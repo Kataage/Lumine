@@ -1,0 +1,127 @@
+use crate::db::Database;
+use anyhow::{Context, Result};
+use std::fs;
+use std::path::Path;
+use walkdir::WalkDir;
+
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "ico", "svg", "avif", "apng",
+];
+
+pub struct FileScanner<'a> {
+    db: &'a Database,
+}
+
+impl<'a> FileScanner<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        Self { db }
+    }
+
+    pub fn scan_library(&self, library_id: i64, root_path: &str) -> Result<ScanResult> {
+        let root = Path::new(root_path);
+        if !root.exists() {
+            anyhow::bail!("Path does not exist: {}", root_path);
+        }
+
+        let mut result = ScanResult::default();
+        let conn = self.db.connection();
+        let tx = conn.unchecked_transaction()?;
+
+        for entry in WalkDir::new(root)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let extension = match path.extension().and_then(|s| s.to_str()) {
+                Some(ext) => ext.to_lowercase(),
+                None => continue,
+            };
+
+            if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+                continue;
+            }
+
+            let file_name = match path.file_name().and_then(|s| s.to_str()) {
+                Some(name) => name,
+                None => continue,
+            };
+
+            let file_path = match path.to_str() {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let metadata = match fs::metadata(path) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            let file_size = metadata.len() as i64;
+            let modified_at = metadata
+                .modified()
+                .ok()
+                .and_then(|t| {
+                    let datetime: chrono::DateTime<chrono::Utc> = t.into();
+                    Some(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
+                });
+
+            let folder_path = path
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or(root_path);
+
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM assets WHERE file_path = ?)",
+                    [file_path],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if !exists {
+                tx.execute(
+                    "INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, modified_at_fs)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    rusqlite::params![library_id, folder_path, file_name, file_path, extension, file_size, modified_at],
+                )?;
+                result.added += 1;
+            } else {
+                result.unchanged += 1;
+            }
+        }
+
+        tx.execute(
+            "UPDATE libraries SET last_scanned_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+            [library_id],
+        )?;
+
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub fn is_image_file(path: &Path) -> bool {
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ScanResult {
+    pub added: u32,
+    pub unchanged: u32,
+    pub errors: u32,
+}
+
+impl ScanResult {
+    pub fn add_error(&mut self) {
+        self.errors += 1;
+    }
+}

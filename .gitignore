@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+dist-ssr
+*.local
+
+# Tauri
+src-tauri/target
+src-tauri/src-tauri
+
+# Test
+coverage
+playwright-report
+test-results
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+Thumbs.db
+
+# Lumine specific
+lumine.db
+lumine.db-wal
+lumine.db-shm
+lumine/thumb-cache
+lumine/logs
+lumine/tmp
