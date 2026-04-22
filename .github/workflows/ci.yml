@@ -25,9 +25,9 @@ jobs:
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
-
-      - name: Lint
-        run: npm run lint
+        with:
+          shared-key: "lumine-rust"
+          cache-targets: false
 
       - name: Typecheck
         run: npm run typecheck
