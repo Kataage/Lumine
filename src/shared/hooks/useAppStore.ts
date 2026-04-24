@@ -16,9 +16,11 @@ interface AppState {
   isScanning: boolean;
   scanProgress: { added: number; unchanged: number; errors: number } | null;
   searchQuery: string;
+  activeView: "assets" | "tags" | "posts" | "settings";
 
   setLibraries: (libraries: Library[]) => void;
   setSearchQuery: (query: string) => void;
+  setActiveView: (view: "assets" | "tags" | "posts" | "settings") => void;
   selectLibrary: (id: number | null) => void;
   addLibrary: (library: Library) => void;
   removeLibrary: (id: number) => void;
@@ -56,9 +58,11 @@ export const useAppStore = create<AppState>((set) => ({
   isScanning: false,
   scanProgress: null,
   searchQuery: "",
+  activeView: "assets",
 
   setLibraries: (libraries) => set({ libraries }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setActiveView: (view) => set({ activeView: view }),
   selectLibrary: (id) => set({ selectedLibraryId: id }),
   addLibrary: (library) =>
     set((state) => ({ libraries: [...state.libraries, library] })),
