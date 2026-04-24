@@ -15,8 +15,10 @@ interface AppState {
   isDetailPanelOpen: boolean;
   isScanning: boolean;
   scanProgress: { added: number; unchanged: number; errors: number } | null;
+  searchQuery: string;
 
   setLibraries: (libraries: Library[]) => void;
+  setSearchQuery: (query: string) => void;
   selectLibrary: (id: number | null) => void;
   addLibrary: (library: Library) => void;
   removeLibrary: (id: number) => void;
@@ -53,8 +55,10 @@ export const useAppStore = create<AppState>((set) => ({
   isDetailPanelOpen: false,
   isScanning: false,
   scanProgress: null,
+  searchQuery: "",
 
   setLibraries: (libraries) => set({ libraries }),
+  setSearchQuery: (query) => set({ searchQuery: query }),
   selectLibrary: (id) => set({ selectedLibraryId: id }),
   addLibrary: (library) =>
     set((state) => ({ libraries: [...state.libraries, library] })),

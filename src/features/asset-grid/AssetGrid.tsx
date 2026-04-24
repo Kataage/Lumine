@@ -10,12 +10,14 @@ export function AssetGrid() {
   const parentRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const thumbnailSize = useAppStore((s) => s.thumbnailSize);
+  const searchQuery = useAppStore((s) => s.searchQuery);
 
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ["assets", selectedLibraryId],
+    queryKey: ["assets", selectedLibraryId, searchQuery],
     queryFn: () =>
       listAssets({
         library_id: selectedLibraryId ?? undefined,
+        search: searchQuery || undefined,
         limit: 1000,
       }),
     enabled: selectedLibraryId !== null,
