@@ -127,6 +127,26 @@ impl<'a> AssetService<'a> {
             sql.push_str(" AND extension = ?");
             params_vec.push(Box::new(extension.clone()));
         }
+  if let Some(ref tags) = query.tags {
+    if !tags.is_empty() {
+      sql.push_str(&format!(
+        " AND id IN (SELECT asset_id FROM asset_tags WHERE tag_id IN ({}) GROUP BY asset_id HAVING COUNT(DISTINCT tag_id) = {})",
+        tags.iter().map(|_| "?").collect::<Vec<_>>().join(","),
+        tags.len()
+      ));
+      for tag_id in tags {
+        params_vec.push(Box::new(*tag_id));
+      }
+    }
+  }
+  if let Some(has_note) = query.has_note {
+    if has_note {
+      sql.push_str(" AND EXISTS (SELECT 1 FROM asset_notes WHERE asset_id = assets.id)");
+    } else {
+      sql.push_str(" AND NOT EXISTS (SELECT 1 FROM asset_notes WHERE asset_id = assets.id)");
+    }
+  }
+
 
         let sort_field = match query.sort_field {
             SortField::ModifiedAt => "modified_at_fs",
