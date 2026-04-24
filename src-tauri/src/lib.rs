@@ -3,9 +3,11 @@ mod commands;
 mod db;
 mod domain;
 mod infrastructure;
+mod jobs;
 
 use db::{Database, migrations};
-use std::sync::Mutex;
+use jobs::JobSystem;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,7 +26,10 @@ pub fn run() {
             let db = Database::new(&db_path).context("Failed to initialize database")?;
             migrations::run_migrations(&db.connection()).context("Failed to run migrations")?;
 
+            let db_arc = Arc::new(db);
             app.manage(Mutex::new(db));
+            app.manage(JobSystem::new(db_arc, app.handle().clone()));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

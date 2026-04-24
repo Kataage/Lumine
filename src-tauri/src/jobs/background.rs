@@ -1,5 +1,4 @@
 use crate::db::Database;
-use anyhow::Result;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 use std::thread;
@@ -13,16 +12,18 @@ pub enum JobCommand {
 
 pub struct JobSystem {
     sender: Sender<JobCommand>,
+    app_handle: AppHandle,
 }
 
 impl JobSystem {
     pub fn new(db: std::sync::Arc<Database>, app_handle: AppHandle) -> Self {
         let (sender, receiver) = channel::<JobCommand>();
         let db_clone = db.clone();
+        let app_handle_clone = app_handle.clone();
         thread::spawn(move || {
-            Self::worker(db_clone, app_handle, receiver);
+            Self::worker(db_clone, app_handle_clone, receiver);
         });
-        Self { sender }
+        Self { sender, app_handle }
     }
 
     fn worker(db: std::sync::Arc<Database>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
@@ -41,6 +42,10 @@ impl JobSystem {
                 }
             }
         }
+    }
+
+    pub fn app_handle(&self) -> AppHandle {
+        self.app_handle.clone()
     }
 
     pub fn queue_scan(&self, library_id: i64) {
