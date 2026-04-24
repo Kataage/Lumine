@@ -1,15 +1,17 @@
-import { useState, useCallback, type ChangeEvent } from "react";
+import { useCallback, type ChangeEvent } from "react";
 import { SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useAppStore } from "@/shared/hooks/useAppStore";
 
 export function SearchInput() {
-  const [value, setValue] = useState("");
+  const searchQuery = useAppStore((s) => s.searchQuery);
+  const setSearchQuery = useAppStore((s) => s.setSearchQuery);
 
   const handleSearch = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      setValue(e.target.value);
+      setSearchQuery(e.target.value);
     },
-    []
+    [setSearchQuery]
   );
 
   return (
@@ -18,7 +20,7 @@ export function SearchInput() {
       <Input
         type="search"
         placeholder="Search assets..."
-        value={value}
+        value={searchQuery}
         onChange={handleSearch}
         className="pl-9"
       />
