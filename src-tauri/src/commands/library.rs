@@ -2,8 +2,9 @@ use crate::application::LibraryService;
 use crate::db::Database;
 use crate::domain::Library;
 use crate::infrastructure::FileScanner;
+use crate::jobs::JobSystem;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[tauri::command]
 pub fn get_app_bootstrap(state: State<'_, Mutex<Database>>) -> Result<BootstrapData, String> {
@@ -41,15 +42,23 @@ pub fn remove_library(state: State<'_, Mutex<Database>>, library_id: i64) -> Res
 #[tauri::command]
 pub fn scan_library(
     state: State<'_, Mutex<Database>>,
+    job_system: State<'_, JobSystem>,
     library_id: i64,
 ) -> Result<ScanResult, String> {
+    let job_id = format!("scan_{}_{}", library_id, chrono::Utc::now().timestamp());
+    let _ = job_system.app_handle().emit("job_started", &job_id);
+
     let db = state.lock().map_err(|e| e.to_string())?;
     let library_service = LibraryService::new(&db);
     let library = library_service.get_library(library_id).map_err(|e| e.to_string())?;
     let scanner = FileScanner::new(&db);
-    scanner
+    let result = scanner
         .scan_library(library_id, &library.root_path)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let _ = job_system.app_handle().emit("job_completed", &job_id);
+
+    Ok(result)
 }
 
 #[derive(serde::Serialize)]
