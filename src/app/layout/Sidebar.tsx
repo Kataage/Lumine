@@ -18,6 +18,8 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const selectLibrary = useAppStore((s) => s.selectLibrary);
+  const activeView = useAppStore((s) => s.activeView);
+  const setActiveView = useAppStore((s) => s.setActiveView);
 
   const { data: libraries = [] } = useQuery({
     queryKey: ["libraries"],
@@ -72,20 +74,41 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         </div>
 
-        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm hover:bg-accent/50">
-          <TagsIcon className="w-4 h-4" />
-          {!collapsed && <span>Tags</span>}
-        </button>
+<button
+        onClick={() => setActiveView("tags")}
+        className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
+          activeView === "tags"
+            ? "bg-accent text-accent-foreground"
+            : "hover:bg-accent/50"
+        }`}
+      >
+        <TagsIcon className="w-4 h-4" />
+        {!collapsed && <span>Tags</span>}
+      </button>
 
-        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm hover:bg-accent/50">
-          <FileImageIcon className="w-4 h-4" />
-          {!collapsed && <span>Posts</span>}
-        </button>
+      <button
+        onClick={() => setActiveView("posts")}
+        className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
+          activeView === "posts"
+            ? "bg-accent text-accent-foreground"
+            : "hover:bg-accent/50"
+        }`}
+      >
+        <FileImageIcon className="w-4 h-4" />
+        {!collapsed && <span>Posts</span>}
+      </button>
 
-        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm hover:bg-accent/50">
-          <SettingsIcon className="w-4 h-4" />
-          {!collapsed && <span>Settings</span>}
-        </button>
+      <button
+        onClick={() => setActiveView("settings")}
+        className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
+          activeView === "settings"
+            ? "bg-accent text-accent-foreground"
+            : "hover:bg-accent/50"
+        }`}
+      >
+        <SettingsIcon className="w-4 h-4" />
+        {!collapsed && <span>Settings</span>}
+      </button>
       </nav>
     </aside>
   );
