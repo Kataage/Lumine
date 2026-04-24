@@ -4,7 +4,7 @@ mod db;
 mod domain;
 mod infrastructure;
 
-use db::{ Database, migrations };
+use db::{Database, migrations};
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -12,16 +12,17 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(|app| -> anyhow::Result<()> {
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .expect("Failed to get app data dir");
-            std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
+                .context("Failed to get app data dir")?;
+            std::fs::create_dir_all(&app_data_dir)
+                .context("Failed to create app data dir")?;
 
             let db_path = app_data_dir.join("lumine.db");
-            let db = Database::new(&db_path).expect("Failed to initialize database");
-            migrations::run_migrations(&db.connection()).expect("Failed to run migrations");
+            let db = Database::new(&db_path).context("Failed to initialize database")?;
+            migrations::run_migrations(&db.connection()).context("Failed to run migrations")?;
 
             app.manage(Mutex::new(db));
             Ok(())

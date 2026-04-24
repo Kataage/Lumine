@@ -16,6 +16,6 @@ impl Database {
     }
 
     pub fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+        self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
