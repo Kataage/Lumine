@@ -81,7 +81,7 @@ impl<'a> FileScanner<'a> {
                     [file_path],
                     |row| row.get(0),
                 )
-                .unwrap_or(false);
+                .with_context(|| format!("Failed to check if asset exists: {}", file_path))?;
 
             if !exists {
                 tx.execute(
