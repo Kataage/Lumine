@@ -1,12 +1,12 @@
 use crate::application::PostService;
 use crate::db::Database;
 use crate::domain::{Asset, Post, PostAccount, PostStatus, PostTarget};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 #[tauri::command]
 pub fn list_post_targets(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
 ) -> Result<Vec<PostTarget>, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = PostService::new(&db);
@@ -15,7 +15,7 @@ pub fn list_post_targets(
 
 #[tauri::command]
 pub fn create_post_target(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     name: String,
     kind: String,
 ) -> Result<PostTarget, String> {
@@ -26,7 +26,7 @@ pub fn create_post_target(
 
 #[tauri::command]
 pub fn list_post_accounts(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     target_id: Option<i64>,
 ) -> Result<Vec<PostAccount>, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
@@ -36,7 +36,7 @@ pub fn list_post_accounts(
 
 #[tauri::command]
 pub fn create_post_account(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     target_id: i64,
     display_name: String,
     account_identifier: String,
@@ -49,7 +49,7 @@ pub fn create_post_account(
 }
 
 #[tauri::command]
-pub fn list_posts(state: State<'_, Mutex<Database>>, status: Option<String>) -> Result<Vec<Post>, String> {
+pub fn list_posts(state: State<'_, Arc<Mutex<Database>>>, status: Option<String>) -> Result<Vec<Post>, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = PostService::new(&db);
     let post_status = status.as_ref().map(|s| PostStatus::from(s.as_str()));
@@ -62,7 +62,7 @@ const MAX_HASHTAGS_SIZE: usize = 4096;
 
 #[tauri::command]
 pub fn create_post_draft(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     title: String,
     body: String,
     hashtags: String,
@@ -85,7 +85,7 @@ pub fn create_post_draft(
 
 #[tauri::command]
 pub fn update_post(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     post_id: i64,
     title: String,
     body: String,
@@ -111,7 +111,7 @@ const MAX_ASSET_ATTACHMENTS: usize = 1000;
 
 #[tauri::command]
 pub fn attach_assets_to_post(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     post_id: i64,
     asset_ids: Vec<i64>,
 ) -> Result<(), String> {
@@ -127,7 +127,7 @@ pub fn attach_assets_to_post(
 
 #[tauri::command]
 pub fn get_post_assets(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     post_id: i64,
 ) -> Result<Vec<Asset>, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
