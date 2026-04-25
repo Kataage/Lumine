@@ -64,12 +64,17 @@ pub fn get_asset_detail(state: State<'_, Mutex<Database>>, asset_id: i64) -> Res
     service.get_asset(asset_id).map_err(|e| e.to_string())
 }
 
+const MAX_NOTE_SIZE: usize = 1024 * 1024;
+
 #[tauri::command]
 pub fn update_asset_note(
     state: State<'_, Mutex<Database>>,
     asset_id: i64,
     content: String,
 ) -> Result<(), String> {
+    if content.len() > MAX_NOTE_SIZE {
+        return Err(format!("Note content exceeds maximum size of {} bytes", MAX_NOTE_SIZE));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = AssetService::new(&db);
     service.update_asset_note(asset_id, &content).map_err(|e| e.to_string())

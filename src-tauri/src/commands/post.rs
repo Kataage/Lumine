@@ -56,6 +56,10 @@ pub fn list_posts(state: State<'_, Mutex<Database>>, status: Option<String>) -> 
     service.list_posts(post_status).map_err(|e| e.to_string())
 }
 
+const MAX_TITLE_SIZE: usize = 256;
+const MAX_BODY_SIZE: usize = 1024 * 1024;
+const MAX_HASHTAGS_SIZE: usize = 4096;
+
 #[tauri::command]
 pub fn create_post_draft(
     state: State<'_, Mutex<Database>>,
@@ -63,6 +67,15 @@ pub fn create_post_draft(
     body: String,
     hashtags: String,
 ) -> Result<Post, String> {
+    if title.len() > MAX_TITLE_SIZE {
+        return Err(format!("Title exceeds maximum size of {} bytes", MAX_TITLE_SIZE));
+    }
+    if body.len() > MAX_BODY_SIZE {
+        return Err(format!("Body exceeds maximum size of {} bytes", MAX_BODY_SIZE));
+    }
+    if hashtags.len() > MAX_HASHTAGS_SIZE {
+        return Err(format!("Hashtags exceeds maximum size of {} bytes", MAX_HASHTAGS_SIZE));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = PostService::new(&db);
     service
@@ -78,6 +91,15 @@ pub fn update_post(
     body: String,
     hashtags: String,
 ) -> Result<(), String> {
+    if title.len() > MAX_TITLE_SIZE {
+        return Err(format!("Title exceeds maximum size of {} bytes", MAX_TITLE_SIZE));
+    }
+    if body.len() > MAX_BODY_SIZE {
+        return Err(format!("Body exceeds maximum size of {} bytes", MAX_BODY_SIZE));
+    }
+    if hashtags.len() > MAX_HASHTAGS_SIZE {
+        return Err(format!("Hashtags exceeds maximum size of {} bytes", MAX_HASHTAGS_SIZE));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = PostService::new(&db);
     service
@@ -85,12 +107,17 @@ pub fn update_post(
         .map_err(|e| e.to_string())
 }
 
+const MAX_ASSET_ATTACHMENTS: usize = 1000;
+
 #[tauri::command]
 pub fn attach_assets_to_post(
     state: State<'_, Mutex<Database>>,
     post_id: i64,
     asset_ids: Vec<i64>,
 ) -> Result<(), String> {
+    if asset_ids.len() > MAX_ASSET_ATTACHMENTS {
+        return Err(format!("Asset count exceeds maximum of {}", MAX_ASSET_ATTACHMENTS));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = PostService::new(&db);
     service
