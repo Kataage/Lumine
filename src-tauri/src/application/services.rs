@@ -38,16 +38,33 @@ impl<'a> LibraryService<'a> {
         Ok(libs)
     }
 
-    pub fn add_library(&self, name: &str, root_path: &str) -> Result<Library> {
-        let conn = self.db.connection();
-        conn.execute(
-            "INSERT INTO libraries (name, root_path) VALUES (?, ?)",
-            params![name, root_path],
-        )?;
-        let id = conn.last_insert_rowid();
-        drop(conn);
+ pub fn add_library(&self, name: &str, root_path: &str) -> Result<Library> {
+ let path = Path::new(root_path);
 
-        self.get_library(id)
+ let canonical_path = path.canonicalize()
+ .with_context(|| format!("Failed to resolve path: {}", root_path))?;
+
+ if !canonical_path.is_dir() {
+ anyhow::bail!("Path is not a directory: {}", root_path);
+ }
+
+ let metadata = std::fs::metadata(&canonical_path)
+ .with_context(|| format!("Failed to read metadata: {}", root_path))?;
+
+ if metadata.permissions().readonly() {
+ anyhow::bail!("Path is not writable (read-only permissions): {}", root_path);
+ }
+
+ let conn = self.db.connection();
+ conn.execute(
+ "INSERT INTO libraries (name, root_path) VALUES (?, ?)",
+ params![name, root_path],
+ )?;
+ let id = conn.last_insert_rowid();
+ drop(conn);
+
+ self.get_library(id)
+ }
     }
 
     pub fn get_library(&self, id: i64) -> Result<Library> {
