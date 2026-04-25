@@ -65,7 +65,6 @@ impl<'a> LibraryService<'a> {
 
  self.get_library(id)
  }
-    }
 
     pub fn get_library(&self, id: i64) -> Result<Library> {
         let conn = self.db.connection();
