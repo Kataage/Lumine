@@ -100,6 +100,13 @@ pub fn set_asset_status(
     asset_id: i64,
     status: String,
 ) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["unorganized", "selected", "posting_candidate", "posted"];
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return Err(format!(
+            "Invalid status '{}'. Valid values: {:?}",
+            status, VALID_STATUSES
+        ));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = AssetService::new(&db);
     let status_label = StatusLabel::from(status.as_str());
