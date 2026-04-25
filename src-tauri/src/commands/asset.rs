@@ -86,6 +86,9 @@ pub fn set_asset_rating(
     asset_id: i64,
     rating: i32,
 ) -> Result<(), String> {
+    if !(0..=5).contains(&rating) {
+        return Err(format!("Rating must be between 0 and 5, got {}", rating));
+    }
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = AssetService::new(&db);
     service.set_asset_rating(asset_id, rating).map_err(|e| e.to_string())
