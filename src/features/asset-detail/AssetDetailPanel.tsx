@@ -5,6 +5,7 @@ import { updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } fro
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon, StarIcon } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export function AssetDetailPanel() {
   const selectedAsset = useAppStore((s) => s.selectedAsset);
@@ -71,7 +72,7 @@ export function AssetDetailPanel() {
       <div className="flex-1 overflow-auto p-4 space-y-4">
         <div>
           <img
-            src={`asset://localhost/thumb/${selectedAsset.id}`}
+            src={convertFileSrc(selectedAsset.file_path)}
             alt={selectedAsset.file_name}
             className="w-full rounded-md bg-muted"
           />

@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
 import { StarIcon } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface AssetGridItemProps {
   asset: Asset;
@@ -22,7 +23,7 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const thumbUrl = `asset://localhost/thumb/${asset.id}`;
+  const thumbUrl = convertFileSrc(asset.file_path);
 
   return (
     <div
