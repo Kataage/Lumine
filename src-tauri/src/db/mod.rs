@@ -2,6 +2,8 @@ use rusqlite::{Connection, Result};
 use std::path::Path;
 use std::sync::Mutex;
 
+pub mod migrations;
+
 pub struct Database {
     pub conn: Mutex<Connection>,
 }

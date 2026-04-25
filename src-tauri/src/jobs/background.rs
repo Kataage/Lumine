@@ -1,6 +1,5 @@
 use crate::db::Database;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
@@ -26,7 +25,7 @@ impl JobSystem {
         Self { sender, app_handle }
     }
 
-    fn worker(db: std::sync::Arc<Database>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
+    fn worker(_db: std::sync::Arc<Database>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
         while let Ok(command) = receiver.recv() {
             match command {
                 JobCommand::ScanLibrary { library_id } => {

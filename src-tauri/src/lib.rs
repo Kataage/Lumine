@@ -15,7 +15,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| -> anyhow::Result<()> {
+        .setup(|app: &mut tauri::App| -> anyhow::Result<()> {
             let app_data_dir = app
                 .path()
                 .app_data_dir()
