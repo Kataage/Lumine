@@ -29,23 +29,29 @@ jobs:
           shared-key: "lumine-rust"
           cache-targets: false
 
+      - name: Lint
+        run: npm run lint || true
+        continue-on-error: true
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Frontend tests
         run: npm run test
 
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets --all-features
+
       - name: Rust fmt
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check || true
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
         continue-on-error: true
 
       - name: Rust clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings || true
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
         continue-on-error: true
 
       - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all || true
-        continue-on-error: true
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all
 
       - name: Frontend build
         run: npm run build
