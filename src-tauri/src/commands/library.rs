@@ -1,7 +1,7 @@
 use crate::application::LibraryService;
 use crate::db::Database;
 use crate::domain::Library;
-use crate::infrastructure::FileScanner;
+use crate::infrastructure::{file_scanner::ScanResult, FileScanner};
 use crate::jobs::JobSystem;
 use std::sync::Mutex;
 use tauri::{Emitter, State};
@@ -64,11 +64,4 @@ pub fn scan_library(
 #[derive(serde::Serialize)]
 pub struct BootstrapData {
     pub libraries: Vec<Library>,
-}
-
-#[derive(serde::Serialize)]
-pub struct ScanResult {
-    pub added: u32,
-    pub unchanged: u32,
-    pub errors: u32,
 }

@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::domain::{
-    Asset, AssetQuery, Library, MoveConflictPolicy, Post, PostAccount, PostStatus, PostTarget,
+    Asset, AssetQuery, Library, Post, PostAccount, PostStatus, PostTarget,
     SortField, SortOrder, StatusLabel, Tag, ThumbStatus,
 };
 use anyhow::{Context, Result};
