@@ -1,4 +1,6 @@
+use crate::application::LibraryService;
 use crate::db::Database;
+use crate::infrastructure::FileScanner;
 use std::sync::{mpsc::{channel, Receiver, Sender}, Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
@@ -26,12 +28,33 @@ impl JobSystem {
         Self { sender, db, app_handle }
     }
 
-    fn worker(_db: Arc<Mutex<Database>>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
+    fn worker(db: Arc<Mutex<Database>>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
         while let Ok(command) = receiver.recv() {
             match command {
                 JobCommand::ScanLibrary { library_id } => {
                     let job_id = format!("scan_{}_{}", library_id, chrono::Utc::now().timestamp());
                     let _ = app_handle.emit("job_started", &job_id);
+
+                    let db_guard = db.lock().unwrap();
+                    let library_service = LibraryService::new(&db_guard);
+                    match library_service.get_library(library_id) {
+                        Ok(library) => {
+                            let scanner = FileScanner::new(&db_guard);
+                            match scanner.scan_library(library_id, &library.root_path) {
+                                Ok(result) => {
+                                    let _ = app_handle.emit("scan_progress", &result);
+                                    let _ = app_handle.emit("job_completed", &job_id);
+                                }
+                                Err(e) => {
+                                    let _ = app_handle.emit("job_failed", format!("{}: {}", job_id, e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let _ = app_handle.emit("job_failed", format!("{}: {}", job_id, e));
+                        }
+                    }
+                    drop(db_guard);
                 }
                 JobCommand::GenerateThumbnail { asset_id } => {
                     let job_id = format!("thumb_{}", asset_id);
