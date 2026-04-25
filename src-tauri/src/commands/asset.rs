@@ -1,12 +1,12 @@
 use crate::application::AssetService;
 use crate::db::Database;
 use crate::domain::{Asset, AssetQuery, SortField, SortOrder, StatusLabel};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 #[tauri::command]
 pub fn list_assets(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     library_id: Option<i64>,
     folder_path: Option<String>,
     search: Option<String>,
@@ -58,7 +58,7 @@ pub fn list_assets(
 }
 
 #[tauri::command]
-pub fn get_asset_detail(state: State<'_, Mutex<Database>>, asset_id: i64) -> Result<Asset, String> {
+pub fn get_asset_detail(state: State<'_, Arc<Mutex<Database>>>, asset_id: i64) -> Result<Asset, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = AssetService::new(&db);
     service.get_asset(asset_id).map_err(|e| e.to_string())
@@ -68,7 +68,7 @@ const MAX_NOTE_SIZE: usize = 1024 * 1024;
 
 #[tauri::command]
 pub fn update_asset_note(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     asset_id: i64,
     content: String,
 ) -> Result<(), String> {
@@ -82,7 +82,7 @@ pub fn update_asset_note(
 
 #[tauri::command]
 pub fn set_asset_rating(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     asset_id: i64,
     rating: i32,
 ) -> Result<(), String> {
@@ -93,7 +93,7 @@ pub fn set_asset_rating(
 
 #[tauri::command]
 pub fn set_asset_status(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     asset_id: i64,
     status: String,
 ) -> Result<(), String> {
@@ -105,7 +105,7 @@ pub fn set_asset_status(
 
 #[tauri::command]
 pub fn set_asset_favorite(
-    state: State<'_, Mutex<Database>>,
+    state: State<'_, Arc<Mutex<Database>>>,
     asset_id: i64,
     is_favorite: bool,
 ) -> Result<(), String> {

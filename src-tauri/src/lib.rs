@@ -27,9 +27,9 @@ pub fn run() {
             let db = Database::new(&db_path).context("Failed to initialize database")?;
             migrations::run_migrations(&db.connection()).context("Failed to run migrations")?;
 
-            let db_arc = Arc::new(db);
-            app.manage(Mutex::new(db));
-            app.manage(JobSystem::new(db_arc, app.handle().clone()));
+            let db = Arc::new(Mutex::new(db));
+            app.manage(db.clone());
+            app.manage(JobSystem::new(db, app.handle().clone()));
 
             Ok(())
         })

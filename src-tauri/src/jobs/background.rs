@@ -1,5 +1,5 @@
 use crate::db::Database;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{mpsc::{channel, Receiver, Sender}, Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
@@ -11,21 +11,22 @@ pub enum JobCommand {
 
 pub struct JobSystem {
     sender: Sender<JobCommand>,
+    db: Arc<Mutex<Database>>,
     app_handle: AppHandle,
 }
 
 impl JobSystem {
-    pub fn new(db: std::sync::Arc<Database>, app_handle: AppHandle) -> Self {
+    pub fn new(db: Arc<Mutex<Database>>, app_handle: AppHandle) -> Self {
         let (sender, receiver) = channel::<JobCommand>();
         let db_clone = db.clone();
         let app_handle_clone = app_handle.clone();
         thread::spawn(move || {
             Self::worker(db_clone, app_handle_clone, receiver);
         });
-        Self { sender, app_handle }
+        Self { sender, db, app_handle }
     }
 
-    fn worker(_db: std::sync::Arc<Database>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
+    fn worker(_db: Arc<Mutex<Database>>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
         while let Ok(command) = receiver.recv() {
             match command {
                 JobCommand::ScanLibrary { library_id } => {
