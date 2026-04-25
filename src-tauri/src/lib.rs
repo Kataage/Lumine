@@ -15,17 +15,18 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app: &mut tauri::App| -> anyhow::Result<()> {
+        .setup(|app: &mut tauri::App| -> Result<(), Box<dyn std::error::Error>> {
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .context("Failed to get app data dir")?;
-            std::fs::create_dir_all(&app_data_dir)
-                .context("Failed to create app data dir")?;
+                .map_err(|e| -> Box<dyn std::error::Error> { anyhow::anyhow!(e).into() })?;
+            std::fs::create_dir_all(&app_data_dir)?;
 
             let db_path = app_data_dir.join("lumine.db");
-            let db = Database::new(&db_path).context("Failed to initialize database")?;
-            migrations::run_migrations(&db.connection()).context("Failed to run migrations")?;
+            let db = Database::new(&db_path)
+                .map_err(|e| -> Box<dyn std::error::Error> { anyhow::anyhow!(e).into() })?;
+            migrations::run_migrations(&db.connection())
+                .map_err(|e| -> Box<dyn std::error::Error> { anyhow::anyhow!(e).into() })?;
 
             let db = Arc::new(Mutex::new(db));
             app.manage(db.clone());
