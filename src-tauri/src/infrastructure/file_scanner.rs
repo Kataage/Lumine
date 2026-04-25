@@ -25,7 +25,7 @@ impl<'a> FileScanner<'a> {
 
         let mut result = ScanResult::default();
         let conn = self.db.connection();
-        let tx = conn.unchecked_transaction()?;
+        let mut tx = conn.transaction()?;
 
         for entry in WalkDir::new(root)
             .follow_links(false)
