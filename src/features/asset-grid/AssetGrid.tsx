@@ -1,19 +1,37 @@
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { listAssets } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { useEffect } from "react";
 
 export function AssetGrid() {
   const parentRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const thumbnailSize = useAppStore((s) => s.thumbnailSize);
   const searchQuery = useAppStore((s) => s.searchQuery);
   const { addToast } = useToast();
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
 
   const { data: assets = [], isLoading, isError, error } = useQuery({
     queryKey: ["assets", selectedLibraryId, searchQuery],
@@ -32,7 +50,9 @@ export function AssetGrid() {
     }
   }, [isError, error, addToast]);
 
-  const columns = Math.max(1, Math.floor(window.innerWidth / (thumbnailSize + 20)));
+  const columns = containerWidth > 0
+    ? Math.max(1, Math.floor(containerWidth / (thumbnailSize + 16)))
+    : 4;
 
   const rowCount = Math.ceil(assets.length / columns);
 
@@ -80,43 +100,45 @@ export function AssetGrid() {
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-auto p-4">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {items.map((virtualRow) => {
-          const startIndex = virtualRow.index * columns;
-          const rowAssets = assets.slice(startIndex, startIndex + columns);
+    <div ref={containerRef} className="h-full overflow-auto p-4">
+      <div ref={parentRef} className="h-full">
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {items.map((virtualRow) => {
+            const startIndex = virtualRow.index * columns;
+            const rowAssets = assets.slice(startIndex, startIndex + columns);
 
-          return (
-            <div
-              key={virtualRow.key}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
+            return (
               <div
-                className="grid gap-4"
+                key={virtualRow.key}
                 style={{
-                  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                {rowAssets.map((asset) => (
-                  <AssetGridItem key={asset.id} asset={asset} size={thumbnailSize} />
-                ))}
+                <div
+                  className="grid gap-4"
+                  style={{
+                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {rowAssets.map((asset) => (
+                    <AssetGridItem key={asset.id} asset={asset} size={thumbnailSize} />
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
