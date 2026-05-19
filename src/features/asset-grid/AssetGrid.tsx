@@ -5,14 +5,17 @@ import { listAssets } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
+import { useEffect } from "react";
 
 export function AssetGrid() {
   const parentRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const thumbnailSize = useAppStore((s) => s.thumbnailSize);
   const searchQuery = useAppStore((s) => s.searchQuery);
+  const { addToast } = useToast();
 
-  const { data: assets = [], isLoading } = useQuery({
+  const { data: assets = [], isLoading, isError, error } = useQuery({
     queryKey: ["assets", selectedLibraryId, searchQuery],
     queryFn: () =>
       listAssets({
@@ -22,6 +25,12 @@ export function AssetGrid() {
       }),
     enabled: selectedLibraryId !== null,
   });
+
+  useEffect(() => {
+    if (isError && error) {
+      addToast(`Failed to load assets: ${error.message}`, "error");
+    }
+  }, [isError, error, addToast]);
 
   const columns = Math.max(1, Math.floor(window.innerWidth / (thumbnailSize + 20)));
 
@@ -50,6 +59,14 @@ export function AssetGrid() {
         {Array.from({ length: 12 }).map((_, i) => (
           <Skeleton key={i} className="w-full h-full" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        <p>Failed to load assets. Please try again.</p>
       </div>
     );
   }

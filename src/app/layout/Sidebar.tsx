@@ -8,7 +8,10 @@ import {
   TagsIcon,
   FileImageIcon,
   SettingsIcon,
+  AlertCircleIcon,
 } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
+import { useEffect } from "react";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -20,11 +23,18 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const selectLibrary = useAppStore((s) => s.selectLibrary);
   const activeView = useAppStore((s) => s.activeView);
   const setActiveView = useAppStore((s) => s.setActiveView);
+  const { addToast } = useToast();
 
-  const { data: libraries = [] } = useQuery({
+  const { data: libraries = [], isError, error } = useQuery({
     queryKey: ["libraries"],
     queryFn: listLibraries,
   });
+
+  useEffect(() => {
+    if (isError && error) {
+      addToast(`Failed to load libraries: ${error.message}`, "error");
+    }
+  }, [isError, error, addToast]);
 
   return (
     <aside
@@ -56,21 +66,34 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </span>
           )}
           <div className="mt-1 space-y-1">
-            {libraries.map((lib) => (
-              <button
-                key={lib.id}
-                onClick={() => selectLibrary(lib.id)}
-                className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
-                  selectedLibraryId === lib.id
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
-                }`}
-                title={lib.name}
-              >
-                <FolderIcon className="w-4 h-4 shrink-0" />
-                {!collapsed && <span className="truncate">{lib.name}</span>}
-              </button>
-            ))}
+            {isError ? (
+              <div className="px-3 py-2 text-sm text-destructive flex items-center gap-2">
+                <AlertCircleIcon className="w-4 h-4" />
+                {!collapsed && <span>Failed to load</span>}
+              </div>
+            ) : libraries.length === 0 ? (
+              !collapsed && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  No libraries yet
+                </div>
+              )
+            ) : (
+              libraries.map((lib) => (
+                <button
+                  key={lib.id}
+                  onClick={() => selectLibrary(lib.id)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm transition-colors ${
+                    selectedLibraryId === lib.id
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50"
+                  }`}
+                  title={lib.name}
+                >
+                  <FolderIcon className="w-4 h-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{lib.name}</span>}
+                </button>
+              ))
+            )}
           </div>
         </div>
 

@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FolderIcon } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 
 interface AddLibraryDialogProps {
   open: boolean;
@@ -23,6 +24,7 @@ export function AddLibraryDialog({ open, onOpenChange }: AddLibraryDialogProps) 
   const [path, setPath] = useState("");
   const addLibraryToStore = useAppStore((s) => s.addLibrary);
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   const mutation = useMutation({
     mutationFn: () => addLibrary(name, path),
@@ -32,6 +34,9 @@ export function AddLibraryDialog({ open, onOpenChange }: AddLibraryDialogProps) 
       setName("");
       setPath("");
       onOpenChange(false);
+    },
+    onError: (error) => {
+      addToast(`Failed to add library: ${error.message}`, "error");
     },
   });
 
