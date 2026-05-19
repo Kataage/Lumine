@@ -1,9 +1,9 @@
 import type { MouseEvent } from "react";
+import { useState } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
 import { StarIcon, ImageIcon } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useState } from "react";
 
 interface AssetGridItemProps {
   asset: Asset;
