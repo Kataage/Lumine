@@ -46,6 +46,7 @@ pub fn run() {
             commands::set_asset_rating,
             commands::set_asset_status,
             commands::set_asset_favorite,
+            commands::move_assets,
             commands::list_tags,
             commands::create_tag,
             commands::set_asset_tags,

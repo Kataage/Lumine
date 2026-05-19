@@ -9,9 +9,11 @@ import {
   MinusIcon,
   PlusIcon,
   FolderPlusIcon,
+  ArrowRightIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddLibraryDialog } from "@/features/libraries/AddLibraryDialog";
+import { MoveAssetsDialog } from "@/features/move-assets/MoveAssetsDialog";
 
 export function Toolbar() {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -20,7 +22,9 @@ export function Toolbar() {
   const setThumbnailSize = useAppStore((s) => s.setThumbnailSize);
   const isDetailPanelOpen = useAppStore((s) => s.isDetailPanelOpen);
   const toggleDetailPanel = useAppStore((s) => s.toggleDetailPanel);
+  const selectedAssetIds = useAppStore((s) => s.selectedAssetIds);
   const [isAddLibraryOpen, setIsAddLibraryOpen] = useState(false);
+  const [isMoveAssetsOpen, setIsMoveAssetsOpen] = useState(false);
 
   return (
     <header className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card">
@@ -93,9 +97,21 @@ export function Toolbar() {
           <FolderPlusIcon className="w-4 h-4 mr-1" />
           Add Library
         </Button>
+
+        {selectedAssetIds.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsMoveAssetsOpen(true)}
+          >
+            <ArrowRightIcon className="w-4 h-4 mr-1" />
+            Move ({selectedAssetIds.length})
+          </Button>
+        )}
       </div>
 
       <AddLibraryDialog open={isAddLibraryOpen} onOpenChange={setIsAddLibraryOpen} />
+      <MoveAssetsDialog open={isMoveAssetsOpen} onOpenChange={setIsMoveAssetsOpen} />
     </header>
   );
 }
