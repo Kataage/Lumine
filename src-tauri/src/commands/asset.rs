@@ -1,6 +1,6 @@
-use crate::application::AssetService;
+use crate::application::{AssetService, MoveService};
 use crate::db::Database;
-use crate::domain::{Asset, AssetQuery, SortField, SortOrder, StatusLabel};
+use crate::domain::{Asset, AssetQuery, MoveConflictPolicy, SortField, SortOrder, StatusLabel};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
@@ -122,4 +122,47 @@ pub fn set_asset_favorite(
     let db = state.lock().map_err(|e| e.to_string())?;
     let service = AssetService::new(&db);
     service.set_asset_favorite(asset_id, is_favorite).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct MoveResultDto {
+    pub succeeded: u32,
+    pub skipped: u32,
+    pub errors: u32,
+    pub error_messages: Vec<String>,
+}
+
+#[tauri::command]
+pub fn move_assets(
+    state: State<'_, Arc<Mutex<Database>>>,
+    asset_ids: Vec<i64>,
+    destination_folder: String,
+    conflict_policy: String,
+) -> Result<MoveResultDto, String> {
+    if asset_ids.is_empty() {
+        return Err("No assets selected".to_string());
+    }
+    if destination_folder.is_empty() {
+        return Err("Destination folder is required".to_string());
+    }
+
+    let policy = match conflict_policy.as_str() {
+        "skip" => MoveConflictPolicy::Skip,
+        "rename" => MoveConflictPolicy::Rename,
+        "fail" => MoveConflictPolicy::Fail,
+        _ => MoveConflictPolicy::Skip,
+    };
+
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let service = MoveService::new(&db);
+    let result = service
+        .move_assets(&asset_ids, &destination_folder, policy)
+        .map_err(|e| e.to_string())?;
+
+    Ok(MoveResultDto {
+        succeeded: result.succeeded,
+        skipped: result.skipped,
+        errors: result.errors,
+        error_messages: result.error_messages,
+    })
 }

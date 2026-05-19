@@ -150,3 +150,22 @@ export async function attachAssetsToPost(postId: number, assetIds: number[]) {
 export async function getPostAssets(postId: number) {
   return invoke<Asset[]>("get_post_assets", { postId });
 }
+
+export interface MoveResult {
+  succeeded: number;
+  skipped: number;
+  errors: number;
+  error_messages: string[];
+}
+
+export async function moveAssets(
+  assetIds: number[],
+  destinationFolder: string,
+  conflictPolicy: string
+) {
+  return invoke<MoveResult>("move_assets", {
+    assetIds,
+    destinationFolder,
+    conflictPolicy,
+  });
+}
