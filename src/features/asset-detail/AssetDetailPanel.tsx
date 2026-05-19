@@ -4,7 +4,7 @@ import { useAppStore } from "@/shared/hooks/useAppStore";
 import { updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } from "@/shared/api/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { XIcon, StarIcon } from "lucide-react";
+import { XIcon, StarIcon, ImageIcon } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useToast } from "@/components/ui/toast";
 
@@ -16,6 +16,14 @@ export function AssetDetailPanel() {
   const { addToast } = useToast();
 
   const [noteContent, setNoteContent] = useState("");
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    if (selectedAsset) {
+      setNoteContent("");
+      setImageError(false);
+    }
+  }, [selectedAsset?.id]);
 
   useEffect(() => {
     if (selectedAsset) {
@@ -91,11 +99,18 @@ export function AssetDetailPanel() {
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
         <div>
-          <img
-            src={convertFileSrc(selectedAsset.file_path)}
-            alt={selectedAsset.file_name}
-            className="w-full rounded-md bg-muted"
-          />
+          {imageError ? (
+            <div className="w-full aspect-square bg-muted rounded-md flex items-center justify-center">
+              <ImageIcon className="w-12 h-12 text-muted-foreground" />
+            </div>
+          ) : (
+            <img
+              src={convertFileSrc(selectedAsset.file_path)}
+              alt={selectedAsset.file_name}
+              className="w-full rounded-md bg-muted"
+              onError={() => setImageError(true)}
+            />
+          )}
         </div>
 
         <div className="space-y-1 text-sm">
