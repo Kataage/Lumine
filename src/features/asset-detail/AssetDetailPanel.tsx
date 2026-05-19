@@ -18,7 +18,9 @@ export function AssetDetailPanel() {
   const [noteContent, setNoteContent] = useState("");
 
   useEffect(() => {
-    setNoteContent(selectedAsset ? "" : "");
+    if (selectedAsset) {
+      setNoteContent("");
+    }
   }, [selectedAsset?.id]);
 
   const noteMutation = useMutation({
