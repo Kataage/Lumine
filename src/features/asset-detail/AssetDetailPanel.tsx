@@ -25,12 +25,6 @@ export function AssetDetailPanel() {
     }
   }, [selectedAsset?.id]);
 
-  useEffect(() => {
-    if (selectedAsset) {
-      setNoteContent("");
-    }
-  }, [selectedAsset?.id]);
-
   const noteMutation = useMutation({
     mutationFn: ({ assetId, content }: { assetId: number; content: string }) =>
       updateAssetNote(assetId, content),
