@@ -1,8 +1,9 @@
 import type { MouseEvent } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
-import { StarIcon } from "lucide-react";
+import { StarIcon, ImageIcon } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { useState } from "react";
 
 interface AssetGridItemProps {
   asset: Asset;
@@ -14,6 +15,8 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
   const toggleAssetSelection = useAppStore((s) => s.toggleAssetSelection);
   const setSelectedAsset = useAppStore((s) => s.setSelectedAsset);
   const isSelected = selectedAssetIds.includes(asset.id);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
@@ -23,7 +26,9 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const thumbUrl = convertFileSrc(asset.file_path);
+  const thumbUrl = asset.thumb_status === "ready"
+    ? convertFileSrc(asset.file_path)
+    : null;
 
   return (
     <div
@@ -37,12 +42,28 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
       role="button"
       tabIndex={0}
     >
-      <img
-        src={thumbUrl}
-        alt={asset.file_name}
-        className="w-full h-full object-cover bg-muted"
-        loading="lazy"
-      />
+      {thumbUrl && !hasError ? (
+        <>
+          {isLoading && (
+            <div className="absolute inset-0 bg-muted animate-pulse" />
+          )}
+          <img
+            src={thumbUrl}
+            alt={asset.file_name}
+            className="w-full h-full object-cover bg-muted"
+            loading="lazy"
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setHasError(true);
+            }}
+          />
+        </>
+      ) : (
+        <div className="w-full h-full bg-muted flex items-center justify-center">
+          <ImageIcon className="w-8 h-8 text-muted-foreground" />
+        </div>
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="absolute bottom-0 left-0 right-0 p-1 text-white text-xs truncate opacity-0 group-hover:opacity-100 transition-opacity">
         {asset.file_name}
