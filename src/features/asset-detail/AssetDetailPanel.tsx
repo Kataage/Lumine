@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } from "@/shared/api/client";
@@ -6,20 +6,29 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon, StarIcon } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { useToast } from "@/components/ui/toast";
 
 export function AssetDetailPanel() {
   const selectedAsset = useAppStore((s) => s.selectedAsset);
   const setSelectedAsset = useAppStore((s) => s.setSelectedAsset);
   const setDetailPanelOpen = useAppStore((s) => s.setDetailPanelOpen);
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   const [noteContent, setNoteContent] = useState("");
+
+  useEffect(() => {
+    setNoteContent(selectedAsset ? "" : "");
+  }, [selectedAsset?.id]);
 
   const noteMutation = useMutation({
     mutationFn: ({ assetId, content }: { assetId: number; content: string }) =>
       updateAssetNote(assetId, content),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (error) => {
+      addToast(`Failed to save note: ${error.message}`, "error");
     },
   });
 
@@ -29,6 +38,9 @@ export function AssetDetailPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
+    onError: (error) => {
+      addToast(`Failed to update rating: ${error.message}`, "error");
+    },
   });
 
   const statusMutation = useMutation({
@@ -37,6 +49,9 @@ export function AssetDetailPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
+    onError: (error) => {
+      addToast(`Failed to update status: ${error.message}`, "error");
+    },
   });
 
   const favoriteMutation = useMutation({
@@ -44,6 +59,9 @@ export function AssetDetailPanel() {
       setAssetFavorite(assetId, isFavorite),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (error) => {
+      addToast(`Failed to update favorite: ${error.message}`, "error");
     },
   });
 
