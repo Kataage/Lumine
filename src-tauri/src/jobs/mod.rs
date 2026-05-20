@@ -79,7 +79,8 @@ impl JobSystem {
                 }
             };
 
-            let conn = db.lock().unwrap().connection();
+            let db_guard = db.lock().unwrap();
+            let conn = db_guard.connection();
             let assets: Vec<(i64, String, String, String)> = conn
                 .prepare(
                     "SELECT id, file_path, COALESCE(modified_at_fs, ''), COALESCE(thumb_status, 'none')

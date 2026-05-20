@@ -213,7 +213,7 @@ pub fn batch_update_assets(
     }
 
     let db = state.lock().map_err(|e| e.to_string())?;
-    let conn = db.connection();
+    let mut conn = db.connection();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let mut updated = 0u32;
