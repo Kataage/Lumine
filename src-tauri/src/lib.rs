@@ -62,6 +62,7 @@ pub fn run() {
             commands::update_post,
             commands::attach_assets_to_post,
             commands::get_post_assets,
+            commands::cancel_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

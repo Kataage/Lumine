@@ -45,16 +45,20 @@ impl<'a> MoveService<'a> {
         let tx = conn.unchecked_transaction()?;
 
         for asset_id in asset_ids {
-            match self.move_single(&tx, *asset_id, dest_path, &policy) {
+            let sp = tx.savepoint().map_err(|e| anyhow::anyhow!("Failed to create savepoint: {}", e))?;
+            match self.move_single(&sp, *asset_id, dest_path, &policy) {
                 Ok(move_outcome) => match move_outcome {
                     MoveOutcome::Moved => {
+                        sp.commit().map_err(|e| anyhow::anyhow!("Failed to commit savepoint: {}", e))?;
                         result.succeeded += 1;
                     }
                     MoveOutcome::Skipped => {
+                        sp.commit().map_err(|e| anyhow::anyhow!("Failed to commit savepoint: {}", e))?;
                         result.skipped += 1;
                     }
                 },
                 Err(e) => {
+                    let _ = sp.rollback();
                     result.errors += 1;
                     result.error_messages.push(format!("Asset {}: {}", asset_id, e));
                 }
