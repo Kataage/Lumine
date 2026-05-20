@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { listAssets } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+
+const PAGE_SIZE = 100;
 
 export function AssetGrid() {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -33,16 +35,32 @@ export function AssetGrid() {
     return () => observer.disconnect();
   }, []);
 
-  const { data: assets = [], isLoading, isError, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["assets", selectedLibraryId, searchQuery],
-    queryFn: () =>
+    queryFn: ({ pageParam = 0 }) =>
       listAssets({
         library_id: selectedLibraryId ?? undefined,
         search: searchQuery || undefined,
-        limit: 1000,
+        limit: PAGE_SIZE,
+        offset: pageParam as number,
       }),
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < PAGE_SIZE) return undefined;
+      return allPages.length * PAGE_SIZE;
+    },
+    initialPageParam: 0,
     enabled: selectedLibraryId !== null,
   });
+
+  const assets = data?.pages.flat() ?? [];
 
   useEffect(() => {
     if (isError && error) {
@@ -64,6 +82,25 @@ export function AssetGrid() {
   });
 
   const items = virtualizer.getVirtualItems();
+
+  const handleScroll = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      const scrollElement = parentRef.current;
+      if (scrollElement) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+        if (scrollHeight - scrollTop - clientHeight < 500) {
+          fetchNextPage();
+        }
+      }
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
 
   if (!selectedLibraryId) {
     return (
@@ -138,6 +175,11 @@ export function AssetGrid() {
               </div>
             );
           })}
+          {isFetchingNextPage && (
+            <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
+              Loading more...
+            </div>
+          )}
         </div>
       </div>
     </div>
