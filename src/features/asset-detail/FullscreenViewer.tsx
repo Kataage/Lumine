@@ -96,9 +96,7 @@ export function FullscreenViewer({ assets, currentIndex, onClose, onNavigate }: 
 
   if (!asset) return null;
 
-  const imageUrl = asset.thumb_status === "ready" && asset.thumb_path
-    ? convertFileSrc(asset.thumb_path)
-    : convertFileSrc(asset.file_path);
+  const imageUrl = convertFileSrc(asset.file_path);
 
   return (
     <div

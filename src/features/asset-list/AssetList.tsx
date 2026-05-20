@@ -21,9 +21,7 @@ interface AssetListItemProps {
 const AssetListItem = memo(({ asset, isSelected, onClick }: AssetListItemProps) => {
   const [imageError, setImageError] = useState(false);
 
-  const imageUrl = asset.thumb_status === "ready" && asset.thumb_path
-    ? convertFileSrc(asset.thumb_path)
-    : convertFileSrc(asset.file_path);
+  const imageUrl = convertFileSrc(asset.file_path);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -67,13 +65,6 @@ const AssetListItem = memo(({ asset, isSelected, onClick }: AssetListItemProps) 
       </div>
       <div className="text-xs text-muted-foreground w-32 text-right">
         {asset.modified_at_fs || ""}
-      </div>
-      <div className="w-16 text-center">
-        {asset.thumb_status === "ready" ? (
-          <span className="text-green-500 text-xs">✓</span>
-        ) : (
-          <span className="text-muted-foreground text-xs">-</span>
-        )}
       </div>
     </div>
   );
@@ -168,7 +159,6 @@ export function AssetList() {
         <div className="w-20 text-right">Size</div>
         <div className="w-24 text-right">Type</div>
         <div className="w-32 text-right">Modified</div>
-        <div className="w-16 text-center">Thumb</div>
       </div>
       <div ref={containerRef} className="flex-1 overflow-auto">
         <div

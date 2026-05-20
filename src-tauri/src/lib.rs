@@ -3,12 +3,9 @@ mod commands;
 mod db;
 mod domain;
 mod infrastructure;
-mod jobs;
 
 use anyhow::anyhow;
 use db::{Database, migrations};
-use infrastructure::FolderWatcher;
-use jobs::JobSystem;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -32,13 +29,6 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(db));
             app.manage(db.clone());
-
-            let cache_dir = app_data_dir.join("thumbnails");
-            let job_system = Arc::new(JobSystem::new(db.clone(), cache_dir));
-            app.manage(job_system);
-
-            let folder_watcher = Arc::new(FolderWatcher::new(db.clone()));
-            app.manage(folder_watcher);
 
             Ok(())
         })
@@ -73,10 +63,6 @@ pub fn run() {
             commands::get_post_assets,
             commands::get_library_path,
             commands::list_assets_from_folder,
-            commands::start_thumbnail_generation,
-            commands::get_job_status,
-            commands::list_jobs,
-            commands::cancel_job,
             commands::get_excluded_folders,
             commands::set_excluded_folders,
             commands::get_supported_extensions,

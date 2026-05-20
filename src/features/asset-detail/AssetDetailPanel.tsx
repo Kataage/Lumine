@@ -194,9 +194,7 @@ export function AssetDetailPanel() {
     noteMutation.mutate({ assetId: selectedAsset.id, content: noteContent });
   };
 
-  const imageUrl = selectedAsset.thumb_status === "ready" && selectedAsset.thumb_path
-    ? convertFileSrc(selectedAsset.thumb_path)
-    : convertFileSrc(selectedAsset.file_path);
+  const imageUrl = convertFileSrc(selectedAsset.file_path);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;

@@ -2,7 +2,6 @@ use crate::application::LibraryService;
 use crate::db::Database;
 use crate::domain::Library;
 use crate::infrastructure::FileScanner;
-use crate::jobs::JobSystem;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
@@ -40,26 +39,23 @@ pub fn remove_library(state: State<'_, Arc<Mutex<Database>>>, library_id: i64) -
 }
 
 #[derive(serde::Serialize, Clone)]
-pub struct ScanResultWithJob {
+pub struct ScanResult {
     pub added: u32,
     pub unchanged: u32,
     pub errors: u32,
-    pub thumbnail_job_id: Option<String>,
 }
 
 #[tauri::command]
 pub fn scan_library(
     state: State<'_, Arc<Mutex<Database>>>,
-    job_system: State<'_, Arc<JobSystem>>,
     library_id: i64,
-) -> Result<ScanResultWithJob, String> {
+) -> Result<ScanResult, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     let library_service = LibraryService::new(&db);
     let library = library_service.get_library(library_id).map_err(|e| e.to_string())?;
     let root_path = library.root_path.clone();
 
     let db_arc = state.inner().clone();
-    let job_system_arc = job_system.inner().clone();
 
     std::thread::spawn(move || {
         let db_guard = db_arc.lock();
@@ -68,14 +64,12 @@ pub fn scan_library(
             let result = scanner.scan_library(library_id, &root_path);
 
             if let Ok(res) = result {
-                let thumbnail_job_id = job_system_arc.start_thumbnail_generation(library_id);
                 tracing::info!(
-                    "Scan completed for library {}: +{} ={} errors={}, thumbnail_job={}",
+                    "Scan completed for library {}: +{} ={} errors={}",
                     library_id,
                     res.added,
                     res.unchanged,
-                    res.errors,
-                    thumbnail_job_id
+                    res.errors
                 );
             } else {
                 tracing::error!("Scan failed for library {}: {:?}", library_id, result);
@@ -83,11 +77,10 @@ pub fn scan_library(
         }
     });
 
-    Ok(ScanResultWithJob {
+    Ok(ScanResult {
         added: 0,
         unchanged: 0,
         errors: 0,
-        thumbnail_job_id: None,
     })
 }
 
