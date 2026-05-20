@@ -64,6 +64,30 @@ export async function listAssets(query: AssetQuery = {}) {
   });
 }
 
+export async function getLibraryPath(libraryId: number) {
+  return invoke<string>("get_library_path", { libraryId });
+}
+
+export async function listAssetsFromFolder(
+  libraryRootPath: string,
+  offset: number,
+  limit: number
+) {
+  return invoke<Array<{
+    id: number;
+    file_path: string;
+    file_name: string;
+    folder_path: string;
+    extension: string;
+    file_size: number;
+    modified_at: string;
+  }>>("list_assets_from_folder", {
+    libraryRootPath,
+    offset,
+    limit,
+  });
+}
+
 export async function getAssetDetail(assetId: number) {
   return invoke<Asset>("get_asset_detail", { assetId });
 }
