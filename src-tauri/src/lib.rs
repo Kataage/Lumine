@@ -3,9 +3,12 @@ mod commands;
 mod db;
 mod domain;
 mod infrastructure;
+mod jobs;
 
 use anyhow::anyhow;
 use db::{Database, migrations};
+use jobs::JobSystem;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -29,6 +32,10 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(db));
             app.manage(db.clone());
+
+            let cache_dir = app_data_dir.join("thumbnails");
+            let job_system = Arc::new(JobSystem::new(db.clone(), cache_dir));
+            app.manage(job_system);
 
             Ok(())
         })
@@ -59,7 +66,10 @@ pub fn run() {
             commands::attach_assets_to_post,
             commands::get_post_assets,
             commands::get_library_path,
-            commands::list_assets_from_folder,
+            commands::start_thumbnail_generation,
+            commands::get_job_status,
+            commands::list_jobs,
+            commands::cancel_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,4 +29,6 @@ blake3 = "1"
 anyhow = "1"
 thiserror = "1"
 chrono = "0.4"
+rayon = "1"
+uuid = { version = "1", features = ["v4"] }
 

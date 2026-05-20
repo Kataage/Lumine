@@ -7,6 +7,18 @@ import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
+interface FolderAsset {
+  id: number;
+  file_path: string;
+  file_name: string;
+  folder_path: string;
+  extension: string;
+  file_size: number;
+  modified_at: string;
+  thumb_status: string;
+  thumb_path: string | null;
+}
+
 export function AssetGrid() {
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
@@ -28,7 +40,7 @@ export function AssetGrid() {
     return () => observer.disconnect();
   }, []);
 
-  const { data: assets = [], isLoading, isError, error } = useQuery({
+  const { data: assets = [], isLoading, isError, error } = useQuery<FolderAsset[]>({
     queryKey: ["folder-assets", selectedLibraryId],
     queryFn: async () => {
       if (!selectedLibraryId) return [];
@@ -141,8 +153,8 @@ export function AssetGrid() {
                       height: null,
                       mime_type: null,
                       hash_blake3: null,
-                      thumb_status: "none",
-                      thumb_path: null,
+                      thumb_status: asset.thumb_status as "none" | "queued" | "ready" | "failed",
+                      thumb_path: asset.thumb_path,
                       rating: 0,
                       status_label: "unorganized",
                       is_favorite: false,
