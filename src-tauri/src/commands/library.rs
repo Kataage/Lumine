@@ -39,7 +39,7 @@ pub fn remove_library(state: State<'_, Arc<Mutex<Database>>>, library_id: i64) -
     service.remove_library(library_id).map_err(|e| e.to_string())
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone)]
 pub struct ScanResultWithJob {
     pub added: u32,
     pub unchanged: u32,
@@ -56,18 +56,38 @@ pub fn scan_library(
     let db = state.lock().map_err(|e| e.to_string())?;
     let library_service = LibraryService::new(&db);
     let library = library_service.get_library(library_id).map_err(|e| e.to_string())?;
-    let scanner = FileScanner::new(&db);
-    let result = scanner
-        .scan_library(library_id, &library.root_path)
-        .map_err(|e| e.to_string())?;
+    let root_path = library.root_path.clone();
 
-    let thumbnail_job_id = job_system.start_thumbnail_generation(library_id);
+    let db_arc = state.inner().clone();
+    let job_system_arc = job_system.inner().clone();
+
+    std::thread::spawn(move || {
+        let db_guard = db_arc.lock();
+        if let Ok(db) = db_guard {
+            let scanner = FileScanner::new(&db);
+            let result = scanner.scan_library(library_id, &root_path);
+
+            if let Ok(res) = result {
+                let thumbnail_job_id = job_system_arc.start_thumbnail_generation(library_id);
+                tracing::info!(
+                    "Scan completed for library {}: +{} ={} errors={}, thumbnail_job={}",
+                    library_id,
+                    res.added,
+                    res.unchanged,
+                    res.errors,
+                    thumbnail_job_id
+                );
+            } else {
+                tracing::error!("Scan failed for library {}: {:?}", library_id, result);
+            }
+        }
+    });
 
     Ok(ScanResultWithJob {
-        added: result.added,
-        unchanged: result.unchanged,
-        errors: result.errors,
-        thumbnail_job_id: Some(thumbnail_job_id),
+        added: 0,
+        unchanged: 0,
+        errors: 0,
+        thumbnail_job_id: None,
     })
 }
 

@@ -25,9 +25,7 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const imageUrl = asset.thumb_status === "ready" && asset.thumb_path
-    ? convertFileSrc(asset.thumb_path)
-    : convertFileSrc(asset.file_path);
+  const imageUrl = convertFileSrc(asset.file_path);
 
   return (
     <div
@@ -56,22 +54,13 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
             onError={(e) => {
               setIsLoading(false);
               setHasError(true);
-              console.error("Image load failed:", asset.file_path, imageUrl, e);
+              console.error("Image load failed:", asset.file_path, e);
             }}
           />
         </>
       ) : (
         <div className="w-full h-full bg-muted flex items-center justify-center">
           <ImageIcon className="w-8 h-8 text-muted-foreground" />
-        </div>
-      )}
-      {asset.thumb_status !== "ready" && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-          <div className="text-white text-xs text-center px-2">
-            {asset.thumb_status === "queued" && "Generating..."}
-            {asset.thumb_status === "failed" && "Failed"}
-            {asset.thumb_status === "none" && "No thumbnail"}
-          </div>
         </div>
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />

@@ -1,28 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef, useState, useEffect } from "react";
-import { getLibraryPath, listAssetsFromFolder } from "@/shared/api/client";
+import { listAssets } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { ImageIcon } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { memo } from "react";
+import type { Asset } from "@/entities/types";
 
-interface FolderAsset {
-  id: number;
-  file_path: string;
-  file_name: string;
-  folder_path: string;
-  extension: string;
-  file_size: number;
-  modified_at: string;
-  thumb_status: string;
-  thumb_path: string | null;
-}
+const PAGE_SIZE = 200;
 
 interface AssetListItemProps {
-  asset: FolderAsset;
+  asset: Asset;
   isSelected: boolean;
   onClick: () => void;
 }
@@ -75,7 +66,7 @@ const AssetListItem = memo(({ asset, isSelected, onClick }: AssetListItemProps) 
         {asset.extension.toUpperCase()}
       </div>
       <div className="text-xs text-muted-foreground w-32 text-right">
-        {asset.modified_at}
+        {asset.modified_at_fs || ""}
       </div>
       <div className="w-16 text-center">
         {asset.thumb_status === "ready" ? (
@@ -96,14 +87,27 @@ export function AssetList() {
   const setSelectedAsset = useAppStore((s) => s.setSelectedAsset);
   const { addToast } = useToast();
 
-  const { data: assets = [], isLoading, isError, error } = useQuery<FolderAsset[]>({
-    queryKey: ["folder-assets", selectedLibraryId],
+  const { data: assets = [], isLoading, isError, error } = useQuery<Asset[]>({
+    queryKey: ["assets", selectedLibraryId],
     queryFn: async () => {
       if (!selectedLibraryId) return [];
-      const rootPath = await getLibraryPath(selectedLibraryId);
-      return listAssetsFromFolder(selectedLibraryId, rootPath);
+      const allAssets: Asset[] = [];
+      let offset = 0;
+      while (true) {
+        const batch = await listAssets({
+          library_id: selectedLibraryId,
+          offset,
+          limit: PAGE_SIZE,
+        });
+        if (batch.length === 0) break;
+        allAssets.push(...batch);
+        offset += PAGE_SIZE;
+        if (batch.length < PAGE_SIZE) break;
+      }
+      return allAssets;
     },
     enabled: selectedLibraryId !== null,
+    staleTime: 30000,
   });
 
   useEffect(() => {
@@ -151,7 +155,7 @@ export function AssetList() {
   if (assets.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p>No images found in this folder.</p>
+        <p>No images found. Try scanning the library.</p>
       </div>
     );
   }
@@ -195,29 +199,7 @@ export function AssetList() {
                   isSelected={isSelected}
                   onClick={() => {
                     toggleAssetSelection(asset.id);
-                    setSelectedAsset({
-                      id: asset.id,
-                      library_id: 0,
-                      folder_path: asset.folder_path,
-                      file_name: asset.file_name,
-                      file_path: asset.file_path,
-                      extension: asset.extension,
-                      file_size: asset.file_size,
-                      created_at_fs: null,
-                      modified_at_fs: asset.modified_at,
-                      width: null,
-                      height: null,
-                      mime_type: null,
-                      hash_blake3: null,
-                      thumb_status: asset.thumb_status as "none" | "queued" | "ready" | "failed",
-                      thumb_path: asset.thumb_path,
-                      rating: 0,
-                      status_label: "unorganized",
-                      is_favorite: false,
-                      color_label: null,
-                      indexed_at: "",
-                      updated_at: "",
-                    });
+                    setSelectedAsset(asset);
                   }}
                 />
               </div>
