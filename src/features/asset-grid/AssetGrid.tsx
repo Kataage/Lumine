@@ -10,7 +10,6 @@ import { useToast } from "@/components/ui/toast";
 const PAGE_SIZE = 100;
 
 export function AssetGrid() {
-  const parentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const thumbnailSize = useAppStore((s) => s.thumbnailSize);
@@ -76,7 +75,7 @@ export function AssetGrid() {
 
   const virtualizer = useVirtualizer({
     count: rowCount,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => containerRef.current,
     estimateSize: () => thumbnailSize + 20,
     overscan: 5,
   });
@@ -85,9 +84,9 @@ export function AssetGrid() {
 
   const handleScroll = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
-      const scrollElement = parentRef.current;
-      if (scrollElement) {
-        const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+      const el = containerRef.current;
+      if (el) {
+        const { scrollTop, scrollHeight, clientHeight } = el;
         if (scrollHeight - scrollTop - clientHeight < 500) {
           fetchNextPage();
         }
@@ -96,7 +95,7 @@ export function AssetGrid() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   useEffect(() => {
-    const el = parentRef.current;
+    const el = containerRef.current;
     if (!el) return;
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
@@ -138,49 +137,47 @@ export function AssetGrid() {
 
   return (
     <div ref={containerRef} className="h-full overflow-auto p-4">
-      <div ref={parentRef} className="h-full">
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {items.map((virtualRow) => {
-            const startIndex = virtualRow.index * columns;
-            const rowAssets = assets.slice(startIndex, startIndex + columns);
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {items.map((virtualRow) => {
+          const startIndex = virtualRow.index * columns;
+          const rowAssets = assets.slice(startIndex, startIndex + columns);
 
-            return (
+          return (
+            <div
+              key={virtualRow.key}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
               <div
-                key={virtualRow.key}
+                className="grid gap-4"
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start}px)`,
+                  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
                 }}
               >
-                <div
-                  className="grid gap-4"
-                  style={{
-                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                  }}
-                >
-                  {rowAssets.map((asset) => (
-                    <AssetGridItem key={asset.id} asset={asset} size={thumbnailSize} />
-                  ))}
-                </div>
+                {rowAssets.map((asset) => (
+                  <AssetGridItem key={asset.id} asset={asset} size={thumbnailSize} />
+                ))}
               </div>
-            );
-          })}
-          {isFetchingNextPage && (
-            <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
-              Loading more...
             </div>
-          )}
-        </div>
+          );
+        })}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
+            Loading more...
+          </div>
+        )}
       </div>
     </div>
   );

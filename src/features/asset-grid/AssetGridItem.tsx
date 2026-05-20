@@ -25,9 +25,7 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const thumbUrl = asset.thumb_status === "ready" && asset.thumb_path
-    ? convertFileSrc(asset.thumb_path)
-    : convertFileSrc(asset.file_path);
+  const imageUrl = convertFileSrc(asset.file_path);
 
   return (
     <div
@@ -47,10 +45,11 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
             <div className="absolute inset-0 bg-muted animate-pulse" />
           )}
           <img
-            src={thumbUrl}
+            src={imageUrl}
             alt={asset.file_name}
             className="w-full h-full object-cover bg-muted"
             loading="lazy"
+            decoding="async"
             onLoad={() => setIsLoading(false)}
             onError={() => {
               setIsLoading(false);
