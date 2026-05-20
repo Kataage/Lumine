@@ -5,11 +5,9 @@ mod domain;
 mod infrastructure;
 mod jobs;
 
-use anyhow::anyhow;
 use db::{Database, migrations};
 use infrastructure::FolderWatcher;
 use jobs::JobSystem;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 

@@ -1,5 +1,6 @@
 use crate::db::Database;
 use anyhow::Result;
+use rusqlite::OptionalExtension;
 use rusqlite::params;
 
 pub struct LibrarySettingsService<'a> {

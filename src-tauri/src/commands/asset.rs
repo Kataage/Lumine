@@ -187,7 +187,7 @@ pub fn set_asset_color_label(
     let conn = db.connection();
     conn.execute(
         "UPDATE assets SET color_label = ?, updated_at = datetime('now') WHERE id = ?",
-        [&color_label, &asset_id.to_string()],
+        rusqlite::params![color_label, asset_id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

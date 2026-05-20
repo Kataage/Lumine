@@ -1,5 +1,6 @@
 use crate::db::Database;
 use anyhow::{Context, Result};
+use rusqlite::OptionalExtension;
 use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;

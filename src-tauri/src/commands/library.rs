@@ -1,7 +1,7 @@
 use crate::application::LibraryService;
 use crate::db::Database;
 use crate::domain::Library;
-use crate::infrastructure::{file_scanner::ScanResult, FileScanner};
+use crate::infrastructure::FileScanner;
 use crate::jobs::JobSystem;
 use std::sync::{Arc, Mutex};
 use tauri::State;
