@@ -5,6 +5,7 @@ mod domain;
 mod infrastructure;
 mod jobs;
 
+use anyhow::anyhow;
 use db::{Database, migrations};
 use infrastructure::FolderWatcher;
 use jobs::JobSystem;
@@ -71,6 +72,7 @@ pub fn run() {
             commands::attach_assets_to_post,
             commands::get_post_assets,
             commands::get_library_path,
+            commands::list_assets_from_folder,
             commands::start_thumbnail_generation,
             commands::get_job_status,
             commands::list_jobs,
