@@ -12,7 +12,8 @@ export function PostsView() {
 
   useEffect(() => {
     if (isError && error) {
-      addToast(`Failed to load posts: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to load posts: ${msg}`, "error");
     }
   }, [isError, error, addToast]);
 

@@ -39,7 +39,8 @@ export function AssetDetailPanel() {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
-      addToast(`Failed to save note: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to save note: ${msg}`, "error");
     },
   });
 
@@ -50,7 +51,8 @@ export function AssetDetailPanel() {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
-      addToast(`Failed to update rating: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to update rating: ${msg}`, "error");
     },
   });
 
@@ -61,7 +63,8 @@ export function AssetDetailPanel() {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
-      addToast(`Failed to update status: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to update status: ${msg}`, "error");
     },
   });
 
@@ -72,7 +75,8 @@ export function AssetDetailPanel() {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
-      addToast(`Failed to update favorite: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to update favorite: ${msg}`, "error");
     },
   });
 
@@ -83,7 +87,8 @@ export function AssetDetailPanel() {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
-      addToast(`Failed to update color label: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to update color label: ${msg}`, "error");
     },
   });
 

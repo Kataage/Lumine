@@ -26,7 +26,8 @@ export function TagsView() {
       addToast("Tag created", "info");
     },
     onError: (error) => {
-      addToast(`Failed to create tag: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to create tag: ${msg}`, "error");
     },
   });
 

@@ -32,7 +32,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   useEffect(() => {
     if (isError && error) {
-      addToast(`Failed to load libraries: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to load libraries: ${msg}`, "error");
     }
   }, [isError, error, addToast]);
 

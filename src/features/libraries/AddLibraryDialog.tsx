@@ -37,7 +37,8 @@ export function AddLibraryDialog({ open, onOpenChange }: AddLibraryDialogProps) 
       onOpenChange(false);
     },
     onError: (error) => {
-      addToast(`Failed to add library: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to add library: ${msg}`, "error");
     },
   });
 
