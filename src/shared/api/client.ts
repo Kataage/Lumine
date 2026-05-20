@@ -41,7 +41,7 @@ export async function removeLibrary(libraryId: number) {
 }
 
 export async function scanLibrary(libraryId: number) {
-  return invoke<{ added: number; unchanged: number; errors: number }>("scan_library", {
+  return invoke<{ added: number; unchanged: number; errors: number; thumbnail_job_id: string | null }>("scan_library", {
     libraryId,
   });
 }
@@ -187,5 +187,33 @@ export async function listAssetsFromFolder(libraryRootPath: string) {
     extension: string;
     file_size: number;
     modified_at: string;
+    thumb_status: string;
+    thumb_path: string | null;
   }>>("list_assets_from_folder", { libraryRootPath });
+}
+
+export async function startThumbnailGeneration(libraryId: number) {
+  return invoke<string>("start_thumbnail_generation", { libraryId });
+}
+
+export interface JobStatus {
+  id: string;
+  job_type: string;
+  status: string;
+  progress: number;
+  total: number;
+  completed: number;
+  message: string;
+}
+
+export async function getJobStatus(jobId: string) {
+  return invoke<JobStatus>("get_job_status", { jobId });
+}
+
+export async function listJobs() {
+  return invoke<JobStatus[]>("list_jobs");
+}
+
+export async function cancelJob(jobId: string) {
+  return invoke<void>("cancel_job", { jobId });
 }

@@ -4,7 +4,6 @@ import { SearchInput } from "./SearchInput";
 import {
   GridIcon,
   ListIcon,
-  SlidersHorizontalIcon,
   PanelRightIcon,
   MinusIcon,
   PlusIcon,
@@ -14,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { AddLibraryDialog } from "@/features/libraries/AddLibraryDialog";
 import { MoveAssetsDialog } from "@/features/move-assets/MoveAssetsDialog";
+import { FilterPanel, type FilterState } from "@/features/search-filter/FilterPanel";
 
 export function Toolbar() {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -25,6 +25,12 @@ export function Toolbar() {
   const selectedAssetIds = useAppStore((s) => s.selectedAssetIds);
   const [isAddLibraryOpen, setIsAddLibraryOpen] = useState(false);
   const [isMoveAssetsOpen, setIsMoveAssetsOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    sortField: "modified_at",
+    sortOrder: "desc",
+  });
+
+  const extensions = ["jpg", "png", "gif", "webp", "bmp", "tiff", "svg", "avif"];
 
   return (
     <header className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card">
@@ -74,9 +80,11 @@ export function Toolbar() {
 
         <div className="mx-2 h-6 w-px bg-border" />
 
-        <Button variant="ghost" size="icon" aria-label="Filters">
-          <SlidersHorizontalIcon className="w-4 h-4" />
-        </Button>
+        <FilterPanel
+          filters={filters}
+          onFilterChange={setFilters}
+          extensions={extensions}
+        />
         <Button
           variant="ghost"
           size="icon"
