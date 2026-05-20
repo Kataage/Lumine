@@ -51,9 +51,10 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
             loading="lazy"
             decoding="async"
             onLoad={() => setIsLoading(false)}
-            onError={() => {
+            onError={(e) => {
               setIsLoading(false);
               setHasError(true);
+              console.error("Image load failed:", asset.file_path, imageUrl, e);
             }}
           />
         </>
