@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS assets (
     mime_type TEXT,
     hash_blake3 TEXT,
     thumb_status TEXT NOT NULL DEFAULT 'none' CHECK (thumb_status IN ('none', 'queued', 'ready', 'failed')),
+    thumb_path TEXT,
     rating INTEGER DEFAULT 0 CHECK (rating >= 0 AND rating <= 5),
     status_label TEXT DEFAULT 'unorganized' CHECK (status_label IN ('unorganized', 'selected', 'posting_candidate', 'posted')),
     is_favorite INTEGER NOT NULL DEFAULT 0,
@@ -46,7 +47,7 @@ CREATE TABLE IF NOT EXISTS assets (
 
 CREATE TABLE IF NOT EXISTS asset_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    asset_id INTEGER NOT NULL UNIQUE REFERENCES assets(id) ON DELETE CASCADE,
     content TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))

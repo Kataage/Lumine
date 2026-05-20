@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -6,6 +6,12 @@ pub mod migrations;
 
 pub struct Database {
     pub conn: Mutex<Connection>,
+}
+
+pub struct AssetRow {
+    pub id: i64,
+    pub file_path: String,
+    pub modified_at: String,
 }
 
 impl Database {
@@ -19,5 +25,27 @@ impl Database {
 
     pub fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn get_asset_by_id(&self, asset_id: i64) -> Result<AssetRow> {
+        let conn = self.connection();
+        let mut stmt = conn.prepare("SELECT id, file_path, modified_at FROM assets WHERE id = ?")?;
+        let asset = stmt.query_row([asset_id], |row| {
+            Ok(AssetRow {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                modified_at: row.get(2)?,
+            })
+        })?;
+        Ok(asset)
+    }
+
+    pub fn update_asset_thumbnail_status(&self, asset_id: i64, thumb_path: &str) -> Result<()> {
+        let conn = self.connection();
+        conn.execute(
+            "UPDATE assets SET thumb_status = 'ready', thumb_path = ? WHERE id = ?",
+            [thumb_path, &asset_id.to_string()],
+        )?;
+        Ok(())
     }
 }

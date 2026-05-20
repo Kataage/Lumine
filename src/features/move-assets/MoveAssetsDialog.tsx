@@ -13,6 +13,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { FolderIcon, AlertCircleIcon, CheckCircleIcon } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface MoveAssetsDialogProps {
   open: boolean;
@@ -114,7 +115,16 @@ export function MoveAssetsDialog({ open, onOpenChange }: MoveAssetsDialogProps) 
                   placeholder="C:\Images\NewFolder"
                   className="flex-1"
                 />
-                <Button type="button" variant="outline">
+                <Button type="button" variant="outline" onClick={async () => {
+                  const selected = await openDialog({
+                    directory: true,
+                    multiple: false,
+                    title: "Select Destination Folder",
+                  });
+                  if (selected && typeof selected === "string") {
+                    setDestination(selected);
+                  }
+                }}>
                   <FolderIcon className="w-4 h-4" />
                 </Button>
               </div>

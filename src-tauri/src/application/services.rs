@@ -49,17 +49,10 @@ impl<'a> LibraryService<'a> {
  anyhow::bail!("Path is not a directory: {}", root_path);
  }
 
- let metadata = std::fs::metadata(&canonical_path)
- .with_context(|| format!("Failed to read metadata: {}", root_path))?;
-
- if metadata.permissions().readonly() {
- anyhow::bail!("Path is not writable (read-only permissions): {}", root_path);
- }
-
  let conn = self.db.connection();
  conn.execute(
  "INSERT INTO libraries (name, root_path) VALUES (?, ?)",
- params![name, root_path],
+ params![name, canonical_path.to_string_lossy()],
  )?;
  let id = conn.last_insert_rowid();
  drop(conn);
@@ -109,7 +102,7 @@ impl<'a> AssetService<'a> {
         let mut sql = String::from(
             "SELECT id, library_id, folder_path, file_name, file_path, extension, file_size,
                     created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3,
-                    thumb_status, rating, status_label, is_favorite, color_label, indexed_at, updated_at
+                    thumb_status, thumb_path, rating, status_label, is_favorite, color_label, indexed_at, updated_at
              FROM assets WHERE 1=1",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -202,12 +195,13 @@ impl<'a> AssetService<'a> {
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
                     thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    rating: row.get(14)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(15)?.as_str()),
-                    is_favorite: row.get::<_, i32>(16)? != 0,
-                    color_label: row.get(17)?,
-                    indexed_at: row.get(18)?,
-                    updated_at: row.get(19)?,
+                    thumb_path: row.get(14)?,
+                    rating: row.get(15)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
+                    is_favorite: row.get::<_, i32>(17)? != 0,
+                    color_label: row.get(18)?,
+                    indexed_at: row.get(19)?,
+                    updated_at: row.get(20)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -219,7 +213,7 @@ impl<'a> AssetService<'a> {
         let asset = conn.query_row(
             "SELECT id, library_id, folder_path, file_name, file_path, extension, file_size,
                     created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3,
-                    thumb_status, rating, status_label, is_favorite, color_label, indexed_at, updated_at
+                    thumb_status, thumb_path, rating, status_label, is_favorite, color_label, indexed_at, updated_at
              FROM assets WHERE id = ?",
             [id],
             |row| {
@@ -238,12 +232,13 @@ impl<'a> AssetService<'a> {
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
                     thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    rating: row.get(14)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(15)?.as_str()),
-                    is_favorite: row.get::<_, i32>(16)? != 0,
-                    color_label: row.get(17)?,
-                    indexed_at: row.get(18)?,
-                    updated_at: row.get(19)?,
+                    thumb_path: row.get(14)?,
+                    rating: row.get(15)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
+                    is_favorite: row.get::<_, i32>(17)? != 0,
+                    color_label: row.get(18)?,
+                    indexed_at: row.get(19)?,
+                    updated_at: row.get(20)?,
                 })
             },
         )?;
@@ -596,7 +591,7 @@ impl<'a> PostService<'a> {
         let mut stmt = conn.prepare(
             "SELECT a.id, a.library_id, a.folder_path, a.file_name, a.file_path, a.extension, a.file_size,
                     a.created_at_fs, a.modified_at_fs, a.width, a.height, a.mime_type, a.hash_blake3,
-                    a.thumb_status, a.rating, a.status_label, a.is_favorite, a.color_label, a.indexed_at, a.updated_at
+                    a.thumb_status, a.thumb_path, a.rating, a.status_label, a.is_favorite, a.color_label, a.indexed_at, a.updated_at
              FROM assets a
              JOIN post_assets pa ON a.id = pa.asset_id
              WHERE pa.post_id = ?
@@ -619,12 +614,13 @@ impl<'a> PostService<'a> {
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
                     thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    rating: row.get(14)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(15)?.as_str()),
-                    is_favorite: row.get::<_, i32>(16)? != 0,
-                    color_label: row.get(17)?,
-                    indexed_at: row.get(18)?,
-                    updated_at: row.get(19)?,
+                    thumb_path: row.get(14)?,
+                    rating: row.get(15)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
+                    is_favorite: row.get::<_, i32>(17)? != 0,
+                    color_label: row.get(18)?,
+                    indexed_at: row.get(19)?,
+                    updated_at: row.get(20)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;

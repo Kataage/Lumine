@@ -26,9 +26,9 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const thumbUrl = asset.thumb_status === "ready"
-    ? convertFileSrc(asset.file_path)
-    : null;
+  const thumbUrl = asset.thumb_status === "ready" && asset.thumb_path
+    ? convertFileSrc(asset.thumb_path)
+    : convertFileSrc(asset.file_path);
 
   return (
     <div

@@ -15,6 +15,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app: &mut tauri::App| -> Result<(), Box<dyn std::error::Error>> {
             let app_data_dir = app
                 .path()
@@ -30,7 +31,9 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(db));
             app.manage(db.clone());
-            app.manage(JobSystem::new(db, app.handle().clone()));
+
+            let cache_dir = app_data_dir.join("thumbnails");
+            app.manage(JobSystem::new(db, app.handle().clone(), cache_dir));
 
             Ok(())
         })

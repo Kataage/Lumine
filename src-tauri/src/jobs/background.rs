@@ -1,6 +1,6 @@
 use crate::application::LibraryService;
 use crate::db::Database;
-use crate::infrastructure::FileScanner;
+use crate::infrastructure::{FileScanner, ThumbnailGenerator};
 use std::sync::{mpsc::{channel, Receiver, Sender}, Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
@@ -15,20 +15,23 @@ pub struct JobSystem {
     sender: Sender<JobCommand>,
     db: Arc<Mutex<Database>>,
     app_handle: AppHandle,
+    thumbnail_generator: Arc<ThumbnailGenerator>,
 }
 
 impl JobSystem {
-    pub fn new(db: Arc<Mutex<Database>>, app_handle: AppHandle) -> Self {
+    pub fn new(db: Arc<Mutex<Database>>, app_handle: AppHandle, cache_dir: std::path::PathBuf) -> Self {
         let (sender, receiver) = channel::<JobCommand>();
         let db_clone = db.clone();
         let app_handle_clone = app_handle.clone();
+        let thumbnail_generator = Arc::new(ThumbnailGenerator::new(cache_dir));
+        let thumbnail_gen_clone = thumbnail_generator.clone();
         thread::spawn(move || {
-            Self::worker(db_clone, app_handle_clone, receiver);
+            Self::worker(db_clone, app_handle_clone, receiver, thumbnail_gen_clone);
         });
-        Self { sender, db, app_handle }
+        Self { sender, db, app_handle, thumbnail_generator }
     }
 
-    fn worker(db: Arc<Mutex<Database>>, app_handle: AppHandle, receiver: Receiver<JobCommand>) {
+    fn worker(db: Arc<Mutex<Database>>, app_handle: AppHandle, receiver: Receiver<JobCommand>, thumbnail_generator: Arc<ThumbnailGenerator>) {
         while let Ok(command) = receiver.recv() {
             match command {
                 JobCommand::ScanLibrary { library_id } => {
@@ -59,6 +62,26 @@ impl JobSystem {
                 JobCommand::GenerateThumbnail { asset_id } => {
                     let job_id = format!("thumb_{}", asset_id);
                     let _ = app_handle.emit("job_started", &job_id);
+
+                    let db_guard = db.lock().unwrap();
+                    match db_guard.get_asset_by_id(asset_id) {
+                        Ok(asset) => {
+                            let source_path = std::path::Path::new(&asset.file_path);
+                            match thumbnail_generator.generate_thumbnail(asset_id, source_path, &asset.modified_at) {
+                                Ok(thumb_path) => {
+                                    let _ = db_guard.update_asset_thumbnail_status(asset_id, &thumb_path.to_string_lossy());
+                                    let _ = app_handle.emit("job_completed", &job_id);
+                                }
+                                Err(e) => {
+                                    let _ = app_handle.emit("job_failed", format!("{}: {}", job_id, e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            let _ = app_handle.emit("job_failed", format!("{}: {}", job_id, e));
+                        }
+                    }
+                    drop(db_guard);
                 }
                 JobCommand::Cancel { job_id } => {
                     let _ = app_handle.emit("job_cancelled", &job_id);

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { FolderIcon } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface AddLibraryDialogProps {
   open: boolean;
@@ -41,8 +42,14 @@ export function AddLibraryDialog({ open, onOpenChange }: AddLibraryDialogProps) 
   });
 
   const handleSelectFolder = async () => {
-    // TODO: Implement folder selection using @tauri-apps/plugin-dialog
-    // For now, user must manually enter the path
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: "Select Library Folder",
+    });
+    if (selected && typeof selected === "string") {
+      setPath(selected);
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {

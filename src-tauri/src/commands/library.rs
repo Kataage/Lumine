@@ -56,6 +56,19 @@ pub fn scan_library(
         .scan_library(library_id, &library.root_path)
         .map_err(|e| e.to_string())?;
 
+    let conn = db.connection();
+    let mut stmt = conn.prepare("SELECT id FROM assets WHERE library_id = ? AND thumb_status = 'none' ORDER BY id DESC LIMIT ?")
+        .map_err(|e| e.to_string())?;
+    let asset_ids: Vec<i64> = stmt
+        .query_map(rusqlite::params![library_id, result.added], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for asset_id in asset_ids {
+        job_system.queue_thumbnail(asset_id);
+    }
+
     let _ = job_system.app_handle().emit("job_completed", &job_id);
 
     Ok(result)
