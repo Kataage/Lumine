@@ -34,3 +34,13 @@ pub fn set_asset_tags(
     let service = TagService::new(&db);
     service.set_asset_tags(asset_id, &tag_ids).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_asset_tags(
+    state: State<'_, Arc<Mutex<Database>>>,
+    asset_id: i64,
+) -> Result<Vec<Tag>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let service = TagService::new(&db);
+    service.get_asset_tags(asset_id).map_err(|e| e.to_string())
+}

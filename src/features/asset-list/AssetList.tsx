@@ -101,7 +101,7 @@ export function AssetList() {
     queryFn: async () => {
       if (!selectedLibraryId) return [];
       const rootPath = await getLibraryPath(selectedLibraryId);
-      return listAssetsFromFolder(rootPath);
+      return listAssetsFromFolder(selectedLibraryId, rootPath);
     },
     enabled: selectedLibraryId !== null,
   });

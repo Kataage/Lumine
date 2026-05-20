@@ -176,3 +176,85 @@ pub fn move_assets(
         error_messages: result.error_messages,
     })
 }
+
+#[tauri::command]
+pub fn set_asset_color_label(
+    state: State<'_, Arc<Mutex<Database>>>,
+    asset_id: i64,
+    color_label: Option<String>,
+) -> Result<(), String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let conn = db.connection();
+    conn.execute(
+        "UPDATE assets SET color_label = ?, updated_at = datetime('now') WHERE id = ?",
+        [&color_label, &asset_id.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct BatchUpdateResult {
+    pub updated: u32,
+    pub errors: u32,
+}
+
+#[tauri::command]
+pub fn batch_update_assets(
+    state: State<'_, Arc<Mutex<Database>>>,
+    asset_ids: Vec<i64>,
+    rating: Option<i32>,
+    status: Option<String>,
+    color_label: Option<Option<String>>,
+    is_favorite: Option<bool>,
+) -> Result<BatchUpdateResult, String> {
+    if asset_ids.is_empty() {
+        return Err("No assets selected".to_string());
+    }
+
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let conn = db.connection();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let mut updated = 0u32;
+    let mut errors = 0u32;
+
+    for asset_id in &asset_ids {
+        let mut sets = vec!["updated_at = datetime('now')".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(r) = rating {
+            sets.push("rating = ?".to_string());
+            params.push(Box::new(r));
+        }
+        if let Some(ref s) = status {
+            sets.push("status_label = ?".to_string());
+            params.push(Box::new(s.clone()));
+        }
+        if let Some(cl) = &color_label {
+            sets.push("color_label = ?".to_string());
+            params.push(Box::new(cl.clone()));
+        }
+        if let Some(fav) = is_favorite {
+            sets.push("is_favorite = ?".to_string());
+            params.push(Box::new(if fav { 1 } else { 0 }));
+        }
+
+        let sql = format!(
+            "UPDATE assets SET {} WHERE id = ?",
+            sets.join(", ")
+        );
+        params.push(Box::new(*asset_id));
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        match tx.execute(&sql, &params_refs[..]) {
+            Ok(_) => updated += 1,
+            Err(_) => errors += 1,
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(BatchUpdateResult { updated, errors })
+}
