@@ -49,7 +49,6 @@ pub fn list_assets_from_folder(
 
     let quick_assets = scan_folder_quick(&library_root_path, &excluded_folders, &supported_extensions);
 
-    let db = state.lock().map_err(|e| e.to_string())?;
     let conn = db.connection();
 
     let mut result = Vec::new();

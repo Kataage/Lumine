@@ -52,7 +52,8 @@ export function AssetGrid() {
 
   useEffect(() => {
     if (isError && error) {
-      addToast(`Failed to load assets: ${error.message}`, "error");
+      const msg = error instanceof Error ? error.message : String(error);
+      addToast(`Failed to load assets: ${msg}`, "error");
     }
   }, [isError, error, addToast]);
 
