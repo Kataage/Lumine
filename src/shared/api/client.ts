@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Asset,
   Library,
@@ -173,16 +172,4 @@ export async function moveAssets(
     destinationFolder,
     conflictPolicy,
   });
-}
-
-export async function selectFolder(title: string) {
-  const selected = await open({
-    directory: true,
-    multiple: false,
-    title,
-  });
-  if (selected && typeof selected === "string") {
-    return selected;
-  }
-  return null;
 }

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { moveAssets, selectFolder } from "@/shared/api/client";
+import { moveAssets } from "@/shared/api/client";
+import { selectFolder } from "@/shared/utils/dialog";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
