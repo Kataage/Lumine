@@ -2,9 +2,8 @@ use crate::application::LibraryService;
 use crate::db::Database;
 use crate::domain::Library;
 use crate::infrastructure::{file_scanner::ScanResult, FileScanner};
-use crate::jobs::JobSystem;
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, State};
+use tauri::State;
 
 #[tauri::command]
 pub fn get_app_bootstrap(state: State<'_, Arc<Mutex<Database>>>) -> Result<BootstrapData, String> {
@@ -42,41 +41,15 @@ pub fn remove_library(state: State<'_, Arc<Mutex<Database>>>, library_id: i64) -
 #[tauri::command]
 pub fn scan_library(
     state: State<'_, Arc<Mutex<Database>>>,
-    job_system: State<'_, JobSystem>,
     library_id: i64,
 ) -> Result<ScanResult, String> {
-    let job_id = format!("scan_{}_{}", library_id, chrono::Utc::now().timestamp());
-    let _ = job_system.app_handle().emit("job_started", &job_id);
-
-    let (result, new_asset_ids) = {
-        let db = state.lock().map_err(|e| e.to_string())?;
-        let library_service = LibraryService::new(&db);
-        let library = library_service.get_library(library_id).map_err(|e| e.to_string())?;
-        let scanner = FileScanner::new(&db);
-        let result = scanner
-            .scan_library(library_id, &library.root_path)
-            .map_err(|e| e.to_string())?;
-
-        let conn = db.connection();
-        let mut stmt = conn
-            .prepare("SELECT id FROM assets WHERE library_id = ? AND thumb_status = 'none' ORDER BY id DESC LIMIT ?")
-            .map_err(|e| e.to_string())?;
-        let asset_ids: Vec<i64> = stmt
-            .query_map(rusqlite::params![library_id, result.added], |row| row.get(0))
-            .map_err(|e| e.to_string())?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        (result, asset_ids)
-    };
-
-    for asset_id in new_asset_ids {
-        job_system.queue_thumbnail(asset_id);
-    }
-
-    let _ = job_system.app_handle().emit("job_completed", &job_id);
-
-    Ok(result)
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let library_service = LibraryService::new(&db);
+    let library = library_service.get_library(library_id).map_err(|e| e.to_string())?;
+    let scanner = FileScanner::new(&db);
+    scanner
+        .scan_library(library_id, &library.root_path)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
