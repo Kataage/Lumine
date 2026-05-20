@@ -1,19 +1,16 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef, useState, useEffect, useCallback } from "react";
-import { listAssets } from "@/shared/api/client";
+import { useRef, useState, useEffect } from "react";
+import { getLibraryPath, listAssetsFromFolder } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
-const PAGE_SIZE = 100;
-
 export function AssetGrid() {
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const thumbnailSize = useAppStore((s) => s.thumbnailSize);
-  const searchQuery = useAppStore((s) => s.searchQuery);
   const { addToast } = useToast();
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -23,43 +20,23 @@ export function AssetGrid() {
         setContainerWidth(containerRef.current.clientWidth);
       }
     };
-
     updateWidth();
-
     const observer = new ResizeObserver(updateWidth);
     if (containerRef.current) {
       observer.observe(containerRef.current);
     }
-
     return () => observer.disconnect();
   }, []);
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ["assets", selectedLibraryId, searchQuery],
-    queryFn: ({ pageParam = 0 }) =>
-      listAssets({
-        library_id: selectedLibraryId ?? undefined,
-        search: searchQuery || undefined,
-        limit: PAGE_SIZE,
-        offset: pageParam as number,
-      }),
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < PAGE_SIZE) return undefined;
-      return allPages.length * PAGE_SIZE;
+  const { data: assets = [], isLoading, isError, error } = useQuery({
+    queryKey: ["folder-assets", selectedLibraryId],
+    queryFn: async () => {
+      if (!selectedLibraryId) return [];
+      const rootPath = await getLibraryPath(selectedLibraryId);
+      return listAssetsFromFolder(rootPath);
     },
-    initialPageParam: 0,
     enabled: selectedLibraryId !== null,
   });
-
-  const assets = data?.pages.flat() ?? [];
 
   useEffect(() => {
     if (isError && error) {
@@ -81,25 +58,6 @@ export function AssetGrid() {
   });
 
   const items = virtualizer.getVirtualItems();
-
-  const handleScroll = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      const el = containerRef.current;
-      if (el) {
-        const { scrollTop, scrollHeight, clientHeight } = el;
-        if (scrollHeight - scrollTop - clientHeight < 500) {
-          fetchNextPage();
-        }
-      }
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
 
   if (!selectedLibraryId) {
     return (
@@ -130,7 +88,7 @@ export function AssetGrid() {
   if (assets.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
-        <p>No assets found. Try scanning the library.</p>
+        <p>No images found in this folder.</p>
       </div>
     );
   }
@@ -167,17 +125,38 @@ export function AssetGrid() {
                 }}
               >
                 {rowAssets.map((asset) => (
-                  <AssetGridItem key={asset.id} asset={asset} size={thumbnailSize} />
+                  <AssetGridItem
+                    key={asset.id}
+                    asset={{
+                      id: asset.id,
+                      library_id: 0,
+                      folder_path: asset.folder_path,
+                      file_name: asset.file_name,
+                      file_path: asset.file_path,
+                      extension: asset.extension,
+                      file_size: asset.file_size,
+                      created_at_fs: null,
+                      modified_at_fs: asset.modified_at,
+                      width: null,
+                      height: null,
+                      mime_type: null,
+                      hash_blake3: null,
+                      thumb_status: "none",
+                      thumb_path: null,
+                      rating: 0,
+                      status_label: "unorganized",
+                      is_favorite: false,
+                      color_label: null,
+                      indexed_at: "",
+                      updated_at: "",
+                    }}
+                    size={thumbnailSize}
+                  />
                 ))}
               </div>
             </div>
           );
         })}
-        {isFetchingNextPage && (
-          <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
-            Loading more...
-          </div>
-        )}
       </div>
     </div>
   );
