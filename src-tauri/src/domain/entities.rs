@@ -38,6 +38,7 @@ pub struct Asset {
     pub mime_type: Option<String>,
     pub hash_blake3: Option<String>,
     pub thumb_status: ThumbStatus,
+    pub thumb_path: Option<String>,
     pub rating: i32,
     pub status_label: StatusLabel,
     pub is_favorite: bool,

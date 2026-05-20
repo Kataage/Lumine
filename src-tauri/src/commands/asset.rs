@@ -64,6 +64,16 @@ pub fn get_asset_detail(state: State<'_, Arc<Mutex<Database>>>, asset_id: i64) -
     service.get_asset(asset_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn get_asset_note(
+    state: State<'_, Arc<Mutex<Database>>>,
+    asset_id: i64,
+) -> Result<Option<String>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let service = AssetService::new(&db);
+    service.get_asset_note(asset_id).map_err(|e| e.to_string())
+}
+
 const MAX_NOTE_SIZE: usize = 1024 * 1024;
 
 #[tauri::command]

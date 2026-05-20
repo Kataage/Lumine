@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { moveAssets } from "@/shared/api/client";
+import { moveAssets, selectFolder } from "@/shared/api/client";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,7 +114,12 @@ export function MoveAssetsDialog({ open, onOpenChange }: MoveAssetsDialogProps) 
                   placeholder="C:\Images\NewFolder"
                   className="flex-1"
                 />
-                <Button type="button" variant="outline">
+                <Button type="button" variant="outline" onClick={async () => {
+                  const selected = await selectFolder("Select Destination Folder");
+                  if (selected) {
+                    setDestination(selected);
+                  }
+                }}>
                   <FolderIcon className="w-4 h-4" />
                 </Button>
               </div>

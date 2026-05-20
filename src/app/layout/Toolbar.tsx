@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/shared/hooks/useAppStore";
+import { scanLibrary } from "@/shared/api/client";
 import { SearchInput } from "./SearchInput";
 import {
   GridIcon,
@@ -10,10 +12,12 @@ import {
   PlusIcon,
   FolderPlusIcon,
   ArrowRightIcon,
+  RefreshCwIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AddLibraryDialog } from "@/features/libraries/AddLibraryDialog";
 import { MoveAssetsDialog } from "@/features/move-assets/MoveAssetsDialog";
+import { useToast } from "@/components/ui/toast";
 
 export function Toolbar() {
   const viewMode = useAppStore((s) => s.viewMode);
@@ -22,9 +26,35 @@ export function Toolbar() {
   const setThumbnailSize = useAppStore((s) => s.setThumbnailSize);
   const isDetailPanelOpen = useAppStore((s) => s.isDetailPanelOpen);
   const toggleDetailPanel = useAppStore((s) => s.toggleDetailPanel);
+  const selectedLibraryId = useAppStore((s) => s.selectedLibraryId);
   const selectedAssetIds = useAppStore((s) => s.selectedAssetIds);
+  const setScanning = useAppStore((s) => s.setScanning);
+  const setScanProgress = useAppStore((s) => s.setScanProgress);
   const [isAddLibraryOpen, setIsAddLibraryOpen] = useState(false);
   const [isMoveAssetsOpen, setIsMoveAssetsOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
+
+  const scanMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedLibraryId) throw new Error("No library selected");
+      return scanLibrary(selectedLibraryId);
+    },
+    onMutate: () => {
+      setScanning(true);
+      setScanProgress(null);
+    },
+    onSuccess: (result) => {
+      setScanning(false);
+      setScanProgress(result);
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      addToast(`Scan complete: ${result.added} added, ${result.unchanged} unchanged, ${result.errors} errors`, "info");
+    },
+    onError: (error) => {
+      setScanning(false);
+      addToast(`Scan failed: ${error.message}`, "error");
+    },
+  });
 
   return (
     <header className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card">
@@ -88,6 +118,16 @@ export function Toolbar() {
         </Button>
 
         <div className="mx-2 h-6 w-px bg-border" />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => scanMutation.mutate()}
+          disabled={!selectedLibraryId || scanMutation.isPending}
+        >
+          <RefreshCwIcon className={`w-4 h-4 mr-1 ${scanMutation.isPending ? "animate-spin" : ""}`} />
+          {scanMutation.isPending ? "Scanning..." : "Scan"}
+        </Button>
 
         <Button
           variant="outline"
