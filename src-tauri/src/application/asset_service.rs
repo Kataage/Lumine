@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::domain::{Asset, AssetQuery, SortField, SortOrder, StatusLabel, ThumbStatus};
 use anyhow::Result;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 pub struct AssetService<'a> {
     db: &'a Database,

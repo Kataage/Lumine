@@ -71,12 +71,12 @@ impl<'a> MoveService<'a> {
 
     fn move_single(
         &self,
-        tx: &rusqlite::Transaction<'_>,
+        conn: &rusqlite::Connection,
         asset_id: i64,
         dest_path: &Path,
         policy: &MoveConflictPolicy,
     ) -> Result<MoveOutcome> {
-        let asset = tx.query_row(
+        let asset = conn.query_row(
             "SELECT id, file_path, file_name FROM assets WHERE id = ?",
             [asset_id],
             |row| {
@@ -114,7 +114,7 @@ impl<'a> MoveService<'a> {
                         };
                         let new_dest = dest_path.join(&new_name);
                         if !new_dest.exists() {
-                            return self.do_move(tx, asset_id, &source_path, &new_dest);
+                            return self.do_move(conn, asset_id, &source_path, &new_dest);
                         }
                         counter += 1;
                         if counter > 1000 {
@@ -128,19 +128,19 @@ impl<'a> MoveService<'a> {
             }
         }
 
-        self.do_move(tx, asset_id, &source_path, &dest_file)
+        self.do_move(conn, asset_id, &source_path, &dest_file)
     }
 
     fn do_move(
         &self,
-        tx: &rusqlite::Transaction<'_>,
+        conn: &rusqlite::Connection,
         asset_id: i64,
         source_path: &str,
         dest_path: &Path,
     ) -> Result<MoveOutcome> {
         let source = Path::new(source_path);
 
-        let source_meta = fs::metadata(source).with_context(|| {
+        let _source_meta = fs::metadata(source).with_context(|| {
             format!("Failed to read source metadata: {}", source_path)
         })?;
 
@@ -170,7 +170,7 @@ impl<'a> MoveService<'a> {
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Destination folder is not valid UTF-8"))?;
 
-        tx.execute(
+        conn.execute(
             "UPDATE assets SET file_path = ?, folder_path = ?, updated_at = datetime('now') WHERE id = ?",
             params![new_path_str, new_folder, asset_id],
         )?;
