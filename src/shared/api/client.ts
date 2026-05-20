@@ -100,6 +100,10 @@ export async function setAssetTags(assetId: number, tagIds: number[]) {
   return invoke<void>("set_asset_tags", { assetId, tagIds });
 }
 
+export async function getAssetTags(assetId: number) {
+  return invoke<Tag[]>("get_asset_tags", { assetId });
+}
+
 export async function listPostTargets() {
   return invoke<PostTarget[]>("list_post_targets");
 }
@@ -133,18 +137,20 @@ export async function listPosts(status?: string) {
 export async function createPostDraft(
   title: string,
   body: string,
-  hashtags: string
+  hashtags: string,
+  scheduledAt?: string
 ) {
-  return invoke<Post>("create_post_draft", { title, body, hashtags });
+  return invoke<Post>("create_post_draft", { title, body, hashtags, scheduledAt: scheduledAt ?? null });
 }
 
 export async function updatePost(
   postId: number,
   title: string,
   body: string,
-  hashtags: string
+  hashtags: string,
+  scheduledAt?: string
 ) {
-  return invoke<void>("update_post", { postId, title, body, hashtags });
+  return invoke<void>("update_post", { postId, title, body, hashtags, scheduledAt: scheduledAt ?? null });
 }
 
 export async function attachAssetsToPost(postId: number, assetIds: number[]) {
@@ -178,7 +184,7 @@ export async function getLibraryPath(libraryId: number) {
   return invoke<string>("get_library_path", { libraryId });
 }
 
-export async function listAssetsFromFolder(libraryRootPath: string) {
+export async function listAssetsFromFolder(libraryId: number, libraryRootPath: string) {
   return invoke<Array<{
     id: number;
     file_path: string;
@@ -189,7 +195,66 @@ export async function listAssetsFromFolder(libraryRootPath: string) {
     modified_at: string;
     thumb_status: string;
     thumb_path: string | null;
-  }>>("list_assets_from_folder", { libraryRootPath });
+  }>>("list_assets_from_folder", { libraryId, libraryRootPath });
+}
+
+export async function getExcludedFolders(libraryId: number) {
+  return invoke<string[]>("get_excluded_folders", { libraryId });
+}
+
+export async function setExcludedFolders(libraryId: number, folders: string[]) {
+  return invoke<void>("set_excluded_folders", { libraryId, folders });
+}
+
+export async function getSupportedExtensions(libraryId: number) {
+  return invoke<string[]>("get_supported_extensions", { libraryId });
+}
+
+export async function setSupportedExtensions(libraryId: number, extensions: string[]) {
+  return invoke<void>("set_supported_extensions", { libraryId, extensions });
+}
+
+export async function startFolderWatcher(libraryId: number, rootPath: string) {
+  return invoke<void>("start_folder_watcher", { libraryId, rootPath });
+}
+
+export async function stopFolderWatcher(libraryId: number) {
+  return invoke<void>("stop_folder_watcher", { libraryId });
+}
+
+export async function isFolderWatching(libraryId: number) {
+  return invoke<boolean>("is_folder_watching", { libraryId });
+}
+
+export async function setAssetColorLabel(assetId: number, colorLabel: string | null) {
+  return invoke<void>("set_asset_color_label", { assetId, colorLabel });
+}
+
+export interface BatchUpdateResult {
+  updated: number;
+  errors: number;
+}
+
+export async function batchUpdateAssets(
+  assetIds: number[],
+  options: {
+    rating?: number;
+    status?: string;
+    colorLabel?: string | null;
+    isFavorite?: boolean;
+  }
+) {
+  return invoke<BatchUpdateResult>("batch_update_assets", {
+    assetIds,
+    rating: options.rating ?? null,
+    status: options.status ?? null,
+    colorLabel: options.colorLabel !== undefined ? options.colorLabel : null,
+    isFavorite: options.isFavorite ?? null,
+  });
+}
+
+export async function executeScheduledPosts() {
+  return invoke<number>("execute_scheduled_posts");
 }
 
 export async function startThumbnailGeneration(libraryId: number) {

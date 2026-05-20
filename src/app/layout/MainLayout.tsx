@@ -5,6 +5,7 @@ import { AssetGrid } from "@/features/asset-grid/AssetGrid";
 import { AssetList } from "@/features/asset-list/AssetList";
 import { AssetDetailPanel } from "@/features/asset-detail/AssetDetailPanel";
 import { useAppStore } from "@/shared/hooks/useAppStore";
+import { useKeyboardShortcuts } from "@/shared/hooks/useKeyboardShortcuts";
 import { TagsView } from "@/pages/tags/TagsView";
 import { PostsView } from "@/pages/posts/PostsView";
 import { SettingsView } from "@/pages/settings/SettingsView";
@@ -14,6 +15,8 @@ export function MainLayout() {
   const activeView = useAppStore((s) => s.activeView);
   const viewMode = useAppStore((s) => s.viewMode);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useKeyboardShortcuts();
 
   return (
     <div className="flex h-screen bg-background text-foreground">

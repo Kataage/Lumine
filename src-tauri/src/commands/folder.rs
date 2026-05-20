@@ -32,9 +32,22 @@ pub struct FolderAssetRow {
 #[tauri::command]
 pub fn list_assets_from_folder(
     state: State<'_, Arc<Mutex<Database>>>,
+    library_id: i64,
     library_root_path: String,
 ) -> Result<Vec<FolderAssetRow>, String> {
-    let quick_assets = scan_folder_quick(&library_root_path);
+    let db = state.lock().map_err(|e| e.to_string())?;
+
+    let excluded_folders = {
+        let service = crate::application::LibrarySettingsService::new(&db);
+        service.get_excluded_folders(library_id).unwrap_or_default()
+    };
+
+    let supported_extensions = {
+        let service = crate::application::LibrarySettingsService::new(&db);
+        service.get_supported_extensions(library_id).unwrap_or_default()
+    };
+
+    let quick_assets = scan_folder_quick(&library_root_path, &excluded_folders, &supported_extensions);
 
     let db = state.lock().map_err(|e| e.to_string())?;
     let conn = db.connection();

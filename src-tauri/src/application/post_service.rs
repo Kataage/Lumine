@@ -280,4 +280,35 @@ impl<'a> PostService<'a> {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(assets)
     }
+
+    pub fn execute_scheduled_posts(&self) -> Result<u32> {
+        let conn = self.db.connection();
+        let mut stmt = conn.prepare(
+            "SELECT id FROM posts
+             WHERE status = 'scheduled'
+             AND scheduled_at IS NOT NULL
+             AND scheduled_at <= datetime('now')",
+        )?;
+        let post_ids: Vec<i64> = stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut updated = 0u32;
+        for post_id in post_ids {
+            conn.execute(
+                "UPDATE posts SET status = 'published', published_at = datetime('now'), updated_at = datetime('now')
+                 WHERE id = ?",
+                [post_id],
+            )?;
+            conn.execute(
+                "UPDATE post_destinations SET status = 'published', published_at = datetime('now')
+                 WHERE post_id = ? AND status = 'scheduled'",
+                [post_id],
+            )?;
+            updated += 1;
+        }
+
+        Ok(updated)
+    }
 }

@@ -7,6 +7,7 @@ mod jobs;
 
 use anyhow::anyhow;
 use db::{Database, migrations};
+use infrastructure::FolderWatcher;
 use jobs::JobSystem;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,9 @@ pub fn run() {
             let job_system = Arc::new(JobSystem::new(db.clone(), cache_dir));
             app.manage(job_system);
 
+            let folder_watcher = Arc::new(FolderWatcher::new(db.clone()));
+            app.manage(folder_watcher);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -53,9 +57,12 @@ pub fn run() {
             commands::set_asset_status,
             commands::set_asset_favorite,
             commands::move_assets,
+            commands::set_asset_color_label,
+            commands::batch_update_assets,
             commands::list_tags,
             commands::create_tag,
             commands::set_asset_tags,
+            commands::get_asset_tags,
             commands::list_post_targets,
             commands::create_post_target,
             commands::list_post_accounts,
@@ -70,6 +77,14 @@ pub fn run() {
             commands::get_job_status,
             commands::list_jobs,
             commands::cancel_job,
+            commands::get_excluded_folders,
+            commands::set_excluded_folders,
+            commands::get_supported_extensions,
+            commands::set_supported_extensions,
+            commands::start_folder_watcher,
+            commands::stop_folder_watcher,
+            commands::is_folder_watching,
+            commands::execute_scheduled_posts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

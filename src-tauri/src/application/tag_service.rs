@@ -66,4 +66,26 @@ impl<'a> TagService<'a> {
         tx.commit()?;
         Ok(())
     }
+
+    pub fn get_asset_tags(&self, asset_id: i64) -> Result<Vec<Tag>> {
+        let conn = self.db.connection();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, t.color, t.created_at
+             FROM tags t
+             INNER JOIN asset_tags at ON t.id = at.tag_id
+             WHERE at.asset_id = ?
+             ORDER BY t.name",
+        )?;
+        let tags = stmt
+            .query_map([asset_id], |row| {
+                Ok(Tag {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(tags)
+    }
 }

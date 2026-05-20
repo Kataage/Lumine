@@ -1,7 +1,7 @@
 use std::path::Path;
 use walkdir::WalkDir;
 
-const IMAGE_EXTENSIONS: &[&str] = &[
+const DEFAULT_IMAGE_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "ico", "svg", "avif", "apng",
 ];
 
@@ -16,7 +16,11 @@ pub struct QuickAsset {
     pub modified_at: String,
 }
 
-pub fn scan_folder_quick(root_path: &str) -> Vec<QuickAsset> {
+pub fn scan_folder_quick(
+    root_path: &str,
+    excluded_folders: &[String],
+    supported_extensions: &[String],
+) -> Vec<QuickAsset> {
     let root = Path::new(root_path);
     if !root.exists() || !root.is_dir() {
         return Vec::new();
@@ -40,7 +44,30 @@ pub fn scan_folder_quick(root_path: &str) -> Vec<QuickAsset> {
             None => continue,
         };
 
-        if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        let extensions_to_check = if supported_extensions.is_empty() {
+            DEFAULT_IMAGE_EXTENSIONS
+        } else {
+            supported_extensions.iter().map(|s| s.as_str()).collect::<Vec<_>>().leak()
+        };
+
+        if !extensions_to_check.contains(&extension.as_str()) {
+            continue;
+        }
+
+        let folder_path = path
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or(root_path)
+            .to_string();
+
+        let relative = folder_path.strip_prefix(root_path).unwrap_or(&folder_path);
+        let is_excluded = excluded_folders.iter().any(|excluded| {
+            relative.starts_with(excluded)
+                || relative.starts_with(&format!("/{}", excluded))
+                || relative.starts_with(&format!("\\{}", excluded))
+        });
+
+        if is_excluded {
             continue;
         }
 
@@ -53,12 +80,6 @@ pub fn scan_folder_quick(root_path: &str) -> Vec<QuickAsset> {
             Some(p) => p.to_string(),
             None => continue,
         };
-
-        let folder_path = path
-            .parent()
-            .and_then(|p| p.to_str())
-            .unwrap_or(root_path)
-            .to_string();
 
         let file_size = path.metadata().map(|m| m.len() as i64).unwrap_or(0);
         let modified_at = path

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/shared/hooks/useAppStore";
-import { getAssetNote, updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } from "@/shared/api/client";
+import { getAssetNote, updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite, setAssetColorLabel } from "@/shared/api/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon, StarIcon, ImageIcon, Maximize2, ChevronLeft, ChevronRight } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useToast } from "@/components/ui/toast";
 import { FullscreenViewer } from "./FullscreenViewer";
+import { TagInput } from "@/features/tags/TagInput";
 
 export function AssetDetailPanel() {
   const selectedAsset = useAppStore((s) => s.selectedAsset);
@@ -72,6 +73,17 @@ export function AssetDetailPanel() {
     },
     onError: (error) => {
       addToast(`Failed to update favorite: ${error.message}`, "error");
+    },
+  });
+
+  const colorLabelMutation = useMutation({
+    mutationFn: ({ assetId, colorLabel }: { assetId: number; colorLabel: string | null }) =>
+      setAssetColorLabel(assetId, colorLabel),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    },
+    onError: (error) => {
+      addToast(`Failed to update color label: ${error.message}`, "error");
     },
   });
 
@@ -346,6 +358,55 @@ export function AssetDetailPanel() {
                 />
                 {selectedAsset.is_favorite ? "Unfavorite" : "Favorite"}
               </Button>
+            </div>
+          </div>
+
+          <div>
+            <span className="text-sm font-medium">Tags</span>
+            <div className="mt-1">
+              <TagInput assetId={selectedAsset.id} />
+            </div>
+          </div>
+
+          <div>
+            <span className="text-sm font-medium">Color Label</span>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              <button
+                onClick={() =>
+                  colorLabelMutation.mutate({
+                    assetId: selectedAsset.id,
+                    colorLabel: null,
+                  })
+                }
+                className={`w-6 h-6 rounded-full border-2 ${
+                  !selectedAsset.color_label
+                    ? "border-primary"
+                    : "border-border"
+                }`}
+                title="Clear"
+              >
+                <XIcon className="w-3 h-3 mx-auto text-muted-foreground" />
+              </button>
+              {["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899"].map(
+                (color) => (
+                  <button
+                    key={color}
+                    onClick={() =>
+                      colorLabelMutation.mutate({
+                        assetId: selectedAsset.id,
+                        colorLabel: color,
+                      })
+                    }
+                    className={`w-6 h-6 rounded-full border-2 ${
+                      selectedAsset.color_label === color
+                        ? "border-primary"
+                        : "border-transparent"
+                    }`}
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                )
+              )}
             </div>
           </div>
 

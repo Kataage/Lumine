@@ -86,6 +86,12 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
           {"★".repeat(asset.rating)}
         </div>
       )}
+      {asset.color_label && (
+        <div
+          className="absolute bottom-1 left-1 w-3 h-3 rounded-full border border-white/50"
+          style={{ backgroundColor: asset.color_label }}
+        />
+      )}
     </div>
   );
 }
