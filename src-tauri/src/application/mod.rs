@@ -8,4 +8,4 @@ pub use library_service::LibraryService;
 pub use asset_service::AssetService;
 pub use tag_service::TagService;
 pub use post_service::PostService;
-pub use move_service::{MoveService, MoveResult};
+pub use move_service::MoveService;

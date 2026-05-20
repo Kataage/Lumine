@@ -5,7 +5,7 @@ mod domain;
 mod infrastructure;
 mod jobs;
 
-use anyhow::Context;
+use anyhow::anyhow;
 use db::{Database, migrations};
 use jobs::JobSystem;
 use std::sync::{Arc, Mutex};

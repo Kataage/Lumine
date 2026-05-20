@@ -42,10 +42,10 @@ impl<'a> MoveService<'a> {
         }
 
         let conn = self.db.connection();
-        let tx = conn.unchecked_transaction()?;
+        let mut tx = conn.unchecked_transaction()?;
 
         for asset_id in asset_ids {
-            let sp = tx.savepoint().map_err(|e| anyhow::anyhow!("Failed to create savepoint: {}", e))?;
+            let mut sp = tx.savepoint().map_err(|e| anyhow::anyhow!("Failed to create savepoint: {}", e))?;
             match self.move_single(&sp, *asset_id, dest_path, &policy) {
                 Ok(move_outcome) => match move_outcome {
                     MoveOutcome::Moved => {
