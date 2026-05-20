@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ChangeEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { addLibrary } from "@/shared/api/client";
+import { selectFolder } from "@/shared/utils/dialog";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,8 +42,10 @@ export function AddLibraryDialog({ open, onOpenChange }: AddLibraryDialogProps) 
   });
 
   const handleSelectFolder = async () => {
-    // TODO: Implement folder selection using @tauri-apps/plugin-dialog
-    // For now, user must manually enter the path
+    const selected = await selectFolder("Select Library Folder");
+    if (selected) {
+      setPath(selected);
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {

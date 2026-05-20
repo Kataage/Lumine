@@ -1,5 +1,4 @@
-import type { MouseEvent } from "react";
-import { useState } from "react";
+import { memo, type MouseEvent, useState } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
 import { StarIcon, ImageIcon } from "lucide-react";
@@ -10,7 +9,7 @@ interface AssetGridItemProps {
   size: number;
 }
 
-export function AssetGridItem({ asset, size }: AssetGridItemProps) {
+function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
   const selectedAssetIds = useAppStore((s) => s.selectedAssetIds);
   const toggleAssetSelection = useAppStore((s) => s.toggleAssetSelection);
   const setSelectedAsset = useAppStore((s) => s.setSelectedAsset);
@@ -26,9 +25,9 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
     }
   };
 
-  const thumbUrl = asset.thumb_status === "ready"
-    ? convertFileSrc(asset.file_path)
-    : null;
+  const thumbUrl = asset.thumb_status === "ready" && asset.thumb_path
+    ? convertFileSrc(asset.thumb_path)
+    : convertFileSrc(asset.file_path);
 
   return (
     <div
@@ -42,7 +41,7 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
       role="button"
       tabIndex={0}
     >
-      {thumbUrl && !hasError ? (
+      {!hasError ? (
         <>
           {isLoading && (
             <div className="absolute inset-0 bg-muted animate-pulse" />
@@ -79,3 +78,5 @@ export function AssetGridItem({ asset, size }: AssetGridItemProps) {
     </div>
   );
 }
+
+export const AssetGridItem = memo(AssetGridItemInner);

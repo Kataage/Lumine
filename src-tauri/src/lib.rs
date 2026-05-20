@@ -5,7 +5,7 @@ mod domain;
 mod infrastructure;
 mod jobs;
 
-use anyhow::Context;
+use anyhow::anyhow;
 use db::{Database, migrations};
 use jobs::JobSystem;
 use std::sync::{Arc, Mutex};
@@ -30,7 +30,9 @@ pub fn run() {
 
             let db = Arc::new(Mutex::new(db));
             app.manage(db.clone());
-            app.manage(JobSystem::new(db, app.handle().clone()));
+
+            let cache_dir = app_data_dir.join("thumbnails");
+            app.manage(JobSystem::new(db, app.handle().clone(), cache_dir));
 
             Ok(())
         })
@@ -42,6 +44,7 @@ pub fn run() {
             commands::scan_library,
             commands::list_assets,
             commands::get_asset_detail,
+            commands::get_asset_note,
             commands::update_asset_note,
             commands::set_asset_rating,
             commands::set_asset_status,
@@ -59,6 +62,7 @@ pub fn run() {
             commands::update_post,
             commands::attach_assets_to_post,
             commands::get_post_assets,
+            commands::cancel_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

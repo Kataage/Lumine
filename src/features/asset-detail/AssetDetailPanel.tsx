@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/shared/hooks/useAppStore";
-import { updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } from "@/shared/api/client";
+import { getAssetNote, updateAssetNote, setAssetRating, setAssetStatus, setAssetFavorite } from "@/shared/api/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon, StarIcon, ImageIcon } from "lucide-react";
@@ -20,8 +20,12 @@ export function AssetDetailPanel() {
 
   useEffect(() => {
     if (selectedAsset) {
-      setNoteContent("");
       setImageError(false);
+      getAssetNote(selectedAsset.id).then((note) => {
+        setNoteContent(note ?? "");
+      }).catch(() => {
+        setNoteContent("");
+      });
     }
   }, [selectedAsset?.id]);
 
@@ -82,6 +86,16 @@ export function AssetDetailPanel() {
     noteMutation.mutate({ assetId: selectedAsset.id, content: noteContent });
   };
 
+  const imageUrl = selectedAsset.thumb_status === "ready" && selectedAsset.thumb_path
+    ? convertFileSrc(selectedAsset.thumb_path)
+    : convertFileSrc(selectedAsset.file_path);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   return (
     <aside className="w-80 border-l border-border bg-card flex flex-col">
       <div className="flex items-center justify-between p-4 border-b border-border">
@@ -99,7 +113,7 @@ export function AssetDetailPanel() {
             </div>
           ) : (
             <img
-              src={convertFileSrc(selectedAsset.file_path)}
+              src={imageUrl}
               alt={selectedAsset.file_name}
               className="w-full rounded-md bg-muted"
               onError={() => setImageError(true)}
@@ -114,7 +128,7 @@ export function AssetDetailPanel() {
           </p>
           <p>
             <span className="text-muted-foreground">Size:</span>{" "}
-            {(selectedAsset.file_size / 1024).toFixed(1)} KB
+            {formatFileSize(selectedAsset.file_size)}
           </p>
           {selectedAsset.width && selectedAsset.height && (
             <p>

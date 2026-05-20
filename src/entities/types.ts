@@ -23,6 +23,7 @@ export interface Asset {
   mime_type: string | null;
   hash_blake3: string | null;
   thumb_status: ThumbStatus;
+  thumb_path: string | null;
   rating: number;
   status_label: StatusLabel;
   is_favorite: boolean;

@@ -45,8 +45,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               toast.type === "error"
                 ? "bg-destructive/10 border-destructive/30 text-destructive"
                 : toast.type === "warning"
-                ? "bg-yellow-50 border-yellow-300 text-yellow-800"
-                : "bg-blue-50 border-blue-300 text-blue-800"
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                : "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400"
             }`}
           >
             <AlertCircleIcon className="w-5 h-5 mt-0.5 shrink-0" />

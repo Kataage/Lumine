@@ -68,6 +68,10 @@ export async function getAssetDetail(assetId: number) {
   return invoke<Asset>("get_asset_detail", { assetId });
 }
 
+export async function getAssetNote(assetId: number) {
+  return invoke<string | null>("get_asset_note", { assetId });
+}
+
 export async function updateAssetNote(assetId: number, content: string) {
   return invoke<void>("update_asset_note", { assetId, content });
 }

@@ -4,6 +4,9 @@ import { Toolbar } from "./Toolbar";
 import { AssetGrid } from "@/features/asset-grid/AssetGrid";
 import { AssetDetailPanel } from "@/features/asset-detail/AssetDetailPanel";
 import { useAppStore } from "@/shared/hooks/useAppStore";
+import { TagsView } from "@/pages/tags/TagsView";
+import { PostsView } from "@/pages/posts/PostsView";
+import { SettingsView } from "@/pages/settings/SettingsView";
 
 export function MainLayout() {
   const isDetailPanelOpen = useAppStore((s) => s.isDetailPanelOpen);
@@ -20,21 +23,9 @@ export function MainLayout() {
         <Toolbar />
         <main className="flex-1 overflow-auto">
           {activeView === "assets" && <AssetGrid />}
-          {activeView === "tags" && (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p>Tags view coming soon</p>
-            </div>
-          )}
-          {activeView === "posts" && (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p>Posts view coming soon</p>
-            </div>
-          )}
-          {activeView === "settings" && (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p>Settings view coming soon</p>
-            </div>
-          )}
+          {activeView === "tags" && <TagsView />}
+          {activeView === "posts" && <PostsView />}
+          {activeView === "settings" && <SettingsView />}
         </main>
       </div>
       {isDetailPanelOpen && <AssetDetailPanel />}
