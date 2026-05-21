@@ -22,6 +22,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -39,11 +47,3 @@ jobs:
 
       - name: Go test
         run: go test -v ./...
-
-      - name: Frontend typecheck
-        working-directory: frontend
-        run: npx tsc --noEmit
-
-      - name: Frontend build
-        working-directory: frontend
-        run: npm run build
