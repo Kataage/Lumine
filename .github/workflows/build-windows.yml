@@ -19,34 +19,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps
+        working-directory: frontend
         run: npm ci
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          targets: x86_64-pc-windows-msvc
+          go-version: "1.22"
+          cache-dependency-path: go.sum
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Windows app
+        run: wails build -production -platform windows/amd64
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: .
-          args: --target x86_64-pc-windows-msvc
+          CGO_ENABLED: "1"
 
-      - name: Upload bundle artifacts
+      - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lumine-windows-bundles
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**
+          name: lumine-windows
+          path: build/bin/Lumine.exe
 
-      - name: Upload portable exe
+      - name: Upload full bundle
         uses: actions/upload-artifact@v4
         with:
-          name: lumine-windows-portable
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/lumine.exe
+          name: lumine-windows-bundle
+          path: build/bin/*
