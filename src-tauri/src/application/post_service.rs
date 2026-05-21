@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::domain::{Asset, Post, PostAccount, PostStatus, PostTarget, StatusLabel, ThumbStatus};
+use crate::domain::{Asset, Post, PostAccount, PostStatus, PostTarget, StatusLabel};
 use anyhow::Result;
 use rusqlite::params;
 
@@ -245,7 +245,7 @@ impl<'a> PostService<'a> {
         let mut stmt = conn.prepare(
             "SELECT a.id, a.library_id, a.folder_path, a.file_name, a.file_path, a.extension, a.file_size,
                     a.created_at_fs, a.modified_at_fs, a.width, a.height, a.mime_type, a.hash_blake3,
-                    a.thumb_status, a.thumb_path, a.rating, a.status_label, a.is_favorite, a.color_label, a.indexed_at, a.updated_at
+                    a.rating, a.status_label, a.is_favorite, a.color_label, a.indexed_at, a.updated_at
              FROM assets a
              JOIN post_assets pa ON a.id = pa.asset_id
              WHERE pa.post_id = ?
@@ -267,14 +267,12 @@ impl<'a> PostService<'a> {
                     height: row.get(10)?,
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
-                    thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    thumb_path: row.get(14)?,
-                    rating: row.get(15)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
-                    is_favorite: row.get::<_, i32>(17)? != 0,
-                    color_label: row.get(18)?,
-                    indexed_at: row.get(19)?,
-                    updated_at: row.get(20)?,
+                    rating: row.get(13)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(14)?.as_str()),
+                    is_favorite: row.get::<_, i32>(15)? != 0,
+                    color_label: row.get(16)?,
+                    indexed_at: row.get(17)?,
+                    updated_at: row.get(18)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;

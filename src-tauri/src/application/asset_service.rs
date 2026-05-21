@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::domain::{Asset, AssetQuery, SortField, SortOrder, StatusLabel, ThumbStatus};
+use crate::domain::{Asset, AssetQuery, SortField, SortOrder, StatusLabel};
 use anyhow::Result;
 use rusqlite::{params, OptionalExtension};
 
@@ -17,7 +17,7 @@ impl<'a> AssetService<'a> {
         let mut sql = String::from(
             "SELECT id, library_id, folder_path, file_name, file_path, extension, file_size,
                     created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3,
-                    thumb_status, thumb_path, rating, status_label, is_favorite, color_label, indexed_at, updated_at
+                    rating, status_label, is_favorite, color_label, indexed_at, updated_at
              FROM assets WHERE 1=1",
         );
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -108,14 +108,12 @@ impl<'a> AssetService<'a> {
                     height: row.get(10)?,
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
-                    thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    thumb_path: row.get(14)?,
-                    rating: row.get(15)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
-                    is_favorite: row.get::<_, i32>(17)? != 0,
-                    color_label: row.get(18)?,
-                    indexed_at: row.get(19)?,
-                    updated_at: row.get(20)?,
+                    rating: row.get(13)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(14)?.as_str()),
+                    is_favorite: row.get::<_, i32>(15)? != 0,
+                    color_label: row.get(16)?,
+                    indexed_at: row.get(17)?,
+                    updated_at: row.get(18)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -127,7 +125,7 @@ impl<'a> AssetService<'a> {
         let asset = conn.query_row(
             "SELECT id, library_id, folder_path, file_name, file_path, extension, file_size,
                     created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3,
-                    thumb_status, thumb_path, rating, status_label, is_favorite, color_label, indexed_at, updated_at
+                    rating, status_label, is_favorite, color_label, indexed_at, updated_at
              FROM assets WHERE id = ?",
             [id],
             |row| {
@@ -145,14 +143,12 @@ impl<'a> AssetService<'a> {
                     height: row.get(10)?,
                     mime_type: row.get(11)?,
                     hash_blake3: row.get(12)?,
-                    thumb_status: ThumbStatus::from(row.get::<_, String>(13)?.as_str()),
-                    thumb_path: row.get(14)?,
-                    rating: row.get(15)?,
-                    status_label: StatusLabel::from(row.get::<_, String>(16)?.as_str()),
-                    is_favorite: row.get::<_, i32>(17)? != 0,
-                    color_label: row.get(18)?,
-                    indexed_at: row.get(19)?,
-                    updated_at: row.get(20)?,
+                    rating: row.get(13)?,
+                    status_label: StatusLabel::from(row.get::<_, String>(14)?.as_str()),
+                    is_favorite: row.get::<_, i32>(15)? != 0,
+                    color_label: row.get(16)?,
+                    indexed_at: row.get(17)?,
+                    updated_at: row.get(18)?,
                 })
             },
         )?;

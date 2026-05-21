@@ -62,7 +62,6 @@ pub fn run() {
             commands::attach_assets_to_post,
             commands::get_post_assets,
             commands::get_library_path,
-            commands::list_assets_from_folder,
             commands::get_excluded_folders,
             commands::set_excluded_folders,
             commands::get_supported_extensions,

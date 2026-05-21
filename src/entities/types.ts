@@ -22,8 +22,6 @@ export interface Asset {
   height: number | null;
   mime_type: string | null;
   hash_blake3: string | null;
-  thumb_status: ThumbStatus;
-  thumb_path: string | null;
   rating: number;
   status_label: StatusLabel;
   is_favorite: boolean;
@@ -31,8 +29,6 @@ export interface Asset {
   indexed_at: string;
   updated_at: string;
 }
-
-export type ThumbStatus = "none" | "queued" | "ready" | "failed";
 
 export type StatusLabel =
   | "unorganized"
@@ -95,14 +91,4 @@ export interface PostAsset {
   post_id: number;
   asset_id: number;
   sort_order: number;
-}
-
-export interface JobLog {
-  id: number;
-  job_type: string;
-  status: string;
-  message: string;
-  payload_json: string | null;
-  started_at: string;
-  finished_at: string | null;
 }

@@ -39,13 +39,4 @@ impl Database {
         })?;
         Ok(asset)
     }
-
-    pub fn update_asset_thumbnail_status(&self, asset_id: i64, thumb_path: &str) -> Result<()> {
-        let conn = self.connection();
-        conn.execute(
-            "UPDATE assets SET thumb_status = 'ready', thumb_path = ? WHERE id = ?",
-            [thumb_path, &asset_id.to_string()],
-        )?;
-        Ok(())
-    }
 }

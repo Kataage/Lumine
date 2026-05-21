@@ -37,51 +37,12 @@ pub struct Asset {
     pub height: Option<i32>,
     pub mime_type: Option<String>,
     pub hash_blake3: Option<String>,
-    pub thumb_status: ThumbStatus,
-    pub thumb_path: Option<String>,
     pub rating: i32,
     pub status_label: StatusLabel,
     pub is_favorite: bool,
     pub color_label: Option<String>,
     pub indexed_at: String,
     pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThumbStatus {
-    None,
-    Queued,
-    Ready,
-    Failed,
-}
-
-impl Default for ThumbStatus {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-impl From<&str> for ThumbStatus {
-    fn from(s: &str) -> Self {
-        match s {
-            "queued" => Self::Queued,
-            "ready" => Self::Ready,
-            "failed" => Self::Failed,
-            _ => Self::None,
-        }
-    }
-}
-
-impl From<ThumbStatus> for &'static str {
-    fn from(status: ThumbStatus) -> Self {
-        match status {
-            ThumbStatus::None => "none",
-            ThumbStatus::Queued => "queued",
-            ThumbStatus::Ready => "ready",
-            ThumbStatus::Failed => "failed",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -215,15 +176,4 @@ pub struct PostAsset {
     pub post_id: i64,
     pub asset_id: i64,
     pub sort_order: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JobLog {
-    pub id: i64,
-    pub job_type: String,
-    pub status: String,
-    pub message: String,
-    pub payload_json: Option<String>,
-    pub started_at: String,
-    pub finished_at: Option<String>,
 }

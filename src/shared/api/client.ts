@@ -184,18 +184,6 @@ export async function getLibraryPath(libraryId: number) {
   return invoke<string>("get_library_path", { libraryId });
 }
 
-export async function listAssetsFromFolder(libraryId: number, libraryRootPath: string) {
-  return invoke<Array<{
-    id: number;
-    file_path: string;
-    file_name: string;
-    folder_path: string;
-    extension: string;
-    file_size: number;
-    modified_at: string;
-  }>>("list_assets_from_folder", { libraryId, libraryRootPath });
-}
-
 export async function getExcludedFolders(libraryId: number) {
   return invoke<string[]>("get_excluded_folders", { libraryId });
 }
