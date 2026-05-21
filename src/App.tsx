@@ -1,11 +1,8 @@
-import { QueryProvider } from "./app/providers";
-import { MainLayout } from "./app/layout/MainLayout";
-
-function App() {
+export function App() {
   return (
-    <QueryProvider>
-      <MainLayout />
-    </QueryProvider>
+    <div className="flex items-center justify-center h-screen">
+      <p className="text-muted-foreground">Lumine - Coming Soon</p>
+    </div>
   );
 }
 
