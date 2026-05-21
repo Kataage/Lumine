@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef, useState, useEffect } from "react";
 import { listAssets, scanLibrary } from "@/shared/api/client";
@@ -6,9 +6,8 @@ import { useAppStore } from "@/shared/hooks/useAppStore";
 import { AssetGridItem } from "./AssetGridItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import type { Asset } from "@/entities/types";
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100;
 
 export function AssetGrid() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,27 +48,35 @@ export function AssetGrid() {
     }
   }, [selectedLibraryId, addToast]);
 
-  const { data: assets = [], isLoading, isError, error, refetch } = useQuery<Asset[]>({
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch,
+  } = useInfiniteQuery({
     queryKey: ["assets", selectedLibraryId],
-    queryFn: async () => {
+    queryFn: async ({ pageParam = 0 }) => {
       if (!selectedLibraryId) return [];
-      const allAssets: Asset[] = [];
-      let offset = 0;
-      while (true) {
-        const batch = await listAssets({
-          library_id: selectedLibraryId,
-          offset,
-          limit: PAGE_SIZE,
-        });
-        if (batch.length === 0) break;
-        allAssets.push(...batch);
-        offset += PAGE_SIZE;
-        if (batch.length < PAGE_SIZE) break;
-      }
-      return allAssets;
+      return listAssets({
+        library_id: selectedLibraryId,
+        offset: pageParam as number,
+        limit: PAGE_SIZE,
+      });
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < PAGE_SIZE) return undefined;
+      return allPages.length * PAGE_SIZE;
     },
     enabled: selectedLibraryId !== null,
-    staleTime: 30000,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   useEffect(() => {
@@ -85,6 +92,8 @@ export function AssetGrid() {
     }
   }, [isScanning, selectedLibraryId, refetch]);
 
+  const assets = data?.pages.flat() ?? [];
+
   const columns = containerWidth > 0
     ? Math.max(1, Math.floor(containerWidth / (thumbnailSize + 16)))
     : 4;
@@ -99,6 +108,15 @@ export function AssetGrid() {
   });
 
   const items = virtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage) return;
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
+    if (lastItem.index >= rowCount - 10) {
+      fetchNextPage();
+    }
+  }, [items, rowCount, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (!selectedLibraryId) {
     return (
@@ -182,6 +200,11 @@ export function AssetGrid() {
           );
         })}
       </div>
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-4 text-sm text-muted-foreground">
+          Loading more...
+        </div>
+      )}
     </div>
   );
 }

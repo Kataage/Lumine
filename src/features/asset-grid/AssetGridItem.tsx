@@ -1,4 +1,4 @@
-import { memo, type MouseEvent, useState } from "react";
+import { memo, type MouseEvent, useState, useEffect, useRef, startTransition } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
 import { StarIcon, ImageIcon } from "lucide-react";
@@ -16,19 +16,47 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
   const isSelected = selectedAssetIds.includes(asset.id);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (isVisible) {
+      setImageSrc(convertFileSrc(asset.file_path));
+    }
+  }, [isVisible, asset.file_path]);
 
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.ctrlKey || e.metaKey) {
-      toggleAssetSelection(asset.id);
-    } else {
-      setSelectedAsset(asset);
-    }
+    startTransition(() => {
+      if (e.ctrlKey || e.metaKey) {
+        toggleAssetSelection(asset.id);
+      } else {
+        setSelectedAsset(asset);
+      }
+    });
   };
-
-  const imageUrl = convertFileSrc(asset.file_path);
 
   return (
     <div
+      ref={ref}
       className={`relative group cursor-pointer rounded-md overflow-hidden border-2 transition-all ${
         isSelected
           ? "border-primary ring-2 ring-primary/20"
@@ -44,19 +72,22 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
           {isLoading && (
             <div className="absolute inset-0 bg-muted animate-pulse" />
           )}
-          <img
-            src={imageUrl}
-            alt={asset.file_name}
-            className="w-full h-full object-cover bg-muted"
-            loading="lazy"
-            decoding="async"
-            onLoad={() => setIsLoading(false)}
-            onError={(e) => {
-              setIsLoading(false);
-              setHasError(true);
-              console.error("Image load failed:", asset.file_path, e);
-            }}
-          />
+          {imageSrc ? (
+            <img
+              src={imageSrc}
+              alt={asset.file_name}
+              className="w-full h-full object-cover bg-muted"
+              decoding="async"
+              onLoad={() => setIsLoading(false)}
+              onError={(e) => {
+                setIsLoading(false);
+                setHasError(true);
+                console.error("Image load failed:", asset.file_path, e);
+              }}
+            />
+          ) : (
+            <div className="w-full h-full bg-muted" />
+          )}
         </>
       ) : (
         <div className="w-full h-full bg-muted flex items-center justify-center">
