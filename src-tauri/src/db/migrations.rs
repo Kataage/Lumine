@@ -3,7 +3,8 @@ use rusqlite::Connection;
 const INITIAL_SCHEMA: &str = include_str!("../../migrations/001_initial_schema.sql");
 const LIBRARY_SETTINGS_SCHEMA: &str = include_str!("../../migrations/002_library_settings.sql");
 const COLOR_LABELS_SCHEMA: &str = include_str!("../../migrations/003_color_labels_and_filters.sql");
-const MIGRATION_VERSION: u32 = 3;
+const PERFORMANCE_INDEXES_SCHEMA: &str = include_str!("../../migrations/004_performance_indexes.sql");
+const MIGRATION_VERSION: u32 = 4;
 
 pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
@@ -17,6 +18,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         (1, INITIAL_SCHEMA),
         (2, LIBRARY_SETTINGS_SCHEMA),
         (3, COLOR_LABELS_SCHEMA),
+        (4, PERFORMANCE_INDEXES_SCHEMA),
     ] {
         let applied: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?)",

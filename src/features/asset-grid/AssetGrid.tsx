@@ -61,11 +61,14 @@ export function AssetGrid() {
     queryKey: ["assets", selectedLibraryId],
     queryFn: async ({ pageParam = 0 }) => {
       if (!selectedLibraryId) return [];
-      return listAssets({
+      const start = performance.now();
+      const result = await listAssets({
         library_id: selectedLibraryId,
         offset: pageParam as number,
         limit: PAGE_SIZE,
       });
+      console.log(`[AssetGrid] Page ${pageParam} fetched ${result.length} items in ${(performance.now() - start).toFixed(0)}ms`);
+      return result;
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
