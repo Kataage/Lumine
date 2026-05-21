@@ -80,7 +80,7 @@ export const useAppStore = create<AppState>((set) => ({
           : [...state.selectedAssetIds, id],
       };
     }),
-  setSelectedAsset: (asset) => set({ selectedAsset: asset }),
+  setSelectedAsset: (asset) => set({ selectedAsset: asset, isDetailPanelOpen: asset !== null }),
   setTags: (tags) => set({ tags }),
   addTag: (tag) => set((state) => ({ tags: [...state.tags, tag] })),
   setPosts: (posts) => set({ posts }),

@@ -1,4 +1,4 @@
-import { memo, type MouseEvent, useState, useEffect, useRef, startTransition } from "react";
+import { memo, type MouseEvent, useState, useEffect, startTransition } from "react";
 import { useAppStore } from "@/shared/hooks/useAppStore";
 import type { Asset } from "@/entities/types";
 import { StarIcon, ImageIcon } from "lucide-react";
@@ -7,48 +7,31 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 interface AssetGridItemProps {
   asset: Asset;
   size: number;
+  shouldLoadImage: boolean;
 }
 
-function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
+function AssetGridItemInner({ asset, size, shouldLoadImage }: AssetGridItemProps) {
   const selectedAssetIds = useAppStore((s) => s.selectedAssetIds);
   const toggleAssetSelection = useAppStore((s) => s.toggleAssetSelection);
   const setSelectedAsset = useAppStore((s) => s.setSelectedAsset);
   const isSelected = selectedAssetIds.includes(asset.id);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "200px" }
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (isVisible) {
+    if (shouldLoadImage && !imageSrc) {
       setImageSrc(convertFileSrc(asset.file_path));
     }
-  }, [isVisible, asset.file_path]);
+  }, [shouldLoadImage, asset.file_path, imageSrc]);
 
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {
+    console.log("[AssetGridItem] Clicked:", asset.file_name);
     startTransition(() => {
       if (e.ctrlKey || e.metaKey) {
         toggleAssetSelection(asset.id);
       } else {
+        console.log("[AssetGridItem] Setting selected asset:", asset.id);
         setSelectedAsset(asset);
       }
     });
@@ -56,7 +39,6 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
 
   return (
     <div
-      ref={ref}
       className={`relative group cursor-pointer rounded-md overflow-hidden border-2 transition-all ${
         isSelected
           ? "border-primary ring-2 ring-primary/20"
@@ -69,7 +51,7 @@ function AssetGridItemInner({ asset, size }: AssetGridItemProps) {
     >
       {!hasError ? (
         <>
-          {isLoading && (
+          {isLoading && shouldLoadImage && (
             <div className="absolute inset-0 bg-muted animate-pulse" />
           )}
           {imageSrc ? (

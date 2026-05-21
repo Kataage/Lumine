@@ -104,10 +104,14 @@ export function AssetGrid() {
     count: rowCount,
     getScrollElement: () => containerRef.current,
     estimateSize: () => thumbnailSize + 20,
-    overscan: 5,
+    overscan: 2,
   });
 
   const items = virtualizer.getVirtualItems();
+
+  useEffect(() => {
+    console.log("[AssetGrid] Virtual items:", items.length, "Total rows:", rowCount);
+  }, [items.length, rowCount]);
 
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage) return;
@@ -170,6 +174,9 @@ export function AssetGrid() {
           const startIndex = virtualRow.index * columns;
           const rowAssets = assets.slice(startIndex, startIndex + columns);
 
+          const range = virtualizer.range;
+          const isInRange = range ? virtualRow.index >= range.startIndex && virtualRow.index <= range.endIndex : false;
+
           return (
             <div
               key={virtualRow.key}
@@ -193,6 +200,7 @@ export function AssetGrid() {
                     key={asset.id}
                     asset={asset}
                     size={thumbnailSize}
+                    shouldLoadImage={isInRange}
                   />
                 ))}
               </div>
