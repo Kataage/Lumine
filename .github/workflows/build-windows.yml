@@ -36,7 +36,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build Windows app
-        run: wails build -production -platform windows/amd64
+        run: wails build -platform windows/amd64
         env:
           CGO_ENABLED: "1"
 
