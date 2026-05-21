@@ -12,6 +12,10 @@ export interface ScanResult {
   hasMore: boolean;
 }
 
+export async function selectFolder(): Promise<string> {
+  return window.go.main.App.SelectFolder();
+}
+
 export async function scanFolder(
   folderPath: string,
   offset: number,

@@ -1,9 +1,9 @@
-// Wails generated types (simulated)
 declare global {
   interface Window {
     go: {
       main: {
         App: {
+          SelectFolder: () => Promise<string>;
           ScanFolder: (folderPath: string, offset: number, limit: number) => Promise<{
             images: Array<{
               filePath: string;
@@ -15,13 +15,8 @@ declare global {
             totalCount: number;
             hasMore: boolean;
           }>;
-          OpenFolderDialog: () => Promise<string>;
         };
       };
-    };
-    runtime: {
-      EventsOn: (eventName: string, callback: (...args: unknown[]) => void) => void;
-      EventsOff: (eventName: string) => void;
     };
   }
 }

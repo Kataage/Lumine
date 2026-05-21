@@ -17,24 +17,9 @@ export default function App() {
   const [folderPath, setFolderPath] = useState<string | null>(null);
 
   const handleSelectFolder = async () => {
-    try {
-      const path = await window.go.main.App.OpenFolderDialog();
-      if (path) {
-        setFolderPath(path);
-      }
-    } catch {
-      // Fallback: use input element for development
-      const input = document.createElement("input");
-      input.type = "file";
-      (input as any).webkitdirectory = true;
-      input.onchange = () => {
-        const files = (input as HTMLInputElement).files;
-        if (files && files.length > 0) {
-          const path = files[0].webkitRelativePath.split("/")[0];
-          setFolderPath(path);
-        }
-      };
-      input.click();
+    const path = await window.go.main.App.SelectFolder();
+    if (path) {
+      setFolderPath(path);
     }
   };
 

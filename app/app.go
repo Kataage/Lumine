@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -25,9 +27,9 @@ type ImageInfo struct {
 
 // ScanResult represents a paginated scan response
 type ScanResult struct {
-	Images      []ImageInfo `json:"images"`
-	TotalCount  int         `json:"totalCount"`
-	HasMore     bool        `json:"hasMore"`
+	Images     []ImageInfo `json:"images"`
+	TotalCount int         `json:"totalCount"`
+	HasMore    bool        `json:"hasMore"`
 }
 
 // NewApp creates a new App application struct
@@ -46,6 +48,17 @@ var imageExtensions = map[string]bool{
 	".ico": true, ".svg": true, ".avif": true, ".apng": true,
 }
 
+// SelectFolder opens a folder picker dialog
+func (a *App) SelectFolder() (string, error) {
+	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Image Folder",
+	})
+	if err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // ScanFolder scans a folder for images with pagination
 func (a *App) ScanFolder(folderPath string, offset int, limit int) (*ScanResult, error) {
 	absPath, err := filepath.Abs(folderPath)
@@ -53,18 +66,16 @@ func (a *App) ScanFolder(folderPath string, offset int, limit int) (*ScanResult,
 		return nil, err
 	}
 
-	// Fast parallel scan using goroutines
 	var mu sync.Mutex
 	var allImages []ImageInfo
 	var wg sync.WaitGroup
 
 	err = filepath.Walk(absPath, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
-			return nil // Skip errors (permission denied, etc.)
+			return nil
 		}
 
 		if info.IsDir() {
-			// Skip hidden directories
 			if strings.HasPrefix(info.Name(), ".") {
 				return filepath.SkipDir
 			}
@@ -104,14 +115,12 @@ func (a *App) ScanFolder(folderPath string, offset int, limit int) (*ScanResult,
 
 	wg.Wait()
 
-	// Sort by file path for consistent ordering
 	sort.Slice(allImages, func(i, j int) bool {
 		return allImages[i].FilePath < allImages[j].FilePath
 	})
 
 	totalCount := len(allImages)
 
-	// Apply pagination
 	if offset >= totalCount {
 		return &ScanResult{
 			Images:     []ImageInfo{},
@@ -132,10 +141,4 @@ func (a *App) ScanFolder(folderPath string, offset int, limit int) (*ScanResult,
 		TotalCount: totalCount,
 		HasMore:    end < totalCount,
 	}, nil
-}
-
-// OpenFolderDialog opens a folder picker dialog
-func (a *App) OpenFolderDialog() (string, error) {
-	// This will be handled by frontend using runtime.OpenDirectoryDialog
-	return "", nil
 }

@@ -162,7 +162,8 @@ function ImageItem({ image, size, shouldLoad }: ImageItemProps) {
 
   useEffect(() => {
     if (shouldLoad && !src) {
-      setSrc(`file://${image.filePath}`);
+      const normalizedPath = image.filePath.replace(/\\/g, "/");
+      setSrc(`/local/${normalizedPath}`);
     }
   }, [shouldLoad, image.filePath, src]);
 
