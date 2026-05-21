@@ -50,6 +50,9 @@ var imageExtensions = map[string]bool{
 
 // SelectFolder opens a folder picker dialog
 func (a *App) SelectFolder() (string, error) {
+	if a.ctx == nil {
+		return "", nil
+	}
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Image Folder",
 	})
