@@ -1,0 +1,12 @@
+CREATE INDEX IF NOT EXISTS idx_assets_file_name ON assets(file_name);
+CREATE INDEX IF NOT EXISTS idx_assets_folder_path ON assets(folder_path);
+CREATE INDEX IF NOT EXISTS idx_assets_modified_at_fs ON assets(modified_at_fs);
+CREATE INDEX IF NOT EXISTS idx_assets_status_label ON assets(status_label);
+CREATE INDEX IF NOT EXISTS idx_assets_rating ON assets(rating);
+CREATE INDEX IF NOT EXISTS idx_assets_is_favorite ON assets(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_asset_notes_asset_id ON asset_notes(asset_id);
+CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+CREATE INDEX IF NOT EXISTS idx_post_assets_asset_id ON post_assets(asset_id);
+CREATE INDEX IF NOT EXISTS idx_post_destinations_post_account_status ON post_destinations(post_account_id, status);
+CREATE INDEX IF NOT EXISTS idx_assets_library_id ON assets(library_id);
+CREATE INDEX IF NOT EXISTS idx_folders_library_id ON folders(library_id);
