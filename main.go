@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/kataage/lumine/app"
+	"github.com/kataage/lumine/internal/commands"
+	"github.com/kataage/lumine/internal/infrastructure/db"
+	"github.com/kataage/lumine/internal/infrastructure/scanner"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -18,9 +22,7 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-type localFileHandler struct {
-	fs http.FileSystem
-}
+type localFileHandler struct{}
 
 func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
@@ -65,9 +67,29 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	a := app.NewApp()
+	slog.Info("starting Lumine")
 
-	err := wails.Run(&options.App{
+	appDir, err := db.EnsureAppDir()
+	if err != nil {
+		log.Fatal("failed to create app directory:", err)
+	}
+
+	database, err := db.Open(appDir)
+	if err != nil {
+		log.Fatal("failed to open database:", err)
+	}
+	defer database.Close()
+
+	scanSvc := scanner.NewScanner(
+		db.NewAssetRepo(database),
+		db.NewLibraryRepo(database),
+		db.NewJobLogRepo(database),
+	)
+	thumbSvc := scanner.NewThumbnailService(filepath.Join(appDir, "thumb-cache"))
+
+	cmd := commands.New(database, scanSvc, thumbSvc)
+
+	err = wails.Run(&options.App{
 		Title:  "Lumine",
 		Width:  1280,
 		Height: 800,
@@ -76,9 +98,12 @@ func main() {
 			Middleware: localFileMiddleware,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 27, B: 30, A: 1},
-		OnStartup:        a.Startup,
+		OnStartup: func(ctx context.Context) {
+			cmd.SetContext(ctx)
+			slog.Info("Lumine started")
+		},
 		Bind: []interface{}{
-			a,
+			cmd,
 		},
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,

@@ -1,87 +1,146 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, createContext, useContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ImageGrid } from "./ImageGrid";
+import { Sidebar, Toolbar, WelcomeScreen } from "./components/Sidebar";
+import { AssetGrid } from "./components/AssetGrid";
+import { AssetDetailPanel } from "./components/AssetDetailPanel";
+import type { LibraryDTO, AssetDTO } from "./api/client";
+import {
+  selectFolder,
+  addLibrary,
+  listLibraries,
+} from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: Infinity,
-      gcTime: Infinity,
+      staleTime: 30_000,
+      gcTime: 300_000,
       refetchOnWindowFocus: false,
-      refetchOnMount: false,
     },
   },
 });
 
+type ViewMode = "grid" | "list";
+type SidebarView = "libraries" | "tags" | "posts" | "settings";
+
+interface AppState {
+  libraries: LibraryDTO[];
+  selectedLibraryId: number | null;
+  selectedAssets: number[];
+  detailAsset: AssetDTO | null;
+  detailOpen: boolean;
+  viewMode: ViewMode;
+  sidebarView: SidebarView;
+  sidebarOpen: boolean;
+  searchQuery: string;
+  sortBy: string;
+  sortDesc: boolean;
+  thumbnailSize: number;
+  filterStatusLabel: string;
+  filterRating: number;
+}
+
+const defaultState: AppState = {
+  libraries: [],
+  selectedLibraryId: null,
+  selectedAssets: [],
+  detailAsset: null,
+  detailOpen: false,
+  viewMode: "grid",
+  sidebarView: "libraries",
+  sidebarOpen: true,
+  searchQuery: "",
+  sortBy: "modifiedAtFs",
+  sortDesc: true,
+  thumbnailSize: 180,
+  filterStatusLabel: "",
+  filterRating: 0,
+};
+
+const AppContext = createContext<{
+  state: AppState;
+  setState: React.Dispatch<React.SetStateAction<AppState>>;
+}>({ state: defaultState, setState: () => {} });
+
+export const useApp = () => useContext(AppContext);
+
 export default function App() {
-  const [folderPath, setFolderPath] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<AppState>(defaultState);
 
   const handleSelectFolder = useCallback(async () => {
     try {
-      setError(null);
-      const path = await window.go.main.App.SelectFolder();
-      if (path) {
-        setFolderPath(path);
+      const path = await selectFolder();
+      if (!path) return;
+      const name = path.split(/[/\\]/).pop() || "Library";
+      const lib = await addLibrary(name, path);
+      if (lib) {
+        const libs = await listLibraries();
+        setState((s) => ({
+          ...s,
+          libraries: libs,
+          selectedLibraryId: lib.id,
+        }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to select folder");
+      console.error("Failed to select folder:", err);
     }
   }, []);
 
-  if (!folderPath) {
+  const handleSelectAsset = useCallback(
+    (asset: AssetDTO, multi: boolean) => {
+      setState((s) => {
+        const sel = multi
+          ? s.selectedAssets.includes(asset.id)
+            ? s.selectedAssets.filter((id) => id !== asset.id)
+            : [...s.selectedAssets, asset.id]
+          : [asset.id];
+        return {
+          ...s,
+          selectedAssets: sel,
+          detailAsset: asset,
+          detailOpen: true,
+        };
+      });
+    },
+    []
+  );
+
+  const handleCloseDetail = useCallback(() => {
+    setState((s) => ({ ...s, detailOpen: false, detailAsset: null }));
+  }, []);
+
+  if (state.libraries.length === 0 && !state.selectedLibraryId) {
     return (
-      <div className="flex items-center justify-center h-full bg-background">
-        <div className="text-center max-w-md px-6">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-muted flex items-center justify-center">
-            <svg className="w-8 h-8 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5l3.75 3.75-3.75 3.75m3.75-3.75H3" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-semibold mb-2 text-foreground">Lumine</h1>
-          <p className="text-muted-foreground mb-8 text-sm leading-relaxed">
-            Select a folder to browse your image collection.
-            <br />
-            Supports JPG, PNG, GIF, WebP, BMP, TIFF, SVG, AVIF.
-          </p>
-          <button
-            onClick={handleSelectFolder}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v4a1 1 0 001 1h3m6-6l3.75 3.75m-3.75-3.75V3h3.75m-3.75 15.75l-3.75-3.75 3.75-3.75m3.75 3.75V21h-3.75" />
-            </svg>
-            Open Folder
-          </button>
-          {error && (
-            <p className="mt-4 text-sm text-destructive">{error}</p>
-          )}
-        </div>
-      </div>
+      <QueryClientProvider client={queryClient}>
+        <WelcomeScreen onSelectFolder={handleSelectFolder} />
+      </QueryClientProvider>
     );
   }
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex flex-col h-full bg-background">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/50 backdrop-blur-sm">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5l3.75 3.75-3.75 3.75m3.75-3.75H3" />
-              </svg>
+      <AppContext.Provider value={{ state, setState }}>
+        <div className="flex h-screen bg-background text-foreground">
+          {state.sidebarOpen && <Sidebar />}
+
+          <div className="flex flex-col flex-1 min-w-0">
+            <Toolbar />
+
+            <div className="flex flex-1 min-h-0">
+              <div className="flex-1 min-w-0">
+                <AssetGrid onSelectAsset={handleSelectAsset} />
+              </div>
+
+              {state.detailOpen && state.detailAsset && (
+                <AssetDetailPanel
+                  assetId={state.detailAsset.id}
+                  onClose={handleCloseDetail}
+                />
+              )}
             </div>
-            <span className="text-sm text-muted-foreground truncate font-medium">{folderPath}</span>
           </div>
-          <button
-            onClick={handleSelectFolder}
-            className="text-xs px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-md transition-colors ml-2 flex-shrink-0"
-          >
-            Change
-          </button>
-        </header>
-        <ImageGrid folderPath={folderPath} />
-      </div>
+        </div>
+      </AppContext.Provider>
     </QueryClientProvider>
   );
 }
