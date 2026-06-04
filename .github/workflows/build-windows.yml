@@ -42,7 +42,7 @@ jobs:
       - name: Build Windows app
         run: wails build -platform windows/amd64
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
