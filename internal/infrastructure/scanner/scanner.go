@@ -1,9 +1,12 @@
 package scanner
 
 import (
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,7 +16,7 @@ import (
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
 
-var imageExtensions = map[string]bool{
+var DefaultImageExtensions = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 	".bmp": true, ".webp": true, ".tiff": true, ".tif": true,
 	".ico": true, ".svg": true, ".avif": true, ".apng": true,
@@ -23,7 +26,12 @@ type Scanner struct {
 	assetRepo   *db.AssetRepo
 	libraryRepo *db.LibraryRepo
 	jobLogRepo  *db.JobLogRepo
+	settingRepo *db.AppSettingRepo
 	cancelled   atomic.Bool
+	scanning    atomic.Bool
+	customExts  map[string]bool
+	extsOnce    sync.Once
+	extsMu      sync.RWMutex
 }
 
 func NewScanner(assetRepo *db.AssetRepo, libraryRepo *db.LibraryRepo, jobLogRepo *db.JobLogRepo) *Scanner {
@@ -34,16 +42,66 @@ func NewScanner(assetRepo *db.AssetRepo, libraryRepo *db.LibraryRepo, jobLogRepo
 	}
 }
 
+func (s *Scanner) SetSettingRepo(repo *db.AppSettingRepo) {
+	s.settingRepo = repo
+}
+
+func (s *Scanner) getExtensions() map[string]bool {
+	s.extsMu.RLock()
+	if s.customExts != nil {
+		exts := s.customExts
+		s.extsMu.RUnlock()
+		return exts
+	}
+	s.extsMu.RUnlock()
+
+	s.extsOnce.Do(func() {
+		exts := make(map[string]bool)
+		for k, v := range DefaultImageExtensions {
+			exts[k] = v
+		}
+		if s.settingRepo != nil {
+			setting, err := s.settingRepo.Get("scanExtensions")
+			if err == nil && setting != nil && setting.ValueJSON != "" {
+				var customList []string
+				if err := json.Unmarshal([]byte(setting.ValueJSON), &customList); err == nil && len(customList) > 0 {
+					exts = make(map[string]bool)
+					for _, ext := range customList {
+						e := strings.TrimSpace(ext)
+						if e != "" {
+							exts[strings.ToLower(e)] = true
+						}
+					}
+				}
+			}
+		}
+		s.extsMu.Lock()
+		s.customExts = exts
+		s.extsMu.Unlock()
+	})
+
+	s.extsMu.RLock()
+	exts := s.customExts
+	s.extsMu.RUnlock()
+	return exts
+}
+
 type ScanProgress struct {
-	ScannedCount int `json:"scannedCount"`
-	AddedCount   int `json:"addedCount"`
-	UpdatedCount int `json:"updatedCount"`
-	SkippedCount int `json:"skippedCount"`
-	FailedCount  int `json:"failedCount"`
-	IsDone       bool `json:"isDone"`
+	LibraryID    int64 `json:"libraryId"`
+	ScannedCount int   `json:"scannedCount"`
+	AddedCount   int   `json:"addedCount"`
+	UpdatedCount int   `json:"updatedCount"`
+	SkippedCount int   `json:"skippedCount"`
+	FailedCount  int   `json:"failedCount"`
+	IsDone       bool  `json:"isDone"`
 }
 
 func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, progressCB func(ScanProgress)) error {
+	if !s.scanning.CompareAndSwap(false, true) {
+		return fmt.Errorf("scan already in progress")
+	}
+	defer s.scanning.Store(false)
+
 	s.cancelled.Store(false)
 
 	jobID, err := s.jobLogRepo.Create(domain.JobTypeScan, library.RootPath)
@@ -51,11 +109,13 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 		return err
 	}
 
-	progress := ScanProgress{}
+	progress := ScanProgress{LibraryID: library.ID}
 	excludedSet := make(map[string]bool)
 	for _, d := range excludedDirs {
 		excludedSet[strings.ToLower(d)] = true
 	}
+
+	exts := s.getExtensions()
 
 	err = filepath.Walk(library.RootPath, func(path string, info os.FileInfo, walkErr error) error {
 		if s.cancelled.Load() {
@@ -76,7 +136,7 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if !imageExtensions[ext] {
+		if !exts[ext] {
 			return nil
 		}
 
@@ -111,16 +171,16 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 		}
 
 		asset := &domain.Asset{
-			LibraryID:    library.ID,
-			FolderPath:   filepath.Dir(path),
-			FileName:     info.Name(),
-			FilePath:     path,
-			Extension:    ext,
-			FileSize:     info.Size(),
+			LibraryID:   library.ID,
+			FolderPath:  filepath.Dir(path),
+			FileName:    info.Name(),
+			FilePath:    path,
+			Extension:   ext,
+			FileSize:    info.Size(),
 			ModifiedAtFS: modTime,
-			ThumbStatus:  domain.ThumbStatusQueued,
-			Rating:       0,
-			StatusLabel:  domain.StatusUnsorted,
+			ThumbStatus: domain.ThumbStatusQueued,
+			Rating:      0,
+			StatusLabel: domain.StatusUnsorted,
 		}
 
 		if _, err := s.assetRepo.Create(asset); err != nil {
@@ -159,16 +219,12 @@ func (s *Scanner) Cancel() {
 
 func formatScanResult(p ScanProgress) string {
 	return strings.Join([]string{
-		"scanned=" + itoa(p.ScannedCount),
-		"added=" + itoa(p.AddedCount),
-		"updated=" + itoa(p.UpdatedCount),
-		"skipped=" + itoa(p.SkippedCount),
-		"failed=" + itoa(p.FailedCount),
+		"scanned=" + strconv.Itoa(p.ScannedCount),
+		"added=" + strconv.Itoa(p.AddedCount),
+		"updated=" + strconv.Itoa(p.UpdatedCount),
+		"skipped=" + strconv.Itoa(p.SkippedCount),
+		"failed=" + strconv.Itoa(p.FailedCount),
 	}, " ")
-}
-
-func itoa(n int) string {
-	return strings.TrimSpace(string(append([]byte{}, byte('0'+n%10))))
 }
 
 type FolderScanResult struct {
@@ -191,7 +247,6 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 		return nil, err
 	}
 
-	var mu sync.Mutex
 	var allImages []ImageEntry
 
 	err = filepath.Walk(absPath, func(path string, info os.FileInfo, walkErr error) error {
@@ -206,11 +261,10 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if !imageExtensions[ext] {
+		if !DefaultImageExtensions[ext] {
 			return nil
 		}
 
-		mu.Lock()
 		allImages = append(allImages, ImageEntry{
 			FilePath:   path,
 			FileName:   info.Name(),
@@ -218,7 +272,6 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 			Extension:  ext,
 			FileSize:   info.Size(),
 		})
-		mu.Unlock()
 
 		return nil
 	})
@@ -257,19 +310,10 @@ func NewThumbnailService(cacheDir string) *ThumbnailService {
 }
 
 func (t *ThumbnailService) GetThumbPath(assetID int64, modifiedAt time.Time, size int) string {
-	return filepath.Join(t.cacheDir, itoa64(assetID)+"_"+modifiedAt.Format("20060102150405")+"_"+itoa(size)+".webp")
+	return filepath.Join(t.cacheDir, strconv.FormatInt(assetID, 10)+"_"+modifiedAt.Format("20060102150405")+"_"+strconv.Itoa(size)+".webp")
 }
 
-func itoa64(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[pos:])
+func (t *ThumbnailService) GenerateThumbnail(srcPath string, destPath string, maxSize int) error {
+	slog.Info("thumbnail generation requested", "src", srcPath, "dest", destPath, "maxSize", maxSize)
+	return fmt.Errorf("thumbnail generation requires native image decoder - not available in current build")
 }

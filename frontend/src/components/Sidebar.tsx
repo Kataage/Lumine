@@ -1,5 +1,33 @@
+import { useState, useEffect } from "react";
 import { useApp } from "../App";
-import { selectFolder, addLibrary, listLibraries, scanLibrary } from "../api/client";
+import {
+  selectFolder,
+  addLibrary,
+  listLibraries,
+  scanLibrary,
+  enableLibrary,
+  disableLibrary,
+  removeLibrary,
+  getSupportedExtensions,
+  setSupportedExtensions,
+  listTags,
+  createTag,
+  deleteTag,
+  listPosts,
+  createPostDraft,
+  deletePost,
+  listPostTargets,
+  createPostTarget,
+  deletePostTarget,
+  listPostAccounts,
+  createPostAccount,
+  deletePostAccount,
+  onScanProgress,
+  offScanProgress,
+  getSetting,
+  setSetting,
+} from "../api/client";
+import type { ScanProgress, TagDTO, PostDTO, PostTargetDTO, PostAccountDTO } from "../api/client";
 
 export function WelcomeScreen({ onSelectFolder }: { onSelectFolder: () => void }) {
   return (
@@ -32,6 +60,25 @@ export function WelcomeScreen({ onSelectFolder }: { onSelectFolder: () => void }
 
 export function Sidebar() {
   const { state, setState } = useApp();
+  const [scanProgress, setScanProgress] = useState<Record<number, ScanProgress>>({});
+
+	useEffect(() => {
+		onScanProgress((p) => {
+			setScanProgress((prev) => ({ ...prev, [p.libraryID]: p }));
+			if (p.isDone) {
+				const timer = setTimeout(() => {
+					setScanProgress((prev) => {
+						const next = { ...prev };
+						delete next[p.libraryID];
+						return next;
+					});
+					listLibraries().then((libs) => setState((s) => ({ ...s, libraries: libs })));
+				}, 2000);
+				return () => clearTimeout(timer);
+			}
+		});
+		return () => offScanProgress();
+	}, [setState]);
 
   const handleAddLibrary = async () => {
     try {
@@ -53,6 +100,30 @@ export function Sidebar() {
       await scanLibrary(id);
     } catch (err) {
       console.error("Scan failed:", err);
+    }
+  };
+
+  const handleToggleEnabled = async (lib: { id: number; isEnabled: boolean }) => {
+    try {
+      if (lib.isEnabled) {
+        await disableLibrary(lib.id);
+      } else {
+        await enableLibrary(lib.id);
+      }
+      const libs = await listLibraries();
+      setState((s) => ({ ...s, libraries: libs }));
+    } catch (err) {
+      console.error("Toggle library failed:", err);
+    }
+  };
+
+  const handleRemoveLibrary = async (id: number) => {
+    try {
+      await removeLibrary(id);
+      const libs = await listLibraries();
+      setState((s) => ({ ...s, libraries: libs, selectedLibraryId: s.selectedLibraryId === id ? null : s.selectedLibraryId }));
+    } catch (err) {
+      console.error("Remove library failed:", err);
     }
   };
 
@@ -102,37 +173,370 @@ export function Sidebar() {
               </svg>
             </button>
           </div>
-          {state.libraries.map((lib) => (
+          {state.libraries.map((lib) => {
+            const progress = scanProgress[lib.id];
+            return (
             <div
               key={lib.id}
               onClick={() => setState((s) => ({ ...s, selectedLibraryId: lib.id }))}
-              className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm cursor-pointer transition-colors ${
+              className={`group flex flex-col gap-0.5 px-2 py-1.5 rounded text-sm cursor-pointer transition-colors ${
                 state.selectedLibraryId === lib.id
                   ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50"
+                  : lib.isEnabled
+                  ? "text-muted-foreground hover:bg-accent/50"
+                  : "text-muted-foreground/50 hover:bg-accent/30"
               }`}
             >
-              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75" />
-              </svg>
-              <span className="truncate">{lib.name}</span>
+              <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); handleToggleEnabled(lib); }}
+                className={`p-0.5 rounded transition-colors ${lib.isEnabled ? "text-green-500" : "text-muted-foreground/40"}`}
+                title={lib.isEnabled ? "Disable library" : "Enable library"}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  {lib.isEnabled ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a.75.75 0 011.05 0l3.87 3.87a.75.75 0 001.05 0l9.543-9.543a.75.75 0 011.05 1.05l-10.07 10.07a2.25 2.25 0 01-3.182 0l-3.87-3.87a.75.75 0 010-1.05z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  )}
+                </svg>
+              </button>
+              <span className={`truncate flex-1 ${!lib.isEnabled ? "line-through opacity-60" : ""}`}>{lib.name}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); handleScan(lib.id); }}
-                className="ml-auto p-0.5 rounded hover:bg-accent/80 opacity-0 group-hover:opacity-100 transition-opacity"
+                className={`p-0.5 rounded hover:bg-accent/80 opacity-0 group-hover:opacity-100 transition-opacity ${progress ? "animate-spin opacity-100" : ""}`}
                 title="Rescan"
+                disabled={!lib.isEnabled || !!progress}
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
                 </svg>
               </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleRemoveLibrary(lib.id); }}
+                className="p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Remove library"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a31.73 31.73 0 00-7.32 0C5.995 3.59 5.005 4.574 5.005 5.754v.916" />
+                </svg>
+              </button>
+              </div>
+              {progress && !progress.isDone && (
+                <div className="pl-5 flex items-center gap-2">
+                  <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${Math.min(100, (progress.scannedCount / Math.max(1, progress.scannedCount + progress.addedCount)) * 100)}%` }} />
+                  </div>
+                  <span className="text-[9px] text-muted-foreground">{progress.scannedCount} scanned</span>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
           {state.libraries.length === 0 && (
             <p className="text-xs text-muted-foreground/60 px-2">No libraries yet</p>
           )}
         </div>
       )}
+
+      {state.sidebarView === "tags" && <TagsPanel />}
+      {state.sidebarView === "posts" && <PostsPanel />}
+      {state.sidebarView === "settings" && <SettingsPanel />}
     </aside>
+  );
+}
+
+function TagsPanel() {
+  const [tags, setTags] = useState<TagDTO[]>([]);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#6366f1");
+
+  useEffect(() => {
+    listTags().then(setTags);
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newTagName.trim()) return;
+    const t = await createTag(newTagName.trim(), newTagColor);
+    if (t) {
+      setTags((prev) => [...prev, t]);
+      setNewTagName("");
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    await deleteTag(id);
+    setTags((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  return (
+    <div className="border-t border-border p-3 space-y-2">
+      <span className="text-xs font-medium text-muted-foreground uppercase">Tags</span>
+      <div className="flex gap-1.5">
+        <input
+          value={newTagName}
+          onChange={(e) => setNewTagName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+          placeholder="New tag..."
+          className="flex-1 text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50"
+        />
+        <input
+          type="color"
+          value={newTagColor}
+          onChange={(e) => setNewTagColor(e.target.value)}
+          className="w-7 h-7 rounded border border-border cursor-pointer bg-transparent"
+        />
+        <button
+          onClick={handleCreate}
+          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          title="Add tag"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      </div>
+      <div className="space-y-1">
+        {tags.map((tag) => (
+          <div key={tag.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent/50 group">
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+            <span className="text-xs text-foreground truncate flex-1">{tag.name}</span>
+            <button
+              onClick={() => handleDelete(tag.id)}
+              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {tags.length === 0 && <p className="text-xs text-muted-foreground/60 px-2">No tags yet</p>}
+      </div>
+    </div>
+  );
+}
+
+function PostsPanel() {
+  const [posts, setPosts] = useState<PostDTO[]>([]);
+  const [targets, setTargets] = useState<PostTargetDTO[]>([]);
+  const [accounts, setAccounts] = useState<PostAccountDTO[]>([]);
+  const [showNewPost, setShowNewPost] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [showNewTarget, setShowNewTarget] = useState(false);
+  const [newTargetName, setNewTargetName] = useState("");
+  const [newTargetKind, setNewTargetKind] = useState("twitter");
+  const [showNewAccount, setShowNewAccount] = useState(false);
+  const [newAccountTargetId, setNewAccountTargetId] = useState<number>(0);
+  const [newAccountDisplay, setNewAccountDisplay] = useState("");
+  const [newAccountIdentifier, setNewAccountIdentifier] = useState("");
+
+  useEffect(() => {
+    listPosts(0, 50).then(setPosts);
+    listPostTargets().then(setTargets);
+    listPostAccounts().then(setAccounts);
+  }, []);
+
+  const handleCreateDraft = async () => {
+    if (!newTitle.trim()) return;
+    const p = await createPostDraft(newTitle.trim(), "", "");
+    if (p) {
+      setPosts((prev) => [p, ...prev]);
+      setNewTitle("");
+      setShowNewPost(false);
+    }
+  };
+
+  const handleDeletePost = async (id: number) => {
+    await deletePost(id);
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const statusColors: Record<string, string> = {
+    draft: "bg-muted text-muted-foreground",
+    scheduled: "bg-blue-500/20 text-blue-400",
+    published: "bg-green-500/20 text-green-400",
+    failed: "bg-red-500/20 text-red-400",
+  };
+
+  return (
+    <div className="border-t border-border p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground uppercase">Posts</span>
+        <button
+          onClick={() => setShowNewPost(!showNewPost)}
+          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          title="New post"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      </div>
+
+      {showNewPost && (
+        <div className="flex gap-1.5">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreateDraft()}
+            placeholder="Post title..."
+            className="flex-1 text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50"
+          />
+          <button onClick={handleCreateDraft} className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">Create</button>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {posts.map((post) => (
+          <div key={post.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent/50 group">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusColors[post.status] ?? statusColors.draft}`}>{post.status}</span>
+            <span className="text-xs text-foreground truncate flex-1">{post.title}</span>
+            <button
+              onClick={() => handleDeletePost(post.id)}
+              className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {posts.length === 0 && <p className="text-xs text-muted-foreground/60 px-2">No posts yet</p>}
+      </div>
+
+      <div className="pt-2 border-t border-border">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-muted-foreground uppercase">Targets</span>
+          <button onClick={() => setShowNewTarget(!showNewTarget)} className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+          </button>
+        </div>
+        {showNewTarget && (
+          <div className="flex gap-1 mt-1">
+            <input value={newTargetName} onChange={(e) => setNewTargetName(e.target.value)} placeholder="Name" className="flex-1 text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50" />
+            <select value={newTargetKind} onChange={(e) => setNewTargetKind(e.target.value)} className="text-xs px-1 py-1 bg-muted rounded border border-border text-muted-foreground">
+              <option value="twitter">Twitter/X</option>
+              <option value="pixiv">Pixiv</option>
+              <option value="misskey">Misskey</option>
+              <option value="bluesky">Bluesky</option>
+              <option value="other">Other</option>
+            </select>
+            <button onClick={async () => { const t = await createPostTarget(newTargetName.trim(), newTargetKind); if (t) { setTargets((prev) => [...prev, t]); setNewTargetName(""); setShowNewTarget(false); } }} className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90">Add</button>
+          </div>
+        )}
+        {targets.map((t) => (
+          <div key={t.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent/50 group">
+            <span className="text-xs text-muted-foreground">{t.kind}</span>
+            <span className="text-xs text-foreground truncate flex-1">{t.name}</span>
+            <button onClick={async () => { await deletePostTarget(t.id); setTargets((prev) => prev.filter((x) => x.id !== t.id)); }} className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="pt-2 border-t border-border">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-muted-foreground uppercase">Accounts</span>
+          {targets.length > 0 && (
+            <button onClick={() => { setShowNewAccount(!showNewAccount); setNewAccountTargetId(targets[0]?.id ?? 0); }} className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            </button>
+          )}
+        </div>
+        {showNewAccount && (
+          <div className="space-y-1 mt-1">
+            <select value={newAccountTargetId} onChange={(e) => setNewAccountTargetId(Number(e.target.value))} className="w-full text-xs px-2 py-1 bg-muted rounded border border-border text-muted-foreground">
+              {targets.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.kind})</option>)}
+            </select>
+            <input value={newAccountDisplay} onChange={(e) => setNewAccountDisplay(e.target.value)} placeholder="Display name" className="w-full text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50" />
+            <input value={newAccountIdentifier} onChange={(e) => setNewAccountIdentifier(e.target.value)} placeholder="@username" className="w-full text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50" />
+            <button onClick={async () => { const a = await createPostAccount(newAccountTargetId, newAccountDisplay.trim(), newAccountIdentifier.trim()); if (a) { setAccounts((prev) => [...prev, a]); setNewAccountDisplay(""); setNewAccountIdentifier(""); setShowNewAccount(false); } }} className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90">Add</button>
+          </div>
+        )}
+        {accounts.map((a) => (
+          <div key={a.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent/50 group">
+            <span className="text-xs text-foreground truncate flex-1">{a.displayName}</span>
+            <button onClick={async () => { await deletePostAccount(a.id); setAccounts((prev) => prev.filter((x) => x.id !== a.id)); }} className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel() {
+  const [extensions, setExtensions] = useState<string[]>([]);
+  const [extInput, setExtInput] = useState("");
+  const [conflictPolicy, setConflictPolicy] = useState("abort");
+
+  useEffect(() => {
+    getSupportedExtensions().then(setExtensions);
+    getSetting("conflictPolicy").then((v) => { if (v) setConflictPolicy(v.replace(/"/g, "")); });
+  }, []);
+
+  const handleAddExt = async () => {
+    const ext = extInput.trim().toLowerCase();
+    if (!ext || extensions.includes(ext)) return;
+    const next = [...extensions, ext];
+    await setSupportedExtensions(next);
+    setExtensions(next);
+    setExtInput("");
+  };
+
+  const handleRemoveExt = async (ext: string) => {
+    const next = extensions.filter((e) => e !== ext);
+    await setSupportedExtensions(next);
+    setExtensions(next);
+  };
+
+  const handleConflictPolicy = async (policy: string) => {
+    setConflictPolicy(policy);
+    await setSetting("conflictPolicy", JSON.stringify(policy));
+  };
+
+  return (
+    <div className="border-t border-border p-3 space-y-3">
+      <span className="text-xs font-medium text-muted-foreground uppercase">Settings</span>
+
+      <div className="space-y-1.5">
+        <span className="text-xs text-muted-foreground">Supported Extensions</span>
+        <div className="flex flex-wrap gap-1">
+          {extensions.map((ext) => (
+            <span key={ext} className="text-[10px] px-1.5 py-0.5 bg-muted rounded-full border border-border flex items-center gap-1">
+              {ext}
+              <button onClick={() => handleRemoveExt(ext)} className="text-muted-foreground hover:text-destructive">&times;</button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          <input
+            value={extInput}
+            onChange={(e) => setExtInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddExt()}
+            placeholder=".raw"
+            className="flex-1 text-xs px-2 py-1 bg-muted rounded border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50"
+          />
+          <button onClick={handleAddExt} className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">Add</button>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <span className="text-xs text-muted-foreground">File Move Conflict Policy</span>
+        <select
+          value={conflictPolicy}
+          onChange={(e) => handleConflictPolicy(e.target.value)}
+          className="w-full text-xs px-2 py-1.5 bg-muted rounded-md border border-border text-foreground"
+        >
+          <option value="abort">Abort on conflict</option>
+          <option value="skip">Skip existing</option>
+          <option value="rename">Auto-rename</option>
+        </select>
+      </div>
+    </div>
   );
 }
 
@@ -213,8 +617,8 @@ export function Toolbar() {
             }`}
             title={`${size}px`}
           >
-        <div className={`rounded-sm bg-current ${size === 120 ? "w-2 h-2" : size === 180 ? "w-3 h-3" : "w-4 h-4"}`} />
-      </button>
+            <div className={`rounded-sm bg-current ${size === 120 ? "w-2 h-2" : size === 180 ? "w-3 h-3" : "w-4 h-4"}`} />
+          </button>
         ))}
       </div>
 

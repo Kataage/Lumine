@@ -16,9 +16,9 @@ dist
 dist-ssr
 *.local
 
-# Tauri
-src-tauri/target
-src-tauri/src-tauri
+# Wails
+build/
+frontend/dist
 
 # Test
 coverage
