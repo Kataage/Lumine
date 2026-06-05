@@ -22,17 +22,17 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-    - name: Lint
-      working-directory: frontend
-      run: npx eslint src --max-warnings 0
+      - name: Lint
+        working-directory: frontend
+        run: npx eslint src --max-warnings 0
 
       - name: Typecheck
         working-directory: frontend
         run: npx tsc --noEmit
 
-    - name: Unit tests
-      working-directory: frontend
-      run: npx vitest run
+      - name: Unit tests
+        working-directory: frontend
+        run: npx vitest run
 
       - name: Build
         working-directory: frontend
