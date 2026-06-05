@@ -19,6 +19,7 @@ dist-ssr
 # Wails
 build/
 frontend/dist
+!frontend/dist/.gitkeep
 
 # Test
 coverage
