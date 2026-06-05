@@ -32,8 +32,17 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filePath := strings.TrimPrefix(path, "/local/")
+	absPath, err := filepath.Abs(filepath.Clean(filePath))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.Contains(absPath, "..") {
+		http.NotFound(w, r)
+		return
+	}
 
-	info, err := os.Stat(filePath)
+	info, err := os.Stat(absPath)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -44,7 +53,7 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ext := strings.ToLower(filepath.Ext(filePath))
+	ext := strings.ToLower(filepath.Ext(absPath))
 	contentTypes := map[string]string{
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
@@ -63,7 +72,7 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ct)
 	}
 
-	http.ServeFile(w, r, filePath)
+	http.ServeFile(w, r, absPath)
 }
 
 func main() {

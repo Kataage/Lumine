@@ -4,6 +4,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_modified_at_fs ON assets(modified_at_fs);
 CREATE INDEX IF NOT EXISTS idx_assets_status_label ON assets(status_label);
 CREATE INDEX IF NOT EXISTS idx_assets_rating ON assets(rating);
 CREATE INDEX IF NOT EXISTS idx_assets_is_favorite ON assets(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_assets_color_label ON assets(color_label);
 CREATE INDEX IF NOT EXISTS idx_asset_notes_asset_id ON asset_notes(asset_id);
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 CREATE INDEX IF NOT EXISTS idx_post_assets_asset_id ON post_assets(asset_id);

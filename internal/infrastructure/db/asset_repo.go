@@ -16,18 +16,19 @@ func NewAssetRepo(db *DB) *AssetRepo {
 }
 
 type AssetQuery struct {
-	LibraryID  int64
-	FolderPath string
-	Search     string
-	Rating     int
+	LibraryID   int64
+	FolderPath  string
+	Search      string
+	Rating      int
 	StatusLabel string
-	IsFavorite *bool
-	TagIDs     []int64
-	HasNote    *bool
-	Extension  string
-	SortBy     string
-	SortDesc   bool
-	Offset     int
+	IsFavorite  *bool
+	TagIDs      []int64
+	HasNote     *bool
+	Extension   string
+	ColorLabel  string
+	SortBy      string
+	SortDesc    bool
+	Offset      int
 	Limit      int
 }
 
@@ -71,6 +72,10 @@ func (r *AssetRepo) List(q AssetQuery) (*AssetListResult, error) {
 	if q.Extension != "" {
 		where += " AND a.extension = ?"
 		args = append(args, q.Extension)
+	}
+	if q.ColorLabel != "" {
+		where += " AND a.color_label = ?"
+		args = append(args, q.ColorLabel)
 	}
 	if q.HasNote != nil {
 		if *q.HasNote {
@@ -287,6 +292,23 @@ func (r *AssetRepo) BulkUpdateFavorite(ids []int64, favorite bool) error {
 	defer tx.Rollback()
 	for _, id := range ids {
 		if _, err := tx.Exec("UPDATE assets SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", favorite, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *AssetRepo) BulkUpdateColorLabel(ids []int64, label string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.Exec("UPDATE assets SET color_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", label, id); err != nil {
 			return err
 		}
 	}

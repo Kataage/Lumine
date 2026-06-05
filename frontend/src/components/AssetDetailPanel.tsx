@@ -1,11 +1,33 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAssetDetail, updateAssetNote, setAssetTags, updateAssetRating, updateAssetStatus, toggleAssetFavorite, listTags, getLocalImageUrl } from "../api/client";
+import {
+  getAssetDetail,
+  updateAssetNote,
+  setAssetTags,
+  updateAssetRating,
+  updateAssetStatus,
+  toggleAssetFavorite,
+  updateAssetColorLabel,
+  listTags,
+  getLocalImageUrl,
+  getPostsByAsset,
+} from "../api/client";
+import { formatFileSize } from "../utils/format";
 
 interface AssetDetailPanelProps {
   assetId: number;
   onClose: () => void;
 }
+
+const COLOR_LABELS = [
+  { value: "", label: "None", color: "bg-muted" },
+  { value: "red", label: "Red", color: "bg-red-500" },
+  { value: "orange", label: "Orange", color: "bg-orange-500" },
+  { value: "yellow", label: "Yellow", color: "bg-yellow-500" },
+  { value: "green", label: "Green", color: "bg-green-500" },
+  { value: "blue", label: "Blue", color: "bg-blue-500" },
+  { value: "purple", label: "Purple", color: "bg-purple-500" },
+];
 
 export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
   const queryClient = useQueryClient();
@@ -18,6 +40,12 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
   const { data: allTags } = useQuery({
     queryKey: ["tags"],
     queryFn: listTags,
+  });
+
+  const { data: posts } = useQuery({
+    queryKey: ["assetPosts", assetId],
+    queryFn: async () => getPostsByAsset(assetId),
+    enabled: !!assetId,
   });
 
   const [noteContent, setNoteContent] = useState("");
@@ -75,6 +103,19 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
         queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
       } catch (err) {
         console.error("Favorite failed:", err);
+      }
+    },
+    [asset, assetId, queryClient]
+  );
+
+  const handleColorLabel = useCallback(
+    async (label: string) => {
+      if (!asset) return;
+      try {
+        await updateAssetColorLabel(asset.id, label);
+        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      } catch (err) {
+        console.error("Color label failed:", err);
       }
     },
     [asset, assetId, queryClient]
@@ -159,6 +200,24 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
         </div>
 
         <div className="space-y-1.5">
+          <span className="text-xs text-muted-foreground">Color Label</span>
+          <div className="flex gap-1.5">
+            {COLOR_LABELS.map((cl) => (
+              <button
+                key={cl.value}
+                onClick={() => handleColorLabel(cl.value)}
+                className={`w-5 h-5 rounded-full transition-transform ${cl.color} ${
+                  (asset.colorLabel ?? "") === cl.value
+                    ? "ring-2 ring-primary ring-offset-1 ring-offset-card scale-110"
+                    : "hover:scale-110"
+                }`}
+                title={cl.label}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
           <span className="text-xs text-muted-foreground">Rating</span>
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((r) => (
@@ -224,6 +283,7 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
                       : "bg-muted text-muted-foreground border-border hover:bg-accent"
                   }`}
                 >
+                  <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: tag.color }} />
                   {tag.name}
                 </button>
               );
@@ -254,13 +314,21 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
             className="w-full text-xs p-2 bg-muted rounded border border-border focus:border-primary focus:outline-none resize-none h-20 placeholder:text-muted-foreground/50"
           />
         </div>
+
+        {posts && posts.length > 0 && (
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Posts</span>
+            <div className="space-y-1">
+              {posts.map((post) => (
+                <div key={post.id} className="text-xs px-2 py-1 bg-muted rounded border border-border">
+                  <span className="font-medium text-foreground">{post.title}</span>
+                  <span className="ml-1.5 text-muted-foreground">{post.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

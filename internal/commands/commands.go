@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
@@ -13,22 +16,24 @@ import (
 )
 
 type AppCommands struct {
-	db           *db.DB
-	libraryRepo  *db.LibraryRepo
-	assetRepo    *db.AssetRepo
-	noteRepo     *db.AssetNoteRepo
-	tagRepo      *db.TagRepo
-	postRepo     *db.PostRepo
-	targetRepo   *db.PostTargetRepo
-	accountRepo  *db.PostAccountRepo
-	jobLogRepo   *db.JobLogRepo
-	settingRepo  *db.AppSettingRepo
-	scanSvc      *scanner.Scanner
-	thumbSvc     *scanner.ThumbnailService
-	ctx          context.Context
+	db          *db.DB
+	libraryRepo *db.LibraryRepo
+	assetRepo   *db.AssetRepo
+	noteRepo    *db.AssetNoteRepo
+	tagRepo     *db.TagRepo
+	postRepo    *db.PostRepo
+	targetRepo  *db.PostTargetRepo
+	accountRepo *db.PostAccountRepo
+	jobLogRepo  *db.JobLogRepo
+	settingRepo *db.AppSettingRepo
+	scanSvc     *scanner.Scanner
+	thumbSvc    *scanner.ThumbnailService
+	ctx         context.Context
 }
 
 func New(database *db.DB, scanSvc *scanner.Scanner, thumbSvc *scanner.ThumbnailService) *AppCommands {
+	settingRepo := db.NewAppSettingRepo(database)
+	scanSvc.SetSettingRepo(settingRepo)
 	return &AppCommands{
 		db:          database,
 		libraryRepo: db.NewLibraryRepo(database),
@@ -39,7 +44,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner, thumbSvc *scanner.ThumbnailS
 		targetRepo:  db.NewPostTargetRepo(database),
 		accountRepo: db.NewPostAccountRepo(database),
 		jobLogRepo:  db.NewJobLogRepo(database),
-		settingRepo: db.NewAppSettingRepo(database),
+		settingRepo: settingRepo,
 		scanSvc:     scanSvc,
 		thumbSvc:    thumbSvc,
 	}
@@ -50,13 +55,14 @@ func (c *AppCommands) SetContext(ctx context.Context) {
 }
 
 type LibraryDTO struct {
-	ID            int64  `json:"id"`
-	Name          string `json:"name"`
-	RootPath      string `json:"rootPath"`
-	IsEnabled     bool   `json:"isEnabled"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"`
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	RootPath     string `json:"rootPath"`
+	IsEnabled    bool   `json:"isEnabled"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
 	LastScannedAt string `json:"lastScannedAt,omitempty"`
+	AssetCount   int    `json:"assetCount"`
 }
 
 func toLibraryDTO(lib *domain.Library) LibraryDTO {
@@ -97,6 +103,45 @@ func (c *AppCommands) AddLibrary(name, rootPath string) *LibraryDTO {
 	return &dto
 }
 
+func (c *AppCommands) UpdateLibrary(id int64, name, rootPath string) *LibraryDTO {
+	lib, err := c.libraryRepo.GetByID(id)
+	if err != nil || lib == nil {
+		slog.Error("UpdateLibrary: not found", "id", id, "error", err)
+		return nil
+	}
+	lib.Name = name
+	lib.RootPath = rootPath
+	if err := c.libraryRepo.Update(lib); err != nil {
+		slog.Error("UpdateLibrary", "error", err)
+		return nil
+	}
+	updated, err := c.libraryRepo.GetByID(id)
+	if err != nil || updated == nil {
+		slog.Error("UpdateLibrary: re-fetch failed", "id", id, "error", err)
+		return nil
+	}
+	dto := toLibraryDTO(updated)
+	return &dto
+}
+
+func (c *AppCommands) EnableLibrary(id int64) error {
+	lib, err := c.libraryRepo.GetByID(id)
+	if err != nil || lib == nil {
+		return fmt.Errorf("library not found: %d", id)
+	}
+	lib.IsEnabled = true
+	return c.libraryRepo.Update(lib)
+}
+
+func (c *AppCommands) DisableLibrary(id int64) error {
+	lib, err := c.libraryRepo.GetByID(id)
+	if err != nil || lib == nil {
+		return fmt.Errorf("library not found: %d", id)
+	}
+	lib.IsEnabled = false
+	return c.libraryRepo.Update(lib)
+}
+
 func (c *AppCommands) RemoveLibrary(id int64) error {
 	return c.libraryRepo.Delete(id)
 }
@@ -115,25 +160,61 @@ func (c *AppCommands) SelectFolder() string {
 	return path
 }
 
+func (c *AppCommands) GetExcludedDirs(libraryID int64) []string {
+	setting, err := c.settingRepo.Get(fmt.Sprintf("excludedDirs:%d", libraryID))
+	if err != nil || setting == nil || setting.ValueJSON == "" {
+		return nil
+	}
+	var dirs []string
+	if err := json.Unmarshal([]byte(setting.ValueJSON), &dirs); err != nil {
+		return nil
+	}
+	return dirs
+}
+
+func (c *AppCommands) SetExcludedDirs(libraryID int64, dirs []string) error {
+	data, err := json.Marshal(dirs)
+	if err != nil {
+		return err
+	}
+	return c.settingRepo.Set(fmt.Sprintf("excludedDirs:%d", libraryID), string(data))
+}
+
+func (c *AppCommands) GetSupportedExtensions() []string {
+	exts := make([]string, 0, len(scanner.DefaultImageExtensions))
+	for ext := range scanner.DefaultImageExtensions {
+		exts = append(exts, ext)
+	}
+	return exts
+}
+
+func (c *AppCommands) SetSupportedExtensions(exts []string) error {
+	data, err := json.Marshal(exts)
+	if err != nil {
+		return err
+	}
+	return c.settingRepo.Set("scanExtensions", string(data))
+}
+
 type AssetDTO struct {
-	ID           int64  `json:"id"`
-	LibraryID    int64  `json:"libraryId"`
-	FolderPath   string `json:"folderPath"`
-	FileName     string `json:"fileName"`
-	FilePath     string `json:"filePath"`
-	Extension    string `json:"extension"`
-	FileSize     int64  `json:"fileSize"`
-	CreatedAtFS  string `json:"createdAtFs,omitempty"`
-	ModifiedAtFS string `json:"modifiedAtFs,omitempty"`
-	Width        int    `json:"width"`
-	Height       int    `json:"height"`
-	MimeType     string `json:"mimeType,omitempty"`
-	ThumbStatus  string `json:"thumbStatus"`
-	Rating       int    `json:"rating"`
-	StatusLabel  string `json:"statusLabel"`
-	IsFavorite   bool   `json:"isFavorite"`
-	ColorLabel   string `json:"colorLabel,omitempty"`
-	NoteContent  string `json:"noteContent,omitempty"`
+	ID           int64   `json:"id"`
+	LibraryID    int64   `json:"libraryId"`
+	FolderPath   string  `json:"folderPath"`
+	FileName     string  `json:"fileName"`
+	FilePath     string  `json:"filePath"`
+	Extension    string  `json:"extension"`
+	FileSize     int64   `json:"fileSize"`
+	CreatedAtFS  string  `json:"createdAtFs,omitempty"`
+	ModifiedAtFS string  `json:"modifiedAtFs,omitempty"`
+	Width        int     `json:"width"`
+	Height       int     `json:"height"`
+	MimeType     string  `json:"mimeType,omitempty"`
+	ThumbStatus  string  `json:"thumbStatus"`
+	Rating       int     `json:"rating"`
+	StatusLabel  string  `json:"statusLabel"`
+	IsFavorite   bool    `json:"isFavorite"`
+	ColorLabel   string  `json:"colorLabel,omitempty"`
+	NoteContent  string  `json:"noteContent,omitempty"`
 	Tags         []TagDTO `json:"tags,omitempty"`
 }
 
@@ -166,19 +247,20 @@ func toAssetDTO(a *domain.Asset) AssetDTO {
 }
 
 type AssetListRequest struct {
-	LibraryID  int64  `json:"libraryId"`
-	FolderPath string `json:"folderPath,omitempty"`
-	Search     string `json:"search,omitempty"`
-	Rating     int    `json:"rating,omitempty"`
+	LibraryID   int64  `json:"libraryId"`
+	FolderPath  string `json:"folderPath,omitempty"`
+	Search      string `json:"search,omitempty"`
+	Rating      int    `json:"rating,omitempty"`
 	StatusLabel string `json:"statusLabel,omitempty"`
-	IsFavorite *bool  `json:"isFavorite,omitempty"`
-	TagIDs     []int64 `json:"tagIds,omitempty"`
-	HasNote    *bool  `json:"hasNote,omitempty"`
-	Extension  string `json:"extension,omitempty"`
-	SortBy     string `json:"sortBy,omitempty"`
-	SortDesc   bool   `json:"sortDesc,omitempty"`
-	Offset     int    `json:"offset"`
-	Limit      int    `json:"limit"`
+	IsFavorite  *bool  `json:"isFavorite,omitempty"`
+	TagIDs      []int64 `json:"tagIds,omitempty"`
+	HasNote     *bool  `json:"hasNote,omitempty"`
+	Extension   string `json:"extension,omitempty"`
+	ColorLabel  string `json:"colorLabel,omitempty"`
+	SortBy      string `json:"sortBy,omitempty"`
+	SortDesc    bool   `json:"sortDesc,omitempty"`
+	Offset      int    `json:"offset"`
+	Limit       int    `json:"limit"`
 }
 
 type AssetListResponse struct {
@@ -197,6 +279,7 @@ func (c *AppCommands) ListAssets(req AssetListRequest) *AssetListResponse {
 		TagIDs:      req.TagIDs,
 		HasNote:     req.HasNote,
 		Extension:   req.Extension,
+		ColorLabel:  req.ColorLabel,
 		SortBy:      req.SortBy,
 		SortDesc:    req.SortDesc,
 		Offset:      req.Offset,
@@ -276,6 +359,15 @@ func (c *AppCommands) ToggleAssetFavorite(assetID int64, favorite bool) error {
 	return c.assetRepo.Update(a)
 }
 
+func (c *AppCommands) UpdateAssetColorLabel(assetID int64, label string) error {
+	a, err := c.assetRepo.GetByID(assetID)
+	if err != nil || a == nil {
+		return fmt.Errorf("asset not found: %d", assetID)
+	}
+	a.ColorLabel = label
+	return c.assetRepo.Update(a)
+}
+
 func (c *AppCommands) BulkUpdateRating(ids []int64, rating int) error {
 	return c.assetRepo.BulkUpdateRating(ids, rating)
 }
@@ -288,8 +380,12 @@ func (c *AppCommands) BulkUpdateFavorite(ids []int64, favorite bool) error {
 	return c.assetRepo.BulkUpdateFavorite(ids, favorite)
 }
 
+func (c *AppCommands) BulkUpdateColorLabel(ids []int64, label string) error {
+	return c.assetRepo.BulkUpdateColorLabel(ids, label)
+}
+
 type MoveRequest struct {
-	AssetIDs          []int64 `json:"assetIds"`
+	AssetIDs         []int64 `json:"assetIds"`
 	DestinationFolder string  `json:"destinationFolder"`
 	ConflictPolicy    string  `json:"conflictPolicy"`
 }
@@ -311,29 +407,39 @@ func (c *AppCommands) MoveAssets(req MoveRequest) *MoveResult {
 			continue
 		}
 
-		newPath := req.DestinationFolder + "\\" + a.FileName
+		destPath := filepath.Join(req.DestinationFolder, a.FileName)
 
 		switch req.ConflictPolicy {
 		case "skip":
-			existing, _ := c.assetRepo.GetByFilePath(newPath)
-			if existing != nil {
+			if _, err := os.Stat(destPath); err == nil {
 				result.SkippedCount++
 				continue
 			}
 		case "rename":
-			newPath = findNonConflictingPath(req.DestinationFolder, a.FileName)
+			destPath = findNonConflictingPath(req.DestinationFolder, a.FileName)
 		default:
+			if _, err := os.Stat(destPath); err == nil {
+				result.FailedCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("file already exists: %s", destPath))
+				continue
+			}
 		}
 
-		if err := moveFile(a.FilePath, newPath); err != nil {
+		if err := os.MkdirAll(req.DestinationFolder, 0755); err != nil {
+			result.FailedCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("create dir %s: %v", req.DestinationFolder, err))
+			continue
+		}
+
+		if err := moveFile(a.FilePath, destPath); err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, fmt.Sprintf("move %s: %v", a.FilePath, err))
 			continue
 		}
 
-		if err := c.assetRepo.UpdateFilePath(a.ID, newPath, req.DestinationFolder, filepathBase(newPath)); err != nil {
+		if err := c.assetRepo.UpdateFilePath(a.ID, destPath, req.DestinationFolder, filepath.Base(destPath)); err != nil {
 			result.FailedCount++
-			result.Errors = append(result.Errors, fmt.Sprintf("db update for %s: %v", newPath, err))
+			result.Errors = append(result.Errors, fmt.Sprintf("db update for %s: %v", destPath, err))
 			continue
 		}
 
@@ -343,46 +449,87 @@ func (c *AppCommands) MoveAssets(req MoveRequest) *MoveResult {
 }
 
 func findNonConflictingPath(dir, name string) string {
-	path := dir + "\\" + name
-	if _, err := statFile(path); err != nil {
+	path := filepath.Join(dir, name)
+	if _, err := os.Stat(path); err != nil {
 		return path
 	}
-	ext := filepathExt(name)
+	ext := filepath.Ext(name)
 	base := name[:len(name)-len(ext)]
 	for i := 1; i < 1000; i++ {
 		newName := fmt.Sprintf("%s (%d)%s", base, i, ext)
-		newPath := dir + "\\" + newName
-		if _, err := statFile(newPath); err != nil {
+		newPath := filepath.Join(dir, newName)
+		if _, err := os.Stat(newPath); err != nil {
 			return newPath
 		}
 	}
 	return path
 }
 
-func filepathBase(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '\\' || path[i] == '/' {
-			return path[i+1:]
-		}
-	}
-	return path
-}
-
-func filepathExt(name string) string {
-	for i := len(name) - 1; i >= 0; i-- {
-		if name[i] == '.' {
-			return name[i:]
-		}
-	}
-	return ""
-}
-
-func statFile(path string) (interface{}, error) {
-	return nil, fmt.Errorf("not found")
-}
-
 func moveFile(src, dst string) error {
-	return fmt.Errorf("move not implemented - requires OS-specific rename")
+	srcDir := filepath.VolumeName(src) + filepath.Dir(src)
+	dstDir := filepath.VolumeName(dst) + filepath.Dir(dst)
+
+	if strings.EqualFold(srcDir, dstDir) {
+		return os.Rename(src, dst)
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		in.Close()
+		return fmt.Errorf("create dest dir: %w", err)
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		in.Close()
+		return fmt.Errorf("create dest: %w", err)
+	}
+
+	buf := make([]byte, 32*1024)
+	written := int64(0)
+	for {
+		n, readErr := in.Read(buf)
+		if n > 0 {
+			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+				out.Close()
+				in.Close()
+				os.Remove(dst)
+				return fmt.Errorf("write dest: %w", writeErr)
+			}
+			written += int64(n)
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	srcInfo, err := os.Stat(src)
+	if err == nil && written != srcInfo.Size() {
+		os.Remove(dst)
+		return fmt.Errorf("copy verification failed: wrote %d, expected %d", written, srcInfo.Size())
+	}
+
+	if err := out.Sync(); err != nil {
+		slog.Warn("sync dest file failed", "path", dst, "error", err)
+	}
+
+	if err := out.Close(); err != nil {
+		os.Remove(dst)
+		return fmt.Errorf("close dest: %w", err)
+	}
+	if err := in.Close(); err != nil {
+		slog.Warn("close source file failed", "path", src, "error", err)
+	}
+
+	if err := os.Remove(src); err != nil {
+		slog.Warn("failed to remove source after copy", "path", src, "error", err)
+	}
+
+	return nil
 }
 
 func (c *AppCommands) ScanLibrary(libraryID int64) error {
@@ -390,9 +537,37 @@ func (c *AppCommands) ScanLibrary(libraryID int64) error {
 	if err != nil || lib == nil {
 		return fmt.Errorf("library not found: %d", libraryID)
 	}
-	go c.scanSvc.ScanLibrary(lib, nil, func(p scanner.ScanProgress) {
-		slog.Info("scan progress", "library", lib.Name, "scanned", p.ScannedCount, "added", p.AddedCount)
-	})
+	if !lib.IsEnabled {
+		return fmt.Errorf("library is disabled: %d", libraryID)
+	}
+
+	excludedDirs := c.GetExcludedDirs(libraryID)
+
+	go func() {
+		if err := c.scanSvc.ScanLibrary(lib, excludedDirs, func(p scanner.ScanProgress) {
+			slog.Info("scan progress",
+				"library", lib.Name,
+				"scanned", p.ScannedCount,
+				"added", p.AddedCount,
+				"updated", p.UpdatedCount,
+				"skipped", p.SkippedCount,
+				"failed", p.FailedCount,
+				"done", p.IsDone,
+			)
+			if c.ctx != nil {
+				runtime.EventsEmit(c.ctx, "scan:progress", p)
+			}
+		}); err != nil {
+			slog.Error("scan failed", "library", lib.Name, "error", err)
+			if c.ctx != nil {
+				runtime.EventsEmit(c.ctx, "scan:progress", scanner.ScanProgress{
+					LibraryID:    lib.ID,
+					IsDone:       true,
+					FailedCount:  1,
+				})
+			}
+		}
+	}()
 	return nil
 }
 
@@ -428,16 +603,30 @@ func (c *AppCommands) DeleteTag(id int64) error {
 }
 
 type PostDTO struct {
-	ID          int64    `json:"id"`
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Hashtags    string   `json:"hashtags"`
-	Status      string   `json:"status"`
-	ScheduledAt string   `json:"scheduledAt,omitempty"`
-	PublishedAt string   `json:"publishedAt,omitempty"`
-	AssetIDs    []int64  `json:"assetIds,omitempty"`
-	CreatedAt   string   `json:"createdAt"`
-	UpdatedAt   string   `json:"updatedAt"`
+	ID          int64   `json:"id"`
+	Title       string  `json:"title"`
+	Body        string  `json:"body"`
+	Hashtags    string  `json:"hashtags"`
+	Status      string  `json:"status"`
+	ScheduledAt string  `json:"scheduledAt,omitempty"`
+	PublishedAt string  `json:"publishedAt,omitempty"`
+	AssetIDs    []int64 `json:"assetIds,omitempty"`
+	CreatedAt   string  `json:"createdAt"`
+	UpdatedAt   string  `json:"updatedAt"`
+}
+
+type PostTargetDTO struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+type PostAccountDTO struct {
+	ID                int64  `json:"id"`
+	PostTargetID      int64  `json:"postTargetId"`
+	DisplayName       string `json:"displayName"`
+	AccountIdentifier string `json:"accountIdentifier"`
+	IsActive          bool   `json:"isActive"`
 }
 
 func (c *AppCommands) ListPosts(offset, limit int) []PostDTO {
@@ -498,6 +687,37 @@ func (c *AppCommands) CreatePostDraft(title, body, hashtags string) *PostDTO {
 	return &dto
 }
 
+func (c *AppCommands) UpdatePost(id int64, title, body, hashtags, status string) *PostDTO {
+	p, err := c.postRepo.GetByID(id)
+	if err != nil || p == nil {
+		slog.Error("UpdatePost: not found", "id", id)
+		return nil
+	}
+	p.Title = title
+	p.Body = body
+	p.Hashtags = hashtags
+	p.Status = domain.PostStatus(status)
+	if err := c.postRepo.Update(p); err != nil {
+		slog.Error("UpdatePost", "error", err)
+		return nil
+	}
+	updated, err := c.postRepo.GetByID(id)
+	if err != nil || updated == nil {
+		slog.Error("UpdatePost: re-fetch failed", "id", id, "error", err)
+		return nil
+	}
+	dto := PostDTO{
+		ID:        updated.ID,
+		Title:     updated.Title,
+		Body:      updated.Body,
+		Hashtags:  updated.Hashtags,
+		Status:    string(updated.Status),
+		CreatedAt: updated.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: updated.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+	return &dto
+}
+
 func (c *AppCommands) AttachAssetsToPost(postID int64, assetIDs []int64) error {
 	return c.postRepo.AttachAssets(postID, assetIDs)
 }
@@ -513,6 +733,8 @@ func (c *AppCommands) GetPostsByAsset(assetID int64) []PostDTO {
 		dtos[i] = PostDTO{
 			ID:        p.ID,
 			Title:     p.Title,
+			Body:      p.Body,
+			Hashtags:  p.Hashtags,
 			Status:    string(p.Status),
 			CreatedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			UpdatedAt: p.UpdatedAt.Format("2006-01-02T15:04:05Z"),
@@ -521,15 +743,14 @@ func (c *AppCommands) GetPostsByAsset(assetID int64) []PostDTO {
 	return dtos
 }
 
-type PostTargetDTO struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+func (c *AppCommands) DeletePost(id int64) error {
+	return c.postRepo.Delete(id)
 }
 
 func (c *AppCommands) ListPostTargets() []PostTargetDTO {
 	targets, err := c.targetRepo.List()
 	if err != nil {
+		slog.Error("ListPostTargets", "error", err)
 		return nil
 	}
 	dtos := make([]PostTargetDTO, len(targets))
@@ -542,13 +763,52 @@ func (c *AppCommands) ListPostTargets() []PostTargetDTO {
 func (c *AppCommands) CreatePostTarget(name, kind string) *PostTargetDTO {
 	id, err := c.targetRepo.Create(name, kind)
 	if err != nil {
+		slog.Error("CreatePostTarget", "error", err)
 		return nil
 	}
 	return &PostTargetDTO{ID: id, Name: name, Kind: kind}
 }
 
-func (c *AppCommands) DeletePost(id int64) error {
-	return c.postRepo.Delete(id)
+func (c *AppCommands) DeletePostTarget(id int64) error {
+	return c.targetRepo.Delete(id)
+}
+
+func (c *AppCommands) ListPostAccounts() []PostAccountDTO {
+	accounts, err := c.accountRepo.List()
+	if err != nil {
+		slog.Error("ListPostAccounts", "error", err)
+		return nil
+	}
+	dtos := make([]PostAccountDTO, len(accounts))
+	for i, a := range accounts {
+		dtos[i] = PostAccountDTO{
+			ID:                a.ID,
+			PostTargetID:      a.PostTargetID,
+			DisplayName:       a.DisplayName,
+			AccountIdentifier: a.AccountIdentifier,
+			IsActive:          a.IsActive,
+		}
+	}
+	return dtos
+}
+
+func (c *AppCommands) CreatePostAccount(targetID int64, displayName, identifier string) *PostAccountDTO {
+	id, err := c.accountRepo.Create(targetID, displayName, identifier)
+	if err != nil {
+		slog.Error("CreatePostAccount", "error", err)
+		return nil
+	}
+	return &PostAccountDTO{
+		ID:                id,
+		PostTargetID:      targetID,
+		DisplayName:       displayName,
+		AccountIdentifier: identifier,
+		IsActive:          true,
+	}
+}
+
+func (c *AppCommands) DeletePostAccount(id int64) error {
+	return c.accountRepo.Delete(id)
 }
 
 func (c *AppCommands) GetSetting(key string) string {
@@ -580,9 +840,16 @@ func (c *AppCommands) GetAppBootstrap() map[string]interface{} {
 		}
 	}
 
+	tags, _ := c.tagRepo.List()
+	tagDTOs := make([]TagDTO, len(tags))
+	for i, t := range tags {
+		tagDTOs[i] = TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
+	}
+
 	return map[string]interface{}{
 		"libraries": libDTOs,
 		"settings":  settings,
+		"tags":      tagDTOs,
 	}
 }
 
