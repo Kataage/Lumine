@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext } from "react";
+import React, { useState, useCallback, createContext, useContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar, Toolbar, WelcomeScreen } from "./components/Sidebar";
 import { AssetGrid } from "./components/AssetGrid";
@@ -30,7 +30,7 @@ type SidebarView = "libraries" | "tags" | "posts" | "settings";
 interface AppState {
   libraries: LibraryDTO[];
   selectedLibraryId: number | null;
-  selectedAssets: number[];
+  selectedAssets: Set<number>;
   lastSelectedIndex: number | null;
   detailAsset: AssetDTO | null;
   detailOpen: boolean;
@@ -49,7 +49,7 @@ interface AppState {
 const defaultState: AppState = {
   libraries: [],
   selectedLibraryId: null,
-  selectedAssets: [],
+  selectedAssets: new Set<number>(),
   lastSelectedIndex: null,
   detailAsset: null,
   detailOpen: false,
@@ -97,7 +97,7 @@ export default function App() {
   const handleSelectAsset = useCallback(
     (asset: AssetDTO, multi: boolean, range: boolean) => {
       setState((s) => {
-        let sel: number[];
+        let sel: Set<number>;
         let lastIdx: number | null = null;
 
         const currentIdx = s.allAssetIds.indexOf(asset.id);
@@ -106,15 +106,18 @@ export default function App() {
           const start = Math.min(s.lastSelectedIndex, currentIdx);
           const end = Math.max(s.lastSelectedIndex, currentIdx);
           const rangeIds = s.allAssetIds.slice(start, end + 1);
-          sel = multi ? [...new Set([...s.selectedAssets, ...rangeIds])] : rangeIds;
+          sel = multi ? new Set([...s.selectedAssets, ...rangeIds]) : new Set(rangeIds);
           lastIdx = currentIdx;
         } else if (multi) {
-          sel = s.selectedAssets.includes(asset.id)
-            ? s.selectedAssets.filter((id) => id !== asset.id)
-            : [...s.selectedAssets, asset.id];
+          sel = new Set(s.selectedAssets);
+          if (sel.has(asset.id)) {
+            sel.delete(asset.id);
+          } else {
+            sel.add(asset.id);
+          }
           lastIdx = currentIdx >= 0 ? currentIdx : s.lastSelectedIndex;
         } else {
-          sel = [asset.id];
+          sel = new Set([asset.id]);
           lastIdx = currentIdx >= 0 ? currentIdx : null;
         }
 
@@ -134,10 +137,14 @@ export default function App() {
     setState((s) => ({ ...s, detailOpen: false, detailAsset: null }));
   }, []);
 
+  const handleAssetsLoaded = useCallback((ids: number[]) => {
+    setState((s) => ({ ...s, allAssetIds: ids }));
+  }, []);
+
   const handleBulkRate = useCallback(async (rating: number) => {
-    if (state.selectedAssets.length === 0) return;
+    if (state.selectedAssets.size === 0) return;
     try {
-      await bulkUpdateRating(state.selectedAssets, rating);
+      await bulkUpdateRating(Array.from(state.selectedAssets), rating);
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     } catch (err) {
       console.error("Bulk rate failed:", err);
@@ -145,9 +152,9 @@ export default function App() {
   }, [state.selectedAssets]);
 
   const handleBulkStatus = useCallback(async (status: string) => {
-    if (state.selectedAssets.length === 0) return;
+    if (state.selectedAssets.size === 0) return;
     try {
-      await bulkUpdateStatus(state.selectedAssets, status);
+      await bulkUpdateStatus(Array.from(state.selectedAssets), status);
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     } catch (err) {
       console.error("Bulk status failed:", err);
@@ -155,9 +162,9 @@ export default function App() {
   }, [state.selectedAssets]);
 
   const handleBulkFavorite = useCallback(async (favorite: boolean) => {
-    if (state.selectedAssets.length === 0) return;
+    if (state.selectedAssets.size === 0) return;
     try {
-      await bulkUpdateFavorite(state.selectedAssets, favorite);
+      await bulkUpdateFavorite(Array.from(state.selectedAssets), favorite);
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     } catch (err) {
       console.error("Bulk favorite failed:", err);
@@ -165,9 +172,9 @@ export default function App() {
   }, [state.selectedAssets]);
 
   const handleBulkColorLabel = useCallback(async (label: string) => {
-    if (state.selectedAssets.length === 0) return;
+    if (state.selectedAssets.size === 0) return;
     try {
-      await bulkUpdateColorLabel(state.selectedAssets, label);
+      await bulkUpdateColorLabel(Array.from(state.selectedAssets), label);
       queryClient.invalidateQueries({ queryKey: ["assets"] });
     } catch (err) {
       console.error("Bulk color label failed:", err);
@@ -193,7 +200,7 @@ export default function App() {
 
             <div className="flex flex-1 min-h-0">
               <div className="flex-1 min-w-0">
-                <AssetGrid onSelectAsset={handleSelectAsset} />
+                <AssetGrid onSelectAsset={handleSelectAsset} onAssetsLoaded={handleAssetsLoaded} />
               </div>
 
               {state.detailOpen && state.detailAsset && (
@@ -204,15 +211,15 @@ export default function App() {
               )}
             </div>
 
-            {state.selectedAssets.length > 1 && (
-              <BulkActionsBar
-                count={state.selectedAssets.length}
-                onRate={handleBulkRate}
-                onStatus={handleBulkStatus}
-                onFavorite={handleBulkFavorite}
-                onColorLabel={handleBulkColorLabel}
-                onClear={() => setState((s) => ({ ...s, selectedAssets: [], lastSelectedIndex: null }))}
-              />
+        {state.selectedAssets.size > 1 && (
+        <BulkActionsBar
+          count={state.selectedAssets.size}
+          onRate={handleBulkRate}
+          onStatus={handleBulkStatus}
+          onFavorite={handleBulkFavorite}
+          onColorLabel={handleBulkColorLabel}
+          onClear={() => setState((s) => ({ ...s, selectedAssets: new Set(), lastSelectedIndex: null }))}
+        />
             )}
           </div>
         </div>

@@ -36,8 +36,7 @@ func setupCommands(t *testing.T) *AppCommands {
 		db.NewJobLogRepo(database),
 	)
 	scanSvc.SetSettingRepo(db.NewAppSettingRepo(database))
-	thumbSvc := &scanner.ThumbnailService{}
-	return New(database, scanSvc, thumbSvc)
+	return New(database, scanSvc)
 }
 
 func createTestLibrary(t *testing.T, cmd *AppCommands, name, rootPath string) *LibraryDTO {

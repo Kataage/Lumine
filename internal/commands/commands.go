@@ -26,12 +26,11 @@ type AppCommands struct {
 	accountRepo *db.PostAccountRepo
 	jobLogRepo  *db.JobLogRepo
 	settingRepo *db.AppSettingRepo
-	scanSvc     *scanner.Scanner
-	thumbSvc    *scanner.ThumbnailService
-	ctx         context.Context
+	scanSvc    *scanner.Scanner
+	ctx        context.Context
 }
 
-func New(database *db.DB, scanSvc *scanner.Scanner, thumbSvc *scanner.ThumbnailService) *AppCommands {
+func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 	settingRepo := db.NewAppSettingRepo(database)
 	scanSvc.SetSettingRepo(settingRepo)
 	return &AppCommands{
@@ -46,7 +45,6 @@ func New(database *db.DB, scanSvc *scanner.Scanner, thumbSvc *scanner.ThumbnailS
 		jobLogRepo:  db.NewJobLogRepo(database),
 		settingRepo: settingRepo,
 		scanSvc:     scanSvc,
-		thumbSvc:    thumbSvc,
 	}
 }
 
