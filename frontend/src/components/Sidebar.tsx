@@ -94,6 +94,7 @@ export function Sidebar() {
       }
     } catch (err) {
       console.error("Add library failed:", err);
+      alert("フォルダーの選択に失敗しました: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
