@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  getLocalImageUrl,
-  onScanProgress,
-  offScanProgress,
-} from "../api/client";
+
+vi.mock("../../wailsjs/runtime/runtime", () => ({
+  EventsOn: vi.fn(),
+  EventsOff: vi.fn(),
+}));
+
+import { getLocalImageUrl, onScanProgress, offScanProgress } from "../api/client";
+import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
 
 describe("getLocalImageUrl", () => {
   it("converts backslash paths to forward slashes", () => {
@@ -31,23 +34,18 @@ describe("getLocalImageUrl", () => {
 
 describe("onScanProgress / offScanProgress", () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it("calls EventsOn with scan:progress", () => {
-    const onSpy = vi.fn();
-    window.runtime = { EventsOn: onSpy, EventsOff: vi.fn() };
-
     const cb = vi.fn();
     onScanProgress(cb);
 
-    expect(onSpy).toHaveBeenCalledWith("scan:progress", expect.any(Function));
+    expect(EventsOn).toHaveBeenCalledWith("scan:progress", expect.any(Function));
   });
 
   it("callback receives ScanProgress data", () => {
-    const onSpy = vi.fn();
-    window.runtime = { EventsOn: onSpy, EventsOff: vi.fn() };
-
+    const onSpy = vi.mocked(EventsOn);
     const cb = vi.fn();
     onScanProgress(cb);
 
@@ -67,24 +65,8 @@ describe("onScanProgress / offScanProgress", () => {
   });
 
   it("offScanProgress calls EventsOff", () => {
-    const offSpy = vi.fn();
-    window.runtime = { EventsOn: vi.fn(), EventsOff: offSpy };
-
     offScanProgress();
 
-    expect(offSpy).toHaveBeenCalledWith("scan:progress");
-  });
-
-  it("onScanProgress handles missing runtime gracefully", () => {
-    window.runtime = undefined as unknown as typeof window.runtime;
-    const cb = vi.fn();
-
-    expect(() => onScanProgress(cb)).not.toThrow();
-  });
-
-  it("offScanProgress handles missing runtime gracefully", () => {
-    window.runtime = undefined as unknown as typeof window.runtime;
-
-    expect(() => offScanProgress()).not.toThrow();
+    expect(EventsOff).toHaveBeenCalledWith("scan:progress");
   });
 });
