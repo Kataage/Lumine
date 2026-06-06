@@ -29,6 +29,23 @@ export interface AssetDTO {
   colorLabel?: string;
   noteContent?: string;
   tags?: TagDTO[];
+  cameraModel?: string;
+  lensModel?: string;
+  focalLength?: string;
+  aperture?: string;
+  shutterSpeed?: string;
+  iso?: number;
+  exifDate?: string;
+  gpsLatitude?: string;
+  gpsLongitude?: string;
+  hashBlake3?: string;
+}
+
+export interface FolderDTO {
+  id: number;
+  libraryId: number;
+  path: string;
+  parentPath?: string;
 }
 
 export interface TagDTO {
@@ -92,6 +109,17 @@ export interface ImageInfo {
   folderPath: string;
   extension: string;
   fileSize: number;
+}
+
+export interface CopyRequest {
+  assetIds: number[];
+  targetFolder: string;
+}
+
+export interface CopyResult {
+  copiedCount: number;
+  failedIds: number[];
+  errors: string[];
 }
 
 export interface ScanResult {
@@ -173,6 +201,9 @@ declare global {
           SetSetting: (key: string, valueJSON: string) => Promise<void>;
           GetAppBootstrap: () => Promise<Record<string, unknown>>;
           ScanFolder: (folderPath: string, offset: number, limit: number) => Promise<ScanResult | null>;
+          GetFolderTree: (libraryId: number) => Promise<FolderDTO[]>;
+          BulkDeleteAssets: (ids: number[]) => Promise<void>;
+          CopyAssets: (req: CopyRequest) => Promise<CopyResult>;
         };
       };
     };
@@ -378,4 +409,16 @@ export function offScanProgress(): void {
 export function getLocalImageUrl(filePath: string): string {
   const normalizedPath = filePath.replace(/\\/g, "/");
   return `/local/${normalizedPath}`;
+}
+
+export async function getFolderTree(libraryId: number): Promise<FolderDTO[]> {
+  return cmd().GetFolderTree(libraryId);
+}
+
+export async function bulkDeleteAssets(ids: number[]): Promise<void> {
+  return cmd().BulkDeleteAssets(ids);
+}
+
+export async function copyAssets(req: CopyRequest): Promise<CopyResult> {
+  return cmd().CopyAssets(req);
 }

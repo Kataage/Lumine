@@ -185,24 +185,42 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
           <p className="text-xs text-muted-foreground truncate">{asset.filePath}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div>
-            <span className="text-muted-foreground">Size</span>
-            <p className="text-foreground">{formatFileSize(asset.fileSize)}</p>
-          </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <span className="text-muted-foreground">Size</span>
+          <p className="text-foreground">{formatFileSize(asset.fileSize)}</p>
+        </div>
+        {asset.width > 0 && asset.height > 0 && (
           <div>
             <span className="text-muted-foreground">Dimensions</span>
-            <p className="text-foreground">{asset.width}×{asset.height}</p>
+            <p className="text-foreground">{asset.width} × {asset.height}</p>
           </div>
-          <div>
-            <span className="text-muted-foreground">Modified</span>
-            <p className="text-foreground">{asset.modifiedAtFs ? new Date(asset.modifiedAtFs).toLocaleDateString() : "-"}</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Type</span>
-            <p className="text-foreground">{asset.extension.toUpperCase()}</p>
+        )}
+        <div>
+          <span className="text-muted-foreground">Modified</span>
+          <p className="text-foreground">{asset.modifiedAtFs ? new Date(asset.modifiedAtFs).toLocaleDateString() : "-"}</p>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Type</span>
+          <p className="text-foreground">{asset.extension.toUpperCase()}</p>
+        </div>
+      </div>
+
+      {(asset.cameraModel || asset.lensModel || asset.focalLength || asset.aperture || asset.shutterSpeed || asset.iso || asset.exifDate || asset.gpsLatitude) && (
+        <div className="border-t border-zinc-700/50 pt-3 mt-1">
+          <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">EXIF</h4>
+          <div className="space-y-1 text-xs">
+            {asset.cameraModel && <div className="flex justify-between"><span className="text-zinc-500">Camera</span><span className="text-zinc-300">{asset.cameraModel}</span></div>}
+            {asset.lensModel && <div className="flex justify-between"><span className="text-zinc-500">Lens</span><span className="text-zinc-300">{asset.lensModel}</span></div>}
+            {asset.focalLength && <div className="flex justify-between"><span className="text-zinc-500">Focal Length</span><span className="text-zinc-300">{asset.focalLength}</span></div>}
+            {asset.aperture && <div className="flex justify-between"><span className="text-zinc-500">Aperture</span><span className="text-zinc-300">{asset.aperture}</span></div>}
+            {asset.shutterSpeed && <div className="flex justify-between"><span className="text-zinc-500">Shutter</span><span className="text-zinc-300">{asset.shutterSpeed}</span></div>}
+            {asset.iso ? <div className="flex justify-between"><span className="text-zinc-500">ISO</span><span className="text-zinc-300">{asset.iso}</span></div> : null}
+            {asset.exifDate && <div className="flex justify-between"><span className="text-zinc-500">Date</span><span className="text-zinc-300">{asset.exifDate}</span></div>}
+            {asset.gpsLatitude && <div className="flex justify-between"><span className="text-zinc-500">GPS</span><span className="text-zinc-300">{asset.gpsLatitude}, {asset.gpsLongitude}</span></div>}
           </div>
         </div>
+      )}
 
         <div className="space-y-1.5">
           <span className="text-xs text-muted-foreground">Color Label</span>

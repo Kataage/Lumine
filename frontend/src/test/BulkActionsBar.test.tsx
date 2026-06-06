@@ -11,8 +11,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     expect(screen.getByText("5 selected")).toBeInTheDocument();
@@ -25,8 +26,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     expect(screen.getByText("Rate:")).toBeInTheDocument();
@@ -39,8 +41,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     expect(screen.getByText("Status:")).toBeInTheDocument();
@@ -57,8 +60,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     expect(screen.getByText("Favorite")).toBeInTheDocument();
@@ -71,8 +75,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     expect(screen.getByText("Clear selection")).toBeInTheDocument();
@@ -86,8 +91,9 @@ describe("BulkActionsBar", () => {
         onRate={vi.fn()}
         onStatus={onStatus}
         onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onClear={vi.fn()}
+  onColorLabel={vi.fn()}
+          onDelete={vi.fn()}
+          onClear={vi.fn()}
       />
     );
     const user = userEvent.setup();
@@ -104,11 +110,45 @@ describe("BulkActionsBar", () => {
         onStatus={vi.fn()}
         onFavorite={vi.fn()}
         onColorLabel={vi.fn()}
+        onDelete={vi.fn()}
         onClear={onClear}
       />
     );
     const user = userEvent.setup();
     await user.click(screen.getByText("Clear selection"));
     expect(onClear).toHaveBeenCalledOnce();
+  });
+
+  it("renders delete button", () => {
+    render(
+      <BulkActionsBar
+        count={2}
+        onRate={vi.fn()}
+        onStatus={vi.fn()}
+        onFavorite={vi.fn()}
+        onColorLabel={vi.fn()}
+        onDelete={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+    expect(screen.getByText("削除")).toBeInTheDocument();
+  });
+
+  it("calls onDelete when delete button clicked", async () => {
+    const onDelete = vi.fn();
+    render(
+      <BulkActionsBar
+        count={2}
+        onRate={vi.fn()}
+        onStatus={vi.fn()}
+        onFavorite={vi.fn()}
+        onColorLabel={vi.fn()}
+        onDelete={onDelete}
+        onClear={vi.fn()}
+      />
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByText("削除"));
+    expect(onDelete).toHaveBeenCalledOnce();
   });
 });

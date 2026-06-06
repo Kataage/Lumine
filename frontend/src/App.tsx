@@ -12,6 +12,7 @@ import {
   bulkUpdateStatus,
   bulkUpdateFavorite,
   bulkUpdateColorLabel,
+  bulkDeleteAssets,
 } from "./api/client";
 
 const queryClient = new QueryClient({
@@ -25,7 +26,7 @@ const queryClient = new QueryClient({
 });
 
 type ViewMode = "grid" | "list";
-type SidebarView = "libraries" | "tags" | "posts" | "settings";
+type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
 
 interface AppState {
   libraries: LibraryDTO[];
@@ -181,6 +182,24 @@ export default function App() {
     }
   }, [state.selectedAssets]);
 
+  const handleBulkDelete = useCallback(async () => {
+    const ids = Array.from(state.selectedAssets);
+    if (ids.length === 0) return;
+    if (!confirm(`${ids.length}件のアセットをデータベースから削除しますか？`)) return;
+    try {
+      await bulkDeleteAssets(ids);
+      setState(s => ({
+        ...s,
+        selectedAssets: new Set<number>(),
+        detailOpen: false,
+        detailAsset: null,
+      }));
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+    } catch (e) {
+      console.error("bulk delete failed:", e);
+    }
+  }, [state.selectedAssets, setState, queryClient]);
+
   if (state.libraries.length === 0 && !state.selectedLibraryId) {
     return (
       <QueryClientProvider client={queryClient}>
@@ -218,6 +237,7 @@ export default function App() {
           onStatus={handleBulkStatus}
           onFavorite={handleBulkFavorite}
           onColorLabel={handleBulkColorLabel}
+          onDelete={handleBulkDelete}
           onClear={() => setState((s) => ({ ...s, selectedAssets: new Set(), lastSelectedIndex: null }))}
         />
             )}
@@ -234,6 +254,7 @@ export function BulkActionsBar({
   onStatus,
   onFavorite,
   onColorLabel,
+  onDelete,
   onClear,
 }: {
   count: number;
@@ -241,6 +262,7 @@ export function BulkActionsBar({
   onStatus: (status: string) => void;
   onFavorite: (favorite: boolean) => void;
   onColorLabel: (label: string) => void;
+  onDelete: () => void;
   onClear: () => void;
 }) {
   return (
@@ -296,12 +318,21 @@ export function BulkActionsBar({
         onClick={() => onFavorite(true)}
         className="text-xs px-2 py-0.5 bg-muted text-muted-foreground border border-border rounded hover:bg-accent transition-colors"
       >
-        Favorite
-      </button>
+      Favorite
+    </button>
 
-      <div className="flex-1" />
+    <div className="h-4 w-px bg-border" />
 
-      <button
+    <button
+      className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
+      onClick={onDelete}
+    >
+      削除
+    </button>
+
+    <div className="flex-1" />
+
+    <button
         onClick={onClear}
         className="text-xs px-2 py-0.5 text-muted-foreground hover:text-foreground transition-colors"
       >
