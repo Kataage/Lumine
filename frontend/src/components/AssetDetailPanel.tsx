@@ -73,8 +73,9 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
     async (rating: number) => {
       if (!asset) return;
       try {
-        await updateAssetRating(asset.id, rating);
-        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      await updateAssetRating(asset.id, rating);
+      queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
       } catch (err) {
         console.error("Rate failed:", err);
       }
@@ -86,8 +87,9 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
     async (status: string) => {
       if (!asset) return;
       try {
-        await updateAssetStatus(asset.id, status);
-        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      await updateAssetStatus(asset.id, status);
+      queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
       } catch (err) {
         console.error("Status update failed:", err);
       }
@@ -99,8 +101,9 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
     async (fav: boolean) => {
       if (!asset) return;
       try {
-        await toggleAssetFavorite(asset.id, fav);
-        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      await toggleAssetFavorite(asset.id, fav);
+      queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
       } catch (err) {
         console.error("Favorite failed:", err);
       }
@@ -112,8 +115,9 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
     async (label: string) => {
       if (!asset) return;
       try {
-        await updateAssetColorLabel(asset.id, label);
-        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      await updateAssetColorLabel(asset.id, label);
+      queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
       } catch (err) {
         console.error("Color label failed:", err);
       }
@@ -129,8 +133,9 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
         ? current.filter((id) => id !== tagId)
         : [...current, tagId];
       try {
-        await setAssetTags(asset.id, next);
-        queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      await setAssetTags(asset.id, next);
+      queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
       } catch (err) {
         console.error("Tag toggle failed:", err);
       }

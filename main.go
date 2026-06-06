@@ -71,6 +71,7 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ct, ok := contentTypes[ext]; ok {
 		w.Header().Set("Content-Type", ct)
 	}
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 
 	http.ServeFile(w, r, absPath)
 }
@@ -94,9 +95,7 @@ func main() {
 		db.NewLibraryRepo(database),
 		db.NewJobLogRepo(database),
 	)
-	thumbSvc := scanner.NewThumbnailService(filepath.Join(appDir, "thumb-cache"))
-
-	cmd := commands.New(database, scanSvc, thumbSvc)
+	cmd := commands.New(database, scanSvc)
 
 	err = wails.Run(&options.App{
 		Title:  "Lumine",

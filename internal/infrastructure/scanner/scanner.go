@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
@@ -117,6 +116,41 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 
 	exts := s.getExtensions()
 
+	existingMap, err := s.assetRepo.GetAllFilePathsMap(library.ID)
+	if err != nil {
+		return fmt.Errorf("preload existing assets: %w", err)
+	}
+
+	var newAssets []*domain.Asset
+	var updatedAssets []*domain.Asset
+	const batchSize = 500
+
+	flushNew := func() {
+		if len(newAssets) == 0 {
+			return
+		}
+		if err := s.assetRepo.CreateBatch(newAssets); err != nil {
+			slog.Warn("error batch creating assets", "error", err)
+			progress.FailedCount += len(newAssets)
+		} else {
+			progress.AddedCount += len(newAssets)
+		}
+		newAssets = newAssets[:0]
+	}
+
+	flushUpdated := func() {
+		if len(updatedAssets) == 0 {
+			return
+		}
+		if err := s.assetRepo.UpdateBatch(updatedAssets); err != nil {
+			slog.Warn("error batch updating assets", "error", err)
+			progress.FailedCount += len(updatedAssets)
+		} else {
+			progress.UpdatedCount += len(updatedAssets)
+		}
+		updatedAssets = updatedAssets[:0]
+	}
+
 	err = filepath.Walk(library.RootPath, func(path string, info os.FileInfo, walkErr error) error {
 		if s.cancelled.Load() {
 			return filepath.SkipDir
@@ -142,15 +176,11 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 
 		progress.ScannedCount++
 
-		existing, err := s.assetRepo.GetByFilePath(path)
-		if err != nil {
-			slog.Warn("error checking existing asset", "path", path, "error", err)
-			progress.FailedCount++
-			return nil
-		}
+		existing := existingMap[path]
 
 		modTime := info.ModTime()
 		if existing != nil {
+			delete(existingMap, path)
 			if !existing.ModifiedAtFS.IsZero() && existing.ModifiedAtFS.Equal(modTime) && existing.FileSize == info.Size() {
 				progress.SkippedCount++
 				if progressCB != nil && progress.ScannedCount%50 == 0 {
@@ -161,11 +191,9 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 			existing.FileSize = info.Size()
 			existing.ModifiedAtFS = modTime
 			existing.ThumbStatus = domain.ThumbStatusNone
-			if err := s.assetRepo.Update(existing); err != nil {
-				slog.Warn("error updating asset", "path", path, "error", err)
-				progress.FailedCount++
-			} else {
-				progress.UpdatedCount++
+			updatedAssets = append(updatedAssets, existing)
+			if len(updatedAssets) >= batchSize {
+				flushUpdated()
 			}
 			return nil
 		}
@@ -183,11 +211,9 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 			StatusLabel: domain.StatusUnsorted,
 		}
 
-		if _, err := s.assetRepo.Create(asset); err != nil {
-			slog.Warn("error creating asset", "path", path, "error", err)
-			progress.FailedCount++
-		} else {
-			progress.AddedCount++
+		newAssets = append(newAssets, asset)
+		if len(newAssets) >= batchSize {
+			flushNew()
 		}
 
 		if progressCB != nil && progress.ScannedCount%50 == 0 {
@@ -196,6 +222,15 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 
 		return nil
 	})
+
+	flushNew()
+	flushUpdated()
+
+	for _, existing := range existingMap {
+		if err := s.assetRepo.Delete(existing.ID); err != nil {
+			slog.Warn("error deleting removed asset", "path", existing.FilePath, "error", err)
+		}
+	}
 
 	if s.cancelled.Load() {
 		_ = s.jobLogRepo.MarkCancelled(jobID)
@@ -295,25 +330,8 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 	}
 
 	return &FolderScanResult{
-		Images:     allImages[offset:end],
+		Images: allImages[offset:end],
 		TotalCount: totalCount,
-		HasMore:    end < totalCount,
+		HasMore: end < totalCount,
 	}, nil
-}
-
-type ThumbnailService struct {
-	cacheDir string
-}
-
-func NewThumbnailService(cacheDir string) *ThumbnailService {
-	return &ThumbnailService{cacheDir: cacheDir}
-}
-
-func (t *ThumbnailService) GetThumbPath(assetID int64, modifiedAt time.Time, size int) string {
-	return filepath.Join(t.cacheDir, strconv.FormatInt(assetID, 10)+"_"+modifiedAt.Format("20060102150405")+"_"+strconv.Itoa(size)+".webp")
-}
-
-func (t *ThumbnailService) GenerateThumbnail(srcPath string, destPath string, maxSize int) error {
-	slog.Info("thumbnail generation requested", "src", srcPath, "dest", destPath, "maxSize", maxSize)
-	return fmt.Errorf("thumbnail generation requires native image decoder - not available in current build")
 }

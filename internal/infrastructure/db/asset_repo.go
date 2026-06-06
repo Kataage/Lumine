@@ -251,68 +251,80 @@ func (r *AssetRepo) BulkUpdateRating(ids []int64, rating int) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.Exec("UPDATE assets SET rating = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", rating, id); err != nil {
-			return err
+	placeholders := ""
+	args := []interface{}{rating}
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
 		}
+		placeholders += "?"
+		args = append(args, id)
 	}
-	return tx.Commit()
+	_, err := r.db.Exec(
+		fmt.Sprintf("UPDATE assets SET rating = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (%s)", placeholders),
+		args...,
+	)
+	return err
 }
 
 func (r *AssetRepo) BulkUpdateStatus(ids []int64, status domain.StatusLabel) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.Exec("UPDATE assets SET status_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, id); err != nil {
-			return err
+	placeholders := ""
+	args := []interface{}{status}
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
 		}
+		placeholders += "?"
+		args = append(args, id)
 	}
-	return tx.Commit()
+	_, err := r.db.Exec(
+		fmt.Sprintf("UPDATE assets SET status_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (%s)", placeholders),
+		args...,
+	)
+	return err
 }
 
 func (r *AssetRepo) BulkUpdateFavorite(ids []int64, favorite bool) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.Exec("UPDATE assets SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", favorite, id); err != nil {
-			return err
+	placeholders := ""
+	args := []interface{}{favorite}
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
 		}
+		placeholders += "?"
+		args = append(args, id)
 	}
-	return tx.Commit()
+	_, err := r.db.Exec(
+		fmt.Sprintf("UPDATE assets SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (%s)", placeholders),
+		args...,
+	)
+	return err
 }
 
 func (r *AssetRepo) BulkUpdateColorLabel(ids []int64, label string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.Exec("UPDATE assets SET color_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", label, id); err != nil {
-			return err
+	placeholders := ""
+	args := []interface{}{label}
+	for i, id := range ids {
+		if i > 0 {
+			placeholders += ","
 		}
+		placeholders += "?"
+		args = append(args, id)
 	}
-	return tx.Commit()
+	_, err := r.db.Exec(
+		fmt.Sprintf("UPDATE assets SET color_label = ?, updated_at = CURRENT_TIMESTAMP WHERE id IN (%s)", placeholders),
+		args...,
+	)
+	return err
 }
 
 func (r *AssetRepo) UpdateFilePath(id int64, newPath, newFolder, newName string) error {
@@ -321,4 +333,98 @@ func (r *AssetRepo) UpdateFilePath(id int64, newPath, newFolder, newName string)
 		newPath, newFolder, newName, id,
 	)
 	return err
+}
+
+func (r *AssetRepo) GetAllFilePathsMap(libraryID int64) (map[string]*domain.Asset, error) {
+	rows, err := r.db.Query(
+		"SELECT id, library_id, folder_path, file_name, file_path, extension, file_size, modified_at_fs, thumb_status, rating, status_label, is_favorite, color_label FROM assets WHERE library_id = ?",
+		libraryID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all file paths: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*domain.Asset)
+	for rows.Next() {
+		var a domain.Asset
+		var modifiedAtFS, colorLabel sql.NullString
+		if err := rows.Scan(
+			&a.ID, &a.LibraryID, &a.FolderPath, &a.FileName, &a.FilePath,
+			&a.Extension, &a.FileSize, &modifiedAtFS, &a.ThumbStatus,
+			&a.Rating, &a.StatusLabel, &a.IsFavorite, &colorLabel,
+		); err != nil {
+			return nil, fmt.Errorf("scan asset path: %w", err)
+		}
+		if modifiedAtFS.Valid {
+			a.ModifiedAtFS, _ = timeParse(modifiedAtFS.String)
+		}
+		if colorLabel.Valid {
+			a.ColorLabel = colorLabel.String
+		}
+		result[a.FilePath] = &a
+	}
+	return result, rows.Err()
+}
+
+func (r *AssetRepo) CreateBatch(assets []*domain.Asset) error {
+	if len(assets) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(
+		"INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, thumb_status, rating, status_label, is_favorite, color_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, a := range assets {
+		_, err := stmt.Exec(
+			a.LibraryID, a.FolderPath, a.FileName, a.FilePath, a.Extension, a.FileSize,
+			a.CreatedAtFS, a.ModifiedAtFS, a.Width, a.Height, a.MimeType,
+			a.ThumbStatus, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
+		)
+		if err != nil {
+			return fmt.Errorf("batch insert asset: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *AssetRepo) UpdateBatch(assets []*domain.Asset) error {
+	if len(assets) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(
+		"UPDATE assets SET folder_path = ?, file_name = ?, file_path = ?, file_size = ?, modified_at_fs = ?, width = ?, height = ?, rating = ?, status_label = ?, is_favorite = ?, color_label = ?, thumb_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, a := range assets {
+		_, err := stmt.Exec(
+			a.FolderPath, a.FileName, a.FilePath, a.FileSize, a.ModifiedAtFS,
+			a.Width, a.Height, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
+			a.ThumbStatus, a.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("batch update asset: %w", err)
+		}
+	}
+	return tx.Commit()
 }

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { listAssets, getLocalImageUrl } from "../api/client";
@@ -11,9 +11,10 @@ const GAP = 8;
 
 interface AssetGridProps {
   onSelectAsset: (asset: AssetDTO, multi: boolean, range: boolean) => void;
+  onAssetsLoaded: (ids: number[]) => void;
 }
 
-export function AssetGrid({ onSelectAsset }: AssetGridProps) {
+export function AssetGrid({ onSelectAsset, onAssetsLoaded }: AssetGridProps) {
   const { state } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -68,6 +69,10 @@ export function AssetGrid({ onSelectAsset }: AssetGridProps) {
   const assets = data?.pages.flatMap((p) => p.assets) ?? [];
   const totalCount = data?.pages[0]?.totalCount ?? 0;
   assetsRef.current = assets;
+
+  useEffect(() => {
+    onAssetsLoaded(assets.map((a) => a.id));
+  }, [assets, onAssetsLoaded]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -169,7 +174,7 @@ export function AssetGrid({ onSelectAsset }: AssetGridProps) {
                         key={asset.id}
                         asset={asset}
                         size={state.thumbnailSize}
-                        selected={state.selectedAssets.includes(asset.id)}
+                        selected={state.selectedAssets.has(asset.id)}
                         onSelect={onSelectAsset}
                         onDoubleClick={handleDoubleClick}
                       />
@@ -190,7 +195,7 @@ export function AssetGrid({ onSelectAsset }: AssetGridProps) {
                 <AssetListItem
                   key={asset.id}
                   asset={asset}
-                  selected={state.selectedAssets.includes(asset.id)}
+                  selected={state.selectedAssets.has(asset.id)}
                   onSelect={onSelectAsset}
                   onDoubleClick={handleDoubleClick}
                   style={{
@@ -330,7 +335,7 @@ interface AssetGridItemProps {
   onDoubleClick: (asset: AssetDTO) => void;
 }
 
-function AssetGridItem({ asset, size, selected, onSelect, onDoubleClick }: AssetGridItemProps) {
+const AssetGridItem = React.memo(function AssetGridItem({ asset, size, selected, onSelect, onDoubleClick }: AssetGridItemProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const src = getLocalImageUrl(asset.filePath);
@@ -399,7 +404,7 @@ function AssetGridItem({ asset, size, selected, onSelect, onDoubleClick }: Asset
       )}
     </div>
   );
-}
+});
 
 interface AssetListItemProps {
   asset: AssetDTO;
@@ -409,7 +414,7 @@ interface AssetListItemProps {
   style: React.CSSProperties;
 }
 
-function AssetListItem({ asset, selected, onSelect, onDoubleClick, style }: AssetListItemProps) {
+const AssetListItem = React.memo(function AssetListItem({ asset, selected, onSelect, onDoubleClick, style }: AssetListItemProps) {
   const src = getLocalImageUrl(asset.filePath);
 
   return (
@@ -451,7 +456,7 @@ function AssetListItem({ asset, selected, onSelect, onDoubleClick, style }: Asse
       </span>
     </div>
   );
-}
+});
 
 function colorLabelClass(label: string): string {
 	const map: Record<string, string> = {

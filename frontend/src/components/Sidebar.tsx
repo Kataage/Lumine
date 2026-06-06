@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
   selectFolder,
@@ -27,7 +28,7 @@ import {
   getSetting,
   setSetting,
 } from "../api/client";
-import type { ScanProgress, TagDTO, PostDTO, PostTargetDTO, PostAccountDTO } from "../api/client";
+import type { ScanProgress, PostDTO, PostTargetDTO, PostAccountDTO } from "../api/client";
 
 export function WelcomeScreen({ onSelectFolder }: { onSelectFolder: () => void }) {
   return (
@@ -247,26 +248,26 @@ export function Sidebar() {
 }
 
 function TagsPanel() {
-  const [tags, setTags] = useState<TagDTO[]>([]);
+  const queryClient = useQueryClient();
+  const { data: tags = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: listTags,
+  });
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#6366f1");
-
-  useEffect(() => {
-    listTags().then(setTags);
-  }, []);
 
   const handleCreate = async () => {
     if (!newTagName.trim()) return;
     const t = await createTag(newTagName.trim(), newTagColor);
     if (t) {
-      setTags((prev) => [...prev, t]);
+      queryClient.invalidateQueries({ queryKey: ["tags"] });
       setNewTagName("");
     }
   };
 
   const handleDelete = async (id: number) => {
     await deleteTag(id);
-    setTags((prev) => prev.filter((t) => t.id !== id));
+    queryClient.invalidateQueries({ queryKey: ["tags"] });
   };
 
   return (
@@ -542,6 +543,20 @@ function SettingsPanel() {
 
 export function Toolbar() {
   const { state, setState } = useApp();
+  const [localSearch, setLocalSearch] = useState(state.searchQuery);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    setLocalSearch(state.searchQuery);
+  }, [state.searchQuery]);
+
+  const handleSearchChange = (value: string) => {
+    setLocalSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setState((s) => ({ ...s, searchQuery: value }));
+    }, 300);
+  };
 
   return (
     <header className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card/50 backdrop-blur-sm flex-shrink-0">
@@ -562,8 +577,8 @@ export function Toolbar() {
         <input
           type="text"
           placeholder="Search files, memos, tags..."
-          value={state.searchQuery}
-          onChange={(e) => setState((s) => ({ ...s, searchQuery: e.target.value }))}
+        value={localSearch}
+        onChange={(e) => handleSearchChange(e.target.value)}
           className="w-full pl-9 pr-3 py-1.5 text-sm bg-muted rounded-md border border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/60"
         />
       </div>
@@ -640,13 +655,13 @@ export function Toolbar() {
         )}
       </button>
 
-      {state.selectedAssets.length > 0 && (
-        <>
-          <div className="h-5 w-px bg-border" />
-          <span className="text-xs text-muted-foreground bg-accent px-2 py-1 rounded">
-            {state.selectedAssets.length} selected
-          </span>
-        </>
+      {state.selectedAssets.size > 0 && (
+      <>
+        <div className="h-5 w-px bg-border" />
+        <span className="text-xs text-muted-foreground bg-accent px-2 py-1 rounded">
+          {state.selectedAssets.size} selected
+        </span>
+      </>
       )}
     </header>
   );
