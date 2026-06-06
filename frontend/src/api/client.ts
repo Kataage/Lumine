@@ -162,7 +162,7 @@ declare global {
           EnableLibrary: (id: number) => Promise<void>;
           DisableLibrary: (id: number) => Promise<void>;
           RemoveLibrary: (id: number) => Promise<void>;
-          SelectFolder: () => Promise<string>;
+          SelectFolder: () => Promise<string>; // rejects with error if dialog fails
           GetExcludedDirs: (libraryId: number) => Promise<string[]>;
           SetExcludedDirs: (libraryId: number, dirs: string[]) => Promise<void>;
           GetSupportedExtensions: () => Promise<string[]>;

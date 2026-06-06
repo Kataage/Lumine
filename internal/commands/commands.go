@@ -149,18 +149,17 @@ func (c *AppCommands) RemoveLibrary(id int64) error {
 	return c.libraryRepo.Delete(id)
 }
 
-func (c *AppCommands) SelectFolder() string {
+func (c *AppCommands) SelectFolder() (string, error) {
 	if c.ctx == nil {
-		return ""
+		return "", fmt.Errorf("SelectFolder: wails context not initialized")
 	}
 	path, err := runtime.OpenDirectoryDialog(c.ctx, runtime.OpenDialogOptions{
 		Title: "Select Image Folder",
 	})
 	if err != nil {
-		slog.Error("SelectFolder", "error", err)
-		return ""
+		return "", fmt.Errorf("SelectFolder: %w", err)
 	}
-	return path
+	return path, nil
 }
 
 func (c *AppCommands) GetExcludedDirs(libraryID int64) []string {

@@ -92,6 +92,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to select folder:", err);
+      alert("フォルダーの選択に失敗しました: " + (err instanceof Error ? err.message : String(err)));
     }
   }, []);
 
