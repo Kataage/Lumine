@@ -20,25 +20,46 @@ const (
 	StatusPublished  StatusLabel = "published"
 )
 
+type EXIFData struct {
+	CameraModel  string
+	LensModel    string
+	FocalLength  string
+	Aperture     string
+	ShutterSpeed string
+	ISO          int
+	ExifDate     string
+	GPSLatitude  string
+	GPSLongitude string
+}
+
 type Asset struct {
-	ID            int64
-	LibraryID     int64
-	FolderPath    string
-	FileName      string
-	FilePath      string
-	Extension     string
-	FileSize      int64
-	CreatedAtFS   time.Time
-	ModifiedAtFS  time.Time
-	Width         int
-	Height        int
-	MimeType      string
-	HashBlake3    string
-	ThumbStatus   ThumbStatus
-	Rating        int
-	StatusLabel   StatusLabel
-	IsFavorite    bool
-	ColorLabel    string
-	IndexedAt     time.Time
-	UpdatedAt     time.Time
+	ID        int64
+	LibraryID int64
+	FolderPath string
+	FileName   string
+	FilePath   string
+	Extension  string
+	FileSize   int64
+	CreatedAtFS time.Time
+	ModifiedAtFS time.Time
+	Width       int
+	Height      int
+	MimeType    string
+	HashBlake3  string
+	ThumbStatus ThumbStatus
+	Rating      int
+StatusLabel StatusLabel
+IsFavorite  bool
+	ColorLabel  string
+	CameraModel  string
+	LensModel    string
+	FocalLength  string
+	Aperture     string
+	ShutterSpeed string
+	ISO          int
+	ExifDate     string
+	GPSLatitude  string
+	GPSLongitude string
+	IndexedAt   time.Time
+	UpdatedAt   time.Time
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -26,13 +27,16 @@ type AppCommands struct {
 	accountRepo *db.PostAccountRepo
 	jobLogRepo  *db.JobLogRepo
 	settingRepo *db.AppSettingRepo
-	scanSvc    *scanner.Scanner
-	ctx        context.Context
+	folderRepo  *db.FolderRepo
+	scanSvc     *scanner.Scanner
+	ctx         context.Context
 }
 
 func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 	settingRepo := db.NewAppSettingRepo(database)
+	folderRepo := db.NewFolderRepo(database)
 	scanSvc.SetSettingRepo(settingRepo)
+	scanSvc.SetFolderRepo(folderRepo)
 	return &AppCommands{
 		db:          database,
 		libraryRepo: db.NewLibraryRepo(database),
@@ -44,6 +48,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		accountRepo: db.NewPostAccountRepo(database),
 		jobLogRepo:  db.NewJobLogRepo(database),
 		settingRepo: settingRepo,
+		folderRepo:  folderRepo,
 		scanSvc:     scanSvc,
 	}
 }
@@ -195,25 +200,35 @@ func (c *AppCommands) SetSupportedExtensions(exts []string) error {
 }
 
 type AssetDTO struct {
-	ID           int64   `json:"id"`
-	LibraryID    int64   `json:"libraryId"`
-	FolderPath   string  `json:"folderPath"`
-	FileName     string  `json:"fileName"`
-	FilePath     string  `json:"filePath"`
-	Extension    string  `json:"extension"`
-	FileSize     int64   `json:"fileSize"`
-	CreatedAtFS  string  `json:"createdAtFs,omitempty"`
-	ModifiedAtFS string  `json:"modifiedAtFs,omitempty"`
-	Width        int     `json:"width"`
-	Height       int     `json:"height"`
-	MimeType     string  `json:"mimeType,omitempty"`
-	ThumbStatus  string  `json:"thumbStatus"`
-	Rating       int     `json:"rating"`
-	StatusLabel  string  `json:"statusLabel"`
-	IsFavorite   bool    `json:"isFavorite"`
-	ColorLabel   string  `json:"colorLabel,omitempty"`
-	NoteContent  string  `json:"noteContent,omitempty"`
+	ID           int64  `json:"id"`
+	LibraryID    int64  `json:"libraryId"`
+	FolderPath   string `json:"folderPath"`
+	FileName     string `json:"fileName"`
+	FilePath     string `json:"filePath"`
+	Extension    string `json:"extension"`
+	FileSize     int64  `json:"fileSize"`
+	CreatedAtFS  string `json:"createdAtFs,omitempty"`
+	ModifiedAtFS string `json:"modifiedAtFs,omitempty"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	MimeType     string `json:"mimeType,omitempty"`
+	ThumbStatus  string `json:"thumbStatus"`
+	Rating       int    `json:"rating"`
+	StatusLabel  string `json:"statusLabel"`
+	IsFavorite   bool   `json:"isFavorite"`
+	ColorLabel   string `json:"colorLabel,omitempty"`
+	NoteContent  string `json:"noteContent,omitempty"`
 	Tags         []TagDTO `json:"tags,omitempty"`
+	CameraModel  string `json:"cameraModel,omitempty"`
+	LensModel    string `json:"lensModel,omitempty"`
+	FocalLength  string `json:"focalLength,omitempty"`
+	Aperture     string `json:"aperture,omitempty"`
+	ShutterSpeed string `json:"shutterSpeed,omitempty"`
+	ISO          int    `json:"iso"`
+	ExifDate     string `json:"exifDate,omitempty"`
+	GPSLatitude  string `json:"gpsLatitude,omitempty"`
+	GPSLongitude string `json:"gpsLongitude,omitempty"`
+	HashBlake3   string `json:"hashBlake3,omitempty"`
 }
 
 type TagDTO struct {
@@ -241,6 +256,16 @@ func toAssetDTO(a *domain.Asset) AssetDTO {
 		StatusLabel:  string(a.StatusLabel),
 		IsFavorite:   a.IsFavorite,
 		ColorLabel:   a.ColorLabel,
+		CameraModel:  a.CameraModel,
+		LensModel:    a.LensModel,
+		FocalLength:  a.FocalLength,
+		Aperture:     a.Aperture,
+		ShutterSpeed: a.ShutterSpeed,
+		ISO:          a.ISO,
+		ExifDate:     a.ExifDate,
+		GPSLatitude:  a.GPSLatitude,
+		GPSLongitude: a.GPSLongitude,
+		HashBlake3: a.HashBlake3,
 	}
 }
 
@@ -856,6 +881,83 @@ func (c *AppCommands) ScanFolder(folderPath string, offset, limit int) *scanner.
 	if err != nil {
 		slog.Error("ScanFolder", "error", err)
 		return nil
+	}
+	return result
+}
+
+type FolderDTO struct {
+	ID         int64  `json:"id"`
+	LibraryID  int64  `json:"libraryId"`
+	Path       string `json:"path"`
+	ParentPath string `json:"parentPath,omitempty"`
+}
+
+func (c *AppCommands) GetFolderTree(libraryID int64) []FolderDTO {
+	folders, err := c.folderRepo.GetTreeByLibrary(libraryID)
+	if err != nil {
+		slog.Error("GetFolderTree", "error", err)
+		return []FolderDTO{}
+	}
+	result := make([]FolderDTO, 0, len(folders))
+	for _, f := range folders {
+		result = append(result, FolderDTO{
+			ID:         f.ID,
+			LibraryID:  f.LibraryID,
+			Path:       f.Path,
+			ParentPath: f.ParentPath,
+		})
+	}
+	return result
+}
+
+func (c *AppCommands) BulkDeleteAssets(ids []int64) error {
+	return c.assetRepo.BulkDelete(ids)
+}
+
+type CopyRequest struct {
+	AssetIDs     []int64 `json:"assetIds"`
+	TargetFolder string  `json:"targetFolder"`
+}
+
+type CopyResult struct {
+	CopiedCount int     `json:"copiedCount"`
+	FailedIDs   []int64 `json:"failedIds"`
+	Errors      []string `json:"errors"`
+}
+
+func (c *AppCommands) CopyAssets(req CopyRequest) *CopyResult {
+	result := &CopyResult{}
+	for _, id := range req.AssetIDs {
+		asset, err := c.assetRepo.GetByID(id)
+		if err != nil || asset == nil {
+			result.FailedIDs = append(result.FailedIDs, id)
+			result.Errors = append(result.Errors, fmt.Sprintf("asset %d: %v", id, err))
+			continue
+		}
+
+		newPath := filepath.Join(req.TargetFolder, asset.FileName)
+		src, err := os.Open(asset.FilePath)
+		if err != nil {
+			result.FailedIDs = append(result.FailedIDs, id)
+			result.Errors = append(result.Errors, fmt.Sprintf("open %s: %v", asset.FilePath, err))
+			continue
+		}
+		dst, err := os.Create(newPath)
+		if err != nil {
+			src.Close()
+			result.FailedIDs = append(result.FailedIDs, id)
+			result.Errors = append(result.Errors, fmt.Sprintf("create %s: %v", newPath, err))
+			continue
+		}
+		_, err = io.Copy(dst, src)
+		src.Close()
+		dst.Close()
+		if err != nil {
+			result.FailedIDs = append(result.FailedIDs, id)
+			result.Errors = append(result.Errors, fmt.Sprintf("copy data: %v", err))
+			continue
+		}
+		result.CopiedCount++
 	}
 	return result
 }

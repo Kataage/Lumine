@@ -31,16 +31,25 @@ export function AssetGrid({ onSelectAsset, onAssetsLoaded }: AssetGridProps) {
   }, []);
 
   const buildQuery = useCallback(
-    (offset: number): AssetListRequest => ({
-      libraryId: state.selectedLibraryId ?? 0,
-      search: state.searchQuery || undefined,
-      sortBy: state.sortBy || undefined,
-      sortDesc: state.sortDesc,
-      statusLabel: state.filterStatusLabel || undefined,
-      rating: state.filterRating || undefined,
-      offset,
-      limit: PAGE_SIZE,
-    }),
+    (offset: number): AssetListRequest => {
+      let folderPath = "";
+      let search = state.searchQuery || "";
+      if (search.startsWith("folder:")) {
+        folderPath = search.substring(7);
+        search = "";
+      }
+      return {
+        libraryId: state.selectedLibraryId ?? 0,
+        search: search || undefined,
+        folderPath: folderPath || undefined,
+        sortBy: state.sortBy || undefined,
+        sortDesc: state.sortDesc,
+        statusLabel: state.filterStatusLabel || undefined,
+        rating: state.filterRating || undefined,
+        offset,
+        limit: PAGE_SIZE,
+      };
+    },
     [state.selectedLibraryId, state.searchQuery, state.sortBy, state.sortDesc, state.filterStatusLabel, state.filterRating]
   );
 
@@ -271,6 +280,64 @@ function ImagePreview({
   hasPrev: boolean;
   hasNext: boolean;
 }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPos = useRef({ x: 0, y: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  useEffect(() => {
+    resetView();
+  }, [asset.id, resetView]);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(z => {
+        const next = z - e.deltaY * 0.001;
+        return Math.max(1, Math.min(10, next));
+      });
+    };
+    img.addEventListener('wheel', handler, { passive: false });
+    return () => img.removeEventListener('wheel', handler);
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoom > 1) {
+      setIsPanning(true);
+      lastPos.current = { x: e.clientX, y: e.clientY };
+    }
+  }, [zoom]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning && zoom > 1) {
+      setPan(p => ({
+        x: p.x + e.clientX - lastPos.current.x,
+        y: p.y + e.clientY - lastPos.current.y,
+      }));
+      lastPos.current = { x: e.clientX, y: e.clientY };
+    }
+  }, [isPanning, zoom]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    if (zoom > 1) {
+      resetView();
+    } else {
+      setZoom(3);
+    }
+  }, [zoom, resetView]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -283,14 +350,42 @@ function ImagePreview({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+      className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
       onClick={onClose}
     >
+      <div className="absolute top-4 right-16 flex items-center gap-2 z-10" onClick={e => e.stopPropagation()}>
+        <button
+          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm"
+          onClick={() => setZoom(z => Math.max(1, z - 0.5))}
+        >−</button>
+        <span className="text-xs text-zinc-400 min-w-[3rem] text-center">{Math.round(zoom * 100)}%</span>
+        <button
+          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm"
+          onClick={() => setZoom(z => Math.min(10, z + 0.5))}
+        >+</button>
+        <button
+          className="p-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm"
+          onClick={resetView}
+        >リセット</button>
+      </div>
+
       <img
+        ref={imgRef}
         src={getLocalImageUrl(asset.filePath)}
         alt={asset.fileName}
-        className="max-w-[90vw] max-h-[90vh] object-contain"
-        onClick={(e) => e.stopPropagation()}
+        className="max-w-full max-h-full select-none"
+        style={{
+          transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+          cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
+          transition: isPanning ? 'none' : 'transform 0.2s ease-out',
+        }}
+        onClick={e => e.stopPropagation()}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        draggable={false}
       />
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 text-white/80 text-sm">

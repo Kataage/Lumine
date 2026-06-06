@@ -27,8 +27,9 @@ import {
   offScanProgress,
   getSetting,
   setSetting,
+  getFolderTree,
 } from "../api/client";
-import type { ScanProgress, PostDTO, PostTargetDTO, PostAccountDTO } from "../api/client";
+import type { ScanProgress, PostDTO, PostTargetDTO, PostAccountDTO, FolderDTO } from "../api/client";
 
 export function WelcomeScreen({ onSelectFolder }: { onSelectFolder: () => void }) {
   return (
@@ -130,6 +131,7 @@ export function Sidebar() {
 
   const navItems: { key: typeof state.sidebarView; label: string; icon: string }[] = [
     { key: "libraries", label: "Libraries", icon: "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5l3.75 3.75-3.75 3.75m3.75-3.75H3" },
+    { key: "folders", label: "Folders", icon: "M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" },
     { key: "tags", label: "Tags", icon: "M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" },
     { key: "posts", label: "Posts", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" },
     { key: "settings", label: "Settings", icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" },
@@ -240,10 +242,70 @@ export function Sidebar() {
         </div>
       )}
 
-      {state.sidebarView === "tags" && <TagsPanel />}
-      {state.sidebarView === "posts" && <PostsPanel />}
+  {state.sidebarView === "tags" && <TagsPanel />}
+  {state.sidebarView === "folders" && <FolderTreePanel />}
+  {state.sidebarView === "posts" && <PostsPanel />}
       {state.sidebarView === "settings" && <SettingsPanel />}
     </aside>
+  );
+}
+
+function FolderTreePanel() {
+  const { state, setState } = useApp();
+  const { data: folders = [] } = useQuery({
+    queryKey: ["folderTree", state.selectedLibraryId],
+    queryFn: () => getFolderTree(state.selectedLibraryId!),
+    enabled: !!state.selectedLibraryId,
+  });
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+
+  const rootFolders = folders.filter(f => !f.parentPath || f.parentPath === "");
+  const getChildren = (parentPath: string) => folders.filter(f => f.parentPath === parentPath);
+
+  const toggleExpand = (path: string) => {
+    setExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const renderFolder = (folder: FolderDTO, depth: number) => {
+    const children = getChildren(folder.path);
+    const isExpanded = expandedPaths.has(folder.path);
+    const folderName = folder.path.split(/[\\/]/).pop() || folder.path;
+    return (
+      <div key={folder.path}>
+        <button
+          className="flex items-center gap-1.5 w-full px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-700/50 rounded cursor-pointer"
+          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          onClick={() => {
+            if (children.length > 0) toggleExpand(folder.path);
+            setState(s => ({ ...s, searchQuery: `folder:${folder.path}` }));
+          }}
+        >
+          {children.length > 0 && (
+            <svg className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+            </svg>
+          )}
+          <svg className="w-3.5 h-3.5 text-amber-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+          </svg>
+          <span className="truncate">{folderName}</span>
+        </button>
+        {isExpanded && children.map(child => renderFolder(child, depth + 1))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="border-t border-border p-2 space-y-0.5 max-h-[50vh] overflow-auto">
+      <span className="text-xs font-medium text-muted-foreground uppercase px-2">Folders</span>
+      {rootFolders.map(f => renderFolder(f, 0))}
+      {rootFolders.length === 0 && <p className="text-xs text-muted-foreground/60 px-2">No folders yet</p>}
+    </div>
   );
 }
 
