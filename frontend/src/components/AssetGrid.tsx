@@ -42,6 +42,7 @@ export function AssetGrid({ onSelectAsset, onAssetsLoaded }: AssetGridProps) {
         libraryId: state.selectedLibraryId ?? 0,
         search: search || undefined,
         folderPath: folderPath || undefined,
+        recurse: !!folderPath,
         sortBy: state.sortBy || undefined,
         sortDesc: state.sortDesc,
         statusLabel: state.filterStatusLabel || undefined,

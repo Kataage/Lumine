@@ -16,9 +16,10 @@ func NewAssetRepo(db *DB) *AssetRepo {
 }
 
 type AssetQuery struct {
-	LibraryID   int64
-	FolderPath  string
-	Search      string
+	LibraryID  int64
+	FolderPath string
+	Recurse    bool
+	Search     string
 	Rating      int
 	StatusLabel string
 	IsFavorite  *bool
@@ -50,8 +51,13 @@ func (r *AssetRepo) List(q AssetQuery) (*AssetListResult, error) {
 		args = append(args, q.LibraryID)
 	}
 	if q.FolderPath != "" {
-		where += " AND a.folder_path = ?"
-		args = append(args, q.FolderPath)
+		if q.Recurse {
+			where += " AND (a.folder_path = ? OR a.folder_path LIKE ? OR a.folder_path LIKE ?)"
+			args = append(args, q.FolderPath, q.FolderPath+"/%", q.FolderPath+"\\%")
+		} else {
+			where += " AND a.folder_path = ?"
+			args = append(args, q.FolderPath)
+		}
 	}
 	if q.Search != "" {
 		where += " AND (a.file_name LIKE ? OR EXISTS (SELECT 1 FROM asset_notes n WHERE n.asset_id = a.id AND n.content LIKE ?))"
