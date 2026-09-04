@@ -41,6 +41,10 @@ describe("MemoryImage", () => {
     vi.mocked(getCachedMemoryBitmap).mockReset();
     vi.mocked(getCachedMemoryBitmap).mockReturnValue(null);
     drawImage = vi.fn();
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 1,
+    });
     Object.defineProperty(globalThis, "createImageBitmap", {
       configurable: true,
       value: vi.fn(),
@@ -96,5 +100,29 @@ describe("MemoryImage", () => {
 
     exact.resolve(bitmap(260, 260));
     await waitFor(() => expect(drawImage.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("高DPIの大きな表示でも指定した最大画素数を超えるBitmapを要求しない", async () => {
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 2,
+    });
+    vi.mocked(loadMemoryBitmap).mockResolvedValue(bitmap(1414, 707));
+
+    render(
+      <MemoryImage
+        filePath="C:\\images\\large.png"
+        width={2000}
+        height={1000}
+        maxDecodePixels={1_000_000}
+        alt="large.png"
+      />
+    );
+
+    await waitFor(() => expect(loadMemoryBitmap).toHaveBeenCalled());
+    expect(loadMemoryBitmap).toHaveBeenCalledWith(expect.objectContaining({
+      targetWidth: 1414,
+      targetHeight: 707,
+    }));
   });
 });
