@@ -7,21 +7,17 @@ vi.mock("../components/MemoryImage", () => ({
   MemoryImage: ({ alt }: { alt: string }) => <div data-testid="memory-image">{alt}</div>,
 }));
 
-vi.mock("../api/client", async () => {
-  const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
-  return {
-    ...actual,
-    getAssetDetail: vi.fn(() => new Promise<null>(() => undefined)),
-    getPostRecordsByAsset: vi.fn(async () => []),
-    listTags: vi.fn(async () => []),
-    setAssetTags: vi.fn(async () => undefined),
-    toggleAssetFavorite: vi.fn(async () => undefined),
-    updateAssetColorLabel: vi.fn(async () => undefined),
-    updateAssetNote: vi.fn(async () => undefined),
-    updateAssetRating: vi.fn(async () => undefined),
-    updateAssetStatus: vi.fn(async () => undefined),
-  };
-});
+vi.mock("../api/client", () => ({
+  getAssetDetail: vi.fn(() => new Promise<null>(() => undefined)),
+  getPostRecordsByAsset: vi.fn(async () => []),
+  listTags: vi.fn(async () => []),
+  setAssetTags: vi.fn(async () => undefined),
+  toggleAssetFavorite: vi.fn(async () => undefined),
+  updateAssetColorLabel: vi.fn(async () => undefined),
+  updateAssetNote: vi.fn(async () => undefined),
+  updateAssetRating: vi.fn(async () => undefined),
+  updateAssetStatus: vi.fn(async () => undefined),
+}));
 
 import { AssetDetailPanel } from "../components/AssetDetailPanel";
 
