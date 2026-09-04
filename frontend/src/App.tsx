@@ -24,6 +24,7 @@ type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
 interface AppState {
   libraries: LibraryDTO[];
   selectedLibraryId: number | null;
+  selectedFolderPath: string;
   selectedAssets: Set<number>;
   lastSelectedIndex: number | null;
   detailAsset: AssetDTO | null;
@@ -43,6 +44,7 @@ interface AppState {
 const defaultState: AppState = {
   libraries: [],
   selectedLibraryId: null,
+  selectedFolderPath: "",
   selectedAssets: new Set<number>(),
   lastSelectedIndex: null,
   detailAsset: null,
@@ -75,6 +77,7 @@ export default function App() {
   const [state, setState] = useState<AppState>(defaultState);
   const [booting, setBooting] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [addingLibrary, setAddingLibrary] = useState(false);
 
   const loadBootstrap = useCallback(async () => {
     setBooting(true);
@@ -95,6 +98,7 @@ export default function App() {
         ...current,
         libraries,
         selectedLibraryId: preferredLibrary?.id ?? null,
+        selectedFolderPath: "",
         thumbnailSize,
       }));
     } catch (error) {
@@ -110,32 +114,38 @@ export default function App() {
   }, [loadBootstrap]);
 
   const handleSelectFolder = useCallback(async () => {
+    if (addingLibrary) return;
+    setAddingLibrary(true);
     try {
       const path = await selectFolder();
       if (!path) return;
-      const name = path.split(/[/\\]/).pop() || "Library";
+      const name = path.split(/[/\\]/).pop() || "画像フォルダー";
       const library = await addLibrary(name, path);
-      if (!library) throw new Error("Failed to register library");
+      if (!library) throw new Error("ライブラリの登録に失敗しました");
 
       const libraries = await listLibraries();
       setState((current) => ({
         ...current,
         libraries,
         selectedLibraryId: library.id,
+        selectedFolderPath: "",
+        searchQuery: "",
       }));
 
-      try {
-        await scanLibrary(library.id);
-        const refreshedLibraries = await listLibraries();
-        setState((current) => ({ ...current, libraries: refreshedLibraries }));
-      } catch (scanError) {
-        console.error("Initial library scan failed", scanError);
-      }
+      await scanLibrary(library.id);
+      const refreshedLibraries = await listLibraries();
+      setState((current) => ({ ...current, libraries: refreshedLibraries }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["assets", library.id] }),
+        queryClient.invalidateQueries({ queryKey: ["folderTree", library.id] }),
+      ]);
     } catch (error) {
       console.error("Failed to select folder:", error);
-      alert("フォルダーの選択に失敗しました: " + (error instanceof Error ? error.message : String(error)));
+      alert("画像フォルダーの追加に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setAddingLibrary(false);
     }
-  }, []);
+  }, [addingLibrary]);
 
   const handleSelectAsset = useCallback(
     (asset: AssetDTO, multi: boolean, range: boolean) => {
@@ -217,7 +227,7 @@ export default function App() {
   const handleBulkDelete = useCallback(async () => {
     const ids = Array.from(state.selectedAssets);
     if (ids.length === 0) return;
-    if (!confirm(`${ids.length}件のアセットをデータベースから削除しますか？`)) return;
+    if (!confirm(`選択した${ids.length}件をLumineの一覧から削除します。\n元の画像ファイルは削除されません。\n\n続行しますか？`)) return;
     try {
       await bulkDeleteAssets(ids);
       setState((current) => ({
@@ -229,15 +239,16 @@ export default function App() {
       await queryClient.invalidateQueries({ queryKey: ["assets"] });
     } catch (error) {
       console.error("bulk delete failed:", error);
+      alert("一覧からの削除に失敗しました。");
     }
   }, [state.selectedAssets]);
 
   if (booting) {
     return (
       <div className="h-screen bg-background text-foreground flex items-center justify-center">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <div className="w-5 h-5 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-          <span>Opening Lumine…</span>
+        <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+          <div className="w-6 h-6 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
+          <span>Lumineを起動しています…</span>
         </div>
       </div>
     );
@@ -246,14 +257,15 @@ export default function App() {
   if (bootstrapError) {
     return (
       <div className="h-screen bg-background text-foreground flex items-center justify-center p-8">
-        <div className="max-w-lg text-center space-y-4">
-          <h1 className="text-lg font-semibold">Lumine could not open its library database</h1>
-          <p className="text-sm text-muted-foreground break-words">{bootstrapError}</p>
+        <div className="max-w-lg text-center space-y-4 rounded-2xl border border-border bg-card p-8">
+          <h1 className="text-lg font-semibold">ライブラリ情報を読み込めませんでした</h1>
+          <p className="text-sm text-muted-foreground">Lumineのデータベースを開く際にエラーが発生しました。</p>
+          <p className="text-xs text-muted-foreground/70 break-words font-mono">{bootstrapError}</p>
           <button
             onClick={() => void loadBootstrap()}
-            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm"
+            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
           >
-            Retry
+            再試行
           </button>
         </div>
       </div>
@@ -263,7 +275,7 @@ export default function App() {
   if (state.libraries.length === 0 && !state.selectedLibraryId) {
     return (
       <QueryClientProvider client={queryClient}>
-        <WelcomeScreen onSelectFolder={handleSelectFolder} />
+        <WelcomeScreen onSelectFolder={handleSelectFolder} busy={addingLibrary} />
       </QueryClientProvider>
     );
   }
@@ -324,54 +336,70 @@ export function BulkActionsBar({
   onDelete: () => void;
   onClear: () => void;
 }) {
+  const statuses = [
+    { value: "unsorted", label: "未整理" },
+    { value: "reviewed", label: "確認済み" },
+    { value: "candidate", label: "候補" },
+    { value: "published", label: "公開済み" },
+  ];
+
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-t border-border bg-card flex-shrink-0">
-      <span className="text-xs text-muted-foreground font-medium">{count} selected</span>
-      <div className="h-4 w-px bg-border" />
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground">Rate:</span>
+    <div className="flex items-center gap-3 px-4 py-2.5 border-t border-border bg-card shadow-[0_-8px_24px_rgba(0,0,0,0.15)] flex-shrink-0 overflow-x-auto">
+      <span className="text-xs font-semibold whitespace-nowrap">{count}件を選択中</span>
+      <div className="h-5 w-px bg-border" />
+
+      <div className="flex items-center gap-1 whitespace-nowrap">
+        <span className="text-xs text-muted-foreground mr-1">評価</span>
         {[1, 2, 3, 4, 5].map((rating) => (
-          <button key={rating} onClick={() => onRate(rating)} className="p-0.5 hover:scale-110 transition-transform text-yellow-400">
+          <button
+            key={rating}
+            onClick={() => onRate(rating)}
+            className="w-7 h-7 rounded-md hover:bg-accent text-yellow-400 transition-colors"
+            title={`評価を${rating}に設定`}
+          >
             ★
           </button>
         ))}
       </div>
-      <div className="h-4 w-px bg-border" />
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground">Status:</span>
-        {(["unsorted", "reviewed", "candidate", "published"] as const).map((status) => (
+
+      <div className="h-5 w-px bg-border" />
+      <div className="flex items-center gap-1 whitespace-nowrap">
+        <span className="text-xs text-muted-foreground mr-1">状態</span>
+        {statuses.map((status) => (
           <button
-            key={status}
-            onClick={() => onStatus(status)}
-            className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border hover:bg-accent"
+            key={status.value}
+            onClick={() => onStatus(status.value)}
+            className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground border border-border hover:bg-accent hover:text-foreground transition-colors"
           >
-            {status}
+            {status.label}
           </button>
         ))}
       </div>
-      <div className="h-4 w-px bg-border" />
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground">Label:</span>
+
+      <div className="h-5 w-px bg-border" />
+      <div className="flex items-center gap-1 whitespace-nowrap">
+        <span className="text-xs text-muted-foreground mr-1">色</span>
         {["", "red", "orange", "yellow", "green", "blue", "purple"].map((label) => (
           <button
             key={label || "none"}
             onClick={() => onColorLabel(label)}
-            className="w-4 h-4 rounded-full border border-border hover:scale-110 transition-transform"
+            className="w-5 h-5 rounded-full border border-border hover:scale-110 transition-transform"
             style={{ backgroundColor: label || "transparent" }}
-            title={label || "Clear label"}
+            title={label ? `${label}ラベル` : "カラーラベルを解除"}
           />
         ))}
       </div>
-      <div className="h-4 w-px bg-border" />
-      <button onClick={() => onFavorite(true)} className="text-xs px-2 py-1 bg-muted rounded hover:bg-accent">
-        Favorite
+
+      <div className="h-5 w-px bg-border" />
+      <button onClick={() => onFavorite(true)} className="text-xs px-2.5 py-1.5 bg-muted rounded-md hover:bg-accent whitespace-nowrap">
+        ★ お気に入り
       </button>
-      <button onClick={onDelete} className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-500">
-        削除
+      <button onClick={onDelete} className="text-xs px-2.5 py-1.5 bg-destructive text-destructive-foreground rounded-md hover:opacity-90 whitespace-nowrap">
+        一覧から削除
       </button>
-      <div className="flex-1" />
-      <button onClick={onClear} className="text-xs px-2 py-1 text-muted-foreground hover:text-foreground">
-        Clear selection
+      <div className="flex-1 min-w-4" />
+      <button onClick={onClear} className="text-xs px-2.5 py-1.5 text-muted-foreground hover:text-foreground whitespace-nowrap">
+        選択を解除
       </button>
     </div>
   );
