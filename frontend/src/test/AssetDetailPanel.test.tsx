@@ -51,7 +51,7 @@ describe("AssetDetailPanel", () => {
       </QueryClientProvider>
     );
 
-    expect(screen.getByText("freshly-scanned.png")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "freshly-scanned.png" })).toBeInTheDocument();
     expect(screen.getByText("C:\\images\\new\\freshly-scanned.png")).toBeInTheDocument();
     expect(screen.getByTestId("memory-image")).toHaveTextContent("freshly-scanned.png");
   });
