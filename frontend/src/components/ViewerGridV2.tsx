@@ -288,7 +288,7 @@ function GridCard({
         width={size}
         height={size}
         fit="cover"
-        priority="high"
+        priority="normal"
         alt={asset.fileName}
       />
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
@@ -342,7 +342,7 @@ function ListRow({
         width={44}
         height={44}
         fit="cover"
-        priority="high"
+        priority="normal"
         alt={asset.fileName}
         className="rounded-lg flex-shrink-0"
       />
