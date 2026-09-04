@@ -1,6 +1,7 @@
 import { commands as cmds } from "../../wailsjs/go/models";
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
+import { queryClient } from "../queryClient";
 
 export type LibraryDTO = cmds.LibraryDTO;
 export type AssetDTO = cmds.AssetDTO;
@@ -60,8 +61,13 @@ export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> 
 
 export async function scanLibrary(libraryId: number): Promise<void> {
   const method = viewerCommands()?.ScanLibraryViewer;
-  if (!method) return Go.ScanLibrary(libraryId);
-  return method(libraryId);
+  if (method) await method(libraryId);
+  else await Go.ScanLibrary(libraryId);
+
+  // Every caller (initial import, sidebar rescan, settings flow) gets the same
+  // cache-consistency guarantee without depending on a component-local event
+  // listener.
+  await queryClient.invalidateQueries({ queryKey: ["assets", libraryId] });
 }
 
 export const updateAssetNote = Go.UpdateAssetNote;
