@@ -42,11 +42,13 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
     sortDesc: state.sortDesc,
     statusLabel: state.filterStatusLabel || undefined,
     rating: state.filterRating || undefined,
+    tagIds: state.filterTagIds.length > 0 ? state.filterTagIds : undefined,
     offset,
     limit: PAGE_SIZE,
   }), [
     state.filterRating,
     state.filterStatusLabel,
+    state.filterTagIds,
     state.searchQuery,
     state.selectedFolderPath,
     state.selectedLibraryId,
@@ -72,6 +74,7 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
       state.sortDesc,
       state.filterStatusLabel,
       state.filterRating,
+      state.filterTagIds.join(","),
     ],
     queryFn: async ({ pageParam = 0 }) => {
       const result = await listAssets(buildQuery(Number(pageParam)));
@@ -141,7 +144,13 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
     );
   }
 
-  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating > 0);
+  const hasFilters = !!(
+    state.selectedFolderPath ||
+    state.searchQuery ||
+    state.filterStatusLabel ||
+    state.filterRating > 0 ||
+    state.filterTagIds.length > 0
+  );
 
   return (
     <>
