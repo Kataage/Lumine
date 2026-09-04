@@ -169,6 +169,15 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 		return result, nil
 	}
 
+	// Missing-path inference is destructive to DB-side metadata (notes, tags,
+	// post associations cascade from assets). If this reconciliation was only a
+	// partial view of the filesystem because any walk/DB step failed, preserve
+	// unseen rows and retry deletion detection on a later clean pass.
+	if result.FailedCount > 0 {
+		result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0
+		return result, nil
+	}
+
 	for _, missing := range existingMap {
 		if err := s.assetRepo.Delete(missing.ID); err != nil {
 			result.FailedCount++
