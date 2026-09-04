@@ -59,6 +59,25 @@ export interface ScanProgress {
   isDone: boolean;
 }
 
+export interface LibrarySyncResult {
+  libraryId: number;
+  scannedCount: number;
+  addedCount: number;
+  updatedCount: number;
+  removedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  changed: boolean;
+}
+
+export interface DeleteAssetFilesResult {
+  deletedCount: number;
+  failedCount: number;
+  deletedIds: number[];
+  failedIds: number[];
+  errors?: string[];
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -79,6 +98,8 @@ function appCommands() {
         AppCommands?: {
           GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
           ScanLibraryViewer?: (libraryId: number) => Promise<void>;
+          SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
+          DeleteAssetFiles?: (ids: number[]) => Promise<DeleteAssetFilesResult | null>;
           CreatePostRecord?: (request: PostRecordRequest) => Promise<PostRecordDTO | null>;
           ListPostRecords?: (offset: number, limit: number) => Promise<PostRecordDTO[]>;
           GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
@@ -96,13 +117,30 @@ export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> 
 
 export async function scanLibrary(libraryId: number): Promise<void> {
   const method = appCommands()?.ScanLibraryViewer;
-  if (method) await method(libraryId);
-  else await Go.ScanLibrary(libraryId);
+  if (method) {
+    await method(libraryId);
+    return;
+  }
+  await Go.ScanLibrary(libraryId);
+}
 
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["assets", libraryId] }),
-    queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId] }),
-  ]);
+export async function syncLibrary(libraryId: number): Promise<LibrarySyncResult | null> {
+  const method = appCommands()?.SyncLibraryViewer;
+  if (!method) return null;
+  return method(libraryId);
+}
+
+export async function deleteAssetFiles(ids: number[]): Promise<DeleteAssetFilesResult> {
+  const method = appCommands()?.DeleteAssetFiles;
+  if (!method) throw new Error("画像削除APIが利用できません。最新版のLumineを起動してください。");
+  const result = await method(ids);
+  if (!result) throw new Error("画像削除の結果を取得できませんでした。");
+  return {
+    ...result,
+    deletedIds: result.deletedIds ?? [],
+    failedIds: result.failedIds ?? [],
+    errors: result.errors ?? [],
+  };
 }
 
 export async function createPostRecord(request: PostRecordRequest): Promise<PostRecordDTO | null> {
