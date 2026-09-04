@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -22,58 +23,83 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+var imageContentTypes = map[string]string{
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+	".gif":  "image/gif",
+	".bmp":  "image/bmp",
+	".webp": "image/webp",
+	".tiff": "image/tiff",
+	".tif":  "image/tiff",
+	".svg":  "image/svg+xml",
+	".avif": "image/avif",
+	".apng": "image/apng",
+	".ico":  "image/x-icon",
+}
+
 type localFileHandler struct{}
 
+func resolveLocalImagePath(r *http.Request) (string, string, error) {
+	filePath := r.URL.Query().Get("path")
+
+	// Keep the old /local/C:/... form working for already-rendered views while
+	// the frontend migrates to the query-string form, which safely handles
+	// spaces, #, ?, Unicode, and Windows drive letters.
+	if filePath == "" && strings.HasPrefix(r.URL.Path, "/local/") {
+		filePath = strings.TrimPrefix(r.URL.Path, "/local/")
+	}
+	if filePath == "" {
+		return "", "", fmt.Errorf("missing image path")
+	}
+
+	cleanPath := filepath.Clean(filePath)
+	if !filepath.IsAbs(cleanPath) {
+		return "", "", fmt.Errorf("image path must be absolute")
+	}
+
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	contentType, ok := imageContentTypes[ext]
+	if !ok {
+		return "", "", fmt.Errorf("unsupported image extension: %s", ext)
+	}
+
+	return cleanPath, contentType, nil
+}
+
 func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if !strings.HasPrefix(path, "/local/") {
-		http.NotFound(w, r)
-		return
-	}
-
-	filePath := strings.TrimPrefix(path, "/local/")
-	absPath, err := filepath.Abs(filepath.Clean(filePath))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if strings.Contains(absPath, "..") {
-		http.NotFound(w, r)
-		return
-	}
-
-	info, err := os.Stat(absPath)
+	filePath, contentType, err := resolveLocalImagePath(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if info.IsDir() {
+	file, err := os.Open(filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
 		return
 	}
 
-	ext := strings.ToLower(filepath.Ext(absPath))
-	contentTypes := map[string]string{
-		".jpg":  "image/jpeg",
-		".jpeg": "image/jpeg",
-		".png":  "image/png",
-		".gif":  "image/gif",
-		".bmp":  "image/bmp",
-		".webp": "image/webp",
-		".tiff": "image/tiff",
-		".tif":  "image/tiff",
-		".svg":  "image/svg+xml",
-		".avif": "image/avif",
-		".ico":  "image/x-icon",
-	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 
-	if ct, ok := contentTypes[ext]; ok {
-		w.Header().Set("Content-Type", ct)
-	}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	// Do not let WebView2 build a second on-disk image library behind Lumine.
+	// Grid/detail previews are cached only in the frontend's bounded in-memory
+	// bitmap cache. http.ServeContent still provides byte-range support for the
+	// full-resolution viewer.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 
-	http.ServeFile(w, r, absPath)
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
 
 func main() {
@@ -126,9 +152,8 @@ func main() {
 
 func localFileMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/local/") {
-			handler := &localFileHandler{}
-			handler.ServeHTTP(w, r)
+		if r.URL.Path == "/local" || strings.HasPrefix(r.URL.Path, "/local/") {
+			(&localFileHandler{}).ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
