@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AssetDTO } from "../api/client";
 import {
   getAssetDetail,
   getPostRecordsByAsset,
@@ -17,7 +18,7 @@ import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
 
 interface AssetDetailPanelProps {
-  assetId: number;
+  asset: AssetDTO;
   onClose: () => void;
 }
 
@@ -30,37 +31,55 @@ const STATUS_OPTIONS = [
 
 const COLORS = ["", "red", "orange", "yellow", "green", "blue", "purple"];
 
-export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
+export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanelProps) {
   const queryClient = useQueryClient();
+  const assetId = listAsset.id;
   const [showViewer, setShowViewer] = useState(false);
   const [showPostRecord, setShowPostRecord] = useState(false);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(listAsset.noteContent ?? "");
   const [noteDirty, setNoteDirty] = useState(false);
 
-  const { data: asset, isLoading, isError, error } = useQuery({
+  const {
+    data: detailedAsset,
+    isFetching: detailFetching,
+    isError: detailError,
+    error,
+  } = useQuery({
     queryKey: ["assetDetail", assetId],
-    queryFn: () => getAssetDetail(assetId),
+    queryFn: async () => {
+      const detail = await getAssetDetail(assetId);
+      if (!detail) throw new Error("画像の詳細情報を取得できませんでした");
+      return detail;
+    },
     enabled: assetId > 0,
-    staleTime: Infinity,
+    staleTime: 30_000,
+    retry: 2,
   });
+
+  // The lightweight list DTO is always enough to render the panel immediately.
+  // EXIF/tags/note arrive asynchronously and enrich the same panel afterwards.
+  // This avoids a blank detail pane for newly scanned or freshly paged assets.
+  const asset = detailedAsset ?? listAsset;
+
   const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
   const { data: postRecords = [] } = useQuery({
     queryKey: ["assetPostRecords", assetId],
     queryFn: () => getPostRecordsByAsset(assetId),
     enabled: assetId > 0,
-    staleTime: Infinity,
+    staleTime: 30_000,
   });
-
-  useEffect(() => {
-    if (!asset) return;
-    setNote(asset.noteContent ?? "");
-    setNoteDirty(false);
-  }, [asset?.id, asset?.noteContent]);
 
   useEffect(() => {
     setShowViewer(false);
     setShowPostRecord(false);
-  }, [assetId]);
+    setNote(listAsset.noteContent ?? "");
+    setNoteDirty(false);
+  }, [assetId, listAsset.noteContent]);
+
+  useEffect(() => {
+    if (!detailedAsset || noteDirty) return;
+    setNote(detailedAsset.noteContent ?? "");
+  }, [detailedAsset, noteDirty]);
 
   const refreshDetail = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["assetDetail", assetId] });
@@ -74,45 +93,35 @@ export function AssetDetailPanel({ assetId, onClose }: AssetDetailPanelProps) {
   }, [assetId, queryClient]);
 
   const saveNote = useCallback(async () => {
-    if (!asset || !noteDirty) return;
-    await updateAssetNote(asset.id, note);
+    if (!noteDirty) return;
+    await updateAssetNote(assetId, note);
     setNoteDirty(false);
     await refreshDetail();
-  }, [asset, note, noteDirty, refreshDetail]);
-
-  if (isLoading) {
-    return (
-      <aside className="app-detail-panel border-l border-border bg-card flex items-center justify-center">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-          詳細を読み込み中…
-        </div>
-      </aside>
-    );
-  }
-
-  if (isError || !asset) {
-    return (
-      <aside className="app-detail-panel border-l border-border bg-card flex flex-col items-center justify-center gap-3 p-5">
-        <p className="text-xs font-medium text-destructive">画像の詳細を開けませんでした</p>
-        {error && <p className="text-[11px] text-muted-foreground text-center break-all">{String(error)}</p>}
-        <button className="ui-secondary-button" onClick={onClose}>閉じる</button>
-      </aside>
-    );
-  }
+  }, [assetId, note, noteDirty, refreshDetail]);
 
   return (
     <>
       <aside className="app-detail-panel border-l border-border bg-card flex flex-col overflow-hidden shadow-[-8px_0_24px_rgba(0,0,0,0.08)]">
         <div className="min-h-14 px-3.5 py-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
           <div className="min-w-0">
-            <p className="text-xs font-semibold">画像の詳細</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold">画像の詳細</p>
+              {detailFetching && <span className="w-3 h-3 border-2 border-muted-foreground/25 border-t-primary rounded-full animate-spin" title="詳細情報を読み込み中" />}
+            </div>
             <p className="text-[11px] text-muted-foreground truncate">確認・整理・投稿記録</p>
           </div>
           <button className="ui-icon-button text-lg" onClick={onClose} aria-label="詳細パネルを閉じる">×</button>
         </div>
 
         <div className="flex-1 overflow-auto p-3 space-y-4">
+          {detailError && (
+            <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+              基本情報を表示しています。追加情報の読み込みに失敗しました。
+              {error ? <span className="block mt-1 text-amber-200/70 break-all">{String(error)}</span> : null}
+              <button className="mt-2 underline underline-offset-2" onClick={() => void refreshDetail()}>再読み込み</button>
+            </div>
+          )}
+
           <section className="space-y-2">
             <button
               onClick={() => setShowViewer(true)}
