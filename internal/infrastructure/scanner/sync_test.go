@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
 
@@ -51,6 +52,49 @@ func TestSyncLibraryDetectsFilesystemDeltaWithoutJobLogs(t *testing.T) {
 	}
 	if first.AddedCount != 1 || !first.Changed {
 		t.Fatalf("first sync = %+v, want one addition", first)
+	}
+
+	asset, err := assetRepo.GetByFilePath(imagePath)
+	if err != nil || asset == nil {
+		t.Fatalf("get added asset: %v, asset=%v", err, asset)
+	}
+	fullAsset, err := assetRepo.GetByID(asset.ID)
+	if err != nil || fullAsset == nil {
+		t.Fatalf("get full asset: %v, asset=%v", err, fullAsset)
+	}
+	fullAsset.Rating = 4
+	fullAsset.StatusLabel = domain.StatusCandidate
+	fullAsset.IsFavorite = true
+	fullAsset.ColorLabel = "blue"
+	if err := assetRepo.Update(fullAsset); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := os.OpenFile(imagePath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte{0}); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := scanner.SyncLibrary(library, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.UpdatedCount != 1 || !updated.Changed {
+		t.Fatalf("updated sync = %+v, want one update", updated)
+	}
+	preserved, err := assetRepo.GetByID(asset.ID)
+	if err != nil || preserved == nil {
+		t.Fatalf("get updated asset: %v, asset=%v", err, preserved)
+	}
+	if preserved.Rating != 4 || preserved.StatusLabel != domain.StatusCandidate || !preserved.IsFavorite || preserved.ColorLabel != "blue" {
+		t.Fatalf("user-managed state changed during sync: %+v", preserved)
 	}
 
 	second, err := scanner.SyncLibrary(library, nil)
