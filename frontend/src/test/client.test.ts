@@ -1,34 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../wailsjs/runtime/runtime", () => ({
   EventsOn: vi.fn(),
   EventsOff: vi.fn(),
 }));
 
-import { getLocalImageUrl, onScanProgress, offScanProgress } from "../api/client";
-import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
+import { getLocalImageUrl, offScanProgress, onScanProgress } from "../api/client";
+import { EventsOff, EventsOn } from "../../wailsjs/runtime/runtime";
 
 describe("getLocalImageUrl", () => {
-  it("converts backslash paths to forward slashes", () => {
-    expect(getLocalImageUrl("C:\\Users\\test\\image.png")).toBe(
-      "/local/C:/Users/test/image.png"
-    );
+  it("Windowsパスを壊さずURLエンコードする", () => {
+    const path = "C:\\Users\\test\\image.png";
+    expect(getLocalImageUrl(path)).toBe(`/local?path=${encodeURIComponent(path)}`);
   });
 
-  it("preserves forward slash paths", () => {
-    expect(getLocalImageUrl("/home/user/photos/img.jpg")).toBe(
-      "/local//home/user/photos/img.jpg"
-    );
+  it("POSIXパスをURLエンコードする", () => {
+    const path = "/home/user/photos/img.jpg";
+    expect(getLocalImageUrl(path)).toBe(`/local?path=${encodeURIComponent(path)}`);
   });
 
-  it("handles mixed slashes", () => {
-    expect(getLocalImageUrl("C:/Users\\test/mixed.png")).toBe(
-      "/local/C:/Users/test/mixed.png"
-    );
-  });
-
-  it("handles simple filename", () => {
-    expect(getLocalImageUrl("photo.png")).toBe("/local/photo.png");
+  it("日本語やURL特殊文字を安全に扱う", () => {
+    const path = "C:\\画像\\a #1?.png";
+    const url = getLocalImageUrl(path);
+    expect(url).toBe(`/local?path=${encodeURIComponent(path)}`);
+    expect(url).not.toContain("#1?");
   });
 });
 
@@ -37,21 +32,20 @@ describe("onScanProgress / offScanProgress", () => {
     vi.clearAllMocks();
   });
 
-  it("calls EventsOn with scan:progress", () => {
-    const cb = vi.fn();
-    onScanProgress(cb);
-
+  it("scan:progressイベントを購読する", () => {
+    const callback = vi.fn();
+    onScanProgress(callback);
     expect(EventsOn).toHaveBeenCalledWith("scan:progress", expect.any(Function));
   });
 
-  it("callback receives ScanProgress data", () => {
+  it("JSON契約どおりlibraryIdを含む進捗を渡す", () => {
     const onSpy = vi.mocked(EventsOn);
-    const cb = vi.fn();
-    onScanProgress(cb);
+    const callback = vi.fn();
+    onScanProgress(callback);
 
     const registeredCallback = onSpy.mock.calls[0][1];
     const progressData = {
-      libraryID: 1,
+      libraryId: 1,
       scannedCount: 100,
       addedCount: 10,
       updatedCount: 5,
@@ -61,12 +55,11 @@ describe("onScanProgress / offScanProgress", () => {
     };
     registeredCallback(progressData);
 
-    expect(cb).toHaveBeenCalledWith(progressData);
+    expect(callback).toHaveBeenCalledWith(progressData);
   });
 
-  it("offScanProgress calls EventsOff", () => {
+  it("購読を解除する", () => {
     offScanProgress();
-
     expect(EventsOff).toHaveBeenCalledWith("scan:progress");
   });
 });

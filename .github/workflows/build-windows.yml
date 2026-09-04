@@ -2,6 +2,8 @@ name: build-windows
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [develop]
   push:
     tags:
       - "v*"
@@ -37,9 +39,9 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
 
-      - name: Build Windows app (installer)
+      - name: Build Windows app
         run: wails build -platform windows/amd64
         env:
           CGO_ENABLED: "0"
@@ -56,6 +58,7 @@ jobs:
           path: build/bin/Lumine.exe
 
       - name: Package portable version
+        shell: pwsh
         run: Compress-Archive -Path build/bin/Lumine-portable.exe -DestinationPath build/bin/Lumine-portable.zip
 
       - name: Upload portable artifact

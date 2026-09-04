@@ -102,44 +102,46 @@ export namespace commands {
 		    return a;
 		}
 	}
-	export class AssetListRequest {
-	    libraryId: number;
-	    folderPath?: string;
-	    search?: string;
-	    rating?: number;
-	    statusLabel?: string;
-	    isFavorite?: boolean;
-	    tagIds?: number[];
-	    hasNote?: boolean;
-	    extension?: string;
-	    colorLabel?: string;
-	    sortBy?: string;
-	    sortDesc?: boolean;
-	    offset: number;
-	    limit: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new AssetListRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.libraryId = source["libraryId"];
-	        this.folderPath = source["folderPath"];
-	        this.search = source["search"];
-	        this.rating = source["rating"];
-	        this.statusLabel = source["statusLabel"];
-	        this.isFavorite = source["isFavorite"];
-	        this.tagIds = source["tagIds"];
-	        this.hasNote = source["hasNote"];
-	        this.extension = source["extension"];
-	        this.colorLabel = source["colorLabel"];
-	        this.sortBy = source["sortBy"];
-	        this.sortDesc = source["sortDesc"];
-	        this.offset = source["offset"];
-	        this.limit = source["limit"];
-	    }
-	}
+export class AssetListRequest {
+  libraryId: number;
+  folderPath?: string;
+  recurse?: boolean;
+  search?: string;
+  rating?: number;
+  statusLabel?: string;
+  isFavorite?: boolean;
+  tagIds?: number[];
+  hasNote?: boolean;
+  extension?: string;
+  colorLabel?: string;
+  sortBy?: string;
+  sortDesc?: boolean;
+  offset: number;
+  limit: number;
+
+  static createFrom(source: any = {}) {
+    return new AssetListRequest(source);
+  }
+
+  constructor(source: any = {}) {
+    if ('string' === typeof source) source = JSON.parse(source);
+    this.libraryId = source["libraryId"];
+    this.folderPath = source["folderPath"];
+    this.recurse = source["recurse"];
+    this.search = source["search"];
+    this.rating = source["rating"];
+    this.statusLabel = source["statusLabel"];
+    this.isFavorite = source["isFavorite"];
+    this.tagIds = source["tagIds"];
+    this.hasNote = source["hasNote"];
+    this.extension = source["extension"];
+    this.colorLabel = source["colorLabel"];
+    this.sortBy = source["sortBy"];
+    this.sortDesc = source["sortDesc"];
+    this.offset = source["offset"];
+    this.limit = source["limit"];
+  }
+}
 	export class AssetListResponse {
 	    assets: AssetDTO[];
 	    totalCount: number;

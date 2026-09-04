@@ -269,9 +269,10 @@ func toAssetDTO(a *domain.Asset) AssetDTO {
 }
 
 type AssetListRequest struct {
-	LibraryID   int64  `json:"libraryId"`
-	FolderPath  string `json:"folderPath,omitempty"`
-	Search      string `json:"search,omitempty"`
+	LibraryID  int64  `json:"libraryId"`
+	FolderPath string `json:"folderPath,omitempty"`
+	Recurse    bool   `json:"recurse,omitempty"`
+	Search     string `json:"search,omitempty"`
 	Rating      int    `json:"rating,omitempty"`
 	StatusLabel string `json:"statusLabel,omitempty"`
 	IsFavorite  *bool  `json:"isFavorite,omitempty"`
@@ -292,9 +293,10 @@ type AssetListResponse struct {
 
 func (c *AppCommands) ListAssets(req AssetListRequest) *AssetListResponse {
 	result, err := c.assetRepo.List(db.AssetQuery{
-		LibraryID:   req.LibraryID,
-		FolderPath:  req.FolderPath,
-		Search:      req.Search,
+		LibraryID:  req.LibraryID,
+		FolderPath: req.FolderPath,
+		Recurse:    req.Recurse,
+		Search:     req.Search,
 		Rating:      req.Rating,
 		StatusLabel: req.StatusLabel,
 		IsFavorite:  req.IsFavorite,

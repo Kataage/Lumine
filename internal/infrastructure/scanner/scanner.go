@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log/slog"
 	"os"
@@ -27,23 +30,23 @@ var DefaultImageExtensions = map[string]bool{
 }
 
 type Scanner struct {
-	assetRepo   *db.AssetRepo
-	libraryRepo  *db.LibraryRepo
-	jobLogRepo   *db.JobLogRepo
-	settingRepo  *db.AppSettingRepo
-	folderRepo   *db.FolderRepo
-	cancelled    atomic.Bool
-	scanning     atomic.Bool
-	customExts   map[string]bool
-	extsOnce     sync.Once
-	extsMu       sync.RWMutex
+	assetRepo  *db.AssetRepo
+	libraryRepo *db.LibraryRepo
+	jobLogRepo *db.JobLogRepo
+	settingRepo *db.AppSettingRepo
+	folderRepo *db.FolderRepo
+	cancelled atomic.Bool
+	scanning atomic.Bool
+	customExts map[string]bool
+	extsOnce sync.Once
+	extsMu sync.RWMutex
 }
 
 func NewScanner(assetRepo *db.AssetRepo, libraryRepo *db.LibraryRepo, jobLogRepo *db.JobLogRepo) *Scanner {
 	return &Scanner{
-		assetRepo:  assetRepo,
+		assetRepo: assetRepo,
 		libraryRepo: libraryRepo,
-		jobLogRepo:  jobLogRepo,
+		jobLogRepo: jobLogRepo,
 	}
 }
 
@@ -96,16 +99,35 @@ func (s *Scanner) getExtensions() map[string]bool {
 }
 
 type ScanProgress struct {
-	LibraryID    int64 `json:"libraryId"`
-	ScannedCount int   `json:"scannedCount"`
-	AddedCount   int   `json:"addedCount"`
-	UpdatedCount int   `json:"updatedCount"`
-	SkippedCount int   `json:"skippedCount"`
-	FailedCount  int   `json:"failedCount"`
-	IsDone       bool  `json:"isDone"`
+	LibraryID int64 `json:"libraryId"`
+	ScannedCount int `json:"scannedCount"`
+	AddedCount int `json:"addedCount"`
+	UpdatedCount int `json:"updatedCount"`
+	SkippedCount int `json:"skippedCount"`
+	FailedCount int `json:"failedCount"`
+	IsDone bool `json:"isDone"`
 }
 
-func extractMetadata(path string) (width, height int, mimeType string, exifData *domain.EXIFData) {
+// readImageConfig only reads enough of the file to determine dimensions and
+// the basic format. It is intentionally used by the library scanner instead
+// of EXIF parsing so a large folder becomes browsable as quickly as possible.
+func readImageConfig(path string) (width, height int, mimeType string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, ""
+	}
+	defer f.Close()
+
+	config, format, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, ""
+	}
+	return config.Width, config.Height, "image/" + format
+}
+
+// LoadMetadata performs the heavier metadata parse. It is exported so the
+// detail command can run it lazily the first time an asset is actually opened.
+func LoadMetadata(path string) (width, height int, mimeType string, exifData *domain.EXIFData) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -119,50 +141,54 @@ func extractMetadata(path string) (width, height int, mimeType string, exifData 
 		mimeType = "image/" + format
 	}
 
-	f.Seek(0, 0)
+	if _, err := f.Seek(0, 0); err != nil {
+		return
+	}
 
 	x, err := exif.Decode(f)
-	if err == nil {
-		exifData = &domain.EXIFData{}
-		if tag, e := x.Get(exif.Model); e == nil {
-			exifData.CameraModel, _ = tag.StringVal()
+	if err != nil {
+		return
+	}
+
+	exifData = &domain.EXIFData{}
+	if tag, e := x.Get(exif.Model); e == nil {
+		exifData.CameraModel, _ = tag.StringVal()
+	}
+	if tag, e := x.Get(exif.LensModel); e == nil {
+		exifData.LensModel, _ = tag.StringVal()
+	}
+	if tag, e := x.Get(exif.FocalLength); e == nil {
+		if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
+			exifData.FocalLength = fmt.Sprintf("%dmm", num/denom)
 		}
-		if tag, e := x.Get(exif.LensModel); e == nil {
-			exifData.LensModel, _ = tag.StringVal()
+	}
+	if tag, e := x.Get(exif.FNumber); e == nil {
+		if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
+			exifData.Aperture = fmt.Sprintf("f/%.1f", float64(num)/float64(denom))
 		}
-		if tag, e := x.Get(exif.FocalLength); e == nil {
-			if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
-				exifData.FocalLength = fmt.Sprintf("%dmm", num/denom)
+	}
+	if tag, e := x.Get(exif.ExposureTime); e == nil {
+		if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
+			if num == 1 {
+				exifData.ShutterSpeed = fmt.Sprintf("1/%ds", denom)
+			} else {
+				exifData.ShutterSpeed = fmt.Sprintf("%d/%ds", num, denom)
 			}
 		}
-		if tag, e := x.Get(exif.FNumber); e == nil {
-			if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
-				exifData.Aperture = fmt.Sprintf("f/%.1f", float64(num)/float64(denom))
-			}
+	}
+	if tag, e := x.Get(exif.ISOSpeedRatings); e == nil {
+		if val, e2 := tag.Int(0); e2 == nil {
+			exifData.ISO = val
 		}
-		if tag, e := x.Get(exif.ExposureTime); e == nil {
-			if num, denom, e2 := tag.Rat2(0); e2 == nil && denom != 0 {
-				if num == 1 {
-					exifData.ShutterSpeed = fmt.Sprintf("1/%ds", denom)
-				} else {
-					exifData.ShutterSpeed = fmt.Sprintf("%d/%ds", num, denom)
-				}
-			}
-		}
-		if tag, e := x.Get(exif.ISOSpeedRatings); e == nil {
-			if val, e2 := tag.Int(0); e2 == nil {
-				exifData.ISO = val
-			}
-		}
-		if tag, e := x.Get(exif.DateTimeOriginal); e == nil {
-			exifData.ExifDate, _ = tag.StringVal()
-		}
-		if tag, e := x.Get(exif.GPSLatitude); e == nil {
-			exifData.GPSLatitude = tag.String()
-		}
-		if tag, e := x.Get(exif.GPSLongitude); e == nil {
-			exifData.GPSLongitude = tag.String()
-		}
+	}
+	if tag, e := x.Get(exif.DateTimeOriginal); e == nil {
+		exifData.ExifDate, _ = tag.StringVal()
+	}
+	if tag, e := x.Get(exif.GPSLatitude); e == nil {
+		exifData.GPSLatitude = tag.String()
+	}
+	if tag, e := x.Get(exif.GPSLongitude); e == nil {
+		exifData.GPSLongitude = tag.String()
 	}
 
 	return
@@ -270,10 +296,9 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 		}
 
 		progress.ScannedCount++
-
 		existing := existingMap[path]
-
 		modTime := info.ModTime()
+
 		if existing != nil {
 			delete(existingMap, path)
 			if !existing.ModifiedAtFS.IsZero() && existing.ModifiedAtFS.Equal(modTime) && existing.FileSize == info.Size() {
@@ -283,24 +308,22 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 				}
 				return nil
 			}
-		existing.FileSize = info.Size()
-		existing.ModifiedAtFS = modTime
-		existing.ThumbStatus = domain.ThumbStatusNone
-		w, h, mime, exifD := extractMetadata(path)
-		existing.Width = w
-		existing.Height = h
-		existing.MimeType = mime
-		if exifD != nil {
-			existing.CameraModel = exifD.CameraModel
-			existing.LensModel = exifD.LensModel
-			existing.FocalLength = exifD.FocalLength
-			existing.Aperture = exifD.Aperture
-			existing.ShutterSpeed = exifD.ShutterSpeed
-			existing.ISO = exifD.ISO
-			existing.ExifDate = exifD.ExifDate
-			existing.GPSLatitude = exifD.GPSLatitude
-			existing.GPSLongitude = exifD.GPSLongitude
-		}
+
+			existing.FileSize = info.Size()
+			existing.ModifiedAtFS = modTime
+			existing.ThumbStatus = domain.ThumbStatusNone
+			existing.MetadataLoaded = false
+			existing.CameraModel = ""
+			existing.LensModel = ""
+			existing.FocalLength = ""
+			existing.Aperture = ""
+			existing.ShutterSpeed = ""
+			existing.ISO = 0
+			existing.ExifDate = ""
+			existing.GPSLatitude = ""
+			existing.GPSLongitude = ""
+			existing.Width, existing.Height, existing.MimeType = readImageConfig(path)
+
 			updatedAssets = append(updatedAssets, existing)
 			if len(updatedAssets) >= batchSize {
 				flushUpdated()
@@ -308,34 +331,23 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 			return nil
 		}
 
+		width, height, mimeType := readImageConfig(path)
 		asset := &domain.Asset{
-			LibraryID:   library.ID,
-			FolderPath:  filepath.Dir(path),
-			FileName:    info.Name(),
-			FilePath:    path,
-			Extension:   ext,
-			FileSize:    info.Size(),
+			LibraryID: library.ID,
+			FolderPath: filepath.Dir(path),
+			FileName: info.Name(),
+			FilePath: path,
+			Extension: ext,
+			FileSize: info.Size(),
 			ModifiedAtFS: modTime,
-			ThumbStatus: domain.ThumbStatusQueued,
-			Rating:      0,
+			Width: width,
+			Height: height,
+			MimeType: mimeType,
+			ThumbStatus: domain.ThumbStatusNone,
+			MetadataLoaded: false,
+			Rating: 0,
 			StatusLabel: domain.StatusUnsorted,
 		}
-
-	w, h, mime, exifD := extractMetadata(path)
-	asset.Width = w
-	asset.Height = h
-	asset.MimeType = mime
-	if exifD != nil {
-		asset.CameraModel = exifD.CameraModel
-		asset.LensModel = exifD.LensModel
-		asset.FocalLength = exifD.FocalLength
-		asset.Aperture = exifD.Aperture
-		asset.ShutterSpeed = exifD.ShutterSpeed
-		asset.ISO = exifD.ISO
-		asset.ExifDate = exifD.ExifDate
-		asset.GPSLatitude = exifD.GPSLatitude
-		asset.GPSLongitude = exifD.GPSLongitude
-	}
 
 		newAssets = append(newAssets, asset)
 		if len(newAssets) >= batchSize {
@@ -389,17 +401,17 @@ func formatScanResult(p ScanProgress) string {
 }
 
 type FolderScanResult struct {
-	Images     []ImageEntry `json:"images"`
-	TotalCount int          `json:"totalCount"`
-	HasMore    bool         `json:"hasMore"`
+	Images []ImageEntry `json:"images"`
+	TotalCount int `json:"totalCount"`
+	HasMore bool `json:"hasMore"`
 }
 
 type ImageEntry struct {
-	FilePath   string `json:"filePath"`
-	FileName   string `json:"fileName"`
+	FilePath string `json:"filePath"`
+	FileName string `json:"fileName"`
 	FolderPath string `json:"folderPath"`
-	Extension  string `json:"extension"`
-	FileSize   int64  `json:"fileSize"`
+	Extension string `json:"extension"`
+	FileSize int64 `json:"fileSize"`
 }
 
 func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, error) {
@@ -427,11 +439,11 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 		}
 
 		allImages = append(allImages, ImageEntry{
-			FilePath:   path,
-			FileName:   info.Name(),
+			FilePath: path,
+			FileName: info.Name(),
 			FolderPath: filepath.Dir(path),
-			Extension:  ext,
-			FileSize:   info.Size(),
+			Extension: ext,
+			FileSize: info.Size(),
 		})
 
 		return nil
@@ -444,20 +456,23 @@ func ScanFolderDirect(folderPath string, offset, limit int) (*FolderScanResult, 
 	totalCount := len(allImages)
 	if offset >= totalCount {
 		return &FolderScanResult{
-			Images:     []ImageEntry{},
+			Images: []ImageEntry{},
 			TotalCount: totalCount,
-			HasMore:    false,
+			HasMore: false,
 		}, nil
 	}
 
+	if limit <= 0 {
+		limit = 100
+	}
 	end := offset + limit
 	if end > totalCount {
 		end = totalCount
 	}
 
 	return &FolderScanResult{
-		Images:     allImages[offset:end],
+		Images: allImages[offset:end],
 		TotalCount: totalCount,
-		HasMore:    end < totalCount,
+		HasMore: end < totalCount,
 	}, nil
 }

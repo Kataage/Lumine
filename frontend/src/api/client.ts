@@ -1,6 +1,7 @@
 import { commands as cmds } from "../../wailsjs/go/models";
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
+import { queryClient } from "../queryClient";
 
 export type LibraryDTO = cmds.LibraryDTO;
 export type AssetDTO = cmds.AssetDTO;
@@ -17,7 +18,7 @@ export type PostTargetDTO = cmds.PostTargetDTO;
 export type PostAccountDTO = cmds.PostAccountDTO;
 
 export interface ScanProgress {
-  libraryID: number;
+  libraryId: number;
   scannedCount: number;
   addedCount: number;
   updatedCount: number;
@@ -38,7 +39,37 @@ export const setExcludedDirs = Go.SetExcludedDirs;
 export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
-export const getAssetDetail = Go.GetAssetDetail;
+
+function viewerCommands() {
+  return (window as unknown as {
+    go?: {
+      commands?: {
+        AppCommands?: {
+          GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
+          ScanLibraryViewer?: (libraryId: number) => Promise<void>;
+        };
+      };
+    };
+  }).go?.commands?.AppCommands;
+}
+
+export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
+  const method = viewerCommands()?.GetViewerAssetDetail;
+  if (!method) return Go.GetAssetDetail(assetId);
+  return method(assetId);
+}
+
+export async function scanLibrary(libraryId: number): Promise<void> {
+  const method = viewerCommands()?.ScanLibraryViewer;
+  if (method) await method(libraryId);
+  else await Go.ScanLibrary(libraryId);
+
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["assets", libraryId] }),
+    queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId] }),
+  ]);
+}
+
 export const updateAssetNote = Go.UpdateAssetNote;
 export const setAssetTags = Go.SetAssetTags;
 export const updateAssetRating = Go.UpdateAssetRating;
@@ -50,7 +81,6 @@ export const bulkUpdateStatus = Go.BulkUpdateStatus;
 export const bulkUpdateFavorite = Go.BulkUpdateFavorite;
 export const bulkUpdateColorLabel = Go.BulkUpdateColorLabel;
 export const moveAssets = Go.MoveAssets;
-export const scanLibrary = Go.ScanLibrary;
 export const cancelScan = Go.CancelScan;
 export const listTags = Go.ListTags;
 export const createTag = Go.CreateTag;
@@ -88,6 +118,5 @@ export function offScanProgress(): void {
 }
 
 export function getLocalImageUrl(filePath: string): string {
-  const normalizedPath = filePath.replace(/\\/g, "/");
-  return `/local/${normalizedPath}`;
+  return `/local?path=${encodeURIComponent(filePath)}`;
 }
