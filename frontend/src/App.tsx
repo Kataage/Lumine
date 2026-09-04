@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar, Toolbar, WelcomeScreen } from "./components/Sidebar";
 import { ViewerGrid } from "./components/ViewerGrid";
 import { AssetDetailPanel } from "./components/AssetDetailPanel";
@@ -16,18 +16,7 @@ import {
   scanLibrary,
   selectFolder,
 } from "./api/client";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: Infinity,
-      gcTime: Infinity,
-      refetchOnWindowFocus: false,
-      refetchOnMount: false,
-      retry: 1,
-    },
-  },
-});
+import { queryClient } from "./queryClient";
 
 type ViewMode = "grid" | "list";
 type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
@@ -137,7 +126,6 @@ export default function App() {
 
       try {
         await scanLibrary(library.id);
-        await queryClient.invalidateQueries({ queryKey: ["assets", library.id] });
         const refreshedLibraries = await listLibraries();
         setState((current) => ({ ...current, libraries: refreshedLibraries }));
       } catch (scanError) {
