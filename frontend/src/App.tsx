@@ -40,6 +40,7 @@ interface AppState {
   thumbnailSize: number;
   filterStatusLabel: string;
   filterRating: number;
+  filterTagIds: number[];
   allAssetIds: number[];
 }
 
@@ -60,6 +61,7 @@ const defaultState: AppState = {
   thumbnailSize: 180,
   filterStatusLabel: "",
   filterRating: 0,
+  filterTagIds: [],
   allAssetIds: [],
 };
 
@@ -131,8 +133,6 @@ export default function App() {
           queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId], refetchType: "active" }),
         ]);
       } catch (error) {
-        // A manual scan can legitimately own the scanner at the same time.
-        // Silent sync is best-effort and will retry on the next interval/focus.
         console.debug("background library sync skipped", error);
       } finally {
         autoSyncRunning.current = false;
@@ -165,7 +165,7 @@ export default function App() {
       const library = await addLibrary(name, path);
       if (!library) throw new Error("ライブラリの登録に失敗しました");
       const libraries = await listLibraries();
-      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "" }));
+      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "", filterTagIds: [] }));
       await scanLibrary(library.id);
       const refreshedLibraries = await listLibraries();
       setState((current) => ({ ...current, libraries: refreshedLibraries }));
