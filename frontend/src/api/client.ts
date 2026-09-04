@@ -39,28 +39,29 @@ export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
-// Wails exposes bound Go methods on window.go immediately at runtime. This
-// viewer-specific method is intentionally called directly so the branch can
-// stay compatible with existing generated bindings while still moving heavy
-// EXIF work out of library scanning. Regenerating Wails bindings later is safe
-// but not required for correctness.
-export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
-  const wailsWindow = window as unknown as {
+function viewerCommands() {
+  return (window as unknown as {
     go?: {
       commands?: {
         AppCommands?: {
           GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
+          ScanLibraryViewer?: (libraryId: number) => Promise<void>;
         };
       };
     };
-  };
-  const method = wailsWindow.go?.commands?.AppCommands?.GetViewerAssetDetail;
-  if (!method) {
-    // Development/browser tests do not have a Wails runtime. Falling back to
-    // the generated method keeps those environments usable.
-    return Go.GetAssetDetail(assetId);
-  }
+  }).go?.commands?.AppCommands;
+}
+
+export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
+  const method = viewerCommands()?.GetViewerAssetDetail;
+  if (!method) return Go.GetAssetDetail(assetId);
   return method(assetId);
+}
+
+export async function scanLibrary(libraryId: number): Promise<void> {
+  const method = viewerCommands()?.ScanLibraryViewer;
+  if (!method) return Go.ScanLibrary(libraryId);
+  return method(libraryId);
 }
 
 export const updateAssetNote = Go.UpdateAssetNote;
@@ -74,7 +75,6 @@ export const bulkUpdateStatus = Go.BulkUpdateStatus;
 export const bulkUpdateFavorite = Go.BulkUpdateFavorite;
 export const bulkUpdateColorLabel = Go.BulkUpdateColorLabel;
 export const moveAssets = Go.MoveAssets;
-export const scanLibrary = Go.ScanLibrary;
 export const cancelScan = Go.CancelScan;
 export const listTags = Go.ListTags;
 export const createTag = Go.CreateTag;
