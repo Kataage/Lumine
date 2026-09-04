@@ -128,6 +128,10 @@ export async function getPostRecordsByAsset(assetId: number): Promise<PostRecord
   return (await method(assetId)) ?? [];
 }
 
+export async function listTags(): Promise<TagDTO[]> {
+  return (await Go.ListTags()) ?? [];
+}
+
 export const updateAssetNote = Go.UpdateAssetNote;
 export const setAssetTags = Go.SetAssetTags;
 export const updateAssetRating = Go.UpdateAssetRating;
@@ -140,7 +144,6 @@ export const bulkUpdateFavorite = Go.BulkUpdateFavorite;
 export const bulkUpdateColorLabel = Go.BulkUpdateColorLabel;
 export const moveAssets = Go.MoveAssets;
 export const cancelScan = Go.CancelScan;
-export const listTags = Go.ListTags;
 export const createTag = Go.CreateTag;
 export const deleteTag = Go.DeleteTag;
 export const listPosts = Go.ListPosts;

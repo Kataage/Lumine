@@ -1,6 +1,7 @@
 import { getLocalImageUrl } from "../api/client";
 
 export type ImageFit = "cover" | "contain";
+export type ImageDecodePriority = "normal" | "high";
 
 export interface ImageBitmapRequest {
   filePath: string;
@@ -10,6 +11,7 @@ export interface ImageBitmapRequest {
   targetWidth: number;
   targetHeight: number;
   fit: ImageFit;
+  priority?: ImageDecodePriority;
 }
 
 export interface Rect {
@@ -27,11 +29,16 @@ interface CacheEntry {
   bytes: number;
 }
 
+interface DecodeWaiter {
+  resolve: () => void;
+  priority: ImageDecodePriority;
+}
+
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<ImageBitmap>>();
 let cacheBytes = 0;
 let activeDecodes = 0;
-const decodeWaiters: Array<() => void> = [];
+const decodeWaiters: DecodeWaiter[] = [];
 
 export function computeCoverCrop(
   sourceWidth: number,
@@ -128,16 +135,34 @@ function cacheBitmap(key: string, bitmap: ImageBitmap): void {
   evictToBudget();
 }
 
-async function withDecodeSlot<T>(work: () => Promise<T>): Promise<T> {
+function wakeNextDecode(): void {
+  const next = decodeWaiters.shift();
+  next?.resolve();
+}
+
+async function withDecodeSlot<T>(
+  work: () => Promise<T>,
+  priority: ImageDecodePriority = "normal"
+): Promise<T> {
   if (activeDecodes >= MAX_CONCURRENT_DECODES) {
-    await new Promise<void>((resolve) => decodeWaiters.push(resolve));
+    await new Promise<void>((resolve) => {
+      const waiter = { resolve, priority };
+      if (priority === "high") {
+        const firstNormal = decodeWaiters.findIndex((item) => item.priority === "normal");
+        if (firstNormal >= 0) decodeWaiters.splice(firstNormal, 0, waiter);
+        else decodeWaiters.push(waiter);
+      } else {
+        decodeWaiters.push(waiter);
+      }
+    });
   }
+
   activeDecodes += 1;
   try {
     return await work();
   } finally {
     activeDecodes -= 1;
-    decodeWaiters.shift()?.();
+    wakeNextDecode();
   }
 }
 
@@ -213,7 +238,7 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
     const bitmap = await createSizedBitmap(blob, request);
     cacheBitmap(key, bitmap);
     return bitmap;
-  });
+  }, request.priority ?? "normal");
 
   inflight.set(key, promise);
   try {

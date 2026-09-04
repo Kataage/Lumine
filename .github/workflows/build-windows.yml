@@ -56,19 +56,20 @@ jobs:
         with:
           name: lumine-windows
           path: build/bin/Lumine.exe
+          if-no-files-found: error
 
-      - name: Package portable version
-        shell: pwsh
-        run: Compress-Archive -Path build/bin/Lumine-portable.exe -DestinationPath build/bin/Lumine-portable.zip
-
+      # upload-artifact itself produces the single downloadable ZIP wrapper.
+      # Upload the portable EXE directly so users do not get ZIP-inside-ZIP.
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: lumine-windows-portable
-          path: build/bin/Lumine-portable.zip
+          path: build/bin/Lumine-portable.exe
+          if-no-files-found: error
 
       - name: Upload full bundle
         uses: actions/upload-artifact@v4
         with:
           name: lumine-windows-bundle
           path: build/bin/*
+          if-no-files-found: error

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import type { AssetDTO } from "../api/client";
 import { getLocalImageUrl } from "../api/client";
@@ -13,6 +13,12 @@ interface ImageViewerModalProps {
   hasNext?: boolean;
 }
 
+interface DragState {
+  pointerId: number;
+  x: number;
+  y: number;
+}
+
 export function ImageViewerModal({
   asset,
   onClose,
@@ -25,7 +31,7 @@ export function ImageViewerModal({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [originalLoaded, setOriginalLoaded] = useState(false);
-  const dragOrigin = useRef({ x: 0, y: 0 });
+  const dragState = useRef<DragState | null>(null);
   const [viewport, setViewport] = useState(() => ({
     width: Math.max(320, window.innerWidth - 48),
     height: Math.max(240, window.innerHeight - 132),
@@ -36,6 +42,7 @@ export function ImageViewerModal({
     setPan({ x: 0, y: 0 });
     setDragging(false);
     setOriginalLoaded(false);
+    dragState.current = null;
   }, []);
 
   useEffect(() => reset(), [asset.id, reset]);
@@ -57,6 +64,16 @@ export function ImageViewerModal({
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  const setZoomSafe = useCallback((nextZoom: number) => {
+    const clamped = Math.max(1, Math.min(8, nextZoom));
+    setZoom(clamped);
+    if (clamped <= 1) {
+      setPan({ x: 0, y: 0 });
+      setDragging(false);
+      dragState.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -74,7 +91,11 @@ export function ImageViewerModal({
       }
       if (event.key === "-") {
         event.preventDefault();
-        setZoom((value) => Math.max(1, value - 0.5));
+        setZoom((value) => {
+          const next = Math.max(1, value - 0.5);
+          if (next <= 1) setPan({ x: 0, y: 0 });
+          return next;
+        });
       }
       if (event.key === "0") {
         event.preventDefault();
@@ -85,34 +106,54 @@ export function ImageViewerModal({
     return () => window.removeEventListener("keydown", handleKey);
   }, [hasNext, hasPrev, onClose, onNext, onPrev, reset]);
 
-  useEffect(() => {
-    if (zoom <= 1) {
-      setOriginalLoaded(false);
-      setPan({ x: 0, y: 0 });
-    }
-  }, [zoom]);
-
-  const handleWheel = useCallback((event: React.WheelEvent) => {
+  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
-    setZoom((value) => Math.max(1, Math.min(8, value - event.deltaY * 0.0016)));
+    const delta = -event.deltaY * 0.0016;
+    setZoom((value) => {
+      const next = Math.max(1, Math.min(8, value + delta));
+      if (next <= 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
   }, []);
 
-  const beginDrag = useCallback((event: React.MouseEvent) => {
-    if (zoom <= 1) return;
+  const beginDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (zoom <= 1 || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    dragState.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
     setDragging(true);
-    dragOrigin.current = { x: event.clientX, y: event.clientY };
   }, [zoom]);
 
-  const moveDrag = useCallback((event: React.MouseEvent) => {
-    if (!dragging || zoom <= 1) return;
-    setPan((current) => ({
-      x: current.x + event.clientX - dragOrigin.current.x,
-      y: current.y + event.clientY - dragOrigin.current.y,
-    }));
-    dragOrigin.current = { x: event.clientX, y: event.clientY };
-  }, [dragging, zoom]);
+  const moveDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = dragState.current;
+    if (!current || current.pointerId !== event.pointerId || zoom <= 1) return;
+    event.preventDefault();
+    const deltaX = event.clientX - current.x;
+    const deltaY = event.clientY - current.y;
+    if (deltaX === 0 && deltaY === 0) return;
+    setPan((value) => ({ x: value.x + deltaX, y: value.y + deltaY }));
+    dragState.current = { ...current, x: event.clientX, y: event.clientY };
+  }, [zoom]);
+
+  const endDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = dragState.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (typeof event.currentTarget.hasPointerCapture === "function" && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragState.current = null;
+    setDragging(false);
+  }, []);
 
   const needsOriginal = zoom > 1;
+  const canPan = zoom > 1;
 
   return createPortal(
     <div
@@ -125,12 +166,12 @@ export function ImageViewerModal({
       <div className="absolute inset-x-0 top-0 h-16 px-4 flex items-center gap-3 bg-gradient-to-b from-black/80 to-transparent z-20 pointer-events-none">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold truncate">{asset.fileName}</p>
-          <p className="text-[11px] text-white/55 truncate">ホイール: 拡大縮小 / ドラッグ: 移動 / 0: 全体表示 / Esc: 閉じる</p>
+          <p className="text-[11px] text-white/55 truncate">ホイール: 拡大縮小 / 拡大後ドラッグ: 移動 / 0: 全体表示 / Esc: 閉じる</p>
         </div>
         <div className="flex items-center gap-1.5 pointer-events-auto" onClick={(event) => event.stopPropagation()}>
-          <button className="viewer-control" onClick={() => setZoom((value) => Math.max(1, value - 0.5))} aria-label="縮小">−</button>
+          <button className="viewer-control" onClick={() => setZoomSafe(zoom - 0.5)} aria-label="縮小">−</button>
           <span className="min-w-14 text-center text-xs text-white/75 tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button className="viewer-control" onClick={() => setZoom((value) => Math.min(8, value + 0.5))} aria-label="拡大">＋</button>
+          <button className="viewer-control" onClick={() => setZoomSafe(zoom + 0.5)} aria-label="拡大">＋</button>
           <button className="viewer-control px-3 text-xs" onClick={reset}>全体</button>
           <button className="viewer-control text-lg" onClick={onClose} aria-label="閉じる">×</button>
         </div>
@@ -138,15 +179,35 @@ export function ImageViewerModal({
 
       <div
         className="absolute inset-0 flex items-center justify-center overflow-hidden select-none"
+        data-testid="viewer-stage"
         onClick={(event) => event.stopPropagation()}
         onWheel={handleWheel}
-        onMouseDown={beginDrag}
-        onMouseMove={moveDrag}
-        onMouseUp={() => setDragging(false)}
-        onMouseLeave={() => setDragging(false)}
-        onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+        onPointerDown={beginDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (zoom > 1) reset(); else setZoomSafe(2.5);
+        }}
+        style={{
+          touchAction: "none",
+          cursor: canPan ? (dragging ? "grabbing" : "grab") : "zoom-in",
+        }}
       >
-        {(!needsOriginal || !originalLoaded) && (
+        <div
+          data-testid="viewer-transform"
+          className="relative flex items-center justify-center"
+          style={{
+            width: viewport.width,
+            height: viewport.height,
+            transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+            transformOrigin: "center center",
+            transition: dragging ? "none" : "transform 90ms ease-out",
+            willChange: zoom > 1 ? "transform" : "auto",
+          }}
+        >
           <MemoryImage
             filePath={asset.filePath}
             modifiedAtFs={asset.modifiedAtFs}
@@ -155,27 +216,23 @@ export function ImageViewerModal({
             width={viewport.width}
             height={viewport.height}
             fit="contain"
+            priority="high"
             alt={asset.fileName}
             className="bg-black"
           />
-        )}
-        {needsOriginal && (
-          <img
-            src={getLocalImageUrl(asset.filePath)}
-            alt={asset.fileName}
-            decoding="async"
-            draggable={false}
-            onLoad={() => setOriginalLoaded(true)}
-            onError={() => setOriginalLoaded(false)}
-            className={`${originalLoaded ? "block" : "absolute opacity-0 pointer-events-none"} max-w-[calc(100vw-48px)] max-h-[calc(100vh-132px)] object-contain`}
-            style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: "center center",
-              cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in",
-              transition: dragging ? "none" : "transform 80ms ease-out",
-            }}
-          />
-        )}
+
+          {needsOriginal && asset.filePath && (
+            <img
+              src={getLocalImageUrl(asset.filePath)}
+              alt={asset.fileName}
+              decoding="async"
+              draggable={false}
+              onLoad={() => setOriginalLoaded(true)}
+              onError={() => setOriginalLoaded(false)}
+              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-100 ${originalLoaded ? "opacity-100" : "opacity-0"}`}
+            />
+          )}
+        </div>
       </div>
 
       {onPrev && (
@@ -201,7 +258,7 @@ export function ImageViewerModal({
 
       <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
         <div className="rounded-full bg-black/55 border border-white/10 px-3 py-1.5 text-[11px] text-white/60 backdrop-blur-sm">
-          ダブルクリックで拡大 / もう一度ダブルクリックで全体表示
+          ダブルクリックで拡大 / 拡大後はドラッグで移動
         </div>
       </div>
     </div>,
