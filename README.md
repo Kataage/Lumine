@@ -55,4 +55,4 @@ go build ./...
 wails build -platform windows/amd64
 ```
 
-GitHub Actions ではフロントエンドの lint / typecheck / unit test / build、Go の vet / build / race test、および Windows の Wails ビルドを検証します。
+GitHub Actions ではフロントエンドの lint / typecheck / unit test / build、Go の vet / build / race test、および Windows の Wails 通常版・portable 版ビルドを検証します。
