@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
@@ -267,7 +267,7 @@ function PostRecordsPanel() {
                   <p className="text-xs font-medium truncate">{record.targetName} · {record.accountDisplay}</p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground truncate">{record.title || "投稿記録"} · 画像{record.assetIds.length}件</p>
                 </div>
-                <button className="text-[10px] text-muted-foreground hover:text-destructive" onClick={async () => { if (!confirm("この投稿記録を削除しますか？")) return; await deletePost(record.id); await queryClient.invalidateQueries({ queryKey: ["postRecords"] }); }}>削除</button>
+                <button className="text-[10px] text-muted-foreground hover:text-destructive" onClick={async () => { if (!confirm("この投稿記録を削除しますか？")) return; await deletePost(record.id); await Promise.all([queryClient.invalidateQueries({ queryKey: ["postRecords"] }), queryClient.invalidateQueries({ queryKey: ["assetPostRecords"] })]); }}>削除</button>
               </div>
               <p className="mt-1.5 text-[10px] text-muted-foreground">{record.publishedAt ? new Date(record.publishedAt).toLocaleString("ja-JP") : ""}</p>
               {record.externalPostId && <p className="mt-1 text-[10px] text-primary break-all">{record.externalPostId}</p>}
@@ -286,14 +286,14 @@ function PostRecordsPanel() {
                 <select className="ui-input" value={targetKind} onChange={(event) => setTargetKind(event.target.value)}><option value="pixiv">Pixiv</option><option value="twitter">X</option><option value="misskey">Misskey</option><option value="bluesky">Bluesky</option><option value="other">その他</option></select>
                 <button className="ui-primary-button" onClick={async () => { if (!targetName.trim()) return; await createPostTarget(targetName.trim(), targetKind); setTargetName(""); await reloadSettings(); }}>追加</button>
               </div>
-              {targets.map((target) => <div key={target.id} className="flex items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate">{target.name} ({target.kind})</span><button className="text-muted-foreground hover:text-destructive" onClick={async () => { await deletePostTarget(target.id); await reloadSettings(); }}>削除</button></div>)}
+              {targets.map((target) => <div key={target.id} className="flex items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate">{target.name} ({target.kind})</span><button className="text-muted-foreground hover:text-destructive" onClick={async () => { if (!confirm(`投稿先「${target.name}」を削除すると、その投稿先を使った既存の投稿記録との紐付けも失われます。\n\n本当に削除しますか？`)) return; await deletePostTarget(target.id); await reloadSettings(); await queryClient.invalidateQueries({ queryKey: ["postRecords"] }); }}>削除</button></div>)}
             </div>
             <div className="space-y-2 border-t border-border pt-3">
               <p className="ui-label">アカウント</p>
               <select className="ui-input w-full" value={accountTargetId} onChange={(event) => setAccountTargetId(Number(event.target.value))}>{targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select>
               <input className="ui-input w-full" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="表示名" />
               <div className="flex gap-1.5"><input className="ui-input min-w-0 flex-1" value={accountIdentifier} onChange={(event) => setAccountIdentifier(event.target.value)} placeholder="@username / ID" /><button className="ui-primary-button" onClick={async () => { if (!accountTargetId || !accountName.trim()) return; await createPostAccount(accountTargetId, accountName.trim(), accountIdentifier.trim()); setAccountName(""); setAccountIdentifier(""); await reloadSettings(); }}>追加</button></div>
-              {accounts.map((account) => <div key={account.id} className="flex items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate">{account.displayName}{account.accountIdentifier ? ` · ${account.accountIdentifier}` : ""}</span><button className="text-muted-foreground hover:text-destructive" onClick={async () => { await deletePostAccount(account.id); await reloadSettings(); }}>削除</button></div>)}
+              {accounts.map((account) => <div key={account.id} className="flex items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate">{account.displayName}{account.accountIdentifier ? ` · ${account.accountIdentifier}` : ""}</span><button className="text-muted-foreground hover:text-destructive" onClick={async () => { if (!confirm(`アカウント「${account.displayName}」を削除すると、そのアカウントを使った既存の投稿記録との紐付けも失われます。\n\n本当に削除しますか？`)) return; await deletePostAccount(account.id); await reloadSettings(); await queryClient.invalidateQueries({ queryKey: ["postRecords"] }); }}>削除</button></div>)}
             </div>
           </div>
         )}
@@ -335,7 +335,7 @@ export function ToolbarV2() {
   const library = state.libraries.find((item) => item.id === state.selectedLibraryId);
   const folderName = state.selectedFolderPath.split(/[\\/]/).pop() || "";
   useEffect(() => setSearch(state.searchQuery), [state.searchQuery]);
-  useEffect(() => () => timer.current && clearTimeout(timer.current), []);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const updateSearch = (value: string) => {
     setSearch(value);
