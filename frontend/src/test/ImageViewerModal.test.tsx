@@ -3,7 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { AssetDTO } from "../api/client";
 
 vi.mock("../components/MemoryImage", () => ({
-  MemoryImage: ({ alt }: { alt: string }) => <div data-testid="viewer-preview">{alt}</div>,
+  MemoryImage: ({ alt, maxDecodePixels, priority }: { alt: string; maxDecodePixels?: number; priority?: string }) => (
+    <div
+      data-testid="viewer-preview"
+      data-max-decode-pixels={maxDecodePixels}
+      data-priority={priority}
+    >
+      {alt}
+    </div>
+  ),
 }));
 
 vi.mock("../api/client", () => ({
@@ -39,6 +47,14 @@ function pointerEvent(type: string, values: Record<string, number>) {
 }
 
 describe("ImageViewerModal", () => {
+  it("全画面プレビューを高優先度かつ過大でないBitmapサイズで要求する", () => {
+    render(<ImageViewerModal asset={asset} onClose={vi.fn()} />);
+
+    const preview = screen.getByTestId("viewer-preview");
+    expect(preview).toHaveAttribute("data-priority", "high");
+    expect(preview).toHaveAttribute("data-max-decode-pixels", "4000000");
+  });
+
   it("元画像の読み込み前でも拡大後のドラッグで表示位置を移動できる", async () => {
     render(<ImageViewerModal asset={asset} onClose={vi.fn()} />);
 
