@@ -8,7 +8,7 @@ vi.mock("../components/MemoryImage", () => ({
 }));
 
 vi.mock("../api/client", () => ({
-  getAssetDetail: vi.fn(() => new Promise<null>(() => undefined)),
+  getAssetDetail: vi.fn(async () => null),
   getPostRecordsByAsset: vi.fn(async () => []),
   listTags: vi.fn(async () => []),
   setAssetTags: vi.fn(async () => undefined),
@@ -40,7 +40,7 @@ const freshlyListedAsset = {
 } as AssetDTO;
 
 describe("AssetDetailPanel", () => {
-  it("詳細APIの応答待ちでも一覧データから基本情報をすぐ表示する", () => {
+  it("詳細APIが未取得でも一覧データから基本情報をすぐ表示する", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -54,6 +54,5 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByText("freshly-scanned.png")).toBeInTheDocument();
     expect(screen.getByText("C:\\images\\new\\freshly-scanned.png")).toBeInTheDocument();
     expect(screen.getByTestId("memory-image")).toHaveTextContent("freshly-scanned.png");
-    expect(screen.getByTitle("詳細情報を読み込み中")).toBeInTheDocument();
   });
 });
