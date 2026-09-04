@@ -18,6 +18,7 @@ vi.mock("../components/PostRecordModal", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  createTag: vi.fn(),
   getAssetDetail: vi.fn(),
   getPostRecordsByAsset: vi.fn(async () => []),
   listTags: vi.fn(async () => []),
