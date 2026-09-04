@@ -18,7 +18,7 @@ export type PostTargetDTO = cmds.PostTargetDTO;
 export type PostAccountDTO = cmds.PostAccountDTO;
 
 export interface ScanProgress {
-  libraryID: number;
+  libraryId: number;
   scannedCount: number;
   addedCount: number;
   updatedCount: number;
@@ -64,10 +64,10 @@ export async function scanLibrary(libraryId: number): Promise<void> {
   if (method) await method(libraryId);
   else await Go.ScanLibrary(libraryId);
 
-  // Every caller (initial import, sidebar rescan, settings flow) gets the same
-  // cache-consistency guarantee without depending on a component-local event
-  // listener.
-  await queryClient.invalidateQueries({ queryKey: ["assets", libraryId] });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["assets", libraryId] }),
+    queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId] }),
+  ]);
 }
 
 export const updateAssetNote = Go.UpdateAssetNote;
