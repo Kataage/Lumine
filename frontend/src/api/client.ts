@@ -25,6 +25,12 @@ export interface PostRecordRequest {
   externalPostId: string;
 }
 
+export interface PostRecordAssetDTO {
+  id: number;
+  fileName: string;
+  filePath: string;
+}
+
 export interface PostRecordDTO {
   id: number;
   title: string;
@@ -33,6 +39,7 @@ export interface PostRecordDTO {
   createdAt: string;
   updatedAt: string;
   assetIds: number[];
+  assets: PostRecordAssetDTO[];
   targetId: number;
   targetName: string;
   targetKind: string;
