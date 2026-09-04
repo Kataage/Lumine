@@ -227,7 +227,7 @@ export default function App() {
             <ToolbarV2 />
             <div className="app-main-region relative flex flex-1 min-h-0 min-w-0">
               <div className="flex-1 min-w-0 flex"><ViewerGridV2 onSelectAsset={handleSelectAsset} onAssetsLoaded={handleAssetsLoaded} /></div>
-              {state.detailOpen && state.detailAsset && <AssetDetailPanel assetId={state.detailAsset.id} onClose={handleCloseDetail} />}
+              {state.detailOpen && state.detailAsset && <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />}
             </div>
             {state.selectedAssets.size > 1 && (
               <BulkActionsBar
