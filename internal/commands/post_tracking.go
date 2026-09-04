@@ -14,24 +14,31 @@ type PostRecordRequest struct {
 	ExternalPostID string  `json:"externalPostId"`
 }
 
-type PostRecordDTO struct {
-	ID                int64   `json:"id"`
-	Title             string  `json:"title"`
-	Status            string  `json:"status"`
-	PublishedAt       string  `json:"publishedAt,omitempty"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
-	AssetIDs          []int64 `json:"assetIds"`
-	TargetID          int64   `json:"targetId"`
-	TargetName        string  `json:"targetName"`
-	TargetKind        string  `json:"targetKind"`
-	AccountID         int64   `json:"accountId"`
-	AccountDisplay    string  `json:"accountDisplay"`
-	AccountIdentifier string  `json:"accountIdentifier"`
-	ExternalPostID    string  `json:"externalPostId,omitempty"`
+type PostRecordAssetDTO struct {
+	ID       int64  `json:"id"`
+	FileName string `json:"fileName"`
+	FilePath string `json:"filePath"`
 }
 
-func toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
+type PostRecordDTO struct {
+	ID                int64                `json:"id"`
+	Title             string               `json:"title"`
+	Status            string               `json:"status"`
+	PublishedAt       string               `json:"publishedAt,omitempty"`
+	CreatedAt         string               `json:"createdAt"`
+	UpdatedAt         string               `json:"updatedAt"`
+	AssetIDs          []int64              `json:"assetIds"`
+	Assets            []PostRecordAssetDTO `json:"assets"`
+	TargetID          int64                `json:"targetId"`
+	TargetName        string               `json:"targetName"`
+	TargetKind        string               `json:"targetKind"`
+	AccountID         int64                `json:"accountId"`
+	AccountDisplay    string               `json:"accountDisplay"`
+	AccountIdentifier string               `json:"accountIdentifier"`
+	ExternalPostID    string               `json:"externalPostId,omitempty"`
+}
+
+func (c *AppCommands) toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
 	dto := PostRecordDTO{
 		ID:                record.ID,
 		Title:             record.Title,
@@ -39,6 +46,7 @@ func toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
 		CreatedAt:         record.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:         record.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		AssetIDs:          record.AssetIDs,
+		Assets:            make([]PostRecordAssetDTO, 0, len(record.AssetIDs)),
 		TargetID:          record.TargetID,
 		TargetName:        record.TargetName,
 		TargetKind:        record.TargetKind,
@@ -49,6 +57,21 @@ func toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
 	}
 	if record.PublishedAt != nil {
 		dto.PublishedAt = record.PublishedAt.Format("2006-01-02T15:04:05Z")
+	}
+	for _, assetID := range record.AssetIDs {
+		asset, err := c.assetRepo.GetByID(assetID)
+		if err != nil {
+			slog.Warn("load post record asset", "postID", record.ID, "assetID", assetID, "error", err)
+			continue
+		}
+		if asset == nil {
+			continue
+		}
+		dto.Assets = append(dto.Assets, PostRecordAssetDTO{
+			ID:       asset.ID,
+			FileName: asset.FileName,
+			FilePath: asset.FilePath,
+		})
 	}
 	return dto
 }
@@ -73,7 +96,7 @@ func (c *AppCommands) CreatePostRecord(req PostRecordRequest) *PostRecordDTO {
 	}
 	for _, record := range records {
 		if record.ID == postID {
-			dto := toPostRecordDTO(record)
+			dto := c.toPostRecordDTO(record)
 			return &dto
 		}
 	}
@@ -88,7 +111,7 @@ func (c *AppCommands) ListPostRecords(offset, limit int) []PostRecordDTO {
 	}
 	result := make([]PostRecordDTO, len(records))
 	for i, record := range records {
-		result[i] = toPostRecordDTO(record)
+		result[i] = c.toPostRecordDTO(record)
 	}
 	return result
 }
@@ -101,7 +124,7 @@ func (c *AppCommands) GetPostRecordsByAsset(assetID int64) []PostRecordDTO {
 	}
 	result := make([]PostRecordDTO, len(records))
 	for i, record := range records {
-		result[i] = toPostRecordDTO(record)
+		result[i] = c.toPostRecordDTO(record)
 	}
 	return result
 }
