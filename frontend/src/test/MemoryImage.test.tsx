@@ -2,6 +2,13 @@ import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils/imagePipeline", () => ({
+  computeCoverCrop: vi.fn((sourceWidth: number, sourceHeight: number) => ({
+    x: 0,
+    y: 0,
+    width: sourceWidth,
+    height: sourceHeight,
+  })),
+  getCachedMemoryBitmap: vi.fn(() => null),
   loadMemoryBitmap: vi.fn(),
 }));
 
@@ -9,7 +16,7 @@ vi.mock("../api/client", () => ({
   getLocalImageUrl: (path: string) => `/local?path=${encodeURIComponent(path)}`,
 }));
 
-import { loadMemoryBitmap } from "../utils/imagePipeline";
+import { getCachedMemoryBitmap, loadMemoryBitmap } from "../utils/imagePipeline";
 import { MemoryImage } from "../components/MemoryImage";
 
 function deferred<T>() {
@@ -27,8 +34,13 @@ function bitmap(width: number, height: number): ImageBitmap {
 }
 
 describe("MemoryImage", () => {
+  let drawImage: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.mocked(loadMemoryBitmap).mockReset();
+    vi.mocked(getCachedMemoryBitmap).mockReset();
+    vi.mocked(getCachedMemoryBitmap).mockReturnValue(null);
+    drawImage = vi.fn();
     Object.defineProperty(globalThis, "createImageBitmap", {
       configurable: true,
       value: vi.fn(),
@@ -37,7 +49,7 @@ describe("MemoryImage", () => {
       configurable: true,
       value: vi.fn(() => ({
         clearRect: vi.fn(),
-        drawImage: vi.fn(),
+        drawImage,
       })),
     });
   });
@@ -66,5 +78,23 @@ describe("MemoryImage", () => {
     larger.resolve(bitmap(260, 260));
     await waitFor(() => expect(canvas.width).toBe(260));
     expect(canvas.height).toBe(260);
+  });
+
+  it("列組み替えでカードが再マウントされても既存メモリBitmapを即表示する", async () => {
+    const exact = deferred<ImageBitmap>();
+    vi.mocked(getCachedMemoryBitmap).mockReturnValue(bitmap(180, 180));
+    vi.mocked(loadMemoryBitmap).mockImplementation(() => exact.promise);
+
+    const { container } = render(
+      <MemoryImage filePath="C:\\images\\a.png" width={260} height={260} alt="a.png" />
+    );
+    const canvas = container.querySelector("canvas") as HTMLCanvasElement;
+
+    await waitFor(() => expect(canvas.width).toBe(260));
+    expect(canvas.height).toBe(260);
+    expect(drawImage).toHaveBeenCalled();
+
+    exact.resolve(bitmap(260, 260));
+    await waitFor(() => expect(drawImage.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 });
