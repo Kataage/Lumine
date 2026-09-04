@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLocalImageUrl } from "../api/client";
-import { loadMemoryBitmap, type ImageDecodePriority, type ImageFit } from "../utils/imagePipeline";
+import {
+  computeCoverCrop,
+  getCachedMemoryBitmap,
+  loadMemoryBitmap,
+  type ImageDecodePriority,
+  type ImageFit,
+} from "../utils/imagePipeline";
 
 interface MemoryImageProps {
   filePath: string;
@@ -13,6 +19,45 @@ interface MemoryImageProps {
   priority?: ImageDecodePriority;
   alt?: string;
   className?: string;
+}
+
+function paintCachedPlaceholder(
+  canvas: HTMLCanvasElement,
+  bitmap: ImageBitmap,
+  targetWidth: number,
+  targetHeight: number,
+  fit: ImageFit
+): boolean {
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) return false;
+
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  ctx.clearRect(0, 0, targetWidth, targetHeight);
+
+  if (fit === "cover") {
+    const crop = computeCoverCrop(bitmap.width, bitmap.height, targetWidth, targetHeight);
+    ctx.drawImage(
+      bitmap,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      0,
+      0,
+      targetWidth,
+      targetHeight
+    );
+    return true;
+  }
+
+  const scale = Math.min(targetWidth / Math.max(1, bitmap.width), targetHeight / Math.max(1, bitmap.height));
+  const drawWidth = Math.max(1, Math.round(bitmap.width * scale));
+  const drawHeight = Math.max(1, Math.round(bitmap.height * scale));
+  const x = Math.floor((targetWidth - drawWidth) / 2);
+  const y = Math.floor((targetHeight - drawHeight) / 2);
+  ctx.drawImage(bitmap, x, y, drawWidth, drawHeight);
+  return true;
 }
 
 export function MemoryImage({
@@ -61,11 +106,7 @@ export function MemoryImage({
 
     const targetWidth = Math.max(1, Math.round(width * pixelRatio));
     const targetHeight = Math.max(1, Math.round(height * pixelRatio));
-
-    // Do not resize/clear the canvas before the replacement bitmap is ready.
-    // Keeping the previous pixels stretched by CSS avoids the black flash on a
-    // library refresh or when switching thumbnail size from medium to large.
-    loadMemoryBitmap({
+    const request = {
       filePath,
       modifiedAtFs,
       sourceWidth,
@@ -74,7 +115,24 @@ export function MemoryImage({
       targetHeight,
       fit,
       priority,
-    })
+    } as const;
+
+    // A thumbnail-size change can regroup virtualized rows and remount cards.
+    // In that case there is no old canvas to preserve, so paint the closest
+    // already-decoded bitmap from the memory LRU synchronously. The sharper
+    // requested bitmap replaces it as soon as decoding finishes.
+    if (!hasRenderedRef.current) {
+      const cachedPlaceholder = getCachedMemoryBitmap(request);
+      if (cachedPlaceholder && paintCachedPlaceholder(canvas, cachedPlaceholder, targetWidth, targetHeight, fit)) {
+        hasRenderedRef.current = true;
+        setLoading(false);
+      }
+    }
+
+    // Do not resize/clear an already-rendered canvas before the replacement
+    // bitmap is ready. CSS can stretch the existing pixels temporarily without
+    // ever presenting an empty black frame.
+    loadMemoryBitmap(request)
       .then((bitmap) => {
         if (cancelled) return;
         const ctx = canvas.getContext("2d", { alpha: false });
