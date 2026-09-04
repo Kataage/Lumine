@@ -25,19 +25,32 @@ func Open(appDir string) (*DB, error) {
 	dbPath := filepath.Join(appDir, "lumine.db")
 	slog.Info("opening database", "path", dbPath)
 
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	// WAL is useful only when reads are allowed to use connections other than the
+	// active writer. The previous SetMaxOpenConns(1) serialized the scanner and
+	// the UI even though WAL was enabled, making browsing stall during scans.
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)"
+	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
+	// SQLite still has a single writer, but WAL permits concurrent readers. A
+	// small bounded pool avoids both the old global bottleneck and an excessive
+	// number of SQLite connections on large libraries.
+	database.SetMaxOpenConns(4)
+	database.SetMaxIdleConns(4)
 
-	if err := migrate(db); err != nil {
-		db.Close()
+	if err := database.Ping(); err != nil {
+		database.Close()
+		return nil, fmt.Errorf("ping db: %w", err)
+	}
+
+	if err := migrate(database); err != nil {
+		database.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
-	return &DB{db}, nil
+	return &DB{database}, nil
 }
 
 func EnsureAppDir() (string, error) {
@@ -46,17 +59,27 @@ func EnsureAppDir() (string, error) {
 		return "", fmt.Errorf("user home dir: %w", err)
 	}
 	appDir := filepath.Join(home, "lumine")
-	dirs := []string{
-		appDir,
-		filepath.Join(appDir, "thumb-cache"),
-		filepath.Join(appDir, "logs"),
-		filepath.Join(appDir, "tmp"),
-	}
-	for _, d := range dirs {
+
+	// Lumine no longer creates thumbnail or temporary image directories. The
+	// database and logs are the only persistent app-owned data required here.
+	for _, d := range []string{appDir, filepath.Join(appDir, "logs")} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			return "", fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
+
+	// Clean up only empty legacy cache directories. Never delete old contents
+	// automatically; users may want to inspect/remove them themselves.
+	for _, legacy := range []string{
+		filepath.Join(appDir, "thumb-cache"),
+		filepath.Join(appDir, "tmp"),
+	} {
+		entries, readErr := os.ReadDir(legacy)
+		if readErr == nil && len(entries) == 0 {
+			_ = os.Remove(legacy)
+		}
+	}
+
 	return appDir, nil
 }
 
