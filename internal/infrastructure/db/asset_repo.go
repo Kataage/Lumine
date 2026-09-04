@@ -102,8 +102,6 @@ func (r *AssetRepo) List(q AssetQuery) (*AssetListResult, error) {
 		where += fmt.Sprintf(" AND a.id IN (SELECT at2.asset_id FROM asset_tags at2 WHERE at2.tag_id IN (%s))", placeholders)
 	}
 
-	// COUNT is only required for the first page. Repeating it on every infinite-
-	// scroll request doubled the DB work for large libraries.
 	totalCount := -1
 	if q.Offset == 0 {
 		countArgs := append([]interface{}(nil), args...)
@@ -133,8 +131,6 @@ func (r *AssetRepo) List(q AssetQuery) (*AssetListResult, error) {
 		sortDir = "DESC"
 	}
 
-	// The grid does not need notes, EXIF, hashes, MIME data, or audit timestamps.
-	// Fetch a compact row here and load the full record only for the detail panel.
 	querySQL := fmt.Sprintf(
 		"SELECT a.id, a.library_id, a.folder_path, a.file_name, a.file_path, a.extension, a.file_size, a.modified_at_fs, a.width, a.height, a.rating, a.status_label, a.is_favorite, a.color_label FROM assets a %s ORDER BY %s %s, a.id %s LIMIT ? OFFSET ?",
 		where, sortCol, sortDir, sortDir,
@@ -186,11 +182,11 @@ func (r *AssetRepo) GetByID(id int64) (*domain.Asset, error) {
 	var createdAtFS, modifiedAtFS, hashBlake3, colorLabel sql.NullString
 	var mimeType sql.NullString
 	err := r.db.QueryRow(
-		"SELECT id, library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude, indexed_at, updated_at FROM assets WHERE id = ?", id,
+		"SELECT id, library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, metadata_loaded, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude, indexed_at, updated_at FROM assets WHERE id = ?", id,
 	).Scan(
 		&a.ID, &a.LibraryID, &a.FolderPath, &a.FileName, &a.FilePath, &a.Extension, &a.FileSize,
 		&createdAtFS, &modifiedAtFS, &a.Width, &a.Height, &mimeType, &hashBlake3,
-		&a.ThumbStatus, &a.Rating, &a.StatusLabel, &a.IsFavorite, &colorLabel,
+		&a.ThumbStatus, &a.MetadataLoaded, &a.Rating, &a.StatusLabel, &a.IsFavorite, &colorLabel,
 		&a.CameraModel, &a.LensModel, &a.FocalLength, &a.Aperture, &a.ShutterSpeed, &a.ISO,
 		&a.ExifDate, &a.GPSLatitude, &a.GPSLongitude,
 		&a.IndexedAt, &a.UpdatedAt,
@@ -237,10 +233,10 @@ func (r *AssetRepo) GetByFilePath(filePath string) (*domain.Asset, error) {
 
 func (r *AssetRepo) Create(a *domain.Asset) (int64, error) {
 	result, err := r.db.Exec(
-		"INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, metadata_loaded, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		a.LibraryID, a.FolderPath, a.FileName, a.FilePath, a.Extension, a.FileSize,
 		a.CreatedAtFS, a.ModifiedAtFS, a.Width, a.Height, a.MimeType, a.HashBlake3,
-		a.ThumbStatus, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
+		a.ThumbStatus, a.MetadataLoaded, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
 		a.CameraModel, a.LensModel, a.FocalLength, a.Aperture, a.ShutterSpeed, a.ISO,
 		a.ExifDate, a.GPSLatitude, a.GPSLongitude,
 	)
@@ -252,9 +248,9 @@ func (r *AssetRepo) Create(a *domain.Asset) (int64, error) {
 
 func (r *AssetRepo) Update(a *domain.Asset) error {
 	_, err := r.db.Exec(
-		"UPDATE assets SET folder_path = ?, file_name = ?, file_path = ?, file_size = ?, modified_at_fs = ?, width = ?, height = ?, mime_type = ?, rating = ?, status_label = ?, is_favorite = ?, color_label = ?, thumb_status = ?, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		"UPDATE assets SET folder_path = ?, file_name = ?, file_path = ?, file_size = ?, modified_at_fs = ?, width = ?, height = ?, mime_type = ?, metadata_loaded = ?, rating = ?, status_label = ?, is_favorite = ?, color_label = ?, thumb_status = ?, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 		a.FolderPath, a.FileName, a.FilePath, a.FileSize, a.ModifiedAtFS,
-		a.Width, a.Height, a.MimeType, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel, a.ThumbStatus,
+		a.Width, a.Height, a.MimeType, a.MetadataLoaded, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel, a.ThumbStatus,
 		a.CameraModel, a.LensModel, a.FocalLength, a.Aperture, a.ShutterSpeed, a.ISO,
 		a.ExifDate, a.GPSLatitude, a.GPSLongitude, a.ID,
 	)
@@ -263,7 +259,7 @@ func (r *AssetRepo) Update(a *domain.Asset) error {
 
 func (r *AssetRepo) UpdateMetadata(a *domain.Asset) error {
 	_, err := r.db.Exec(
-		"UPDATE assets SET width = ?, height = ?, mime_type = ?, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		"UPDATE assets SET width = ?, height = ?, mime_type = ?, metadata_loaded = 1, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 		a.Width, a.Height, a.MimeType,
 		a.CameraModel, a.LensModel, a.FocalLength, a.Aperture, a.ShutterSpeed, a.ISO,
 		a.ExifDate, a.GPSLatitude, a.GPSLongitude, a.ID,
@@ -366,7 +362,7 @@ func (r *AssetRepo) UpdateFilePath(id int64, newPath, newFolder, newName string)
 
 func (r *AssetRepo) GetAllFilePathsMap(libraryID int64) (map[string]*domain.Asset, error) {
 	rows, err := r.db.Query(
-		"SELECT id, library_id, folder_path, file_name, file_path, extension, file_size, modified_at_fs, width, height, mime_type, thumb_status, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude FROM assets WHERE library_id = ?",
+		"SELECT id, library_id, folder_path, file_name, file_path, extension, file_size, modified_at_fs, width, height, mime_type, thumb_status, metadata_loaded, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude FROM assets WHERE library_id = ?",
 		libraryID,
 	)
 	if err != nil {
@@ -380,7 +376,7 @@ func (r *AssetRepo) GetAllFilePathsMap(libraryID int64) (map[string]*domain.Asse
 		var modifiedAtFS, colorLabel, mimeType sql.NullString
 		if err := rows.Scan(
 			&a.ID, &a.LibraryID, &a.FolderPath, &a.FileName, &a.FilePath,
-			&a.Extension, &a.FileSize, &modifiedAtFS, &a.Width, &a.Height, &mimeType, &a.ThumbStatus,
+			&a.Extension, &a.FileSize, &modifiedAtFS, &a.Width, &a.Height, &mimeType, &a.ThumbStatus, &a.MetadataLoaded,
 			&a.Rating, &a.StatusLabel, &a.IsFavorite, &colorLabel,
 			&a.CameraModel, &a.LensModel, &a.FocalLength, &a.Aperture, &a.ShutterSpeed, &a.ISO,
 			&a.ExifDate, &a.GPSLatitude, &a.GPSLongitude,
@@ -412,7 +408,7 @@ func (r *AssetRepo) CreateBatch(assets []*domain.Asset) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		"INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO assets (library_id, folder_path, file_name, file_path, extension, file_size, created_at_fs, modified_at_fs, width, height, mime_type, hash_blake3, thumb_status, metadata_loaded, rating, status_label, is_favorite, color_label, camera_model, lens_model, focal_length, aperture, shutter_speed, iso, exif_date, gps_latitude, gps_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return err
@@ -423,7 +419,7 @@ func (r *AssetRepo) CreateBatch(assets []*domain.Asset) error {
 		_, err := stmt.Exec(
 			a.LibraryID, a.FolderPath, a.FileName, a.FilePath, a.Extension, a.FileSize,
 			a.CreatedAtFS, a.ModifiedAtFS, a.Width, a.Height, a.MimeType, a.HashBlake3,
-			a.ThumbStatus, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
+			a.ThumbStatus, a.MetadataLoaded, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
 			a.CameraModel, a.LensModel, a.FocalLength, a.Aperture, a.ShutterSpeed, a.ISO,
 			a.ExifDate, a.GPSLatitude, a.GPSLongitude,
 		)
@@ -465,7 +461,7 @@ func (r *AssetRepo) UpdateBatch(assets []*domain.Asset) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		"UPDATE assets SET folder_path = ?, file_name = ?, file_path = ?, file_size = ?, modified_at_fs = ?, width = ?, height = ?, mime_type = ?, rating = ?, status_label = ?, is_favorite = ?, color_label = ?, thumb_status = ?, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		"UPDATE assets SET folder_path = ?, file_name = ?, file_path = ?, file_size = ?, modified_at_fs = ?, width = ?, height = ?, mime_type = ?, metadata_loaded = ?, rating = ?, status_label = ?, is_favorite = ?, color_label = ?, thumb_status = ?, camera_model = ?, lens_model = ?, focal_length = ?, aperture = ?, shutter_speed = ?, iso = ?, exif_date = ?, gps_latitude = ?, gps_longitude = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
 	)
 	if err != nil {
 		return err
@@ -475,7 +471,7 @@ func (r *AssetRepo) UpdateBatch(assets []*domain.Asset) error {
 	for _, a := range assets {
 		_, err := stmt.Exec(
 			a.FolderPath, a.FileName, a.FilePath, a.FileSize, a.ModifiedAtFS,
-			a.Width, a.Height, a.MimeType, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
+			a.Width, a.Height, a.MimeType, a.MetadataLoaded, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
 			a.ThumbStatus,
 			a.CameraModel, a.LensModel, a.FocalLength, a.Aperture, a.ShutterSpeed, a.ISO,
 			a.ExifDate, a.GPSLatitude, a.GPSLongitude, a.ID,
