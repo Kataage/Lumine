@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLocalImageUrl } from "../api/client";
-import { loadMemoryBitmap, type ImageFit } from "../utils/imagePipeline";
+import { loadMemoryBitmap, type ImageDecodePriority, type ImageFit } from "../utils/imagePipeline";
 
 interface MemoryImageProps {
   filePath: string;
@@ -10,6 +10,7 @@ interface MemoryImageProps {
   width: number;
   height: number;
   fit?: ImageFit;
+  priority?: ImageDecodePriority;
   alt?: string;
   className?: string;
 }
@@ -22,6 +23,7 @@ export function MemoryImage({
   width,
   height,
   fit = "cover",
+  priority = "normal",
   alt = "",
   className = "",
 }: MemoryImageProps) {
@@ -42,6 +44,14 @@ export function MemoryImage({
     setFallbackError(false);
 
     const canvas = canvasRef.current;
+    if (!filePath) {
+      setFallbackError(true);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (!canvas || typeof createImageBitmap !== "function") {
       setFallback(true);
       setLoading(false);
@@ -63,6 +73,7 @@ export function MemoryImage({
       targetWidth,
       targetHeight,
       fit,
+      priority,
     })
       .then((bitmap) => {
         if (cancelled) return;
@@ -84,7 +95,7 @@ export function MemoryImage({
     return () => {
       cancelled = true;
     };
-  }, [filePath, modifiedAtFs, sourceWidth, sourceHeight, width, height, fit, pixelRatio]);
+  }, [filePath, modifiedAtFs, sourceWidth, sourceHeight, width, height, fit, priority, pixelRatio]);
 
   return (
     <div
@@ -111,10 +122,11 @@ export function MemoryImage({
         />
       )}
       {fallbackError && (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/50 text-[10px]">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
           </svg>
+          <span>プレビュー不可</span>
         </div>
       )}
     </div>
