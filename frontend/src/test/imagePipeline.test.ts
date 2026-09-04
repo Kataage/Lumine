@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { computeContainSize, computeCoverCrop } from "../utils/imagePipeline";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../api/client", () => ({
+  getLocalImageUrl: (path: string) => `/local?path=${encodeURIComponent(path)}`,
+}));
+
+import {
+  clearMemoryImageCache,
+  computeContainSize,
+  computeCoverCrop,
+  loadMemoryBitmap,
+} from "../utils/imagePipeline";
 
 describe("computeCoverCrop", () => {
   it("center-crops a wide image for a square preview", () => {
@@ -41,5 +51,62 @@ describe("computeContainSize", () => {
       width: 1,
       height: 1,
     });
+  });
+});
+
+describe("decode priority", () => {
+  afterEach(() => {
+    clearMemoryImageCache();
+    vi.unstubAllGlobals();
+  });
+
+  it("通常3件が実行中でもhigh要求を4番目の予約枠で先に開始する", async () => {
+    type PendingFetch = {
+      url: string;
+      resolve: (value: Response) => void;
+    };
+    const pending: PendingFetch[] = [];
+
+    const fetchMock = vi.fn((input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      pending.push({ url: String(input), resolve });
+    }));
+    const close = vi.fn();
+    const createImageBitmapMock = vi.fn(async () => ({ width: 32, height: 32, close } as unknown as ImageBitmap));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("createImageBitmap", createImageBitmapMock);
+
+    const request = (name: string, priority: "normal" | "high") => loadMemoryBitmap({
+      filePath: `C:\\images\\${name}.png`,
+      modifiedAtFs: "2026-09-04T00:00:00Z",
+      sourceWidth: 100,
+      sourceHeight: 100,
+      targetWidth: 32,
+      targetHeight: 32,
+      fit: "cover",
+      priority,
+    });
+
+    const normal1 = request("normal-1", "normal");
+    const normal2 = request("normal-2", "normal");
+    const normal3 = request("normal-3", "normal");
+    const normal4 = request("normal-4", "normal");
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    const focused = request("focused", "high");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(pending[3]?.url).toContain("focused.png");
+
+    const response = () => ({
+      ok: true,
+      blob: async () => new Blob(["image"]),
+    } as Response);
+
+    pending.slice(0, 4).forEach((item) => item.resolve(response()));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(pending[4]?.url).toContain("normal-4.png");
+    pending[4]?.resolve(response());
+
+    await Promise.all([normal1, normal2, normal3, normal4, focused]);
   });
 });
