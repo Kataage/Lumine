@@ -42,3 +42,8 @@ func (r *FolderRepo) UpsertFolder(libraryID int64, path, parentPath string) erro
 	)
 	return err
 }
+
+func (r *FolderRepo) DeletePath(libraryID int64, path string) error {
+	_, err := r.db.Exec("DELETE FROM folders WHERE library_id = ? AND path = ?", libraryID, path)
+	return err
+}
