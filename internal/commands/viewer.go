@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // GetViewerAssetDetail is the viewer-oriented detail path. Expensive EXIF
@@ -43,8 +45,6 @@ func (c *AppCommands) GetViewerAssetDetail(id int64) *AssetDTO {
 
 		asset.MetadataLoaded = true
 		if err := c.assetRepo.UpdateMetadata(asset); err != nil {
-			// Metadata persistence failure should not prevent the image itself from
-			// being viewed. The detail data for this request is still returned.
 			slog.Warn("persist viewer metadata", "id", id, "error", err)
 		}
 	}
@@ -64,4 +64,25 @@ func (c *AppCommands) GetViewerAssetDetail(id int64) *AssetDTO {
 	}
 
 	return &dto
+}
+
+// ScanLibraryViewer keeps the expensive walk off the browser thread but gives
+// JavaScript a reliable completion boundary. The older ScanLibrary command
+// returned immediately after spawning another goroutine, which made a freshly
+// added library race its first asset query and frequently appear empty.
+func (c *AppCommands) ScanLibraryViewer(libraryID int64) error {
+	library, err := c.libraryRepo.GetByID(libraryID)
+	if err != nil || library == nil {
+		return fmt.Errorf("library not found: %d", libraryID)
+	}
+	if !library.IsEnabled {
+		return fmt.Errorf("library is disabled: %d", libraryID)
+	}
+
+	excludedDirs := c.GetExcludedDirs(libraryID)
+	return c.scanSvc.ScanLibrary(library, excludedDirs, func(progress scanner.ScanProgress) {
+		if c.ctx != nil {
+			runtime.EventsEmit(c.ctx, "scan:progress", progress)
+		}
+	})
 }
