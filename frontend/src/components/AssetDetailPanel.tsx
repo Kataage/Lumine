@@ -5,7 +5,6 @@ import {
   getAssetDetail,
   getPostRecordsByAsset,
   listTags,
-  setAssetTags,
   toggleAssetFavorite,
   updateAssetColorLabel,
   updateAssetNote,
@@ -16,6 +15,7 @@ import { formatFileSize } from "../utils/format";
 import { ImageViewerModal } from "./ImageViewerModal";
 import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
+import { TagPicker } from "./TagPicker";
 
 interface AssetDetailPanelProps {
   asset: AssetDTO;
@@ -314,25 +314,13 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
           </Section>
 
           <Section title="タグ">
-            <div className="flex flex-wrap gap-1.5">
-              {tags.length > 0 ? tags.map((tag) => {
-                const active = asset.tags?.some((item) => item.id === tag.id) ?? false;
-                return (
-                  <button
-                    key={tag.id}
-                    onClick={async () => {
-                      const current = asset.tags?.map((item) => item.id) ?? [];
-                      const next = active ? current.filter((id) => id !== tag.id) : [...current, tag.id];
-                      await setAssetTags(asset.id, next);
-                      await refreshAll();
-                    }}
-                    className={`h-7 px-2.5 rounded-full border text-[11px] ${active ? "bg-primary/15 border-primary/40 text-foreground" : "bg-muted border-border text-muted-foreground"}`}
-                  >
-                    <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: tag.color }} />{tag.name}
-                  </button>
-                );
-              }) : <p className="text-[11px] text-muted-foreground">タグはまだありません。</p>}
-            </div>
+            <TagPicker
+              assetId={asset.id}
+              tags={tags}
+              assignedTags={asset.tags ?? []}
+              onAssignedTagsChange={(nextTags) => setAsset((current) => ({ ...current, tags: nextTags } as AssetDTO))}
+              onChanged={refreshAll}
+            />
           </Section>
 
           <Section title="メモ">
