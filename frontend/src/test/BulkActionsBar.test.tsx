@@ -10,6 +10,7 @@ function renderBar(overrides: Partial<React.ComponentProps<typeof BulkActionsBar
     onStatus: vi.fn(),
     onFavorite: vi.fn(),
     onColorLabel: vi.fn(),
+    onPostRecord: vi.fn(),
     onDelete: vi.fn(),
     onClear: vi.fn(),
     ...overrides,
@@ -34,11 +35,12 @@ describe("BulkActionsBar", () => {
     expect(screen.getByText("公開済み")).toBeInTheDocument();
   });
 
-  it("お気に入り・削除・選択解除を表示する", () => {
+  it("お気に入り・投稿記録・削除・選択解除を表示する", () => {
     renderBar();
     expect(screen.getByText("★ お気に入り")).toBeInTheDocument();
+    expect(screen.getByText("＋ 投稿記録")).toBeInTheDocument();
     expect(screen.getByText("一覧から削除")).toBeInTheDocument();
-    expect(screen.getByText("選択を解除")).toBeInTheDocument();
+    expect(screen.getByText("選択解除")).toBeInTheDocument();
   });
 
   it("状態ボタンで内部ステータス値を渡す", async () => {
@@ -49,11 +51,19 @@ describe("BulkActionsBar", () => {
     expect(onStatus).toHaveBeenCalledWith("reviewed");
   });
 
+  it("投稿記録モーダルを開ける", async () => {
+    const onPostRecord = vi.fn();
+    renderBar({ onPostRecord });
+    const user = userEvent.setup();
+    await user.click(screen.getByText("＋ 投稿記録"));
+    expect(onPostRecord).toHaveBeenCalledOnce();
+  });
+
   it("選択解除を実行できる", async () => {
     const onClear = vi.fn();
     renderBar({ onClear });
     const user = userEvent.setup();
-    await user.click(screen.getByText("選択を解除"));
+    await user.click(screen.getByText("選択解除"));
     expect(onClear).toHaveBeenCalledOnce();
   });
 
