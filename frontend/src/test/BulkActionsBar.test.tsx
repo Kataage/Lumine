@@ -1,154 +1,67 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BulkActionsBar } from "../App";
 
+function renderBar(overrides: Partial<React.ComponentProps<typeof BulkActionsBar>> = {}) {
+  const props: React.ComponentProps<typeof BulkActionsBar> = {
+    count: 3,
+    onRate: vi.fn(),
+    onStatus: vi.fn(),
+    onFavorite: vi.fn(),
+    onColorLabel: vi.fn(),
+    onDelete: vi.fn(),
+    onClear: vi.fn(),
+    ...overrides,
+  };
+  render(<BulkActionsBar {...props} />);
+  return props;
+}
+
 describe("BulkActionsBar", () => {
-  it("shows selected count", () => {
-    render(
-      <BulkActionsBar
-        count={5}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("5 selected")).toBeInTheDocument();
+  it("選択件数を表示する", () => {
+    renderBar({ count: 5 });
+    expect(screen.getByText("5件を選択中")).toBeInTheDocument();
   });
 
-  it("renders all five star rating buttons", () => {
-    render(
-      <BulkActionsBar
-        count={3}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("Rate:")).toBeInTheDocument();
+  it("評価と状態の操作を表示する", () => {
+    renderBar();
+    expect(screen.getByText("評価")).toBeInTheDocument();
+    expect(screen.getByText("状態")).toBeInTheDocument();
+    expect(screen.getByText("未整理")).toBeInTheDocument();
+    expect(screen.getByText("確認済み")).toBeInTheDocument();
+    expect(screen.getByText("候補")).toBeInTheDocument();
+    expect(screen.getByText("公開済み")).toBeInTheDocument();
   });
 
-  it("renders status buttons", () => {
-    render(
-      <BulkActionsBar
-        count={2}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("Status:")).toBeInTheDocument();
-    expect(screen.getByText("unsorted")).toBeInTheDocument();
-    expect(screen.getByText("reviewed")).toBeInTheDocument();
-    expect(screen.getByText("candidate")).toBeInTheDocument();
-    expect(screen.getByText("published")).toBeInTheDocument();
+  it("お気に入り・削除・選択解除を表示する", () => {
+    renderBar();
+    expect(screen.getByText("★ お気に入り")).toBeInTheDocument();
+    expect(screen.getByText("一覧から削除")).toBeInTheDocument();
+    expect(screen.getByText("選択を解除")).toBeInTheDocument();
   });
 
-  it("renders favorite button", () => {
-    render(
-      <BulkActionsBar
-        count={1}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("Favorite")).toBeInTheDocument();
-  });
-
-  it("renders clear selection button", () => {
-    render(
-      <BulkActionsBar
-        count={1}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("Clear selection")).toBeInTheDocument();
-  });
-
-  it("calls onStatus when status button clicked", async () => {
+  it("状態ボタンで内部ステータス値を渡す", async () => {
     const onStatus = vi.fn();
-    render(
-      <BulkActionsBar
-        count={2}
-        onRate={vi.fn()}
-        onStatus={onStatus}
-        onFavorite={vi.fn()}
-  onColorLabel={vi.fn()}
-          onDelete={vi.fn()}
-          onClear={vi.fn()}
-      />
-    );
+    renderBar({ onStatus });
     const user = userEvent.setup();
-    await user.click(screen.getByText("reviewed"));
+    await user.click(screen.getByText("確認済み"));
     expect(onStatus).toHaveBeenCalledWith("reviewed");
   });
 
-  it("calls onClear when clear button clicked", async () => {
+  it("選択解除を実行できる", async () => {
     const onClear = vi.fn();
-    render(
-      <BulkActionsBar
-        count={3}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onDelete={vi.fn()}
-        onClear={onClear}
-      />
-    );
+    renderBar({ onClear });
     const user = userEvent.setup();
-    await user.click(screen.getByText("Clear selection"));
+    await user.click(screen.getByText("選択を解除"));
     expect(onClear).toHaveBeenCalledOnce();
   });
 
-  it("renders delete button", () => {
-    render(
-      <BulkActionsBar
-        count={2}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onDelete={vi.fn()}
-        onClear={vi.fn()}
-      />
-    );
-    expect(screen.getByText("削除")).toBeInTheDocument();
-  });
-
-  it("calls onDelete when delete button clicked", async () => {
+  it("一覧から削除を実行できる", async () => {
     const onDelete = vi.fn();
-    render(
-      <BulkActionsBar
-        count={2}
-        onRate={vi.fn()}
-        onStatus={vi.fn()}
-        onFavorite={vi.fn()}
-        onColorLabel={vi.fn()}
-        onDelete={onDelete}
-        onClear={vi.fn()}
-      />
-    );
+    renderBar({ onDelete });
     const user = userEvent.setup();
-    await user.click(screen.getByText("削除"));
+    await user.click(screen.getByText("一覧から削除"));
     expect(onDelete).toHaveBeenCalledOnce();
   });
 });
