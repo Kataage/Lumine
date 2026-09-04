@@ -122,11 +122,21 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={(event) => {
-      if (event.currentTarget === event.target && !busy) onClose();
-    }}>
-      <div className="w-full max-w-xl max-h-[calc(100dvh-32px)] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label="投稿記録を追加">
-        <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-3">
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.82)", backdropFilter: "blur(2px)" }}
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target && !busy) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-xl max-h-[calc(100dvh-32px)] overflow-hidden rounded-2xl border border-border shadow-2xl isolate"
+        style={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--card-foreground))", boxShadow: "0 24px 80px rgba(0, 0, 0, 0.7)" }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="投稿記録を追加"
+      >
+        <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-3" style={{ backgroundColor: "hsl(var(--card))" }}>
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">投稿記録を追加</h2>
             <p className="text-[11px] text-muted-foreground truncate">選択した{assetIds.length}件の画像を、どこへ投稿したか記録します。</p>
@@ -134,7 +144,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           <button onClick={onClose} disabled={busy} className="ui-icon-button text-lg" aria-label="閉じる">×</button>
         </div>
 
-        <div className="overflow-auto p-4 space-y-4 max-h-[calc(100dvh-154px)]">
+        <div className="overflow-auto p-4 space-y-4 max-h-[calc(100dvh-154px)]" style={{ backgroundColor: "hsl(var(--card))" }}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="space-y-1.5">
               <span className="ui-label">投稿先</span>
@@ -172,7 +182,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           </div>
 
           {showQuickTarget && (
-            <div className="rounded-xl border border-border bg-muted/25 p-3 space-y-2">
+            <div className="rounded-xl border border-border p-3 space-y-2" style={{ backgroundColor: "hsl(var(--muted))" }}>
               <p className="text-xs font-medium">投稿先をその場で追加</p>
               <div className="grid grid-cols-[minmax(0,1fr)_120px_auto] gap-2">
                 <input className="ui-input min-w-0" value={newTargetName} onChange={(event) => setNewTargetName(event.target.value)} placeholder="例: Pixiv" />
@@ -189,7 +199,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           )}
 
           {showQuickAccount && targetId > 0 && (
-            <div className="rounded-xl border border-border bg-muted/25 p-3 space-y-2">
+            <div className="rounded-xl border border-border p-3 space-y-2" style={{ backgroundColor: "hsl(var(--muted))" }}>
               <p className="text-xs font-medium">この投稿先のアカウントを追加</p>
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
                 <input className="ui-input min-w-0" value={newAccountDisplay} onChange={(event) => setNewAccountDisplay(event.target.value)} placeholder="表示名" />
@@ -223,7 +233,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           {error && <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
         </div>
 
-        <div className="min-h-16 px-4 py-3 border-t border-border flex items-center justify-between gap-3 bg-card">
+        <div className="min-h-16 px-4 py-3 border-t border-border flex items-center justify-between gap-3" style={{ backgroundColor: "hsl(var(--card))" }}>
           <p className="text-[11px] text-muted-foreground">画像ファイル自体は変更・移動されません。</p>
           <div className="flex items-center gap-2">
             <button className="ui-secondary-button" onClick={onClose} disabled={busy}>キャンセル</button>

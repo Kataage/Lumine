@@ -42,11 +42,13 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
     sortDesc: state.sortDesc,
     statusLabel: state.filterStatusLabel || undefined,
     rating: state.filterRating || undefined,
+    tagIds: state.filterTagIds.length > 0 ? state.filterTagIds : undefined,
     offset,
     limit: PAGE_SIZE,
   }), [
     state.filterRating,
     state.filterStatusLabel,
+    state.filterTagIds,
     state.searchQuery,
     state.selectedFolderPath,
     state.selectedLibraryId,
@@ -72,6 +74,7 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
       state.sortDesc,
       state.filterStatusLabel,
       state.filterRating,
+      state.filterTagIds.join(","),
     ],
     queryFn: async ({ pageParam = 0 }) => {
       const result = await listAssets(buildQuery(Number(pageParam)));
@@ -109,6 +112,10 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
   const virtualItems = virtualizer.getVirtualItems();
 
   useEffect(() => {
+    virtualizer.measure();
+  }, [columns, state.thumbnailSize, state.viewMode, virtualizer]);
+
+  useEffect(() => {
     if (!hasNextPage || isFetchingNextPage) return;
     const last = virtualItems[virtualItems.length - 1];
     const maximum = state.viewMode === "grid" ? rowCount : assets.length;
@@ -137,7 +144,13 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
     );
   }
 
-  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating > 0);
+  const hasFilters = !!(
+    state.selectedFolderPath ||
+    state.searchQuery ||
+    state.filterStatusLabel ||
+    state.filterRating > 0 ||
+    state.filterTagIds.length > 0
+  );
 
   return (
     <>
@@ -218,7 +231,7 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
             <div className="max-w-sm rounded-2xl border border-dashed border-border p-8 text-center">
               <p className="text-sm font-semibold">{hasFilters ? "条件に一致する画像がありません" : "画像が見つかりません"}</p>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {hasFilters ? "上部の絞り込み条件を解除して確認してください。" : "対象フォルダーを再スキャンしてください。"}
+                {hasFilters ? "上部の絞り込み条件を解除して確認してください。" : "画像フォルダーの変更は自動で確認されます。必要なら左側から再スキャンもできます。"}
               </p>
             </div>
           </div>
@@ -275,6 +288,7 @@ function GridCard({
         width={size}
         height={size}
         fit="cover"
+        priority="high"
         alt={asset.fileName}
       />
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
@@ -328,6 +342,7 @@ function ListRow({
         width={44}
         height={44}
         fit="cover"
+        priority="high"
         alt={asset.fileName}
         className="rounded-lg flex-shrink-0"
       />

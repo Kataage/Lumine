@@ -27,6 +27,13 @@ const MAX_CONCURRENT_DECODES = 4;
 interface CacheEntry {
   bitmap: ImageBitmap;
   bytes: number;
+  filePath: string;
+  modifiedAtFs: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  targetWidth: number;
+  targetHeight: number;
+  fit: ImageFit;
 }
 
 interface DecodeWaiter {
@@ -122,7 +129,7 @@ function evictToBudget(): void {
   }
 }
 
-function cacheBitmap(key: string, bitmap: ImageBitmap): void {
+function cacheBitmap(key: string, bitmap: ImageBitmap, request: ImageBitmapRequest): void {
   const bytes = bitmap.width * bitmap.height * 4;
   const previous = cache.get(key);
   if (previous) {
@@ -130,9 +137,57 @@ function cacheBitmap(key: string, bitmap: ImageBitmap): void {
     if (previous.bitmap !== bitmap) previous.bitmap.close();
     cache.delete(key);
   }
-  cache.set(key, { bitmap, bytes });
+  cache.set(key, {
+    bitmap,
+    bytes,
+    filePath: request.filePath,
+    modifiedAtFs: request.modifiedAtFs ?? "",
+    sourceWidth: request.sourceWidth ?? 0,
+    sourceHeight: request.sourceHeight ?? 0,
+    targetWidth: Math.max(1, Math.round(request.targetWidth)),
+    targetHeight: Math.max(1, Math.round(request.targetHeight)),
+    fit: request.fit,
+  });
   cacheBytes += bytes;
   evictToBudget();
+}
+
+// Returns the nearest already-decoded representation of the same source image.
+// This is intentionally synchronous: a remounted grid card can paint the old
+// in-memory preview immediately while the requested larger bitmap is decoded.
+export function getCachedMemoryBitmap(request: ImageBitmapRequest): ImageBitmap | null {
+  const sourceWidth = request.sourceWidth ?? 0;
+  const sourceHeight = request.sourceHeight ?? 0;
+  const modifiedAtFs = request.modifiedAtFs ?? "";
+  const targetWidth = Math.max(1, Math.round(request.targetWidth));
+  const targetHeight = Math.max(1, Math.round(request.targetHeight));
+
+  let bestKey: string | null = null;
+  let bestEntry: CacheEntry | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const [key, entry] of cache) {
+    if (
+      entry.filePath !== request.filePath ||
+      entry.modifiedAtFs !== modifiedAtFs ||
+      entry.sourceWidth !== sourceWidth ||
+      entry.sourceHeight !== sourceHeight ||
+      entry.fit !== request.fit
+    ) {
+      continue;
+    }
+
+    const distance = Math.abs(entry.targetWidth - targetWidth) + Math.abs(entry.targetHeight - targetHeight);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestKey = key;
+      bestEntry = entry;
+    }
+  }
+
+  if (!bestKey || !bestEntry) return null;
+  touchCache(bestKey, bestEntry);
+  return bestEntry.bitmap;
 }
 
 function wakeNextDecode(): void {
@@ -236,7 +291,7 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
     }
     const blob = await response.blob();
     const bitmap = await createSizedBitmap(blob, request);
-    cacheBitmap(key, bitmap);
+    cacheBitmap(key, bitmap, request);
     return bitmap;
   }, request.priority ?? "normal");
 

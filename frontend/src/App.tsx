@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { SidebarV2, ToolbarV2, WelcomeScreenV2 } from "./components/NavigationV2";
 import { ViewerGridV2 } from "./components/ViewerGridV2";
@@ -7,15 +7,16 @@ import { PostRecordModal } from "./components/PostRecordModal";
 import type { AssetDTO, LibraryDTO } from "./api/client";
 import {
   addLibrary,
-  bulkDeleteAssets,
   bulkUpdateColorLabel,
   bulkUpdateFavorite,
   bulkUpdateRating,
   bulkUpdateStatus,
+  deleteAssetFiles,
   getAppBootstrap,
   listLibraries,
   scanLibrary,
   selectFolder,
+  syncLibrary,
 } from "./api/client";
 import { queryClient } from "./queryClient";
 
@@ -39,6 +40,7 @@ interface AppState {
   thumbnailSize: number;
   filterStatusLabel: string;
   filterRating: number;
+  filterTagIds: number[];
   allAssetIds: number[];
 }
 
@@ -59,6 +61,7 @@ const defaultState: AppState = {
   thumbnailSize: 180,
   filterStatusLabel: "",
   filterRating: 0,
+  filterTagIds: [],
   allAssetIds: [],
 };
 
@@ -74,12 +77,15 @@ interface BootstrapPayload {
   settings?: Record<string, unknown>;
 }
 
+const AUTO_SYNC_INTERVAL_MS = 15_000;
+
 export default function App() {
   const [state, setState] = useState<AppState>(defaultState);
   const [booting, setBooting] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [addingLibrary, setAddingLibrary] = useState(false);
   const [bulkPostRecordOpen, setBulkPostRecordOpen] = useState(false);
+  const autoSyncRunning = useRef(false);
 
   const loadBootstrap = useCallback(async () => {
     setBooting(true);
@@ -109,6 +115,46 @@ export default function App() {
 
   useEffect(() => { void loadBootstrap(); }, [loadBootstrap]);
 
+  useEffect(() => {
+    const libraryId = state.selectedLibraryId;
+    const library = state.libraries.find((item) => item.id === libraryId);
+    if (!libraryId || !library?.isEnabled) return;
+
+    let disposed = false;
+
+    const run = async () => {
+      if (disposed || document.hidden || autoSyncRunning.current) return;
+      autoSyncRunning.current = true;
+      try {
+        const result = await syncLibrary(libraryId);
+        if (disposed || !result?.changed) return;
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["assets", libraryId], refetchType: "active" }),
+          queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId], refetchType: "active" }),
+        ]);
+      } catch (error) {
+        console.debug("background library sync skipped", error);
+      } finally {
+        autoSyncRunning.current = false;
+      }
+    };
+
+    const initialTimer = window.setTimeout(() => void run(), 1200);
+    const interval = window.setInterval(() => void run(), AUTO_SYNC_INTERVAL_MS);
+    const onFocus = () => void run();
+    const onVisibility = () => { if (!document.hidden) void run(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [state.libraries, state.selectedLibraryId]);
+
   const handleSelectFolder = useCallback(async () => {
     if (addingLibrary) return;
     setAddingLibrary(true);
@@ -119,7 +165,7 @@ export default function App() {
       const library = await addLibrary(name, path);
       if (!library) throw new Error("ライブラリの登録に失敗しました");
       const libraries = await listLibraries();
-      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "" }));
+      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "", filterTagIds: [] }));
       await scanLibrary(library.id);
       const refreshedLibraries = await listLibraries();
       setState((current) => ({ ...current, libraries: refreshedLibraries }));
@@ -161,8 +207,18 @@ export default function App() {
   const handleCloseDetail = useCallback(() => setState((current) => ({ ...current, detailOpen: false, detailAsset: null })), []);
   const handleAssetsLoaded = useCallback((ids: number[]) => {
     setState((current) => {
-      if (current.allAssetIds.length === ids.length && current.allAssetIds.every((id, index) => id === ids[index])) return current;
-      return { ...current, allAssetIds: ids };
+      const sameIds = current.allAssetIds.length === ids.length && current.allAssetIds.every((id, index) => id === ids[index]);
+      const available = new Set(ids);
+      const selectedAssets = new Set(Array.from(current.selectedAssets).filter((id) => available.has(id)));
+      const detailStillExists = !current.detailAsset || available.has(current.detailAsset.id);
+      if (sameIds && selectedAssets.size === current.selectedAssets.size && detailStillExists) return current;
+      return {
+        ...current,
+        allAssetIds: ids,
+        selectedAssets,
+        detailOpen: detailStillExists ? current.detailOpen : false,
+        detailAsset: detailStillExists ? current.detailAsset : null,
+      };
     });
   }, []);
 
@@ -192,19 +248,33 @@ export default function App() {
     await queryClient.invalidateQueries({ queryKey: ["assets"] });
   }, [state.selectedAssets]);
 
-  const handleBulkDelete = useCallback(async () => {
+  const handleDeleteFiles = useCallback(async () => {
     const ids = Array.from(state.selectedAssets);
     if (!ids.length) return;
-    if (!confirm(`選択した${ids.length}件をLumineの一覧から削除します。\n元の画像ファイルは削除されません。\n\n続行しますか？`)) return;
+    const label = ids.length === 1 ? "選択した画像" : `選択した${ids.length}件の画像`;
+    if (!confirm(`${label}の元画像ファイルを削除します。\n\nこの操作は元に戻せません。Lumineの登録情報も同時に削除されます。\n\n本当に削除しますか？`)) return;
+
     try {
-      await bulkDeleteAssets(ids);
-      setState((current) => ({ ...current, selectedAssets: new Set<number>(), detailOpen: false, detailAsset: null }));
-      await queryClient.invalidateQueries({ queryKey: ["assets"] });
+      const result = await deleteAssetFiles(ids);
+      const deleted = new Set(result.deletedIds);
+      setState((current) => ({
+        ...current,
+        selectedAssets: new Set(Array.from(current.selectedAssets).filter((id) => !deleted.has(id))),
+        detailOpen: current.detailAsset && deleted.has(current.detailAsset.id) ? false : current.detailOpen,
+        detailAsset: current.detailAsset && deleted.has(current.detailAsset.id) ? null : current.detailAsset,
+        lastSelectedIndex: null,
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["assets", state.selectedLibraryId], refetchType: "active" });
+
+      if (result.failedCount > 0) {
+        const details = (result.errors ?? []).slice(0, 5).join("\n");
+        alert(`${result.deletedCount}件を削除しましたが、${result.failedCount}件は削除できませんでした。${details ? `\n\n${details}` : ""}`);
+      }
     } catch (error) {
-      console.error("bulk delete failed:", error);
-      alert("一覧からの削除に失敗しました。");
+      console.error("image file delete failed:", error);
+      alert("画像ファイルの削除に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
     }
-  }, [state.selectedAssets]);
+  }, [state.selectedAssets, state.selectedLibraryId]);
 
   if (booting) {
     return <div className="h-screen bg-background text-foreground flex items-center justify-center"><div className="flex flex-col items-center gap-3 text-sm text-muted-foreground"><div className="w-6 h-6 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" /><span>Lumineを起動しています…</span></div></div>;
@@ -229,7 +299,7 @@ export default function App() {
               <div className="flex-1 min-w-0 flex"><ViewerGridV2 onSelectAsset={handleSelectAsset} onAssetsLoaded={handleAssetsLoaded} /></div>
               {state.detailOpen && state.detailAsset && <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />}
             </div>
-            {state.selectedAssets.size > 1 && (
+            {state.selectedAssets.size > 0 && (
               <BulkActionsBar
                 count={state.selectedAssets.size}
                 onRate={handleBulkRate}
@@ -237,7 +307,7 @@ export default function App() {
                 onFavorite={handleBulkFavorite}
                 onColorLabel={handleBulkColorLabel}
                 onPostRecord={() => setBulkPostRecordOpen(true)}
-                onDelete={handleBulkDelete}
+                onDelete={handleDeleteFiles}
                 onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
               />
             )}
@@ -277,7 +347,7 @@ export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLab
       <div className="h-5 w-px bg-border" />
       <button onClick={() => onFavorite(true)} className="ui-secondary-button">★ お気に入り</button>
       <button onClick={onPostRecord} className="ui-primary-button">＋ 投稿記録</button>
-      <button onClick={onDelete} className="h-8 px-3 rounded-lg bg-destructive text-destructive-foreground text-[11px] font-medium whitespace-nowrap">一覧から削除</button>
+      <button onClick={onDelete} className="h-8 px-3 rounded-lg bg-destructive text-destructive-foreground text-[11px] font-medium whitespace-nowrap">画像ファイルを削除</button>
       <div className="flex-1 min-w-3" />
       <button onClick={onClear} className="ui-secondary-button">選択解除</button>
     </div>

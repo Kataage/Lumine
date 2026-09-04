@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
@@ -37,6 +37,9 @@ const NAV_ITEMS = [
   ["posts", "投稿記録", "投稿先を確認"],
   ["settings", "設定", "読み込み・操作"],
 ] as const;
+
+const TAG_MANAGER_VISIBLE_LIMIT = 200;
+const tagNameCollator = new Intl.Collator("ja", { sensitivity: "base", numeric: true });
 
 export function WelcomeScreenV2({ onSelectFolder, busy = false }: { onSelectFolder: () => void; busy?: boolean }) {
   return (
@@ -140,7 +143,7 @@ function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, ScanPro
     const library = await addLibrary(name, path);
     if (!library) return;
     const libraries = await listLibraries();
-    setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "" }));
+    setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "", filterTagIds: [] }));
     await scanLibrary(library.id);
   };
 
@@ -153,7 +156,7 @@ function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, ScanPro
           const progress = scanProgress[library.id];
           return (
             <div key={library.id} className={`rounded-xl border p-2.5 ${selected ? "border-primary/40 bg-primary/10" : "border-border bg-muted/15"}`}>
-              <button className="w-full text-left min-w-0" onClick={() => setState((current) => ({ ...current, selectedLibraryId: library.id, selectedFolderPath: "", selectedAssets: new Set(), detailOpen: false, detailAsset: null }))}>
+              <button className="w-full text-left min-w-0" onClick={() => setState((current) => ({ ...current, selectedLibraryId: library.id, selectedFolderPath: "", selectedAssets: new Set(), detailOpen: false, detailAsset: null, filterTagIds: [] }))}>
                 <p className="text-xs font-medium truncate">{library.name}</p>
                 <p className="mt-0.5 text-[10px] text-muted-foreground truncate">{library.rootPath}</p>
               </button>
@@ -168,7 +171,7 @@ function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, ScanPro
                   if (!confirm(`「${library.name}」の登録を解除しますか？\n元画像は削除されません。`)) return;
                   await removeLibrary(library.id);
                   const libraries = await listLibraries();
-                  setState((current) => ({ ...current, libraries, selectedLibraryId: current.selectedLibraryId === library.id ? (libraries[0]?.id ?? null) : current.selectedLibraryId, selectedFolderPath: "", detailOpen: false, detailAsset: null }));
+                  setState((current) => ({ ...current, libraries, selectedLibraryId: current.selectedLibraryId === library.id ? (libraries[0]?.id ?? null) : current.selectedLibraryId, selectedFolderPath: "", detailOpen: false, detailAsset: null, filterTagIds: [] }));
                 }}>登録解除</button>
               </div>
             </div>
@@ -215,21 +218,92 @@ function FoldersPanel() {
 
 function TagsPanel() {
   const queryClient = useQueryClient();
+  const { state, setState } = useApp();
   const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
   const [name, setName] = useState("");
   const [color, setColor] = useState("#6366f1");
+  const [search, setSearch] = useState("");
+  const searchKey = search.trim().toLocaleLowerCase("ja-JP");
+  const filteredTags = useMemo(() => {
+    const next = tags.filter((tag) => !searchKey || tag.name.toLocaleLowerCase("ja-JP").includes(searchKey));
+    next.sort((a, b) => {
+      const aActive = state.filterTagIds.includes(a.id);
+      const bActive = state.filterTagIds.includes(b.id);
+      if (aActive !== bActive) return aActive ? -1 : 1;
+      return tagNameCollator.compare(a.name, b.name);
+    });
+    return next;
+  }, [searchKey, state.filterTagIds, tags]);
+  const visibleTags = filteredTags.slice(0, TAG_MANAGER_VISIBLE_LIMIT);
+
+  const toggleFilterTag = (tagId: number) => {
+    setState((current) => ({
+      ...current,
+      filterTagIds: current.filterTagIds.includes(tagId)
+        ? current.filterTagIds.filter((id) => id !== tagId)
+        : [...current.filterTagIds, tagId],
+      selectedAssets: new Set(),
+      lastSelectedIndex: null,
+      detailOpen: false,
+      detailAsset: null,
+    }));
+  };
+
   return (
     <div className="pb-3">
-      <PanelTitle title="タグ" description="画像の分類用タグを管理します。" />
+      <PanelTitle title="タグ" description={`クリックで画像を絞り込み。現在 ${tags.length}件`} />
       <div className="px-3 space-y-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_36px_auto] gap-2">
-          <input className="ui-input min-w-0" value={name} onChange={(event) => setName(event.target.value)} placeholder="タグ名" />
-          <input type="color" className="w-9 h-9 rounded-lg border border-border bg-transparent" value={color} onChange={(event) => setColor(event.target.value)} />
-          <button className="ui-primary-button" onClick={async () => { if (!name.trim()) return; await createTag(name.trim(), color); setName(""); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>追加</button>
+        <div className="rounded-xl border border-border bg-muted/15 p-2.5 space-y-2">
+          <p className="text-[10px] font-medium text-muted-foreground">新しいタグ</p>
+          <div className="grid grid-cols-[minmax(0,1fr)_36px_auto] gap-2">
+            <input className="ui-input min-w-0" value={name} onChange={(event) => setName(event.target.value)} placeholder="タグ名" />
+            <input type="color" className="w-9 h-9 rounded-lg border border-border bg-transparent" value={color} onChange={(event) => setColor(event.target.value)} />
+            <button className="ui-primary-button" onClick={async () => { if (!name.trim()) return; await createTag(name.trim(), color); setName(""); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>追加</button>
+          </div>
         </div>
-        <div className="space-y-1">
-          {tags.map((tag) => <div key={tag.id} className="min-h-9 px-2.5 rounded-lg flex items-center gap-2 hover:bg-accent/50"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} /><span className="text-xs min-w-0 flex-1 truncate">{tag.name}</span><button className="text-[11px] text-muted-foreground hover:text-destructive" onClick={async () => { await deleteTag(tag.id); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>削除</button></div>)}
+
+        <div className="space-y-1.5">
+          <label className="ui-label" htmlFor="tag-manager-search">タグを検索</label>
+          <input id="tag-manager-search" className="ui-input w-full" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="タグ名で絞り込み…" autoComplete="off" />
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>{searchKey ? `${filteredTags.length}件ヒット` : `${tags.length}件`}{state.filterTagIds.length > 0 ? ` · ${state.filterTagIds.length}件で絞り込み中` : ""}</span>
+            {filteredTags.length > TAG_MANAGER_VISIBLE_LIMIT && <span>上位{TAG_MANAGER_VISIBLE_LIMIT}件を表示</span>}
+          </div>
         </div>
+
+        <div className="max-h-[52vh] overflow-y-auto rounded-lg border border-border p-1 space-y-0.5">
+          {visibleTags.map((tag) => {
+            const active = state.filterTagIds.includes(tag.id);
+            return (
+              <div key={tag.id} className={`min-h-9 rounded-lg flex items-center gap-1 ${active ? "bg-primary/12 ring-1 ring-primary/25" : "hover:bg-accent/50"}`}>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 h-9 px-2 flex items-center gap-2 text-left"
+                  onClick={() => toggleFilterTag(tag.id)}
+                  title={active ? `「${tag.name}」の絞り込みを解除` : `「${tag.name}」で画像を絞り込み`}
+                >
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                  <span className="text-xs min-w-0 flex-1 truncate">{tag.name}</span>
+                  <span className={`text-[10px] ${active ? "text-primary font-medium" : "text-muted-foreground"}`}>{active ? "✓ 絞込中" : "絞込"}</span>
+                </button>
+                <button
+                  className="h-9 px-2 text-[11px] text-muted-foreground hover:text-destructive flex-shrink-0"
+                  onClick={async () => {
+                    if (!confirm(`タグ「${tag.name}」を削除しますか？\n画像へのタグ付けも解除されます。`)) return;
+                    await deleteTag(tag.id);
+                    setState((current) => ({ ...current, filterTagIds: current.filterTagIds.filter((id) => id !== tag.id) }));
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["tags"] }),
+                      queryClient.invalidateQueries({ queryKey: ["assets"] }),
+                    ]);
+                  }}
+                >削除</button>
+              </div>
+            );
+          })}
+          {visibleTags.length === 0 && <p className="py-5 text-center text-[11px] text-muted-foreground">該当するタグはありません</p>}
+        </div>
+        {filteredTags.length > TAG_MANAGER_VISIBLE_LIMIT && <p className="text-[10px] leading-relaxed text-muted-foreground">タグ数が多いため先頭{TAG_MANAGER_VISIBLE_LIMIT}件だけ表示しています。検索欄へ数文字入力すると残りもすぐ探せます。</p>}
       </div>
     </div>
   );
@@ -345,6 +419,10 @@ export function ToolbarV2() {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const library = state.libraries.find((item) => item.id === state.selectedLibraryId);
   const folderName = state.selectedFolderPath.split(/[\\/]/).pop() || "";
+  const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
+  const selectedTagNames = state.filterTagIds
+    .map((id) => tags.find((tag) => tag.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
   useEffect(() => setSearch(state.searchQuery), [state.searchQuery]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -354,7 +432,7 @@ export function ToolbarV2() {
     timer.current = setTimeout(() => setState((current) => ({ ...current, searchQuery: value })), 250);
   };
 
-  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating);
+  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating || state.filterTagIds.length);
   return (
     <header className="toolbar-v2 border-b border-border bg-card/80 flex-shrink-0">
       <div className="toolbar-primary-row">
@@ -382,7 +460,12 @@ export function ToolbarV2() {
           {state.searchQuery && <button className="filter-chip" onClick={() => setState((current) => ({ ...current, searchQuery: "" }))}>検索: {state.searchQuery} ×</button>}
           {state.filterStatusLabel && <button className="filter-chip" onClick={() => setState((current) => ({ ...current, filterStatusLabel: "" }))}>状態 ×</button>}
           {state.filterRating > 0 && <button className="filter-chip" onClick={() => setState((current) => ({ ...current, filterRating: 0 }))}>★{state.filterRating} ×</button>}
-          <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "", searchQuery: "", filterStatusLabel: "", filterRating: 0 }))}>すべて解除</button>
+          {state.filterTagIds.length > 0 && (
+            <button className="filter-chip" onClick={() => setState((current) => ({ ...current, filterTagIds: [] }))} title={selectedTagNames.join(", ")}>
+              タグ: {state.filterTagIds.length === 1 && selectedTagNames[0] ? selectedTagNames[0] : `${state.filterTagIds.length}件`} ×
+            </button>
+          )}
+          <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "", searchQuery: "", filterStatusLabel: "", filterRating: 0, filterTagIds: [] }))}>すべて解除</button>
         </div>
       )}
     </header>
