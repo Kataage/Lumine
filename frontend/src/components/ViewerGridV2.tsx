@@ -10,6 +10,7 @@ import { ImageViewerModal } from "./ImageViewerModal";
 
 const PAGE_SIZE = 100;
 const GAP = 10;
+const GRID_PADDING = 24;
 
 interface ViewerGridV2Props {
   onSelectAsset: (asset: AssetDTO, multi: boolean, range: boolean) => void;
@@ -25,9 +26,10 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => setContainerWidth(element.clientWidth));
+    const updateWidth = () => setContainerWidth(Math.max(0, element.clientWidth - GRID_PADDING));
+    const observer = new ResizeObserver(updateWidth);
     observer.observe(element);
-    setContainerWidth(element.clientWidth);
+    updateWidth();
     return () => observer.disconnect();
   }, []);
 
