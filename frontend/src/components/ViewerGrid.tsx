@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listAssets, getLocalImageUrl } from "../api/client";
-import { formatFileSize } from "../utils/format";
-import { useApp } from "../App";
-import { MemoryImage } from "./MemoryImage";
+import { getLocalImageUrl, listAssets } from "../api/client";
 import type { AssetDTO, AssetListRequest } from "../api/client";
+import { useApp } from "../App";
+import { formatFileSize } from "../utils/format";
+import { MemoryImage } from "./MemoryImage";
 
 const PAGE_SIZE = 100;
 const GAP = 8;
@@ -23,38 +23,31 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
   const assetsRef = useRef<AssetDTO[]>([]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const update = () => setContainerWidth(el.clientWidth);
+    const element = containerRef.current;
+    if (!element) return;
+    const update = () => setContainerWidth(element.clientWidth);
     const observer = new ResizeObserver(update);
-    observer.observe(el);
+    observer.observe(element);
     update();
     return () => observer.disconnect();
   }, []);
 
   const buildQuery = useCallback(
-    (offset: number): AssetListRequest => {
-      let folderPath = "";
-      let search = state.searchQuery || "";
-      if (search.startsWith("folder:")) {
-        folderPath = search.substring(7);
-        search = "";
-      }
-      return {
-        libraryId: state.selectedLibraryId ?? 0,
-        search: search || undefined,
-        folderPath: folderPath || undefined,
-        recurse: !!folderPath,
-        sortBy: state.sortBy || undefined,
-        sortDesc: state.sortDesc,
-        statusLabel: state.filterStatusLabel || undefined,
-        rating: state.filterRating || undefined,
-        offset,
-        limit: PAGE_SIZE,
-      };
-    },
+    (offset: number): AssetListRequest => ({
+      libraryId: state.selectedLibraryId ?? 0,
+      search: state.searchQuery || undefined,
+      folderPath: state.selectedFolderPath || undefined,
+      recurse: !!state.selectedFolderPath,
+      sortBy: state.sortBy || undefined,
+      sortDesc: state.sortDesc,
+      statusLabel: state.filterStatusLabel || undefined,
+      rating: state.filterRating || undefined,
+      offset,
+      limit: PAGE_SIZE,
+    }),
     [
       state.selectedLibraryId,
+      state.selectedFolderPath,
       state.searchQuery,
       state.sortBy,
       state.sortDesc,
@@ -75,6 +68,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
     queryKey: [
       "assets",
       state.selectedLibraryId,
+      state.selectedFolderPath,
       state.searchQuery,
       state.sortBy,
       state.sortDesc,
@@ -116,7 +110,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
   const virtualizer = useVirtualizer({
     count: state.viewMode === "grid" ? rowCount : assets.length,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => (state.viewMode === "grid" ? state.thumbnailSize + 28 : 48),
+    estimateSize: () => (state.viewMode === "grid" ? state.thumbnailSize + GAP : 56),
     overscan: 1,
   });
   const virtualItems = virtualizer.getVirtualItems();
@@ -125,9 +119,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
     if (!hasNextPage || isFetchingNextPage) return;
     const last = virtualItems[virtualItems.length - 1];
     const maximum = state.viewMode === "grid" ? rowCount : assets.length;
-    if (last && last.index >= maximum - 3) {
-      void fetchNextPage();
-    }
+    if (last && last.index >= maximum - 3) void fetchNextPage();
   }, [virtualItems, rowCount, assets.length, state.viewMode, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
@@ -139,8 +131,10 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
       if (event.key === "Escape") {
         setPreviewAsset(null);
       } else if (event.key === "ArrowLeft" && index > 0) {
+        event.preventDefault();
         setPreviewAsset(assetsRef.current[index - 1]);
       } else if (event.key === "ArrowRight" && index >= 0 && index < assetsRef.current.length - 1) {
+        event.preventDefault();
         setPreviewAsset(assetsRef.current[index + 1]);
       }
     };
@@ -150,24 +144,34 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
 
   if (!state.selectedLibraryId) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Select a library to browse images
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center space-y-2">
+          <p className="text-sm font-medium">表示するライブラリを選択してください</p>
+          <p className="text-xs text-muted-foreground">左の「ライブラリ」から画像フォルダーを選べます。</p>
+        </div>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 text-sm">
-        <p className="text-destructive">Failed to load images.</p>
-        <p className="text-muted-foreground text-xs">{String(error)}</p>
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-sm">
+        <p className="text-destructive font-medium">画像一覧を読み込めませんでした</p>
+        <p className="text-muted-foreground text-xs max-w-lg break-all text-center">{String(error)}</p>
       </div>
     );
   }
 
+  const hasFilters = !!(
+    state.selectedFolderPath ||
+    state.searchQuery ||
+    state.filterStatusLabel ||
+    state.filterRating > 0
+  );
+
   return (
     <>
-      <div ref={containerRef} className="flex-1 overflow-auto p-3">
+      <div ref={containerRef} className="flex-1 overflow-auto p-3 bg-background">
         {state.viewMode === "grid" ? (
           <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualItems.map((virtualRow) => {
@@ -188,7 +192,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: `repeat(${columns}, 1fr)`,
+                      gridTemplateColumns: `repeat(${columns}, ${state.thumbnailSize}px)`,
                       gap: GAP,
                     }}
                   >
@@ -234,20 +238,32 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
         )}
 
         {isLoading && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-8 h-8 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading images…</p>
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="w-7 h-7 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground">画像一覧を読み込んでいます…</p>
           </div>
         )}
+
         {isFetchingNextPage && (
-          <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground text-sm">
+          <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground text-xs">
             <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-            <span>Loading more… ({assets.length}/{totalCount})</span>
+            <span>続きを読み込み中… {assets.length.toLocaleString()} / {totalCount.toLocaleString()}件</span>
           </div>
         )}
+
         {!isLoading && assets.length === 0 && (
-          <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-            No indexed images yet. A new library starts indexing automatically.
+          <div className="min-h-[55vh] flex items-center justify-center">
+            <div className="max-w-sm text-center rounded-2xl border border-dashed border-border p-8">
+              <div className="w-12 h-12 mx-auto rounded-xl bg-muted flex items-center justify-center text-muted-foreground mb-3">▧</div>
+              <p className="text-sm font-medium">
+                {hasFilters ? "条件に一致する画像がありません" : "画像が見つかりません"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                {hasFilters
+                  ? "上部の絞り込み条件を解除するか、別の条件で検索してください。"
+                  : "ライブラリの再スキャンを行い、対象フォルダーに対応画像があるか確認してください。"}
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -292,8 +308,11 @@ const ViewerGridItem = React.memo(function ViewerGridItem({
       style={{ width: size, height: size }}
       onClick={(event) => onSelect(asset, event.ctrlKey || event.metaKey, event.shiftKey)}
       onDoubleClick={() => onDoubleClick(asset)}
-      className={`relative rounded-lg overflow-hidden bg-muted group cursor-pointer border transition-colors ${
-        selected ? "border-primary ring-1 ring-primary/30" : "border-border/50 hover:border-border"
+      title={`${asset.fileName}\nダブルクリックで全画面表示`}
+      className={`relative rounded-xl overflow-hidden bg-muted group cursor-pointer border transition-all ${
+        selected
+          ? "border-primary ring-2 ring-primary/30 shadow-lg"
+          : "border-border/50 hover:border-border hover:-translate-y-px hover:shadow-lg"
       }`}
     >
       <MemoryImage
@@ -307,15 +326,15 @@ const ViewerGridItem = React.memo(function ViewerGridItem({
         alt={asset.fileName}
       />
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <p className="text-white text-xs truncate font-medium">{asset.fileName}</p>
-        <p className="text-white/60 text-[10px]">{formatFileSize(asset.fileSize)}</p>
+      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 pointer-events-none">
+        <p className="text-white text-[11px] truncate font-medium drop-shadow">{asset.fileName}</p>
+        <p className="text-white/60 text-[9px] opacity-0 group-hover:opacity-100 transition-opacity">{formatFileSize(asset.fileSize)}</p>
       </div>
 
       {selected && (
-        <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-          <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-md">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
           </svg>
         </div>
@@ -330,7 +349,7 @@ const ViewerGridItem = React.memo(function ViewerGridItem({
       )}
       {asset.colorLabel && (
         <div
-          className="absolute bottom-1.5 left-1.5 w-3 h-3 rounded-full border border-white/40"
+          className="absolute bottom-1.5 right-1.5 w-3 h-3 rounded-full border border-white/50 shadow"
           style={{ backgroundColor: labelColor(asset.colorLabel) }}
         />
       )}
@@ -358,8 +377,9 @@ const ViewerListItem = React.memo(function ViewerListItem({
       style={style}
       onClick={(event) => onSelect(asset, event.ctrlKey || event.metaKey, event.shiftKey)}
       onDoubleClick={() => onDoubleClick(asset)}
-      className={`flex items-center gap-3 px-2 border-b border-border/50 cursor-pointer ${
-        selected ? "bg-primary/10" : "hover:bg-accent/50"
+      title="ダブルクリックで全画面表示"
+      className={`flex items-center gap-3 px-2.5 rounded-lg cursor-pointer transition-colors ${
+        selected ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "hover:bg-accent/50"
       }`}
     >
       <MemoryImage
@@ -367,18 +387,19 @@ const ViewerListItem = React.memo(function ViewerListItem({
         modifiedAtFs={asset.modifiedAtFs}
         sourceWidth={asset.width}
         sourceHeight={asset.height}
-        width={36}
-        height={36}
+        width={42}
+        height={42}
         fit="cover"
         alt={asset.fileName}
-        className="rounded"
+        className="rounded-lg flex-shrink-0"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm truncate">{asset.fileName}</p>
-        <p className="text-[10px] text-muted-foreground truncate">{asset.folderPath}</p>
+        <p className="text-xs font-medium truncate">{asset.fileName}</p>
+        <p className="text-[9px] text-muted-foreground truncate">{asset.folderPath}</p>
       </div>
-      <span className="text-xs text-muted-foreground tabular-nums">{formatFileSize(asset.fileSize)}</span>
-      {asset.rating > 0 && <span className="text-xs text-yellow-400">{"★".repeat(asset.rating)}</span>}
+      <span className="text-[10px] text-muted-foreground tabular-nums flex-shrink-0">{formatFileSize(asset.fileSize)}</span>
+      {asset.isFavorite && <span className="text-xs text-yellow-400 flex-shrink-0">★</span>}
+      {asset.rating > 0 && <span className="text-[10px] text-yellow-400 flex-shrink-0">{"★".repeat(asset.rating)}</span>}
     </div>
   );
 });
@@ -424,6 +445,10 @@ function ViewerPreview({
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  useEffect(() => {
+    if (zoom <= 1 && fullLoaded) setFullLoaded(false);
+  }, [zoom, fullLoaded]);
+
   const zoomIn = () => setZoom((value) => Math.min(10, value + 0.5));
   const zoomOut = () => setZoom((value) => Math.max(1, value - 0.5));
 
@@ -462,7 +487,7 @@ function ViewerPreview({
         onMouseLeave={handleMouseUp}
         onDoubleClick={() => (zoom > 1 ? resetView() : setZoom(3))}
       >
-        {!fullLoaded && (
+        {(!needsOriginal || !fullLoaded) && (
           <MemoryImage
             filePath={asset.filePath}
             modifiedAtFs={asset.modifiedAtFs}
@@ -494,32 +519,41 @@ function ViewerPreview({
       </div>
 
       <div className="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none">
-        <div className="max-w-[60vw] truncate text-white/80 text-xs bg-black/50 px-3 py-2 rounded-lg backdrop-blur-sm">
+        <div className="max-w-[55vw] truncate text-white/90 text-xs bg-black/55 px-3 py-2 rounded-lg backdrop-blur-sm">
           {asset.fileName}
         </div>
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <button onClick={zoomOut} className="px-3 py-2 bg-zinc-800/90 hover:bg-zinc-700 text-white rounded-lg">−</button>
-          <span className="text-xs text-zinc-300 min-w-[3.5rem] text-center">{Math.round(zoom * 100)}%</span>
-          <button onClick={zoomIn} className="px-3 py-2 bg-zinc-800/90 hover:bg-zinc-700 text-white rounded-lg">+</button>
-          <button onClick={resetView} className="px-3 py-2 bg-zinc-800/90 hover:bg-zinc-700 text-white rounded-lg text-xs">Fit</button>
-          <button onClick={onClose} className="px-3 py-2 bg-zinc-800/90 hover:bg-zinc-700 text-white rounded-lg">×</button>
+        <div
+          className="flex items-center gap-1.5 pointer-events-auto bg-black/40 p-1.5 rounded-xl backdrop-blur-sm"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button onClick={zoomOut} disabled={zoom <= 1} className="h-8 w-8 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white rounded-lg" title="縮小">−</button>
+          <span className="text-[10px] text-zinc-300 min-w-[3.5rem] text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button onClick={zoomIn} className="h-8 w-8 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg" title="拡大">+</button>
+          <button onClick={resetView} className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px]">全体表示</button>
+          <button onClick={onClose} className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[10px]">閉じる</button>
         </div>
       </div>
 
       <button
         onClick={(event) => { event.stopPropagation(); onPrev(); }}
         disabled={!hasPrev}
-        className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20"
+        className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl disabled:opacity-20 backdrop-blur-sm"
+        title="前の画像（←）"
       >
         ‹
       </button>
       <button
         onClick={(event) => { event.stopPropagation(); onNext(); }}
         disabled={!hasNext}
-        className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white disabled:opacity-20"
+        className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl disabled:opacity-20 backdrop-blur-sm"
+        title="次の画像（→）"
       >
         ›
       </button>
+
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] text-white/55 bg-black/35 px-3 py-1.5 rounded-full pointer-events-none backdrop-blur-sm">
+        ホイール: 拡大・縮小　ダブルクリック: 3倍 / 全体表示　← →: 前後の画像　Esc: 閉じる
+      </div>
     </div>
   );
 }
