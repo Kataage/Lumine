@@ -23,6 +23,7 @@ export interface Rect {
 
 const CACHE_BUDGET_BYTES = 96 * 1024 * 1024;
 const MAX_CONCURRENT_DECODES = 4;
+const MAX_NORMAL_CONCURRENT_DECODES = 3;
 
 interface CacheEntry {
   bitmap: ImageBitmap;
@@ -237,29 +238,48 @@ export function getCachedMemoryBitmap(request: ImageBitmapRequest): ImageBitmap 
   return bestEntry.bitmap;
 }
 
+function canStartDecode(priority: ImageDecodePriority): boolean {
+  const limit = priority === "high" ? MAX_CONCURRENT_DECODES : MAX_NORMAL_CONCURRENT_DECODES;
+  return activeDecodes < limit;
+}
+
+function queueDecode(priority: ImageDecodePriority): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const waiter = { resolve, priority };
+    if (priority === "high") {
+      const firstNormal = decodeWaiters.findIndex((item) => item.priority === "normal");
+      if (firstNormal >= 0) decodeWaiters.splice(firstNormal, 0, waiter);
+      else decodeWaiters.push(waiter);
+    } else {
+      decodeWaiters.push(waiter);
+    }
+  });
+}
+
 function wakeNextDecode(): void {
-  const next = decodeWaiters.shift();
-  next?.resolve();
+  const index = decodeWaiters.findIndex((item) => canStartDecode(item.priority));
+  if (index < 0) return;
+  const [next] = decodeWaiters.splice(index, 1);
+  // Reserve the slot before resolving to prevent another task from taking it
+  // before the waiting promise continues on the microtask queue.
+  activeDecodes += 1;
+  next.resolve();
+}
+
+async function acquireDecodeSlot(priority: ImageDecodePriority): Promise<boolean> {
+  if (canStartDecode(priority)) {
+    activeDecodes += 1;
+    return false;
+  }
+  await queueDecode(priority);
+  return true;
 }
 
 async function withDecodeSlot<T>(
   work: () => Promise<T>,
   priority: ImageDecodePriority = "normal"
 ): Promise<T> {
-  if (activeDecodes >= MAX_CONCURRENT_DECODES) {
-    await new Promise<void>((resolve) => {
-      const waiter = { resolve, priority };
-      if (priority === "high") {
-        const firstNormal = decodeWaiters.findIndex((item) => item.priority === "normal");
-        if (firstNormal >= 0) decodeWaiters.splice(firstNormal, 0, waiter);
-        else decodeWaiters.push(waiter);
-      } else {
-        decodeWaiters.push(waiter);
-      }
-    });
-  }
-
-  activeDecodes += 1;
+  await acquireDecodeSlot(priority);
   try {
     return await work();
   } finally {
