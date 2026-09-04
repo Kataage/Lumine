@@ -19,6 +19,8 @@ interface DragState {
   y: number;
 }
 
+const VIEWER_PREVIEW_MAX_PIXELS = 4_000_000;
+
 export function ImageViewerModal({
   asset,
   onClose,
@@ -217,6 +219,7 @@ export function ImageViewerModal({
             height={viewport.height}
             fit="contain"
             priority="high"
+            maxDecodePixels={VIEWER_PREVIEW_MAX_PIXELS}
             alt={asset.fileName}
             className="bg-black"
           />
