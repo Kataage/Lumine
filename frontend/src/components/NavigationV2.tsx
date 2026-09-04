@@ -269,6 +269,17 @@ function PostRecordsPanel() {
                 </div>
                 <button className="text-[10px] text-muted-foreground hover:text-destructive" onClick={async () => { if (!confirm("この投稿記録を削除しますか？")) return; await deletePost(record.id); await Promise.all([queryClient.invalidateQueries({ queryKey: ["postRecords"] }), queryClient.invalidateQueries({ queryKey: ["assetPostRecords"] })]); }}>削除</button>
               </div>
+              {record.assets.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {record.assets.slice(0, 3).map((asset) => (
+                    <div key={asset.id} className="h-6 px-2 rounded-md bg-background/60 flex items-center gap-1.5" title={asset.filePath}>
+                      <span className="text-[10px] text-muted-foreground">画像</span>
+                      <span className="min-w-0 flex-1 truncate text-[10px]">{asset.fileName}</span>
+                    </div>
+                  ))}
+                  {record.assets.length > 3 && <p className="pl-2 text-[10px] text-muted-foreground">ほか {record.assets.length - 3}件</p>}
+                </div>
+              )}
               <p className="mt-1.5 text-[10px] text-muted-foreground">{record.publishedAt ? new Date(record.publishedAt).toLocaleString("ja-JP") : ""}</p>
               {record.externalPostId && <p className="mt-1 text-[10px] text-primary break-all">{record.externalPostId}</p>}
             </div>
