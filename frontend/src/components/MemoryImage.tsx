@@ -17,6 +17,7 @@ interface MemoryImageProps {
   height: number;
   fit?: ImageFit;
   priority?: ImageDecodePriority;
+  maxDecodePixels?: number;
   alt?: string;
   className?: string;
 }
@@ -69,6 +70,7 @@ export function MemoryImage({
   height,
   fit = "cover",
   priority = "normal",
+  maxDecodePixels,
   alt = "",
   className = "",
 }: MemoryImageProps) {
@@ -104,8 +106,14 @@ export function MemoryImage({
       };
     }
 
-    const targetWidth = Math.max(1, Math.round(width * pixelRatio));
-    const targetHeight = Math.max(1, Math.round(height * pixelRatio));
+    const rawTargetWidth = Math.max(1, Math.round(width * pixelRatio));
+    const rawTargetHeight = Math.max(1, Math.round(height * pixelRatio));
+    const rawPixels = rawTargetWidth * rawTargetHeight;
+    const decodeScale = maxDecodePixels && maxDecodePixels > 0 && rawPixels > maxDecodePixels
+      ? Math.sqrt(maxDecodePixels / rawPixels)
+      : 1;
+    const targetWidth = Math.max(1, Math.round(rawTargetWidth * decodeScale));
+    const targetHeight = Math.max(1, Math.round(rawTargetHeight * decodeScale));
     const request = {
       filePath,
       modifiedAtFs,
@@ -161,7 +169,7 @@ export function MemoryImage({
     return () => {
       cancelled = true;
     };
-  }, [filePath, modifiedAtFs, sourceWidth, sourceHeight, width, height, fit, priority, pixelRatio]);
+  }, [filePath, modifiedAtFs, sourceWidth, sourceHeight, width, height, fit, priority, maxDecodePixels, pixelRatio]);
 
   return (
     <div
