@@ -35,11 +35,11 @@ describe("BulkActionsBar", () => {
     expect(screen.getByText("公開済み")).toBeInTheDocument();
   });
 
-  it("お気に入り・投稿記録・削除・選択解除を表示する", () => {
+  it("お気に入り・投稿記録・ファイル削除・選択解除を表示する", () => {
     renderBar();
     expect(screen.getByText("★ お気に入り")).toBeInTheDocument();
     expect(screen.getByText("＋ 投稿記録")).toBeInTheDocument();
-    expect(screen.getByText("一覧から削除")).toBeInTheDocument();
+    expect(screen.getByText("画像ファイルを削除")).toBeInTheDocument();
     expect(screen.getByText("選択解除")).toBeInTheDocument();
   });
 
@@ -67,11 +67,11 @@ describe("BulkActionsBar", () => {
     expect(onClear).toHaveBeenCalledOnce();
   });
 
-  it("一覧から削除を実行できる", async () => {
+  it("画像ファイル削除を実行できる", async () => {
     const onDelete = vi.fn();
     renderBar({ onDelete });
     const user = userEvent.setup();
-    await user.click(screen.getByText("一覧から削除"));
+    await user.click(screen.getByText("画像ファイルを削除"));
     expect(onDelete).toHaveBeenCalledOnce();
   });
 });
