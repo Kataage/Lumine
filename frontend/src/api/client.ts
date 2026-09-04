@@ -17,6 +17,31 @@ export type PostDTO = cmds.PostDTO;
 export type PostTargetDTO = cmds.PostTargetDTO;
 export type PostAccountDTO = cmds.PostAccountDTO;
 
+export interface PostRecordRequest {
+  assetIds: number[];
+  targetId: number;
+  accountId: number;
+  title: string;
+  externalPostId: string;
+}
+
+export interface PostRecordDTO {
+  id: number;
+  title: string;
+  status: string;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  assetIds: number[];
+  targetId: number;
+  targetName: string;
+  targetKind: string;
+  accountId: number;
+  accountDisplay: string;
+  accountIdentifier: string;
+  externalPostId?: string;
+}
+
 export interface ScanProgress {
   libraryId: number;
   scannedCount: number;
@@ -40,13 +65,16 @@ export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
-function viewerCommands() {
+function appCommands() {
   return (window as unknown as {
     go?: {
       commands?: {
         AppCommands?: {
           GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
           ScanLibraryViewer?: (libraryId: number) => Promise<void>;
+          CreatePostRecord?: (request: PostRecordRequest) => Promise<PostRecordDTO | null>;
+          ListPostRecords?: (offset: number, limit: number) => Promise<PostRecordDTO[]>;
+          GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
         };
       };
     };
@@ -54,13 +82,13 @@ function viewerCommands() {
 }
 
 export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
-  const method = viewerCommands()?.GetViewerAssetDetail;
+  const method = appCommands()?.GetViewerAssetDetail;
   if (!method) return Go.GetAssetDetail(assetId);
   return method(assetId);
 }
 
 export async function scanLibrary(libraryId: number): Promise<void> {
-  const method = viewerCommands()?.ScanLibraryViewer;
+  const method = appCommands()?.ScanLibraryViewer;
   if (method) await method(libraryId);
   else await Go.ScanLibrary(libraryId);
 
@@ -68,6 +96,29 @@ export async function scanLibrary(libraryId: number): Promise<void> {
     queryClient.invalidateQueries({ queryKey: ["assets", libraryId] }),
     queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId] }),
   ]);
+}
+
+export async function createPostRecord(request: PostRecordRequest): Promise<PostRecordDTO | null> {
+  const method = appCommands()?.CreatePostRecord;
+  if (!method) throw new Error("投稿記録APIが利用できません。最新版のLumineを起動してください。");
+  const record = await method(request);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["postRecords"] }),
+    ...request.assetIds.map((assetId) => queryClient.invalidateQueries({ queryKey: ["assetPostRecords", assetId] })),
+  ]);
+  return record;
+}
+
+export async function listPostRecords(offset = 0, limit = 100): Promise<PostRecordDTO[]> {
+  const method = appCommands()?.ListPostRecords;
+  if (!method) return [];
+  return (await method(offset, limit)) ?? [];
+}
+
+export async function getPostRecordsByAsset(assetId: number): Promise<PostRecordDTO[]> {
+  const method = appCommands()?.GetPostRecordsByAsset;
+  if (!method) return [];
+  return (await method(assetId)) ?? [];
 }
 
 export const updateAssetNote = Go.UpdateAssetNote;
