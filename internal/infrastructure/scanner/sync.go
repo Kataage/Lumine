@@ -33,7 +33,7 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 	s.cancelled.Store(false)
 
 	result := &SyncResult{LibraryID: library.ID}
-	existingMap, err := s.assetRepo.GetAllFilePathsMap(library.ID)
+	existingMap, err := s.assetRepo.GetSyncFilePathsMap(library.ID)
 	if err != nil {
 		return nil, fmt.Errorf("preload existing assets: %w", err)
 	}
