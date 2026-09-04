@@ -77,7 +77,8 @@ interface BootstrapPayload {
   settings?: Record<string, unknown>;
 }
 
-const AUTO_SYNC_INTERVAL_MS = 15_000;
+const AUTO_SYNC_INTERVAL_MS = 60_000;
+const AUTO_SYNC_INITIAL_DELAY_MS = 5_000;
 
 export default function App() {
   const [state, setState] = useState<AppState>(defaultState);
@@ -139,7 +140,7 @@ export default function App() {
       }
     };
 
-    const initialTimer = window.setTimeout(() => void run(), 1200);
+    const initialTimer = window.setTimeout(() => void run(), AUTO_SYNC_INITIAL_DELAY_MS);
     const interval = window.setInterval(() => void run(), AUTO_SYNC_INTERVAL_MS);
     const onFocus = () => void run();
     const onVisibility = () => { if (!document.hidden) void run(); };
