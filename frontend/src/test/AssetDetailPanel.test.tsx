@@ -95,7 +95,7 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByText("C:\\images\\new\\freshly-scanned.png")).toBeInTheDocument();
   });
 
-  it("軽量DTOに欠損値があっても詳細パネル全体が落ちない", () => {
+  it("軽量DTOに欠損値があっても詳細パネル全体が落ちず安全な値へ正規化する", () => {
     vi.mocked(getAssetDetail).mockImplementation(() => new Promise(() => undefined));
     const partial = {
       ...freshlyListedAsset,
@@ -109,8 +109,10 @@ describe("AssetDetailPanel", () => {
     renderPanel(partial);
 
     expect(screen.getByRole("heading", { name: "freshly-scanned.png" })).toBeInTheDocument();
+    expect(screen.getByText("0 B")).toBeInTheDocument();
+    expect(screen.getByText(".PNG")).toBeInTheDocument();
     expect(screen.getByText("取得中 / 不明")).toBeInTheDocument();
-    expect(screen.getAllByText("不明").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "未整理" })).toHaveClass("bg-primary");
   });
 
   it("詳細取得後はEXIFなどの追加情報を同じパネルへ反映する", async () => {
