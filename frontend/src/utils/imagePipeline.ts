@@ -42,6 +42,7 @@ interface DecodeWaiter {
 }
 
 const cache = new Map<string, CacheEntry>();
+const cacheKeysBySource = new Map<string, Set<string>>();
 const inflight = new Map<string, Promise<ImageBitmap>>();
 let cacheBytes = 0;
 let activeDecodes = 0;
@@ -101,6 +102,36 @@ export function computeContainSize(
   };
 }
 
+function sourceKey(
+  filePath: string,
+  modifiedAtFs: string,
+  sourceWidth: number,
+  sourceHeight: number,
+  fit: ImageFit
+): string {
+  return [filePath, modifiedAtFs, sourceWidth, sourceHeight, fit].join("|");
+}
+
+function requestSourceKey(request: ImageBitmapRequest): string {
+  return sourceKey(
+    request.filePath,
+    request.modifiedAtFs ?? "",
+    request.sourceWidth ?? 0,
+    request.sourceHeight ?? 0,
+    request.fit
+  );
+}
+
+function entrySourceKey(entry: CacheEntry): string {
+  return sourceKey(
+    entry.filePath,
+    entry.modifiedAtFs,
+    entry.sourceWidth,
+    entry.sourceHeight,
+    entry.fit
+  );
+}
+
 function requestKey(request: ImageBitmapRequest): string {
   return [
     request.filePath,
@@ -111,6 +142,24 @@ function requestKey(request: ImageBitmapRequest): string {
     Math.round(request.targetHeight),
     request.fit,
   ].join("|");
+}
+
+function addToSourceIndex(key: string, entry: CacheEntry): void {
+  const indexed = entrySourceKey(entry);
+  let keys = cacheKeysBySource.get(indexed);
+  if (!keys) {
+    keys = new Set<string>();
+    cacheKeysBySource.set(indexed, keys);
+  }
+  keys.add(key);
+}
+
+function removeFromSourceIndex(key: string, entry: CacheEntry): void {
+  const indexed = entrySourceKey(entry);
+  const keys = cacheKeysBySource.get(indexed);
+  if (!keys) return;
+  keys.delete(key);
+  if (keys.size === 0) cacheKeysBySource.delete(indexed);
 }
 
 function touchCache(key: string, entry: CacheEntry): void {
@@ -124,6 +173,7 @@ function evictToBudget(): void {
     if (!oldest) break;
     const [key, entry] = oldest;
     cache.delete(key);
+    removeFromSourceIndex(key, entry);
     cacheBytes -= entry.bytes;
     entry.bitmap.close();
   }
@@ -134,10 +184,12 @@ function cacheBitmap(key: string, bitmap: ImageBitmap, request: ImageBitmapReque
   const previous = cache.get(key);
   if (previous) {
     cacheBytes -= previous.bytes;
+    removeFromSourceIndex(key, previous);
     if (previous.bitmap !== bitmap) previous.bitmap.close();
     cache.delete(key);
   }
-  cache.set(key, {
+
+  const entry: CacheEntry = {
     bitmap,
     bytes,
     filePath: request.filePath,
@@ -147,36 +199,31 @@ function cacheBitmap(key: string, bitmap: ImageBitmap, request: ImageBitmapReque
     targetWidth: Math.max(1, Math.round(request.targetWidth)),
     targetHeight: Math.max(1, Math.round(request.targetHeight)),
     fit: request.fit,
-  });
+  };
+
+  cache.set(key, entry);
+  addToSourceIndex(key, entry);
   cacheBytes += bytes;
   evictToBudget();
 }
 
 // Returns the nearest already-decoded representation of the same source image.
-// This is intentionally synchronous: a remounted grid card can paint the old
-// in-memory preview immediately while the requested larger bitmap is decoded.
+// Lookup is indexed by source, so remounting many cards does not scan the whole
+// 96 MiB LRU for every visible image.
 export function getCachedMemoryBitmap(request: ImageBitmapRequest): ImageBitmap | null {
-  const sourceWidth = request.sourceWidth ?? 0;
-  const sourceHeight = request.sourceHeight ?? 0;
-  const modifiedAtFs = request.modifiedAtFs ?? "";
   const targetWidth = Math.max(1, Math.round(request.targetWidth));
   const targetHeight = Math.max(1, Math.round(request.targetHeight));
+  const indexed = requestSourceKey(request);
+  const keys = cacheKeysBySource.get(indexed);
+  if (!keys || keys.size === 0) return null;
 
   let bestKey: string | null = null;
   let bestEntry: CacheEntry | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
-  for (const [key, entry] of cache) {
-    if (
-      entry.filePath !== request.filePath ||
-      entry.modifiedAtFs !== modifiedAtFs ||
-      entry.sourceWidth !== sourceWidth ||
-      entry.sourceHeight !== sourceHeight ||
-      entry.fit !== request.fit
-    ) {
-      continue;
-    }
-
+  for (const key of keys) {
+    const entry = cache.get(key);
+    if (!entry) continue;
     const distance = Math.abs(entry.targetWidth - targetWidth) + Math.abs(entry.targetHeight - targetHeight);
     if (distance < bestDistance) {
       bestDistance = distance;
@@ -308,6 +355,7 @@ export function clearMemoryImageCache(): void {
     entry.bitmap.close();
   }
   cache.clear();
+  cacheKeysBySource.clear();
   cacheBytes = 0;
 }
 
