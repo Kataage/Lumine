@@ -124,9 +124,11 @@ func main() {
 	cmd := commands.New(database, scanSvc)
 
 	err = wails.Run(&options.App{
-		Title:  "Lumine",
-		Width:  1280,
-		Height: 800,
+		Title:     "Lumine",
+		Width:     1280,
+		Height:    800,
+		MinWidth:  800,
+		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets:     assets,
 			Middleware: localFileMiddleware,
