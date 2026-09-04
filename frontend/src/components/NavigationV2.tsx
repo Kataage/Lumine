@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
@@ -37,6 +37,9 @@ const NAV_ITEMS = [
   ["posts", "投稿記録", "投稿先を確認"],
   ["settings", "設定", "読み込み・操作"],
 ] as const;
+
+const TAG_MANAGER_VISIBLE_LIMIT = 200;
+const tagNameCollator = new Intl.Collator("ja", { sensitivity: "base", numeric: true });
 
 export function WelcomeScreenV2({ onSelectFolder, busy = false }: { onSelectFolder: () => void; busy?: boolean }) {
   return (
@@ -218,18 +221,55 @@ function TagsPanel() {
   const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
   const [name, setName] = useState("");
   const [color, setColor] = useState("#6366f1");
+  const [search, setSearch] = useState("");
+  const searchKey = search.trim().toLocaleLowerCase("ja-JP");
+  const filteredTags = useMemo(() => {
+    const next = tags.filter((tag) => !searchKey || tag.name.toLocaleLowerCase("ja-JP").includes(searchKey));
+    next.sort((a, b) => tagNameCollator.compare(a.name, b.name));
+    return next;
+  }, [searchKey, tags]);
+  const visibleTags = filteredTags.slice(0, TAG_MANAGER_VISIBLE_LIMIT);
+
   return (
     <div className="pb-3">
-      <PanelTitle title="タグ" description="画像の分類用タグを管理します。" />
+      <PanelTitle title="タグ" description={`画像の分類用タグを管理します。現在 ${tags.length}件`} />
       <div className="px-3 space-y-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_36px_auto] gap-2">
-          <input className="ui-input min-w-0" value={name} onChange={(event) => setName(event.target.value)} placeholder="タグ名" />
-          <input type="color" className="w-9 h-9 rounded-lg border border-border bg-transparent" value={color} onChange={(event) => setColor(event.target.value)} />
-          <button className="ui-primary-button" onClick={async () => { if (!name.trim()) return; await createTag(name.trim(), color); setName(""); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>追加</button>
+        <div className="rounded-xl border border-border bg-muted/15 p-2.5 space-y-2">
+          <p className="text-[10px] font-medium text-muted-foreground">新しいタグ</p>
+          <div className="grid grid-cols-[minmax(0,1fr)_36px_auto] gap-2">
+            <input className="ui-input min-w-0" value={name} onChange={(event) => setName(event.target.value)} placeholder="タグ名" />
+            <input type="color" className="w-9 h-9 rounded-lg border border-border bg-transparent" value={color} onChange={(event) => setColor(event.target.value)} />
+            <button className="ui-primary-button" onClick={async () => { if (!name.trim()) return; await createTag(name.trim(), color); setName(""); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>追加</button>
+          </div>
         </div>
-        <div className="space-y-1">
-          {tags.map((tag) => <div key={tag.id} className="min-h-9 px-2.5 rounded-lg flex items-center gap-2 hover:bg-accent/50"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} /><span className="text-xs min-w-0 flex-1 truncate">{tag.name}</span><button className="text-[11px] text-muted-foreground hover:text-destructive" onClick={async () => { await deleteTag(tag.id); await queryClient.invalidateQueries({ queryKey: ["tags"] }); }}>削除</button></div>)}
+
+        <div className="space-y-1.5">
+          <label className="ui-label" htmlFor="tag-manager-search">タグを検索</label>
+          <input id="tag-manager-search" className="ui-input w-full" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="タグ名で絞り込み…" autoComplete="off" />
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>{searchKey ? `${filteredTags.length}件ヒット` : `${tags.length}件`}</span>
+            {filteredTags.length > TAG_MANAGER_VISIBLE_LIMIT && <span>上位{TAG_MANAGER_VISIBLE_LIMIT}件を表示</span>}
+          </div>
         </div>
+
+        <div className="max-h-[52vh] overflow-y-auto rounded-lg border border-border p-1 space-y-0.5">
+          {visibleTags.map((tag) => (
+            <div key={tag.id} className="min-h-9 px-2 rounded-lg flex items-center gap-2 hover:bg-accent/50">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+              <span className="text-xs min-w-0 flex-1 truncate" title={tag.name}>{tag.name}</span>
+              <button
+                className="text-[11px] text-muted-foreground hover:text-destructive"
+                onClick={async () => {
+                  if (!confirm(`タグ「${tag.name}」を削除しますか？\n画像へのタグ付けも解除されます。`)) return;
+                  await deleteTag(tag.id);
+                  await queryClient.invalidateQueries({ queryKey: ["tags"] });
+                }}
+              >削除</button>
+            </div>
+          ))}
+          {visibleTags.length === 0 && <p className="py-5 text-center text-[11px] text-muted-foreground">該当するタグはありません</p>}
+        </div>
+        {filteredTags.length > TAG_MANAGER_VISIBLE_LIMIT && <p className="text-[10px] leading-relaxed text-muted-foreground">タグ数が多いため先頭{TAG_MANAGER_VISIBLE_LIMIT}件だけ表示しています。検索欄へ数文字入力すると残りもすぐ探せます。</p>}
       </div>
     </div>
   );
