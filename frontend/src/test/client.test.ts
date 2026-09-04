@@ -9,26 +9,21 @@ import { getLocalImageUrl, onScanProgress, offScanProgress } from "../api/client
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
 
 describe("getLocalImageUrl", () => {
-  it("converts backslash paths to forward slashes", () => {
-    expect(getLocalImageUrl("C:\\Users\\test\\image.png")).toBe(
-      "/local/C:/Users/test/image.png"
-    );
+  it("encodes a Windows path without losing drive letters or separators", () => {
+    const path = "C:\\Users\\test\\image.png";
+    expect(getLocalImageUrl(path)).toBe(`/local?path=${encodeURIComponent(path)}`);
   });
 
-  it("preserves forward slash paths", () => {
-    expect(getLocalImageUrl("/home/user/photos/img.jpg")).toBe(
-      "/local//home/user/photos/img.jpg"
-    );
+  it("encodes POSIX paths", () => {
+    const path = "/home/user/photos/img.jpg";
+    expect(getLocalImageUrl(path)).toBe(`/local?path=${encodeURIComponent(path)}`);
   });
 
-  it("handles mixed slashes", () => {
-    expect(getLocalImageUrl("C:/Users\\test/mixed.png")).toBe(
-      "/local/C:/Users/test/mixed.png"
-    );
-  });
-
-  it("handles simple filename", () => {
-    expect(getLocalImageUrl("photo.png")).toBe("/local/photo.png");
+  it("protects URL-significant and Unicode filename characters", () => {
+    const path = "C:\\画像\\a #1?.png";
+    const url = getLocalImageUrl(path);
+    expect(url).toBe(`/local?path=${encodeURIComponent(path)}`);
+    expect(url).not.toContain("#1?");
   });
 });
 
@@ -40,7 +35,6 @@ describe("onScanProgress / offScanProgress", () => {
   it("calls EventsOn with scan:progress", () => {
     const cb = vi.fn();
     onScanProgress(cb);
-
     expect(EventsOn).toHaveBeenCalledWith("scan:progress", expect.any(Function));
   });
 
@@ -66,7 +60,6 @@ describe("onScanProgress / offScanProgress", () => {
 
   it("offScanProgress calls EventsOff", () => {
     offScanProgress();
-
     expect(EventsOff).toHaveBeenCalledWith("scan:progress");
   });
 });
