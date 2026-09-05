@@ -60,6 +60,13 @@ describe("decode priority", () => {
     vi.unstubAllGlobals();
   });
 
+  function response(): Response {
+    return {
+      ok: true,
+      blob: async () => new Blob(["image"]),
+    } as Response;
+  }
+
   it("通常3件が実行中でもhigh要求を4番目の予約枠で先に開始する", async () => {
     type PendingFetch = {
       url: string;
@@ -75,7 +82,7 @@ describe("decode priority", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("createImageBitmap", createImageBitmapMock);
 
-    const request = (name: string, priority: "normal" | "high") => loadMemoryBitmap({
+    const request = (name: string, priority: "prefetch" | "normal" | "high") => loadMemoryBitmap({
       filePath: `C:\\images\\${name}.png`,
       modifiedAtFs: "2026-09-04T00:00:00Z",
       sourceWidth: 100,
@@ -97,16 +104,59 @@ describe("decode priority", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(pending[3]?.url).toContain("focused.png");
 
-    const response = () => ({
-      ok: true,
-      blob: async () => new Blob(["image"]),
-    } as Response);
-
     pending.slice(0, 4).forEach((item) => item.resolve(response()));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(pending[4]?.url).toContain("normal-4.png");
     pending[4]?.resolve(response());
 
     await Promise.all([normal1, normal2, normal3, normal4, focused]);
+  });
+
+  it("先読み待ちの画像が画面内に入ったら通常優先度へ昇格する", async () => {
+    type PendingFetch = {
+      url: string;
+      resolve: (value: Response) => void;
+    };
+    const pending: PendingFetch[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      pending.push({ url: String(input), resolve });
+    }));
+    const close = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 32, height: 32, close } as unknown as ImageBitmap)));
+
+    const request = (name: string, priority: "prefetch" | "normal") => loadMemoryBitmap({
+      filePath: `C:\\images\\${name}.png`,
+      modifiedAtFs: "2026-09-04T00:00:00Z",
+      sourceWidth: 100,
+      sourceHeight: 100,
+      targetWidth: 32,
+      targetHeight: 32,
+      fit: "cover",
+      priority,
+    });
+
+    const first = request("prefetch-1", "prefetch");
+    const second = request("prefetch-2", "prefetch");
+    const third = request("prefetch-3", "prefetch");
+    const becomesVisible = request("prefetch-4", "prefetch");
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    // Same bitmap request, now requested by a visible card. This must promote
+    // its queued work rather than waiting behind prefetch-3.
+    const visiblePromise = request("prefetch-4", "normal");
+    pending[0]?.resolve(response());
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(pending[2]?.url).toContain("prefetch-4.png");
+
+    pending[1]?.resolve(response());
+    pending[2]?.resolve(response());
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(pending[3]?.url).toContain("prefetch-3.png");
+    pending[3]?.resolve(response());
+
+    await Promise.all([first, second, third, becomesVisible, visiblePromise]);
   });
 });
