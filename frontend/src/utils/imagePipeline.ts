@@ -1,7 +1,7 @@
 import { getLocalImageUrl } from "../api/client";
 
 export type ImageFit = "cover" | "contain";
-export type ImageDecodePriority = "normal" | "high";
+export type ImageDecodePriority = "prefetch" | "normal" | "high";
 
 export interface ImageBitmapRequest {
   filePath: string;
@@ -21,9 +21,13 @@ export interface Rect {
   height: number;
 }
 
-const CACHE_BUDGET_BYTES = 96 * 1024 * 1024;
+// Keep enough recent decoded thumbnails for real viewer-style back/forward
+// scrolling while retaining a strict upper bound. This is memory-only; Lumine
+// still never writes generated thumbnails to disk.
+const CACHE_BUDGET_BYTES = 256 * 1024 * 1024;
 const MAX_CONCURRENT_DECODES = 4;
 const MAX_NORMAL_CONCURRENT_DECODES = 3;
+const MAX_PREFETCH_CONCURRENT_DECODES = 2;
 
 interface CacheEntry {
   bitmap: ImageBitmap;
@@ -40,6 +44,7 @@ interface CacheEntry {
 interface DecodeWaiter {
   resolve: () => void;
   priority: ImageDecodePriority;
+  key: string;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -209,8 +214,8 @@ function cacheBitmap(key: string, bitmap: ImageBitmap, request: ImageBitmapReque
 }
 
 // Returns the nearest already-decoded representation of the same source image.
-// Lookup is indexed by source, so remounting many cards does not scan the whole
-// 96 MiB LRU for every visible image.
+// This is what makes a remounted row display immediately when the user scrolls
+// back instead of flashing an empty frame while decoding again.
 export function getCachedMemoryBitmap(request: ImageBitmapRequest): ImageBitmap | null {
   const targetWidth = Math.max(1, Math.round(request.targetWidth));
   const targetHeight = Math.max(1, Math.round(request.targetHeight));
@@ -238,48 +243,68 @@ export function getCachedMemoryBitmap(request: ImageBitmapRequest): ImageBitmap 
   return bestEntry.bitmap;
 }
 
+function priorityRank(priority: ImageDecodePriority): number {
+  switch (priority) {
+    case "high": return 2;
+    case "normal": return 1;
+    default: return 0;
+  }
+}
+
 function canStartDecode(priority: ImageDecodePriority): boolean {
-  const limit = priority === "high" ? MAX_CONCURRENT_DECODES : MAX_NORMAL_CONCURRENT_DECODES;
+  const limit = priority === "high"
+    ? MAX_CONCURRENT_DECODES
+    : priority === "normal"
+      ? MAX_NORMAL_CONCURRENT_DECODES
+      : MAX_PREFETCH_CONCURRENT_DECODES;
   return activeDecodes < limit;
 }
 
-function queueDecode(priority: ImageDecodePriority): Promise<void> {
+function insertWaiter(waiter: DecodeWaiter): void {
+  const rank = priorityRank(waiter.priority);
+  const firstLower = decodeWaiters.findIndex((item) => priorityRank(item.priority) < rank);
+  if (firstLower >= 0) decodeWaiters.splice(firstLower, 0, waiter);
+  else decodeWaiters.push(waiter);
+}
+
+function queueDecode(key: string, priority: ImageDecodePriority): Promise<void> {
   return new Promise<void>((resolve) => {
-    const waiter = { resolve, priority };
-    if (priority === "high") {
-      const firstNormal = decodeWaiters.findIndex((item) => item.priority === "normal");
-      if (firstNormal >= 0) decodeWaiters.splice(firstNormal, 0, waiter);
-      else decodeWaiters.push(waiter);
-    } else {
-      decodeWaiters.push(waiter);
-    }
+    insertWaiter({ resolve, priority, key });
   });
+}
+
+function promoteQueuedDecode(key: string, priority: ImageDecodePriority): void {
+  const index = decodeWaiters.findIndex((item) => item.key === key);
+  if (index < 0) return;
+  const waiter = decodeWaiters[index];
+  if (priorityRank(priority) <= priorityRank(waiter.priority)) return;
+  decodeWaiters.splice(index, 1);
+  waiter.priority = priority;
+  insertWaiter(waiter);
 }
 
 function wakeNextDecode(): void {
   const index = decodeWaiters.findIndex((item) => canStartDecode(item.priority));
   if (index < 0) return;
   const [next] = decodeWaiters.splice(index, 1);
-  // Reserve the slot before resolving to prevent another task from taking it
-  // before the waiting promise continues on the microtask queue.
   activeDecodes += 1;
   next.resolve();
 }
 
-async function acquireDecodeSlot(priority: ImageDecodePriority): Promise<boolean> {
+async function acquireDecodeSlot(key: string, priority: ImageDecodePriority): Promise<void> {
   if (canStartDecode(priority)) {
     activeDecodes += 1;
-    return false;
+    return;
   }
-  await queueDecode(priority);
-  return true;
+  await queueDecode(key, priority);
 }
 
 async function withDecodeSlot<T>(
+  key: string,
   work: () => Promise<T>,
   priority: ImageDecodePriority = "normal"
 ): Promise<T> {
-  await acquireDecodeSlot(priority);
+  await acquireDecodeSlot(key, priority);
   try {
     return await work();
   } finally {
@@ -345,10 +370,17 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
     return cached.bitmap;
   }
 
+  const requestedPriority = request.priority ?? "normal";
   const pending = inflight.get(key);
-  if (pending) return pending;
+  if (pending) {
+    // An item that was only being prefetched may become visible during a fast
+    // scroll. Promote its queued decode instead of leaving the visible card
+    // waiting behind unrelated prefetch work.
+    promoteQueuedDecode(key, requestedPriority);
+    return pending;
+  }
 
-  const promise = withDecodeSlot(async () => {
+  const promise = withDecodeSlot(key, async () => {
     const response = await fetch(getLocalImageUrl(request.filePath), {
       cache: "no-store",
       credentials: "same-origin",
@@ -360,7 +392,7 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
     const bitmap = await createSizedBitmap(blob, request);
     cacheBitmap(key, bitmap, request);
     return bitmap;
-  }, request.priority ?? "normal");
+  }, requestedPriority);
 
   inflight.set(key, promise);
   try {
@@ -379,6 +411,6 @@ export function clearMemoryImageCache(): void {
   cacheBytes = 0;
 }
 
-export function getMemoryImageCacheStats(): { entries: number; bytes: number } {
-  return { entries: cache.size, bytes: cacheBytes };
+export function getMemoryImageCacheStats(): { entries: number; bytes: number; budgetBytes: number } {
+  return { entries: cache.size, bytes: cacheBytes, budgetBytes: CACHE_BUDGET_BYTES };
 }
