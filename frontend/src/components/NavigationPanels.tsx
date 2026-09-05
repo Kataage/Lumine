@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
   addLibrary, createTag, deleteTag, disableLibrary, enableLibrary, getFolderTree, getSetting, getSupportedExtensions,
-  listLibraries, removeLibrary, scanLibrary, selectFolder, setSetting, setSupportedExtensions,
+  listLibraries, listTags, removeLibrary, scanLibrary, selectFolder, setSetting, setSupportedExtensions,
 } from "../api/client";
 import type { FolderDTO, ScanProgress } from "../api/client";
 
@@ -22,7 +22,6 @@ function PanelTitle({ title, description, action }: { title: string; description
     </div>
   );
 }
-
 export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, ScanProgress> }) {
   const { state, setState } = useApp();
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +78,6 @@ export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, 
     </div>
   );
 }
-
 export function FoldersPanel() {
   const { state, setState } = useApp();
   const { data: folders = [] } = useQuery({ queryKey: ["folderTree", state.selectedLibraryId], queryFn: () => getFolderTree(state.selectedLibraryId!), enabled: !!state.selectedLibraryId, staleTime: Infinity });
@@ -113,7 +111,6 @@ export function FoldersPanel() {
     </div>
   );
 }
-
 export function TagsPanel() {
   const queryClient = useQueryClient();
   const { state, setState } = useApp();
@@ -193,7 +190,6 @@ export function TagsPanel() {
     </div>
   );
 }
-
 export function SettingsPanel() {
   const [extensions, setExtensions] = useState<string[]>([]);
   const [extension, setExtension] = useState("");
