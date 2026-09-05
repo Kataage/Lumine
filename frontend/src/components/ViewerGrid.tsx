@@ -5,9 +5,16 @@ import { getLocalImageUrl, listAssets } from "../api/client";
 import type { AssetDTO, AssetListRequest } from "../api/client";
 import { useApp } from "../App";
 import { formatFileSize } from "../utils/format";
+import {
+  computeViewerOverscan,
+  getViewerVisibleRange,
+  shouldFetchViewerPageAhead,
+  viewerImagePriority,
+  type ViewerImagePriority,
+} from "../utils/viewerPreload";
 import { MemoryImage } from "./MemoryImage";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 200;
 const GAP = 8;
 
 interface ViewerGridProps {
@@ -19,13 +26,17 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
   const { state } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
   const assetsRef = useRef<AssetDTO[]>([]);
 
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const update = () => setContainerWidth(element.clientWidth);
+    const update = () => {
+      setContainerWidth(element.clientWidth);
+      setContainerHeight(element.clientHeight);
+    };
     const observer = new ResizeObserver(update);
     observer.observe(element);
     update();
@@ -106,21 +117,42 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
       ? Math.max(1, Math.floor((containerWidth + GAP) / (state.thumbnailSize + GAP)))
       : 4;
   const rowCount = Math.ceil(assets.length / columns);
+  const itemExtent = state.viewMode === "grid" ? state.thumbnailSize + GAP : 56;
+  const itemCount = state.viewMode === "grid" ? rowCount : assets.length;
+  const overscan = computeViewerOverscan(containerHeight, itemExtent);
 
   const virtualizer = useVirtualizer({
-    count: state.viewMode === "grid" ? rowCount : assets.length,
+    count: itemCount,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => (state.viewMode === "grid" ? state.thumbnailSize + GAP : 56),
-    overscan: 1,
+    estimateSize: () => itemExtent,
+    overscan,
   });
   const virtualItems = virtualizer.getVirtualItems();
+  const visibleRange = getViewerVisibleRange(
+    virtualizer.scrollOffset ?? 0,
+    containerHeight,
+    itemExtent,
+    itemCount
+  );
 
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage) return;
     const last = virtualItems[virtualItems.length - 1];
-    const maximum = state.viewMode === "grid" ? rowCount : assets.length;
-    if (last && last.index >= maximum - 3) void fetchNextPage();
-  }, [virtualItems, rowCount, assets.length, state.viewMode, hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (
+      last &&
+      shouldFetchViewerPageAhead(last.index, itemCount, containerHeight, itemExtent)
+    ) {
+      void fetchNextPage();
+    }
+  }, [
+    virtualItems,
+    itemCount,
+    containerHeight,
+    itemExtent,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  ]);
 
   const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
 
@@ -177,6 +209,11 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
             {virtualItems.map((virtualRow) => {
               const startIndex = virtualRow.index * columns;
               const rowAssets = assets.slice(startIndex, startIndex + columns);
+              const priority = viewerImagePriority(
+                virtualRow.index,
+                visibleRange.first,
+                visibleRange.last
+              );
               return (
                 <div
                   key={virtualRow.key}
@@ -201,6 +238,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
                         key={asset.id}
                         asset={asset}
                         size={state.thumbnailSize}
+                        priority={priority}
                         selected={state.selectedAssets.has(asset.id)}
                         onSelect={onSelectAsset}
                         onDoubleClick={openPreview}
@@ -216,10 +254,16 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
             {virtualItems.map((virtualItem) => {
               const asset = assets[virtualItem.index];
               if (!asset) return null;
+              const priority = viewerImagePriority(
+                virtualItem.index,
+                visibleRange.first,
+                visibleRange.last
+              );
               return (
                 <ViewerListItem
                   key={asset.id}
                   asset={asset}
+                  priority={priority}
                   selected={state.selectedAssets.has(asset.id)}
                   onSelect={onSelectAsset}
                   onDoubleClick={openPreview}
@@ -291,6 +335,7 @@ export function ViewerGrid({ onSelectAsset, onAssetsLoaded }: ViewerGridProps) {
 interface ViewerGridItemProps {
   asset: AssetDTO;
   size: number;
+  priority: ViewerImagePriority;
   selected: boolean;
   onSelect: (asset: AssetDTO, multi: boolean, range: boolean) => void;
   onDoubleClick: (asset: AssetDTO) => void;
@@ -299,6 +344,7 @@ interface ViewerGridItemProps {
 const ViewerGridItem = React.memo(function ViewerGridItem({
   asset,
   size,
+  priority,
   selected,
   onSelect,
   onDoubleClick,
@@ -323,6 +369,7 @@ const ViewerGridItem = React.memo(function ViewerGridItem({
         width={size}
         height={size}
         fit="cover"
+        priority={priority}
         alt={asset.fileName}
       />
 
@@ -359,6 +406,7 @@ const ViewerGridItem = React.memo(function ViewerGridItem({
 
 interface ViewerListItemProps {
   asset: AssetDTO;
+  priority: ViewerImagePriority;
   selected: boolean;
   onSelect: (asset: AssetDTO, multi: boolean, range: boolean) => void;
   onDoubleClick: (asset: AssetDTO) => void;
@@ -367,6 +415,7 @@ interface ViewerListItemProps {
 
 const ViewerListItem = React.memo(function ViewerListItem({
   asset,
+  priority,
   selected,
   onSelect,
   onDoubleClick,
@@ -390,6 +439,7 @@ const ViewerListItem = React.memo(function ViewerListItem({
         width={42}
         height={42}
         fit="cover"
+        priority={priority}
         alt={asset.fileName}
         className="rounded-lg flex-shrink-0"
       />
@@ -496,6 +546,7 @@ function ViewerPreview({
             width={viewport.width}
             height={viewport.height}
             fit="contain"
+            priority="high"
             alt={asset.fileName}
             className="bg-black"
           />
