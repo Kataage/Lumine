@@ -7,32 +7,48 @@ import (
 	"time"
 )
 
-// PostRecordView is a viewer-oriented read model for the actual purpose of
-// Lumine's post feature: remembering which images were registered to which
-// service/account. It intentionally uses the existing post_destinations table
-// instead of treating posts as a text-composer first.
-type PostRecordView struct {
-	ID                int64
-	Title             string
-	Status            string
-	PublishedAt       *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	AssetIDs          []int64
-	TargetID          int64
-	TargetName        string
-	TargetKind        string
-	AccountID         int64
-	AccountDisplay    string
-	AccountIdentifier string
-	ExternalPostID    string
+// PostRecordCreate captures what was actually published. Common searchable
+// fields stay first-class while platform-specific details are stored as JSON.
+type PostRecordCreate struct {
+	Title                string
+	Body                 string
+	Hashtags             string
+	PlatformMetadataJSON string
+	AssetIDs             []int64
+	TargetID             int64
+	AccountID            int64
+	ExternalPostID       string
+	ExternalURL          string
+	PublishedAt          *time.Time
 }
 
-func (r *PostRepo) CreateTrackingRecord(title string, assetIDs []int64, targetID, accountID int64, externalPostID string) (int64, error) {
-	if len(assetIDs) == 0 {
+// PostRecordView is the publication snapshot read model used by the viewer.
+type PostRecordView struct {
+	ID                   int64
+	Title                string
+	Body                 string
+	Hashtags             string
+	PlatformMetadataJSON string
+	Status               string
+	PublishedAt          *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	AssetIDs             []int64
+	TargetID             int64
+	TargetName           string
+	TargetKind           string
+	AccountID            int64
+	AccountDisplay       string
+	AccountIdentifier    string
+	ExternalPostID       string
+	ExternalURL          string
+}
+
+func (r *PostRepo) CreateTrackingRecord(input PostRecordCreate) (int64, error) {
+	if len(input.AssetIDs) == 0 {
 		return 0, fmt.Errorf("at least one asset is required")
 	}
-	if targetID <= 0 || accountID <= 0 {
+	if input.TargetID <= 0 || input.AccountID <= 0 {
 		return 0, fmt.Errorf("post target and account are required")
 	}
 
@@ -45,8 +61,8 @@ func (r *PostRepo) CreateTrackingRecord(title string, assetIDs []int64, targetID
 	var accountMatches int
 	if err := tx.QueryRow(
 		"SELECT COUNT(*) FROM post_accounts WHERE id = ? AND post_target_id = ? AND is_active = 1",
-		accountID,
-		targetID,
+		input.AccountID,
+		input.TargetID,
 	).Scan(&accountMatches); err != nil {
 		return 0, fmt.Errorf("validate post account: %w", err)
 	}
@@ -54,14 +70,26 @@ func (r *PostRepo) CreateTrackingRecord(title string, assetIDs []int64, targetID
 		return 0, fmt.Errorf("selected account does not belong to the selected target")
 	}
 
-	title = strings.TrimSpace(title)
+	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		title = "投稿記録"
 	}
+	metadataJSON := strings.TrimSpace(input.PlatformMetadataJSON)
+	if metadataJSON == "" {
+		metadataJSON = "{}"
+	}
+	publishedAt := time.Now().UTC()
+	if input.PublishedAt != nil {
+		publishedAt = input.PublishedAt.UTC()
+	}
 
 	result, err := tx.Exec(
-		"INSERT INTO posts (title, body, hashtags, status, published_at) VALUES (?, '', '', 'published', CURRENT_TIMESTAMP)",
+		"INSERT INTO posts (title, body, hashtags, status, published_at, platform_metadata_json) VALUES (?, ?, ?, 'published', ?, ?)",
 		title,
+		strings.TrimSpace(input.Body),
+		strings.TrimSpace(input.Hashtags),
+		publishedAt,
+		metadataJSON,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("create post record: %w", err)
@@ -72,18 +100,20 @@ func (r *PostRepo) CreateTrackingRecord(title string, assetIDs []int64, targetID
 	}
 
 	if _, err := tx.Exec(
-		"INSERT INTO post_destinations (post_id, post_target_id, post_account_id, status, published_at, external_post_id) VALUES (?, ?, ?, 'published', CURRENT_TIMESTAMP, ?)",
+		"INSERT INTO post_destinations (post_id, post_target_id, post_account_id, status, published_at, external_post_id, external_url) VALUES (?, ?, ?, 'published', ?, ?, ?)",
 		postID,
-		targetID,
-		accountID,
-		strings.TrimSpace(externalPostID),
+		input.TargetID,
+		input.AccountID,
+		publishedAt,
+		strings.TrimSpace(input.ExternalPostID),
+		strings.TrimSpace(input.ExternalURL),
 	); err != nil {
 		return 0, fmt.Errorf("create post destination: %w", err)
 	}
 
-	seen := make(map[int64]struct{}, len(assetIDs))
+	seen := make(map[int64]struct{}, len(input.AssetIDs))
 	sortOrder := 0
-	for _, assetID := range assetIDs {
+	for _, assetID := range input.AssetIDs {
 		if assetID <= 0 {
 			continue
 		}
@@ -116,10 +146,11 @@ func (r *PostRepo) ListTrackingRecords(offset, limit int) ([]PostRecordView, err
 		limit = 100
 	}
 	rows, err := r.db.Query(`
-		SELECT p.id, p.title, p.status, p.published_at, p.created_at, p.updated_at,
+		SELECT p.id, p.title, p.body, p.hashtags, p.platform_metadata_json,
+		       p.status, p.published_at, p.created_at, p.updated_at,
 		       t.id, t.name, t.kind,
 		       a.id, a.display_name, a.account_identifier,
-		       COALESCE(d.external_post_id, '')
+		       COALESCE(d.external_post_id, ''), COALESCE(d.external_url, '')
 		FROM posts p
 		INNER JOIN post_destinations d ON d.post_id = p.id
 		INNER JOIN post_targets t ON t.id = d.post_target_id
@@ -149,10 +180,11 @@ func (r *PostRepo) ListTrackingRecords(offset, limit int) ([]PostRecordView, err
 
 func (r *PostRepo) GetTrackingRecordsByAsset(assetID int64) ([]PostRecordView, error) {
 	rows, err := r.db.Query(`
-		SELECT p.id, p.title, p.status, p.published_at, p.created_at, p.updated_at,
+		SELECT p.id, p.title, p.body, p.hashtags, p.platform_metadata_json,
+		       p.status, p.published_at, p.created_at, p.updated_at,
 		       t.id, t.name, t.kind,
 		       a.id, a.display_name, a.account_identifier,
-		       COALESCE(d.external_post_id, '')
+		       COALESCE(d.external_post_id, ''), COALESCE(d.external_url, '')
 		FROM posts p
 		INNER JOIN post_assets pa ON pa.post_id = p.id
 		INNER JOIN post_destinations d ON d.post_id = p.id
@@ -191,6 +223,9 @@ func scanPostRecord(row rowScanner) (PostRecordView, error) {
 	if err := row.Scan(
 		&record.ID,
 		&record.Title,
+		&record.Body,
+		&record.Hashtags,
+		&record.PlatformMetadataJSON,
 		&record.Status,
 		&publishedAt,
 		&record.CreatedAt,
@@ -202,6 +237,7 @@ func scanPostRecord(row rowScanner) (PostRecordView, error) {
 		&record.AccountDisplay,
 		&record.AccountIdentifier,
 		&record.ExternalPostID,
+		&record.ExternalURL,
 	); err != nil {
 		return PostRecordView{}, err
 	}
