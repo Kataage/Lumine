@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetDTO } from "../api/client";
 import { registerViewerOpenHandler } from "../utils/viewerSession";
+import { AppDialogProvider } from "../components/AppDialogProvider";
 
 vi.mock("../components/MemoryImage", () => ({
   MemoryImage: ({ alt, priority }: { alt: string; priority?: string }) => (
@@ -15,11 +16,19 @@ vi.mock("../components/PostRecordModal", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  addAssetsToGenerationGroup: vi.fn(async () => undefined),
+  addAssetsToWork: vi.fn(async () => undefined),
+  createGenerationGroup: vi.fn(),
   createTag: vi.fn(),
+  createWork: vi.fn(),
   deleteAssetFiles: vi.fn(async () => ({ deletedCount: 1, failedCount: 0, deletedIds: [101], failedIds: [], errors: [] })),
+  deleteAssetRelation: vi.fn(async () => undefined),
+  getAssetCreativeContext: vi.fn(async () => ({ works: [], groups: [], relations: [] })),
   getAssetDetail: vi.fn(),
   getPostRecordsByAsset: vi.fn(async () => []),
+  listGenerationGroups: vi.fn(async () => []),
   listTags: vi.fn(async () => []),
+  listWorks: vi.fn(async () => []),
   setAssetTags: vi.fn(async () => undefined),
   toggleAssetFavorite: vi.fn(async () => undefined),
   updateAssetColorLabel: vi.fn(async () => undefined),
@@ -51,17 +60,14 @@ const freshlyListedAsset = {
 
 function renderPanel(asset: AssetDTO = freshlyListedAsset) {
   const client = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        retryDelay: 0,
-      },
-    },
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
   });
 
   return render(
     <QueryClientProvider client={client}>
-      <AssetDetailPanel asset={asset} onClose={vi.fn()} />
+      <AppDialogProvider>
+        <AssetDetailPanel asset={asset} onClose={vi.fn()} />
+      </AppDialogProvider>
     </QueryClientProvider>
   );
 }
@@ -71,7 +77,7 @@ describe("AssetDetailPanel", () => {
     vi.mocked(getAssetDetail).mockReset();
   });
 
-  it("詳細APIが待機中でも一覧データから基本情報を即表示する", () => {
+  it("詳細APIが待機中でも一覧データから基本情報と制作コンテキスト枠を即表示する", () => {
     vi.mocked(getAssetDetail).mockImplementation(() => new Promise(() => undefined));
 
     renderPanel();
@@ -81,6 +87,7 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByTestId("memory-image")).toHaveTextContent("freshly-scanned.png");
     expect(screen.getByTestId("memory-image")).toHaveAttribute("data-priority", "high");
     expect(screen.getByTitle("詳細情報を読み込み中")).toBeInTheDocument();
+    expect(screen.getByText("制作コンテキスト")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "元画像ファイルを削除…" })).toBeInTheDocument();
   });
 

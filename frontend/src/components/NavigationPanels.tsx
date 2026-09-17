@@ -7,6 +7,7 @@ import {
   listLibraries, listTags, removeLibrary, scanLibrary, selectFolder, setSetting, setSupportedExtensions,
 } from "../api/client";
 import type { FolderDTO, ScanProgress } from "../api/client";
+import { useAppDialog } from "./AppDialogProvider";
 
 const TAG_MANAGER_VISIBLE_LIMIT = 200;
 const tagNameCollator = new Intl.Collator("ja", { sensitivity: "base", numeric: true });
@@ -22,8 +23,10 @@ function PanelTitle({ title, description, action }: { title: string; description
     </div>
   );
 }
+
 export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, ScanProgress> }) {
   const { state, setState } = useApp();
+  const dialog = useAppDialog();
   const [error, setError] = useState<string | null>(null);
 
   const add = async () => {
@@ -60,15 +63,29 @@ export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, 
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button type="button" className="ui-mini-button" onClick={() => void scanLibrary(library.id)} disabled={!library.isEnabled || !!progress}>再スキャン</button>
                 <button type="button" className="ui-mini-button" onClick={async () => {
-                  if (library.isEnabled) await disableLibrary(library.id); else await enableLibrary(library.id);
-                  const libraries = await listLibraries();
-                  setState((current) => ({ ...current, libraries }));
+                  try {
+                    if (library.isEnabled) await disableLibrary(library.id); else await enableLibrary(library.id);
+                    const libraries = await listLibraries();
+                    setState((current) => ({ ...current, libraries }));
+                  } catch (cause) {
+                    await dialog.notify({ title: "ライブラリの状態を変更できませんでした", description: "有効/無効の切り替えに失敗しました。", detail: cause instanceof Error ? cause.message : String(cause), tone: "danger" });
+                  }
                 }}>{library.isEnabled ? "無効化" : "有効化"}</button>
                 <button type="button" className="ui-mini-button text-destructive" onClick={async () => {
-                  if (!confirm(`「${library.name}」の登録を解除しますか？\n元画像は削除されません。`)) return;
-                  await removeLibrary(library.id);
-                  const libraries = await listLibraries();
-                  setState((current) => ({ ...current, libraries, selectedLibraryId: current.selectedLibraryId === library.id ? (libraries[0]?.id ?? null) : current.selectedLibraryId, selectedFolderPath: "", detailOpen: false, detailAsset: null, filterTagIds: [] }));
+                  const approved = await dialog.confirm({
+                    title: "ライブラリの登録を解除しますか？",
+                    description: `「${library.name}」をLumineのライブラリから外します。\n元の画像ファイルは削除されません。`,
+                    confirmLabel: "登録を解除",
+                    tone: "danger",
+                  });
+                  if (!approved) return;
+                  try {
+                    await removeLibrary(library.id);
+                    const libraries = await listLibraries();
+                    setState((current) => ({ ...current, libraries, selectedLibraryId: current.selectedLibraryId === library.id ? (libraries[0]?.id ?? null) : current.selectedLibraryId, selectedFolderPath: "", detailOpen: false, detailAsset: null, filterTagIds: [] }));
+                  } catch (cause) {
+                    await dialog.notify({ title: "ライブラリの登録を解除できませんでした", description: "データベースからライブラリ情報を削除できませんでした。", detail: cause instanceof Error ? cause.message : String(cause), tone: "danger" });
+                  }
                 }}>登録解除</button>
               </div>
             </div>
@@ -78,6 +95,7 @@ export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, 
     </div>
   );
 }
+
 export function FoldersPanel() {
   const { state, setState } = useApp();
   const { data: folders = [] } = useQuery({ queryKey: ["folderTree", state.selectedLibraryId], queryFn: () => getFolderTree(state.selectedLibraryId!), enabled: !!state.selectedLibraryId, staleTime: Infinity });
@@ -111,8 +129,10 @@ export function FoldersPanel() {
     </div>
   );
 }
+
 export function TagsPanel() {
   const queryClient = useQueryClient();
+  const dialog = useAppDialog();
   const { state, setState } = useApp();
   const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
   const [name, setName] = useState("");
@@ -176,10 +196,20 @@ export function TagsPanel() {
                   <span className={`text-[10px] ${active ? "text-primary font-medium" : "text-muted-foreground"}`}>{active ? "✓ 絞込中" : "絞込"}</span>
                 </button>
                 <button type="button" className="h-9 px-2 text-[11px] text-muted-foreground hover:text-destructive flex-shrink-0" onClick={async () => {
-                  if (!confirm(`タグ「${tag.name}」を削除しますか？\n画像へのタグ付けも解除されます。`)) return;
-                  await deleteTag(tag.id);
-                  setState((current) => ({ ...current, filterTagIds: current.filterTagIds.filter((id) => id !== tag.id) }));
-                  await Promise.all([queryClient.invalidateQueries({ queryKey: ["tags"] }), queryClient.invalidateQueries({ queryKey: ["assets"] })]);
+                  const approved = await dialog.confirm({
+                    title: "タグを削除しますか？",
+                    description: `「${tag.name}」を削除します。\nこのタグが付いている画像からもタグ付けが解除されます。`,
+                    confirmLabel: "タグを削除",
+                    tone: "danger",
+                  });
+                  if (!approved) return;
+                  try {
+                    await deleteTag(tag.id);
+                    setState((current) => ({ ...current, filterTagIds: current.filterTagIds.filter((id) => id !== tag.id) }));
+                    await Promise.all([queryClient.invalidateQueries({ queryKey: ["tags"] }), queryClient.invalidateQueries({ queryKey: ["assets"] })]);
+                  } catch (cause) {
+                    await dialog.notify({ title: "タグを削除できませんでした", description: "タグ情報を更新できませんでした。", detail: cause instanceof Error ? cause.message : String(cause), tone: "danger" });
+                  }
                 }}>削除</button>
               </div>
             );
@@ -190,6 +220,7 @@ export function TagsPanel() {
     </div>
   );
 }
+
 export function SettingsPanel() {
   const [extensions, setExtensions] = useState<string[]>([]);
   const [extension, setExtension] = useState("");

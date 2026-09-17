@@ -10,6 +10,7 @@ function renderBar(overrides: Partial<React.ComponentProps<typeof BulkActionsBar
     onStatus: vi.fn(),
     onFavorite: vi.fn(),
     onColorLabel: vi.fn(),
+    onCreativeOrganize: vi.fn(),
     onPostRecord: vi.fn(),
     onDelete: vi.fn(),
     onClear: vi.fn(),
@@ -35,10 +36,11 @@ describe("BulkActionsBar", () => {
     expect(screen.getByText("公開済み")).toBeInTheDocument();
   });
 
-  it("お気に入り・投稿記録・ファイル削除・選択解除を表示する", () => {
+  it("制作整理・公開記録・ファイル削除・選択解除を表示する", () => {
     renderBar();
     expect(screen.getByText("★ お気に入り")).toBeInTheDocument();
-    expect(screen.getByText("＋ 投稿記録")).toBeInTheDocument();
+    expect(screen.getByText("制作整理")).toBeInTheDocument();
+    expect(screen.getByText("＋ 公開記録")).toBeInTheDocument();
     expect(screen.getByText("画像ファイルを削除")).toBeInTheDocument();
     expect(screen.getByText("選択解除")).toBeInTheDocument();
   });
@@ -51,11 +53,19 @@ describe("BulkActionsBar", () => {
     expect(onStatus).toHaveBeenCalledWith("reviewed");
   });
 
-  it("投稿記録モーダルを開ける", async () => {
+  it("制作整理モーダルを開ける", async () => {
+    const onCreativeOrganize = vi.fn();
+    renderBar({ onCreativeOrganize });
+    const user = userEvent.setup();
+    await user.click(screen.getByText("制作整理"));
+    expect(onCreativeOrganize).toHaveBeenCalledOnce();
+  });
+
+  it("公開記録モーダルを開ける", async () => {
     const onPostRecord = vi.fn();
     renderBar({ onPostRecord });
     const user = userEvent.setup();
-    await user.click(screen.getByText("＋ 投稿記録"));
+    await user.click(screen.getByText("＋ 公開記録"));
     expect(onPostRecord).toHaveBeenCalledOnce();
   });
 

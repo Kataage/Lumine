@@ -14,6 +14,8 @@ import {
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 import { openAssetInViewer } from "../utils/viewerSession";
+import { useAppDialog } from "./AppDialogProvider";
+import { CreativeContextPanel } from "./CreativeContextPanel";
 import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
 import { TagPicker } from "./TagPicker";
@@ -89,8 +91,19 @@ function mergeAsset(base: AssetDTO, detail: AssetDTO): AssetDTO {
   } as AssetDTO);
 }
 
+function parsePlatformMetadata(value?: string): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanelProps) {
   const queryClient = useQueryClient();
+  const dialog = useAppDialog();
   const baseAsset = useMemo(() => normalizeAsset(listAsset), [listAsset]);
   const assetId = baseAsset.id;
   const [asset, setAsset] = useState<AssetDTO>(baseAsset);
@@ -117,12 +130,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
     refetchOnMount: "always",
   });
 
-  const { data: tags = [] } = useQuery({
-    queryKey: ["tags"],
-    queryFn: listTags,
-    staleTime: Infinity,
-  });
-
+  const { data: tags = [] } = useQuery({ queryKey: ["tags"], queryFn: listTags, staleTime: Infinity });
   const { data: postRecords = [] } = useQuery({
     queryKey: ["assetPostRecords", assetId],
     queryFn: () => getPostRecordsByAsset(assetId),
@@ -189,7 +197,13 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
   const deleteCurrentFile = async () => {
     if (assetId <= 0 || deleting) return;
-    if (!confirm(`「${asset.fileName}」の元画像ファイルを削除します。\n\nこの操作は元に戻せません。Lumineの登録情報も同時に削除されます。\n\n本当に削除しますか？`)) return;
+    const approved = await dialog.confirm({
+      title: "元画像ファイルを削除しますか？",
+      description: `「${asset.fileName}」をディスクから削除し、Lumineの登録情報も削除します。\nこの操作は元に戻せません。`,
+      confirmLabel: "画像を削除",
+      tone: "danger",
+    });
+    if (!approved) return;
     setDeleting(true);
     try {
       const result = await deleteAssetFiles([assetId]);
@@ -198,11 +212,20 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
         await queryClient.invalidateQueries({ queryKey: ["assets"], refetchType: "active" });
         return;
       }
-      const detail = (result.errors ?? []).slice(0, 3).join("\n");
-      alert(`画像ファイルを削除できませんでした。${detail ? `\n\n${detail}` : ""}`);
+      await dialog.notify({
+        title: "画像ファイルを削除できませんでした",
+        description: "ファイルが使用中か、アクセス権限が不足している可能性があります。",
+        detail: (result.errors ?? []).slice(0, 3).join("\n"),
+        tone: "danger",
+      });
     } catch (error) {
       console.error("image file delete failed:", error);
-      alert("画像ファイルの削除に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
+      await dialog.notify({
+        title: "画像ファイルの削除に失敗しました",
+        description: "元画像は削除されていません。",
+        detail: error instanceof Error ? error.message : String(error),
+        tone: "danger",
+      });
     } finally {
       setDeleting(false);
     }
@@ -225,7 +248,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
               <p className="text-xs font-semibold">画像の詳細</p>
               {detailFetching && <span className="w-3 h-3 border-2 border-muted-foreground/25 border-t-primary rounded-full animate-spin" title="詳細情報を読み込み中" />}
             </div>
-            <p className="text-[11px] text-muted-foreground truncate">基本情報は即時表示・追加情報は後から読み込み</p>
+            <p className="text-[11px] text-muted-foreground truncate">制作履歴・整理情報・公開履歴をまとめて確認</p>
           </div>
           <button className="ui-icon-button text-lg" onClick={onClose} aria-label="詳細パネルを閉じる">×</button>
         </div>
@@ -240,38 +263,14 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
           )}
 
           <section className="space-y-2">
-            <button
-              onClick={() => { openAssetInViewer(asset); }}
-              className="relative block w-full rounded-xl border border-border bg-muted/25 overflow-hidden group focus:outline-none focus:ring-2 focus:ring-primary"
-              title="大きく表示"
-              disabled={!asset.filePath}
-            >
+            <button onClick={() => { openAssetInViewer(asset); }} className="relative block w-full rounded-xl border border-border bg-muted/25 overflow-hidden group focus:outline-none focus:ring-2 focus:ring-primary" title="大きく表示" disabled={!asset.filePath}>
               <div className="flex justify-center min-h-40 items-center">
-                {asset.filePath ? (
-                  <MemoryImage
-                    filePath={asset.filePath}
-                    modifiedAtFs={asset.modifiedAtFs}
-                    sourceWidth={asset.width}
-                    sourceHeight={asset.height}
-                    width={300}
-                    height={240}
-                    fit="contain"
-                    priority="high"
-                    alt={asset.fileName}
-                  />
-                ) : (
-                  <div className="w-full h-40 flex items-center justify-center text-xs text-muted-foreground">画像パスを取得できません</div>
-                )}
+                {asset.filePath ? <MemoryImage filePath={asset.filePath} modifiedAtFs={asset.modifiedAtFs} sourceWidth={asset.width} sourceHeight={asset.height} width={300} height={240} fit="contain" priority="high" alt={asset.fileName} /> : <div className="w-full h-40 flex items-center justify-center text-xs text-muted-foreground">画像パスを取得できません</div>}
               </div>
               <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/75 to-transparent pointer-events-none" />
-              <span className="absolute bottom-2 right-2 h-8 px-3 inline-flex items-center rounded-lg bg-black/70 border border-white/15 text-[11px] font-medium text-white pointer-events-none">
-                ⛶ 大きく表示
-              </span>
+              <span className="absolute bottom-2 right-2 h-8 px-3 inline-flex items-center rounded-lg bg-black/70 border border-white/15 text-[11px] font-medium text-white pointer-events-none">⛶ 大きく表示</span>
             </button>
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold leading-snug break-words">{asset.fileName}</h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground break-all">{asset.filePath || "ファイルパス不明"}</p>
-            </div>
+            <div className="min-w-0"><h3 className="text-sm font-semibold leading-snug break-words">{asset.fileName}</h3><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground break-all">{asset.filePath || "ファイルパス不明"}</p></div>
           </section>
 
           <section className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-muted/20 p-3">
@@ -281,153 +280,63 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
             <Info label="更新日" value={modifiedLabel} />
           </section>
 
+          <Section title="制作コンテキスト"><CreativeContextPanel assetId={assetId} /></Section>
+
           <Section title="整理">
             <div className="space-y-3">
-              <div>
-                <p className="ui-label mb-1.5">評価</p>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((rating) => (
-                    <button
-                      key={rating}
-                      className={`w-8 h-8 rounded-lg text-lg hover:bg-accent ${rating <= asset.rating ? "text-yellow-400" : "text-muted-foreground/25"}`}
-                      onClick={() => void updateRating(rating)}
-                      aria-label={`評価 ${rating}`}
-                    >★</button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="ui-label mb-1.5">状態</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {STATUS_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => void updateStatus(option.value)}
-                      className={`h-8 px-2.5 rounded-lg border text-[11px] ${asset.statusLabel === option.value ? "bg-primary border-primary text-primary-foreground" : "bg-muted border-border text-muted-foreground hover:text-foreground"}`}
-                    >{option.label}</button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="ui-label">お気に入り</span>
-                <button
-                  className={`ui-secondary-button ${asset.isFavorite ? "text-yellow-400 border-yellow-400/30" : ""}`}
-                  onClick={() => void updateFavorite(!asset.isFavorite)}
-                >★ {asset.isFavorite ? "登録済み" : "登録する"}</button>
-              </div>
-
-              <div>
-                <p className="ui-label mb-1.5">カラーラベル</p>
-                <div className="flex gap-2">
-                  {COLORS.map((color) => (
-                    <button
-                      key={color || "none"}
-                      className={`w-6 h-6 rounded-full border border-border ${asset.colorLabel === color ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`}
-                      style={{ backgroundColor: color || "transparent" }}
-                      onClick={() => void updateColor(color)}
-                      aria-label={color || "カラーラベルなし"}
-                    />
-                  ))}
-                </div>
-              </div>
+              <div><p className="ui-label mb-1.5">評価</p><div className="flex gap-1">{[1, 2, 3, 4, 5].map((rating) => <button key={rating} className={`w-8 h-8 rounded-lg text-lg hover:bg-accent ${rating <= asset.rating ? "text-yellow-400" : "text-muted-foreground/25"}`} onClick={() => void updateRating(rating)} aria-label={`評価 ${rating}`}>★</button>)}</div></div>
+              <div><p className="ui-label mb-1.5">状態</p><div className="flex flex-wrap gap-1.5">{STATUS_OPTIONS.map((option) => <button key={option.value} onClick={() => void updateStatus(option.value)} className={`h-8 px-2.5 rounded-lg border text-[11px] ${asset.statusLabel === option.value ? "bg-primary border-primary text-primary-foreground" : "bg-muted border-border text-muted-foreground hover:text-foreground"}`}>{option.label}</button>)}</div></div>
+              <div className="flex items-center justify-between gap-3"><span className="ui-label">お気に入り</span><button className={`ui-secondary-button ${asset.isFavorite ? "text-yellow-400 border-yellow-400/30" : ""}`} onClick={() => void updateFavorite(!asset.isFavorite)}>★ {asset.isFavorite ? "登録済み" : "登録する"}</button></div>
+              <div><p className="ui-label mb-1.5">カラーラベル</p><div className="flex gap-2">{COLORS.map((color) => <button key={color || "none"} className={`w-6 h-6 rounded-full border border-border ${asset.colorLabel === color ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""}`} style={{ backgroundColor: color || "transparent" }} onClick={() => void updateColor(color)} aria-label={color || "カラーラベルなし"} />)}</div></div>
             </div>
           </Section>
 
-          <Section title="タグ">
-            <TagPicker
-              assetId={asset.id}
-              tags={tags}
-              assignedTags={asset.tags ?? []}
-              onAssignedTagsChange={(nextTags) => setAsset((current) => ({ ...current, tags: nextTags } as AssetDTO))}
-              onChanged={refreshAll}
-            />
-          </Section>
+          <Section title="タグ"><TagPicker assetId={asset.id} tags={tags} assignedTags={asset.tags ?? []} onAssignedTagsChange={(nextTags) => setAsset((current) => ({ ...current, tags: nextTags } as AssetDTO))} onChanged={refreshAll} /></Section>
 
           <Section title="メモ">
-            <textarea
-              value={note}
-              onChange={(event) => { setNote(event.target.value); setNoteDirty(true); }}
-              onBlur={() => void saveNote()}
-              placeholder="この画像についてメモを残す…"
-              className="ui-input w-full min-h-24 resize-y leading-relaxed"
-            />
-            <div className="mt-1.5 min-h-5 flex justify-end">
-              {noteDirty ? <button className="ui-primary-button" onClick={() => void saveNote()}>保存</button> : <span className="text-[11px] text-muted-foreground">変更は自動保存されます</span>}
-            </div>
+            <textarea value={note} onChange={(event) => { setNote(event.target.value); setNoteDirty(true); }} onBlur={() => void saveNote()} placeholder="この画像についてメモを残す…" className="ui-input w-full min-h-24 resize-y leading-relaxed" />
+            <div className="mt-1.5 min-h-5 flex justify-end">{noteDirty ? <button className="ui-primary-button" onClick={() => void saveNote()}>保存</button> : <span className="text-[11px] text-muted-foreground">変更は自動保存されます</span>}</div>
           </Section>
 
-          <Section title="投稿記録">
-            <button className="ui-primary-button w-full justify-center" onClick={() => setShowPostRecord(true)} disabled={asset.id <= 0}>
-              ＋ この画像の投稿記録を追加
-            </button>
+          <Section title="公開履歴">
+            <button className="ui-primary-button w-full justify-center" onClick={() => setShowPostRecord(true)} disabled={asset.id <= 0}>＋ この画像の公開記録を追加</button>
             <div className="mt-2 space-y-2">
-              {postRecords.map((record) => (
-                <div key={record.id} className="rounded-lg border border-border bg-muted/25 p-2.5">
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium truncate">{record.targetName}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{record.accountDisplay}{record.accountIdentifier ? ` · ${record.accountIdentifier}` : ""}</p>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{record.publishedAt ? new Date(record.publishedAt).toLocaleDateString("ja-JP") : ""}</span>
+              {postRecords.map((record) => {
+                const metadata = parsePlatformMetadata(record.platformMetadataJson);
+                const aiGenerated = metadata.aiGenerated === true;
+                const ageRestriction = typeof metadata.ageRestriction === "string" ? metadata.ageRestriction : "";
+                const tagsLabel = record.hashtags.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean).slice(0, 5);
+                return (
+                  <div key={record.id} className="rounded-lg border border-border bg-muted/25 p-2.5 space-y-1.5">
+                    <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="text-xs font-medium truncate">{record.targetName} · {record.accountDisplay}</p><p className="text-[10px] text-muted-foreground truncate">{record.title}</p></div><span className="text-[10px] text-muted-foreground whitespace-nowrap">{record.publishedAt ? new Date(record.publishedAt).toLocaleDateString("ja-JP") : ""}</span></div>
+                    {record.body && <p className="text-[10px] leading-relaxed text-muted-foreground line-clamp-3 whitespace-pre-wrap">{record.body}</p>}
+                    {tagsLabel.length > 0 && <div className="flex flex-wrap gap-1">{tagsLabel.map((tag) => <span key={tag} className="rounded-md bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground">#{tag.replace(/^#/, "")}</span>)}</div>}
+                    {(aiGenerated || ageRestriction) && <p className="text-[9px] text-muted-foreground">{aiGenerated ? "AI生成" : ""}{aiGenerated && ageRestriction ? " · " : ""}{ageRestriction}</p>}
+                    {(record.externalUrl || record.externalPostId) && <p className="text-[10px] text-primary break-all select-text">{record.externalUrl || record.externalPostId}</p>}
                   </div>
-                  {record.externalPostId && <p className="mt-1.5 text-[11px] text-primary break-all">{record.externalPostId}</p>}
-                </div>
-              ))}
-              {postRecords.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">まだ投稿記録はありません</p>}
+                );
+              })}
+              {postRecords.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-2">まだ公開履歴はありません</p>}
             </div>
           </Section>
 
           {(asset.cameraModel || asset.lensModel || asset.focalLength || asset.aperture || asset.shutterSpeed || asset.iso || asset.exifDate) && (
-            <Section title="撮影情報 (EXIF)">
-              <div className="space-y-1.5">
-                {asset.cameraModel && <Meta label="カメラ" value={asset.cameraModel} />}
-                {asset.lensModel && <Meta label="レンズ" value={asset.lensModel} />}
-                {asset.focalLength && <Meta label="焦点距離" value={asset.focalLength} />}
-                {asset.aperture && <Meta label="絞り" value={asset.aperture} />}
-                {asset.shutterSpeed && <Meta label="シャッター" value={asset.shutterSpeed} />}
-                {asset.iso ? <Meta label="ISO" value={String(asset.iso)} /> : null}
-                {asset.exifDate && <Meta label="撮影日時" value={asset.exifDate} />}
-              </div>
-            </Section>
+            <Section title="撮影情報 (EXIF)"><div className="space-y-1.5">{asset.cameraModel && <Meta label="カメラ" value={asset.cameraModel} />}{asset.lensModel && <Meta label="レンズ" value={asset.lensModel} />}{asset.focalLength && <Meta label="焦点距離" value={asset.focalLength} />}{asset.aperture && <Meta label="絞り" value={asset.aperture} />}{asset.shutterSpeed && <Meta label="シャッター" value={asset.shutterSpeed} />}{asset.iso ? <Meta label="ISO" value={String(asset.iso)} /> : null}{asset.exifDate && <Meta label="撮影日時" value={asset.exifDate} />}</div></Section>
           )}
 
           {assetId > 0 && (
-            <Section title="ファイル操作">
-              <button
-                type="button"
-                disabled={deleting}
-                className="w-full h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-[11px] font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                onClick={() => void deleteCurrentFile()}
-              >
-                {deleting ? "削除しています…" : "元画像ファイルを削除…"}
-              </button>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">元画像とLumineの登録情報を削除します。実行前に確認が表示されます。</p>
-            </Section>
+            <Section title="ファイル操作"><button type="button" disabled={deleting} className="w-full h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-[11px] font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => void deleteCurrentFile()}>{deleting ? "削除しています…" : "元画像ファイルを削除…"}</button><p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">元画像とLumineの登録情報を削除します。Lumine内の確認ダイアログを表示してから実行します。</p></Section>
           )}
         </div>
       </aside>
 
-      {showPostRecord && asset.id > 0 && (
-        <PostRecordModal
-          assetIds={[asset.id]}
-          defaultTitle={asset.fileName}
-          onClose={() => setShowPostRecord(false)}
-          onSaved={() => void queryClient.invalidateQueries({ queryKey: ["assetPostRecords", asset.id] })}
-        />
-      )}
+      {showPostRecord && asset.id > 0 && <PostRecordModal assetIds={[asset.id]} defaultTitle={asset.fileName} onClose={() => setShowPostRecord(false)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ["assetPostRecords", asset.id] })} />}
     </>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="border-t border-border pt-3">
-      <h4 className="mb-2 text-[11px] font-semibold text-muted-foreground">{title}</h4>
-      {children}
-    </section>
-  );
+  return <section className="border-t border-border pt-3"><h4 className="mb-2 text-[11px] font-semibold text-muted-foreground">{title}</h4>{children}</section>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {

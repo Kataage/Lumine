@@ -4,10 +4,11 @@ import {
   createPostAccount,
   createPostRecord,
   createPostTarget,
+  getAssetDetail,
   listPostAccounts,
   listPostTargets,
 } from "../api/client";
-import type { PostAccountDTO, PostTargetDTO } from "../api/client";
+import type { AssetDTO, PostAccountDTO, PostTargetDTO } from "../api/client";
 
 interface PostRecordModalProps {
   assetIds: number[];
@@ -24,26 +25,43 @@ const POST_KIND_OPTIONS = [
   { value: "other", label: "その他" },
 ];
 
-const postKindLabel = (kind: string) => POST_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? kind;
+function toLocalDateTimeInput(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
 
 export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved }: PostRecordModalProps) {
   const [targets, setTargets] = useState<PostTargetDTO[]>([]);
   const [accounts, setAccounts] = useState<PostAccountDTO[]>([]);
+  const [assets, setAssets] = useState<AssetDTO[]>([]);
+  const [orderedIds, setOrderedIds] = useState(assetIds);
   const [targetId, setTargetId] = useState(0);
   const [accountId, setAccountId] = useState(0);
   const [title, setTitle] = useState(defaultTitle);
+  const [body, setBody] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [externalPostId, setExternalPostId] = useState("");
+  const [externalUrl, setExternalUrl] = useState("");
+  const [publishedAt, setPublishedAt] = useState(toLocalDateTimeInput());
+  const [ageRestriction, setAgeRestriction] = useState("全年齢");
+  const [aiGenerated, setAiGenerated] = useState(true);
   const [busy, setBusy] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
   const [setupLoading, setSetupLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
-  const [showTitle, setShowTitle] = useState(Boolean(defaultTitle));
   const [newTargetName, setNewTargetName] = useState("");
   const [newTargetKind, setNewTargetKind] = useState("pixiv");
   const [newAccountDisplay, setNewAccountDisplay] = useState("");
   const [newAccountIdentifier, setNewAccountIdentifier] = useState("");
+
+  const selectedTarget = targets.find((target) => target.id === targetId);
+  const targetKind = selectedTarget?.kind ?? "other";
+  const filteredAccounts = useMemo(
+    () => accounts.filter((account) => account.postTargetId === targetId && account.isActive),
+    [accounts, targetId]
+  );
 
   const loadSetup = async (preferredTargetId = 0, preferredAccountId = 0) => {
     setSetupLoading(true);
@@ -53,12 +71,10 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
       const safeAccounts = loadedAccounts ?? [];
       setTargets(safeTargets);
       setAccounts(safeAccounts);
-
       const nextTargetId = safeTargets.some((target) => target.id === preferredTargetId)
         ? preferredTargetId
         : (safeTargets.some((target) => target.id === targetId) ? targetId : (safeTargets[0]?.id ?? 0));
       setTargetId(nextTargetId);
-
       const matchingAccounts = safeAccounts.filter((account) => account.postTargetId === nextTargetId && account.isActive);
       const nextAccountId = matchingAccounts.some((account) => account.id === preferredAccountId)
         ? preferredAccountId
@@ -76,6 +92,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     void loadSetup();
+    void Promise.all(assetIds.map((id) => getAssetDetail(id))).then((items) => setAssets(items.filter((item): item is AssetDTO => Boolean(item))));
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
 
@@ -87,263 +104,144 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
     return () => window.removeEventListener("keydown", handler);
   }, [busy, onClose, setupBusy]);
 
-  const filteredAccounts = useMemo(
-    () => accounts.filter((account) => account.postTargetId === targetId && account.isActive),
-    [accounts, targetId]
-  );
-
   useEffect(() => {
     if (filteredAccounts.some((account) => account.id === accountId)) return;
     setAccountId(filteredAccounts[0]?.id ?? 0);
     if (targetId > 0 && filteredAccounts.length === 0) setShowSetup(true);
   }, [accountId, filteredAccounts, targetId]);
 
-  const quickCreateTarget = async () => {
-    const name = newTargetName.trim();
-    if (!name) {
-      setError("投稿先名を入力してください");
+  const addTag = () => {
+    const value = tagInput.trim().replace(/^#/, "");
+    if (!value || tags.includes(value)) {
+      setTagInput("");
       return;
     }
-    setSetupBusy(true);
-    setError(null);
-    setNotice(null);
+    setTags((current) => [...current, value]);
+    setTagInput("");
+  };
+
+  const moveImage = (index: number, delta: -1 | 1) => {
+    setOrderedIds((current) => {
+      const nextIndex = index + delta;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+
+  const quickCreateTarget = async () => {
+    const name = newTargetName.trim();
+    if (!name) { setError("投稿先名を入力してください"); return; }
+    setSetupBusy(true); setError(null);
     try {
       const target = await createPostTarget(name, newTargetKind);
       if (!target) throw new Error("登録結果を取得できませんでした");
       setNewTargetName("");
       await loadSetup(target.id, 0);
-      setNotice(`${target.name} を追加しました`);
     } catch (cause) {
       setError(`投稿先を追加できませんでした: ${cause instanceof Error ? cause.message : String(cause)}`);
-    } finally {
-      setSetupBusy(false);
-    }
+    } finally { setSetupBusy(false); }
   };
 
   const quickCreateAccount = async () => {
     const displayName = newAccountDisplay.trim();
-    if (!targetId) {
-      setError("投稿先を選択してください");
-      return;
-    }
-    if (!displayName) {
-      setError("アカウント名を入力してください");
-      return;
-    }
-    setSetupBusy(true);
-    setError(null);
-    setNotice(null);
+    if (!targetId) { setError("投稿先を選択してください"); return; }
+    if (!displayName) { setError("アカウント名を入力してください"); return; }
+    setSetupBusy(true); setError(null);
     try {
       const account = await createPostAccount(targetId, displayName, newAccountIdentifier.trim());
       if (!account) throw new Error("登録結果を取得できませんでした");
-      setNewAccountDisplay("");
-      setNewAccountIdentifier("");
+      setNewAccountDisplay(""); setNewAccountIdentifier("");
       await loadSetup(targetId, account.id);
       setShowSetup(false);
-      setNotice(`${account.displayName} を追加しました`);
     } catch (cause) {
       setError(`アカウントを追加できませんでした: ${cause instanceof Error ? cause.message : String(cause)}`);
-    } finally {
-      setSetupBusy(false);
-    }
+    } finally { setSetupBusy(false); }
   };
 
   const save = async () => {
-    if (assetIds.length === 0) {
-      setError("画像が選択されていません");
-      return;
-    }
-    if (!targetId) {
-      setError("投稿先を選択してください");
-      setShowSetup(true);
-      return;
-    }
-    if (!accountId) {
-      setError("アカウントを選択してください");
-      setShowSetup(true);
-      return;
-    }
+    if (orderedIds.length === 0) { setError("画像が選択されていません"); return; }
+    if (!targetId) { setError("投稿先を選択してください"); setShowSetup(true); return; }
+    if (!accountId) { setError("アカウントを選択してください"); setShowSetup(true); return; }
+    if (targetKind === "pixiv" && !title.trim()) { setError("Pixivの投稿タイトルを入力してください"); return; }
 
-    setBusy(true);
-    setError(null);
-    setNotice(null);
+    setBusy(true); setError(null);
     try {
+      const metadata: Record<string, unknown> = {};
+      if (targetKind === "pixiv") {
+        metadata.ageRestriction = ageRestriction;
+        metadata.aiGenerated = aiGenerated;
+      }
+      const publishedISO = publishedAt ? new Date(publishedAt).toISOString() : "";
       const record = await createPostRecord({
-        assetIds,
+        assetIds: orderedIds,
         targetId,
         accountId,
         title: title.trim(),
+        body: body.trim(),
+        hashtags: tags.join("\n"),
+        platformMetadataJson: JSON.stringify(metadata),
         externalPostId: externalPostId.trim(),
+        externalUrl: externalUrl.trim(),
+        publishedAt: publishedISO,
       });
-      if (!record) throw new Error("投稿記録を保存できませんでした");
-      onSaved?.();
-      onClose();
+      if (!record) throw new Error("公開記録を保存できませんでした");
+      onSaved?.(); onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0, 0, 0, 0.84)", backdropFilter: "blur(3px)" }}
-      onMouseDown={(event) => { if (event.currentTarget === event.target && !busy && !setupBusy) onClose(); }}
-    >
-      <div
-        className="w-full max-w-lg max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden rounded-2xl border border-border shadow-2xl isolate"
-        style={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--card-foreground))", boxShadow: "0 24px 80px rgba(0, 0, 0, 0.72)" }}
-        role="dialog"
-        aria-modal="true"
-        aria-label="投稿を記録"
-      >
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" onMouseDown={(event) => { if (event.currentTarget === event.target && !busy && !setupBusy) onClose(); }}>
+      <div className="w-full max-w-3xl max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl" role="dialog" aria-modal="true" aria-label="公開記録を追加">
         <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-sm font-semibold">投稿を記録</h2>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{assetIds.length}件</span>
-          </div>
+          <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">公開記録</h2><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{orderedIds.length}枚</span></div><p className="text-[10px] text-muted-foreground">実際に投稿した内容を、その時点のスナップショットとして保存</p></div>
           <button type="button" onClick={onClose} disabled={busy || setupBusy} className="ui-icon-button text-lg" aria-label="閉じる">×</button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          {setupLoading ? (
-            <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-              <span className="w-4 h-4 border-2 border-muted-foreground/25 border-t-primary rounded-full animate-spin" />
-              読み込み中…
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
+          {error && <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive whitespace-pre-wrap">{error}</div>}
+
+          <section className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1.5"><span className="ui-label">投稿先</span><select value={targetId} onChange={(event) => setTargetId(Number(event.target.value))} className="ui-input w-full"><option value={0}>選択</option>{targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select></label>
+              <label className="space-y-1.5"><span className="ui-label">アカウント</span><select value={accountId} onChange={(event) => setAccountId(Number(event.target.value))} className="ui-input w-full" disabled={!targetId}><option value={0}>選択</option>{filteredAccounts.map((account) => <option key={account.id} value={account.id}>{account.displayName}{account.accountIdentifier ? ` · ${account.accountIdentifier}` : ""}</option>)}</select></label>
             </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="space-y-1.5">
-                  <span className="ui-label">投稿先</span>
-                  <select value={targetId} onChange={(event) => setTargetId(Number(event.target.value))} className="ui-input w-full">
-                    <option value={0}>選択</option>
-                    {targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
-                  </select>
-                </label>
-                <label className="space-y-1.5">
-                  <span className="ui-label">アカウント</span>
-                  <select value={accountId} onChange={(event) => setAccountId(Number(event.target.value))} className="ui-input w-full" disabled={!targetId}>
-                    <option value={0}>選択</option>
-                    {filteredAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.displayName}{account.accountIdentifier ? ` · ${account.accountIdentifier}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+            <div className="flex justify-end"><button type="button" className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowSetup((value) => !value)}>{showSetup ? "投稿先設定を閉じる" : "投稿先・アカウントを設定"}</button></div>
+            {setupLoading && <p className="text-[11px] text-muted-foreground">投稿先設定を読み込み中…</p>}
+            {showSetup && <div className="rounded-xl border border-border bg-muted/10 p-3 space-y-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_120px_auto] gap-2"><input className="ui-input" value={newTargetName} onChange={(event) => setNewTargetName(event.target.value)} placeholder="投稿先名" /><select className="ui-input" value={newTargetKind} onChange={(event) => setNewTargetKind(event.target.value)}>{POST_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><button className="ui-secondary-button" type="button" onClick={() => void quickCreateTarget()} disabled={setupBusy}>投稿先追加</button></div>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2"><input className="ui-input" value={newAccountDisplay} onChange={(event) => setNewAccountDisplay(event.target.value)} placeholder="アカウント表示名" disabled={!targetId} /><input className="ui-input" value={newAccountIdentifier} onChange={(event) => setNewAccountIdentifier(event.target.value)} placeholder="@ID（任意）" disabled={!targetId} /><button className="ui-secondary-button" type="button" onClick={() => void quickCreateAccount()} disabled={setupBusy || !targetId}>アカウント追加</button></div>
+            </div>}
+          </section>
 
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 text-[11px] text-muted-foreground truncate">
-                  {targetId > 0
-                    ? `${targets.find((target) => target.id === targetId)?.name ?? "投稿先"}${filteredAccounts.length ? ` · ${filteredAccounts.length}アカウント` : " · アカウント未登録"}`
-                    : "投稿先を選択"}
-                </div>
-                <button
-                  type="button"
-                  className="ui-secondary-button flex-shrink-0"
-                  aria-expanded={showSetup}
-                  onClick={() => { setShowSetup((value) => !value); setError(null); setNotice(null); }}
-                >
-                  {showSetup ? "設定を閉じる" : "投稿先設定"}
-                </button>
-              </div>
+          <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-2.5">
+            <div className="flex items-center justify-between"><div><p className="text-xs font-semibold">投稿画像と順序</p><p className="text-[10px] text-muted-foreground">実際の投稿順を保存します</p></div></div>
+            <div className="space-y-1.5">{orderedIds.map((id, index) => {
+              const asset = assets.find((item) => item.id === id);
+              return <div key={id} className="flex items-center gap-2 rounded-lg bg-background/60 p-2"><span className="w-5 text-right text-[10px] text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-[11px]">{asset?.fileName ?? `Asset #${id}`}</span><button className="ui-mini-button" type="button" onClick={() => moveImage(index, -1)} disabled={index === 0}>↑</button><button className="ui-mini-button" type="button" onClick={() => moveImage(index, 1)} disabled={index === orderedIds.length - 1}>↓</button></div>;
+            })}</div>
+          </section>
 
-              {showSetup && (
-                <div className="rounded-xl border border-border bg-muted/10 p-3 space-y-3">
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-semibold">投稿先を追加</p>
-                    <div className="flex gap-2">
-                      <input
-                        aria-label="新しい投稿先名"
-                        className="ui-input min-w-0 flex-1"
-                        value={newTargetName}
-                        onChange={(event) => setNewTargetName(event.target.value)}
-                        placeholder="Pixiv / X など"
-                      />
-                      <select aria-label="新しい投稿先の種類" className="ui-input w-28" value={newTargetKind} onChange={(event) => setNewTargetKind(event.target.value)}>
-                        {POST_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                      <button type="button" className="ui-primary-button" onClick={() => void quickCreateTarget()} disabled={setupBusy}>追加</button>
-                    </div>
-                  </div>
+          <section className="space-y-3">
+            <label className="block space-y-1.5"><span className="ui-label">{targetKind === "twitter" ? "管理名（任意）" : "タイトル"}</span><input className="ui-input w-full" value={title} onChange={(event) => setTitle(event.target.value)} placeholder={targetKind === "pixiv" ? "Pixivのタイトル" : "Lumine内で見分けるタイトル"} /></label>
+            <label className="block space-y-1.5"><span className="ui-label">{targetKind === "pixiv" ? "キャプション / 詳細" : targetKind === "twitter" ? "投稿本文" : "本文 / 詳細"}</span><textarea className="ui-input w-full min-h-32 resize-y leading-relaxed" value={body} onChange={(event) => setBody(event.target.value)} placeholder="実際に投稿した文章" /></label>
+            <div className="space-y-1.5"><span className="ui-label">{targetKind === "pixiv" ? "タグ" : "タグ / ハッシュタグ"}</span><div className="flex flex-wrap gap-1.5">{tags.map((tag) => <button key={tag} type="button" onClick={() => setTags((current) => current.filter((item) => item !== tag))} className="rounded-full border border-border bg-muted px-2.5 py-1 text-[10px] hover:border-destructive/40">#{tag} ×</button>)}</div><input className="ui-input w-full" value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addTag(); } }} onBlur={addTag} placeholder="入力して Enter（複数可）" /></div>
+          </section>
 
-                  <div className="border-t border-border pt-3 space-y-2">
-                    <p className="text-[11px] font-semibold">アカウントを追加</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
-                      <input
-                        aria-label="新しいアカウント表示名"
-                        className="ui-input"
-                        value={newAccountDisplay}
-                        onChange={(event) => setNewAccountDisplay(event.target.value)}
-                        placeholder="表示名"
-                        disabled={!targetId}
-                      />
-                      <input
-                        aria-label="新しいアカウントID"
-                        className="ui-input"
-                        value={newAccountIdentifier}
-                        onChange={(event) => setNewAccountIdentifier(event.target.value)}
-                        placeholder="@ID（任意）"
-                        disabled={!targetId}
-                      />
-                      <button type="button" className="ui-primary-button" onClick={() => void quickCreateAccount()} disabled={setupBusy || !targetId}>追加</button>
-                    </div>
-                  </div>
+          {targetKind === "pixiv" && <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-3"><p className="text-xs font-semibold">Pixiv投稿情報</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="space-y-1.5"><span className="ui-label">年齢制限</span><select className="ui-input w-full" value={ageRestriction} onChange={(event) => setAgeRestriction(event.target.value)}><option>全年齢</option><option>R-18</option><option>R-18G</option></select></label><label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/50 px-3 py-2"><span><span className="block text-[11px] font-medium">AI生成作品</span><span className="block text-[9px] text-muted-foreground">投稿時の設定を記録</span></span><input type="checkbox" checked={aiGenerated} onChange={(event) => setAiGenerated(event.target.checked)} /></label></div></section>}
 
-                  {targets.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {targets.map((target) => (
-                        <span key={target.id} className="rounded-md bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
-                          {target.name} · {postKindLabel(target.kind)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>}
-          {notice && <div role="status" className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs">{notice}</div>}
-
-          <label className="block space-y-1.5">
-            <span className="ui-label">投稿URL / ID <span className="font-normal text-muted-foreground">任意</span></span>
-            <input value={externalPostId} onChange={(event) => setExternalPostId(event.target.value)} className="ui-input w-full" placeholder="URL、作品ID、投稿IDなど" />
-          </label>
-
-          <div>
-            <button type="button" className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowTitle((value) => !value)} aria-expanded={showTitle}>
-              {showTitle ? "− 記録名を隠す" : "＋ 記録名を追加"}
-            </button>
-            {showTitle && (
-              <input
-                aria-label="記録名"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="ui-input w-full mt-2"
-                placeholder="任意のメモ名"
-              />
-            )}
-          </div>
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="space-y-1.5"><span className="ui-label">投稿日時</span><input type="datetime-local" className="ui-input w-full" value={publishedAt} onChange={(event) => setPublishedAt(event.target.value)} /></label>
+            <label className="space-y-1.5"><span className="ui-label">作品 / 投稿ID <span className="font-normal text-muted-foreground">任意</span></span><input className="ui-input w-full" value={externalPostId} onChange={(event) => setExternalPostId(event.target.value)} placeholder="123456789" /></label>
+            <label className="space-y-1.5 sm:col-span-2"><span className="ui-label">投稿URL <span className="font-normal text-muted-foreground">任意</span></span><input className="ui-input w-full" value={externalUrl} onChange={(event) => setExternalUrl(event.target.value)} placeholder="https://..." /></label>
+          </section>
         </div>
 
-        <div className="px-4 py-3 border-t border-border flex items-center justify-end gap-2 flex-shrink-0">
-          <button type="button" className="ui-secondary-button" onClick={onClose} disabled={busy || setupBusy}>キャンセル</button>
-          <button
-            type="button"
-            className="ui-primary-button min-w-24"
-            onClick={() => void save()}
-            disabled={busy || setupBusy || setupLoading || assetIds.length === 0 || !targetId || !accountId}
-          >
-            {busy ? "保存中…" : "保存"}
-          </button>
-        </div>
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between gap-3 flex-shrink-0"><p className="text-[10px] text-muted-foreground">後からローカルタグを変えても、この公開内容はそのまま残ります。</p><div className="flex gap-2"><button type="button" className="ui-secondary-button" onClick={onClose} disabled={busy || setupBusy}>キャンセル</button><button type="button" className="ui-primary-button min-w-24" onClick={() => void save()} disabled={busy || setupBusy}>{busy ? "保存中…" : "公開記録を保存"}</button></div></div>
       </div>
-    </div>,
-    document.body
+    </div>, document.body
   );
 }

@@ -61,13 +61,17 @@ func TestPostTrackingRecordRoundTrip(t *testing.T) {
 		t.Fatalf("create account: %v", err)
 	}
 
-	postID, err := postRepo.CreateTrackingRecord(
-		"テスト投稿",
-		[]int64{assetA, assetB, assetA},
-		targetID,
-		accountID,
-		"https://example.invalid/post/123",
-	)
+	postID, err := postRepo.CreateTrackingRecord(PostRecordCreate{
+		Title:                "テスト投稿",
+		Body:                 "投稿時点のキャプション",
+		Hashtags:             "白上フブキ\n浴衣",
+		PlatformMetadataJSON: `{"ageRestriction":"all","aiGenerated":true}`,
+		AssetIDs:             []int64{assetA, assetB, assetA},
+		TargetID:             targetID,
+		AccountID:            accountID,
+		ExternalPostID:       "123",
+		ExternalURL:          "https://example.invalid/post/123",
+	})
 	if err != nil {
 		t.Fatalf("CreateTrackingRecord: %v", err)
 	}
@@ -92,8 +96,14 @@ func TestPostTrackingRecordRoundTrip(t *testing.T) {
 	if record.AccountDisplay != "main" || record.AccountIdentifier != "kataage" {
 		t.Errorf("unexpected account: %s/%s", record.AccountDisplay, record.AccountIdentifier)
 	}
-	if record.ExternalPostID != "https://example.invalid/post/123" {
-		t.Errorf("unexpected external ID: %s", record.ExternalPostID)
+	if record.Body != "投稿時点のキャプション" || record.Hashtags != "白上フブキ\n浴衣" {
+		t.Errorf("publication copy was not preserved: body=%q hashtags=%q", record.Body, record.Hashtags)
+	}
+	if record.PlatformMetadataJSON != `{"ageRestriction":"all","aiGenerated":true}` {
+		t.Errorf("unexpected platform metadata: %s", record.PlatformMetadataJSON)
+	}
+	if record.ExternalPostID != "123" || record.ExternalURL != "https://example.invalid/post/123" {
+		t.Errorf("unexpected external reference: id=%s url=%s", record.ExternalPostID, record.ExternalURL)
 	}
 	if len(record.AssetIDs) != 2 || record.AssetIDs[0] != assetA || record.AssetIDs[1] != assetB {
 		t.Errorf("expected deduplicated ordered asset IDs [%d %d], got %v", assetA, assetB, record.AssetIDs)
@@ -144,7 +154,9 @@ func TestPostTrackingRejectsMismatchedAccount(t *testing.T) {
 	targetB, _ := targetRepo.Create("X", "twitter")
 	accountB, _ := accountRepo.Create(targetB, "x-main", "@kataage")
 
-	if _, err := NewPostRepo(database).CreateTrackingRecord("bad", []int64{assetID}, targetA, accountB, ""); err == nil {
+	if _, err := NewPostRepo(database).CreateTrackingRecord(PostRecordCreate{
+		Title: "bad", AssetIDs: []int64{assetID}, TargetID: targetA, AccountID: accountB,
+	}); err == nil {
 		t.Fatal("expected mismatched target/account to be rejected")
 	}
 }
