@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -39,16 +39,45 @@ describe("PostRecordModal", () => {
     api.createPostRecord.mockReset();
   });
 
-  it("初回利用時に投稿先とアカウントの意味を説明する", async () => {
+  it("設定済みなら説明を挟まず投稿先とアカウントを選べる", async () => {
+    api.targets.push({ id: 1, name: "Pixiv", kind: "pixiv" });
+    api.accounts.push({ id: 2, postTargetId: 1, displayName: "メイン", accountIdentifier: "@example", isActive: true });
+
     render(<PostRecordModal assetIds={[1]} onClose={vi.fn()} />, { wrapper: Wrapper });
-    expect(await screen.findByText("初回だけ、投稿先とアカウントを登録します")).toBeInTheDocument();
-    expect(screen.getByText(/投稿先 = Pixiv \/ X/)).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByLabelText("投稿先")).toHaveValue("1"));
+    expect(screen.getByLabelText("アカウント")).toHaveValue("2");
+    expect(screen.queryByText("初回だけ、投稿先とアカウントを登録します")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "投稿先設定" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
   });
 
-  it("空の投稿先追加を無反応にせずエラー表示する", async () => {
+  it("未設定なら設定欄を自動で開き入力不足を表示する", async () => {
     render(<PostRecordModal assetIds={[1]} onClose={vi.fn()} />, { wrapper: Wrapper });
-    const button = await screen.findByRole("button", { name: "投稿先を追加" });
-    fireEvent.click(button);
+
+    const targetInput = await screen.findByLabelText("新しい投稿先名");
+    expect(targetInput).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "追加" })[0]);
     expect(await screen.findByRole("alert")).toHaveTextContent("投稿先名を入力してください");
+  });
+
+  it("設定済みなら最小入力で保存できる", async () => {
+    api.targets.push({ id: 1, name: "Pixiv", kind: "pixiv" });
+    api.accounts.push({ id: 2, postTargetId: 1, displayName: "メイン", accountIdentifier: "", isActive: true });
+    api.createPostRecord.mockResolvedValue({ id: 10 });
+    const onClose = vi.fn();
+
+    render(<PostRecordModal assetIds={[101]} onClose={onClose} />, { wrapper: Wrapper });
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(api.createPostRecord).toHaveBeenCalledWith({
+      assetIds: [101],
+      targetId: 1,
+      accountId: 2,
+      title: "",
+      externalPostId: "",
+    }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
