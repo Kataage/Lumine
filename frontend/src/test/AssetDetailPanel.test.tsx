@@ -1,16 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetDTO } from "../api/client";
+import { registerViewerOpenHandler } from "../utils/viewerSession";
 
 vi.mock("../components/MemoryImage", () => ({
   MemoryImage: ({ alt, priority }: { alt: string; priority?: string }) => (
     <div data-testid="memory-image" data-priority={priority}>{alt}</div>
   ),
-}));
-
-vi.mock("../components/ImageViewerModal", () => ({
-  ImageViewerModal: () => <div data-testid="image-viewer-modal" />,
 }));
 
 vi.mock("../components/PostRecordModal", () => ({
@@ -85,6 +82,21 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByTestId("memory-image")).toHaveAttribute("data-priority", "high");
     expect(screen.getByTitle("詳細情報を読み込み中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "元画像ファイルを削除…" })).toBeInTheDocument();
+  });
+
+  it("詳細の大きく表示から共有ビューアセッションへ同じ画像を渡す", () => {
+    vi.mocked(getAssetDetail).mockImplementation(() => new Promise(() => undefined));
+    const openViewer = vi.fn();
+    const unregister = registerViewerOpenHandler(openViewer);
+
+    try {
+      renderPanel();
+      fireEvent.click(screen.getByTitle("大きく表示"));
+      expect(openViewer).toHaveBeenCalledOnce();
+      expect(openViewer).toHaveBeenCalledWith(expect.objectContaining({ id: freshlyListedAsset.id, fileName: freshlyListedAsset.fileName }));
+    } finally {
+      unregister();
+    }
   });
 
   it("詳細APIが失敗しても基本情報を消さずに残す", async () => {

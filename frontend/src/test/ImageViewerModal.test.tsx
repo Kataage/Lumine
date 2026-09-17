@@ -55,6 +55,29 @@ describe("ImageViewerModal", () => {
     expect(preview).toHaveAttribute("data-max-decode-pixels", "4000000");
   });
 
+  it("左右ボタンと矢印キーで前後画像へ移動できる", () => {
+    const onPrev = vi.fn();
+    const onNext = vi.fn();
+    render(
+      <ImageViewerModal
+        asset={asset}
+        onClose={vi.fn()}
+        onPrev={onPrev}
+        onNext={onNext}
+        hasPrev
+        hasNext
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "前の画像" }));
+    fireEvent.click(screen.getByRole("button", { name: "次の画像" }));
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+
+    expect(onPrev).toHaveBeenCalledTimes(2);
+    expect(onNext).toHaveBeenCalledTimes(2);
+  });
+
   it("元画像の読み込み前でも拡大後のドラッグで表示位置を移動できる", async () => {
     render(<ImageViewerModal asset={asset} onClose={vi.fn()} />);
 

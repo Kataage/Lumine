@@ -13,7 +13,7 @@ import {
   updateAssetStatus,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
-import { ImageViewerModal } from "./ImageViewerModal";
+import { openAssetInViewer } from "../utils/viewerSession";
 import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
 import { TagPicker } from "./TagPicker";
@@ -94,7 +94,6 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
   const baseAsset = useMemo(() => normalizeAsset(listAsset), [listAsset]);
   const assetId = baseAsset.id;
   const [asset, setAsset] = useState<AssetDTO>(baseAsset);
-  const [showViewer, setShowViewer] = useState(false);
   const [showPostRecord, setShowPostRecord] = useState(false);
   const [note, setNote] = useState(baseAsset.noteContent ?? "");
   const [noteDirty, setNoteDirty] = useState(false);
@@ -133,7 +132,6 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
   useEffect(() => {
     setAsset(baseAsset);
-    setShowViewer(false);
     setShowPostRecord(false);
     setNote(baseAsset.noteContent ?? "");
     setNoteDirty(false);
@@ -243,7 +241,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
           <section className="space-y-2">
             <button
-              onClick={() => setShowViewer(true)}
+              onClick={() => { openAssetInViewer(asset); }}
               className="relative block w-full rounded-xl border border-border bg-muted/25 overflow-hidden group focus:outline-none focus:ring-2 focus:ring-primary"
               title="大きく表示"
               disabled={!asset.filePath}
@@ -411,7 +409,6 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
         </div>
       </aside>
 
-      {showViewer && asset.filePath && <ImageViewerModal asset={asset} onClose={() => setShowViewer(false)} />}
       {showPostRecord && asset.id > 0 && (
         <PostRecordModal
           assetIds={[asset.id]}

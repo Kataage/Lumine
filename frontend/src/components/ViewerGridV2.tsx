@@ -12,6 +12,7 @@ import {
   viewerImagePriority,
   type ViewerImagePriority,
 } from "../utils/viewerPreload";
+import { registerViewerOpenHandler } from "../utils/viewerSession";
 import { MemoryImage } from "./MemoryImage";
 import { ImageViewerModal } from "./ImageViewerModal";
 
@@ -32,6 +33,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
+  const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
+
+  useEffect(() => registerViewerOpenHandler(openPreview), [openPreview]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -240,7 +244,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
                         priority={priority}
                         onSelect={onSelectAsset}
                         onDetail={() => onOpenDetail(asset)}
-                        onPreview={() => setPreviewAsset(asset)}
+                        onPreview={() => openPreview(asset)}
                       />
                     ))}
                   </div>
@@ -262,7 +266,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
                   priority={priority}
                   onSelect={onSelectAsset}
                   onDetail={() => onOpenDetail(asset)}
-                  onPreview={() => setPreviewAsset(asset)}
+                  onPreview={() => openPreview(asset)}
                   style={{
                     position: "absolute",
                     insetInline: 0,
