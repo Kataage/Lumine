@@ -3,7 +3,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { SidebarV2, ToolbarV2, WelcomeScreenV2 } from "./components/NavigationV2";
 import { ViewerGridV2 } from "./components/ViewerGridV2";
 import { AssetDetailPanel } from "./components/AssetDetailPanel";
+import { CreativeOrganizeModal } from "./components/CreativeOrganizeModal";
 import { PostRecordModal } from "./components/PostRecordModal";
+import { useAppDialog } from "./components/AppDialogProvider";
 import type { AssetDTO, LibraryDTO } from "./api/client";
 import {
   addLibrary,
@@ -93,11 +95,13 @@ function parseStoredSetting(raw: string): unknown {
 }
 
 export default function App() {
+  const dialog = useAppDialog();
   const [state, setState] = useState<AppState>(defaultState);
   const [booting, setBooting] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [addingLibrary, setAddingLibrary] = useState(false);
   const [bulkPostRecordOpen, setBulkPostRecordOpen] = useState(false);
+  const [creativeOrganizeOpen, setCreativeOrganizeOpen] = useState(false);
   const autoSyncRunning = useRef(false);
 
   const loadBootstrap = useCallback(async () => {
@@ -208,29 +212,22 @@ export default function App() {
       ]);
     } catch (error) {
       console.error("Failed to select folder:", error);
-      alert("画像フォルダーの追加に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
+      await dialog.notify({
+        title: "画像フォルダーを追加できませんでした",
+        description: "フォルダーを読み込めなかったため、ライブラリには追加されていません。",
+        detail: error instanceof Error ? error.message : String(error),
+        tone: "danger",
+      });
     } finally {
       setAddingLibrary(false);
     }
-  }, [addingLibrary]);
+  }, [addingLibrary, dialog]);
 
   const handleSelectAsset = useCallback((asset: AssetDTO, multi: boolean, range: boolean) => {
     setState((current) => {
-      const selection = computeViewerSelection(
-        current.selectedAssets,
-        current.allAssetIds,
-        current.lastSelectedIndex,
-        asset.id,
-        multi,
-        range
-      );
+      const selection = computeViewerSelection(current.selectedAssets, current.allAssetIds, current.lastSelectedIndex, asset.id, multi, range);
       const assetIsSelected = selection.selectedIds.has(asset.id);
-      const detailAsset = assetIsSelected
-        ? asset
-        : current.detailAsset?.id === asset.id
-          ? null
-          : current.detailAsset;
-
+      const detailAsset = assetIsSelected ? asset : current.detailAsset?.id === asset.id ? null : current.detailAsset;
       return {
         ...current,
         selectedAssets: selection.selectedIds,
@@ -329,7 +326,13 @@ export default function App() {
     const ids = Array.from(state.selectedAssets);
     if (!ids.length) return;
     const label = ids.length === 1 ? "選択した画像" : `選択した${ids.length}件の画像`;
-    if (!confirm(`${label}の元画像ファイルを削除します。\n\nこの操作は元に戻せません。Lumineの登録情報も同時に削除されます。\n\n本当に削除しますか？`)) return;
+    const approved = await dialog.confirm({
+      title: "元画像ファイルを削除しますか？",
+      description: `${label}をディスクから削除し、Lumineの登録情報も削除します。\nこの操作は元に戻せません。`,
+      confirmLabel: ids.length === 1 ? "画像を削除" : `${ids.length}件を削除`,
+      tone: "danger",
+    });
+    if (!approved) return;
 
     try {
       const result = await deleteAssetFiles(ids);
@@ -344,14 +347,23 @@ export default function App() {
       await queryClient.invalidateQueries({ queryKey: ["assets", state.selectedLibraryId], refetchType: "active" });
 
       if (result.failedCount > 0) {
-        const details = (result.errors ?? []).slice(0, 5).join("\n");
-        alert(`${result.deletedCount}件を削除しましたが、${result.failedCount}件は削除できませんでした。${details ? `\n\n${details}` : ""}`);
+        await dialog.notify({
+          title: "一部の画像を削除できませんでした",
+          description: `${result.deletedCount}件を削除しましたが、${result.failedCount}件は残っています。`,
+          detail: (result.errors ?? []).slice(0, 5).join("\n"),
+          tone: "danger",
+        });
       }
     } catch (error) {
       console.error("image file delete failed:", error);
-      alert("画像ファイルの削除に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
+      await dialog.notify({
+        title: "画像ファイルの削除に失敗しました",
+        description: "削除処理を完了できませんでした。",
+        detail: error instanceof Error ? error.message : String(error),
+        tone: "danger",
+      });
     }
-  }, [state.selectedAssets, state.selectedLibraryId]);
+  }, [dialog, state.selectedAssets, state.selectedLibraryId]);
 
   if (booting) {
     return <div className="h-screen bg-background text-foreground flex items-center justify-center"><div className="flex flex-col items-center gap-3 text-sm text-muted-foreground"><div className="w-6 h-6 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" /><span>Lumineを起動しています…</span></div></div>;
@@ -393,6 +405,7 @@ export default function App() {
                     onStatus={handleBulkStatus}
                     onFavorite={handleBulkFavorite}
                     onColorLabel={handleBulkColorLabel}
+                    onCreativeOrganize={() => setCreativeOrganizeOpen(true)}
                     onPostRecord={() => setBulkPostRecordOpen(true)}
                     onDelete={handleDeleteFiles}
                     onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
@@ -402,18 +415,20 @@ export default function App() {
             </div>
           </div>
         </div>
-        {bulkPostRecordOpen && selectedIDs.length > 0 && <PostRecordModal assetIds={selectedIDs} defaultTitle={`${selectedIDs.length}件の画像`} onClose={() => setBulkPostRecordOpen(false)} />}
+        {creativeOrganizeOpen && selectedIDs.length > 1 && <CreativeOrganizeModal assetIds={selectedIDs} onClose={() => setCreativeOrganizeOpen(false)} />}
+        {bulkPostRecordOpen && selectedIDs.length > 0 && <PostRecordModal assetIds={selectedIDs} defaultTitle="" onClose={() => setBulkPostRecordOpen(false)} />}
       </AppContext.Provider>
     </QueryClientProvider>
   );
 }
 
-export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLabel, onPostRecord, onDelete, onClear }: {
+export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLabel, onCreativeOrganize, onPostRecord, onDelete, onClear }: {
   count: number;
   onRate: (rating: number) => void;
   onStatus: (status: string) => void;
   onFavorite: (favorite: boolean) => void;
   onColorLabel: (label: string) => void;
+  onCreativeOrganize?: () => void;
   onPostRecord: () => void;
   onDelete: () => void;
   onClear: () => void;
@@ -435,7 +450,8 @@ export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLab
       <div className="flex items-center gap-1 whitespace-nowrap"><span className="text-[11px] text-muted-foreground mr-1">色</span>{["","red","orange","yellow","green","blue","purple"].map((label) => <button key={label || "none"} onClick={() => onColorLabel(label)} className="w-5 h-5 rounded-full border border-border" style={{ backgroundColor: label || "transparent" }} title={label || "なし"} />)}</div>
       <div className="h-5 w-px bg-border" />
       <button onClick={() => onFavorite(true)} className="ui-secondary-button">★ お気に入り</button>
-      <button onClick={onPostRecord} className="ui-primary-button">＋ 投稿記録</button>
+      {onCreativeOrganize && <button onClick={onCreativeOrganize} className="ui-secondary-button">制作整理</button>}
+      <button onClick={onPostRecord} className="ui-primary-button">＋ 公開記録</button>
       <button onClick={onDelete} className="h-8 px-3 rounded-lg bg-destructive text-destructive-foreground text-[11px] font-medium whitespace-nowrap">画像ファイルを削除</button>
       <div className="flex-1 min-w-3" />
       <button onClick={onClear} className="ui-secondary-button">選択解除</button>
