@@ -20,6 +20,7 @@ import { TagPicker } from "./TagPicker";
 interface AssetDetailPanelProps {
   asset: AssetDTO;
   onClose: () => void;
+  onDelete?: () => void;
 }
 
 const STATUS_OPTIONS = [
@@ -88,7 +89,7 @@ function mergeAsset(base: AssetDTO, detail: AssetDTO): AssetDTO {
   } as AssetDTO);
 }
 
-export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanelProps) {
+export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetDetailPanelProps) {
   const queryClient = useQueryClient();
   const baseAsset = useMemo(() => normalizeAsset(listAsset), [listAsset]);
   const assetId = baseAsset.id;
@@ -368,6 +369,19 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
                 {asset.iso ? <Meta label="ISO" value={String(asset.iso)} /> : null}
                 {asset.exifDate && <Meta label="撮影日時" value={asset.exifDate} />}
               </div>
+            </Section>
+          )}
+
+          {onDelete && (
+            <Section title="ファイル操作">
+              <button
+                type="button"
+                className="w-full h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-[11px] font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                onClick={onDelete}
+              >
+                元画像ファイルを削除…
+              </button>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">元画像とLumineの登録情報を削除します。実行前に確認が表示されます。</p>
             </Section>
           )}
         </div>
