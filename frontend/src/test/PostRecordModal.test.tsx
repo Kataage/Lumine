@@ -1,7 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 
 const api = vi.hoisted(() => ({
   targets: [] as Array<{ id: number; name: string; kind: string }>,
@@ -9,6 +7,7 @@ const api = vi.hoisted(() => ({
   createPostTarget: vi.fn(),
   createPostAccount: vi.fn(),
   createPostRecord: vi.fn(),
+  getAssetDetail: vi.fn(),
 }));
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -20,15 +19,11 @@ vi.mock("../api/client", async (importOriginal) => {
     createPostTarget: api.createPostTarget,
     createPostAccount: api.createPostAccount,
     createPostRecord: api.createPostRecord,
+    getAssetDetail: api.getAssetDetail,
   };
 });
 
 import { PostRecordModal } from "../components/PostRecordModal";
-
-function Wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-}
 
 describe("PostRecordModal", () => {
   beforeEach(() => {
@@ -37,47 +32,69 @@ describe("PostRecordModal", () => {
     api.createPostTarget.mockReset();
     api.createPostAccount.mockReset();
     api.createPostRecord.mockReset();
+    api.getAssetDetail.mockReset();
+    api.getAssetDetail.mockImplementation(async (id: number) => ({ id, fileName: `image-${id}.png`, filePath: `C:\\images\\image-${id}.png` }));
   });
 
-  it("設定済みなら説明を挟まず投稿先とアカウントを選べる", async () => {
+  it("設定済みなら投稿内容をすぐ編集でき、Pixiv固有項目も表示する", async () => {
     api.targets.push({ id: 1, name: "Pixiv", kind: "pixiv" });
     api.accounts.push({ id: 2, postTargetId: 1, displayName: "メイン", accountIdentifier: "@example", isActive: true });
 
-    render(<PostRecordModal assetIds={[1]} onClose={vi.fn()} />, { wrapper: Wrapper });
+    render(<PostRecordModal assetIds={[1]} onClose={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByLabelText("投稿先")).toHaveValue("1"));
     expect(screen.getByLabelText("アカウント")).toHaveValue("2");
-    expect(screen.queryByText("初回だけ、投稿先とアカウントを登録します")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "投稿先設定" })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    expect(screen.getByLabelText("タイトル")).toBeInTheDocument();
+    expect(screen.getByLabelText("キャプション / 詳細")).toBeInTheDocument();
+    expect(screen.getByLabelText("年齢制限")).toHaveValue("全年齢");
+    expect(screen.getByText("AI生成作品")).toBeInTheDocument();
+    expect(screen.getByText("image-1.png")).toBeInTheDocument();
   });
 
-  it("未設定なら設定欄を自動で開き入力不足を表示する", async () => {
-    render(<PostRecordModal assetIds={[1]} onClose={vi.fn()} />, { wrapper: Wrapper });
+  it("複数画像の投稿順を変更できる", async () => {
+    api.targets.push({ id: 1, name: "X", kind: "twitter" });
+    api.accounts.push({ id: 2, postTargetId: 1, displayName: "メイン", accountIdentifier: "", isActive: true });
 
-    const targetInput = await screen.findByLabelText("新しい投稿先名");
-    expect(targetInput).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "追加" })[0]);
-    expect(await screen.findByRole("alert")).toHaveTextContent("投稿先名を入力してください");
+    render(<PostRecordModal assetIds={[101, 202]} onClose={vi.fn()} />);
+    await screen.findByText("image-101.png");
+
+    const downButtons = screen.getAllByRole("button", { name: "↓" });
+    fireEvent.click(downButtons[0]);
+
+    const rows = screen.getAllByText(/image-(101|202)\.png/);
+    expect(rows[0]).toHaveTextContent("image-202.png");
+    expect(rows[1]).toHaveTextContent("image-101.png");
   });
 
-  it("設定済みなら最小入力で保存できる", async () => {
+  it("Pixivのタイトル・本文・タグ・固有設定を投稿スナップショットとして保存する", async () => {
     api.targets.push({ id: 1, name: "Pixiv", kind: "pixiv" });
     api.accounts.push({ id: 2, postTargetId: 1, displayName: "メイン", accountIdentifier: "", isActive: true });
     api.createPostRecord.mockResolvedValue({ id: 10 });
     const onClose = vi.fn();
 
-    render(<PostRecordModal assetIds={[101]} onClose={onClose} />, { wrapper: Wrapper });
-    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    render(<PostRecordModal assetIds={[101]} onClose={onClose} />);
+    await waitFor(() => expect(screen.getByLabelText("投稿先")).toHaveValue("1"));
 
-    await waitFor(() => expect(api.createPostRecord).toHaveBeenCalledWith({
+    fireEvent.change(screen.getByLabelText("タイトル"), { target: { value: "夏祭りフブキ" } });
+    fireEvent.change(screen.getByLabelText("キャプション / 詳細"), { target: { value: "浴衣の作品です" } });
+    const tagInput = screen.getByPlaceholderText("入力して Enter（複数可）");
+    fireEvent.change(tagInput, { target: { value: "白上フブキ" } });
+    fireEvent.keyDown(tagInput, { key: "Enter" });
+    fireEvent.change(screen.getByLabelText("年齢制限"), { target: { value: "R-18" } });
+    fireEvent.click(screen.getByRole("button", { name: "公開記録を保存" }));
+
+    await waitFor(() => expect(api.createPostRecord).toHaveBeenCalledWith(expect.objectContaining({
       assetIds: [101],
       targetId: 1,
       accountId: 2,
-      title: "",
+      title: "夏祭りフブキ",
+      body: "浴衣の作品です",
+      hashtags: "白上フブキ",
+      platformMetadataJson: JSON.stringify({ ageRestriction: "R-18", aiGenerated: true }),
       externalPostId: "",
-    }));
+      externalUrl: "",
+      publishedAt: expect.any(String),
+    })));
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
