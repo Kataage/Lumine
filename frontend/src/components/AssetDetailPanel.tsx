@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssetDTO } from "../api/client";
 import {
+  deleteAssetFiles,
   getAssetDetail,
   getPostRecordsByAsset,
   listTags,
@@ -20,7 +21,6 @@ import { TagPicker } from "./TagPicker";
 interface AssetDetailPanelProps {
   asset: AssetDTO;
   onClose: () => void;
-  onDelete?: () => void;
 }
 
 const STATUS_OPTIONS = [
@@ -89,7 +89,7 @@ function mergeAsset(base: AssetDTO, detail: AssetDTO): AssetDTO {
   } as AssetDTO);
 }
 
-export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetDetailPanelProps) {
+export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanelProps) {
   const queryClient = useQueryClient();
   const baseAsset = useMemo(() => normalizeAsset(listAsset), [listAsset]);
   const assetId = baseAsset.id;
@@ -98,6 +98,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetD
   const [showPostRecord, setShowPostRecord] = useState(false);
   const [note, setNote] = useState(baseAsset.noteContent ?? "");
   const [noteDirty, setNoteDirty] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const {
     data: detailedAsset,
@@ -136,6 +137,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetD
     setShowPostRecord(false);
     setNote(baseAsset.noteContent ?? "");
     setNoteDirty(false);
+    setDeleting(false);
   }, [assetId, baseAsset]);
 
   useEffect(() => {
@@ -185,6 +187,27 @@ export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetD
     setAsset((current) => ({ ...current, colorLabel } as AssetDTO));
     await updateAssetColorLabel(assetId, colorLabel);
     await refreshAll();
+  };
+
+  const deleteCurrentFile = async () => {
+    if (assetId <= 0 || deleting) return;
+    if (!confirm(`「${asset.fileName}」の元画像ファイルを削除します。\n\nこの操作は元に戻せません。Lumineの登録情報も同時に削除されます。\n\n本当に削除しますか？`)) return;
+    setDeleting(true);
+    try {
+      const result = await deleteAssetFiles([assetId]);
+      if (result.deletedCount > 0) {
+        onClose();
+        await queryClient.invalidateQueries({ queryKey: ["assets"], refetchType: "active" });
+        return;
+      }
+      const detail = (result.errors ?? []).slice(0, 3).join("\n");
+      alert(`画像ファイルを削除できませんでした。${detail ? `\n\n${detail}` : ""}`);
+    } catch (error) {
+      console.error("image file delete failed:", error);
+      alert("画像ファイルの削除に失敗しました。\n" + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const extensionLabel = asset.extension ? asset.extension.toUpperCase() : "不明";
@@ -372,14 +395,15 @@ export function AssetDetailPanel({ asset: listAsset, onClose, onDelete }: AssetD
             </Section>
           )}
 
-          {onDelete && (
+          {assetId > 0 && (
             <Section title="ファイル操作">
               <button
                 type="button"
+                disabled={deleting}
                 className="w-full h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-[11px] font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                onClick={onDelete}
+                onClick={() => void deleteCurrentFile()}
               >
-                元画像ファイルを削除…
+                {deleting ? "削除しています…" : "元画像ファイルを削除…"}
               </button>
               <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">元画像とLumineの登録情報を削除します。実行前に確認が表示されます。</p>
             </Section>
