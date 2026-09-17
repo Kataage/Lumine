@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./detailPanel.css";
 import { initializeMemoryImageCacheBudget } from "./utils/imageCacheSettings";
 
 async function start() {
