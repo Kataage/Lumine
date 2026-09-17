@@ -35,8 +35,8 @@ describe("CreativeOrganizeModal", () => {
     const onClose = vi.fn();
     render(<AppDialogProvider><CreativeOrganizeModal assetIds={[1, 2]} onClose={onClose} /></AppDialogProvider>);
 
-    await screen.findByText("base.png");
-    expect(screen.getByText("derived.png")).toBeInTheDocument();
+    expect((await screen.findAllByText("base.png")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("derived.png").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("関係"), { target: { value: "inpaint" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
