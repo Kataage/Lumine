@@ -21,10 +21,14 @@ export interface Rect {
   height: number;
 }
 
-// Keep enough recent decoded thumbnails for real viewer-style back/forward
-// scrolling while retaining a strict upper bound. This is memory-only; Lumine
-// still never writes generated thumbnails to disk.
-const CACHE_BUDGET_BYTES = 256 * 1024 * 1024;
+// Viewer thumbnails are kept in memory only. A larger default budget makes
+// back/forward browsing feel like a desktop image viewer without creating a
+// generated thumbnail cache on disk. Users can lower or raise this at runtime.
+export const DEFAULT_MEMORY_IMAGE_CACHE_BUDGET_MIB = 1024;
+export const MEMORY_IMAGE_CACHE_BUDGET_OPTIONS_MIB = [256, 512, 1024, 2048] as const;
+const MIB = 1024 * 1024;
+let cacheBudgetBytes = DEFAULT_MEMORY_IMAGE_CACHE_BUDGET_MIB * MIB;
+
 const MAX_CONCURRENT_DECODES = 4;
 const MAX_NORMAL_CONCURRENT_DECODES = 3;
 const MAX_PREFETCH_CONCURRENT_DECODES = 2;
@@ -53,6 +57,17 @@ const inflight = new Map<string, Promise<ImageBitmap>>();
 let cacheBytes = 0;
 let activeDecodes = 0;
 const decodeWaiters: DecodeWaiter[] = [];
+
+export function normalizeMemoryImageCacheBudgetMiB(value: unknown): number {
+  const numeric = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim() !== ""
+      ? Number(value)
+      : Number.NaN;
+  return (MEMORY_IMAGE_CACHE_BUDGET_OPTIONS_MIB as readonly number[]).includes(numeric)
+    ? numeric
+    : DEFAULT_MEMORY_IMAGE_CACHE_BUDGET_MIB;
+}
 
 export function computeCoverCrop(
   sourceWidth: number,
@@ -174,7 +189,7 @@ function touchCache(key: string, entry: CacheEntry): void {
 }
 
 function evictToBudget(): void {
-  while (cacheBytes > CACHE_BUDGET_BYTES && cache.size > 1) {
+  while (cacheBytes > cacheBudgetBytes && cache.size > 1) {
     const oldest = cache.entries().next().value as [string, CacheEntry] | undefined;
     if (!oldest) break;
     const [key, entry] = oldest;
@@ -183,6 +198,15 @@ function evictToBudget(): void {
     cacheBytes -= entry.bytes;
     entry.bitmap.close();
   }
+}
+
+export function setMemoryImageCacheBudgetMiB(value: number): number {
+  const normalized = normalizeMemoryImageCacheBudgetMiB(value);
+  cacheBudgetBytes = normalized * MIB;
+  // Lowering the setting should take effect immediately instead of waiting for
+  // the next decoded image to enter the LRU.
+  evictToBudget();
+  return normalized;
 }
 
 function cacheBitmap(key: string, bitmap: ImageBitmap, request: ImageBitmapRequest): void {
@@ -412,5 +436,5 @@ export function clearMemoryImageCache(): void {
 }
 
 export function getMemoryImageCacheStats(): { entries: number; bytes: number; budgetBytes: number } {
-  return { entries: cache.size, bytes: cacheBytes, budgetBytes: CACHE_BUDGET_BYTES };
+  return { entries: cache.size, bytes: cacheBytes, budgetBytes: cacheBudgetBytes };
 }
