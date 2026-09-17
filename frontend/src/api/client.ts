@@ -22,7 +22,12 @@ export interface PostRecordRequest {
   targetId: number;
   accountId: number;
   title: string;
+  body: string;
+  hashtags: string;
+  platformMetadataJson: string;
   externalPostId: string;
+  externalUrl: string;
+  publishedAt: string;
 }
 
 export interface PostRecordAssetDTO {
@@ -34,6 +39,9 @@ export interface PostRecordAssetDTO {
 export interface PostRecordDTO {
   id: number;
   title: string;
+  body: string;
+  hashtags: string;
+  platformMetadataJson: string;
   status: string;
   publishedAt?: string;
   createdAt: string;
@@ -47,6 +55,77 @@ export interface PostRecordDTO {
   accountDisplay: string;
   accountIdentifier: string;
   externalPostId?: string;
+  externalUrl?: string;
+}
+
+export interface CreativeAssetRefDTO {
+  id: number;
+  fileName: string;
+  filePath: string;
+}
+
+export interface WorkDTO {
+  id: number;
+  title: string;
+  description: string;
+  coverAssetId?: number;
+  assetIds: number[];
+  assets: CreativeAssetRefDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenerationGroupDTO {
+  id: number;
+  workId?: number;
+  name: string;
+  prompt: string;
+  negativePrompt: string;
+  modelName: string;
+  sampler: string;
+  scheduler: string;
+  steps: number;
+  cfgScale: number;
+  workflowJson: string;
+  notes: string;
+  assetIds: number[];
+  assets: CreativeAssetRefDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetRelationDTO {
+  id: number;
+  parentAssetId: number;
+  parentFileName: string;
+  parentFilePath: string;
+  childAssetId: number;
+  childFileName: string;
+  childFilePath: string;
+  relationType: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface AssetCreativeContextDTO {
+  works: WorkDTO[];
+  groups: GenerationGroupDTO[];
+  relations: AssetRelationDTO[];
+}
+
+export interface CreateGenerationGroupRequest {
+  assetIds: number[];
+  workId?: number;
+  name: string;
+  prompt: string;
+  negativePrompt: string;
+  modelName: string;
+  sampler: string;
+  scheduler: string;
+  steps: number;
+  cfgScale: number;
+  workflowJson: string;
+  notes: string;
 }
 
 export interface ScanProgress {
@@ -91,22 +170,27 @@ export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
-function appCommands() {
-  return (window as unknown as {
-    go?: {
-      commands?: {
-        AppCommands?: {
-          GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
-          ScanLibraryViewer?: (libraryId: number) => Promise<void>;
-          SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
-          DeleteAssetFiles?: (ids: number[]) => Promise<DeleteAssetFilesResult | null>;
-          CreatePostRecord?: (request: PostRecordRequest) => Promise<PostRecordDTO | null>;
-          ListPostRecords?: (offset: number, limit: number) => Promise<PostRecordDTO[]>;
-          GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
-        };
-      };
-    };
-  }).go?.commands?.AppCommands;
+type DynamicCommands = {
+  GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
+  ScanLibraryViewer?: (libraryId: number) => Promise<void>;
+  SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
+  DeleteAssetFiles?: (ids: number[]) => Promise<DeleteAssetFilesResult | null>;
+  CreatePostRecord?: (request: PostRecordRequest) => Promise<PostRecordDTO | null>;
+  ListPostRecords?: (offset: number, limit: number) => Promise<PostRecordDTO[]>;
+  GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
+  ListWorks?: (limit: number) => Promise<WorkDTO[]>;
+  CreateWork?: (title: string, description: string, assetIds: number[]) => Promise<WorkDTO | null>;
+  AddAssetsToWork?: (workId: number, assetIds: number[]) => Promise<void>;
+  ListGenerationGroups?: (limit: number) => Promise<GenerationGroupDTO[]>;
+  CreateGenerationGroup?: (request: CreateGenerationGroupRequest) => Promise<GenerationGroupDTO | null>;
+  AddAssetsToGenerationGroup?: (groupId: number, assetIds: number[]) => Promise<void>;
+  CreateAssetRelation?: (parentAssetId: number, childAssetId: number, relationType: string, note: string) => Promise<AssetRelationDTO | null>;
+  DeleteAssetRelation?: (id: number) => Promise<void>;
+  GetAssetCreativeContext?: (assetId: number) => Promise<AssetCreativeContextDTO | null>;
+};
+
+function appCommands(): DynamicCommands | undefined {
+  return (window as unknown as { go?: { commands?: { AppCommands?: DynamicCommands } } }).go?.commands?.AppCommands;
 }
 
 export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
@@ -164,6 +248,66 @@ export async function getPostRecordsByAsset(assetId: number): Promise<PostRecord
   const method = appCommands()?.GetPostRecordsByAsset;
   if (!method) return [];
   return (await method(assetId)) ?? [];
+}
+
+function requireDynamic<K extends keyof DynamicCommands>(name: K): NonNullable<DynamicCommands[K]> {
+  const method = appCommands()?.[name];
+  if (!method) throw new Error(`${String(name)} APIが利用できません。最新版のLumineを起動してください。`);
+  return method as NonNullable<DynamicCommands[K]>;
+}
+
+export async function listWorks(limit = 200): Promise<WorkDTO[]> {
+  return (await requireDynamic("ListWorks")(limit)) ?? [];
+}
+
+export async function createWork(title: string, description: string, assetIds: number[]): Promise<WorkDTO | null> {
+  const result = await requireDynamic("CreateWork")(title, description, assetIds);
+  await invalidateCreative(assetIds);
+  return result;
+}
+
+export async function addAssetsToWork(workId: number, assetIds: number[]): Promise<void> {
+  await requireDynamic("AddAssetsToWork")(workId, assetIds);
+  await invalidateCreative(assetIds);
+}
+
+export async function listGenerationGroups(limit = 200): Promise<GenerationGroupDTO[]> {
+  return (await requireDynamic("ListGenerationGroups")(limit)) ?? [];
+}
+
+export async function createGenerationGroup(request: CreateGenerationGroupRequest): Promise<GenerationGroupDTO | null> {
+  const result = await requireDynamic("CreateGenerationGroup")(request);
+  await invalidateCreative(request.assetIds);
+  return result;
+}
+
+export async function addAssetsToGenerationGroup(groupId: number, assetIds: number[]): Promise<void> {
+  await requireDynamic("AddAssetsToGenerationGroup")(groupId, assetIds);
+  await invalidateCreative(assetIds);
+}
+
+export async function createAssetRelation(parentAssetId: number, childAssetId: number, relationType: string, note: string): Promise<AssetRelationDTO | null> {
+  const result = await requireDynamic("CreateAssetRelation")(parentAssetId, childAssetId, relationType, note);
+  await invalidateCreative([parentAssetId, childAssetId]);
+  return result;
+}
+
+export async function deleteAssetRelation(id: number, assetIds: number[] = []): Promise<void> {
+  await requireDynamic("DeleteAssetRelation")(id);
+  await invalidateCreative(assetIds);
+}
+
+export async function getAssetCreativeContext(assetId: number): Promise<AssetCreativeContextDTO> {
+  const result = await requireDynamic("GetAssetCreativeContext")(assetId);
+  return result ?? { works: [], groups: [], relations: [] };
+}
+
+async function invalidateCreative(assetIds: number[]): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["works"] }),
+    queryClient.invalidateQueries({ queryKey: ["generationGroups"] }),
+    ...assetIds.map((assetId) => queryClient.invalidateQueries({ queryKey: ["assetCreativeContext", assetId] })),
+  ]);
 }
 
 export async function listTags(): Promise<TagDTO[]> {
