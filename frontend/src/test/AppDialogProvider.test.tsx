@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AppDialogProvider, useAppDialog } from "../components/AppDialogProvider";
 
@@ -18,6 +18,6 @@ describe("AppDialogProvider", () => {
 
     expect(await screen.findByRole("dialog", { name: "画像を削除しますか？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "削除" }));
-    expect(document.body.dataset.confirmed).toBe("true");
+    await waitFor(() => expect(document.body.dataset.confirmed).toBe("true"));
   });
 });
