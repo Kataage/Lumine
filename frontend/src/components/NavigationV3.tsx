@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../App";
-import { listLibraries, listTags, offScanProgress, onScanProgress } from "../api/client";
+import { listLibraries, listTags, offScanProgress, onScanProgress, setSetting } from "../api/client";
 import type { ScanProgress } from "../api/client";
 import { FoldersPanel, LibrariesPanel, SettingsPanel, TagsPanel } from "./NavigationPanels";
 import { PostRecordsPanel } from "./PostRecordsPanel";
@@ -14,6 +14,12 @@ const NAV_ITEMS = [
   { key: "posts", label: "投稿記録", description: "投稿先を確認", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625A1.125 1.125 0 004.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75a1.125 1.125 0 001.125-1.125V11.25a9 9 0 00-9-9z" },
   { key: "settings", label: "設定", description: "読み込み・操作", icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87l1.295.747 1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827a1.125 1.125 0 000 1.735l1.004.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456-1.295.748a1.125 1.125 0 00-.645.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281a1.125 1.125 0 00-.644-.87l-1.296-.747-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827a1.125 1.125 0 000-1.735l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456 1.296-.748a1.125 1.125 0 00.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
 ] as const;
+
+function persistViewerSetting(key: string, value: unknown): void {
+  void setSetting(key, JSON.stringify(value)).catch((error) => {
+    console.debug(`viewer setting ${key} could not be saved`, error);
+  });
+}
 
 function AppIcon({ size, className = "" }: { size: number; className?: string }) {
   return <img src={APP_ICON_URL} alt="Lumine" width={size} height={size} className={`object-contain ${className}`} draggable={false} />;
@@ -107,6 +113,24 @@ export function ToolbarV2() {
   const updateSearch = (value: string) => { setSearch(value); if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => setState((current) => ({ ...current, searchQuery: value })), 250); };
   const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating || state.filterTagIds.length);
 
+  const updateSort = (value: string) => {
+    setState((current) => ({ ...current, sortBy: value }));
+    persistViewerSetting("sortBy", value);
+  };
+  const toggleSortDirection = () => {
+    const next = !state.sortDesc;
+    setState((current) => ({ ...current, sortDesc: next }));
+    persistViewerSetting("sortDesc", next);
+  };
+  const updateThumbnailSize = (value: number) => {
+    setState((current) => ({ ...current, thumbnailSize: value }));
+    persistViewerSetting("thumbnailSize", value);
+  };
+  const updateViewMode = (value: "grid" | "list") => {
+    setState((current) => ({ ...current, viewMode: value }));
+    persistViewerSetting("viewMode", value);
+  };
+
   return (
     <header className="toolbar-v2 border-b border-border bg-card/80 flex-shrink-0">
       <div className="toolbar-primary-row">
@@ -115,13 +139,20 @@ export function ToolbarV2() {
         <div className="relative min-w-0 flex-1"><input className="ui-input w-full pl-3" value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="ファイル名・メモを検索…" /></div>
       </div>
       <div className="toolbar-controls-row">
-        <select className="ui-input" value={state.sortBy} onChange={(event) => setState((current) => ({ ...current, sortBy: event.target.value }))}><option value="modifiedAtFs">更新日時</option><option value="created">作成日時</option><option value="name">ファイル名</option><option value="size">サイズ</option><option value="rating">評価</option><option value="status">状態</option></select>
-        <button type="button" className="ui-secondary-button" onClick={() => setState((current) => ({ ...current, sortDesc: !current.sortDesc }))}>{state.sortDesc ? "降順 ↓" : "昇順 ↑"}</button>
+        <select className="ui-input" value={state.sortBy} onChange={(event) => updateSort(event.target.value)}><option value="modifiedAtFs">更新日時</option><option value="created">作成日時</option><option value="name">ファイル名</option><option value="size">サイズ</option><option value="rating">評価</option><option value="status">状態</option></select>
+        <button type="button" className="ui-secondary-button" onClick={toggleSortDirection}>{state.sortDesc ? "降順 ↓" : "昇順 ↑"}</button>
         <select className="ui-input" value={state.filterStatusLabel} onChange={(event) => setState((current) => ({ ...current, filterStatusLabel: event.target.value }))}><option value="">状態: すべて</option><option value="unsorted">未整理</option><option value="reviewed">確認済み</option><option value="candidate">候補</option><option value="published">公開済み</option></select>
         <select className="ui-input" value={state.filterRating} onChange={(event) => setState((current) => ({ ...current, filterRating: Number(event.target.value) }))}><option value={0}>評価: すべて</option>{[1,2,3,4,5].map((rating) => <option key={rating} value={rating}>{"★".repeat(rating)}</option>)}</select>
-        <div className="ui-segmented">{[[120,"小"],[180,"中"],[260,"大"]].map(([value,label]) => <button type="button" key={value} onClick={() => setState((current) => ({ ...current, thumbnailSize: Number(value) }))} className={state.thumbnailSize === Number(value) ? "active" : ""}>{label}</button>)}</div>
-        <div className="ui-segmented"><button type="button" className={state.viewMode === "grid" ? "active" : ""} onClick={() => setState((current) => ({ ...current, viewMode: "grid" }))}>グリッド</button><button type="button" className={state.viewMode === "list" ? "active" : ""} onClick={() => setState((current) => ({ ...current, viewMode: "list" }))}>リスト</button></div>
-        {state.selectedAssets.size > 0 && <span className="ml-auto text-[11px] font-medium text-primary whitespace-nowrap">{state.selectedAssets.size}件選択</span>}
+        <div className="ui-segmented">{[[120,"小"],[180,"中"],[260,"大"]].map(([value,label]) => <button type="button" key={value} onClick={() => updateThumbnailSize(Number(value))} className={state.thumbnailSize === Number(value) ? "active" : ""}>{label}</button>)}</div>
+        <div className="ui-segmented"><button type="button" className={state.viewMode === "grid" ? "active" : ""} onClick={() => updateViewMode("grid")}>グリッド</button><button type="button" className={state.viewMode === "list" ? "active" : ""} onClick={() => updateViewMode("list")}>リスト</button></div>
+        {state.selectedAssets.size > 0 && (
+          <div className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
+            <span className="text-[11px] font-medium text-primary" title="1-5: 評価 / F: お気に入り / I: 詳細">{state.selectedAssets.size}件選択</span>
+            {state.selectedAssets.size === 1 && state.detailAsset && (
+              <button type="button" className="ui-secondary-button" onClick={() => setState((current) => ({ ...current, detailOpen: true }))} title="詳細を表示 (I)">ⓘ 詳細</button>
+            )}
+          </div>
+        )}
       </div>
       {hasFilters && <div className="toolbar-filter-row"><span className="text-[10px] text-muted-foreground">絞り込み</span>{state.selectedFolderPath && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "" }))}>📁 {folderName} ×</button>}{state.searchQuery && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, searchQuery: "" }))}>検索: {state.searchQuery} ×</button>}{state.filterStatusLabel && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterStatusLabel: "" }))}>状態 ×</button>}{state.filterRating > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterRating: 0 }))}>★{state.filterRating} ×</button>}{state.filterTagIds.length > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterTagIds: [] }))} title={selectedTagNames.join(", ")}>タグ: {state.filterTagIds.length === 1 && selectedTagNames[0] ? selectedTagNames[0] : `${state.filterTagIds.length}件`} ×</button>}<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "", searchQuery: "", filterStatusLabel: "", filterRating: 0, filterTagIds: [] }))}>すべて解除</button></div>}
     </header>

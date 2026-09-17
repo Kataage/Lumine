@@ -13,12 +13,14 @@ import {
   bulkUpdateStatus,
   deleteAssetFiles,
   getAppBootstrap,
+  getSetting,
   listLibraries,
   scanLibrary,
   selectFolder,
   syncLibrary,
 } from "./api/client";
 import { queryClient } from "./queryClient";
+import { computeViewerSelection, isEditableShortcutTarget } from "./utils/viewerInteraction";
 
 type ViewMode = "grid" | "list";
 type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
@@ -79,6 +81,16 @@ interface BootstrapPayload {
 
 const AUTO_SYNC_INTERVAL_MS = 60_000;
 const AUTO_SYNC_INITIAL_DELAY_MS = 5_000;
+const ALLOWED_SORTS = new Set(["modifiedAtFs", "created", "name", "size", "rating", "status"]);
+
+function parseStoredSetting(raw: string): unknown {
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
 
 export default function App() {
   const [state, setState] = useState<AppState>(defaultState);
@@ -99,12 +111,32 @@ export default function App() {
       const thumbnailSize = typeof savedThumbnailSize === "number" && savedThumbnailSize >= 80 && savedThumbnailSize <= 420
         ? savedThumbnailSize
         : defaultState.thumbnailSize;
+
+      const readSetting = async (key: string) => {
+        try {
+          return parseStoredSetting(await getSetting(key));
+        } catch {
+          return undefined;
+        }
+      };
+      const [savedViewMode, savedSortBy, savedSortDesc] = await Promise.all([
+        readSetting("viewMode"),
+        readSetting("sortBy"),
+        readSetting("sortDesc"),
+      ]);
+      const viewMode: ViewMode = savedViewMode === "list" || savedViewMode === "grid" ? savedViewMode : defaultState.viewMode;
+      const sortBy = typeof savedSortBy === "string" && ALLOWED_SORTS.has(savedSortBy) ? savedSortBy : defaultState.sortBy;
+      const sortDesc = typeof savedSortDesc === "boolean" ? savedSortDesc : defaultState.sortDesc;
+
       setState((current) => ({
         ...current,
         libraries,
         selectedLibraryId: preferredLibrary?.id ?? null,
         selectedFolderPath: "",
         thumbnailSize,
+        viewMode,
+        sortBy,
+        sortDesc,
       }));
     } catch (error) {
       console.error("Lumine bootstrap failed", error);
@@ -184,28 +216,36 @@ export default function App() {
 
   const handleSelectAsset = useCallback((asset: AssetDTO, multi: boolean, range: boolean) => {
     setState((current) => {
-      let selection: Set<number>;
-      let lastIndex: number | null = null;
-      const currentIndex = current.allAssetIds.indexOf(asset.id);
-      if (range && current.lastSelectedIndex !== null && currentIndex >= 0) {
-        const start = Math.min(current.lastSelectedIndex, currentIndex);
-        const end = Math.max(current.lastSelectedIndex, currentIndex);
-        const rangeIds = current.allAssetIds.slice(start, end + 1);
-        selection = multi ? new Set([...current.selectedAssets, ...rangeIds]) : new Set(rangeIds);
-        lastIndex = currentIndex;
-      } else if (multi) {
-        selection = new Set(current.selectedAssets);
-        if (selection.has(asset.id)) selection.delete(asset.id); else selection.add(asset.id);
-        lastIndex = currentIndex >= 0 ? currentIndex : current.lastSelectedIndex;
-      } else {
-        selection = new Set([asset.id]);
-        lastIndex = currentIndex >= 0 ? currentIndex : null;
-      }
-      return { ...current, selectedAssets: selection, lastSelectedIndex: lastIndex, detailAsset: asset, detailOpen: true };
+      const selection = computeViewerSelection(
+        current.selectedAssets,
+        current.allAssetIds,
+        current.lastSelectedIndex,
+        asset.id,
+        multi,
+        range
+      );
+      const assetIsSelected = selection.selectedIds.has(asset.id);
+      const detailAsset = assetIsSelected
+        ? asset
+        : current.detailAsset?.id === asset.id
+          ? null
+          : current.detailAsset;
+
+      return {
+        ...current,
+        selectedAssets: selection.selectedIds,
+        lastSelectedIndex: selection.lastSelectedIndex,
+        detailAsset,
+        detailOpen: current.detailOpen && detailAsset !== null,
+      };
     });
   }, []);
 
-  const handleCloseDetail = useCallback(() => setState((current) => ({ ...current, detailOpen: false, detailAsset: null })), []);
+  const handleOpenDetail = useCallback((asset: AssetDTO) => {
+    setState((current) => ({ ...current, detailAsset: asset, detailOpen: true }));
+  }, []);
+
+  const handleCloseDetail = useCallback(() => setState((current) => ({ ...current, detailOpen: false })), []);
   const handleAssetsLoaded = useCallback((ids: number[]) => {
     setState((current) => {
       const sameIds = current.allAssetIds.length === ids.length && current.allAssetIds.every((id, index) => id === ids[index]);
@@ -227,7 +267,14 @@ export default function App() {
 
   const handleBulkRate = useCallback(async (rating: number) => {
     if (!state.selectedAssets.size) return;
-    await bulkUpdateRating(Array.from(state.selectedAssets), rating);
+    const ids = Array.from(state.selectedAssets);
+    await bulkUpdateRating(ids, rating);
+    setState((current) => ({
+      ...current,
+      detailAsset: current.detailAsset && current.selectedAssets.has(current.detailAsset.id)
+        ? ({ ...current.detailAsset, rating } as AssetDTO)
+        : current.detailAsset,
+    }));
     await queryClient.invalidateQueries({ queryKey: ["assets"] });
   }, [state.selectedAssets]);
 
@@ -240,6 +287,12 @@ export default function App() {
   const handleBulkFavorite = useCallback(async (favorite: boolean) => {
     if (!state.selectedAssets.size) return;
     await bulkUpdateFavorite(Array.from(state.selectedAssets), favorite);
+    setState((current) => ({
+      ...current,
+      detailAsset: current.detailAsset && current.selectedAssets.has(current.detailAsset.id)
+        ? ({ ...current.detailAsset, isFavorite: favorite } as AssetDTO)
+        : current.detailAsset,
+    }));
     await queryClient.invalidateQueries({ queryKey: ["assets"] });
   }, [state.selectedAssets]);
 
@@ -248,6 +301,29 @@ export default function App() {
     await bulkUpdateColorLabel(Array.from(state.selectedAssets), label);
     await queryClient.invalidateQueries({ queryKey: ["assets"] });
   }, [state.selectedAssets]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (isEditableShortcutTarget(event.target) || state.selectedAssets.size === 0) return;
+      const rating = Number(event.key);
+      if (Number.isInteger(rating) && rating >= 1 && rating <= 5) {
+        event.preventDefault();
+        void handleBulkRate(rating);
+        return;
+      }
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        void handleBulkFavorite(true);
+        return;
+      }
+      if (event.key.toLowerCase() === "i" && state.detailAsset) {
+        event.preventDefault();
+        setState((current) => ({ ...current, detailOpen: true }));
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [handleBulkFavorite, handleBulkRate, state.detailAsset, state.selectedAssets.size]);
 
   const handleDeleteFiles = useCallback(async () => {
     const ids = Array.from(state.selectedAssets);
@@ -297,21 +373,33 @@ export default function App() {
           <div className="flex flex-col flex-1 min-w-0">
             <ToolbarV2 />
             <div className="app-main-region relative flex flex-1 min-h-0 min-w-0">
-              <div className="flex-1 min-w-0 flex"><ViewerGridV2 onSelectAsset={handleSelectAsset} onAssetsLoaded={handleAssetsLoaded} /></div>
-              {state.detailOpen && state.detailAsset && <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />}
+              <div className="flex-1 min-w-0 flex">
+                <ViewerGridV2 onSelectAsset={handleSelectAsset} onOpenDetail={handleOpenDetail} onAssetsLoaded={handleAssetsLoaded} />
+              </div>
+
+              {state.detailOpen && state.detailAsset && (
+                <div className="absolute inset-y-0 right-0 z-30 flex pointer-events-none">
+                  <div className="h-full pointer-events-auto">
+                    <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />
+                  </div>
+                </div>
+              )}
+
+              {state.selectedAssets.size > 1 && (
+                <div className="absolute inset-x-3 bottom-3 z-40 flex justify-center pointer-events-none">
+                  <BulkActionsBar
+                    count={state.selectedAssets.size}
+                    onRate={handleBulkRate}
+                    onStatus={handleBulkStatus}
+                    onFavorite={handleBulkFavorite}
+                    onColorLabel={handleBulkColorLabel}
+                    onPostRecord={() => setBulkPostRecordOpen(true)}
+                    onDelete={handleDeleteFiles}
+                    onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
+                  />
+                </div>
+              )}
             </div>
-            {state.selectedAssets.size > 0 && (
-              <BulkActionsBar
-                count={state.selectedAssets.size}
-                onRate={handleBulkRate}
-                onStatus={handleBulkStatus}
-                onFavorite={handleBulkFavorite}
-                onColorLabel={handleBulkColorLabel}
-                onPostRecord={() => setBulkPostRecordOpen(true)}
-                onDelete={handleDeleteFiles}
-                onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
-              />
-            )}
           </div>
         </div>
         {bulkPostRecordOpen && selectedIDs.length > 0 && <PostRecordModal assetIds={selectedIDs} defaultTitle={`${selectedIDs.length}件の画像`} onClose={() => setBulkPostRecordOpen(false)} />}
@@ -337,7 +425,7 @@ export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLab
     { value: "published", label: "公開済み" },
   ];
   return (
-    <div className="min-h-14 flex items-center gap-2 px-3 py-2 border-t border-border bg-card shadow-[0_-8px_24px_rgba(0,0,0,0.15)] flex-shrink-0 overflow-x-auto">
+    <div className="pointer-events-auto max-w-full min-h-14 flex items-center gap-2 px-3 py-2 rounded-2xl border border-border bg-card/95 shadow-2xl backdrop-blur-md overflow-x-auto">
       <span className="text-xs font-semibold whitespace-nowrap">{count}件を選択中</span>
       <div className="h-5 w-px bg-border" />
       <div className="flex items-center gap-1 whitespace-nowrap"><span className="text-[11px] text-muted-foreground mr-1">評価</span>{[1,2,3,4,5].map((rating) => <button key={rating} onClick={() => onRate(rating)} className="w-8 h-8 rounded-lg hover:bg-accent text-yellow-400" title={`評価を${rating}に設定`}>★</button>)}</div>

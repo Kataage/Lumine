@@ -19,6 +19,7 @@ vi.mock("../components/PostRecordModal", () => ({
 
 vi.mock("../api/client", () => ({
   createTag: vi.fn(),
+  deleteAssetFiles: vi.fn(async () => ({ deletedCount: 1, failedCount: 0, deletedIds: [101], failedIds: [], errors: [] })),
   getAssetDetail: vi.fn(),
   getPostRecordsByAsset: vi.fn(async () => []),
   listTags: vi.fn(async () => []),
@@ -83,6 +84,7 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByTestId("memory-image")).toHaveTextContent("freshly-scanned.png");
     expect(screen.getByTestId("memory-image")).toHaveAttribute("data-priority", "high");
     expect(screen.getByTitle("詳細情報を読み込み中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "元画像ファイルを削除…" })).toBeInTheDocument();
   });
 
   it("詳細APIが失敗しても基本情報を消さずに残す", async () => {
