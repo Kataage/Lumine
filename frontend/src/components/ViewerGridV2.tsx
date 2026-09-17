@@ -5,31 +5,44 @@ import type { AssetDTO, AssetListRequest } from "../api/client";
 import { listAssets } from "../api/client";
 import { useApp } from "../App";
 import { formatFileSize } from "../utils/format";
+import {
+  computeViewerOverscan,
+  getViewerVisibleRange,
+  shouldFetchViewerPageAhead,
+  viewerImagePriority,
+  type ViewerImagePriority,
+} from "../utils/viewerPreload";
 import { MemoryImage } from "./MemoryImage";
 import { ImageViewerModal } from "./ImageViewerModal";
 
-const PAGE_SIZE = 100;
-const GAP = 10;
+const PAGE_SIZE = 200;
+const GAP = 8;
 const GRID_PADDING = 24;
+const LIST_ROW_HEIGHT = 60;
 
 interface ViewerGridV2Props {
   onSelectAsset: (asset: AssetDTO, multi: boolean, range: boolean) => void;
+  onOpenDetail: (asset: AssetDTO) => void;
   onAssetsLoaded: (ids: number[]) => void;
 }
 
-export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Props) {
+export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: ViewerGridV2Props) {
   const { state } = useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const updateWidth = () => setContainerWidth(Math.max(0, element.clientWidth - GRID_PADDING));
-    const observer = new ResizeObserver(updateWidth);
+    const updateSize = () => {
+      setContainerWidth(Math.max(0, element.clientWidth - GRID_PADDING));
+      setContainerHeight(Math.max(0, element.clientHeight));
+    };
+    const observer = new ResizeObserver(updateSize);
     observer.observe(element);
-    updateWidth();
+    updateSize();
     return () => observer.disconnect();
   }, []);
 
@@ -98,18 +111,40 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
 
   useEffect(() => onAssetsLoaded(assets.map((asset) => asset.id)), [assets, onAssetsLoaded]);
 
+  useEffect(() => {
+    containerRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [
+    state.selectedLibraryId,
+    state.selectedFolderPath,
+    state.searchQuery,
+    state.sortBy,
+    state.sortDesc,
+    state.filterStatusLabel,
+    state.filterRating,
+    state.filterTagIds,
+  ]);
+
   const columns = containerWidth > 0
     ? Math.max(1, Math.floor((containerWidth + GAP) / (state.thumbnailSize + GAP)))
     : 4;
   const rowCount = Math.ceil(assets.length / columns);
+  const itemExtent = state.viewMode === "grid" ? state.thumbnailSize + GAP : LIST_ROW_HEIGHT;
+  const itemCount = state.viewMode === "grid" ? rowCount : assets.length;
+  const overscan = computeViewerOverscan(containerHeight, itemExtent);
 
   const virtualizer = useVirtualizer({
-    count: state.viewMode === "grid" ? rowCount : assets.length,
+    count: itemCount,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => state.viewMode === "grid" ? state.thumbnailSize + GAP : 60,
-    overscan: 1,
+    estimateSize: () => itemExtent,
+    overscan,
   });
   const virtualItems = virtualizer.getVirtualItems();
+  const visibleRange = getViewerVisibleRange(
+    virtualizer.scrollOffset ?? 0,
+    containerHeight,
+    itemExtent,
+    itemCount
+  );
 
   useEffect(() => {
     virtualizer.measure();
@@ -118,11 +153,34 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage) return;
     const last = virtualItems[virtualItems.length - 1];
-    const maximum = state.viewMode === "grid" ? rowCount : assets.length;
-    if (last && last.index >= maximum - 3) void fetchNextPage();
-  }, [assets.length, fetchNextPage, hasNextPage, isFetchingNextPage, rowCount, state.viewMode, virtualItems]);
+    if (last && shouldFetchViewerPageAhead(last.index, itemCount, containerHeight, itemExtent)) {
+      void fetchNextPage();
+    }
+  }, [containerHeight, fetchNextPage, hasNextPage, isFetchingNextPage, itemCount, itemExtent, virtualItems]);
 
   const previewIndex = previewAsset ? assets.findIndex((asset) => asset.id === previewAsset.id) : -1;
+
+  useEffect(() => {
+    if (!previewAsset || !hasNextPage || isFetchingNextPage || previewIndex < 0) return;
+    const threshold = Math.max(8, columns * 2);
+    if (previewIndex >= assets.length - threshold) void fetchNextPage();
+  }, [assets.length, columns, fetchNextPage, hasNextPage, isFetchingNextPage, previewAsset, previewIndex]);
+
+  const goNext = useCallback(async () => {
+    if (previewIndex < 0) return;
+    if (previewIndex < assets.length - 1) {
+      setPreviewAsset(assets[previewIndex + 1]);
+      return;
+    }
+    if (!hasNextPage || isFetchingNextPage) return;
+
+    const result = await fetchNextPage();
+    const nextAssets = result.data?.pages.flatMap((page) => page.assets) ?? assets;
+    const currentIndex = previewAsset ? nextAssets.findIndex((asset) => asset.id === previewAsset.id) : -1;
+    if (currentIndex >= 0 && currentIndex < nextAssets.length - 1) {
+      setPreviewAsset(nextAssets[currentIndex + 1]);
+    }
+  }, [assets, fetchNextPage, hasNextPage, isFetchingNextPage, previewAsset, previewIndex]);
 
   if (!state.selectedLibraryId) {
     return (
@@ -160,6 +218,7 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
             {virtualItems.map((virtualRow) => {
               const startIndex = virtualRow.index * columns;
               const rowAssets = assets.slice(startIndex, startIndex + columns);
+              const priority = viewerImagePriority(virtualRow.index, visibleRange.first, visibleRange.last);
               return (
                 <div
                   key={virtualRow.key}
@@ -178,7 +237,9 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
                         asset={asset}
                         size={state.thumbnailSize}
                         selected={state.selectedAssets.has(asset.id)}
+                        priority={priority}
                         onSelect={onSelectAsset}
+                        onDetail={() => onOpenDetail(asset)}
                         onPreview={() => setPreviewAsset(asset)}
                       />
                     ))}
@@ -192,12 +253,15 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
             {virtualItems.map((item) => {
               const asset = assets[item.index];
               if (!asset) return null;
+              const priority = viewerImagePriority(item.index, visibleRange.first, visibleRange.last);
               return (
                 <ListRow
                   key={asset.id}
                   asset={asset}
                   selected={state.selectedAssets.has(asset.id)}
+                  priority={priority}
                   onSelect={onSelectAsset}
+                  onDetail={() => onOpenDetail(asset)}
                   onPreview={() => setPreviewAsset(asset)}
                   style={{
                     position: "absolute",
@@ -222,7 +286,7 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
         {isFetchingNextPage && (
           <div className="flex items-center justify-center py-4 gap-2 text-xs text-muted-foreground">
             <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-            続きを読み込み中… {assets.length.toLocaleString()} / {totalCount.toLocaleString()}件
+            続きを先読み中… {assets.length.toLocaleString()} / {totalCount.toLocaleString()}件
           </div>
         )}
 
@@ -243,9 +307,9 @@ export function ViewerGridV2({ onSelectAsset, onAssetsLoaded }: ViewerGridV2Prop
           asset={previewAsset}
           onClose={() => setPreviewAsset(null)}
           onPrev={() => previewIndex > 0 && setPreviewAsset(assets[previewIndex - 1])}
-          onNext={() => previewIndex >= 0 && previewIndex < assets.length - 1 && setPreviewAsset(assets[previewIndex + 1])}
+          onNext={() => { void goNext(); }}
           hasPrev={previewIndex > 0}
-          hasNext={previewIndex >= 0 && previewIndex < assets.length - 1}
+          hasNext={previewIndex >= 0 && (previewIndex < assets.length - 1 || !!hasNextPage)}
         />
       )}
     </>
@@ -256,29 +320,36 @@ function GridCard({
   asset,
   size,
   selected,
+  priority,
   onSelect,
+  onDetail,
   onPreview,
 }: {
   asset: AssetDTO;
   size: number;
   selected: boolean;
+  priority: ViewerImagePriority;
   onSelect: (asset: AssetDTO, multi: boolean, range: boolean) => void;
+  onDetail: () => void;
   onPreview: () => void;
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border bg-muted group transition-all ${selected ? "border-primary ring-2 ring-primary/30 shadow-lg" : "border-border/60 hover:border-border hover:shadow-lg"}`}
+      className={`relative overflow-hidden rounded-xl border bg-muted group transition-[border-color,box-shadow] ${selected ? "border-primary ring-2 ring-primary/30 shadow-lg" : "border-border/60 hover:border-border hover:shadow-lg"}`}
       style={{ width: size, height: size }}
       onClick={(event) => onSelect(asset, event.ctrlKey || event.metaKey, event.shiftKey)}
       onDoubleClick={(event) => { event.preventDefault(); onPreview(); }}
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onPreview();
+        } else if (event.key.toLowerCase() === "i") {
+          event.preventDefault();
+          onDetail();
         }
       }}
-      title={`${asset.fileName}\nダブルクリックまたはEnterで大きく表示`}
+      title={`${asset.fileName}\nクリック: 選択 / ダブルクリック・Enter・Space: 拡大 / I: 詳細`}
     >
       <MemoryImage
         filePath={asset.filePath}
@@ -288,7 +359,7 @@ function GridCard({
         width={size}
         height={size}
         fit="cover"
-        priority="normal"
+        priority={priority}
         alt={asset.fileName}
       />
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
@@ -297,13 +368,24 @@ function GridCard({
         <p className="mt-0.5 text-[10px] text-white/60">{formatFileSize(asset.fileSize)}</p>
       </div>
 
-      <button
-        onClick={(event) => { event.stopPropagation(); onPreview(); }}
-        className="absolute top-2 right-2 min-w-16 h-8 px-2 rounded-lg border border-white/20 bg-black/65 text-[11px] font-medium text-white opacity-90 hover:bg-black/80 focus:opacity-100"
-        aria-label={`${asset.fileName} を大きく表示`}
-      >
-        ⛶ 拡大
-      </button>
+      <div className={`absolute top-2 right-2 flex gap-1 transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
+        <button
+          onClick={(event) => { event.stopPropagation(); onDetail(); }}
+          className="w-8 h-8 rounded-lg border border-white/20 bg-black/65 text-xs font-medium text-white hover:bg-black/80"
+          aria-label={`${asset.fileName} の詳細を表示`}
+          title="詳細 (I)"
+        >
+          ⓘ
+        </button>
+        <button
+          onClick={(event) => { event.stopPropagation(); onPreview(); }}
+          className="w-8 h-8 rounded-lg border border-white/20 bg-black/65 text-xs font-medium text-white hover:bg-black/80"
+          aria-label={`${asset.fileName} を大きく表示`}
+          title="大きく表示 (Enter / Space)"
+        >
+          ⛶
+        </button>
+      </div>
 
       {selected && (
         <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[11px] shadow">✓</div>
@@ -317,13 +399,17 @@ function GridCard({
 function ListRow({
   asset,
   selected,
+  priority,
   onSelect,
+  onDetail,
   onPreview,
   style,
 }: {
   asset: AssetDTO;
   selected: boolean;
+  priority: ViewerImagePriority;
   onSelect: (asset: AssetDTO, multi: boolean, range: boolean) => void;
+  onDetail: () => void;
   onPreview: () => void;
   style: React.CSSProperties;
 }) {
@@ -333,6 +419,16 @@ function ListRow({
       className={`flex items-center gap-3 px-2.5 rounded-lg border border-transparent ${selected ? "bg-primary/10 border-primary/25" : "hover:bg-accent/50"}`}
       onClick={(event) => onSelect(asset, event.ctrlKey || event.metaKey, event.shiftKey)}
       onDoubleClick={onPreview}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onPreview();
+        } else if (event.key.toLowerCase() === "i") {
+          event.preventDefault();
+          onDetail();
+        }
+      }}
     >
       <MemoryImage
         filePath={asset.filePath}
@@ -342,7 +438,7 @@ function ListRow({
         width={44}
         height={44}
         fit="cover"
-        priority="normal"
+        priority={priority}
         alt={asset.fileName}
         className="rounded-lg flex-shrink-0"
       />
@@ -352,10 +448,18 @@ function ListRow({
       </div>
       <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">{formatFileSize(asset.fileSize)}</span>
       <button
+        onClick={(event) => { event.stopPropagation(); onDetail(); }}
+        className="ui-secondary-button flex-shrink-0"
+        title="詳細 (I)"
+      >
+        ⓘ 詳細
+      </button>
+      <button
         onClick={(event) => { event.stopPropagation(); onPreview(); }}
         className="ui-secondary-button flex-shrink-0"
+        title="大きく表示 (Enter / Space)"
       >
-        ⛶ 大きく表示
+        ⛶ 拡大
       </button>
     </div>
   );
