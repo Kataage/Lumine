@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const getSettingMock = vi.fn();
-const setSettingMock = vi.fn();
+const { getSettingMock, setSettingMock } = vi.hoisted(() => ({
+  getSettingMock: vi.fn(),
+  setSettingMock: vi.fn(),
+}));
 
 vi.mock("../api/client", () => ({
   getSetting: getSettingMock,
