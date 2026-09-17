@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { key: "libraries", label: "ライブラリ", description: "画像フォルダー", icon: "M3.75 6.75A2.25 2.25 0 016 4.5h3.879c.621 0 1.216.257 1.641.71l1.21 1.29H18a2.25 2.25 0 012.25 2.25v8.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z" },
   { key: "folders", label: "フォルダー", description: "階層で絞り込み", icon: "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5L17.25 12l-3.75 3.75M17.25 12H3" },
   { key: "tags", label: "タグ", description: "画像の分類", icon: "M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" },
-  { key: "posts", label: "投稿記録", description: "投稿先を確認", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625A1.125 1.125 0 004.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75a1.125 1.125 0 001.125-1.125V11.25a9 9 0 00-9-9z" },
+  { key: "posts", label: "公開履歴", description: "投稿内容を確認", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625A1.125 1.125 0 004.5 3.375v17.25c0 .621.504 1.125 1.125 1.125h12.75a1.125 1.125 0 001.125-1.125V11.25a9 9 0 00-9-9z" },
   { key: "settings", label: "設定", description: "読み込み・操作", icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87l1.295.747 1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827a1.125 1.125 0 000 1.735l1.004.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456-1.295.748a1.125 1.125 0 00-.645.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281a1.125 1.125 0 00-.644-.87l-1.296-.747-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827a1.125 1.125 0 000-1.735l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456 1.296-.748a1.125 1.125 0 00.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z" },
 ] as const;
 
@@ -31,7 +31,7 @@ export function WelcomeScreenV2({ onSelectFolder, busy = false }: { onSelectFold
       <div className="w-full max-w-xl rounded-3xl border border-border bg-card p-8 sm:p-10 text-center shadow-2xl">
         <AppIcon size={72} className="mx-auto drop-shadow-xl" />
         <h1 className="mt-5 text-2xl font-bold">Lumine</h1>
-        <p className="mt-2 text-sm text-muted-foreground">画像を軽快に探し、確認し、投稿先まで記録する画像ライブラリ</p>
+        <p className="mt-2 text-sm text-muted-foreground">生成過程・作品・派生関係・公開履歴までつなぐ制作アーカイブ</p>
         <div className="mt-7 rounded-2xl border border-border bg-muted/30 p-4 text-left">
           <p className="text-sm font-medium">最初に画像フォルダーを登録してください</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">画像そのものをコピーせず、表示用サムネイルもディスクへ保存しません。</p>
@@ -79,7 +79,7 @@ export function SidebarV2() {
     <aside className="app-sidebar border-r border-border bg-card flex flex-col flex-shrink-0 overflow-hidden">
       <div className="h-14 px-3.5 border-b border-border flex items-center gap-2.5 flex-shrink-0">
         <AppIcon size={34} className="flex-shrink-0 drop-shadow-md" />
-        <div className="min-w-0"><p className="text-sm font-bold">Lumine</p><p className="text-[11px] text-muted-foreground">画像ライブラリ</p></div>
+        <div className="min-w-0"><p className="text-sm font-bold">Lumine</p><p className="text-[11px] text-muted-foreground">制作アーカイブ</p></div>
       </div>
       <nav className="p-2 border-b border-border grid grid-cols-1 gap-1 flex-shrink-0">
         {NAV_ITEMS.map((item) => (
