@@ -29,7 +29,7 @@ func TestOpenAndMigrate(t *testing.T) {
 		t.Errorf("expected 0 libraries, got %d", count)
 	}
 
-	tables := []string{"assets", "asset_notes", "tags", "asset_tags", "post_targets", "post_accounts", "posts", "post_destinations", "post_assets", "job_logs", "app_settings"}
+	tables := []string{"assets", "asset_notes", "tags", "asset_tags", "post_targets", "post_accounts", "posts", "post_destinations", "post_assets", "job_logs", "app_settings", "ai_asset_analysis", "ai_jobs"}
 	for _, table := range tables {
 		var tc int
 		err := database.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&tc)
