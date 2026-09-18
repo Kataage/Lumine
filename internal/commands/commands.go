@@ -83,48 +83,49 @@ func toLibraryDTO(lib *domain.Library) LibraryDTO {
 	return dto
 }
 
-func (c *AppCommands) ListLibraries() []LibraryDTO {
+func (c *AppCommands) ListLibraries() ([]LibraryDTO, error) {
 	libs, err := c.libraryRepo.List()
 	if err != nil {
-		slog.Error("ListLibraries", "error", err)
-		return nil
+		return nil, fmt.Errorf("list libraries: %w", err)
 	}
 	dtos := make([]LibraryDTO, len(libs))
 	for i, lib := range libs {
 		dtos[i] = toLibraryDTO(&lib)
 	}
-	return dtos
+	return dtos, nil
 }
 
-func (c *AppCommands) AddLibrary(name, rootPath string) *LibraryDTO {
+func (c *AppCommands) AddLibrary(name, rootPath string) (*LibraryDTO, error) {
 	lib, err := c.libraryRepo.Create(name, rootPath)
 	if err != nil {
-		slog.Error("AddLibrary", "error", err)
-		return nil
+		return nil, fmt.Errorf("add library: %w", err)
 	}
 	dto := toLibraryDTO(lib)
-	return &dto
+	return &dto, nil
 }
 
-func (c *AppCommands) UpdateLibrary(id int64, name, rootPath string) *LibraryDTO {
+func (c *AppCommands) UpdateLibrary(id int64, name, rootPath string) (*LibraryDTO, error) {
 	lib, err := c.libraryRepo.GetByID(id)
-	if err != nil || lib == nil {
-		slog.Error("UpdateLibrary: not found", "id", id, "error", err)
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("get library %d: %w", id, err)
+	}
+	if lib == nil {
+		return nil, fmt.Errorf("library not found: %d", id)
 	}
 	lib.Name = name
 	lib.RootPath = rootPath
 	if err := c.libraryRepo.Update(lib); err != nil {
-		slog.Error("UpdateLibrary", "error", err)
-		return nil
+		return nil, fmt.Errorf("update library %d: %w", id, err)
 	}
 	updated, err := c.libraryRepo.GetByID(id)
-	if err != nil || updated == nil {
-		slog.Error("UpdateLibrary: re-fetch failed", "id", id, "error", err)
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("reload library %d: %w", id, err)
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("library disappeared after update: %d", id)
 	}
 	dto := toLibraryDTO(updated)
-	return &dto
+	return &dto, nil
 }
 
 func (c *AppCommands) EnableLibrary(id int64) error {
@@ -162,16 +163,19 @@ func (c *AppCommands) SelectFolder() (string, error) {
 	return path, nil
 }
 
-func (c *AppCommands) GetExcludedDirs(libraryID int64) []string {
+func (c *AppCommands) GetExcludedDirs(libraryID int64) ([]string, error) {
 	setting, err := c.settingRepo.Get(fmt.Sprintf("excludedDirs:%d", libraryID))
-	if err != nil || setting == nil || setting.ValueJSON == "" {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("get excluded dirs for library %d: %w", libraryID, err)
+	}
+	if setting == nil || setting.ValueJSON == "" {
+		return nil, nil
 	}
 	var dirs []string
 	if err := json.Unmarshal([]byte(setting.ValueJSON), &dirs); err != nil {
-		return nil
+		return nil, fmt.Errorf("decode excluded dirs for library %d: %w", libraryID, err)
 	}
-	return dirs
+	return dirs, nil
 }
 
 func (c *AppCommands) SetExcludedDirs(libraryID int64, dirs []string) error {
@@ -291,12 +295,12 @@ type AssetListResponse struct {
 	TotalCount int        `json:"totalCount"`
 }
 
-func (c *AppCommands) ListAssets(req AssetListRequest) *AssetListResponse {
+func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {
 	result, err := c.assetRepo.List(db.AssetQuery{
-		LibraryID:  req.LibraryID,
-		FolderPath: req.FolderPath,
-		Recurse:    req.Recurse,
-		Search:     req.Search,
+		LibraryID:   req.LibraryID,
+		FolderPath:  req.FolderPath,
+		Recurse:     req.Recurse,
+		Search:      req.Search,
 		Rating:      req.Rating,
 		StatusLabel: req.StatusLabel,
 		IsFavorite:  req.IsFavorite,
@@ -310,8 +314,7 @@ func (c *AppCommands) ListAssets(req AssetListRequest) *AssetListResponse {
 		Limit:       req.Limit,
 	})
 	if err != nil {
-		slog.Error("ListAssets", "error", err)
-		return &AssetListResponse{}
+		return nil, fmt.Errorf("list assets: %w", err)
 	}
 
 	dtos := make([]AssetDTO, len(result.Assets))
@@ -322,22 +325,31 @@ func (c *AppCommands) ListAssets(req AssetListRequest) *AssetListResponse {
 	return &AssetListResponse{
 		Assets:     dtos,
 		TotalCount: result.TotalCount,
-	}
+	}, nil
 }
 
-func (c *AppCommands) GetAssetDetail(id int64) *AssetDTO {
+func (c *AppCommands) GetAssetDetail(id int64) (*AssetDTO, error) {
 	a, err := c.assetRepo.GetByID(id)
-	if err != nil || a == nil {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("get asset %d: %w", id, err)
+	}
+	if a == nil {
+		return nil, fmt.Errorf("asset not found: %d", id)
 	}
 	dto := toAssetDTO(a)
 
-	note, _ := c.noteRepo.GetByAssetID(id)
+	note, err := c.noteRepo.GetByAssetID(id)
+	if err != nil {
+		return nil, fmt.Errorf("get note for asset %d: %w", id, err)
+	}
 	if note != nil {
 		dto.NoteContent = note.Content
 	}
 
-	tags, _ := c.tagRepo.GetByAssetID(id)
+	tags, err := c.tagRepo.GetByAssetID(id)
+	if err != nil {
+		return nil, fmt.Errorf("get tags for asset %d: %w", id, err)
+	}
 	if tags != nil {
 		dto.Tags = make([]TagDTO, len(tags))
 		for i, t := range tags {
@@ -345,7 +357,7 @@ func (c *AppCommands) GetAssetDetail(id int64) *AssetDTO {
 		}
 	}
 
-	return &dto
+	return &dto, nil
 }
 
 func (c *AppCommands) UpdateAssetNote(assetID int64, content string) error {
@@ -558,14 +570,20 @@ func moveFile(src, dst string) error {
 
 func (c *AppCommands) ScanLibrary(libraryID int64) error {
 	lib, err := c.libraryRepo.GetByID(libraryID)
-	if err != nil || lib == nil {
+	if err != nil {
+		return fmt.Errorf("get library %d: %w", libraryID, err)
+	}
+	if lib == nil {
 		return fmt.Errorf("library not found: %d", libraryID)
 	}
 	if !lib.IsEnabled {
 		return fmt.Errorf("library is disabled: %d", libraryID)
 	}
 
-	excludedDirs := c.GetExcludedDirs(libraryID)
+	excludedDirs, err := c.GetExcludedDirs(libraryID)
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		if err := c.scanSvc.ScanLibrary(lib, excludedDirs, func(p scanner.ScanProgress) {
@@ -585,9 +603,9 @@ func (c *AppCommands) ScanLibrary(libraryID int64) error {
 			slog.Error("scan failed", "library", lib.Name, "error", err)
 			if c.ctx != nil {
 				runtime.EventsEmit(c.ctx, "scan:progress", scanner.ScanProgress{
-					LibraryID:    lib.ID,
-					IsDone:       true,
-					FailedCount:  1,
+					LibraryID:   lib.ID,
+					IsDone:      true,
+					FailedCount: 1,
 				})
 			}
 		}
@@ -599,27 +617,25 @@ func (c *AppCommands) CancelScan() {
 	c.scanSvc.Cancel()
 }
 
-func (c *AppCommands) ListTags() []TagDTO {
+func (c *AppCommands) ListTags() ([]TagDTO, error) {
 	tags, err := c.tagRepo.List()
 	if err != nil {
-		slog.Error("ListTags", "error", err)
-		return nil
+		return nil, fmt.Errorf("list tags: %w", err)
 	}
 	dtos := make([]TagDTO, len(tags))
 	for i, t := range tags {
 		dtos[i] = TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
 	}
-	return dtos
+	return dtos, nil
 }
 
-func (c *AppCommands) CreateTag(name, color string) *TagDTO {
+func (c *AppCommands) CreateTag(name, color string) (*TagDTO, error) {
 	t, err := c.tagRepo.Create(name, color)
 	if err != nil {
-		slog.Error("CreateTag", "error", err)
-		return nil
+		return nil, fmt.Errorf("create tag: %w", err)
 	}
 	dto := TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
-	return &dto
+	return &dto, nil
 }
 
 func (c *AppCommands) DeleteTag(id int64) error {
@@ -653,11 +669,10 @@ type PostAccountDTO struct {
 	IsActive          bool   `json:"isActive"`
 }
 
-func (c *AppCommands) ListPosts(offset, limit int) []PostDTO {
+func (c *AppCommands) ListPosts(offset, limit int) ([]PostDTO, error) {
 	posts, err := c.postRepo.List(offset, limit)
 	if err != nil {
-		slog.Error("ListPosts", "error", err)
-		return nil
+		return nil, fmt.Errorf("list posts: %w", err)
 	}
 	dtos := make([]PostDTO, len(posts))
 	for i, p := range posts {
@@ -676,14 +691,17 @@ func (c *AppCommands) ListPosts(offset, limit int) []PostDTO {
 		if p.PublishedAt != nil {
 			dto.PublishedAt = p.PublishedAt.Format("2006-01-02T15:04:05Z")
 		}
-		assetIDs, _ := c.postRepo.GetAssetsByPostID(p.ID)
+		assetIDs, err := c.postRepo.GetAssetsByPostID(p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get assets for post %d: %w", p.ID, err)
+		}
 		dto.AssetIDs = assetIDs
 		dtos[i] = dto
 	}
-	return dtos
+	return dtos, nil
 }
 
-func (c *AppCommands) CreatePostDraft(title, body, hashtags string) *PostDTO {
+func (c *AppCommands) CreatePostDraft(title, body, hashtags string) (*PostDTO, error) {
 	p := &domain.Post{
 		Title:    title,
 		Body:     body,
@@ -692,12 +710,14 @@ func (c *AppCommands) CreatePostDraft(title, body, hashtags string) *PostDTO {
 	}
 	id, err := c.postRepo.Create(p)
 	if err != nil {
-		slog.Error("CreatePostDraft", "error", err)
-		return nil
+		return nil, fmt.Errorf("create post draft: %w", err)
 	}
-	created, _ := c.postRepo.GetByID(id)
+	created, err := c.postRepo.GetByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("reload post draft %d: %w", id, err)
+	}
 	if created == nil {
-		return nil
+		return nil, fmt.Errorf("post draft disappeared after create: %d", id)
 	}
 	dto := PostDTO{
 		ID:        created.ID,
@@ -708,27 +728,30 @@ func (c *AppCommands) CreatePostDraft(title, body, hashtags string) *PostDTO {
 		CreatedAt: created.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt: created.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
-	return &dto
+	return &dto, nil
 }
 
-func (c *AppCommands) UpdatePost(id int64, title, body, hashtags, status string) *PostDTO {
+func (c *AppCommands) UpdatePost(id int64, title, body, hashtags, status string) (*PostDTO, error) {
 	p, err := c.postRepo.GetByID(id)
-	if err != nil || p == nil {
-		slog.Error("UpdatePost: not found", "id", id)
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("get post %d: %w", id, err)
+	}
+	if p == nil {
+		return nil, fmt.Errorf("post not found: %d", id)
 	}
 	p.Title = title
 	p.Body = body
 	p.Hashtags = hashtags
 	p.Status = domain.PostStatus(status)
 	if err := c.postRepo.Update(p); err != nil {
-		slog.Error("UpdatePost", "error", err)
-		return nil
+		return nil, fmt.Errorf("update post %d: %w", id, err)
 	}
 	updated, err := c.postRepo.GetByID(id)
-	if err != nil || updated == nil {
-		slog.Error("UpdatePost: re-fetch failed", "id", id, "error", err)
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("reload post %d: %w", id, err)
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("post disappeared after update: %d", id)
 	}
 	dto := PostDTO{
 		ID:        updated.ID,
@@ -739,18 +762,17 @@ func (c *AppCommands) UpdatePost(id int64, title, body, hashtags, status string)
 		CreatedAt: updated.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt: updated.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
-	return &dto
+	return &dto, nil
 }
 
 func (c *AppCommands) AttachAssetsToPost(postID int64, assetIDs []int64) error {
 	return c.postRepo.AttachAssets(postID, assetIDs)
 }
 
-func (c *AppCommands) GetPostsByAsset(assetID int64) []PostDTO {
+func (c *AppCommands) GetPostsByAsset(assetID int64) ([]PostDTO, error) {
 	posts, err := c.postRepo.GetPostsByAssetID(assetID)
 	if err != nil {
-		slog.Error("GetPostsByAsset", "error", err)
-		return nil
+		return nil, fmt.Errorf("get posts for asset %d: %w", assetID, err)
 	}
 	dtos := make([]PostDTO, len(posts))
 	for i, p := range posts {
@@ -764,44 +786,41 @@ func (c *AppCommands) GetPostsByAsset(assetID int64) []PostDTO {
 			UpdatedAt: p.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		}
 	}
-	return dtos
+	return dtos, nil
 }
 
 func (c *AppCommands) DeletePost(id int64) error {
 	return c.postRepo.Delete(id)
 }
 
-func (c *AppCommands) ListPostTargets() []PostTargetDTO {
+func (c *AppCommands) ListPostTargets() ([]PostTargetDTO, error) {
 	targets, err := c.targetRepo.List()
 	if err != nil {
-		slog.Error("ListPostTargets", "error", err)
-		return nil
+		return nil, fmt.Errorf("list post targets: %w", err)
 	}
 	dtos := make([]PostTargetDTO, len(targets))
 	for i, t := range targets {
 		dtos[i] = PostTargetDTO{ID: t.ID, Name: t.Name, Kind: t.Kind}
 	}
-	return dtos
+	return dtos, nil
 }
 
-func (c *AppCommands) CreatePostTarget(name, kind string) *PostTargetDTO {
+func (c *AppCommands) CreatePostTarget(name, kind string) (*PostTargetDTO, error) {
 	id, err := c.targetRepo.Create(name, kind)
 	if err != nil {
-		slog.Error("CreatePostTarget", "error", err)
-		return nil
+		return nil, fmt.Errorf("create post target: %w", err)
 	}
-	return &PostTargetDTO{ID: id, Name: name, Kind: kind}
+	return &PostTargetDTO{ID: id, Name: name, Kind: kind}, nil
 }
 
 func (c *AppCommands) DeletePostTarget(id int64) error {
 	return c.targetRepo.Delete(id)
 }
 
-func (c *AppCommands) ListPostAccounts() []PostAccountDTO {
+func (c *AppCommands) ListPostAccounts() ([]PostAccountDTO, error) {
 	accounts, err := c.accountRepo.List()
 	if err != nil {
-		slog.Error("ListPostAccounts", "error", err)
-		return nil
+		return nil, fmt.Errorf("list post accounts: %w", err)
 	}
 	dtos := make([]PostAccountDTO, len(accounts))
 	for i, a := range accounts {
@@ -813,14 +832,13 @@ func (c *AppCommands) ListPostAccounts() []PostAccountDTO {
 			IsActive:          a.IsActive,
 		}
 	}
-	return dtos
+	return dtos, nil
 }
 
-func (c *AppCommands) CreatePostAccount(targetID int64, displayName, identifier string) *PostAccountDTO {
+func (c *AppCommands) CreatePostAccount(targetID int64, displayName, identifier string) (*PostAccountDTO, error) {
 	id, err := c.accountRepo.Create(targetID, displayName, identifier)
 	if err != nil {
-		slog.Error("CreatePostAccount", "error", err)
-		return nil
+		return nil, fmt.Errorf("create post account: %w", err)
 	}
 	return &PostAccountDTO{
 		ID:                id,
@@ -828,26 +846,69 @@ func (c *AppCommands) CreatePostAccount(targetID int64, displayName, identifier 
 		DisplayName:       displayName,
 		AccountIdentifier: identifier,
 		IsActive:          true,
-	}
+	}, nil
 }
 
 func (c *AppCommands) DeletePostAccount(id int64) error {
 	return c.accountRepo.Delete(id)
 }
 
-func (c *AppCommands) GetSetting(key string) string {
-	s, err := c.settingRepo.Get(key)
-	if err != nil || s == nil {
-		return ""
+func (c *AppCommands) GetSetting(key string) (string, error) {
+	setting, err := c.settingRepo.Get(key)
+	if err != nil {
+		return "", fmt.Errorf("get setting %q: %w", key, err)
 	}
-	return s.ValueJSON
+	if setting == nil {
+		return "", nil
+	}
+	return setting.ValueJSON, nil
 }
 
 func (c *AppCommands) SetSetting(key, valueJSON string) error {
 	return c.settingRepo.Set(key, valueJSON)
 }
 
-func (c *AppCommands) GetAppBootstrap() map[string]interface{} {
+func (c *AppCommands) GetAppBootstrap() (map[string]interface{}, error) {
+	libs, err := c.libraryRepo.List()
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap libraries: %w", err)
+	}
+	libDTOs := make([]LibraryDTO, len(libs))
+	for i, lib := range libs {
+		libDTOs[i] = toLibraryDTO(&lib)
+	}
+
+	settings := make(map[string]interface{})
+	for _, key := range []string{"theme", "thumbnailSize", "scanExtensions", "conflictPolicy", "logLevel"} {
+		setting, err := c.settingRepo.Get(key)
+		if err != nil {
+			return nil, fmt.Errorf("bootstrap setting %q: %w", key, err)
+		}
+		if setting == nil {
+			continue
+		}
+		var value interface{}
+		if err := json.Unmarshal([]byte(setting.ValueJSON), &value); err != nil {
+			return nil, fmt.Errorf("decode bootstrap setting %q: %w", key, err)
+		}
+		settings[key] = value
+	}
+
+	tags, err := c.tagRepo.List()
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap tags: %w", err)
+	}
+	tagDTOs := make([]TagDTO, len(tags))
+	for i, t := range tags {
+		tagDTOs[i] = TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
+	}
+
+	return map[string]interface{}{
+		"libraries": libDTOs,
+		"settings":  settings,
+		"tags":      tagDTOs,
+	}, nil
+} {
 	libs, _ := c.libraryRepo.List()
 	libDTOs := make([]LibraryDTO, len(libs))
 	for i, lib := range libs {
@@ -877,13 +938,12 @@ func (c *AppCommands) GetAppBootstrap() map[string]interface{} {
 	}
 }
 
-func (c *AppCommands) ScanFolder(folderPath string, offset, limit int) *scanner.FolderScanResult {
+func (c *AppCommands) ScanFolder(folderPath string, offset, limit int) (*scanner.FolderScanResult, error) {
 	result, err := scanner.ScanFolderDirect(folderPath, offset, limit)
 	if err != nil {
-		slog.Error("ScanFolder", "error", err)
-		return nil
+		return nil, fmt.Errorf("scan folder %q: %w", folderPath, err)
 	}
-	return result
+	return result, nil
 }
 
 type FolderDTO struct {
@@ -893,22 +953,21 @@ type FolderDTO struct {
 	ParentPath string `json:"parentPath,omitempty"`
 }
 
-func (c *AppCommands) GetFolderTree(libraryID int64) []FolderDTO {
+func (c *AppCommands) GetFolderTree(libraryID int64) ([]FolderDTO, error) {
 	folders, err := c.folderRepo.GetTreeByLibrary(libraryID)
 	if err != nil {
-		slog.Error("GetFolderTree", "error", err)
-		return []FolderDTO{}
+		return nil, fmt.Errorf("get folder tree for library %d: %w", libraryID, err)
 	}
 	result := make([]FolderDTO, 0, len(folders))
-	for _, f := range folders {
+	for _, folder := range folders {
 		result = append(result, FolderDTO{
-			ID:         f.ID,
-			LibraryID:  f.LibraryID,
-			Path:       f.Path,
-			ParentPath: f.ParentPath,
+			ID:         folder.ID,
+			LibraryID:  folder.LibraryID,
+			Path:       folder.Path,
+			ParentPath: folder.ParentPath,
 		})
 	}
-	return result
+	return result, nil
 }
 
 func (c *AppCommands) BulkDeleteAssets(ids []int64) error {
