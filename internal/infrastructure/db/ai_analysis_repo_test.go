@@ -1,10 +1,27 @@
 package db
 
 import (
+	"os"
 	"testing"
 
 	"github.com/kataage/lumine/internal/domain"
 )
+
+func openAIAnalysisTestDB(t *testing.T) *DB {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "lumine-ai-analysis-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	database, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	return database
+}
 
 func createAIRepoTestAsset(t *testing.T, database *DB, folder, name string) int64 {
 	t.Helper()
@@ -30,7 +47,7 @@ func createAIRepoTestAsset(t *testing.T, database *DB, folder, name string) int6
 }
 
 func TestAIAnalysisRepoLifecycleAndProvenance(t *testing.T) {
-	database := openTestDB(t)
+	database := openAIAnalysisTestDB(t)
 	repo := NewAIAnalysisRepo(database)
 	assetID := createAIRepoTestAsset(t, database, "/tmp/ai-repo-lifecycle", "asset.png")
 
@@ -138,7 +155,7 @@ func TestAIAnalysisRepoLifecycleAndProvenance(t *testing.T) {
 }
 
 func TestAIAnalysisRepoRetryCancelAndRecovery(t *testing.T) {
-	database := openTestDB(t)
+	database := openAIAnalysisTestDB(t)
 	repo := NewAIAnalysisRepo(database)
 	assetID := createAIRepoTestAsset(t, database, "/tmp/ai-repo-retry", "retry.png")
 
@@ -245,7 +262,7 @@ func TestAIAnalysisRepoRetryCancelAndRecovery(t *testing.T) {
 }
 
 func TestAIAnalysisRepoBatchPriorityAndCapabilityClaim(t *testing.T) {
-	database := openTestDB(t)
+	database := openAIAnalysisTestDB(t)
 	repo := NewAIAnalysisRepo(database)
 
 	lib, err := NewLibraryRepo(database).Create("AI Batch", "/tmp/ai-batch")
