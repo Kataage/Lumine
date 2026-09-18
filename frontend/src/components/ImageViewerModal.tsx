@@ -166,10 +166,7 @@ export function ImageViewerModal({
       onClick={onClose}
     >
       <div className="absolute inset-x-0 top-0 h-16 px-4 flex items-center gap-3 bg-gradient-to-b from-black/80 to-transparent z-20 pointer-events-none">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold truncate">{asset.fileName}</p>
-          <p className="text-[11px] text-white/55 truncate">ホイール: 拡大縮小 / 拡大後ドラッグ: 移動 / 0: 全体表示 / Esc: 閉じる</p>
-        </div>
+        <p className="min-w-0 flex-1 text-sm font-semibold truncate">{asset.fileName}</p>
         <div className="flex items-center gap-1.5 pointer-events-auto" onClick={(event) => event.stopPropagation()}>
           <button className="viewer-control" onClick={() => setZoomSafe(zoom - 0.5)} aria-label="縮小">−</button>
           <span className="min-w-14 text-center text-xs text-white/75 tabular-nums">{Math.round(zoom * 100)}%</span>
@@ -259,11 +256,6 @@ export function ImageViewerModal({
         </button>
       )}
 
-      <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
-        <div className="rounded-full bg-black/55 border border-white/10 px-3 py-1.5 text-[11px] text-white/60 backdrop-blur-sm">
-          ダブルクリックで拡大 / 拡大後はドラッグで移動
-        </div>
-      </div>
     </div>,
     document.body
   );
