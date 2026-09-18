@@ -589,11 +589,11 @@ func (r *AIAnalysisRepo) ListJobs(limit int) ([]domain.AIJob, error) {
 	return jobs, rows.Err()
 }
 
-type rowScanner interface {
+type aiRowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanAIAnalysis(row rowScanner) (domain.AIAnalysis, error) {
+func scanAIAnalysis(row aiRowScanner) (domain.AIAnalysis, error) {
 	var value domain.AIAnalysis
 	var analyzed sql.NullTime
 	if err := row.Scan(
@@ -609,7 +609,7 @@ func scanAIAnalysis(row rowScanner) (domain.AIAnalysis, error) {
 	return value, nil
 }
 
-func scanAIJobRow(row rowScanner) (*domain.AIJob, error) {
+func scanAIJobRow(row aiRowScanner) (*domain.AIJob, error) {
 	job, err := scanAIJob(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -620,7 +620,7 @@ func scanAIJobRow(row rowScanner) (*domain.AIJob, error) {
 	return &job, nil
 }
 
-func scanAIJob(row rowScanner) (domain.AIJob, error) {
+func scanAIJob(row aiRowScanner) (domain.AIJob, error) {
 	var job domain.AIJob
 	var started, finished sql.NullTime
 	if err := row.Scan(
