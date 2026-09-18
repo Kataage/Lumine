@@ -63,9 +63,10 @@ type Fixture struct {
 }
 
 type Catalog struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	FixturePack   string    `json:"fixturePack"`
-	Fixtures      []Fixture `json:"fixtures"`
+	SchemaVersion      int        `json:"schemaVersion"`
+	FixturePack        string     `json:"fixturePack"`
+	RequiredCategories []Category `json:"requiredCategories,omitempty"`
+	Fixtures           []Fixture  `json:"fixtures"`
 }
 
 type FixturePackFile struct {
