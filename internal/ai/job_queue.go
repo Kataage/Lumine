@@ -24,6 +24,7 @@ type AnalysisHandler func(context.Context, domain.AIJob) (AnalysisOutput, error)
 
 type AnalysisJobRepository interface {
 	Enqueue(assetID int64, capability domain.AICapability, source domain.AIJobSource, priority int, maxAttempts int) (domain.AIJob, bool, error)
+	EnqueueBatch(assetIDs []int64, capability domain.AICapability, source domain.AIJobSource, priority int, maxAttempts int) (int, error)
 	ClaimNext(capabilities []domain.AICapability) (*domain.AIJob, error)
 	CompleteJob(jobID int64, engine, modelID, modelVersion, resultJSON string) error
 	FailOrRequeue(jobID int64, message string) (bool, error)
@@ -196,16 +197,39 @@ func (q *JobQueue) EnqueueMany(
 	priority int,
 	automatic bool,
 ) (int, error) {
-	created := 0
-	for _, assetID := range assetIDs {
-		_, wasCreated, err := q.Enqueue(assetID, capability, priority, automatic)
-		if err != nil {
-			return created, fmt.Errorf("enqueue AI analysis for asset %d: %w", assetID, err)
-		}
-		if wasCreated {
-			created++
-		}
+	if len(assetIDs) == 0 {
+		return 0, nil
 	}
+	if !domain.IsModelBackedAICapability(capability) {
+		return 0, fmt.Errorf("unsupported AI job capability %q", capability)
+	}
+	settings, err := q.currentSettings()
+	if err != nil {
+		return 0, err
+	}
+	if !settings.CapabilityEnabled(capability) {
+		return 0, ErrCapabilityDisabled
+	}
+
+	source := domain.AIJobSourceManual
+	if automatic {
+		if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+			return 0, ErrAutoAnalyzeDisabled
+		}
+		source = domain.AIJobSourceAutomatic
+	}
+	if priority > 1000 {
+		priority = 1000
+	}
+	if priority < -1000 {
+		priority = -1000
+	}
+
+	created, err := q.repo.EnqueueBatch(assetIDs, capability, source, priority, 3)
+	if err != nil {
+		return 0, err
+	}
+	q.signal()
 	return created, nil
 }
 
