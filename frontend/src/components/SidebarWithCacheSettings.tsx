@@ -5,7 +5,8 @@ import { listLibraries, offScanProgress, onScanProgress } from "../api/client";
 import type { ScanProgress } from "../api/client";
 import { FoldersPanel, LibrariesPanel, SettingsPanel, TagsPanel } from "./NavigationPanels";
 import { PostRecordsPanel } from "./PostRecordsPanel";
-import { MemoryCacheSettingsPanel } from "./MemoryCacheSettingsPanel";\nimport { AISettingsPanel } from "./AISettingsPanel";
+import { MemoryCacheSettingsPanel } from "./MemoryCacheSettingsPanel";
+import { AISettingsPanel } from "./AISettingsPanel";
 
 const APP_ICON_URL = "/appicon.png";
 const NAV_ITEMS = [
