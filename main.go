@@ -133,7 +133,7 @@ func main() {
 			Assets:     assets,
 			Middleware: localFileMiddleware,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 27, B: 30, A: 1},
+		BackgroundColour: &options.RGBA{R: 9, G: 9, B: 11, A: 1},
 		OnStartup: func(ctx context.Context) {
 			cmd.SetContext(ctx)
 			slog.Info("Lumine started")
@@ -144,6 +144,21 @@ func main() {
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			Theme:                windows.Dark,
+			CustomTheme: &windows.ThemeSettings{
+				DarkModeTitleBar:           windows.RGB(9, 9, 11),
+				DarkModeTitleBarInactive:   windows.RGB(9, 9, 11),
+				DarkModeTitleText:          windows.RGB(228, 228, 231),
+				DarkModeTitleTextInactive:  windows.RGB(161, 161, 170),
+				DarkModeBorder:             windows.RGB(39, 39, 42),
+				DarkModeBorderInactive:     windows.RGB(24, 24, 27),
+				LightModeTitleBar:          windows.RGB(9, 9, 11),
+				LightModeTitleBarInactive:  windows.RGB(9, 9, 11),
+				LightModeTitleText:         windows.RGB(228, 228, 231),
+				LightModeTitleTextInactive: windows.RGB(161, 161, 170),
+				LightModeBorder:            windows.RGB(39, 39, 42),
+				LightModeBorderInactive:    windows.RGB(24, 24, 27),
+			},
 		},
 	})
 
