@@ -25,6 +25,9 @@ func Compare(
 	if err := ValidateThresholds(thresholds); err != nil {
 		return ComparisonReport{}, fmt.Errorf("thresholds: %w", err)
 	}
+	if baseline.EvaluatorVersion != candidate.EvaluatorVersion {
+		return ComparisonReport{}, errors.New("evaluatorVersion mismatch; benchmark scores are not directly comparable")
+	}
 	if baseline.Environment.HardwareID != candidate.Environment.HardwareID && !options.AllowHardwareMismatch {
 		return ComparisonReport{}, errors.New("hardwareId mismatch; performance regressions are not comparable")
 	}
