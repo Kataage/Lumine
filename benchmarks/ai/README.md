@@ -9,8 +9,9 @@ This directory is the source of truth for comparing local AI models used by Lumi
 - `adoptions.json` records candidate/adopted/rejected decisions and the evidence used for adopted models.
 - `profiles/` contains model-profile templates or immutable profiles used by recorded runs.
 - `results/evidence/` is for selected benchmark results that justify an adoption or rejection.
+- `TAGGER_BENCHMARK.md` defines the controlled wd-vit-tagger-v3 vs PixAI Tagger v0.9 procedure for Issue #165.
 
-Large, copyrighted, private, or adult-only image fixtures are **not committed**. They live in a local fixture pack. The pack identity is `lumine-ai-core-v1`; its `manifest.json` records SHA-256 and byte size for every file referenced by the catalog. A run refuses to start if the fixture pack does not match.
+Large, copyrighted, private, or adult-only image fixtures are **not committed**. They live in a local fixture pack. The pack identity is `lumine-ai-core-v2`; its `manifest.json` records SHA-256 and byte size for every file referenced by the catalog. A run refuses to start if the fixture pack does not match.
 
 ## Fixture pack layout
 
@@ -34,7 +35,7 @@ After curating or changing the pack, generate its hash manifest:
 ```powershell
 go run ./cmd/ai-bench hash-fixtures `
   -catalog benchmarks/ai/catalog.json `
-  -fixtures-dir D:\LumineBench\lumine-ai-core-v1
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2
 ```
 
 Validate both catalog coverage and local fixture integrity:
@@ -42,7 +43,7 @@ Validate both catalog coverage and local fixture integrity:
 ```powershell
 go run ./cmd/ai-bench validate-catalog `
   -catalog benchmarks/ai/catalog.json `
-  -fixtures-dir D:\LumineBench\lumine-ai-core-v1
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2
 ```
 
 Do not silently replace a fixture while keeping the same pack ID. If benchmark semantics change, create a new pack ID (for example `lumine-ai-core-v2`) and update the catalog. This prevents historical results from appearing directly comparable when their inputs changed.
@@ -56,7 +57,7 @@ Request shape:
 ```json
 {
   "schemaVersion": 1,
-  "fixtureDir": "D:\\LumineBench\\lumine-ai-core-v1",
+  "fixtureDir": "D:\\LumineBench\\lumine-ai-core-v2",
   "model": {
     "id": "vendor/model",
     "version": "1.0",
@@ -103,7 +104,7 @@ go run ./cmd/ai-bench run `
   -catalog benchmarks/ai/catalog.json `
   -profile benchmarks/ai/profiles/my-model.json `
   -adapter C:\path\to\lumine-model-bench-adapter.exe `
-  -fixtures-dir D:\LumineBench\lumine-ai-core-v1 `
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2 `
   -hardware-id "desktop-rtx3060-cpu8t-v1" `
   -cpu "CPU model / thread configuration" `
   -gpu "NVIDIA GPU model" `
