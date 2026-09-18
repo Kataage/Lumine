@@ -141,6 +141,9 @@ func main() {
 		Bind: []interface{}{
 			cmd,
 		},
+		// Keep native Windows chrome so resize, Snap Layouts, maximise/restore,
+		// and multi-monitor movement retain their normal shell behaviour. The
+		// native frame is themed to visually continue Lumine's app header.
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
