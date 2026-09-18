@@ -96,7 +96,7 @@ Adapters must not write logs to stdout; use stderr for diagnostics.
 
 ## Running a benchmark
 
-Create an immutable model profile from `profiles/example.json`. Record the exact model version, engine/runtime, quantization and artifact SHA-256 whenever available.
+Create an immutable model profile from `profiles/example.json`. Record the exact model version, engine/runtime, quantization and artifact SHA-256 whenever available. `benchmarkCategories` declares the categories that model/adapter actually supports; all other catalog cases are recorded explicitly as `skipped`. An omitted/empty `benchmarkCategories` means the adapter claims support for the full catalog.
 
 ```powershell
 go run ./cmd/ai-bench run `
