@@ -73,7 +73,7 @@ type Engine interface {
 
 type EngineFactory func() Engine
 
-type CapabilityPolicy func(domain.AICapability) (bool, error)
+type SettingsProvider func() (domain.AISettings, error)
 
 type RuntimeState string
 
