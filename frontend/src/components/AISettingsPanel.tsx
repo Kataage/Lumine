@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAISettings, setAISettings } from "../api/client";
+import {
+  EventsOff,
+  EventsOn,
+  getAISettings,
+  getDefaultSemanticModelInfo,
+  installDefaultSemanticModel,
+  loadDefaultSemanticModel,
+  setAISettings,
+  type SemanticModelInfo,
+} from "../api/client";
+import { formatFileSize } from "../utils/format";
 import {
   DEFAULT_AI_SETTINGS,
   getInitialAIEngineStatus,
@@ -103,12 +113,20 @@ export function AISettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setSettings(await getAISettings());
+      const [nextSettings, model] = await Promise.all([
+        getAISettings(),
+        getDefaultSemanticModelInfo().catch(() => null),
+      ]);
+      setSettings(nextSettings);
+      setSemanticModel(model);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -119,6 +137,48 @@ export function AISettingsPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    EventsOn("ai:model-download", (raw: unknown) => {
+      const progress = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
+      setDownloadProgress({
+        downloaded: Math.max(0, Number(progress.bytesDownloaded ?? 0)),
+        total: Math.max(0, Number(progress.bytesTotal ?? 0)),
+      });
+      if (progress.done) void getDefaultSemanticModelInfo().then(setSemanticModel).catch(() => undefined);
+    });
+    return () => EventsOff("ai:model-download");
+  }, []);
+
+  const installSemanticModel = async () => {
+    if (modelBusy) return;
+    setModelBusy(true);
+    setError(null);
+    setDownloadProgress({ downloaded: 0, total: semanticModel?.sizeBytes ?? 0 });
+    try {
+      await installDefaultSemanticModel();
+      setSemanticModel(await getDefaultSemanticModelInfo());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setModelBusy(false);
+      setDownloadProgress(null);
+    }
+  };
+
+  const loadSemanticModel = async () => {
+    if (modelBusy) return;
+    setModelBusy(true);
+    setError(null);
+    try {
+      await loadDefaultSemanticModel();
+      setSemanticModel(await getDefaultSemanticModelInfo());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setModelBusy(false);
+    }
+  };
 
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
@@ -164,7 +224,9 @@ export function AISettingsPanel() {
 
       <div className="space-y-1.5">
         {MODEL_FEATURES.map((feature) => {
-          const status = getInitialAIEngineStatus(settings, feature.key);
+          const status = feature.key === "semanticSearch" && semanticModel
+            ? semanticModel.runtime.state
+            : getInitialAIEngineStatus(settings, feature.key);
           return (
             <div key={feature.key} className="rounded-lg border border-border/70 bg-background/30 p-2.5">
               <div className="flex items-center gap-2">
@@ -184,6 +246,54 @@ export function AISettingsPanel() {
                   onChange={(checked) => void update({ [feature.key]: checked } as Partial<AISettings>)}
                 />
               </div>
+
+              {feature.key === "semanticSearch" && semanticModel && (
+                <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">
+                    <span className="truncate" title={semanticModel.displayName}>{semanticModel.displayName}</span>
+                    <span className="flex-shrink-0">{formatFileSize(semanticModel.sizeBytes)}</span>
+                  </div>
+                  {downloadProgress && downloadProgress.total > 0 && (
+                    <div className="space-y-1">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-primary transition-[width]"
+                          style={{ width: `${Math.min(100, (downloadProgress.downloaded / downloadProgress.total) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[9px] text-muted-foreground">
+                        {formatFileSize(downloadProgress.downloaded)} / {formatFileSize(downloadProgress.total)}
+                      </p>
+                    </div>
+                  )}
+                  {!semanticModel.installed ? (
+                    <button
+                      type="button"
+                      className="ui-primary-button w-full justify-center"
+                      disabled={modelBusy}
+                      onClick={() => void installSemanticModel()}
+                    >
+                      {modelBusy ? "モデルを導入中…" : "SigLIP 2を導入"}
+                    </button>
+                  ) : status !== "ready" && status !== "running" && settings.enabled && settings.semanticSearch ? (
+                    <button
+                      type="button"
+                      className="ui-secondary-button w-full justify-center"
+                      disabled={modelBusy}
+                      onClick={() => void loadSemanticModel()}
+                    >
+                      {modelBusy ? "モデルを読み込み中…" : "導入済みモデルを読み込む"}
+                    </button>
+                  ) : (
+                    <p className="text-[9px] text-muted-foreground">
+                      {semanticModel.installed ? "モデル導入済み · ローカル保存" : ""}
+                    </p>
+                  )}
+                  {semanticModel.runtime.error && (
+                    <p className="text-[9px] leading-relaxed text-destructive break-all">{semanticModel.runtime.error}</p>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
