@@ -17,6 +17,16 @@ var (
 	ErrSemanticModelNotReady  = errors.New("Semantic Search model is not loaded")
 )
 
+func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
+	if len(assetIDs) == 0 || c.aiJobQueue == nil {
+		return 0, nil
+	}
+	if _, err := c.aiJobQueue.MarkStaleForAssets(domain.AICapabilitySemanticSearch, assetIDs); err != nil {
+		return 0, err
+	}
+	return c.EnqueueAutomaticSemanticAssets(assetIDs)
+}
+
 func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, error) {
 	if len(assetIDs) == 0 || c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
