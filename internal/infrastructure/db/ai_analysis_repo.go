@@ -94,6 +94,73 @@ func (r *AIAnalysisRepo) Enqueue(
 	return *job, created, nil
 }
 
+func (r *AIAnalysisRepo) EnqueueBatch(
+	assetIDs []int64,
+	capability domain.AICapability,
+	source domain.AIJobSource,
+	priority int,
+	maxAttempts int,
+) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin AI batch enqueue: %w", err)
+	}
+	defer tx.Rollback()
+
+	created := 0
+	for _, assetID := range assetIDs {
+		var existingID int64
+		var existingStatus domain.AIJobStatus
+		findErr := tx.QueryRow(
+			"SELECT id, status FROM ai_jobs WHERE asset_id = ? AND capability = ? AND status IN ('queued','running') ORDER BY id LIMIT 1",
+			assetID, capability,
+		).Scan(&existingID, &existingStatus)
+		if findErr != nil && findErr != sql.ErrNoRows {
+			return 0, fmt.Errorf("find active AI job for asset %d: %w", assetID, findErr)
+		}
+
+		if findErr == sql.ErrNoRows {
+			if _, err := tx.Exec(
+				"INSERT INTO ai_jobs (asset_id, capability, source, priority, status, max_attempts) VALUES (?, ?, ?, ?, 'queued', ?)",
+				assetID, capability, source, priority, maxAttempts,
+			); err != nil {
+				return 0, fmt.Errorf("insert AI job for asset %d: %w", assetID, err)
+			}
+			created++
+			existingStatus = domain.AIJobQueued
+		} else if existingStatus == domain.AIJobQueued {
+			if _, err := tx.Exec("UPDATE ai_jobs SET priority = MAX(priority, ?) WHERE id = ?", priority, existingID); err != nil {
+				return 0, fmt.Errorf("raise AI job priority for asset %d: %w", assetID, err)
+			}
+		}
+
+		if existingStatus == domain.AIJobQueued {
+			if _, err := tx.Exec(`
+				INSERT INTO ai_asset_analysis (asset_id, capability, state, error_message, updated_at)
+				VALUES (?, ?, 'queued', '', CURRENT_TIMESTAMP)
+				ON CONFLICT(asset_id, capability) DO UPDATE SET
+					state = 'queued',
+					error_message = '',
+					updated_at = CURRENT_TIMESTAMP
+			`, assetID, capability); err != nil {
+				return 0, fmt.Errorf("mark AI analysis queued for asset %d: %w", assetID, err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit AI batch enqueue: %w", err)
+	}
+	return created, nil
+}
+
 func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.AIJob, error) {
 	if len(capabilities) == 0 {
 		return nil, nil
