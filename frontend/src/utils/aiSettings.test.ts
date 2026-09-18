@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   DEFAULT_AI_SETTINGS,
   getInitialAIEngineStatus,
