@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
@@ -32,6 +33,7 @@ type AppCommands struct {
 	scanSvc     *scanner.Scanner
 	aiManager   *ai.Manager
 	aiJobQueue  *ai.JobQueue
+	llamaRuntimeStore *llamacpp.RuntimeStore
 	semanticRepo *db.SemanticEmbeddingRepo
 	ctx         context.Context
 }
