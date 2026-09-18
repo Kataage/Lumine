@@ -132,6 +132,17 @@ func TestCompareDetectsQualityPerformanceAndStatusRegressions(t *testing.T) {
 	}
 }
 
+func TestCompareRejectsEvaluatorMismatch(t *testing.T) {
+	catalog := fullTestCatalog()
+	baseline := fullTestResult(catalog, "baseline", "machine-a")
+	candidate := fullTestResult(catalog, "candidate", "machine-a")
+	candidate.EvaluatorVersion = "future-evaluator"
+
+	if _, err := Compare(baseline, candidate, catalog, Thresholds{}, CompareOptions{}); err == nil {
+		t.Fatal("evaluator mismatch should fail")
+	}
+}
+
 func TestCompareRejectsHardwareMismatchByDefault(t *testing.T) {
 	catalog := fullTestCatalog()
 	baseline := fullTestResult(catalog, "baseline", "machine-a")
