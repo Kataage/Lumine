@@ -473,7 +473,11 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 
 	result, err := tx.Exec(`
 		UPDATE ai_jobs
-		SET status = 'queued', cancel_requested = 0, started_at = NULL, finished_at = NULL,
+		SET status = 'queued',
+			attempt_count = MAX(attempt_count - 1, 0),
+			cancel_requested = 0,
+			started_at = NULL,
+			finished_at = NULL,
 			last_error = CASE WHEN last_error = '' THEN 'recovered after app restart' ELSE last_error END
 		WHERE status = 'running'
 	`)
