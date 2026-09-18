@@ -228,10 +228,16 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		t.Fatalf("repository adoption ledger: %v", err)
 	}
 
-	var profile ModelProfile
-	readJSONForTest(t, filepath.Join(root, "profiles", "example.json"), &profile)
-	if err := ValidateModelProfile(profile); err != nil {
-		t.Fatalf("repository example profile: %v", err)
+	for _, name := range []string{
+		"example.json",
+		"wd-vit-tagger-v3.json",
+		"pixai-tagger-v0.9.json",
+	} {
+		var profile ModelProfile
+		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)
+		if err := ValidateModelProfile(profile); err != nil {
+			t.Fatalf("repository profile %s: %v", name, err)
+		}
 	}
 }
 
