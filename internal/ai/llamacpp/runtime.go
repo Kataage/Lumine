@@ -10,12 +10,35 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 const runtimeInstallManifestName = "runtime.json"
+
+var safeRuntimeComponentPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+package llamacpp
+
+import (
+	"archive/zip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+)
 
 type RuntimeManifest struct {
 	ID               string `json:"id"`
@@ -85,11 +108,18 @@ func (s *RuntimeStore) SetHTTPClient(client *http.Client) {
 }
 
 func ValidateRuntimeManifest(manifest RuntimeManifest) error {
-	if manifest.ID == "" || manifest.Version == "" {
-		return errors.New("runtime id and version are required")
+	if !safeRuntimeComponentPattern.MatchString(manifest.ID) {
+		return fmt.Errorf("invalid runtime id %q", manifest.ID)
 	}
-	if manifest.URL == "" {
-		return errors.New("runtime URL is required")
+	if !safeRuntimeComponentPattern.MatchString(manifest.Version) {
+		return fmt.Errorf("invalid runtime version %q", manifest.Version)
+	}
+	parsedURL, err := url.Parse(manifest.URL)
+	if err != nil {
+		return fmt.Errorf("invalid runtime URL: %w", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("unsupported runtime URL scheme %q", parsedURL.Scheme)
 	}
 	if len(manifest.SHA256) != sha256.Size*2 {
 		return fmt.Errorf("runtime sha256 must contain %d hex characters", sha256.Size*2)
