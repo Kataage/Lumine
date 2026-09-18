@@ -25,12 +25,12 @@ import { useAppDialog } from "./AppDialogProvider";
 const TAG_MANAGER_VISIBLE_LIMIT = 200;
 const tagNameCollator = new Intl.Collator("ja", { sensitivity: "base", numeric: true });
 
-function PanelTitle({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+function PanelTitle({ title, badge, action }: { title: string; badge?: string | number; action?: ReactNode }) {
   return (
-    <div className="px-3 pt-3 pb-2 flex items-start justify-between gap-2">
-      <div className="min-w-0">
+    <div className="px-3 pt-3 pb-2 flex items-center justify-between gap-2">
+      <div className="min-w-0 flex items-center gap-2">
         <p className="text-xs font-semibold">{title}</p>
-        <p className="text-[11px] text-muted-foreground leading-relaxed">{description}</p>
+        {badge !== undefined && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground tabular-nums">{badge}</span>}
       </div>
       {action}
     </div>
@@ -75,7 +75,7 @@ export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, 
     <div className="pb-3">
       <PanelTitle
         title="ライブラリ"
-        description="普段は選択だけ。管理操作は必要な時だけ開けます。"
+        badge={state.libraries.length}
         action={<button type="button" className="ui-primary-button" onClick={() => void add()}>＋ 追加</button>}
       />
 
@@ -136,7 +136,6 @@ export function LibrariesPanel({ scanProgress }: { scanProgress: Record<number, 
 
               {selected && managing && (
                 <div className="border-t border-border/70 bg-background/30 px-2.5 py-2.5 space-y-2">
-                  <p className="text-[10px] leading-relaxed text-muted-foreground">日常操作では使わないライブラリ設定です。</p>
                   <button
                     type="button"
                     className="ui-secondary-button w-full justify-center"
@@ -260,7 +259,7 @@ export function FoldersPanel() {
 
   return (
     <div className="pb-3">
-      <PanelTitle title="フォルダー" description="表示したい階層を選びます。子フォルダーもまとめて対象になります。" />
+      <PanelTitle title="フォルダー" />
       <div className="px-2">
         <button
           type="button"
@@ -324,7 +323,7 @@ export function TagsPanel() {
     <div className="pb-3">
       <PanelTitle
         title="タグ"
-        description={`画像の絞り込みが中心です。現在 ${tags.length}件`}
+        badge={tags.length}
         action={
           <div className="flex gap-1">
             <button type="button" className={`ui-mini-button ${showCreate ? "bg-accent text-foreground" : ""}`} onClick={() => setShowCreate((value) => !value)} aria-expanded={showCreate}>
@@ -427,7 +426,7 @@ export function TagsPanel() {
         </div>
 
         {filteredTags.length > TAG_MANAGER_VISIBLE_LIMIT && (
-          <p className="text-[10px] leading-relaxed text-muted-foreground">上位{TAG_MANAGER_VISIBLE_LIMIT}件を表示しています。検索すると残りもすぐ探せます。</p>
+          <p className="text-[9px] text-muted-foreground text-right">上位{TAG_MANAGER_VISIBLE_LIMIT}件</p>
         )}
       </div>
     </div>
@@ -449,13 +448,13 @@ export function SettingsPanel() {
 
   return (
     <div className="pb-3">
-      <PanelTitle title="設定" description="普段変更しない項目は必要な時だけ編集できます。" />
+      <PanelTitle title="設定" />
       <div className="px-3 space-y-3">
         <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-2.5">
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-[11px] font-semibold">読み込み対象</p>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">{extensions.length}種類の拡張子を読み込みます。</p>
+              <p className="mt-0.5 text-[9px] text-muted-foreground">{extensions.length}種類</p>
             </div>
             <button type="button" className="ui-mini-button" onClick={() => setEditingExtensions((value) => !value)} aria-expanded={editingExtensions}>
               {editingExtensions ? "閉じる" : "編集"}
@@ -511,10 +510,7 @@ export function SettingsPanel() {
         </section>
 
         <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-2">
-          <div>
-            <p className="text-[11px] font-semibold">同名ファイル</p>
-            <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">移動・コピー時に同じ名前が存在した場合の動作です。</p>
-          </div>
+          <p className="text-[11px] font-semibold">同名ファイル</p>
           <select
             className="ui-input w-full"
             value={conflictPolicy}
