@@ -9,7 +9,10 @@ export type AssetDTO = cmds.AssetDTO & { semanticScore?: number };
 export type FolderDTO = cmds.FolderDTO;
 export type TagDTO = cmds.TagDTO;
 export type AssetListRequest = cmds.AssetListRequest;
-export type AssetListResponse = cmds.AssetListResponse;
+export interface AssetListResponse {
+  assets: AssetDTO[];
+  totalCount: number;
+}
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
 export type MoveRequest = cmds.MoveRequest;
