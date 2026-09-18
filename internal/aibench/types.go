@@ -81,14 +81,15 @@ type FixturePackManifest struct {
 }
 
 type ModelProfile struct {
-	ID             string            `json:"id"`
-	Version        string            `json:"version"`
-	Engine         string            `json:"engine"`
-	Quantization   string            `json:"quantization,omitempty"`
-	ArtifactSHA256 string            `json:"artifactSha256,omitempty"`
-	ModelSizeBytes int64             `json:"modelSizeBytes,omitempty"`
-	Runtime        string            `json:"runtime,omitempty"`
-	Parameters     map[string]string `json:"parameters,omitempty"`
+	ID                  string            `json:"id"`
+	Version             string            `json:"version"`
+	Engine              string            `json:"engine"`
+	Quantization        string            `json:"quantization,omitempty"`
+	ArtifactSHA256      string            `json:"artifactSha256,omitempty"`
+	ModelSizeBytes      int64             `json:"modelSizeBytes,omitempty"`
+	Runtime             string            `json:"runtime,omitempty"`
+	BenchmarkCategories []Category        `json:"benchmarkCategories,omitempty"`
+	Parameters          map[string]string `json:"parameters,omitempty"`
 }
 
 type Environment struct {
