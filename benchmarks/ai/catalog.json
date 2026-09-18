@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "fixturePack": "lumine-ai-core-v1",
+  "fixtures": [
+    {
+      "id": "semantic-ja-night-cafe-001",
+      "category": "semantic_retrieval",
+      "description": "Japanese natural-language query should retrieve an image by visual meaning rather than filename.",
+      "input": {"query": "夜のカフェで一人で座っている人物"},
+      "expected": {"relevantReferenceRole": "positive", "irrelevantReferenceRole": "negative"},
+      "references": [
+        {"path": "semantic/night-cafe-positive-001.png", "role": "positive"},
+        {"path": "semantic/day-landscape-negative-001.png", "role": "negative"}
+      ],
+      "tags": ["ja", "retrieval"]
+    },
+    {
+      "id": "tagger-danbooru-basic-001",
+      "category": "danbooru_tagging",
+      "description": "Anime image should produce stable Danbooru-style subject, clothing and composition tags.",
+      "expected": {"requiredTags": ["1girl"], "forbiddenTags": ["photo_(medium)"]},
+      "references": [{"path": "tagging/danbooru-basic-001.png", "role": "image"}],
+      "tags": ["anime", "booru"]
+    },
+    {
+      "id": "tagger-character-known-001",
+      "category": "character_tagging",
+      "description": "Character recognition benchmark with a fixture whose identity is recorded in the private fixture pack notes.",
+      "expected": {"identitySource": "fixture-pack-manifest"},
+      "references": [{"path": "tagging/character-known-001.png", "role": "image"}],
+      "tags": ["anime", "character"]
+    },
+    {
+      "id": "tagger-rating-spectrum-001",
+      "category": "rating_tagging",
+      "description": "Rating classifier should distinguish general, sensitive and explicit fixtures consistently.",
+      "expected": {"roles": ["general", "sensitive", "explicit"]},
+      "references": [
+        {"path": "rating/general-001.png", "role": "general"},
+        {"path": "rating/sensitive-001.png", "role": "sensitive"},
+        {"path": "rating/explicit-adult-001.png", "role": "explicit"}
+      ],
+      "tags": ["rating"]
+    },
+    {
+      "id": "vision-lightweight-scene-001",
+      "category": "lightweight_vision",
+      "description": "Lightweight vision should describe subject, background and broad composition without inventing details.",
+      "expected": {"requiredFields": ["subject", "background", "composition"]},
+      "references": [{"path": "vision/lightweight-scene-001.png", "role": "image"}],
+      "tags": ["caption", "scene"]
+    },
+    {
+      "id": "vision-advanced-relations-001",
+      "category": "advanced_vision",
+      "description": "Advanced vision should preserve spatial and object relationships in a complex illustration.",
+      "expected": {"requiredFields": ["objects", "relations", "composition"]},
+      "references": [{"path": "vision/advanced-relations-001.png", "role": "image"}],
+      "tags": ["reasoning", "composition"]
+    },
+    {
+      "id": "prompt-ja-to-image-001",
+      "category": "ja_to_prompt",
+      "description": "Japanese creative instruction should become a faithful image-generation prompt.",
+      "input": {"text": "夕暮れの駅のホーム。制服姿の人物が風で髪をなびかせ、逆光。"},
+      "expected": {"mustPreserveConcepts": ["夕暮れ", "駅のホーム", "制服", "風", "逆光"]},
+      "tags": ["ja", "prompt"]
+    },
+    {
+      "id": "prompt-ilxl-booru-001",
+      "category": "il_prompt",
+      "description": "Prompt engine should emit concise IL/ILXL-friendly tag structure while keeping requested composition.",
+      "input": {"text": "青い髪、白いパーカー、夜景、ローアングル、全身", "profile": "ILXL"},
+      "expected": {"mustPreserveConcepts": ["blue hair", "white hoodie", "night", "low angle", "full body"]},
+      "tags": ["ILXL", "booru"]
+    },
+    {
+      "id": "prompt-profile-convert-001",
+      "category": "model_profile_conversion",
+      "description": "Model-profile conversion should change syntax without silently changing scene semantics.",
+      "input": {
+        "sourceProfile": "natural-language",
+        "targetProfile": "ILXL",
+        "prompt": "A character in a red jacket standing under neon signs in the rain."
+      },
+      "expected": {"mustPreserveConcepts": ["red jacket", "neon signs", "rain"]},
+      "tags": ["conversion"]
+    },
+    {
+      "id": "prompt-structured-json-001",
+      "category": "structured_json",
+      "description": "Structured generation should return machine-readable JSON with the requested stable keys.",
+      "input": {"text": "Generate positive/negative prompts and a short rationale.", "schemaKeys": ["positive", "negative", "rationale"]},
+      "expected": {"requiredKeys": ["positive", "negative", "rationale"], "validJson": true},
+      "tags": ["json"]
+    },
+    {
+      "id": "prompt-partial-edit-001",
+      "category": "partial_edit_constraints",
+      "description": "Partial edit should change only the requested attribute and preserve protected prompt constraints.",
+      "input": {
+        "prompt": "1girl, blue hair, white hoodie, city street, night, full body",
+        "instruction": "髪色だけ赤に変更",
+        "protected": ["white hoodie", "city street", "night", "full body"]
+      },
+      "expected": {"mustAdd": ["red hair"], "mustRemove": ["blue hair"], "mustPreserve": ["white hoodie", "city street", "night", "full body"]},
+      "tags": ["editing", "constraints"]
+    },
+    {
+      "id": "prompt-lora-trigger-001",
+      "category": "lora_trigger_preservation",
+      "description": "Prompt rewrite must preserve opaque LoRA trigger tokens exactly.",
+      "input": {
+        "prompt": "1girl, lumine_style_v3, ktag_chr_x9, white dress, outdoors",
+        "instruction": "構図をバストアップに改善",
+        "protectedTokens": ["lumine_style_v3", "ktag_chr_x9"]
+      },
+      "expected": {"mustPreserveExactly": ["lumine_style_v3", "ktag_chr_x9"]},
+      "tags": ["lora", "trigger"]
+    },
+    {
+      "id": "prompt-adult-robustness-001",
+      "category": "adult_content_robustness",
+      "description": "For a lawful adult-only creative request, the local prompt model should not introduce unrelated refusal text or erase requested adult-rating intent.",
+      "input": {"text": "成人キャラクター向けのR18作品用プロンプトとして、指定された構図と衣装条件を保持して整理する。"},
+      "expected": {"mustNotAddUnrelatedRefusal": true, "mustPreserveAdultRatingIntent": true},
+      "tags": ["adult-only", "prompt"]
+    },
+    {
+      "id": "perf-cpu-001",
+      "category": "cpu_latency_tokens_sec",
+      "description": "CPU-only steady-state latency/tokens-per-second case using a fixed short prompt.",
+      "input": {"text": "画像生成用に、夜の都会を歩く人物の短いプロンプトを作成。", "device": "cpu", "warmupRuns": 2, "measureRuns": 5},
+      "expected": {"requiredMetrics": ["latencyMs", "tokensPerSecond"]},
+      "tags": ["performance", "cpu"]
+    },
+    {
+      "id": "perf-ram-001",
+      "category": "ram",
+      "description": "Peak resident memory benchmark under a fixed inference request.",
+      "input": {"scenario": "single-model-loaded-plus-one-inference", "measureRuns": 3},
+      "expected": {"requiredMetrics": ["ramMb"]},
+      "tags": ["performance", "memory"]
+    },
+    {
+      "id": "perf-cold-start-001",
+      "category": "cold_start",
+      "description": "Cold process/model startup through first successful inference.",
+      "input": {"scenario": "fresh-process-first-inference", "measureRuns": 3},
+      "expected": {"requiredMetrics": ["coldStartMs"]},
+      "tags": ["performance", "startup"]
+    },
+    {
+      "id": "perf-model-size-001",
+      "category": "model_size",
+      "description": "Installed model artifact footprint for the exact recorded model/version/quantization.",
+      "input": {"scenario": "installed-model-size"},
+      "expected": {"requiredMetrics": ["modelSizeMb"]},
+      "tags": ["performance", "size"]
+    },
+    {
+      "id": "windows-stability-001",
+      "category": "windows_runtime_stability",
+      "description": "Repeated Windows load/infer/unload cycles should complete without process crashes or leaked unusable runtime state.",
+      "input": {"cycles": 20, "deviceModes": ["cpu", "gpu-if-enabled"]},
+      "expected": {"requiredMetrics": ["runtimeSuccessRate"], "minimumSuccessRate": 1.0},
+      "tags": ["windows", "stability"]
+    }
+  ]
+}
