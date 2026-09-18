@@ -473,18 +473,26 @@ def _run_performance_case(
         }
 
     if category == "cold_start":
-        started = time.perf_counter()
-        session = _new_session(config)
-        try:
-            probabilities, _ = _infer(session, image_path, config)
-            _classify(probabilities, tags, config)
-        finally:
-            del session
-        cold_ms = (time.perf_counter() - started) * 1000.0
+        measure_runs = max(1, int((fixture.get("input") or {}).get("measureRuns") or 3))
+        samples: list[float] = []
+        for _ in range(measure_runs):
+            started = time.perf_counter()
+            session = _new_session(config)
+            try:
+                probabilities, _ = _infer(session, image_path, config)
+                _classify(probabilities, tags, config)
+            finally:
+                del session
+            samples.append((time.perf_counter() - started) * 1000.0)
+        cold_ms = sum(samples) / len(samples)
         return {
             "status": "ok",
             "score": 1.0,
             "metrics": {"coldStartMs": cold_ms},
+            "output": {
+                "measureRuns": measure_runs,
+                "coldStartSamplesMs": [round(value, 4) for value in samples],
+            },
         }
 
     if category == "windows_runtime_stability":
@@ -518,16 +526,27 @@ def _run_performance_case(
         _classify(probabilities, tags, config)
 
         if category == "ram":
-            before = _measure_rss_mb(process)
-            probabilities, latency_ms = _infer(session, image_path, config)
-            _classify(probabilities, tags, config)
-            after = _measure_rss_mb(process)
+            measure_runs = max(1, int((fixture.get("input") or {}).get("measureRuns") or 3))
+            samples = [_measure_rss_mb(process)]
+            latencies: list[float] = []
+            for _ in range(measure_runs):
+                probabilities, latency_ms = _infer(session, image_path, config)
+                _classify(probabilities, tags, config)
+                latencies.append(latency_ms)
+                samples.append(_measure_rss_mb(process))
+            peak_rss = max(samples)
             return {
                 "status": "ok",
                 "score": 1.0,
-                "metrics": {"ramMb": max(before, after), "latencyMs": latency_ms},
-                "output": {"rssBeforeMb": before, "rssAfterMb": after},
-                "notes": "RAM is process RSS after model load and inference; OS/runtime allocator behavior may retain memory.",
+                "metrics": {
+                    "ramMb": peak_rss,
+                    "latencyMs": sum(latencies) / len(latencies),
+                },
+                "output": {
+                    "measureRuns": measure_runs,
+                    "rssSamplesMb": [round(value, 4) for value in samples],
+                },
+                "notes": "RAM is peak process RSS after model load and repeated inference; OS/runtime allocator behavior may retain memory.",
             }
 
         if category == "cpu_latency_tokens_sec":
