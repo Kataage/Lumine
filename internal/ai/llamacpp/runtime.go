@@ -128,12 +128,7 @@ func (s *RuntimeStore) Install(
 	if err != nil {
 		return InstalledRuntime{}, fmt.Errorf("create runtime staging: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(staging)
-		}
-	}()
+	defer os.RemoveAll(staging)
 
 	archivePath := filepath.Join(staging, "runtime.zip")
 	if err := s.downloadArchive(ctx, manifest, archivePath, progress); err != nil {
@@ -197,18 +192,19 @@ func (s *RuntimeStore) Install(
 		}
 		return InstalledRuntime{}, fmt.Errorf("commit runtime installation: %w", err)
 	}
-	if hadPrevious {
-		_ = os.RemoveAll(backup)
-	}
-	committed = true
 
 	result, err := s.Verify(manifest)
 	if err != nil {
 		_ = os.RemoveAll(target)
 		if hadPrevious {
-			_ = os.Rename(backup, target)
+			if restoreErr := os.Rename(backup, target); restoreErr != nil {
+				return InstalledRuntime{}, fmt.Errorf("verify installed runtime: %w (restore previous runtime: %v)", err, restoreErr)
+			}
 		}
 		return InstalledRuntime{}, fmt.Errorf("verify installed runtime: %w", err)
+	}
+	if hadPrevious {
+		_ = os.RemoveAll(backup)
 	}
 	if progress != nil {
 		progress(RuntimeDownloadProgress{
