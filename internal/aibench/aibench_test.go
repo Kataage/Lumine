@@ -237,6 +237,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		t.Fatalf("repository catalog: %v", err)
 	}
 
+	var lightweightCatalog Catalog
+	readJSONForTest(t, filepath.Join(root, "catalogs", "lightweight-vision-v1.json"), &lightweightCatalog)
+	if err := ValidateCatalog(lightweightCatalog); err != nil {
+		t.Fatalf("repository lightweight vision catalog: %v", err)
+	}
+
 	var thresholds Thresholds
 	readJSONForTest(t, filepath.Join(root, "thresholds.json"), &thresholds)
 	if err := ValidateThresholds(thresholds); err != nil {
@@ -253,6 +259,8 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"example.json",
 		"wd-vit-tagger-v3.json",
 		"pixai-tagger-v0.9.json",
+		"florence-2-base.json",
+		"smolvlm-500m-q8.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)
