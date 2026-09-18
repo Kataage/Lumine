@@ -112,11 +112,31 @@ func TestManagerFullLifecycleAndSettingsGate(t *testing.T) {
 		t.Fatal("loaded model must not be removable")
 	}
 
+	if err := manager.Unload(context.Background(), domain.AICapabilitySemanticSearch); err != nil {
+		t.Fatalf("Unload: %v", err)
+	}
+	if !lastEngine.unloaded {
+		t.Fatal("explicit unload must tear down the active runtime")
+	}
+
+	// Reload once more so the settings transition itself is also proven to
+	// unload an active runtime.
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{},
+	); err != nil {
+		t.Fatalf("reload before settings change: %v", err)
+	}
+	reloadedEngine := lastEngine
+
 	settings.Enabled = false
 	if err := manager.ApplySettings(context.Background(), settings); err != nil {
 		t.Fatalf("ApplySettings: %v", err)
 	}
-	if !lastEngine.unloaded {
+	if !reloadedEngine.unloaded {
 		t.Fatal("disabling AI must unload the active runtime")
 	}
 	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateDisabled {
