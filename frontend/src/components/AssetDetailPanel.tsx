@@ -259,7 +259,6 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
               <p className="text-xs font-semibold">画像の詳細</p>
               {detailFetching && <span className="w-3 h-3 border-2 border-muted-foreground/25 border-t-primary rounded-full animate-spin" title="詳細情報を読み込み中" />}
             </div>
-            <p className="text-[11px] text-muted-foreground truncate">必要な作業だけ切り替えて編集できます</p>
           </div>
           <button className="ui-icon-button text-lg" onClick={onClose} aria-label="詳細パネルを閉じる">×</button>
         </div>
@@ -319,7 +318,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
           {activeView === "organize" && (
             <div className="p-3 space-y-3">
-              <Section title="整理ステータス" description="日常的に触る項目をここにまとめています。">
+              <Section title="整理ステータス">
                 <div className="space-y-3">
                   <div>
                     <p className="ui-label mb-1.5">評価</p>
@@ -342,7 +341,6 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border bg-background/35 px-2.5 py-2">
                     <div>
                       <p className="text-[11px] font-medium">お気に入り</p>
-                      <p className="text-[10px] text-muted-foreground">よく使う画像をすぐ見つけるための目印</p>
                     </div>
                     <button className={`ui-secondary-button ${asset.isFavorite ? "text-yellow-400 border-yellow-400/30" : ""}`} onClick={() => void updateFavorite(!asset.isFavorite)}>★ {asset.isFavorite ? "登録済み" : "登録"}</button>
                   </div>
@@ -356,27 +354,27 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
                 </div>
               </Section>
 
-              <Section title="タグ" description="既存タグの付与と新規作成を同じ場所で行えます。">
+              <Section title="タグ">
                 <TagPicker assetId={asset.id} tags={tags} assignedTags={asset.tags ?? []} onAssignedTagsChange={(nextTags) => setAsset((current) => ({ ...current, tags: nextTags } as AssetDTO))} onChanged={refreshAll} />
               </Section>
 
-              <Section title="メモ" description="画像固有の判断や修正予定などを残せます。">
+              <Section title="メモ">
                 <textarea value={note} onChange={(event) => { setNote(event.target.value); setNoteDirty(true); }} onBlur={() => void saveNote()} placeholder="この画像についてメモを残す…" className="ui-input w-full min-h-28 resize-y leading-relaxed" />
-                <div className="mt-1.5 min-h-5 flex justify-end">{noteDirty ? <button className="ui-primary-button" onClick={() => void saveNote()}>保存</button> : <span className="text-[11px] text-muted-foreground">変更は自動保存されます</span>}</div>
+                {noteDirty && <div className="mt-1.5 flex justify-end"><button className="ui-primary-button" onClick={() => void saveNote()}>保存</button></div>}
               </Section>
             </div>
           )}
 
           {activeView === "creative" && (
             <div className="p-3 space-y-3">
-              <PanelIntro title="制作コンテキスト" description="作品・生成グループ・派生関係など、画像が制作工程のどこにいるかを整理します。" />
+              <PanelIntro title="制作コンテキスト" />
               <CreativeContextPanel assetId={assetId} />
             </div>
           )}
 
           {activeView === "publication" && (
             <div className="p-3 space-y-3">
-              <PanelIntro title="公開履歴" description="この画像をどこへ、どの内容で公開したかを記録します。" />
+              <PanelIntro title="公開履歴" />
               <button className="ui-primary-button w-full justify-center" onClick={() => setShowPostRecord(true)} disabled={asset.id <= 0}>＋ この画像の公開記録を追加</button>
               <div className="space-y-2">
                 {postRecords.map((record) => {
@@ -407,7 +405,7 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
           {activeView === "info" && (
             <div className="p-3 space-y-3">
-              <Section title="ファイル情報" description="画像そのものの情報です。">
+              <Section title="ファイル情報">
                 <div className="grid grid-cols-2 gap-2">
                   <Info label="ファイルサイズ" value={formatFileSize(asset.fileSize)} />
                   <Info label="形式" value={extensionLabel} />
@@ -418,15 +416,14 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
               </Section>
 
               {(asset.cameraModel || asset.lensModel || asset.focalLength || asset.aperture || asset.shutterSpeed || asset.iso || asset.exifDate) && (
-                <Section title="撮影情報 (EXIF)" description="画像ファイルから読み取った撮影情報です。">
+                <Section title="撮影情報 (EXIF)">
                   <div className="space-y-1.5">{asset.cameraModel && <Meta label="カメラ" value={asset.cameraModel} />}{asset.lensModel && <Meta label="レンズ" value={asset.lensModel} />}{asset.focalLength && <Meta label="焦点距離" value={asset.focalLength} />}{asset.aperture && <Meta label="絞り" value={asset.aperture} />}{asset.shutterSpeed && <Meta label="シャッター" value={asset.shutterSpeed} />}{asset.iso ? <Meta label="ISO" value={String(asset.iso)} /> : null}{asset.exifDate && <Meta label="撮影日時" value={asset.exifDate} />}</div>
                 </Section>
               )}
 
               {assetId > 0 && (
-                <Section title="ファイル操作" description="元画像そのものに対する操作です。">
+                <Section title="ファイル操作">
                   <button type="button" disabled={deleting} className="w-full h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-[11px] font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground" onClick={() => void deleteCurrentFile()}>{deleting ? "削除しています…" : "元画像ファイルを削除…"}</button>
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">元画像とLumineの登録情報を削除します。Lumine内の確認ダイアログを表示してから実行します。</p>
                 </Section>
               )}
             </div>
@@ -451,8 +448,8 @@ function Section({ title, description, children }: { title: string; description?
   );
 }
 
-function PanelIntro({ title, description }: { title: string; description: string }) {
-  return <div className="rounded-xl border border-border bg-muted/10 px-3 py-2.5"><p className="text-xs font-semibold">{title}</p><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{description}</p></div>;
+function PanelIntro({ title }: { title: string }) {
+  return <div className="px-0.5"><p className="text-xs font-semibold">{title}</p></div>;
 }
 
 function SummaryChip({ children }: { children: React.ReactNode }) {
