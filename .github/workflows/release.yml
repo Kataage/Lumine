@@ -1,0 +1,136 @@
+name: release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "VERSION must be semantic version like 1.0.0. Got: $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check existing release
+        id: release_check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Stop when version is already released
+        if: steps.release_check.outputs.exists == 'true'
+        shell: pwsh
+        run: Write-Host "${{ steps.version.outputs.tag }} already has a GitHub Release. Nothing to do."
+
+      - uses: actions/setup-node@v4
+        if: steps.release_check.outputs.exists != 'true'
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        if: steps.release_check.outputs.exists != 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        if: steps.release_check.outputs.exists != 'true'
+        working-directory: frontend
+        run: npm run build
+
+      - name: Setup Go
+        if: steps.release_check.outputs.exists != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: go.sum
+
+      - name: Install Wails CLI
+        if: steps.release_check.outputs.exists != 'true'
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+
+      - name: Build Windows app
+        if: steps.release_check.outputs.exists != 'true'
+        run: wails build -platform windows/amd64
+        env:
+          CGO_ENABLED: "0"
+
+      - name: Build Windows portable
+        if: steps.release_check.outputs.exists != 'true'
+        run: wails build -platform windows/amd64 -ldflags "-H windowsgui" -o Lumine-portable.exe
+        env:
+          CGO_ENABLED: "0"
+
+      - name: Prepare release assets
+        if: steps.release_check.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item build/bin/Lumine.exe "release/Lumine-v$env:VERSION-windows-x64.exe"
+          Copy-Item build/bin/Lumine-portable.exe "release/Lumine-v$env:VERSION-windows-x64-portable.exe"
+          Compress-Archive -Path "release/Lumine-v$env:VERSION-windows-x64-portable.exe" -DestinationPath "release/Lumine-v$env:VERSION-windows-x64-portable.zip" -Force
+
+      - name: Ensure release tag points at this master commit
+        if: steps.release_check.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git fetch --tags --force
+          git rev-parse -q --verify "refs/tags/$env:TAG" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = git rev-list -n 1 $env:TAG
+            if ($tagCommit -ne $env:GITHUB_SHA) {
+              throw "Tag $env:TAG already exists at $tagCommit, expected $env:GITHUB_SHA"
+            }
+          } else {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a $env:TAG $env:GITHUB_SHA -m "Lumine $env:TAG"
+            git push origin $env:TAG
+          }
+
+      - name: Create GitHub Release
+        if: steps.release_check.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create $env:TAG release/Lumine-v*-windows-x64.exe release/Lumine-v*-windows-x64-portable.exe release/Lumine-v*-windows-x64-portable.zip --repo $env:GITHUB_REPOSITORY --title "Lumine $env:TAG" --target $env:GITHUB_SHA --generate-notes
+
+      - name: Upload release build artifact
+        if: steps.release_check.outputs.exists != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-v${{ steps.version.outputs.version }}-windows-release
+          path: release/*
+          if-no-files-found: error
