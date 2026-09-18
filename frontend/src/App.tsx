@@ -25,6 +25,7 @@ import { queryClient } from "./queryClient";
 import { computeViewerSelection, isEditableShortcutTarget } from "./utils/viewerInteraction";
 
 type ViewMode = "grid" | "list";
+type SearchMode = "normal" | "semantic";
 type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
 
 interface AppState {
@@ -39,6 +40,9 @@ interface AppState {
   sidebarView: SidebarView;
   sidebarOpen: boolean;
   searchQuery: string;
+  searchMode: SearchMode;
+  similarAssetId: number | null;
+  similarAssetName: string;
   sortBy: string;
   sortDesc: boolean;
   thumbnailSize: number;
@@ -60,6 +64,9 @@ const defaultState: AppState = {
   sidebarView: "libraries",
   sidebarOpen: true,
   searchQuery: "",
+  searchMode: "normal",
+  similarAssetId: null,
+  similarAssetName: "",
   sortBy: "modifiedAtFs",
   sortDesc: true,
   thumbnailSize: 180,
@@ -202,7 +209,7 @@ export default function App() {
       const library = await addLibrary(name, path);
       if (!library) throw new Error("ライブラリの登録に失敗しました");
       const libraries = await listLibraries();
-      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "", filterTagIds: [] }));
+      setState((current) => ({ ...current, libraries, selectedLibraryId: library.id, selectedFolderPath: "", searchQuery: "", searchMode: "normal", similarAssetId: null, similarAssetName: "", filterTagIds: [] }));
       await scanLibrary(library.id);
       const refreshedLibraries = await listLibraries();
       setState((current) => ({ ...current, libraries: refreshedLibraries }));
