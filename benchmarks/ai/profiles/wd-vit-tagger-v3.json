@@ -1,0 +1,32 @@
+{
+  "id": "SmilingWolf/wd-vit-tagger-v3",
+  "version": "790b0e92cefd2a0221451604e7831fe643ab7c4f",
+  "engine": "python-onnxruntime-cpu",
+  "quantization": "FP32",
+  "artifactSha256": "35f23693620b668f4d53fd3c62bf65e40af739bc52c7eb0fbc49258b58d065b6",
+  "modelSizeBytes": 378536310,
+  "runtime": "onnxruntime-cpu",
+  "benchmarkCategories": [
+    "danbooru_tagging",
+    "character_tagging",
+    "rating_tagging",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "family": "wd-v3",
+    "repoId": "SmilingWolf/wd-vit-tagger-v3",
+    "modelFile": "model.onnx",
+    "tagsFile": "selected_tags.csv",
+    "generalThreshold": "0.35",
+    "characterThreshold": "0.85",
+    "threads": "8",
+    "interOpThreads": "1",
+    "providers": "CPUExecutionProvider",
+    "imageSize": "448",
+    "ratingSupported": "true"
+  }
+}

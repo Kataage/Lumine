@@ -1,0 +1,32 @@
+{
+  "id": "deepghs/pixai-tagger-v0.9-onnx",
+  "version": "d8cf666911a2c3d10d586d7823259192313c7eb7",
+  "engine": "python-onnxruntime-cpu",
+  "quantization": "FP32",
+  "artifactSha256": "a8d479098b5e23f253543c93df42391736abbb77c21c2efd3a513b9cda7b3657",
+  "modelSizeBytes": 1271365854,
+  "runtime": "onnxruntime-cpu",
+  "benchmarkCategories": [
+    "danbooru_tagging",
+    "character_tagging",
+    "rating_tagging",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "family": "pixai-v0.9",
+    "repoId": "deepghs/pixai-tagger-v0.9-onnx",
+    "modelFile": "model.onnx",
+    "tagsFile": "tags.csv",
+    "generalThreshold": "0.30",
+    "characterThreshold": "0.85",
+    "threads": "8",
+    "interOpThreads": "1",
+    "providers": "CPUExecutionProvider",
+    "imageSize": "448",
+    "ratingSupported": "false"
+  }
+}

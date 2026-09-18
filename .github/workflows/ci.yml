@@ -63,3 +63,6 @@ jobs:
 
       - name: Go test
         run: go test -v -race ./...
+
+      - name: Validate AI benchmark Python tooling
+        run: python3 -m py_compile benchmarks/ai/adapters/tagger_onnx.py benchmarks/ai/adapters/tagger_report.py

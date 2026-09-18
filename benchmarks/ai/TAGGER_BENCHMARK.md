@@ -1,0 +1,184 @@
+# Tagger benchmark: wd-vit-tagger-v3 vs PixAI Tagger v0.9
+
+Issue: #165
+
+This benchmark chooses Lumine's default Anime/Danbooru tagger from controlled measurements, not model-card impressions. Both candidates must use the same `lumine-ai-core-v2` private fixture pack and the same Windows CPU hardware ID.
+
+## Pinned candidates
+
+### wd-vit-tagger-v3
+
+Profile: `profiles/wd-vit-tagger-v3.json`
+
+- repository: `SmilingWolf/wd-vit-tagger-v3`
+- pinned revision: `790b0e92cefd2a0221451604e7831fe643ab7c4f`
+- ONNX SHA-256: `35f23693620b668f4d53fd3c62bf65e40af739bc52c7eb0fbc49258b58d065b6`
+- model bytes: `378536310`
+- general threshold: `0.35`
+- character threshold: `0.85`
+- direct rating output: yes
+
+The adapter follows the WD v3 inference convention: alpha on white, square white padding, bicubic resize to 448, BGR NHWC float32, and direct model probabilities.
+
+### PixAI Tagger v0.9
+
+Profile: `profiles/pixai-tagger-v0.9.json`
+
+- repository: `deepghs/pixai-tagger-v0.9-onnx`
+- pinned revision: `d8cf666911a2c3d10d586d7823259192313c7eb7`
+- ONNX SHA-256: `a8d479098b5e23f253543c93df42391736abbb77c21c2efd3a513b9cda7b3657`
+- model bytes: `1271365854`
+- general threshold: `0.30`
+- character threshold: `0.85`
+- direct rating output: no
+
+The adapter follows the public PixAI ONNX convention: RGB bicubic resize to 448, scale to `[-1,1]`, CHW float32, then sigmoid over model logits.
+
+A missing rating head is recorded as an explicit skipped `rating_tagging` case. It must not be silently treated as equivalent to a model that produces general/sensitive/questionable/explicit ratings.
+
+## Private fixture pack
+
+The repository defines paths and scoring rules but deliberately does not contain private/copyrighted/adult-only benchmark images. Create the files below under a local fixture directory:
+
+```text
+<fixture-dir>/
+  tagging/
+    danbooru-basic-001.png
+    danbooru-basic-001.json
+    danbooru-finegrained-001.png
+    danbooru-finegrained-001.json
+    character-known-001.png
+    character-known-001.json
+    character-recent-001.png
+    character-recent-001.json
+    adult-explicit-001.png
+    adult-explicit-001.json
+  rating/
+    general-001.png
+    sensitive-001.png
+    explicit-adult-001.png
+  ...other lumine-ai-core-v2 fixtures...
+```
+
+Each tagger ground-truth JSON uses this schema:
+
+```json
+{
+  "requiredTags": ["1girl", "solo", "white_shirt"],
+  "forbiddenTags": ["photo_(medium)"],
+  "referenceTags": ["1girl", "solo", "white_shirt", "upper_body"],
+  "expectedCharacter": "canonical_character_tag"
+}
+```
+
+Use only the fields relevant to that fixture. `requiredTags` and `forbiddenTags` determine the normalized benchmark score according to the v1 rubric. When `referenceTags` is provided, the adapter additionally records precision, recall, and F1 in `output.referenceMetrics`. Character fixtures use `expectedCharacter` for exact top-1 scoring.
+
+For the recent-character fixture, choose a character intentionally newer than the older candidate's training snapshot when possible and record the canonical tag in the sidecar. Do not rename the fixture or alter its ground truth after producing evidence; create a new fixture-pack generation instead.
+
+The adult-only fixture must contain only clearly adult subjects and lawful content. It is private because redistribution rights and content sensitivity can differ from the public repository.
+
+After curating the pack:
+
+```powershell
+go run ./cmd/ai-bench hash-fixtures `
+  -catalog benchmarks/ai/catalog.json `
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2
+```
+
+Then verify it:
+
+```powershell
+go run ./cmd/ai-bench validate-catalog `
+  -catalog benchmarks/ai/catalog.json `
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2
+```
+
+## Benchmark environment
+
+Use the same machine, power plan, CPU thread count, OS session and fixture pack for both candidates.
+
+The checked-in profiles pin:
+
+- CPU Execution Provider only;
+- 8 intra-op threads;
+- 1 inter-op thread;
+- exact candidate revision, artifact hash, thresholds and preprocessing family.
+
+If the benchmark machine needs a different thread count, create two new profiles with the same changed value. Never modify only one candidate.
+
+Install the research adapter environment:
+
+```powershell
+py -3 -m venv .venv-tagger-bench
+.\.venv-tagger-bench\Scripts\python -m pip install -r benchmarks\ai\adapters\requirements-tagger.txt
+```
+
+## Run both candidates
+
+The adapter is Python research tooling only. It is not the Lumine product runtime used by #166.
+
+WD:
+
+```powershell
+go run ./cmd/ai-bench run `
+  -catalog benchmarks/ai/catalog.json `
+  -profile benchmarks/ai/profiles/wd-vit-tagger-v3.json `
+  -adapter .\.venv-tagger-bench\Scripts\python.exe `
+  -adapter-arg benchmarks\ai\adapters\tagger_onnx.py `
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2 `
+  -hardware-id "<same-controlled-machine-id>" `
+  -cpu "<exact CPU and thread configuration>" `
+  -lumine-version "<git commit>" `
+  -out benchmarks\ai\results\local\wd-vit-tagger-v3.json
+```
+
+PixAI:
+
+```powershell
+go run ./cmd/ai-bench run `
+  -catalog benchmarks/ai/catalog.json `
+  -profile benchmarks/ai/profiles/pixai-tagger-v0.9.json `
+  -adapter .\.venv-tagger-bench\Scripts\python.exe `
+  -adapter-arg benchmarks\ai\adapters\tagger_onnx.py `
+  -fixtures-dir D:\LumineBench\lumine-ai-core-v2 `
+  -hardware-id "<same-controlled-machine-id>" `
+  -cpu "<exact CPU and thread configuration>" `
+  -lumine-version "<git commit>" `
+  -out benchmarks\ai\results\local\pixai-tagger-v0.9.json
+```
+
+The first run may download the pinned Hugging Face artifacts. Download time is outside the adapter's reported inference metrics. The adapter verifies the model byte size and SHA-256; a small hash stamp in the local Hugging Face cache avoids re-hashing gigabyte-scale files on every case.
+
+## Measurements
+
+The result files contain:
+
+- Danbooru constraint score;
+- optional complete-label precision / recall / F1;
+- known-character top-1 exact match;
+- recent-character top-1 exact match;
+- rating accuracy, or an explicit unsupported/skipped result;
+- adult-only fine-grained tag constraint score and F1 when fully labelled;
+- per-case inference latency;
+- CPU steady-state latency and images/sec;
+- process RSS after load/inference;
+- cold model/session start through first inference;
+- exact model artifact size;
+- 20-cycle Windows load/infer/unload success rate.
+
+For taggers, `tokensPerSecond` is intentionally not fabricated. `cpu_latency_tokens_sec` records `latencyMs` and `output.imagesPerSecond` instead.
+
+## Result table and adoption
+
+Generate the side-by-side Markdown table:
+
+```powershell
+py -3 benchmarks\ai\adapters\tagger_report.py `
+  benchmarks\ai\results\local\wd-vit-tagger-v3.json `
+  benchmarks\ai\results\local\pixai-tagger-v0.9.json `
+  > benchmarks\ai\results\local\tagger-comparison.md
+```
+
+Do not change `adoptions.json` from `candidate` to `adopted` until both result files validate against the same catalog pack/evaluator/hardware ID and the table has been reviewed.
+
+The adoption decision should explicitly weigh tag quality, recent-character coverage, rating support, adult-only usefulness, CPU latency, RAM, model size, Windows stability, integration complexity, and redistribution/license constraints. There is no single hidden weighted score in the harness.
