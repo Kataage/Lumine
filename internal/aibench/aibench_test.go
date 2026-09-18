@@ -227,6 +227,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 	if err := ValidateAdoptionLedger(ledger); err != nil {
 		t.Fatalf("repository adoption ledger: %v", err)
 	}
+
+	var profile ModelProfile
+	readJSONForTest(t, filepath.Join(root, "profiles", "example.json"), &profile)
+	if err := ValidateModelProfile(profile); err != nil {
+		t.Fatalf("repository example profile: %v", err)
+	}
 }
 
 func readJSONForTest(t *testing.T, path string, target any) {
