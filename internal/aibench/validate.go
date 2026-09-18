@@ -1,10 +1,14 @@
 package aibench
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,7 +51,9 @@ func ValidateCatalog(catalog Catalog) error {
 			if strings.TrimSpace(ref.Path) == "" {
 				return fmt.Errorf("fixture %q contains an empty reference path", fixture.ID)
 			}
-			if strings.Contains(ref.Path, "..") {
+			clean := filepath.Clean(filepath.FromSlash(ref.Path))
+			if filepath.IsAbs(clean) || clean == "." || clean == ".." ||
+				strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("fixture %q contains unsafe reference path %q", fixture.ID, ref.Path)
 			}
 		}
@@ -224,21 +230,90 @@ func VerifyFixturePack(catalog Catalog, fixtureDir string) error {
 	if fixtureDir == "" {
 		return errors.New("fixture directory is required")
 	}
+
+	manifestPath := filepath.Join(fixtureDir, "manifest.json")
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read fixture pack manifest: %w", err)
+	}
+	var manifest FixturePackManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return fmt.Errorf("decode fixture pack manifest: %w", err)
+	}
+	if manifest.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported fixture pack schemaVersion %d", manifest.SchemaVersion)
+	}
+	if manifest.PackID != catalog.FixturePack {
+		return fmt.Errorf("fixture pack id %q does not match catalog %q", manifest.PackID, catalog.FixturePack)
+	}
+
+	files := make(map[string]FixturePackFile, len(manifest.Files))
+	for _, file := range manifest.Files {
+		clean := filepath.Clean(filepath.FromSlash(file.Path))
+		if filepath.IsAbs(clean) || clean == "." || clean == ".." ||
+			strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("fixture pack contains unsafe path %q", file.Path)
+		}
+		if len(file.SHA256) != 64 {
+			return fmt.Errorf("fixture pack file %q has invalid sha256 length", file.Path)
+		}
+		if _, err := hex.DecodeString(file.SHA256); err != nil {
+			return fmt.Errorf("fixture pack file %q has invalid sha256: %w", file.Path, err)
+		}
+		if file.SizeBytes < 0 {
+			return fmt.Errorf("fixture pack file %q has negative size", file.Path)
+		}
+		if _, exists := files[file.Path]; exists {
+			return fmt.Errorf("fixture pack contains duplicate path %q", file.Path)
+		}
+		files[file.Path] = file
+	}
+
+	verified := make(map[string]struct{})
 	for _, fixture := range catalog.Fixtures {
 		for _, ref := range fixture.References {
-			path := fixtureDir + string(os.PathSeparator) + filepathFromSlash(ref.Path)
-			info, err := os.Stat(path)
-			if err != nil {
-				return fmt.Errorf("fixture %q reference %q is unavailable: %w", fixture.ID, ref.Path, err)
+			if _, ok := verified[ref.Path]; ok {
+				continue
 			}
-			if info.IsDir() {
-				return fmt.Errorf("fixture %q reference %q is a directory", fixture.ID, ref.Path)
+			expected, ok := files[ref.Path]
+			if !ok {
+				return fmt.Errorf("fixture %q reference %q is missing from pack manifest", fixture.ID, ref.Path)
 			}
+			path := filepath.Join(fixtureDir, filepath.FromSlash(ref.Path))
+			if err := verifyFixtureFile(path, expected); err != nil {
+				return fmt.Errorf("fixture %q reference %q: %w", fixture.ID, ref.Path, err)
+			}
+			verified[ref.Path] = struct{}{}
 		}
 	}
 	return nil
 }
 
-func filepathFromSlash(path string) string {
-	return strings.ReplaceAll(path, "/", string(os.PathSeparator))
+func verifyFixtureFile(path string, expected FixturePackFile) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return errors.New("reference is a directory")
+	}
+	if expected.SizeBytes > 0 && info.Size() != expected.SizeBytes {
+		return fmt.Errorf("size mismatch: got %d want %d", info.Size(), expected.SizeBytes)
+	}
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(hasher.Sum(nil))
+	if !strings.EqualFold(actual, expected.SHA256) {
+		return fmt.Errorf("sha256 mismatch: got %s want %s", actual, expected.SHA256)
+	}
+	return nil
 }
