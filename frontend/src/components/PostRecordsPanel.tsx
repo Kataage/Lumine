@@ -121,7 +121,7 @@ export function PostRecordsPanel() {
 
       <div className="space-y-2">
         {recordsLoading && <p className="py-3 text-center text-[11px] text-muted-foreground">読み込み中…</p>}
-        {!recordsLoading && records.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center"><p className="text-xs font-medium">公開履歴はありません</p><p className="mt-1 text-[10px] text-muted-foreground">画像を選択して、実際に投稿した内容を記録できます。</p></div>}
+        {!recordsLoading && records.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center"><p className="text-[11px] text-muted-foreground">公開履歴はありません</p></div>}
         {records.map((record) => {
           const metadata = parseMetadata(record);
           const tags = splitTags(record.hashtags);
@@ -145,7 +145,7 @@ export function PostRecordsPanel() {
         {settingsLoading && <p className="text-[11px] text-muted-foreground">読み込み中…</p>}
         {settingsError && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">{settingsError}</div>}
         <section className="space-y-2">
-          <div><p className="ui-label">投稿先</p><p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">PixivやXなど、公開先サービスを登録します。</p></div>
+          <p className="ui-label">投稿先</p>
           <form onSubmit={addTarget} className="space-y-2">
             <input aria-label="投稿先名" className="ui-input w-full" value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="投稿先名（例: Pixiv）" />
             <div className="flex gap-2">
@@ -156,7 +156,7 @@ export function PostRecordsPanel() {
           <div className="space-y-1">{targets.map((target) => <div key={target.id} className="min-h-8 px-2 rounded-lg bg-background/50 flex items-center gap-2 text-[11px]"><span className="min-w-0 flex-1 truncate">{target.name} <span className="text-muted-foreground">· {postKindLabel[target.kind] ?? target.kind}</span></span><button type="button" className="text-[10px] text-muted-foreground hover:text-destructive" onClick={async () => { const approved = await dialog.confirm({ title: "投稿先を削除しますか？", description: `「${target.name}」と、その投稿先に紐づく設定を削除します。`, confirmLabel: "投稿先を削除", tone: "danger" }); if (!approved) return; try { await deletePostTarget(target.id); await reloadSettings(); await queryClient.invalidateQueries({ queryKey: ["postRecords"] }); } catch (cause) { await dialog.notify({ title: "投稿先を削除できませんでした", description: "この投稿先を使用している公開記録が残っている可能性があります。", detail: cause instanceof Error ? cause.message : String(cause), tone: "danger" }); } }}>削除</button></div>)}</div>
         </section>
         <section className="space-y-2 border-t border-border pt-3">
-          <div><p className="ui-label">アカウント</p><p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">投稿先ごとのアカウントを登録します。</p></div>
+          <p className="ui-label">アカウント</p>
           <form onSubmit={addAccount} className="space-y-2">
             <select aria-label="アカウントの投稿先" className="ui-input w-full" value={accountTargetId} onChange={(event) => setAccountTargetId(Number(event.target.value))} disabled={!targets.length}><option value={0}>投稿先を選択</option>{targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select>
             <input aria-label="アカウント表示名" className="ui-input w-full" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="表示名" disabled={!targets.length} />
