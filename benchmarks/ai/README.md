@@ -106,12 +106,12 @@ go run ./cmd/ai-bench run `
   -fixtures-dir D:\LumineBench\lumine-ai-core-v1 `
   -hardware-id "desktop-rtx3060-cpu8t-v1" `
   -cpu "CPU model / thread configuration" `
-  -gpu "NVIDIA RTX 3060" `
+  -gpu "NVIDIA GPU model" `
   -lumine-version "<git commit>" `
   -out benchmarks/ai/results/local/my-model.json
 ```
 
-The hardware ID is deliberately explicit. Performance results from different hardware IDs are rejected by `compare` unless `-allow-hardware-mismatch` is supplied. Use that override only for quality-oriented inspection; do not treat cross-hardware latency/RAM numbers as a controlled regression comparison.
+Every generated result is stamped with evaluatorVersion `lumine-ai-bench-v1`; results from different evaluator generations are rejected as non-comparable. The hardware ID is deliberately explicit. Performance results from different hardware IDs are rejected by `compare` unless `-allow-hardware-mismatch` is supplied. Use that override only for quality-oriented inspection; do not treat cross-hardware latency/RAM numbers as a controlled regression comparison.
 
 Validate a saved result:
 
