@@ -38,8 +38,9 @@ func fullTestResult(catalog Catalog, runID, hardwareID string) BenchmarkResult {
 		})
 	}
 	return BenchmarkResult{
-		SchemaVersion: SchemaVersion,
-		RunID:         runID,
+		SchemaVersion:    SchemaVersion,
+		EvaluatorVersion: EvaluatorVersion,
+		RunID:            runID,
 		CreatedAt:     time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC),
 		CatalogPack:   catalog.FixturePack,
 		Model: ModelProfile{
