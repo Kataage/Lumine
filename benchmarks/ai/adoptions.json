@@ -30,6 +30,30 @@
       "modelId": "Spark-X2.5-4B-Heretic-jp",
       "rationale": "Japanese-focused prompt-engine candidate; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
       "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "tagger",
+      "status": "candidate",
+      "modelId": "SmilingWolf/wd-vit-tagger-v3",
+      "version": "790b0e92cefd2a0221451604e7831fe643ab7c4f",
+      "engine": "python-onnxruntime-cpu",
+      "quantization": "FP32",
+      "artifactSha256": "35f23693620b668f4d53fd3c62bf65e40af739bc52c7eb0fbc49258b58d065b6",
+      "issue": "#165",
+      "rationale": "Pinned benchmark candidate with direct general, character and rating outputs. Adoption is pending controlled lumine-ai-core-v2 evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "tagger",
+      "status": "candidate",
+      "modelId": "deepghs/pixai-tagger-v0.9-onnx",
+      "version": "d8cf666911a2c3d10d586d7823259192313c7eb7",
+      "engine": "python-onnxruntime-cpu",
+      "quantization": "FP32",
+      "artifactSha256": "a8d479098b5e23f253543c93df42391736abbb77c21c2efd3a513b9cda7b3657",
+      "issue": "#165",
+      "rationale": "Pinned newer-character-focused benchmark candidate. The public ONNX export exposes general and character tags but no direct rating category; adoption is pending controlled lumine-ai-core-v2 evidence.",
+      "updatedAt": "2026-09-19"
     }
   ]
 }
