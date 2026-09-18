@@ -68,6 +68,18 @@ type Catalog struct {
 	Fixtures      []Fixture `json:"fixtures"`
 }
 
+type FixturePackFile struct {
+	Path      string `json:"path"`
+	SHA256    string `json:"sha256"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+type FixturePackManifest struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	PackID        string            `json:"packId"`
+	Files         []FixturePackFile `json:"files"`
+}
+
 type ModelProfile struct {
 	ID             string            `json:"id"`
 	Version        string            `json:"version"`
