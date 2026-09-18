@@ -35,6 +35,7 @@ type Scanner struct {
 	jobLogRepo *db.JobLogRepo
 	settingRepo *db.AppSettingRepo
 	folderRepo *db.FolderRepo
+	assetChangeHandler func([]int64)
 	cancelled atomic.Bool
 	scanning atomic.Bool
 	customExts map[string]bool
@@ -56,6 +57,25 @@ func (s *Scanner) SetSettingRepo(repo *db.AppSettingRepo) {
 
 func (s *Scanner) SetFolderRepo(repo *db.FolderRepo) {
 	s.folderRepo = repo
+}
+
+func (s *Scanner) SetAssetChangeHandler(handler func([]int64)) {
+	s.assetChangeHandler = handler
+}
+
+func (s *Scanner) notifyAssetChanges(assets []*domain.Asset) {
+	if s.assetChangeHandler == nil || len(assets) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(assets))
+	for _, asset := range assets {
+		if asset != nil && asset.ID > 0 {
+			ids = append(ids, asset.ID)
+		}
+	}
+	if len(ids) > 0 {
+		s.assetChangeHandler(ids)
+	}
 }
 
 func (s *Scanner) getExtensions() map[string]bool {
@@ -246,6 +266,7 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 			progress.FailedCount += len(newAssets)
 		} else {
 			progress.AddedCount += len(newAssets)
+			s.notifyAssetChanges(newAssets)
 		}
 		newAssets = newAssets[:0]
 	}
@@ -259,6 +280,7 @@ func (s *Scanner) ScanLibrary(library *domain.Library, excludedDirs []string, pr
 			progress.FailedCount += len(updatedAssets)
 		} else {
 			progress.UpdatedCount += len(updatedAssets)
+			s.notifyAssetChanges(updatedAssets)
 		}
 		updatedAssets = updatedAssets[:0]
 	}
