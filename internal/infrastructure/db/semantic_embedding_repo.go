@@ -115,6 +115,42 @@ func (r *SemanticEmbeddingRepo) Get(assetID int64) (*domain.SemanticEmbedding, e
 	return &value, nil
 }
 
+func (r *SemanticEmbeddingRepo) GetReady(assetID int64) (*domain.SemanticEmbedding, error) {
+	var value domain.SemanticEmbedding
+	var blob []byte
+	err := r.db.QueryRow(`
+		SELECT e.asset_id, e.engine, e.model_id, e.model_version, e.dimensions, e.vector
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa
+		  ON aa.asset_id = e.asset_id
+		 AND aa.capability = 'semantic_search'
+		 AND aa.state = 'ready'
+		 AND aa.engine = e.engine
+		 AND aa.model_id = e.model_id
+		 AND aa.model_version = e.model_version
+		WHERE e.asset_id = ?
+	`, assetID).Scan(
+		&value.AssetID,
+		&value.Engine,
+		&value.ModelID,
+		&value.ModelVersion,
+		&value.Dimensions,
+		&blob,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get ready semantic embedding: %w", err)
+	}
+	vector, err := decodeSemanticVector(blob, value.Dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("decode ready semantic embedding: %w", err)
+	}
+	value.Vector = vector
+	return &value, nil
+}
+
 func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQuery) (*SemanticSearchResult, error) {
 	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
 		return nil, errors.New("semantic search provenance is required")
