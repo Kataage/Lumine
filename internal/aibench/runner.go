@@ -62,8 +62,9 @@ func RunAdapter(
 
 	now := time.Now().UTC()
 	result := BenchmarkResult{
-		SchemaVersion: SchemaVersion,
-		RunID:         buildRunID(now, model),
+		SchemaVersion:    SchemaVersion,
+		EvaluatorVersion: EvaluatorVersion,
+		RunID:            buildRunID(now, model),
 		CreatedAt:     now,
 		CatalogPack:   catalog.FixturePack,
 		Model:         model,
