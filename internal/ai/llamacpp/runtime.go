@@ -19,26 +19,7 @@ import (
 
 const runtimeInstallManifestName = "runtime.json"
 
-var safeRuntimeComponentPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+package llamacpp
-
-import (
-	"archive/zip"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-)
-
-)
+var safeRuntimeComponentPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 type RuntimeManifest struct {
 	ID               string `json:"id"`
