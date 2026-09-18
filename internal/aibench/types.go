@@ -131,13 +131,14 @@ type CaseResult struct {
 }
 
 type BenchmarkResult struct {
-	SchemaVersion int          `json:"schemaVersion"`
-	RunID         string       `json:"runId"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	CatalogPack   string       `json:"catalogPack"`
-	Model         ModelProfile `json:"model"`
-	Environment   Environment  `json:"environment"`
-	Cases         []CaseResult `json:"cases"`
+	SchemaVersion    int          `json:"schemaVersion"`
+	EvaluatorVersion string       `json:"evaluatorVersion"`
+	RunID            string       `json:"runId"`
+	CreatedAt        time.Time    `json:"createdAt"`
+	CatalogPack      string       `json:"catalogPack"`
+	Model            ModelProfile `json:"model"`
+	Environment      Environment  `json:"environment"`
+	Cases            []CaseResult `json:"cases"`
 }
 
 type Thresholds struct {
