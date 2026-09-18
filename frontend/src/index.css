@@ -22,7 +22,7 @@
   --ring: 240 4.9% 83.9%;
   --radius: 0.625rem;
 
-  --sidebar-width: 15rem;
+  --sidebar-width: 19.5rem;
   --detail-width: clamp(22rem, 27vw, 26rem);
   --control-height: 2rem;
   --control-radius: 0.5rem;
@@ -143,52 +143,81 @@ textarea:focus-visible {
 
 .app-sidebar {
   width: var(--sidebar-width);
-  min-width: 13.5rem;
-  max-width: 17rem;
+  min-width: 18rem;
+  max-width: 21rem;
 }
 
-/* The previous navigation marker was only an empty bordered dot. Use crisp,
-   monochrome mask icons so the menu reads as intentional UI instead of a
-   missing-icon placeholder. */
-.app-sidebar nav > button > span:first-child {
-  width: 1rem !important;
-  height: 1rem !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background-color: currentColor;
-  flex: 0 0 1rem;
-  opacity: 0.9;
-  -webkit-mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-size: 1rem 1rem;
-  mask-position: center;
-  mask-repeat: no-repeat;
-  mask-size: 1rem 1rem;
+.sidebar-rail {
+  width: 3.25rem;
+  min-width: 3.25rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.45);
 }
 
-.app-sidebar nav > button:nth-child(1) > span:first-child {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5' fill='black'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5' fill='black'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5' fill='black'/%3E%3C/svg%3E");
+.sidebar-rail-brand {
+  height: 3.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
-.app-sidebar nav > button:nth-child(2) > span:first-child {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2.5 6.5A2.5 2.5 0 0 1 5 4h5l2 2h7A2.5 2.5 0 0 1 21.5 8.5v8A2.5 2.5 0 0 1 19 19H5a2.5 2.5 0 0 1-2.5-2.5z' fill='black'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2.5 6.5A2.5 2.5 0 0 1 5 4h5l2 2h7A2.5 2.5 0 0 1 21.5 8.5v8A2.5 2.5 0 0 1 19 19H5a2.5 2.5 0 0 1-2.5-2.5z' fill='black'/%3E%3C/svg%3E");
+.sidebar-rail-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.375rem;
 }
 
-.app-sidebar nav > button:nth-child(3) > span:first-child {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 5.5A2.5 2.5 0 0 1 5.5 3H13l8 8-10 10-8-8z' fill='black'/%3E%3Ccircle cx='8' cy='8' r='1.5' fill='white'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 5.5A2.5 2.5 0 0 1 5.5 3H13l8 8-10 10-8-8z' fill='black'/%3E%3Ccircle cx='8' cy='8' r='1.5' fill='white'/%3E%3C/svg%3E");
+.sidebar-rail-footer {
+  flex-shrink: 0;
+  padding: 0.5rem 0.375rem;
+  border-top: 1px solid hsl(var(--border));
 }
 
-.app-sidebar nav > button:nth-child(4) > span:first-child {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4h9v2H6v12h12v-7h2v9H4z' fill='black'/%3E%3Cpath d='M14 3h7v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14z' fill='black'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4h9v2H6v12h12v-7h2v9H4z' fill='black'/%3E%3Cpath d='M14 3h7v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14z' fill='black'/%3E%3C/svg%3E");
+.sidebar-rail-button {
+  width: 2.5rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  color: hsl(var(--muted-foreground));
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-.app-sidebar nav > button:nth-child(5) > span:first-child {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h10v2H4zm0 6h16v2H4zm0 6h12v2H4z' fill='black'/%3E%3Ccircle cx='17' cy='6' r='2' fill='black'/%3E%3Ccircle cx='8' cy='12' r='2' fill='black'/%3E%3Ccircle cx='19' cy='18' r='2' fill='black'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h10v2H4zm0 6h16v2H4zm0 6h12v2H4z' fill='black'/%3E%3Ccircle cx='17' cy='6' r='2' fill='black'/%3E%3Ccircle cx='8' cy='12' r='2' fill='black'/%3E%3Ccircle cx='19' cy='18' r='2' fill='black'/%3E%3C/svg%3E");
+.sidebar-rail-button:hover {
+  background: hsl(var(--accent) / 0.7);
+  color: hsl(var(--foreground));
+}
+
+.sidebar-rail-button.active {
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--foreground));
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.16);
+}
+
+.sidebar-rail-label {
+  max-width: 2.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.5rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-workspace {
+  min-width: 0;
+  background: hsl(var(--card));
 }
 
 .app-detail-panel {
@@ -432,7 +461,7 @@ textarea:focus-visible {
 
 @media (max-width: 900px) {
   :root {
-    --sidebar-width: 13.5rem;
+    --sidebar-width: 18rem;
     --detail-width: min(24rem, calc(100vw - 4rem));
   }
 
@@ -443,6 +472,9 @@ textarea:focus-visible {
 
 @media (max-width: 760px) {
   .app-sidebar {
+    width: min(19.5rem, calc(100vw - 2.5rem));
+    min-width: min(18rem, calc(100vw - 2.5rem));
+    max-width: calc(100vw - 2.5rem);
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 50;
