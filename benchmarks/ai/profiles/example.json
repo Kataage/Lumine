@@ -1,0 +1,13 @@
+{
+  "id": "example/model",
+  "version": "1.0.0",
+  "engine": "example-engine",
+  "quantization": "Q4_K_M",
+  "artifactSha256": "",
+  "modelSizeBytes": 0,
+  "runtime": "example-runtime",
+  "parameters": {
+    "threads": "8",
+    "context": "4096"
+  }
+}
