@@ -48,3 +48,7 @@ lumine.db-shm
 lumine/thumb-cache
 lumine/logs
 lumine/tmp
+
+# Local AI benchmark data
+benchmarks/ai/fixtures/private/
+benchmarks/ai/results/local/
