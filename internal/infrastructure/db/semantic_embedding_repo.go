@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -101,7 +102,7 @@ func (r *SemanticEmbeddingRepo) Get(assetID int64) (*domain.SemanticEmbedding, e
 		&blob,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "no rows") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get semantic embedding: %w", err)
