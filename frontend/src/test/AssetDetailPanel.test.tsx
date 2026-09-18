@@ -87,7 +87,13 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByTestId("memory-image")).toHaveTextContent("freshly-scanned.png");
     expect(screen.getByTestId("memory-image")).toHaveAttribute("data-priority", "high");
     expect(screen.getByTitle("詳細情報を読み込み中")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "整理" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("制作コンテキスト")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "制作" }));
     expect(screen.getByText("制作コンテキスト")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "情報" }));
     expect(screen.getByRole("button", { name: "元画像ファイルを削除…" })).toBeInTheDocument();
   });
 
@@ -133,8 +139,10 @@ describe("AssetDetailPanel", () => {
     expect(screen.getByRole("heading", { name: "freshly-scanned.png" })).toBeInTheDocument();
     expect(screen.getByText("0 B")).toBeInTheDocument();
     expect(screen.getByText(".PNG")).toBeInTheDocument();
-    expect(screen.getByText("取得中 / 不明")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "未整理" })).toHaveClass("bg-primary");
+
+    fireEvent.click(screen.getByRole("tab", { name: "情報" }));
+    expect(screen.getByText("取得中 / 不明")).toBeInTheDocument();
   });
 
   it("詳細取得後はEXIFなどの追加情報を同じパネルへ反映する", async () => {
@@ -145,6 +153,7 @@ describe("AssetDetailPanel", () => {
     } as AssetDTO);
 
     renderPanel();
+    fireEvent.click(screen.getByRole("tab", { name: "情報" }));
 
     await waitFor(() => expect(screen.getByText("Test Camera")).toBeInTheDocument());
     expect(screen.getByText("Test Lens")).toBeInTheDocument();
