@@ -63,12 +63,35 @@ func ValidateCatalog(catalog Catalog) error {
 		coverage[fixture.Category]++
 	}
 
-	for _, category := range RequiredCategories {
+	required, err := catalogRequiredCategories(catalog)
+	if err != nil {
+		return err
+	}
+	for _, category := range required {
 		if coverage[category] == 0 {
 			return fmt.Errorf("catalog does not cover required category %q", category)
 		}
 	}
 	return nil
+}
+
+func catalogRequiredCategories(catalog Catalog) ([]Category, error) {
+	if len(catalog.RequiredCategories) == 0 {
+		return RequiredCategories, nil
+	}
+	seen := make(map[Category]struct{}, len(catalog.RequiredCategories))
+	required := make([]Category, 0, len(catalog.RequiredCategories))
+	for _, category := range catalog.RequiredCategories {
+		if _, ok := categorySet[category]; !ok {
+			return nil, fmt.Errorf("catalog contains unknown required category %q", category)
+		}
+		if _, exists := seen[category]; exists {
+			return nil, fmt.Errorf("catalog contains duplicate required category %q", category)
+		}
+		seen[category] = struct{}{}
+		required = append(required, category)
+	}
+	return required, nil
 }
 
 func ValidateModelProfile(profile ModelProfile) error {
