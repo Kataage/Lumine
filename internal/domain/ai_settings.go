@@ -64,3 +64,16 @@ func (s AISettings) CapabilityEnabled(capability AICapability) bool {
 		return false
 	}
 }
+
+func IsModelBackedAICapability(capability AICapability) bool {
+	switch capability {
+	case AICapabilitySemanticSearch,
+		AICapabilityTagger,
+		AICapabilityLightweightVision,
+		AICapabilityAdvancedVision,
+		AICapabilityPromptEngine:
+		return true
+	default:
+		return false
+	}
+}
