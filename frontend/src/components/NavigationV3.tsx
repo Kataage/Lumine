@@ -5,8 +5,35 @@ import { listLibraries, listTags, offScanProgress, onScanProgress, setSetting } 
 import type { ScanProgress } from "../api/client";
 import { FoldersPanel, LibrariesPanel, SettingsPanel, TagsPanel } from "./NavigationPanels";
 import { PostRecordsPanel } from "./PostRecordsPanel";
+import { ToolbarSelect } from "./ToolbarSelect";
 
 const APP_ICON_URL = "/appicon.png";
+
+const SORT_OPTIONS = [
+  { value: "modifiedAtFs", label: "更新日時" },
+  { value: "created", label: "作成日時" },
+  { value: "name", label: "ファイル名" },
+  { value: "size", label: "サイズ" },
+  { value: "rating", label: "評価" },
+  { value: "status", label: "状態" },
+] as const;
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "", label: "状態: すべて" },
+  { value: "unsorted", label: "未整理" },
+  { value: "reviewed", label: "確認済み" },
+  { value: "candidate", label: "候補" },
+  { value: "published", label: "公開済み" },
+] as const;
+
+const RATING_FILTER_OPTIONS = [
+  { value: 0, label: "評価: すべて" },
+  { value: 1, label: "★" },
+  { value: 2, label: "★★" },
+  { value: 3, label: "★★★" },
+  { value: 4, label: "★★★★" },
+  { value: 5, label: "★★★★★" },
+] as const;
 const NAV_ITEMS = [
   { key: "libraries", label: "ライブラリ", description: "画像フォルダー", icon: "M3.75 6.75A2.25 2.25 0 016 4.5h3.879c.621 0 1.216.257 1.641.71l1.21 1.29H18a2.25 2.25 0 012.25 2.25v8.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z" },
   { key: "folders", label: "フォルダー", description: "階層で絞り込み", icon: "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5L17.25 12l-3.75 3.75M17.25 12H3" },
@@ -139,10 +166,10 @@ export function ToolbarV2() {
         <div className="relative min-w-0 flex-1"><input className="ui-input w-full pl-3" value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="ファイル名・メモを検索…" /></div>
       </div>
       <div className="toolbar-controls-row">
-        <select className="ui-input" value={state.sortBy} onChange={(event) => updateSort(event.target.value)}><option value="modifiedAtFs">更新日時</option><option value="created">作成日時</option><option value="name">ファイル名</option><option value="size">サイズ</option><option value="rating">評価</option><option value="status">状態</option></select>
+        <ToolbarSelect value={state.sortBy} options={SORT_OPTIONS} onChange={updateSort} ariaLabel="並び順" />
         <button type="button" className="ui-secondary-button" onClick={toggleSortDirection}>{state.sortDesc ? "降順 ↓" : "昇順 ↑"}</button>
-        <select className="ui-input" value={state.filterStatusLabel} onChange={(event) => setState((current) => ({ ...current, filterStatusLabel: event.target.value }))}><option value="">状態: すべて</option><option value="unsorted">未整理</option><option value="reviewed">確認済み</option><option value="candidate">候補</option><option value="published">公開済み</option></select>
-        <select className="ui-input" value={state.filterRating} onChange={(event) => setState((current) => ({ ...current, filterRating: Number(event.target.value) }))}><option value={0}>評価: すべて</option>{[1,2,3,4,5].map((rating) => <option key={rating} value={rating}>{"★".repeat(rating)}</option>)}</select>
+        <ToolbarSelect value={state.filterStatusLabel} options={STATUS_FILTER_OPTIONS} onChange={(value) => setState((current) => ({ ...current, filterStatusLabel: value }))} ariaLabel="状態で絞り込み" />
+        <ToolbarSelect value={state.filterRating} options={RATING_FILTER_OPTIONS} onChange={(value) => setState((current) => ({ ...current, filterRating: value }))} ariaLabel="評価で絞り込み" />
         <div className="ui-segmented">{[[120,"小"],[180,"中"],[260,"大"]].map(([value,label]) => <button type="button" key={value} onClick={() => updateThumbnailSize(Number(value))} className={state.thumbnailSize === Number(value) ? "active" : ""}>{label}</button>)}</div>
         <div className="ui-segmented"><button type="button" className={state.viewMode === "grid" ? "active" : ""} onClick={() => updateViewMode("grid")}>グリッド</button><button type="button" className={state.viewMode === "list" ? "active" : ""} onClick={() => updateViewMode("list")}>リスト</button></div>
         {state.selectedAssets.size > 0 && (
