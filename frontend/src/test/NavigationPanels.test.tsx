@@ -53,7 +53,9 @@ describe("NavigationPanels destructive UX", () => {
 
   it("ライブラリ解除をLumineダイアログで確認する", async () => {
     render(<LibrariesPanel scanProgress={{}} />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByRole("button", { name: "登録解除" }));
+    expect(screen.queryByRole("button", { name: "登録を解除…" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "登録を解除…" }));
     expect(await screen.findByRole("dialog", { name: "ライブラリの登録を解除しますか？" })).toBeInTheDocument();
     expect(api.removeLibrary).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "登録を解除" }));
@@ -63,6 +65,8 @@ describe("NavigationPanels destructive UX", () => {
   it("タグ削除をLumineダイアログで確認する", async () => {
     render(<TagsPanel />, { wrapper: Wrapper });
     await screen.findByText("test-tag");
+    expect(screen.queryByRole("button", { name: "削除" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "管理" }));
     fireEvent.click(screen.getByRole("button", { name: "削除" }));
     expect(await screen.findByRole("dialog", { name: "タグを削除しますか？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "タグを削除" }));
