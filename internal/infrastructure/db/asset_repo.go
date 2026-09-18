@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -416,7 +417,7 @@ func (r *AssetRepo) CreateBatch(assets []*domain.Asset) error {
 	defer stmt.Close()
 
 	for _, a := range assets {
-		_, err := stmt.Exec(
+		result, err := stmt.Exec(
 			a.LibraryID, a.FolderPath, a.FileName, a.FilePath, a.Extension, a.FileSize,
 			a.CreatedAtFS, a.ModifiedAtFS, a.Width, a.Height, a.MimeType, a.HashBlake3,
 			a.ThumbStatus, a.MetadataLoaded, a.Rating, a.StatusLabel, a.IsFavorite, a.ColorLabel,
@@ -425,6 +426,9 @@ func (r *AssetRepo) CreateBatch(assets []*domain.Asset) error {
 		)
 		if err != nil {
 			return fmt.Errorf("batch insert asset: %w", err)
+		}
+		if id, err := result.LastInsertId(); err == nil {
+			a.ID = id
 		}
 	}
 	return tx.Commit()
@@ -522,4 +526,74 @@ func (r *AssetRepo) ListIDsByScope(libraryID int64, folderPath string, recurse b
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+
+func (r *AssetRepo) GetByIDs(ids []int64) ([]domain.Asset, error) {
+	if len(ids) == 0 {
+		return []domain.Asset{}, nil
+	}
+	if len(ids) > 1000 {
+		return nil, fmt.Errorf("too many asset ids: %d", len(ids))
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	rows, err := r.db.Query(
+		`SELECT id, library_id, folder_path, file_name, file_path, extension, file_size,
+		        modified_at_fs, width, height, rating, status_label, is_favorite, color_label
+		 FROM assets WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get assets by ids: %w", err)
+	}
+	defer rows.Close()
+
+	byID := make(map[int64]domain.Asset, len(ids))
+	for rows.Next() {
+		var a domain.Asset
+		var modifiedAtFS, colorLabel sql.NullString
+		if err := rows.Scan(
+			&a.ID,
+			&a.LibraryID,
+			&a.FolderPath,
+			&a.FileName,
+			&a.FilePath,
+			&a.Extension,
+			&a.FileSize,
+			&modifiedAtFS,
+			&a.Width,
+			&a.Height,
+			&a.Rating,
+			&a.StatusLabel,
+			&a.IsFavorite,
+			&colorLabel,
+		); err != nil {
+			return nil, fmt.Errorf("scan asset by ids: %w", err)
+		}
+		if modifiedAtFS.Valid {
+			a.ModifiedAtFS, _ = timeParse(modifiedAtFS.String)
+		}
+		if colorLabel.Valid {
+			a.ColorLabel = colorLabel.String
+		}
+		byID[a.ID] = a
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ordered := make([]domain.Asset, 0, len(ids))
+	for _, id := range ids {
+		if value, ok := byID[id]; ok {
+			ordered = append(ordered, value)
+		}
+	}
+	return ordered, nil
 }
