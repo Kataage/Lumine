@@ -1,7 +1,8 @@
 import { commands as cmds } from "../../wailsjs/go/models";
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
-import { queryClient } from "../queryClient";\nimport { normalizeAISettings, type AISettings } from "../utils/aiSettings";
+import { queryClient } from "../queryClient";
+import { normalizeAISettings, type AISettings } from "../utils/aiSettings";
 
 export type LibraryDTO = cmds.LibraryDTO;
 export type AssetDTO = cmds.AssetDTO;
