@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/siglip2"
 	"github.com/kataage/lumine/internal/commands"
+	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
 	"github.com/wailsapp/wails/v2"
@@ -126,13 +128,25 @@ func main() {
 	cmd := commands.New(database, scanSvc)
 	aiManager := ai.NewManager(filepath.Join(appDir, "models"), cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
+	if err := aiManager.RegisterEngine(siglip2.EngineID, siglip2.NewEngine); err != nil {
+		log.Fatal("failed to register SigLIP2 engine:", err)
+	}
 
 	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
 	cmd.SetAIJobQueue(aiJobQueue)
+	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
+		log.Fatal("failed to register Semantic Search job handler:", err)
+	}
 	aiManager.SetModelActivatedHook(aiJobQueue.HandleModelActivated)
 	if err := aiJobQueue.Start(context.Background()); err != nil {
 		log.Fatal("failed to start AI job queue:", err)
 	}
+
+	scanSvc.SetAssetChangeHandler(func(assetIDs []int64) {
+		if _, err := cmd.EnqueueAutomaticSemanticAssets(assetIDs); err != nil {
+			slog.Debug("automatic semantic enqueue skipped", "error", err)
+		}
+	})
 
 	// Stop workers before unloading runtimes and before closing SQLite.
 	defer func() {
@@ -160,6 +174,11 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			cmd.SetContext(ctx)
 			slog.Info("Lumine started")
+			go func() {
+				if err := cmd.RestoreDefaultSemanticModel(); err != nil {
+					slog.Warn("failed to restore Semantic Search runtime", "error", err)
+				}
+			}()
 		},
 		Bind: []interface{}{
 			cmd,
