@@ -150,7 +150,7 @@ describe("PostRecordsPanel", () => {
     await waitFor(() => expect(screen.getByLabelText("アカウント表示名")).not.toBeDisabled());
     fireEvent.change(screen.getByLabelText("アカウント表示名"), { target: { value: "メイン" } });
     fireEvent.change(screen.getByLabelText("アカウントID"), { target: { value: "@example" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "追加" })[1]);
+    fireEvent.click(screen.getByRole("button", { name: "アカウントを追加" }));
     await waitFor(() => expect(api.createPostAccount).toHaveBeenCalledWith(11, "メイン", "@example"));
   });
 });
