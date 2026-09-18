@@ -1,0 +1,26 @@
+{
+  "id": "microsoft/Florence-2-base",
+  "version": "fe9219b07e218d2a787a1ef276ad0830ab7b31c4",
+  "engine": "python-transformers-cpu",
+  "quantization": "FP32/BF16-source",
+  "artifactSha256": "03075d2d2d2bbd3e180b9ba0afae4aa8563226e2d32911656966e05b2f2ee060",
+  "modelSizeBytes": 463221266,
+  "runtime": "transformers-5.17.0+torch-2.14.0-cpu",
+  "benchmarkCategories": [
+    "lightweight_vision",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "microsoft/Florence-2-base",
+    "trustRemoteCode": "true",
+    "threads": "8",
+    "device": "cpu",
+    "shortTask": "<CAPTION>",
+    "detailedTask": "<MORE_DETAILED_CAPTION>",
+    "ocrTask": "<OCR>"
+  }
+}

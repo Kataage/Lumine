@@ -69,6 +69,27 @@ func TestCatalogRequiresEveryBenchmarkCategory(t *testing.T) {
 	}
 }
 
+func TestCatalogCanScopeRequiredCategories(t *testing.T) {
+	catalog := Catalog{
+		SchemaVersion:      SchemaVersion,
+		FixturePack:        "vision-only-v1",
+		RequiredCategories: []Category{CategoryLightweightVision, CategoryCPULatency},
+		Fixtures: []Fixture{
+			{ID: "vision", Category: CategoryLightweightVision, Description: "vision"},
+			{ID: "cpu", Category: CategoryCPULatency, Description: "cpu"},
+		},
+	}
+	if err := ValidateCatalog(catalog); err != nil {
+		t.Fatalf("ValidateCatalog scoped: %v", err)
+	}
+
+	catalog.RequiredCategories = append(catalog.RequiredCategories, CategoryRAM)
+	if err := ValidateCatalog(catalog); err == nil {
+		t.Fatal("scoped catalog missing declared RAM category should fail")
+	}
+}
+
+
 func TestResultValidationRequiresCompleteStableFixtureCoverage(t *testing.T) {
 	catalog := fullTestCatalog()
 	result := fullTestResult(catalog, "baseline", "machine-a")
@@ -216,6 +237,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		t.Fatalf("repository catalog: %v", err)
 	}
 
+	var lightweightCatalog Catalog
+	readJSONForTest(t, filepath.Join(root, "catalogs", "lightweight-vision-v1.json"), &lightweightCatalog)
+	if err := ValidateCatalog(lightweightCatalog); err != nil {
+		t.Fatalf("repository lightweight vision catalog: %v", err)
+	}
+
 	var thresholds Thresholds
 	readJSONForTest(t, filepath.Join(root, "thresholds.json"), &thresholds)
 	if err := ValidateThresholds(thresholds); err != nil {
@@ -232,6 +259,8 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"example.json",
 		"wd-vit-tagger-v3.json",
 		"pixai-tagger-v0.9.json",
+		"florence-2-base.json",
+		"smolvlm-500m-q8.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)

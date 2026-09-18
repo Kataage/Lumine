@@ -1,0 +1,6 @@
+huggingface_hub==1.32.0
+pillow==12.3.0
+psutil==7.0.0
+requests==2.34.2
+torch==2.14.0
+transformers==5.17.0

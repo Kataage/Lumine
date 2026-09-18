@@ -1,0 +1,32 @@
+{
+  "id": "ggml-org/SmolVLM-500M-Instruct-GGUF",
+  "version": "72e986006ef53e37cdd3f6d4241c90b0f01df376",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q8_0",
+  "artifactSha256": "9d4612de6a42214499e301494a3ecc2be0abdd9de44e663bda63f1152fad1bf4",
+  "modelSizeBytes": 545590272,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "lightweight_vision",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "ggml-org/SmolVLM-500M-Instruct-GGUF",
+    "modelFile": "SmolVLM-500M-Instruct-Q8_0.gguf",
+    "modelSha256": "9d4612de6a42214499e301494a3ecc2be0abdd9de44e663bda63f1152fad1bf4",
+    "modelSizeBytes": "436806912",
+    "mmprojFile": "mmproj-SmolVLM-500M-Instruct-Q8_0.gguf",
+    "mmprojSha256": "d1eb8b6b23979205fdf63703ed10f788131a3f812c7b1f72e0119d5d81295150",
+    "mmprojSizeBytes": "108783360",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "4096",
+    "device": "cpu"
+  }
+}

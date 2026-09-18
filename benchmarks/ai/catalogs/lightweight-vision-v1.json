@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "fixturePack": "lumine-lightweight-vision-v1",
+  "requiredCategories": [
+    "lightweight_vision",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "fixtures": [
+    {
+      "id": "lightvision-short-general-001",
+      "category": "lightweight_vision",
+      "description": "Short caption should identify the primary subject and broad setting without inventing details.",
+      "input": {
+        "mode": "short"
+      },
+      "expected": {
+        "groundTruth": "vision/lightweight-short-general-001.json"
+      },
+      "references": [
+        {
+          "path": "vision/lightweight-short-general-001.png",
+          "role": "image"
+        },
+        {
+          "path": "vision/lightweight-short-general-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "caption",
+        "general"
+      ]
+    },
+    {
+      "id": "lightvision-detailed-composition-001",
+      "category": "lightweight_vision",
+      "description": "Detailed caption should preserve subject, background, composition and viewpoint in a visually complex image.",
+      "input": {
+        "mode": "detailed"
+      },
+      "expected": {
+        "groundTruth": "vision/lightweight-detailed-composition-001.json"
+      },
+      "references": [
+        {
+          "path": "vision/lightweight-detailed-composition-001.png",
+          "role": "image"
+        },
+        {
+          "path": "vision/lightweight-detailed-composition-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "caption",
+        "composition",
+        "viewpoint"
+      ]
+    },
+    {
+      "id": "lightvision-anime-001",
+      "category": "lightweight_vision",
+      "description": "Anime illustration should be described faithfully without turning image-generation style cues into unrelated photographic assumptions.",
+      "input": {
+        "mode": "detailed"
+      },
+      "expected": {
+        "groundTruth": "vision/lightweight-anime-001.json"
+      },
+      "references": [
+        {
+          "path": "vision/lightweight-anime-001.png",
+          "role": "image"
+        },
+        {
+          "path": "vision/lightweight-anime-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "anime",
+        "caption"
+      ]
+    },
+    {
+      "id": "lightvision-visible-text-001",
+      "category": "lightweight_vision",
+      "description": "Visible text case measures practical OCR-like extraction together with scene understanding.",
+      "input": {
+        "mode": "detailed",
+        "includeVisibleText": true
+      },
+      "expected": {
+        "groundTruth": "vision/lightweight-visible-text-001.json"
+      },
+      "references": [
+        {
+          "path": "vision/lightweight-visible-text-001.png",
+          "role": "image"
+        },
+        {
+          "path": "vision/lightweight-visible-text-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "ocr",
+        "text"
+      ]
+    },
+    {
+      "id": "lightvision-adult-001",
+      "category": "lightweight_vision",
+      "description": "Lawful adult-only illustration should be described without unrelated refusal or silently dropping important scene/composition information.",
+      "input": {
+        "mode": "detailed",
+        "adultOnly": true
+      },
+      "expected": {
+        "groundTruth": "vision/lightweight-adult-001.json"
+      },
+      "references": [
+        {
+          "path": "vision/lightweight-adult-001.png",
+          "role": "image"
+        },
+        {
+          "path": "vision/lightweight-adult-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "adult-only",
+        "caption"
+      ]
+    },
+    {
+      "id": "lightvision-perf-cpu-001",
+      "category": "cpu_latency_tokens_sec",
+      "description": "CPU-only steady-state lightweight vision latency on the canonical detailed-composition fixture.",
+      "input": {
+        "reference": "vision/lightweight-detailed-composition-001.png",
+        "warmupRuns": 2,
+        "measureRuns": 5
+      },
+      "expected": {
+        "requiredMetrics": [
+          "latencyMs"
+        ]
+      }
+    },
+    {
+      "id": "lightvision-perf-ram-001",
+      "category": "ram",
+      "description": "Peak process RSS while the lightweight vision model is loaded and serving repeated inference.",
+      "input": {
+        "reference": "vision/lightweight-detailed-composition-001.png",
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "ramMb"
+        ]
+      }
+    },
+    {
+      "id": "lightvision-perf-cold-start-001",
+      "category": "cold_start",
+      "description": "Fresh runtime/model startup through first successful lightweight vision response.",
+      "input": {
+        "reference": "vision/lightweight-detailed-composition-001.png",
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "coldStartMs"
+        ]
+      }
+    },
+    {
+      "id": "lightvision-perf-model-size-001",
+      "category": "model_size",
+      "description": "Exact local artifact footprint required for the candidate model.",
+      "input": {
+        "scenario": "installed-model-size"
+      },
+      "expected": {
+        "requiredMetrics": [
+          "modelSizeMb"
+        ]
+      }
+    },
+    {
+      "id": "lightvision-windows-stability-001",
+      "category": "windows_runtime_stability",
+      "description": "Repeated Windows load/infer/unload or server start/infer/stop cycles should complete without runtime failure.",
+      "input": {
+        "reference": "vision/lightweight-detailed-composition-001.png",
+        "cycles": 20,
+        "deviceModes": [
+          "cpu"
+        ]
+      },
+      "expected": {
+        "requiredMetrics": [
+          "runtimeSuccessRate"
+        ],
+        "minimumSuccessRate": 1
+      }
+    }
+  ]
+}
