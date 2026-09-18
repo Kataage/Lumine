@@ -92,6 +92,16 @@ func ValidateModelProfile(profile ModelProfile) error {
 			return fmt.Errorf("artifactSha256 is not valid hex: %w", err)
 		}
 	}
+	seenCategories := make(map[Category]struct{}, len(profile.BenchmarkCategories))
+	for _, category := range profile.BenchmarkCategories {
+		if _, ok := categorySet[category]; !ok {
+			return fmt.Errorf("model profile contains unknown benchmark category %q", category)
+		}
+		if _, exists := seenCategories[category]; exists {
+			return fmt.Errorf("model profile contains duplicate benchmark category %q", category)
+		}
+		seenCategories[category] = struct{}{}
+	}
 	return nil
 }
 
@@ -284,6 +294,21 @@ func BuildFixturePackManifest(catalog Catalog, fixtureDir string) (FixturePackMa
 }
 
 func VerifyFixturePack(catalog Catalog, fixtureDir string) error {
+	return verifyFixturePack(catalog, fixtureDir, nil)
+}
+
+func VerifyFixturePackForCategories(catalog Catalog, fixtureDir string, categories []Category) error {
+	selected := make(map[Category]struct{}, len(categories))
+	for _, category := range categories {
+		if _, ok := categorySet[category]; !ok {
+			return fmt.Errorf("unknown benchmark category %q", category)
+		}
+		selected[category] = struct{}{}
+	}
+	return verifyFixturePack(catalog, fixtureDir, selected)
+}
+
+func verifyFixturePack(catalog Catalog, fixtureDir string, selected map[Category]struct{}) error {
 	if fixtureDir == "" {
 		return errors.New("fixture directory is required")
 	}
@@ -328,6 +353,11 @@ func VerifyFixturePack(catalog Catalog, fixtureDir string) error {
 
 	verified := make(map[string]struct{})
 	for _, fixture := range catalog.Fixtures {
+		if selected != nil {
+			if _, ok := selected[fixture.Category]; !ok {
+				continue
+			}
+		}
 		for _, ref := range fixture.References {
 			if _, ok := verified[ref.Path]; ok {
 				continue
