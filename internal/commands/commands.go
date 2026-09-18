@@ -899,8 +899,8 @@ func (c *AppCommands) GetAppBootstrap() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("bootstrap tags: %w", err)
 	}
 	tagDTOs := make([]TagDTO, len(tags))
-	for i, t := range tags {
-		tagDTOs[i] = TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
+	for i, tag := range tags {
+		tagDTOs[i] = TagDTO{ID: tag.ID, Name: tag.Name, Color: tag.Color}
 	}
 
 	return map[string]interface{}{
@@ -908,34 +908,6 @@ func (c *AppCommands) GetAppBootstrap() (map[string]interface{}, error) {
 		"settings":  settings,
 		"tags":      tagDTOs,
 	}, nil
-} {
-	libs, _ := c.libraryRepo.List()
-	libDTOs := make([]LibraryDTO, len(libs))
-	for i, lib := range libs {
-		libDTOs[i] = toLibraryDTO(&lib)
-	}
-
-	settings := make(map[string]interface{})
-	for _, key := range []string{"theme", "thumbnailSize", "scanExtensions", "conflictPolicy", "logLevel"} {
-		if s, _ := c.settingRepo.Get(key); s != nil {
-			var val interface{}
-			if err := json.Unmarshal([]byte(s.ValueJSON), &val); err == nil {
-				settings[key] = val
-			}
-		}
-	}
-
-	tags, _ := c.tagRepo.List()
-	tagDTOs := make([]TagDTO, len(tags))
-	for i, t := range tags {
-		tagDTOs[i] = TagDTO{ID: t.ID, Name: t.Name, Color: t.Color}
-	}
-
-	return map[string]interface{}{
-		"libraries": libDTOs,
-		"settings":  settings,
-		"tags":      tagDTOs,
-	}
 }
 
 func (c *AppCommands) ScanFolder(folderPath string, offset, limit int) (*scanner.FolderScanResult, error) {
