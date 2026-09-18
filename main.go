@@ -141,8 +141,6 @@ func main() {
 		if err := aiJobQueue.Stop(shutdownCtx); err != nil {
 			slog.Warn("failed to stop AI job queue cleanly", "error", err)
 		}
-	}()
-	defer func() {
 		if err := aiManager.Close(context.Background()); err != nil {
 			slog.Warn("failed to close AI runtime", "error", err)
 		}
