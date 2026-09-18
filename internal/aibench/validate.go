@@ -226,6 +226,57 @@ func ValidateAdoptionLedger(ledger AdoptionLedger) error {
 	return nil
 }
 
+func BuildFixturePackManifest(catalog Catalog, fixtureDir string) (FixturePackManifest, error) {
+	if err := ValidateCatalog(catalog); err != nil {
+		return FixturePackManifest{}, err
+	}
+	if fixtureDir == "" {
+		return FixturePackManifest{}, errors.New("fixture directory is required")
+	}
+
+	manifest := FixturePackManifest{
+		SchemaVersion: SchemaVersion,
+		PackID:        catalog.FixturePack,
+	}
+	seen := make(map[string]struct{})
+	for _, fixture := range catalog.Fixtures {
+		for _, ref := range fixture.References {
+			if _, ok := seen[ref.Path]; ok {
+				continue
+			}
+			path := filepath.Join(fixtureDir, filepath.FromSlash(ref.Path))
+			file, err := os.Open(path)
+			if err != nil {
+				return FixturePackManifest{}, fmt.Errorf("open fixture %q: %w", ref.Path, err)
+			}
+			info, statErr := file.Stat()
+			if statErr != nil {
+				_ = file.Close()
+				return FixturePackManifest{}, fmt.Errorf("stat fixture %q: %w", ref.Path, statErr)
+			}
+			if info.IsDir() {
+				_ = file.Close()
+				return FixturePackManifest{}, fmt.Errorf("fixture %q is a directory", ref.Path)
+			}
+			hasher := sha256.New()
+			if _, err := io.Copy(hasher, file); err != nil {
+				_ = file.Close()
+				return FixturePackManifest{}, fmt.Errorf("hash fixture %q: %w", ref.Path, err)
+			}
+			if err := file.Close(); err != nil {
+				return FixturePackManifest{}, fmt.Errorf("close fixture %q: %w", ref.Path, err)
+			}
+			manifest.Files = append(manifest.Files, FixturePackFile{
+				Path:      ref.Path,
+				SHA256:    hex.EncodeToString(hasher.Sum(nil)),
+				SizeBytes: info.Size(),
+			})
+			seen[ref.Path] = struct{}{}
+		}
+	}
+	return manifest, nil
+}
+
 func VerifyFixturePack(catalog Catalog, fixtureDir string) error {
 	if fixtureDir == "" {
 		return errors.New("fixture directory is required")
