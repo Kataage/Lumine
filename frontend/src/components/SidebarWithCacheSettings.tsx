@@ -6,6 +6,7 @@ import type { ScanProgress } from "../api/client";
 import { FoldersPanel, LibrariesPanel, SettingsPanel, TagsPanel } from "./NavigationPanels";
 import { PostRecordsPanel } from "./PostRecordsPanel";
 import { MemoryCacheSettingsPanel } from "./MemoryCacheSettingsPanel";
+import { AISettingsPanel } from "./AISettingsPanel";
 
 const APP_ICON_URL = "/appicon.png";
 const NAV_ITEMS = [
@@ -117,6 +118,7 @@ export function SidebarWithCacheSettings() {
           {state.sidebarView === "settings" && (
             <>
               <SettingsPanel />
+              <AISettingsPanel />
               <MemoryCacheSettingsPanel />
             </>
           )}

@@ -2,6 +2,7 @@ import { commands as cmds } from "../../wailsjs/go/models";
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
 import { queryClient } from "../queryClient";
+import { normalizeAISettings, type AISettings } from "../utils/aiSettings";
 
 export type LibraryDTO = cmds.LibraryDTO;
 export type AssetDTO = cmds.AssetDTO;
@@ -171,6 +172,9 @@ export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
 type DynamicCommands = {
+  GetAISettings?: () => Promise<AISettings | null>;
+  SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
+  IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -254,6 +258,20 @@ function requireDynamic<K extends keyof DynamicCommands>(name: K): NonNullable<D
   const method = appCommands()?.[name];
   if (!method) throw new Error(`${String(name)} APIが利用できません。最新版のLumineを起動してください。`);
   return method as NonNullable<DynamicCommands[K]>;
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  const value = await requireDynamic("GetAISettings")();
+  return normalizeAISettings(value);
+}
+
+export async function setAISettings(settings: AISettings): Promise<AISettings> {
+  const value = await requireDynamic("SetAISettings")(settings);
+  return normalizeAISettings(value ?? settings);
+}
+
+export async function isAICapabilityEnabled(capability: string): Promise<boolean> {
+  return requireDynamic("IsAICapabilityEnabled")(capability);
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {
