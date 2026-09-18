@@ -1,0 +1,244 @@
+package aibench
+
+import (
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+)
+
+const SchemaVersion = 1
+
+var categorySet = func() map[Category]struct{} {
+	result := make(map[Category]struct{}, len(RequiredCategories))
+	for _, category := range RequiredCategories {
+		result[category] = struct{}{}
+	}
+	return result
+}()
+
+func ValidateCatalog(catalog Catalog) error {
+	if catalog.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported catalog schemaVersion %d", catalog.SchemaVersion)
+	}
+	if strings.TrimSpace(catalog.FixturePack) == "" {
+		return errors.New("catalog fixturePack is required")
+	}
+
+	seenIDs := make(map[string]struct{}, len(catalog.Fixtures))
+	coverage := make(map[Category]int)
+	for index, fixture := range catalog.Fixtures {
+		if strings.TrimSpace(fixture.ID) == "" {
+			return fmt.Errorf("fixture[%d] id is required", index)
+		}
+		if _, exists := seenIDs[fixture.ID]; exists {
+			return fmt.Errorf("duplicate fixture id %q", fixture.ID)
+		}
+		seenIDs[fixture.ID] = struct{}{}
+
+		if _, ok := categorySet[fixture.Category]; !ok {
+			return fmt.Errorf("fixture %q has unknown category %q", fixture.ID, fixture.Category)
+		}
+		if strings.TrimSpace(fixture.Description) == "" {
+			return fmt.Errorf("fixture %q description is required", fixture.ID)
+		}
+		for _, ref := range fixture.References {
+			if strings.TrimSpace(ref.Path) == "" {
+				return fmt.Errorf("fixture %q contains an empty reference path", fixture.ID)
+			}
+			if strings.Contains(ref.Path, "..") {
+				return fmt.Errorf("fixture %q contains unsafe reference path %q", fixture.ID, ref.Path)
+			}
+		}
+		coverage[fixture.Category]++
+	}
+
+	for _, category := range RequiredCategories {
+		if coverage[category] == 0 {
+			return fmt.Errorf("catalog does not cover required category %q", category)
+		}
+	}
+	return nil
+}
+
+func ValidateModelProfile(profile ModelProfile) error {
+	if strings.TrimSpace(profile.ID) == "" {
+		return errors.New("model id is required")
+	}
+	if strings.TrimSpace(profile.Version) == "" {
+		return errors.New("model version is required")
+	}
+	if strings.TrimSpace(profile.Engine) == "" {
+		return errors.New("model engine is required")
+	}
+	if profile.ModelSizeBytes < 0 {
+		return errors.New("modelSizeBytes cannot be negative")
+	}
+	if profile.ArtifactSHA256 != "" {
+		if len(profile.ArtifactSHA256) != 64 {
+			return errors.New("artifactSha256 must contain 64 hex characters")
+		}
+		if _, err := hex.DecodeString(profile.ArtifactSHA256); err != nil {
+			return fmt.Errorf("artifactSha256 is not valid hex: %w", err)
+		}
+	}
+	return nil
+}
+
+func ValidateResult(result BenchmarkResult, catalog Catalog) error {
+	if err := ValidateCatalog(catalog); err != nil {
+		return fmt.Errorf("catalog: %w", err)
+	}
+	if result.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported result schemaVersion %d", result.SchemaVersion)
+	}
+	if strings.TrimSpace(result.RunID) == "" {
+		return errors.New("runId is required")
+	}
+	if result.CreatedAt.IsZero() {
+		return errors.New("createdAt is required")
+	}
+	if result.CatalogPack != catalog.FixturePack {
+		return fmt.Errorf("result catalogPack %q does not match catalog %q", result.CatalogPack, catalog.FixturePack)
+	}
+	if err := ValidateModelProfile(result.Model); err != nil {
+		return fmt.Errorf("model: %w", err)
+	}
+	if strings.TrimSpace(result.Environment.HardwareID) == "" {
+		return errors.New("environment.hardwareId is required")
+	}
+	if strings.TrimSpace(result.Environment.OS) == "" || strings.TrimSpace(result.Environment.Arch) == "" {
+		return errors.New("environment.os and environment.arch are required")
+	}
+
+	expected := make(map[string]Fixture, len(catalog.Fixtures))
+	for _, fixture := range catalog.Fixtures {
+		expected[fixture.ID] = fixture
+	}
+	seen := make(map[string]struct{}, len(result.Cases))
+	for _, value := range result.Cases {
+		fixture, ok := expected[value.FixtureID]
+		if !ok {
+			return fmt.Errorf("result contains unknown fixture %q", value.FixtureID)
+		}
+		if _, exists := seen[value.FixtureID]; exists {
+			return fmt.Errorf("result contains duplicate fixture %q", value.FixtureID)
+		}
+		seen[value.FixtureID] = struct{}{}
+		if value.Category != fixture.Category {
+			return fmt.Errorf("fixture %q category = %q, want %q", value.FixtureID, value.Category, fixture.Category)
+		}
+		if value.Status != CaseStatusOK && value.Status != CaseStatusSkipped && value.Status != CaseStatusError {
+			return fmt.Errorf("fixture %q has invalid status %q", value.FixtureID, value.Status)
+		}
+		if value.Score < 0 || value.Score > 1 {
+			return fmt.Errorf("fixture %q score %.4f is outside [0,1]", value.FixtureID, value.Score)
+		}
+		if value.Status == CaseStatusError && strings.TrimSpace(value.Error) == "" {
+			return fmt.Errorf("fixture %q error status requires an error message", value.FixtureID)
+		}
+		if err := validateMetrics(value.FixtureID, value.Metrics); err != nil {
+			return err
+		}
+	}
+	if len(seen) != len(expected) {
+		var missing []string
+		for id := range expected {
+			if _, ok := seen[id]; !ok {
+				missing = append(missing, id)
+			}
+		}
+		return fmt.Errorf("result is missing %d fixtures: %s", len(missing), strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func validateMetrics(fixtureID string, metrics Metrics) error {
+	if metrics.LatencyMS < 0 ||
+		metrics.TokensPerSecond < 0 ||
+		metrics.RAMMB < 0 ||
+		metrics.ColdStartMS < 0 ||
+		metrics.ModelSizeMB < 0 {
+		return fmt.Errorf("fixture %q contains a negative performance metric", fixtureID)
+	}
+	if metrics.RuntimeSuccessRate < 0 || metrics.RuntimeSuccessRate > 1 {
+		return fmt.Errorf("fixture %q runtimeSuccessRate is outside [0,1]", fixtureID)
+	}
+	return nil
+}
+
+func ValidateThresholds(thresholds Thresholds) error {
+	values := map[string]float64{
+		"maxScoreDrop":                   thresholds.MaxScoreDrop,
+		"maxLatencyRegressionPercent":    thresholds.MaxLatencyRegressionPercent,
+		"maxTokensPerSecondDropPercent":  thresholds.MaxTokensPerSecondDropPercent,
+		"maxRAMRegressionPercent":        thresholds.MaxRAMRegressionPercent,
+		"maxColdStartRegressionPercent":  thresholds.MaxColdStartRegressionPercent,
+		"maxModelSizeRegressionPercent":  thresholds.MaxModelSizeRegressionPercent,
+		"maxRuntimeSuccessRateDrop":      thresholds.MaxRuntimeSuccessRateDrop,
+	}
+	for name, value := range values {
+		if value < 0 {
+			return fmt.Errorf("%s cannot be negative", name)
+		}
+	}
+	return nil
+}
+
+func ValidateAdoptionLedger(ledger AdoptionLedger) error {
+	if ledger.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported adoption schemaVersion %d", ledger.SchemaVersion)
+	}
+	seen := make(map[string]struct{}, len(ledger.Decisions))
+	for _, decision := range ledger.Decisions {
+		if strings.TrimSpace(decision.Capability) == "" || strings.TrimSpace(decision.ModelID) == "" {
+			return errors.New("adoption capability and modelId are required")
+		}
+		key := decision.Capability + "\x00" + string(decision.Status) + "\x00" + decision.ModelID
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate adoption decision for %s / %s / %s", decision.Capability, decision.Status, decision.ModelID)
+		}
+		seen[key] = struct{}{}
+		switch decision.Status {
+		case AdoptionCandidate, AdoptionAdopted, AdoptionRejected:
+		default:
+			return fmt.Errorf("invalid adoption status %q", decision.Status)
+		}
+		if strings.TrimSpace(decision.Rationale) == "" {
+			return fmt.Errorf("adoption decision for %s requires rationale", decision.ModelID)
+		}
+		if decision.Status == AdoptionAdopted {
+			if decision.Version == "" || decision.Engine == "" || decision.Quantization == "" {
+				return fmt.Errorf("adopted model %s must record version, engine and quantization", decision.ModelID)
+			}
+			if len(decision.EvidenceResults) == 0 {
+				return fmt.Errorf("adopted model %s must reference benchmark evidence", decision.ModelID)
+			}
+		}
+	}
+	return nil
+}
+
+func VerifyFixturePack(catalog Catalog, fixtureDir string) error {
+	if fixtureDir == "" {
+		return errors.New("fixture directory is required")
+	}
+	for _, fixture := range catalog.Fixtures {
+		for _, ref := range fixture.References {
+			path := fixtureDir + string(os.PathSeparator) + filepathFromSlash(ref.Path)
+			info, err := os.Stat(path)
+			if err != nil {
+				return fmt.Errorf("fixture %q reference %q is unavailable: %w", fixture.ID, ref.Path, err)
+			}
+			if info.IsDir() {
+				return fmt.Errorf("fixture %q reference %q is a directory", fixture.ID, ref.Path)
+			}
+		}
+	}
+	return nil
+}
+
+func filepathFromSlash(path string) string {
+	return strings.ReplaceAll(path, "/", string(os.PathSeparator))
+}
