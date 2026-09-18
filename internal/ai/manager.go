@@ -26,7 +26,8 @@ type runtimeSession struct {
 
 type Manager struct {
 	store      *ModelStore
-	settings   SettingsProvider
+	settings       SettingsProvider
+	modelActivated func(domain.AICapability, InstalledModel) error
 
 	mu         sync.Mutex
 	factories  map[string]EngineFactory
@@ -44,6 +45,12 @@ func NewManager(root string, settings SettingsProvider) *Manager {
 
 func (m *Manager) Store() *ModelStore {
 	return m.store
+}
+
+func (m *Manager) SetModelActivatedHook(hook func(domain.AICapability, InstalledModel) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.modelActivated = hook
 }
 
 func (m *Manager) RegisterEngine(engineID string, factory EngineFactory) error {
@@ -149,6 +156,16 @@ func (m *Manager) Load(
 	if err := engine.Load(ctx, model, options); err != nil {
 		_ = engine.Unload(context.Background())
 		return fmt.Errorf("load engine %s: %w", engine.ID(), err)
+	}
+
+	m.mu.Lock()
+	hook := m.modelActivated
+	m.mu.Unlock()
+	if hook != nil {
+		if err := hook(capability, model); err != nil {
+			_ = engine.Unload(context.Background())
+			return fmt.Errorf("activate model metadata for %s: %w", capability, err)
+		}
 	}
 
 	m.mu.Lock()
