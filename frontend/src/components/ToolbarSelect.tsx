@@ -23,7 +23,6 @@ interface MenuPosition {
 
 const MENU_GAP = 5;
 const VIEWPORT_MARGIN = 10;
-const MIN_MENU_HEIGHT = 96;
 
 export function ToolbarSelect<T extends string | number>({
   value,
@@ -45,7 +44,8 @@ export function ToolbarSelect<T extends string | number>({
     const trigger = triggerRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
-    const width = Math.max(rect.width, 132);
+    const viewportWidth = Math.max(0, window.innerWidth - VIEWPORT_MARGIN * 2);
+    const width = Math.min(Math.max(rect.width, 132), viewportWidth);
     const maxLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN);
     const left = Math.min(Math.max(rect.left, VIEWPORT_MARGIN), maxLeft);
     const top = rect.bottom + MENU_GAP;
@@ -55,7 +55,7 @@ export function ToolbarSelect<T extends string | number>({
       top,
       left,
       width,
-      maxHeight: Math.max(MIN_MENU_HEIGHT, availableBelow),
+      maxHeight: Math.max(0, availableBelow),
     });
   };
 
