@@ -109,10 +109,7 @@ export function TagPicker({ assetId, tags, assignedTags, onAssignedTagsChange, o
   return (
     <div className="space-y-2.5">
       <div>
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-medium text-muted-foreground">付与済み {assignedTags.length}件</span>
-          {assignedTags.length > 0 && <span className="text-[10px] text-muted-foreground/70">クリックで解除</span>}
-        </div>
+        {assignedTags.length > 0 && <div className="mb-1.5 text-[10px] font-medium text-muted-foreground">付与済み {assignedTags.length}</div>}
         {assignedTags.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {assignedTags
@@ -133,9 +130,7 @@ export function TagPicker({ assetId, tags, assignedTags, onAssignedTagsChange, o
                 </button>
               ))}
           </div>
-        ) : (
-          <p className="text-[11px] text-muted-foreground">この画像にはまだタグがありません。</p>
-        )}
+        ) : null}
       </div>
 
       <div className="space-y-1.5">
@@ -203,9 +198,6 @@ export function TagPicker({ assetId, tags, assignedTags, onAssignedTagsChange, o
               <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">該当する未付与タグはありません</p>
             )}
           </div>
-          {candidates.length > MAX_VISIBLE_CANDIDATES && (
-            <p className="px-2.5 py-1.5 border-t border-border text-[10px] text-muted-foreground">タグ名を入力して絞り込むと、残りの候補もすぐ探せます。</p>
-          )}
         </div>
       )}
 
