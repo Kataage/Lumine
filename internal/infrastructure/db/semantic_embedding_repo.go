@@ -151,6 +151,62 @@ func (r *SemanticEmbeddingRepo) GetReady(assetID int64) (*domain.SemanticEmbeddi
 	return &value, nil
 }
 
+func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
+	libraryID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	afterID int64,
+	limit int,
+) ([]int64, error) {
+	if libraryID <= 0 {
+		return nil, errors.New("library id must be positive")
+	}
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return nil, errors.New("semantic embedding provenance is required")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+
+	rows, err := r.db.Query(`
+		SELECT a.id
+		FROM assets a
+		WHERE a.library_id = ?
+		  AND a.id > ?
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = a.id
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'ready'
+			  AND aa.engine = ?
+			  AND aa.model_id = ?
+			  AND aa.model_version = ?
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		  )
+		ORDER BY a.id ASC
+		LIMIT ?
+	`, libraryID, afterID, engine, modelID, modelVersion, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list assets needing semantic embedding: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan asset needing semantic embedding: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQuery) (*SemanticSearchResult, error) {
 	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
 		return nil, errors.New("semantic search provenance is required")
