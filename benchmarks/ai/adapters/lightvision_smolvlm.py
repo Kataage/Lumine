@@ -236,11 +236,7 @@ def infer(server: Server, image_path: Path, mode: str) -> tuple[dict[str, Any], 
         }],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {
-                "name": "lumine_lightweight_vision",
-                "strict": True,
-                "schema": VISION_JSON_SCHEMA,
-            },
+            "schema": VISION_JSON_SCHEMA,
         },
     }
     started = time.perf_counter()
