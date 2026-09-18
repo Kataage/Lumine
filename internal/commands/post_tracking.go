@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"log/slog"
+	"fmt"
 	"strings"
 	"time"
 
@@ -49,7 +49,7 @@ type PostRecordDTO struct {
 	ExternalURL          string               `json:"externalUrl,omitempty"`
 }
 
-func (c *AppCommands) toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
+func (c *AppCommands) toPostRecordDTO(record db.PostRecordView) (PostRecordDTO, error) {
 	dto := PostRecordDTO{
 		ID:                   record.ID,
 		Title:                record.Title,
@@ -76,11 +76,10 @@ func (c *AppCommands) toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
 	for _, assetID := range record.AssetIDs {
 		asset, err := c.assetRepo.GetByID(assetID)
 		if err != nil {
-			slog.Warn("load post record asset", "postID", record.ID, "assetID", assetID, "error", err)
-			continue
+			return PostRecordDTO{}, fmt.Errorf("load post record %d asset %d: %w", record.ID, assetID, err)
 		}
 		if asset == nil {
-			continue
+			return PostRecordDTO{}, fmt.Errorf("post record %d references missing asset %d", record.ID, assetID)
 		}
 		dto.Assets = append(dto.Assets, PostRecordAssetDTO{
 			ID:       asset.ID,
@@ -88,17 +87,17 @@ func (c *AppCommands) toPostRecordDTO(record db.PostRecordView) PostRecordDTO {
 			FilePath: asset.FilePath,
 		})
 	}
-	return dto
+	return dto, nil
 }
 
-func (c *AppCommands) CreatePostRecord(req PostRecordRequest) *PostRecordDTO {
+func (c *AppCommands) CreatePostRecord(req PostRecordRequest) (*PostRecordDTO, error) {
 	var publishedAt *time.Time
 	if value := strings.TrimSpace(req.PublishedAt); value != "" {
-		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
-			publishedAt = &parsed
-		} else {
-			slog.Warn("CreatePostRecord: invalid publishedAt", "value", value, "error", err)
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid publishedAt %q: %w", value, err)
 		}
+		publishedAt = &parsed
 	}
 
 	postID, err := c.postRepo.CreateTrackingRecord(db.PostRecordCreate{
@@ -114,46 +113,53 @@ func (c *AppCommands) CreatePostRecord(req PostRecordRequest) *PostRecordDTO {
 		PublishedAt:          publishedAt,
 	})
 	if err != nil {
-		slog.Error("CreatePostRecord", "error", err)
-		return nil
+		return nil, fmt.Errorf("create post record: %w", err)
 	}
 
 	records, err := c.postRepo.ListTrackingRecords(0, 100)
 	if err != nil {
-		slog.Error("CreatePostRecord: reload", "error", err)
-		return nil
+		return nil, fmt.Errorf("reload post record %d: %w", postID, err)
 	}
 	for _, record := range records {
 		if record.ID == postID {
-			dto := c.toPostRecordDTO(record)
-			return &dto
+			dto, err := c.toPostRecordDTO(record)
+			if err != nil {
+				return nil, err
+			}
+			return &dto, nil
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("created post record not found after reload: %d", postID)
 }
 
-func (c *AppCommands) ListPostRecords(offset, limit int) []PostRecordDTO {
+func (c *AppCommands) ListPostRecords(offset, limit int) ([]PostRecordDTO, error) {
 	records, err := c.postRepo.ListTrackingRecords(offset, limit)
 	if err != nil {
-		slog.Error("ListPostRecords", "error", err)
-		return nil
+		return nil, fmt.Errorf("list post records: %w", err)
 	}
-	result := make([]PostRecordDTO, len(records))
-	for i, record := range records {
-		result[i] = c.toPostRecordDTO(record)
+	result := make([]PostRecordDTO, 0, len(records))
+	for _, record := range records {
+		dto, err := c.toPostRecordDTO(record)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, dto)
 	}
-	return result
+	return result, nil
 }
 
-func (c *AppCommands) GetPostRecordsByAsset(assetID int64) []PostRecordDTO {
+func (c *AppCommands) GetPostRecordsByAsset(assetID int64) ([]PostRecordDTO, error) {
 	records, err := c.postRepo.GetTrackingRecordsByAsset(assetID)
 	if err != nil {
-		slog.Error("GetPostRecordsByAsset", "assetID", assetID, "error", err)
-		return nil
+		return nil, fmt.Errorf("get post records for asset %d: %w", assetID, err)
 	}
-	result := make([]PostRecordDTO, len(records))
-	for i, record := range records {
-		result[i] = c.toPostRecordDTO(record)
+	result := make([]PostRecordDTO, 0, len(records))
+	for _, record := range records {
+		dto, err := c.toPostRecordDTO(record)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, dto)
 	}
-	return result
+	return result, nil
 }
