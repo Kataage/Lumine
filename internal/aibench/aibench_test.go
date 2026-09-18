@@ -73,7 +73,7 @@ func TestCatalogCanScopeRequiredCategories(t *testing.T) {
 	catalog := Catalog{
 		SchemaVersion:      SchemaVersion,
 		FixturePack:        "vision-only-v1",
-		RequiredCategories: []Category{CategoryLightweightVision, CategoryCPUlatencyForTest()},
+		RequiredCategories: []Category{CategoryLightweightVision, CategoryCPULatency},
 		Fixtures: []Fixture{
 			{ID: "vision", Category: CategoryLightweightVision, Description: "vision"},
 			{ID: "cpu", Category: CategoryCPULatency, Description: "cpu"},
@@ -89,9 +89,6 @@ func TestCatalogCanScopeRequiredCategories(t *testing.T) {
 	}
 }
 
-func CategoryCPUlatencyForTest() Category {
-	return CategoryCPULatency
-}
 
 func TestResultValidationRequiresCompleteStableFixtureCoverage(t *testing.T) {
 	catalog := fullTestCatalog()
