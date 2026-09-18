@@ -55,7 +55,13 @@ func RunAdapter(
 		}
 	}
 	if hasReferences {
-		if err := VerifyFixturePackForCategories(catalog, options.FixtureDir, model.BenchmarkCategories); err != nil {
+		var err error
+		if len(model.BenchmarkCategories) == 0 {
+			err = VerifyFixturePack(catalog, options.FixtureDir)
+		} else {
+			err = VerifyFixturePackForCategories(catalog, options.FixtureDir, model.BenchmarkCategories)
+		}
+		if err != nil {
 			return BenchmarkResult{}, err
 		}
 	}
