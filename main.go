@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/ai/siglip2"
 	"github.com/kataage/lumine/internal/commands"
 	"github.com/kataage/lumine/internal/domain"
@@ -132,6 +133,14 @@ func main() {
 		log.Fatal("failed to register SigLIP2 engine:", err)
 	}
 
+	llamaRuntimeStore := llamacpp.NewRuntimeStore(filepath.Join(appDir, "runtimes", "llama.cpp"))
+	cmd.SetLlamaRuntimeStore(llamaRuntimeStore)
+	if err := aiManager.RegisterEngine(llamacpp.EngineID, func() ai.Engine {
+		return llamacpp.NewEngine(llamaRuntimeStore)
+	}); err != nil {
+		log.Fatal("failed to register llama.cpp VLM engine:", err)
+	}
+
 	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
 	cmd.SetAIJobQueue(aiJobQueue)
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
@@ -177,6 +186,9 @@ func main() {
 			go func() {
 				if err := cmd.RestoreDefaultSemanticModel(); err != nil {
 					slog.Warn("failed to restore Semantic Search runtime", "error", err)
+				}
+				if err := cmd.RestoreDefaultLightweightVisionModel(); err != nil {
+					slog.Warn("failed to restore Lightweight Vision runtime", "error", err)
 				}
 			}()
 		},
