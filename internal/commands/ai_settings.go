@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -43,6 +45,18 @@ func (c *AppCommands) SetAISettings(settings domain.AISettings) (domain.AISettin
 	}
 	if err := c.settingRepo.Set(aiSettingsKey, string(value)); err != nil {
 		return domain.AISettings{}, fmt.Errorf("save AI settings: %w", err)
+	}
+
+	if c.aiManager != nil {
+		applyContext := c.ctx
+		if applyContext == nil {
+			applyContext = context.Background()
+		}
+		if err := c.aiManager.ApplySettings(applyContext, settings); err != nil {
+			// The persisted setting is authoritative. Runtime shutdown failures are
+			// surfaced through logs/status but must not roll the user's setting back.
+			slog.Error("failed to apply AI settings to runtime", "error", err)
+		}
 	}
 
 	if c.ctx != nil {
