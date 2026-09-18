@@ -140,13 +140,31 @@ func (s *ModelStore) Install(ctx context.Context, manifest ModelManifest, progre
 	}
 
 	target := filepath.Join(modelRoot, manifest.Version)
-	if err := os.RemoveAll(target); err != nil {
-		return InstalledModel{}, fmt.Errorf("remove previous model version: %w", err)
+	backup := filepath.Join(modelRoot, "."+manifest.Version+"-previous")
+	_ = os.RemoveAll(backup)
+
+	hadPrevious := false
+	if _, statErr := os.Stat(target); statErr == nil {
+		if err := os.Rename(target, backup); err != nil {
+			return InstalledModel{}, fmt.Errorf("stage previous model version: %w", err)
+		}
+		hadPrevious = true
+	} else if !os.IsNotExist(statErr) {
+		return InstalledModel{}, fmt.Errorf("inspect previous model version: %w", statErr)
 	}
+
 	if err := os.Rename(staging, target); err != nil {
+		if hadPrevious {
+			if restoreErr := os.Rename(backup, target); restoreErr != nil {
+				return InstalledModel{}, fmt.Errorf("commit model installation: %w (restore previous version: %v)", err, restoreErr)
+			}
+		}
 		return InstalledModel{}, fmt.Errorf("commit model installation: %w", err)
 	}
 	committed = true
+	if hadPrevious {
+		_ = os.RemoveAll(backup)
+	}
 
 	installed := InstalledModel{Manifest: manifest, RootDir: target}
 	if _, err := s.Verify(manifest.ID, manifest.Version); err != nil {
