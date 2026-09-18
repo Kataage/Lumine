@@ -197,7 +197,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" onMouseDown={(event) => { if (event.currentTarget === event.target && !busy && !setupBusy) onClose(); }}>
       <div className="w-full max-w-3xl max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-2xl" role="dialog" aria-modal="true" aria-label="公開記録を追加">
         <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
-          <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">公開記録</h2><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{orderedIds.length}枚</span></div><p className="text-[10px] text-muted-foreground">実際に投稿した内容を、その時点のスナップショットとして保存</p></div>
+          <div className="min-w-0 flex items-center gap-2"><h2 className="text-sm font-semibold">公開記録</h2><span className="rounded-full bg-muted px-2 py-0.5 text-[9px] text-muted-foreground">{orderedIds.length}枚</span></div>
           <button type="button" onClick={onClose} disabled={busy || setupBusy} className="ui-icon-button text-lg" aria-label="閉じる">×</button>
         </div>
 
@@ -218,7 +218,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           </section>
 
           <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-2.5">
-            <div className="flex items-center justify-between"><div><p className="text-xs font-semibold">投稿画像と順序</p><p className="text-[10px] text-muted-foreground">実際の投稿順を保存します</p></div></div>
+            <p className="text-xs font-semibold">投稿画像と順序</p>
             <div className="space-y-1.5">{orderedIds.map((id, index) => {
               const asset = assets.find((item) => item.id === id);
               return <div key={id} className="flex items-center gap-2 rounded-lg bg-background/60 p-2"><span className="w-5 text-right text-[10px] text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-[11px]">{asset?.fileName ?? `Asset #${id}`}</span><button className="ui-mini-button" type="button" onClick={() => moveImage(index, -1)} disabled={index === 0}>↑</button><button className="ui-mini-button" type="button" onClick={() => moveImage(index, 1)} disabled={index === orderedIds.length - 1}>↓</button></div>;
@@ -231,7 +231,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
             <div className="space-y-1.5"><span className="ui-label">{targetKind === "pixiv" ? "タグ" : "タグ / ハッシュタグ"}</span><div className="flex flex-wrap gap-1.5">{tags.map((tag) => <button key={tag} type="button" onClick={() => setTags((current) => current.filter((item) => item !== tag))} className="rounded-full border border-border bg-muted px-2.5 py-1 text-[10px] hover:border-destructive/40">#{tag} ×</button>)}</div><input className="ui-input w-full" value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addTag(); } }} onBlur={addTag} placeholder="入力して Enter（複数可）" /></div>
           </section>
 
-          {targetKind === "pixiv" && <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-3"><p className="text-xs font-semibold">Pixiv投稿情報</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="space-y-1.5"><span className="ui-label">年齢制限</span><select className="ui-input w-full" value={ageRestriction} onChange={(event) => setAgeRestriction(event.target.value)}><option>全年齢</option><option>R-18</option><option>R-18G</option></select></label><label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/50 px-3 py-2"><span><span className="block text-[11px] font-medium">AI生成作品</span><span className="block text-[9px] text-muted-foreground">投稿時の設定を記録</span></span><input type="checkbox" checked={aiGenerated} onChange={(event) => setAiGenerated(event.target.checked)} /></label></div></section>}
+          {targetKind === "pixiv" && <section className="rounded-xl border border-border bg-muted/10 p-3 space-y-3"><p className="text-xs font-semibold">Pixiv投稿情報</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><label className="space-y-1.5"><span className="ui-label">年齢制限</span><select className="ui-input w-full" value={ageRestriction} onChange={(event) => setAgeRestriction(event.target.value)}><option>全年齢</option><option>R-18</option><option>R-18G</option></select></label><label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/50 px-3 py-2"><span><span className="block text-[11px] font-medium">AI生成作品</span></span><input type="checkbox" checked={aiGenerated} onChange={(event) => setAiGenerated(event.target.checked)} /></label></div></section>}
 
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="space-y-1.5"><span className="ui-label">投稿日時</span><input type="datetime-local" className="ui-input w-full" value={publishedAt} onChange={(event) => setPublishedAt(event.target.value)} /></label>
@@ -240,7 +240,7 @@ export function PostRecordModal({ assetIds, defaultTitle = "", onClose, onSaved 
           </section>
         </div>
 
-        <div className="px-4 py-3 border-t border-border flex items-center justify-between gap-3 flex-shrink-0"><p className="text-[10px] text-muted-foreground">後からローカルタグを変えても、この公開内容はそのまま残ります。</p><div className="flex gap-2"><button type="button" className="ui-secondary-button" onClick={onClose} disabled={busy || setupBusy}>キャンセル</button><button type="button" className="ui-primary-button min-w-24" onClick={() => void save()} disabled={busy || setupBusy}>{busy ? "保存中…" : "公開記録を保存"}</button></div></div>
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between gap-3 flex-shrink-0"><p className="text-[9px] text-muted-foreground">保存後は公開時点の内容を保持</p><div className="flex gap-2"><button type="button" className="ui-secondary-button" onClick={onClose} disabled={busy || setupBusy}>キャンセル</button><button type="button" className="ui-primary-button min-w-24" onClick={() => void save()} disabled={busy || setupBusy}>{busy ? "保存中…" : "公開記録を保存"}</button></div></div>
       </div>
     </div>, document.body
   );
