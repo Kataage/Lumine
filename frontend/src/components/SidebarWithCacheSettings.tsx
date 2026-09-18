@@ -75,12 +75,13 @@ export function SidebarWithCacheSettings() {
 
   const primaryItems = NAV_ITEMS.filter((item) => item.key !== "settings");
   const settingsItem = NAV_ITEMS.find((item) => item.key === "settings")!;
+  const activeItem = NAV_ITEMS.find((item) => item.key === state.sidebarView) ?? NAV_ITEMS[0];
 
   return (
     <aside className="app-sidebar border-r border-border bg-card flex flex-shrink-0 overflow-hidden" aria-label="Lumine サイドバー">
       <div className="sidebar-rail flex-shrink-0">
         <div className="sidebar-rail-brand">
-          <AppIcon size={30} className="drop-shadow-md" />
+          <AppIcon size={28} />
         </div>
 
         <nav className="sidebar-rail-nav" aria-label="サイドバーナビゲーション">
@@ -104,8 +105,8 @@ export function SidebarWithCacheSettings() {
       </div>
 
       <div className="sidebar-workspace min-w-0 flex-1 flex flex-col">
-        <div className="h-14 px-3.5 border-b border-border flex items-center flex-shrink-0">
-          <p className="text-sm font-bold">Lumine</p>
+        <div className="sidebar-workspace-header px-3.5 border-b border-border flex items-center flex-shrink-0">
+          <p className="text-xs font-semibold tracking-wide">{activeItem.label}</p>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto">
