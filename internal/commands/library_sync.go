@@ -20,7 +20,11 @@ func (c *AppCommands) SyncLibraryViewer(libraryID int64) (*scanner.SyncResult, e
 		return nil, fmt.Errorf("library is disabled: %d", libraryID)
 	}
 
-	result, err := c.scanSvc.SyncLibrary(library, c.GetExcludedDirs(libraryID))
+	excludedDirs, err := c.GetExcludedDirs(libraryID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := c.scanSvc.SyncLibrary(library, excludedDirs)
 	if err != nil && strings.Contains(err.Error(), "scan already in progress") {
 		return &scanner.SyncResult{LibraryID: libraryID}, nil
 	}
