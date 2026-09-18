@@ -2,6 +2,8 @@ name: build-windows
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [develop]
   push:
     tags:
       - "v*"
@@ -19,34 +21,55 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps
+        working-directory: frontend
         run: npm ci
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          targets: x86_64-pc-windows-msvc
+          go-version: "1.23"
+          cache-dependency-path: go.sum
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Windows app
+        run: wails build -platform windows/amd64
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: .
-          args: --target x86_64-pc-windows-msvc
+          CGO_ENABLED: "0"
 
-      - name: Upload bundle artifacts
+      - name: Build Windows portable
+        run: wails build -platform windows/amd64 -ldflags "-H windowsgui" -o Lumine-portable.exe
+        env:
+          CGO_ENABLED: "0"
+
+      - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lumine-windows-bundles
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/**
+          name: lumine-windows
+          path: build/bin/Lumine.exe
+          if-no-files-found: error
 
-      - name: Upload portable exe
+      # upload-artifact itself produces the single downloadable ZIP wrapper.
+      # Upload the portable EXE directly so users do not get ZIP-inside-ZIP.
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: lumine-windows-portable
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/lumine.exe
+          path: build/bin/Lumine-portable.exe
+          if-no-files-found: error
+
+      - name: Upload full bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-windows-bundle
+          path: build/bin/*
+          if-no-files-found: error

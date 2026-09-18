@@ -1,0 +1,12 @@
+.app-detail-panel {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.app-detail-panel > div:last-child {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}

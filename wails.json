@@ -1,0 +1,13 @@
+{
+  "name": "Lumine",
+  "outputfilename": "Lumine",
+  "frontendDir": "frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Kataage",
+    "email": ""
+  }
+}
