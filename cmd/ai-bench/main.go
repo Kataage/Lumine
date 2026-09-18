@@ -34,6 +34,8 @@ func main() {
 		err = validateCatalogCommand(os.Args[2:])
 	case "validate-result":
 		err = validateResultCommand(os.Args[2:])
+	case "hash-fixtures":
+		err = hashFixturesCommand(os.Args[2:])
 	case "validate-adoptions":
 		err = validateAdoptionsCommand(os.Args[2:])
 	case "run":
@@ -53,7 +55,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "Usage: go run ./cmd/ai-bench <command> [options]")
-	fmt.Fprintln(os.Stderr, "Commands: validate-catalog, validate-result, validate-adoptions, run, compare")
+	fmt.Fprintln(os.Stderr, "Commands: validate-catalog, hash-fixtures, validate-result, validate-adoptions, run, compare")
 }
 
 func validateCatalogCommand(args []string) error {
@@ -78,6 +80,36 @@ func validateCatalogCommand(args []string) error {
 	}
 	fmt.Printf("catalog OK: %d fixtures, %d required categories, pack=%s\n",
 		len(catalog.Fixtures), len(aibench.RequiredCategories), catalog.FixturePack)
+	return nil
+}
+
+func hashFixturesCommand(args []string) error {
+	fs := flag.NewFlagSet("hash-fixtures", flag.ContinueOnError)
+	catalogPath := fs.String("catalog", "benchmarks/ai/catalog.json", "fixture catalog")
+	fixtureDir := fs.String("fixtures-dir", "", "local fixture pack directory")
+	out := fs.String("out", "", "manifest output path; defaults to <fixtures-dir>/manifest.json")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *fixtureDir == "" {
+		return errors.New("-fixtures-dir is required")
+	}
+	if *out == "" {
+		*out = filepath.Join(*fixtureDir, "manifest.json")
+	}
+
+	var catalog aibench.Catalog
+	if err := readJSON(*catalogPath, &catalog); err != nil {
+		return err
+	}
+	manifest, err := aibench.BuildFixturePackManifest(catalog, *fixtureDir)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(*out, manifest); err != nil {
+		return err
+	}
+	fmt.Printf("wrote fixture manifest: %s files=%d pack=%s\n", *out, len(manifest.Files), manifest.PackID)
 	return nil
 }
 
