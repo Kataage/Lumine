@@ -299,26 +299,57 @@ def _ref_path(fixture_dir: Path, fixture: dict[str, Any], role: str | None = Non
     )
 
 
-def _constraint_score(fixture: dict[str, Any], predicted: dict[str, Any]) -> float:
-    expected = fixture.get("expected") or {}
+def _fixture_expected(fixture_dir: Path, fixture: dict[str, Any]) -> dict[str, Any]:
+    expected = dict(fixture.get("expected") or {})
+    for ref in fixture.get("references") or []:
+        if ref.get("role") != "ground_truth":
+            continue
+        path = fixture_dir / str(ref["path"])
+        with path.open("r", encoding="utf-8") as handle:
+            ground_truth = json.load(handle)
+        if not isinstance(ground_truth, dict):
+            raise ValueError(f"ground truth {path} must contain a JSON object")
+        expected.update(ground_truth)
+    return expected
+
+
+def _constraint_score(expected: dict[str, Any], predicted: dict[str, Any]) -> tuple[float, dict[str, float]]:
     actual = {_normalize_tag(name) for name, _ in predicted["general"]}
     required = [_normalize_tag(str(x)) for x in expected.get("requiredTags", [])]
     forbidden = [_normalize_tag(str(x)) for x in expected.get("forbiddenTags", [])]
     constraints = [(tag, tag in actual) for tag in required]
     constraints += [(tag, tag not in actual) for tag in forbidden]
-    if not constraints:
-        return 0.0
-    return sum(1 for _, ok in constraints if ok) / len(constraints)
+    constraint_score = (
+        sum(1 for _, ok in constraints if ok) / len(constraints)
+        if constraints
+        else 0.0
+    )
+
+    metrics: dict[str, float] = {}
+    reference_tags = {
+        _normalize_tag(str(x)) for x in expected.get("referenceTags", [])
+    }
+    if reference_tags:
+        true_positive = len(actual & reference_tags)
+        precision = true_positive / len(actual) if actual else 0.0
+        recall = true_positive / len(reference_tags)
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if precision + recall > 0
+            else 0.0
+        )
+        metrics = {"precision": precision, "recall": recall, "f1": f1}
+    return constraint_score, metrics
 
 
-def _character_score(fixture: dict[str, Any], predicted: dict[str, Any]) -> float:
-    expected = _normalize_tag(str((fixture.get("expected") or {}).get("expectedCharacter", "")))
-    if not expected:
+def _character_score(expected: dict[str, Any], predicted: dict[str, Any]) -> float:
+    expected_character = _normalize_tag(str(expected.get("expectedCharacter", "")))
+    if not expected_character:
         return 0.0
     if not predicted["characters"]:
         return 0.0
     top = _normalize_tag(predicted["characters"][0][0])
-    return 1.0 if top == expected else 0.0
+    return 1.0 if top == expected_character else 0.0
 
 
 def _tag_output(predicted: dict[str, Any]) -> dict[str, Any]:
@@ -384,19 +415,26 @@ def _run_quality_case(
         }
 
     path = _ref_path(fixture_dir, fixture, "image")
+    expected = _fixture_expected(fixture_dir, fixture)
     probabilities, latency_ms = _infer(session, path, config)
     predicted = _classify(probabilities, tags, config)
+    output = _tag_output(predicted)
     if category == "danbooru_tagging":
-        score = _constraint_score(fixture, predicted)
+        score, tag_metrics = _constraint_score(expected, predicted)
+        if tag_metrics:
+            output["referenceMetrics"] = {
+                key: round(value, 8) for key, value in tag_metrics.items()
+            }
     elif category == "character_tagging":
-        score = _character_score(fixture, predicted)
+        score = _character_score(expected, predicted)
+        output["expectedCharacter"] = expected.get("expectedCharacter", "")
     else:
         raise ValueError(f"unsupported tagger quality category {category}")
     return {
         "status": "ok",
         "score": score,
         "metrics": {"latencyMs": latency_ms},
-        "output": _tag_output(predicted),
+        "output": output,
     }
 
 
