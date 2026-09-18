@@ -17,6 +17,83 @@ var (
 	ErrSemanticModelNotReady  = errors.New("Semantic Search model is not loaded")
 )
 
+func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, error) {
+	if len(assetIDs) == 0 || c.aiJobQueue == nil || c.aiManager == nil {
+		return 0, nil
+	}
+	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		return 0, nil
+	}
+	return c.aiJobQueue.EnqueueMany(
+		assetIDs,
+		domain.AICapabilitySemanticSearch,
+		-50,
+		true,
+	)
+}
+
+func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
+	if c.aiJobQueue == nil || c.aiManager == nil {
+		return 0, nil
+	}
+	if err := c.requireSemanticSearchEnabled(); err != nil {
+		return 0, err
+	}
+
+	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		return 0, ErrSemanticModelNotReady
+	}
+	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
+		return 0, errors.New("Semantic Search runtime provenance is incomplete")
+	}
+
+	libraries, err := c.libraryRepo.List()
+	if err != nil {
+		return 0, fmt.Errorf("list libraries for semantic backfill: %w", err)
+	}
+
+	total := 0
+	for _, library := range libraries {
+		if !library.IsEnabled {
+			continue
+		}
+		var afterID int64
+		for {
+			ids, err := c.semanticRepo.ListNeedingEmbedding(
+				library.ID,
+				status.Engine,
+				status.ModelID,
+				status.Version,
+				afterID,
+				1000,
+			)
+			if err != nil {
+				return total, err
+			}
+			if len(ids) == 0 {
+				break
+			}
+			created, err := c.aiJobQueue.EnqueueMany(
+				ids,
+				domain.AICapabilitySemanticSearch,
+				-100,
+				false,
+			)
+			if err != nil {
+				return total, err
+			}
+			total += created
+			afterID = ids[len(ids)-1]
+			if len(ids) < 1000 {
+				break
+			}
+		}
+	}
+	return total, nil
+}
+
 func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AIJob) (ai.AnalysisOutput, error) {
 	if c.aiManager == nil {
 		return ai.AnalysisOutput{}, errors.New("AI model manager is not available")
