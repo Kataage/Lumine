@@ -9,5 +9,19 @@
   "parameters": {
     "threads": "8",
     "context": "4096"
-  }
+  },
+  "benchmarkCategories": [
+    "ja_to_prompt",
+    "il_prompt",
+    "model_profile_conversion",
+    "structured_json",
+    "partial_edit_constraints",
+    "lora_trigger_preservation",
+    "adult_content_robustness",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ]
 }
