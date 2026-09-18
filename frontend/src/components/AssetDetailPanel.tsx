@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useApp } from "../App";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssetDTO } from "../api/client";
 import {
@@ -111,6 +112,7 @@ function parsePlatformMetadata(value?: string): Record<string, unknown> {
 }
 
 export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanelProps) {
+  const { setState } = useApp();
   const queryClient = useQueryClient();
   const dialog = useAppDialog();
   const baseAsset = useMemo(() => normalizeAsset(listAsset), [listAsset]);
@@ -286,6 +288,26 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
                 <SummaryChip>{formatFileSize(asset.fileSize)}</SummaryChip>
                 {asset.width > 0 && asset.height > 0 && <SummaryChip>{asset.width} × {asset.height}</SummaryChip>}
                 {asset.isFavorite && <SummaryChip>★ お気に入り</SummaryChip>}
+                <button
+                  type="button"
+                  className="ui-mini-button"
+                  onClick={() => {
+                    setState((current) => ({
+                      ...current,
+                      searchMode: "semantic",
+                      searchQuery: "",
+                      similarAssetId: asset.id,
+                      similarAssetName: asset.fileName,
+                      selectedAssets: new Set(),
+                      lastSelectedIndex: null,
+                    }));
+                    onClose();
+                  }}
+                  disabled={asset.id <= 0}
+                  title="Semantic embeddingから近い画像を表示"
+                >
+                  ≈ 類似画像
+                </button>
               </div>
             </div>
           </div>
