@@ -69,6 +69,30 @@ func TestCatalogRequiresEveryBenchmarkCategory(t *testing.T) {
 	}
 }
 
+func TestCatalogCanScopeRequiredCategories(t *testing.T) {
+	catalog := Catalog{
+		SchemaVersion:      SchemaVersion,
+		FixturePack:        "vision-only-v1",
+		RequiredCategories: []Category{CategoryLightweightVision, CategoryCPUlatencyForTest()},
+		Fixtures: []Fixture{
+			{ID: "vision", Category: CategoryLightweightVision, Description: "vision"},
+			{ID: "cpu", Category: CategoryCPULatency, Description: "cpu"},
+		},
+	}
+	if err := ValidateCatalog(catalog); err != nil {
+		t.Fatalf("ValidateCatalog scoped: %v", err)
+	}
+
+	catalog.RequiredCategories = append(catalog.RequiredCategories, CategoryRAM)
+	if err := ValidateCatalog(catalog); err == nil {
+		t.Fatal("scoped catalog missing declared RAM category should fail")
+	}
+}
+
+func CategoryCPUlatencyForTest() Category {
+	return CategoryCPULatency
+}
+
 func TestResultValidationRequiresCompleteStableFixtureCoverage(t *testing.T) {
 	catalog := fullTestCatalog()
 	result := fullTestResult(catalog, "baseline", "machine-a")
