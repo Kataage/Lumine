@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/commands"
@@ -125,6 +126,22 @@ func main() {
 	cmd := commands.New(database, scanSvc)
 	aiManager := ai.NewManager(filepath.Join(appDir, "models"), cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
+
+	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
+	cmd.SetAIJobQueue(aiJobQueue)
+	aiManager.SetModelActivatedHook(aiJobQueue.HandleModelActivated)
+	if err := aiJobQueue.Start(context.Background()); err != nil {
+		log.Fatal("failed to start AI job queue:", err)
+	}
+
+	// Stop workers before unloading runtimes and before closing SQLite.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := aiJobQueue.Stop(shutdownCtx); err != nil {
+			slog.Warn("failed to stop AI job queue cleanly", "error", err)
+		}
+	}()
 	defer func() {
 		if err := aiManager.Close(context.Background()); err != nil {
 			slog.Warn("failed to close AI runtime", "error", err)
