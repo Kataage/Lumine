@@ -42,10 +42,22 @@ func Compare(
 	}
 	for _, current := range candidate.Cases {
 		previous := baseByID[current.FixtureID]
-		if previous.Status != CaseStatusOK || current.Status != CaseStatusOK {
+		if previous.Status != CaseStatusOK {
 			continue
 		}
 		report.ComparedCases++
+		if current.Status != CaseStatusOK {
+			report.Regressions = append(report.Regressions, Regression{
+				FixtureID: current.FixtureID,
+				Category:  current.Category,
+				Metric:    "status",
+				Baseline:  1,
+				Candidate: 0,
+				Delta:     1,
+				Limit:     0,
+			})
+			continue
+		}
 		report.Regressions = append(report.Regressions, compareCase(previous, current, thresholds)...)
 	}
 	report.Passed = len(report.Regressions) == 0
