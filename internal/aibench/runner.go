@@ -49,13 +49,13 @@ func RunAdapter(
 
 	hasReferences := false
 	for _, fixture := range catalog.Fixtures {
-		if len(fixture.References) > 0 {
+		if modelSupportsCategory(model, fixture.Category) && len(fixture.References) > 0 {
 			hasReferences = true
 			break
 		}
 	}
 	if hasReferences {
-		if err := VerifyFixturePack(catalog, options.FixtureDir); err != nil {
+		if err := VerifyFixturePackForCategories(catalog, options.FixtureDir, model.BenchmarkCategories); err != nil {
 			return BenchmarkResult{}, err
 		}
 	}
@@ -73,10 +73,32 @@ func RunAdapter(
 	}
 
 	for _, fixture := range catalog.Fixtures {
+		if !modelSupportsCategory(model, fixture.Category) {
+			result.Cases = append(result.Cases, CaseResult{
+				FixtureID: fixture.ID,
+				Category:  fixture.Category,
+				Status:    CaseStatusSkipped,
+				Score:     0,
+				Notes:     "category not selected by model profile",
+			})
+			continue
+		}
 		caseResult := runFixture(ctx, fixture, model, options)
 		result.Cases = append(result.Cases, caseResult)
 	}
 	return result, nil
+}
+
+func modelSupportsCategory(model ModelProfile, category Category) bool {
+	if len(model.BenchmarkCategories) == 0 {
+		return true
+	}
+	for _, selected := range model.BenchmarkCategories {
+		if selected == category {
+			return true
+		}
+	}
+	return false
 }
 
 func runFixture(
