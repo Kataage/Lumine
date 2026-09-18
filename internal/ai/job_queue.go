@@ -288,6 +288,16 @@ func (q *JobQueue) MarkStaleForModel(
 	return q.repo.MarkStaleForModel(capability, engine, modelID, modelVersion)
 }
 
+func (q *JobQueue) HandleModelActivated(capability domain.AICapability, model InstalledModel) error {
+	_, err := q.MarkStaleForModel(
+		capability,
+		model.Manifest.Engine,
+		model.Manifest.ID,
+		model.Manifest.Version,
+	)
+	return err
+}
+
 func (q *JobQueue) GetAnalysesByAsset(assetID int64) ([]domain.AIAnalysis, error) {
 	return q.repo.GetByAsset(assetID)
 }
