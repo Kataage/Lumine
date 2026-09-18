@@ -176,7 +176,6 @@ def main() -> None:
 
         root = prepare_snapshot(model_profile)
         threads = max(1, int(param(model_profile, "threads", "8")))
-        image_path = image_reference(fixture_dir, fixture)
 
         if category == "model_size":
             size = int(model_profile.get("modelSizeBytes") or (root / "model.safetensors").stat().st_size)
@@ -187,6 +186,8 @@ def main() -> None:
                 "notes": "Metric records the primary safetensors weight artifact; tokenizer/processor code is reported separately by the profile/runtime."
             }, ensure_ascii=False))
             return
+
+        image_path = image_reference(fixture_dir, fixture)
 
         if category == "cold_start":
             runs = max(1, int((fixture.get("input") or {}).get("measureRuns") or 3))
