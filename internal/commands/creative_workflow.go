@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"log/slog"
+	"fmt"
 	"strings"
 
 	"github.com/kataage/lumine/internal/domain"
@@ -78,37 +78,54 @@ type CreateGenerationGroupRequest struct {
 	Notes          string  `json:"notes"`
 }
 
-func (c *AppCommands) creativeAssetRefs(ids []int64) []CreativeAssetRefDTO {
+func (c *AppCommands) creativeAssetRefs(ids []int64) ([]CreativeAssetRefDTO, error) {
 	refs := make([]CreativeAssetRefDTO, 0, len(ids))
 	for _, id := range ids {
 		asset, err := c.assetRepo.GetByID(id)
-		if err != nil || asset == nil {
-			continue
+		if err != nil {
+			return nil, fmt.Errorf("load creative asset %d: %w", id, err)
+		}
+		if asset == nil {
+			return nil, fmt.Errorf("creative asset not found: %d", id)
 		}
 		refs = append(refs, CreativeAssetRefDTO{ID: asset.ID, FileName: asset.FileName, FilePath: asset.FilePath})
 	}
-	return refs
+	return refs, nil
 }
 
-func (c *AppCommands) toWorkDTO(repo *db.CreativeRepo, work domain.Work) WorkDTO {
-	ids, _ := repo.GetWorkAssetIDs(work.ID)
+func (c *AppCommands) toWorkDTO(repo *db.CreativeRepo, work domain.Work) (WorkDTO, error) {
+	ids, err := repo.GetWorkAssetIDs(work.ID)
+	if err != nil {
+		return WorkDTO{}, fmt.Errorf("get work %d assets: %w", work.ID, err)
+	}
+	refs, err := c.creativeAssetRefs(ids)
+	if err != nil {
+		return WorkDTO{}, err
+	}
 	dto := WorkDTO{
 		ID:          work.ID,
 		Title:       work.Title,
 		Description: work.Description,
 		AssetIDs:    ids,
-		Assets:      c.creativeAssetRefs(ids),
+		Assets:      refs,
 		CreatedAt:   work.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:   work.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	if work.CoverAssetID != nil {
 		dto.CoverAssetID = *work.CoverAssetID
 	}
-	return dto
+	return dto, nil
 }
 
-func (c *AppCommands) toGenerationGroupDTO(repo *db.CreativeRepo, group domain.GenerationGroup) GenerationGroupDTO {
-	ids, _ := repo.GetGenerationGroupAssetIDs(group.ID)
+func (c *AppCommands) toGenerationGroupDTO(repo *db.CreativeRepo, group domain.GenerationGroup) (GenerationGroupDTO, error) {
+	ids, err := repo.GetGenerationGroupAssetIDs(group.ID)
+	if err != nil {
+		return GenerationGroupDTO{}, fmt.Errorf("get generation group %d assets: %w", group.ID, err)
+	}
+	refs, err := c.creativeAssetRefs(ids)
+	if err != nil {
+		return GenerationGroupDTO{}, err
+	}
 	dto := GenerationGroupDTO{
 		ID:             group.ID,
 		Name:           group.Name,
@@ -122,17 +139,17 @@ func (c *AppCommands) toGenerationGroupDTO(repo *db.CreativeRepo, group domain.G
 		WorkflowJSON:   group.WorkflowJSON,
 		Notes:          group.Notes,
 		AssetIDs:       ids,
-		Assets:         c.creativeAssetRefs(ids),
+		Assets:         refs,
 		CreatedAt:      group.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:      group.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	if group.WorkID != nil {
 		dto.WorkID = *group.WorkID
 	}
-	return dto
+	return dto, nil
 }
 
-func (c *AppCommands) toAssetRelationDTO(relation domain.AssetRelation) AssetRelationDTO {
+func (c *AppCommands) toAssetRelationDTO(relation domain.AssetRelation) (AssetRelationDTO, error) {
 	dto := AssetRelationDTO{
 		ID:            relation.ID,
 		ParentAssetID: relation.ParentAssetID,
@@ -141,61 +158,80 @@ func (c *AppCommands) toAssetRelationDTO(relation domain.AssetRelation) AssetRel
 		Note:          relation.Note,
 		CreatedAt:     relation.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	}
-	if asset, _ := c.assetRepo.GetByID(relation.ParentAssetID); asset != nil {
-		dto.ParentFileName = asset.FileName
-		dto.ParentFilePath = asset.FilePath
+	parent, err := c.assetRepo.GetByID(relation.ParentAssetID)
+	if err != nil {
+		return AssetRelationDTO{}, fmt.Errorf("load relation parent asset %d: %w", relation.ParentAssetID, err)
 	}
-	if asset, _ := c.assetRepo.GetByID(relation.ChildAssetID); asset != nil {
-		dto.ChildFileName = asset.FileName
-		dto.ChildFilePath = asset.FilePath
+	if parent == nil {
+		return AssetRelationDTO{}, fmt.Errorf("relation parent asset not found: %d", relation.ParentAssetID)
 	}
-	return dto
+	dto.ParentFileName = parent.FileName
+	dto.ParentFilePath = parent.FilePath
+
+	child, err := c.assetRepo.GetByID(relation.ChildAssetID)
+	if err != nil {
+		return AssetRelationDTO{}, fmt.Errorf("load relation child asset %d: %w", relation.ChildAssetID, err)
+	}
+	if child == nil {
+		return AssetRelationDTO{}, fmt.Errorf("relation child asset not found: %d", relation.ChildAssetID)
+	}
+	dto.ChildFileName = child.FileName
+	dto.ChildFilePath = child.FilePath
+	return dto, nil
 }
 
-func (c *AppCommands) ListWorks(limit int) []WorkDTO {
+func (c *AppCommands) ListWorks(limit int) ([]WorkDTO, error) {
 	repo := db.NewCreativeRepo(c.db)
 	works, err := repo.ListWorks(limit)
 	if err != nil {
-		slog.Error("ListWorks", "error", err)
-		return nil
+		return nil, fmt.Errorf("list works: %w", err)
 	}
 	result := make([]WorkDTO, 0, len(works))
 	for _, work := range works {
-		result = append(result, c.toWorkDTO(repo, work))
+		dto, err := c.toWorkDTO(repo, work)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, dto)
 	}
-	return result
+	return result, nil
 }
 
-func (c *AppCommands) CreateWork(title, description string, assetIDs []int64) *WorkDTO {
+func (c *AppCommands) CreateWork(title, description string, assetIDs []int64) (*WorkDTO, error) {
 	repo := db.NewCreativeRepo(c.db)
 	work, err := repo.CreateWork(title, description, assetIDs)
 	if err != nil {
-		slog.Error("CreateWork", "error", err)
-		return nil
+		return nil, fmt.Errorf("create work: %w", err)
 	}
-	dto := c.toWorkDTO(repo, *work)
-	return &dto
+	dto, err := c.toWorkDTO(repo, *work)
+	if err != nil {
+		return nil, err
+	}
+	return &dto, nil
 }
 
 func (c *AppCommands) AddAssetsToWork(workID int64, assetIDs []int64) error {
 	return db.NewCreativeRepo(c.db).AddAssetsToWork(workID, assetIDs)
 }
 
-func (c *AppCommands) ListGenerationGroups(limit int) []GenerationGroupDTO {
+func (c *AppCommands) ListGenerationGroups(limit int) ([]GenerationGroupDTO, error) {
 	repo := db.NewCreativeRepo(c.db)
 	groups, err := repo.ListGenerationGroups(limit)
 	if err != nil {
-		slog.Error("ListGenerationGroups", "error", err)
-		return nil
+		return nil, fmt.Errorf("list generation groups: %w", err)
 	}
 	result := make([]GenerationGroupDTO, 0, len(groups))
 	for _, group := range groups {
-		result = append(result, c.toGenerationGroupDTO(repo, group))
+		dto, err := c.toGenerationGroupDTO(repo, group)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, dto)
 	}
-	return result
+	return result, nil
 }
 
-func (c *AppCommands) CreateGenerationGroup(req CreateGenerationGroupRequest) *GenerationGroupDTO {
+func (c *AppCommands) CreateGenerationGroup(req CreateGenerationGroupRequest) (*GenerationGroupDTO, error) {
 	repo := db.NewCreativeRepo(c.db)
 	group := &domain.GenerationGroup{
 		Name:           strings.TrimSpace(req.Name),
@@ -215,47 +251,48 @@ func (c *AppCommands) CreateGenerationGroup(req CreateGenerationGroupRequest) *G
 	}
 	created, err := repo.CreateGenerationGroup(group, req.AssetIDs)
 	if err != nil {
-		slog.Error("CreateGenerationGroup", "error", err)
-		return nil
+		return nil, fmt.Errorf("create generation group: %w", err)
 	}
-	dto := c.toGenerationGroupDTO(repo, *created)
-	return &dto
+	dto, err := c.toGenerationGroupDTO(repo, *created)
+	if err != nil {
+		return nil, err
+	}
+	return &dto, nil
 }
 
 func (c *AppCommands) AddAssetsToGenerationGroup(groupID int64, assetIDs []int64) error {
 	return db.NewCreativeRepo(c.db).AddAssetsToGenerationGroup(groupID, assetIDs)
 }
 
-func (c *AppCommands) CreateAssetRelation(parentAssetID, childAssetID int64, relationType, note string) *AssetRelationDTO {
+func (c *AppCommands) CreateAssetRelation(parentAssetID, childAssetID int64, relationType, note string) (*AssetRelationDTO, error) {
 	relation, err := db.NewCreativeRepo(c.db).CreateRelation(parentAssetID, childAssetID, relationType, note)
 	if err != nil {
-		slog.Error("CreateAssetRelation", "error", err)
-		return nil
+		return nil, fmt.Errorf("create asset relation: %w", err)
 	}
-	dto := c.toAssetRelationDTO(*relation)
-	return &dto
+	dto, err := c.toAssetRelationDTO(*relation)
+	if err != nil {
+		return nil, err
+	}
+	return &dto, nil
 }
 
 func (c *AppCommands) DeleteAssetRelation(id int64) error {
 	return db.NewCreativeRepo(c.db).DeleteRelation(id)
 }
 
-func (c *AppCommands) GetAssetCreativeContext(assetID int64) *AssetCreativeContextDTO {
+func (c *AppCommands) GetAssetCreativeContext(assetID int64) (*AssetCreativeContextDTO, error) {
 	repo := db.NewCreativeRepo(c.db)
 	works, err := repo.GetWorksByAsset(assetID)
 	if err != nil {
-		slog.Error("GetAssetCreativeContext works", "assetID", assetID, "error", err)
-		return nil
+		return nil, fmt.Errorf("get works for asset %d: %w", assetID, err)
 	}
 	groups, err := repo.GetGenerationGroupsByAsset(assetID)
 	if err != nil {
-		slog.Error("GetAssetCreativeContext groups", "assetID", assetID, "error", err)
-		return nil
+		return nil, fmt.Errorf("get generation groups for asset %d: %w", assetID, err)
 	}
 	relations, err := repo.GetRelationsByAsset(assetID)
 	if err != nil {
-		slog.Error("GetAssetCreativeContext relations", "assetID", assetID, "error", err)
-		return nil
+		return nil, fmt.Errorf("get relations for asset %d: %w", assetID, err)
 	}
 
 	result := &AssetCreativeContextDTO{
@@ -264,13 +301,25 @@ func (c *AppCommands) GetAssetCreativeContext(assetID int64) *AssetCreativeConte
 		Relations: make([]AssetRelationDTO, 0, len(relations)),
 	}
 	for _, work := range works {
-		result.Works = append(result.Works, c.toWorkDTO(repo, work))
+		dto, err := c.toWorkDTO(repo, work)
+		if err != nil {
+			return nil, err
+		}
+		result.Works = append(result.Works, dto)
 	}
 	for _, group := range groups {
-		result.Groups = append(result.Groups, c.toGenerationGroupDTO(repo, group))
+		dto, err := c.toGenerationGroupDTO(repo, group)
+		if err != nil {
+			return nil, err
+		}
+		result.Groups = append(result.Groups, dto)
 	}
 	for _, relation := range relations {
-		result.Relations = append(result.Relations, c.toAssetRelationDTO(relation))
+		dto, err := c.toAssetRelationDTO(relation)
+		if err != nil {
+			return nil, err
+		}
+		result.Relations = append(result.Relations, dto)
 	}
-	return result
+	return result, nil
 }

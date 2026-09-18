@@ -41,11 +41,167 @@ func setupCommands(t *testing.T) *AppCommands {
 
 func createTestLibrary(t *testing.T, cmd *AppCommands, name, rootPath string) *LibraryDTO {
 	t.Helper()
-	lib := cmd.AddLibrary(name, rootPath)
+	lib, err := cmd.AddLibrary(name, rootPath)
+	if err != nil {
+		t.Fatalf("AddLibrary: %v", err)
+	}
 	if lib == nil {
 		t.Fatal("AddLibrary returned nil")
 	}
 	return lib
+}
+
+func mustListLibraries(t *testing.T, cmd *AppCommands) []LibraryDTO {
+	t.Helper()
+	value, err := cmd.ListLibraries()
+	if err != nil {
+		t.Fatalf("ListLibraries: %v", err)
+	}
+	return value
+}
+
+func mustUpdateLibrary(t *testing.T, cmd *AppCommands, id int64, name, rootPath string) *LibraryDTO {
+	t.Helper()
+	value, err := cmd.UpdateLibrary(id, name, rootPath)
+	if err != nil {
+		t.Fatalf("UpdateLibrary: %v", err)
+	}
+	return value
+}
+
+func mustGetExcludedDirs(t *testing.T, cmd *AppCommands, libraryID int64) []string {
+	t.Helper()
+	value, err := cmd.GetExcludedDirs(libraryID)
+	if err != nil {
+		t.Fatalf("GetExcludedDirs: %v", err)
+	}
+	return value
+}
+
+func mustGetAssetDetail(t *testing.T, cmd *AppCommands, id int64) *AssetDTO {
+	t.Helper()
+	value, err := cmd.GetAssetDetail(id)
+	if err != nil {
+		t.Fatalf("GetAssetDetail: %v", err)
+	}
+	return value
+}
+
+func mustListTags(t *testing.T, cmd *AppCommands) []TagDTO {
+	t.Helper()
+	value, err := cmd.ListTags()
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	return value
+}
+
+func mustCreateTag(t *testing.T, cmd *AppCommands, name, color string) *TagDTO {
+	t.Helper()
+	value, err := cmd.CreateTag(name, color)
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	return value
+}
+
+func mustListPosts(t *testing.T, cmd *AppCommands, offset, limit int) []PostDTO {
+	t.Helper()
+	value, err := cmd.ListPosts(offset, limit)
+	if err != nil {
+		t.Fatalf("ListPosts: %v", err)
+	}
+	return value
+}
+
+func mustCreatePostDraft(t *testing.T, cmd *AppCommands, title, body, hashtags string) *PostDTO {
+	t.Helper()
+	value, err := cmd.CreatePostDraft(title, body, hashtags)
+	if err != nil {
+		t.Fatalf("CreatePostDraft: %v", err)
+	}
+	return value
+}
+
+func mustUpdatePost(t *testing.T, cmd *AppCommands, id int64, title, body, hashtags, status string) *PostDTO {
+	t.Helper()
+	value, err := cmd.UpdatePost(id, title, body, hashtags, status)
+	if err != nil {
+		t.Fatalf("UpdatePost: %v", err)
+	}
+	return value
+}
+
+func mustGetPostsByAsset(t *testing.T, cmd *AppCommands, assetID int64) []PostDTO {
+	t.Helper()
+	value, err := cmd.GetPostsByAsset(assetID)
+	if err != nil {
+		t.Fatalf("GetPostsByAsset: %v", err)
+	}
+	return value
+}
+
+func mustListPostTargets(t *testing.T, cmd *AppCommands) []PostTargetDTO {
+	t.Helper()
+	value, err := cmd.ListPostTargets()
+	if err != nil {
+		t.Fatalf("ListPostTargets: %v", err)
+	}
+	return value
+}
+
+func mustCreatePostTarget(t *testing.T, cmd *AppCommands, name, kind string) *PostTargetDTO {
+	t.Helper()
+	value, err := cmd.CreatePostTarget(name, kind)
+	if err != nil {
+		t.Fatalf("CreatePostTarget: %v", err)
+	}
+	return value
+}
+
+func mustListPostAccounts(t *testing.T, cmd *AppCommands) []PostAccountDTO {
+	t.Helper()
+	value, err := cmd.ListPostAccounts()
+	if err != nil {
+		t.Fatalf("ListPostAccounts: %v", err)
+	}
+	return value
+}
+
+func mustCreatePostAccount(t *testing.T, cmd *AppCommands, targetID int64, displayName, identifier string) *PostAccountDTO {
+	t.Helper()
+	value, err := cmd.CreatePostAccount(targetID, displayName, identifier)
+	if err != nil {
+		t.Fatalf("CreatePostAccount: %v", err)
+	}
+	return value
+}
+
+func mustGetSetting(t *testing.T, cmd *AppCommands, key string) string {
+	t.Helper()
+	value, err := cmd.GetSetting(key)
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	return value
+}
+
+func mustGetAppBootstrap(t *testing.T, cmd *AppCommands) map[string]interface{} {
+	t.Helper()
+	value, err := cmd.GetAppBootstrap()
+	if err != nil {
+		t.Fatalf("GetAppBootstrap: %v", err)
+	}
+	return value
+}
+
+func mustListAssets(t *testing.T, cmd *AppCommands, req AssetListRequest) *AssetListResponse {
+	t.Helper()
+	value, err := cmd.ListAssets(req)
+	if err != nil {
+		t.Fatalf("ListAssets: %v", err)
+	}
+	return value
 }
 
 func makeAsset(libraryID int64, folder, name string) *domain.Asset {
@@ -67,7 +223,7 @@ func makeAsset(libraryID int64, folder, name string) *domain.Asset {
 func TestListLibraries(t *testing.T) {
 	cmd := setupCommands(t)
 
-	libs := cmd.ListLibraries()
+	libs := mustListLibraries(t, cmd)
 	if len(libs) != 0 {
 		t.Errorf("expected 0 libraries, got %d", len(libs))
 	}
@@ -75,7 +231,7 @@ func TestListLibraries(t *testing.T) {
 	createTestLibrary(t, cmd, "Lib1", "/tmp/lib1")
 	createTestLibrary(t, cmd, "Lib2", "/tmp/lib2")
 
-	libs = cmd.ListLibraries()
+	libs = mustListLibraries(t, cmd)
 	if len(libs) != 2 {
 		t.Errorf("expected 2 libraries, got %d", len(libs))
 	}
@@ -94,7 +250,7 @@ func TestEnableDisableLibrary(t *testing.T) {
 		t.Fatalf("DisableLibrary: %v", err)
 	}
 
-	libs := cmd.ListLibraries()
+	libs := mustListLibraries(t, cmd)
 	if libs[0].IsEnabled {
 		t.Error("library should be disabled")
 	}
@@ -104,7 +260,7 @@ func TestEnableDisableLibrary(t *testing.T) {
 		t.Fatalf("EnableLibrary: %v", err)
 	}
 
-	libs = cmd.ListLibraries()
+	libs = mustListLibraries(t, cmd)
 	if !libs[0].IsEnabled {
 		t.Error("library should be enabled")
 	}
@@ -114,7 +270,7 @@ func TestUpdateLibrary(t *testing.T) {
 	cmd := setupCommands(t)
 	lib := createTestLibrary(t, cmd, "OldName", "/tmp/old")
 
-	updated := cmd.UpdateLibrary(lib.ID, "NewName", "/tmp/new")
+	updated := mustUpdateLibrary(t, cmd, lib.ID, "NewName", "/tmp/new")
 	if updated == nil {
 		t.Fatal("UpdateLibrary returned nil")
 	}
@@ -135,7 +291,7 @@ func TestRemoveLibrary(t *testing.T) {
 		t.Fatalf("RemoveLibrary: %v", err)
 	}
 
-	libs := cmd.ListLibraries()
+	libs := mustListLibraries(t, cmd)
 	if len(libs) != 0 {
 		t.Errorf("expected 0 libraries after delete, got %d", len(libs))
 	}
@@ -145,7 +301,7 @@ func TestExcludedDirs(t *testing.T) {
 	cmd := setupCommands(t)
 	lib := createTestLibrary(t, cmd, "TestLib", "/tmp/test")
 
-	dirs := cmd.GetExcludedDirs(lib.ID)
+	dirs := mustGetExcludedDirs(t, cmd, lib.ID)
 	if dirs != nil {
 		t.Errorf("expected nil dirs, got %v", dirs)
 	}
@@ -155,7 +311,7 @@ func TestExcludedDirs(t *testing.T) {
 		t.Fatalf("SetExcludedDirs: %v", err)
 	}
 
-	dirs = cmd.GetExcludedDirs(lib.ID)
+	dirs = mustGetExcludedDirs(t, cmd, lib.ID)
 	if len(dirs) != 2 {
 		t.Errorf("expected 2 dirs, got %d", len(dirs))
 	}
@@ -303,7 +459,7 @@ func TestAssetNote(t *testing.T) {
 		t.Fatalf("UpdateAssetNote: %v", err)
 	}
 
-	dto := cmd.GetAssetDetail(assetID)
+	dto := mustGetAssetDetail(t, cmd, assetID)
 	if dto == nil {
 		t.Fatal("GetAssetDetail returned nil")
 	}
@@ -315,12 +471,12 @@ func TestAssetNote(t *testing.T) {
 func TestTagsCRUD(t *testing.T) {
 	cmd := setupCommands(t)
 
-	tags := cmd.ListTags()
+	tags := mustListTags(t, cmd)
 	if len(tags) != 0 {
 		t.Errorf("expected 0 tags, got %d", len(tags))
 	}
 
-	tag := cmd.CreateTag("character", "#ff0000")
+	tag := mustCreateTag(t, cmd, "character", "#ff0000")
 	if tag == nil {
 		t.Fatal("CreateTag returned nil")
 	}
@@ -328,7 +484,7 @@ func TestTagsCRUD(t *testing.T) {
 		t.Errorf("expected character, got %s", tag.Name)
 	}
 
-	tags = cmd.ListTags()
+	tags = mustListTags(t, cmd)
 	if len(tags) != 1 {
 		t.Errorf("expected 1 tag, got %d", len(tags))
 	}
@@ -337,7 +493,7 @@ func TestTagsCRUD(t *testing.T) {
 		t.Fatalf("DeleteTag: %v", err)
 	}
 
-	tags = cmd.ListTags()
+	tags = mustListTags(t, cmd)
 	if len(tags) != 0 {
 		t.Errorf("expected 0 tags after delete, got %d", len(tags))
 	}
@@ -346,12 +502,12 @@ func TestTagsCRUD(t *testing.T) {
 func TestPostsCRUD(t *testing.T) {
 	cmd := setupCommands(t)
 
-	posts := cmd.ListPosts(0, 50)
+	posts := mustListPosts(t, cmd, 0, 50)
 	if len(posts) != 0 {
 		t.Errorf("expected 0 posts, got %d", len(posts))
 	}
 
-	p := cmd.CreatePostDraft("Test Post", "body content", "#art")
+	p := mustCreatePostDraft(t, cmd, "Test Post", "body content", "#art")
 	if p == nil {
 		t.Fatal("CreatePostDraft returned nil")
 	}
@@ -362,7 +518,7 @@ func TestPostsCRUD(t *testing.T) {
 		t.Errorf("expected draft, got %s", p.Status)
 	}
 
-	updated := cmd.UpdatePost(p.ID, "Updated Title", "new body", "#updated", "scheduled")
+	updated := mustUpdatePost(t, cmd, p.ID, "Updated Title", "new body", "#updated", "scheduled")
 	if updated == nil {
 		t.Fatal("UpdatePost returned nil")
 	}
@@ -373,7 +529,7 @@ func TestPostsCRUD(t *testing.T) {
 		t.Errorf("expected scheduled, got %s", updated.Status)
 	}
 
-	posts = cmd.ListPosts(0, 50)
+	posts = mustListPosts(t, cmd, 0, 50)
 	if len(posts) != 1 {
 		t.Errorf("expected 1 post, got %d", len(posts))
 	}
@@ -382,7 +538,7 @@ func TestPostsCRUD(t *testing.T) {
 		t.Fatalf("DeletePost: %v", err)
 	}
 
-	posts = cmd.ListPosts(0, 50)
+	posts = mustListPosts(t, cmd, 0, 50)
 	if len(posts) != 0 {
 		t.Errorf("expected 0 posts after delete, got %d", len(posts))
 	}
@@ -391,12 +547,12 @@ func TestPostsCRUD(t *testing.T) {
 func TestPostTargetsCRUD(t *testing.T) {
 	cmd := setupCommands(t)
 
-	targets := cmd.ListPostTargets()
+	targets := mustListPostTargets(t, cmd)
 	if len(targets) != 0 {
 		t.Errorf("expected 0 targets, got %d", len(targets))
 	}
 
-	target := cmd.CreatePostTarget("Twitter", "twitter")
+	target := mustCreatePostTarget(t, cmd, "Twitter", "twitter")
 	if target == nil {
 		t.Fatal("CreatePostTarget returned nil")
 	}
@@ -404,7 +560,7 @@ func TestPostTargetsCRUD(t *testing.T) {
 		t.Errorf("expected Twitter, got %s", target.Name)
 	}
 
-	targets = cmd.ListPostTargets()
+	targets = mustListPostTargets(t, cmd)
 	if len(targets) != 1 {
 		t.Errorf("expected 1 target, got %d", len(targets))
 	}
@@ -417,17 +573,17 @@ func TestPostTargetsCRUD(t *testing.T) {
 func TestPostAccountsCRUD(t *testing.T) {
 	cmd := setupCommands(t)
 
-	target := cmd.CreatePostTarget("Pixiv", "pixiv")
+	target := mustCreatePostTarget(t, cmd, "Pixiv", "pixiv")
 	if target == nil {
 		t.Fatal("CreatePostTarget returned nil")
 	}
 
-	accounts := cmd.ListPostAccounts()
+	accounts := mustListPostAccounts(t, cmd)
 	if len(accounts) != 0 {
 		t.Errorf("expected 0 accounts, got %d", len(accounts))
 	}
 
-	account := cmd.CreatePostAccount(target.ID, "MyAccount", "@myaccount")
+	account := mustCreatePostAccount(t, cmd, target.ID, "MyAccount", "@myaccount")
 	if account == nil {
 		t.Fatal("CreatePostAccount returned nil")
 	}
@@ -435,7 +591,7 @@ func TestPostAccountsCRUD(t *testing.T) {
 		t.Errorf("expected MyAccount, got %s", account.DisplayName)
 	}
 
-	accounts = cmd.ListPostAccounts()
+	accounts = mustListPostAccounts(t, cmd)
 	if len(accounts) != 1 {
 		t.Errorf("expected 1 account, got %d", len(accounts))
 	}
@@ -448,7 +604,7 @@ func TestPostAccountsCRUD(t *testing.T) {
 func TestSettings(t *testing.T) {
 	cmd := setupCommands(t)
 
-	val := cmd.GetSetting("nonexistent")
+	val := mustGetSetting(t, cmd, "nonexistent")
 	if val != "" {
 		t.Errorf("expected empty string for nonexistent key, got %s", val)
 	}
@@ -457,7 +613,7 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("SetSetting: %v", err)
 	}
 
-	val = cmd.GetSetting("theme")
+	val = mustGetSetting(t, cmd, "theme")
 	if val != `"dark"` {
 		t.Errorf("expected \"dark\", got %s", val)
 	}
@@ -466,7 +622,7 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("SetSetting update: %v", err)
 	}
 
-	val = cmd.GetSetting("theme")
+	val = mustGetSetting(t, cmd, "theme")
 	if val != `"light"` {
 		t.Errorf("expected \"light\", got %s", val)
 	}
@@ -475,9 +631,9 @@ func TestSettings(t *testing.T) {
 func TestGetAppBootstrap(t *testing.T) {
 	cmd := setupCommands(t)
 	createTestLibrary(t, cmd, "Lib1", "/tmp/lib1")
-	cmd.CreateTag("tag1", "#ff0000")
+	mustCreateTag(t, cmd, "tag1", "#ff0000")
 
-	bootstrap := cmd.GetAppBootstrap()
+	bootstrap := mustGetAppBootstrap(t, cmd)
 	if bootstrap == nil {
 		t.Fatal("GetAppBootstrap returned nil")
 	}
@@ -502,7 +658,7 @@ func TestListAssets(t *testing.T) {
 		assetRepo.Create(makeAsset(lib.ID, "/tmp/test", "img"+itoa(i)+".png"))
 	}
 
-	resp := cmd.ListAssets(AssetListRequest{
+	resp := mustListAssets(t, cmd, AssetListRequest{
 		LibraryID: lib.ID,
 		Offset:    0,
 		Limit:     10,
@@ -517,7 +673,7 @@ func TestListAssets(t *testing.T) {
 		t.Errorf("expected 10 assets, got %d", len(resp.Assets))
 	}
 
-	resp2 := cmd.ListAssets(AssetListRequest{
+	resp2 := mustListAssets(t, cmd, AssetListRequest{
 		LibraryID: lib.ID,
 		Offset:    10,
 		Limit:     10,
@@ -534,14 +690,14 @@ func TestAssetDetailWithTags(t *testing.T) {
 	assetRepo := db.NewAssetRepo(cmd.db)
 	assetID, _ := assetRepo.Create(makeAsset(lib.ID, "/tmp/test", "test.png"))
 
-	tag1 := cmd.CreateTag("character", "#ff0000")
-	tag2 := cmd.CreateTag("landscape", "#00ff00")
+	tag1 := mustCreateTag(t, cmd, "character", "#ff0000")
+	tag2 := mustCreateTag(t, cmd, "landscape", "#00ff00")
 
 	if err := cmd.SetAssetTags(assetID, []int64{tag1.ID, tag2.ID}); err != nil {
 		t.Fatalf("SetAssetTags: %v", err)
 	}
 
-	detail := cmd.GetAssetDetail(assetID)
+	detail := mustGetAssetDetail(t, cmd, assetID)
 	if detail == nil {
 		t.Fatal("GetAssetDetail returned nil")
 	}
@@ -553,7 +709,7 @@ func TestAssetDetailWithTags(t *testing.T) {
 		t.Fatalf("SetAssetTags remove: %v", err)
 	}
 
-	detail = cmd.GetAssetDetail(assetID)
+	detail = mustGetAssetDetail(t, cmd, assetID)
 	if len(detail.Tags) != 1 {
 		t.Errorf("expected 1 tag after removal, got %d", len(detail.Tags))
 	}
@@ -570,7 +726,7 @@ func TestAttachAssetsToPost(t *testing.T) {
 		assetIDs = append(assetIDs, id)
 	}
 
-	post := cmd.CreatePostDraft("Test Post", "", "")
+	post := mustCreatePostDraft(t, cmd, "Test Post", "", "")
 	if post == nil {
 		t.Fatal("CreatePostDraft returned nil")
 	}
@@ -579,7 +735,7 @@ func TestAttachAssetsToPost(t *testing.T) {
 		t.Fatalf("AttachAssetsToPost: %v", err)
 	}
 
-	posts := cmd.GetPostsByAsset(assetIDs[0])
+	posts := mustGetPostsByAsset(t, cmd, assetIDs[0])
 	if len(posts) != 1 {
 		t.Errorf("expected 1 post for asset, got %d", len(posts))
 	}
