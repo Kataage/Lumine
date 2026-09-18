@@ -360,6 +360,43 @@ func (r *AIAnalysisRepo) RetryJob(jobID int64) error {
 	return tx.Commit()
 }
 
+func (r *AIAnalysisRepo) RequeueInterrupted(jobID int64, message string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin interrupted AI requeue: %w", err)
+	}
+	defer tx.Rollback()
+
+	job, err := getAIJobTx(tx, jobID)
+	if err != nil {
+		return err
+	}
+	if job == nil || job.Status != domain.AIJobRunning {
+		return tx.Commit()
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE ai_jobs
+		SET status = 'queued',
+			attempt_count = MAX(attempt_count - 1, 0),
+			last_error = ?,
+			cancel_requested = 0,
+			started_at = NULL,
+			finished_at = NULL
+		WHERE id = ? AND status = 'running'
+	`, message, jobID); err != nil {
+		return fmt.Errorf("requeue interrupted AI job: %w", err)
+	}
+	if _, err := tx.Exec(`
+		UPDATE ai_asset_analysis
+		SET state = 'queued', error_message = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE asset_id = ? AND capability = ?
+	`, message, job.AssetID, job.Capability); err != nil {
+		return fmt.Errorf("mark interrupted AI analysis queued: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
