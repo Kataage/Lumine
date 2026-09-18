@@ -26,7 +26,7 @@
       "id": "tagger-character-known-001",
       "category": "character_tagging",
       "description": "Character recognition benchmark with a fixture whose identity is recorded in the private fixture pack notes.",
-      "expected": {"identitySource": "fixture-pack-manifest"},
+      "expected": {"expectedCharacter": "Rindo Chihaya", "top1Exact": true},
       "references": [{"path": "tagging/character-known-001.png", "role": "image"}],
       "tags": ["anime", "character"]
     },
