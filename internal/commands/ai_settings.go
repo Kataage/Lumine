@@ -59,6 +59,14 @@ func (c *AppCommands) SetAISettings(settings domain.AISettings) (domain.AISettin
 		}
 	}
 
+	if c.aiJobQueue != nil {
+		if err := c.aiJobQueue.ApplySettings(settings); err != nil {
+			// The persisted setting remains authoritative. Queue shutdown failures
+			// are diagnostic and must not silently restore a disabled feature.
+			slog.Error("failed to apply AI settings to job queue", "error", err)
+		}
+	}
+
 	if c.ctx != nil {
 		runtime.EventsEmit(c.ctx, "ai:settings-changed", settings)
 	}

@@ -168,3 +168,67 @@ func TestManagerRejectsLoadWhenFeatureIsOff(t *testing.T) {
 		t.Fatalf("Load error = %v, want %v", err, ErrCapabilityDisabled)
 	}
 }
+
+
+func TestManagerCallsModelActivationHookBeforePublishingRuntime(t *testing.T) {
+	data := []byte("model activation hook")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+
+	var engine *dummyEngine
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		engine = &dummyEngine{}
+		return engine
+	}); err != nil {
+		t.Fatalf("RegisterEngine: %v", err)
+	}
+
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatalf("InstallModel: %v", err)
+	}
+
+	var called bool
+	manager.SetModelActivatedHook(func(capability domain.AICapability, model InstalledModel) error {
+		called = true
+		if capability != domain.AICapabilitySemanticSearch {
+			t.Fatalf("hook capability = %s, want %s", capability, domain.AICapabilitySemanticSearch)
+		}
+		if model.Manifest.ID != manifest.ID || model.Manifest.Version != manifest.Version {
+			t.Fatalf("hook model mismatch: %+v", model.Manifest)
+		}
+		if status := manager.Status(capability); status.State != RuntimeStateModelNotInstalled {
+			t.Fatalf("runtime must not be published before activation hook succeeds: %+v", status)
+		}
+		return nil
+	})
+
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{},
+	); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !called {
+		t.Fatal("model activation hook was not called")
+	}
+	if engine == nil || !engine.loaded {
+		t.Fatal("engine should be loaded")
+	}
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateReady {
+		t.Fatalf("runtime status after hook = %+v", status)
+	}
+}

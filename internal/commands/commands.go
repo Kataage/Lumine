@@ -31,6 +31,7 @@ type AppCommands struct {
 	folderRepo  *db.FolderRepo
 	scanSvc     *scanner.Scanner
 	aiManager   *ai.Manager
+	aiJobQueue  *ai.JobQueue
 	ctx         context.Context
 }
 

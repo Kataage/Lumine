@@ -482,3 +482,44 @@ func (r *AssetRepo) UpdateBatch(assets []*domain.Asset) error {
 	}
 	return tx.Commit()
 }
+
+func (r *AssetRepo) ListIDsByScope(libraryID int64, folderPath string, recurse bool, afterID int64, limit int) ([]int64, error) {
+	if libraryID <= 0 {
+		return nil, fmt.Errorf("library id must be positive")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+
+	where := "library_id = ? AND id > ?"
+	args := []any{libraryID, afterID}
+	if folderPath != "" {
+		if recurse {
+			where += " AND (folder_path = ? OR folder_path LIKE ? OR folder_path LIKE ?)"
+			args = append(args, folderPath, folderPath+"/%", folderPath+"\\%")
+		} else {
+			where += " AND folder_path = ?"
+			args = append(args, folderPath)
+		}
+	}
+	args = append(args, limit)
+
+	rows, err := r.db.Query(
+		fmt.Sprintf("SELECT id FROM assets WHERE %s ORDER BY id ASC LIMIT ?", where),
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list asset ids by scope: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan asset id by scope: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
