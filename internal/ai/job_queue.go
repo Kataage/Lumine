@@ -33,6 +33,7 @@ type AnalysisJobRepository interface {
 	RequeueInterrupted(jobID int64, message string) error
 	RecoverInterrupted() (int64, error)
 	MarkStaleForModel(capability domain.AICapability, engine, modelID, modelVersion string) (int64, error)
+	MarkStaleForAssets(capability domain.AICapability, assetIDs []int64) (int64, error)
 	GetByAsset(assetID int64) ([]domain.AIAnalysis, error)
 	GetJob(id int64) (*domain.AIJob, error)
 	ListJobs(limit int) ([]domain.AIJob, error)
@@ -286,6 +287,13 @@ func (q *JobQueue) MarkStaleForModel(
 	modelVersion string,
 ) (int64, error) {
 	return q.repo.MarkStaleForModel(capability, engine, modelID, modelVersion)
+}
+
+func (q *JobQueue) MarkStaleForAssets(
+	capability domain.AICapability,
+	assetIDs []int64,
+) (int64, error) {
+	return q.repo.MarkStaleForAssets(capability, assetIDs)
 }
 
 func (q *JobQueue) HandleModelActivated(capability domain.AICapability, model InstalledModel) error {

@@ -508,6 +508,41 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	return count, nil
 }
 
+func (r *AIAnalysisRepo) MarkStaleForAssets(
+	capability domain.AICapability,
+	assetIDs []int64,
+) (int64, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	if len(assetIDs) > 5000 {
+		return 0, fmt.Errorf("too many assets to mark stale: %d", len(assetIDs))
+	}
+
+	placeholders := make([]string, len(assetIDs))
+	args := make([]any, 0, len(assetIDs)+1)
+	args = append(args, capability)
+	for i, id := range assetIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	result, err := r.db.Exec(
+		fmt.Sprintf(`
+			UPDATE ai_asset_analysis
+			SET state = 'stale', error_message = '', updated_at = CURRENT_TIMESTAMP
+			WHERE capability = ?
+			  AND asset_id IN (%s)
+			  AND state = 'ready'
+		`, strings.Join(placeholders, ",")),
+		args...,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("mark changed asset analysis stale: %w", err)
+	}
+	count, _ := result.RowsAffected()
+	return count, nil
+}
+
 func (r *AIAnalysisRepo) MarkStaleForModel(
 	capability domain.AICapability,
 	engine string,

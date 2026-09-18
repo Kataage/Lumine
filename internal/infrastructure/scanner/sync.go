@@ -58,6 +58,7 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 			result.FailedCount += len(newAssets)
 		} else {
 			result.AddedCount += len(newAssets)
+			s.notifyAssetChanges(newAssets)
 		}
 		newAssets = newAssets[:0]
 	}
@@ -71,6 +72,7 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 			result.FailedCount += len(updatedAssets)
 		} else {
 			result.UpdatedCount += len(updatedAssets)
+			s.notifyAssetChanges(updatedAssets)
 		}
 		updatedAssets = updatedAssets[:0]
 	}

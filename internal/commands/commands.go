@@ -32,6 +32,7 @@ type AppCommands struct {
 	scanSvc     *scanner.Scanner
 	aiManager   *ai.Manager
 	aiJobQueue  *ai.JobQueue
+	semanticRepo *db.SemanticEmbeddingRepo
 	ctx         context.Context
 }
 
@@ -51,8 +52,9 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		accountRepo: db.NewPostAccountRepo(database),
 		jobLogRepo:  db.NewJobLogRepo(database),
 		settingRepo: settingRepo,
-		folderRepo:  folderRepo,
-		scanSvc:     scanSvc,
+		folderRepo:   folderRepo,
+		semanticRepo: db.NewSemanticEmbeddingRepo(database),
+		scanSvc:      scanSvc,
 	}
 }
 
@@ -235,6 +237,7 @@ type AssetDTO struct {
 	GPSLatitude  string `json:"gpsLatitude,omitempty"`
 	GPSLongitude string `json:"gpsLongitude,omitempty"`
 	HashBlake3   string `json:"hashBlake3,omitempty"`
+	SemanticScore float32 `json:"semanticScore,omitempty"`
 }
 
 type TagDTO struct {

@@ -5,11 +5,14 @@ import { queryClient } from "../queryClient";
 import { normalizeAISettings, type AISettings } from "../utils/aiSettings";
 
 export type LibraryDTO = cmds.LibraryDTO;
-export type AssetDTO = cmds.AssetDTO;
+export type AssetDTO = cmds.AssetDTO & { semanticScore?: number };
 export type FolderDTO = cmds.FolderDTO;
 export type TagDTO = cmds.TagDTO;
 export type AssetListRequest = cmds.AssetListRequest;
-export type AssetListResponse = cmds.AssetListResponse;
+export interface AssetListResponse {
+  assets: AssetDTO[];
+  totalCount: number;
+}
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
 export type MoveRequest = cmds.MoveRequest;
@@ -158,6 +161,26 @@ export interface DeleteAssetFilesResult {
   errors?: string[];
 }
 
+export type AIRuntimeState = "disabled" | "model_not_installed" | "ready" | "running" | "error";
+
+export interface SemanticModelInfo {
+  id: string;
+  version: string;
+  engine: string;
+  displayName: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+  runtime: {
+    capability: string;
+    state: AIRuntimeState;
+    modelId?: string;
+    version?: string;
+    engine?: string;
+    error?: string;
+  };
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -175,6 +198,11 @@ type DynamicCommands = {
   GetAISettings?: () => Promise<AISettings | null>;
   SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
   IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
+  SemanticSearchAssets?: (request: AssetListRequest) => Promise<AssetListResponse | null>;
+  ListSimilarAssets?: (assetId: number, request: AssetListRequest) => Promise<AssetListResponse | null>;
+  GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
+  InstallDefaultSemanticModel?: () => Promise<unknown>;
+  LoadDefaultSemanticModel?: () => Promise<void>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -272,6 +300,28 @@ export async function setAISettings(settings: AISettings): Promise<AISettings> {
 
 export async function isAICapabilityEnabled(capability: string): Promise<boolean> {
   return requireDynamic("IsAICapabilityEnabled")(capability);
+}
+
+export async function semanticSearchAssets(request: AssetListRequest): Promise<AssetListResponse> {
+  return (await requireDynamic("SemanticSearchAssets")(request)) ?? { assets: [], totalCount: 0 };
+}
+
+export async function listSimilarAssets(assetId: number, request: AssetListRequest): Promise<AssetListResponse> {
+  return (await requireDynamic("ListSimilarAssets")(assetId, request)) ?? { assets: [], totalCount: 0 };
+}
+
+export async function getDefaultSemanticModelInfo(): Promise<SemanticModelInfo> {
+  const value = await requireDynamic("GetDefaultSemanticModelInfo")();
+  if (!value) throw new Error("Semantic Searchモデル情報を取得できませんでした。");
+  return value;
+}
+
+export async function installDefaultSemanticModel(): Promise<void> {
+  await requireDynamic("InstallDefaultSemanticModel")();
+}
+
+export async function loadDefaultSemanticModel(): Promise<void> {
+  await requireDynamic("LoadDefaultSemanticModel")();
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {

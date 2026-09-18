@@ -137,8 +137,25 @@ export function ToolbarV2() {
   const selectedTagNames = state.filterTagIds.map((id) => tags.find((tag) => tag.id === id)?.name).filter((name): name is string => Boolean(name));
   useEffect(() => setSearch(state.searchQuery), [state.searchQuery]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  const updateSearch = (value: string) => { setSearch(value); if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => setState((current) => ({ ...current, searchQuery: value })), 250); };
-  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.filterStatusLabel || state.filterRating || state.filterTagIds.length);
+  const updateSearch = (value: string) => {
+    setSearch(value);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState((current) => ({
+      ...current,
+      searchQuery: value,
+      similarAssetId: null,
+      similarAssetName: "",
+    })), 250);
+  };
+  const setSearchMode = (searchMode: "normal" | "semantic") => {
+    setState((current) => ({
+      ...current,
+      searchMode,
+      similarAssetId: null,
+      similarAssetName: "",
+    }));
+  };
+  const hasFilters = !!(state.selectedFolderPath || state.searchQuery || state.similarAssetId || state.filterStatusLabel || state.filterRating || state.filterTagIds.length);
 
   const updateSort = (value: string) => {
     setState((current) => ({ ...current, sortBy: value }));
@@ -163,7 +180,18 @@ export function ToolbarV2() {
       <div className="toolbar-primary-row">
         <button type="button" className="ui-icon-button" onClick={() => setState((current) => ({ ...current, sidebarOpen: !current.sidebarOpen }))} aria-label="サイドバー切り替え">☰</button>
         <div className="toolbar-library min-w-0"><p className="text-[10px] text-muted-foreground">表示中</p><p className="text-xs font-medium truncate" title={library?.rootPath}>{library?.name ?? "未選択"}</p></div>
-        <div className="relative min-w-0 flex-1"><input className="ui-input w-full pl-3" value={search} onChange={(event) => updateSearch(event.target.value)} placeholder="ファイル名・メモを検索…" /></div>
+        <div className="ui-segmented flex-shrink-0">
+          <button type="button" className={state.searchMode === "normal" && !state.similarAssetId ? "active" : ""} onClick={() => setSearchMode("normal")}>通常</button>
+          <button type="button" className={state.searchMode === "semantic" && !state.similarAssetId ? "active" : ""} onClick={() => setSearchMode("semantic")}>意味</button>
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <input
+            className="ui-input w-full pl-3"
+            value={search}
+            onChange={(event) => updateSearch(event.target.value)}
+            placeholder={state.similarAssetId ? "類似画像を表示中…" : state.searchMode === "semantic" ? "画像内容を自然文で検索…" : "ファイル名・メモを検索…"}
+          />
+        </div>
       </div>
       <div className="toolbar-controls-row">
         <ToolbarSelect value={state.sortBy} options={SORT_OPTIONS} onChange={updateSort} ariaLabel="並び順" />
@@ -181,7 +209,16 @@ export function ToolbarV2() {
           </div>
         )}
       </div>
-      {hasFilters && <div className="toolbar-filter-row"><span className="text-[10px] text-muted-foreground">絞り込み</span>{state.selectedFolderPath && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "" }))}>📁 {folderName} ×</button>}{state.searchQuery && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, searchQuery: "" }))}>検索: {state.searchQuery} ×</button>}{state.filterStatusLabel && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterStatusLabel: "" }))}>状態 ×</button>}{state.filterRating > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterRating: 0 }))}>★{state.filterRating} ×</button>}{state.filterTagIds.length > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterTagIds: [] }))} title={selectedTagNames.join(", ")}>タグ: {state.filterTagIds.length === 1 && selectedTagNames[0] ? selectedTagNames[0] : `${state.filterTagIds.length}件`} ×</button>}<button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "", searchQuery: "", filterStatusLabel: "", filterRating: 0, filterTagIds: [] }))}>すべて解除</button></div>}
+      {hasFilters && <div className="toolbar-filter-row">
+        <span className="text-[10px] text-muted-foreground">絞り込み</span>
+        {state.selectedFolderPath && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "" }))}>📁 {folderName} ×</button>}
+        {state.similarAssetId && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, similarAssetId: null, similarAssetName: "" }))}>類似: {state.similarAssetName || `#${state.similarAssetId}`} ×</button>}
+        {state.searchQuery && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, searchQuery: "" }))}>{state.searchMode === "semantic" ? "意味検索" : "検索"}: {state.searchQuery} ×</button>}
+        {state.filterStatusLabel && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterStatusLabel: "" }))}>状態 ×</button>}
+        {state.filterRating > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterRating: 0 }))}>★{state.filterRating} ×</button>}
+        {state.filterTagIds.length > 0 && <button type="button" className="filter-chip" onClick={() => setState((current) => ({ ...current, filterTagIds: [] }))} title={selectedTagNames.join(", ")}>タグ: {state.filterTagIds.length === 1 && selectedTagNames[0] ? selectedTagNames[0] : `${state.filterTagIds.length}件`} ×</button>}
+        <button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => setState((current) => ({ ...current, selectedFolderPath: "", searchQuery: "", similarAssetId: null, similarAssetName: "", filterStatusLabel: "", filterRating: 0, filterTagIds: [] }))}>すべて解除</button>
+      </div>}
     </header>
   );
 }
