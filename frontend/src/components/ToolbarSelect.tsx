@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 export interface ToolbarSelectOption<T extends string | number> {
@@ -40,7 +41,7 @@ export function ToolbarSelect<T extends string | number>({
   const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
   const selected = options[selectedIndex] ?? options[0];
 
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
@@ -57,13 +58,13 @@ export function ToolbarSelect<T extends string | number>({
       width,
       maxHeight: Math.max(0, availableBelow),
     });
-  };
+  }, []);
 
   useLayoutEffect(() => {
     if (!open) return;
     setActiveIndex(selectedIndex);
     updatePosition();
-  }, [open, selectedIndex]);
+  }, [open, selectedIndex, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,7 +93,7 @@ export function ToolbarSelect<T extends string | number>({
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
     };
-  }, [open]);
+  }, [open, updatePosition]);
 
   const selectIndex = (index: number) => {
     const option = options[index];
@@ -102,7 +103,7 @@ export function ToolbarSelect<T extends string | number>({
     triggerRef.current?.focus();
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!open) {
