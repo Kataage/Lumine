@@ -35,8 +35,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $releaseTags = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName --jq '.[].tagName')
+          if ($releaseTags -contains $env:TAG) {
             "exists=true" >> $env:GITHUB_OUTPUT
           } else {
             "exists=false" >> $env:GITHUB_OUTPUT
