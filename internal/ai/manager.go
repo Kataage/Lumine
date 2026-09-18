@@ -16,6 +16,7 @@ var (
 )
 
 type runtimeSession struct {
+	opMu     sync.Mutex
 	engine   Engine
 	model    InstalledModel
 	options  LoadOptions
@@ -60,10 +61,16 @@ func (m *Manager) RegisterEngine(engineID string, factory EngineFactory) error {
 }
 
 func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	if m.modelInUse(manifest.ID, manifest.Version) {
+		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
+	}
 	return m.store.Install(ctx, manifest, progress)
 }
 
 func (m *Manager) UpdateModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	if m.modelInUse(manifest.ID, manifest.Version) {
+		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
+	}
 	return m.store.Update(ctx, manifest, progress)
 }
 
@@ -134,27 +141,18 @@ func (m *Manager) Load(
 		engine:  engine,
 		model:   model,
 		options: options,
-		state:   RuntimeStateModelNotInstalled,
+		state:   RuntimeStateReady,
 	}
-	m.mu.Lock()
-	m.sessions[capability] = session
-	m.mu.Unlock()
 
+	// Do not publish the session until Load succeeds. This prevents inference
+	// from racing an engine that is only partially initialised.
 	if err := engine.Load(ctx, model, options); err != nil {
-		m.mu.Lock()
-		session.state = RuntimeStateError
-		session.lastErr = err.Error()
-		m.mu.Unlock()
 		_ = engine.Unload(context.Background())
-		m.mu.Lock()
-		delete(m.sessions, capability)
-		m.mu.Unlock()
 		return fmt.Errorf("load engine %s: %w", engine.ID(), err)
 	}
 
 	m.mu.Lock()
-	session.state = RuntimeStateReady
-	session.lastErr = ""
+	m.sessions[capability] = session
 	m.mu.Unlock()
 	return nil
 }
@@ -179,20 +177,27 @@ func (m *Manager) Infer(
 		m.mu.Unlock()
 		return InferenceResponse{}, ErrRuntimeNotLoaded
 	}
+	// Acquire the per-session operation lock before releasing the manager lock.
+	// Unload first removes the session from the manager, then waits for this
+	// lock, so an in-flight inference always completes before engine teardown.
+	session.opMu.Lock()
 	session.state = RuntimeStateRunning
 	m.mu.Unlock()
 
 	response, inferErr := session.engine.Infer(ctx, request)
 
 	m.mu.Lock()
-	if inferErr != nil {
-		session.state = RuntimeStateError
-		session.lastErr = inferErr.Error()
-	} else {
-		session.state = RuntimeStateReady
-		session.lastErr = ""
+	if current := m.sessions[capability]; current == session {
+		if inferErr != nil {
+			session.state = RuntimeStateError
+			session.lastErr = inferErr.Error()
+		} else {
+			session.state = RuntimeStateReady
+			session.lastErr = ""
+		}
 	}
 	m.mu.Unlock()
+	session.opMu.Unlock()
 
 	if inferErr != nil {
 		return InferenceResponse{}, inferErr
@@ -210,6 +215,8 @@ func (m *Manager) Unload(ctx context.Context, capability domain.AICapability) er
 	delete(m.sessions, capability)
 	m.mu.Unlock()
 
+	session.opMu.Lock()
+	defer session.opMu.Unlock()
 	if err := session.engine.Unload(ctx); err != nil {
 		return fmt.Errorf("unload engine %s: %w", session.engine.ID(), err)
 	}
@@ -283,6 +290,17 @@ func (m *Manager) capabilityAllowed(capability domain.AICapability) (bool, error
 		return false, err
 	}
 	return settings.CapabilityEnabled(capability), nil
+}
+
+func (m *Manager) modelInUse(modelID, version string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, session := range m.sessions {
+		if session.model.Manifest.ID == modelID && session.model.Manifest.Version == version {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) currentSettings() (domain.AISettings, error) {
