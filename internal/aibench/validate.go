@@ -12,7 +12,10 @@ import (
 	"strings"
 )
 
-const SchemaVersion = 1
+const (
+	SchemaVersion    = 1
+	EvaluatorVersion = "lumine-ai-bench-v1"
+)
 
 var categorySet = func() map[Category]struct{} {
 	result := make(map[Category]struct{}, len(RequiredCategories))
@@ -98,6 +101,9 @@ func ValidateResult(result BenchmarkResult, catalog Catalog) error {
 	}
 	if result.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported result schemaVersion %d", result.SchemaVersion)
+	}
+	if result.EvaluatorVersion != EvaluatorVersion {
+		return fmt.Errorf("unsupported evaluatorVersion %q", result.EvaluatorVersion)
 	}
 	if strings.TrimSpace(result.RunID) == "" {
 		return errors.New("runId is required")
