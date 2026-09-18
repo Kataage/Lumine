@@ -21,6 +21,14 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	if len(assetIDs) == 0 || c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
 	}
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return 0, err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilitySemanticSearch) ||
+		!settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+		return 0, nil
+	}
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
 		return 0, nil
