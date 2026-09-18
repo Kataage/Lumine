@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/commands"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
@@ -122,6 +123,13 @@ func main() {
 		db.NewJobLogRepo(database),
 	)
 	cmd := commands.New(database, scanSvc)
+	aiManager := ai.NewManager(filepath.Join(appDir, "models"), cmd.GetAISettings)
+	cmd.SetAIManager(aiManager)
+	defer func() {
+		if err := aiManager.Close(context.Background()); err != nil {
+			slog.Warn("failed to close AI runtime", "error", err)
+		}
+	}()
 
 	err = wails.Run(&options.App{
 		Title:     "Lumine",
