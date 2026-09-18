@@ -275,7 +275,6 @@ def main() -> None:
         server_exe = resolve_server(profile)
         threads = max(1, int(param(profile, "threads", "8")))
         context = max(1024, int(param(profile, "context", "4096")))
-        image_path = image_reference(fixture_dir, fixture)
 
         if category == "model_size":
             size = model_path.stat().st_size + mmproj_path.stat().st_size
@@ -288,6 +287,8 @@ def main() -> None:
                 }
             }, ensure_ascii=False))
             return
+
+        image_path = image_reference(fixture_dir, fixture)
 
         def new_server() -> Server:
             return Server(server_exe, model_path, mmproj_path, threads, context)
