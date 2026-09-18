@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "decisions": [
+    {
+      "capability": "semantic_search",
+      "status": "candidate",
+      "modelId": "SigLIP 2",
+      "issue": "#164",
+      "rationale": "Issue #164 defines SigLIP 2 as the standard semantic-embedding candidate; adoption remains pending benchmark evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "semantic_search",
+      "status": "candidate",
+      "modelId": "MobileCLIP2",
+      "issue": "#164",
+      "rationale": "Kept as the speed-oriented comparison candidate for semantic embedding.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "NeoHorse-1-4B Abliterated",
+      "rationale": "Candidate for the local prompt engine; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "Spark-X2.5-4B-Heretic-jp",
+      "rationale": "Japanese-focused prompt-engine candidate; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "updatedAt": "2026-09-19"
+    }
+  ]
+}

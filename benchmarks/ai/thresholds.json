@@ -1,0 +1,9 @@
+{
+  "maxScoreDrop": 0.03,
+  "maxLatencyRegressionPercent": 15,
+  "maxTokensPerSecondDropPercent": 15,
+  "maxRAMRegressionPercent": 15,
+  "maxColdStartRegressionPercent": 20,
+  "maxModelSizeRegressionPercent": 10,
+  "maxRuntimeSuccessRateDrop": 0.01
+}
