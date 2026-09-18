@@ -24,6 +24,7 @@
 
   --sidebar-width: 19.5rem;
   --detail-width: clamp(22rem, 27vw, 26rem);
+  --app-header-height: 3.5rem;
   --control-height: 2rem;
   --control-radius: 0.5rem;
   --ui-font: 0.75rem;
@@ -158,7 +159,7 @@ textarea:focus-visible {
 }
 
 .sidebar-rail-brand {
-  height: 3.5rem;
+  height: var(--app-header-height);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -218,6 +219,11 @@ textarea:focus-visible {
 .sidebar-workspace {
   min-width: 0;
   background: hsl(var(--card));
+}
+
+.sidebar-workspace-header {
+  height: var(--app-header-height);
+  background: hsl(var(--background));
 }
 
 .app-detail-panel {
@@ -474,6 +480,7 @@ textarea:focus-visible {
 
 .toolbar-v2 {
   min-width: 0;
+  background: hsl(var(--card) / 0.96);
 }
 
 .toolbar-primary-row,
@@ -488,13 +495,16 @@ textarea:focus-visible {
 }
 
 .toolbar-primary-row {
-  min-height: 2.75rem;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
+  min-height: var(--app-header-height);
+  height: var(--app-header-height);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  background: hsl(var(--background));
 }
 
 .toolbar-controls-row {
   min-height: 2.5rem;
+  background: hsl(var(--card) / 0.96);
   padding-top: 0.25rem;
   padding-bottom: 0.375rem;
   border-top: 1px solid hsl(var(--border) / 0.55);
