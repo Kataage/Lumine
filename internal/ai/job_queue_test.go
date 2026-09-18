@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -112,7 +113,7 @@ func TestJobQueueProcessesAndPersistsModelProvenance(t *testing.T) {
 		job domain.AIJob,
 	) (AnalysisOutput, error) {
 		if job.AssetID != assetID {
-			t.Fatalf("handler asset = %d, want %d", job.AssetID, assetID)
+			return AnalysisOutput{}, fmt.Errorf("handler asset = %d, want %d", job.AssetID, assetID)
 		}
 		return AnalysisOutput{
 			Engine:       "test-engine",
