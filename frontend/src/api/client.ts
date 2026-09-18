@@ -172,6 +172,9 @@ export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
 type DynamicCommands = {
+  GetAISettings?: () => Promise<AISettings | null>;
+  SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
+  IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
