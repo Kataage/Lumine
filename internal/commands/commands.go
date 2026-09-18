@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
@@ -29,6 +30,7 @@ type AppCommands struct {
 	settingRepo *db.AppSettingRepo
 	folderRepo  *db.FolderRepo
 	scanSvc     *scanner.Scanner
+	aiManager   *ai.Manager
 	ctx         context.Context
 }
 
