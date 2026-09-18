@@ -143,8 +143,8 @@ func main() {
 	}
 
 	scanSvc.SetAssetChangeHandler(func(assetIDs []int64) {
-		if _, err := cmd.EnqueueAutomaticSemanticAssets(assetIDs); err != nil {
-			slog.Debug("automatic semantic enqueue skipped", "error", err)
+		if _, err := cmd.HandleScannedAssetChanges(assetIDs); err != nil {
+			slog.Debug("semantic asset-change handling skipped", "error", err)
 		}
 	})
 
