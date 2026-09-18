@@ -25,17 +25,17 @@ type runtimeSession struct {
 
 type Manager struct {
 	store      *ModelStore
-	policy     CapabilityPolicy
+	settings   SettingsProvider
 
 	mu         sync.Mutex
 	factories  map[string]EngineFactory
 	sessions   map[domain.AICapability]*runtimeSession
 }
 
-func NewManager(root string, policy CapabilityPolicy) *Manager {
+func NewManager(root string, settings SettingsProvider) *Manager {
 	return &Manager{
 		store:     NewModelStore(root),
-		policy:    policy,
+		settings:  settings,
 		factories: make(map[string]EngineFactory),
 		sessions:  make(map[domain.AICapability]*runtimeSession),
 	}
@@ -94,13 +94,14 @@ func (m *Manager) Load(
 	version string,
 	options LoadOptions,
 ) error {
-	allowed, err := m.capabilityAllowed(capability)
+	settings, err := m.currentSettings()
 	if err != nil {
 		return err
 	}
-	if !allowed {
+	if !settings.CapabilityEnabled(capability) {
 		return ErrCapabilityDisabled
 	}
+	options.AllowGPU = options.AllowGPU && settings.GPUAcceleration
 
 	model, err := m.store.Verify(modelID, version)
 	if err != nil {
@@ -277,8 +278,16 @@ func (m *Manager) Close(ctx context.Context) error {
 }
 
 func (m *Manager) capabilityAllowed(capability domain.AICapability) (bool, error) {
-	if m.policy == nil {
-		return false, nil
+	settings, err := m.currentSettings()
+	if err != nil {
+		return false, err
 	}
-	return m.policy(capability)
+	return settings.CapabilityEnabled(capability), nil
+}
+
+func (m *Manager) currentSettings() (domain.AISettings, error) {
+	if m.settings == nil {
+		return domain.DefaultAISettings(), nil
+	}
+	return m.settings()
 }
