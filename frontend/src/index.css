@@ -286,6 +286,91 @@ textarea:focus-visible {
   color: hsl(var(--muted-foreground) / 0.65);
 }
 
+.toolbar-select-trigger {
+  min-height: var(--control-height);
+  min-width: 7.75rem;
+  max-width: 11rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.55rem 0.375rem 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--control-radius);
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-size: var(--ui-font-small);
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.toolbar-select-trigger:hover,
+.toolbar-select-trigger.open {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--muted-foreground) / 0.35);
+}
+
+.toolbar-select-trigger.open {
+  box-shadow: 0 0 0 1px hsl(var(--ring) / 0.16);
+}
+
+.toolbar-select-chevron {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  color: hsl(var(--muted-foreground));
+  transition: transform 120ms ease;
+}
+
+.toolbar-select-trigger.open .toolbar-select-chevron {
+  transform: rotate(180deg);
+}
+
+.toolbar-select-menu {
+  position: fixed;
+  z-index: 120;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.65rem;
+  background: hsl(var(--popover) / 0.98);
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  scrollbar-gutter: stable;
+}
+
+.toolbar-select-option {
+  width: 100%;
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.45rem;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--ui-font-small);
+  text-align: left;
+}
+
+.toolbar-select-option:hover,
+.toolbar-select-option.active {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+.toolbar-select-option.selected {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.toolbar-select-check {
+  flex: 0 0 auto;
+  color: hsl(var(--primary));
+  font-size: 0.6875rem;
+}
+
 .ui-label {
   display: block;
   color: hsl(var(--muted-foreground));
