@@ -4,9 +4,17 @@
   min-height: 0;
 }
 
-.app-detail-panel > div:last-child {
+.detail-scroll-region {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  .app-detail-panel {
+    min-width: 0;
+    width: min(24rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+  }
 }
