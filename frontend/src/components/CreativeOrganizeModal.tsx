@@ -105,15 +105,15 @@ export function CreativeOrganizeModal({ assetIds, onClose }: { assetIds: number[
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onMouseDown={(event) => { if (event.currentTarget === event.target && !busy) onClose(); }}>
       <div className="w-full max-w-2xl max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-label="制作情報を整理">
         <div className="h-14 px-4 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
-          <div><h2 className="text-sm font-semibold">制作情報を整理</h2><p className="text-[10px] text-muted-foreground">{assetIds.length}枚を、ファイルではなく制作単位として整理します</p></div>
+          <div className="flex items-center gap-2"><h2 className="text-sm font-semibold">制作情報を整理</h2><span className="rounded-full bg-muted px-2 py-0.5 text-[9px] text-muted-foreground">{assetIds.length}枚</span></div>
           <button className="ui-icon-button text-lg" onClick={onClose} disabled={busy} aria-label="閉じる">×</button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           <div className="grid grid-cols-3 gap-2">
-            <ModeButton active={mode === "group"} title="生成グループ" description="同じ生成意図の画像群" onClick={() => setMode("group")} />
-            <ModeButton active={mode === "work"} title="作品" description="人が認識する作品単位" onClick={() => setMode("work")} />
-            <ModeButton active={mode === "relation"} title="派生関係" description="元画像 → 派生画像" onClick={() => setMode("relation")} disabled={assetIds.length !== 2} />
+            <ModeButton active={mode === "group"} title="生成グループ" onClick={() => setMode("group")} />
+            <ModeButton active={mode === "work"} title="作品" onClick={() => setMode("work")} />
+            <ModeButton active={mode === "relation"} title="派生関係" onClick={() => setMode("relation")} disabled={assetIds.length !== 2} />
           </div>
 
           <div className="rounded-xl border border-border bg-muted/10 p-3">
@@ -147,6 +147,6 @@ export function CreativeOrganizeModal({ assetIds, onClose }: { assetIds: number[
   );
 }
 
-function ModeButton({ active, title, description, onClick, disabled = false }: { active: boolean; title: string; description: string; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className={`rounded-xl border p-3 text-left transition-colors disabled:opacity-35 ${active ? "border-primary/50 bg-primary/10" : "border-border bg-muted/10 hover:bg-accent/40"}`}><p className="text-xs font-semibold">{title}</p><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{description}</p></button>;
+function ModeButton({ active, title, onClick, disabled = false }: { active: boolean; title: string; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" disabled={disabled} onClick={onClick} className={`min-h-10 rounded-xl border px-3 text-center text-xs font-semibold transition-colors disabled:opacity-35 ${active ? "border-primary/50 bg-primary/10" : "border-border bg-muted/10 hover:bg-accent/40"}`}>{title}</button>;
 }
