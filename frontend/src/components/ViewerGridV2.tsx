@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AssetDTO, AssetListRequest } from "../api/client";
-import { listAssets } from "../api/client";
+import { listAssets, listSimilarAssets, semanticSearchAssets } from "../api/client";
 import { useApp } from "../App";
 import { formatFileSize } from "../utils/format";
 import {
@@ -87,6 +87,8 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       state.selectedLibraryId,
       state.selectedFolderPath,
       state.searchQuery,
+      state.searchMode,
+      state.similarAssetId,
       state.sortBy,
       state.sortDesc,
       state.filterStatusLabel,
@@ -94,7 +96,14 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       state.filterTagIds.join(","),
     ],
     queryFn: async ({ pageParam = 0 }) => {
-      const result = await listAssets(buildQuery(Number(pageParam)));
+      const request = buildQuery(Number(pageParam));
+      if (state.similarAssetId) {
+        return listSimilarAssets(state.similarAssetId, request);
+      }
+      if (state.searchMode === "semantic" && state.searchQuery.trim()) {
+        return semanticSearchAssets(request);
+      }
+      const result = await listAssets(request);
       return result ?? { assets: [], totalCount: 0 };
     },
     initialPageParam: 0,
@@ -121,6 +130,8 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     state.selectedLibraryId,
     state.selectedFolderPath,
     state.searchQuery,
+    state.searchMode,
+    state.similarAssetId,
     state.sortBy,
     state.sortDesc,
     state.filterStatusLabel,
@@ -200,7 +211,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   if (isError) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8">
-        <p className="text-sm font-semibold text-destructive">画像一覧を読み込めませんでした</p>
+        <p className="text-sm font-semibold text-destructive">{state.similarAssetId ? "類似画像を検索できませんでした" : state.searchMode === "semantic" ? "意味検索を実行できませんでした" : "画像一覧を読み込めませんでした"}</p>
         <p className="max-w-lg text-center text-xs text-muted-foreground break-all">{String(error)}</p>
       </div>
     );
@@ -209,6 +220,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const hasFilters = !!(
     state.selectedFolderPath ||
     state.searchQuery ||
+    state.similarAssetId ||
     state.filterStatusLabel ||
     state.filterRating > 0 ||
     state.filterTagIds.length > 0
@@ -299,7 +311,13 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
             <div className="max-w-sm rounded-2xl border border-dashed border-border p-8 text-center">
               <p className="text-sm font-semibold">{hasFilters ? "条件に一致する画像がありません" : "画像が見つかりません"}</p>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {hasFilters ? "上部の絞り込み条件を解除して確認してください。" : "画像フォルダーの変更は自動で確認されます。必要なら左側から再スキャンもできます。"}
+                {state.similarAssetId
+                  ? "この画像に近いembeddingを持つ画像がまだありません。Semantic Searchの解析状況を確認してください。"
+                  : state.searchMode === "semantic" && state.searchQuery
+                    ? "意味検索に使えるembeddingがまだないか、条件に一致する画像がありません。"
+                    : hasFilters
+                      ? "上部の絞り込み条件を解除して確認してください。"
+                      : "画像フォルダーの変更は自動で確認されます。必要なら左側から再スキャンもできます。"}
               </p>
             </div>
           </div>
@@ -369,7 +387,10 @@ function GridCard({
       <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 px-2.5 py-2 pointer-events-none">
         <p className="truncate text-[11px] font-medium text-white drop-shadow">{asset.fileName}</p>
-        <p className="mt-0.5 text-[10px] text-white/60">{formatFileSize(asset.fileSize)}</p>
+        <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-white/60">
+          <span>{formatFileSize(asset.fileSize)}</span>
+          {typeof asset.semanticScore === "number" && <span>{Math.round(asset.semanticScore * 100)}%</span>}
+        </div>
       </div>
 
       <div className={`absolute top-2 right-2 flex gap-1 transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>
@@ -450,6 +471,7 @@ function ListRow({
         <p className="truncate text-xs font-medium">{asset.fileName}</p>
         <p className="truncate text-[11px] text-muted-foreground">{asset.folderPath}</p>
       </div>
+      {typeof asset.semanticScore === "number" && <span className="text-[10px] text-primary tabular-nums flex-shrink-0">{Math.round(asset.semanticScore * 100)}%</span>}
       <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">{formatFileSize(asset.fileSize)}</span>
       <button
         onClick={(event) => { event.stopPropagation(); onDetail(); }}
