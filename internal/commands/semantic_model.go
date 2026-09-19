@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -146,6 +147,7 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
 				// Search can retry the warm synchronously. Runtime readiness must
 				// not depend on a cache warm succeeding.
+				slog.Warn("semantic index warm failed", "error", err)
 				return
 			}
 		})
@@ -159,6 +161,7 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 		}
 		if _, err := c.enqueueSemanticBackfillContext(backfillCtx); err != nil && backfillCtx.Err() == nil {
 			// Backfill is recoverable and can be retried from Settings.
+			slog.Warn("semantic backfill enqueue failed", "error", err)
 			return
 		}
 	})
