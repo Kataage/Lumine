@@ -9,6 +9,7 @@ type PromptLoRA struct {
 }
 
 type PromptProject struct {
+	SchemaVersion int
 	ID              int64
 	Title           string
 	Idea            string
@@ -29,6 +30,7 @@ type PromptVariant struct {
 }
 
 type PromptVersion struct {
+	SchemaVersion       int
 	ID                  int64
 	VariantID           int64
 	ParentVersionID     *int64
