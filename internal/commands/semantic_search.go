@@ -360,6 +360,15 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		if err := c.EnsureSemanticSearchReady(); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSemanticModelNotReady, err)
+		}
+		status = c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	}
+	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		if status.Error != "" {
+			return nil, fmt.Errorf("%w: %s: %s", ErrSemanticModelNotReady, status.State, status.Error)
+		}
 		return nil, fmt.Errorf("%w: %s", ErrSemanticModelNotReady, status.State)
 	}
 
