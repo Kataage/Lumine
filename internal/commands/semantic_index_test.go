@@ -10,7 +10,12 @@ func readySemanticIndex(vectors map[int64][]float32) *semanticMemoryIndex {
 	index := newSemanticMemoryIndex()
 	index.key = semanticKey("engine", "model", "1")
 	index.ready = true
-	index.vectors = vectors
+	index.stage = "ready"
+	for assetID, vector := range vectors {
+		index.Upsert(assetID, "engine", "model", "1", vector)
+	}
+	index.total = len(index.positions)
+	index.loaded = len(index.positions)
 	return index
 }
 
