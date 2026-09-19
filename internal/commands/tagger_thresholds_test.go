@@ -58,6 +58,26 @@ func TestTaggerThresholdOverridesPersistence(t *testing.T) {
 	}
 }
 
+func TestTaggerThresholdEchoValidation(t *testing.T) {
+	overrides := taggerThresholdOverrides{General: floatPtr(0.25)}
+	response := ai.InferenceResponse{Payload: map[string]any{
+		"generalThreshold": 0.25,
+	}}
+	if err := validateTaggerThresholdEcho(response, overrides); err != nil {
+		t.Fatalf("matching threshold echo failed: %v", err)
+	}
+
+	response.Payload["generalThreshold"] = 0.35
+	if err := validateTaggerThresholdEcho(response, overrides); err == nil {
+		t.Fatal("mismatched threshold echo must fail")
+	}
+
+	delete(response.Payload, "generalThreshold")
+	if err := validateTaggerThresholdEcho(response, overrides); err == nil {
+		t.Fatal("missing threshold echo must fail")
+	}
+}
+
 func TestTaggerThresholdOverridesPayloadAndFiltering(t *testing.T) {
 	overrides := taggerThresholdOverrides{
 		General:   floatPtr(0.5),
