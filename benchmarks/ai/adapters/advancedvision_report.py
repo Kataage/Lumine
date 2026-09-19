@@ -35,6 +35,22 @@ def load(path: str) -> dict[str, Any]:
         return json.load(handle)
 
 
+def ensure_evidence_eligible(result: dict[str, Any]) -> None:
+    model = result.get("model") or {}
+    parameters = model.get("parameters") or {}
+    pin_status = str(parameters.get("pinStatus") or "")
+    artifact_hash = str(model.get("artifactSha256") or "")
+    if (
+        str(model.get("version") or "") == "main"
+        or len(artifact_hash) != 64
+        or int(model.get("modelSizeBytes") or 0) <= 0
+        or pin_status.startswith("exploratory")
+    ):
+        raise SystemExit(
+            f"model {model.get('id')} is exploratory/unpinned and cannot be used in the evidence comparison report"
+        )
+
+
 def cases(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(item["fixtureId"]): item for item in result.get("cases", [])}
 
@@ -61,6 +77,8 @@ def main() -> None:
         raise SystemExit("usage: advancedvision_report.py RESULT_A RESULT_B [RESULT_C ...]")
 
     results = [load(path) for path in sys.argv[1:]]
+    for result in results:
+        ensure_evidence_eligible(result)
     first = results[0]
     for result in results[1:]:
         for field in ("catalogPack", "evaluatorVersion"):
