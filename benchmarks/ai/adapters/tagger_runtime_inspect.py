@@ -101,6 +101,14 @@ def normalize_shape(shape: list[Any]) -> list[Any]:
     return result
 
 
+def display_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
 def inspect_profile(path: Path) -> dict[str, Any]:
     profile = json.loads(path.read_text(encoding="utf-8"))
     repo_id = parameter(profile, "repoId")
@@ -112,7 +120,7 @@ def inspect_profile(path: Path) -> dict[str, Any]:
     categories_file = parameter(profile, "categoriesFile")
 
     base: dict[str, Any] = {
-        "profilePath": str(path),
+        "profilePath": display_path(path),
         "id": profile.get("id"),
         "version": revision,
         "benchmarkEngine": engine,
