@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/kataage/lumine/internal/ai"
 )
 
 const taggerThresholdOverridesSettingKey = "ai.tagger.threshold_overrides"
@@ -87,6 +89,43 @@ func (c *AppCommands) SetTaggerThresholdOverridesJSON(encoded string) error {
 		return fmt.Errorf("encode Tagger threshold overrides: %w", err)
 	}
 	return c.settingRepo.Set(taggerThresholdOverridesSettingKey, string(normalized))
+}
+
+func validateTaggerThresholdEcho(
+	response ai.InferenceResponse,
+	overrides taggerThresholdOverrides,
+) error {
+	checks := []struct {
+		name  string
+		key   string
+		value *float64
+	}{
+		{name: "general", key: "generalThreshold", value: overrides.General},
+		{name: "character", key: "characterThreshold", value: overrides.Character},
+		{name: "rating", key: "ratingThreshold", value: overrides.Rating},
+	}
+	for _, check := range checks {
+		if check.value == nil {
+			continue
+		}
+		raw, ok := response.Payload[check.key]
+		if !ok {
+			return fmt.Errorf("Tagger engine did not report applied %s threshold", check.name)
+		}
+		actual, ok := numberAsFloat64(raw)
+		if !ok || math.IsNaN(actual) || math.IsInf(actual, 0) {
+			return fmt.Errorf("Tagger engine returned invalid %s threshold", check.name)
+		}
+		if math.Abs(actual-*check.value) > 1e-6 {
+			return fmt.Errorf(
+				"Tagger engine did not honor %s threshold override: got %.6f want %.6f",
+				check.name,
+				actual,
+				*check.value,
+			)
+		}
+	}
+	return nil
 }
 
 func applyTaggerThresholdOverrides(
