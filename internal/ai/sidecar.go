@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 )
 
 const defaultSidecarLogLimit = 256 * 1024
@@ -122,17 +123,33 @@ func (s *SidecarProcess) Stop(ctx context.Context) error {
 		cancel()
 	}
 
-	select {
-	case err := <-done:
+	waitResult := func(err error) error {
 		if err != nil && !errorsIsContextTermination(err) {
 			return fmt.Errorf("sidecar exit: %w", err)
 		}
 		return nil
+	}
+
+	select {
+	case err := <-done:
+		return waitResult(err)
 	case <-ctx.Done():
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
-		return ctx.Err()
+
+		// Process.Kill is asynchronous on some platforms. Do not return while a
+		// Lumine-owned child may still be alive: wait briefly for cmd.Wait to
+		// observe the forced termination.
+		select {
+		case err := <-done:
+			if stopErr := waitResult(err); stopErr != nil {
+				return stopErr
+			}
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+			return fmt.Errorf("sidecar did not exit after forced kill: %w", ctx.Err())
+		}
 	}
 }
 
