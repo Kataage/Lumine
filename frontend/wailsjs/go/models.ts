@@ -189,8 +189,24 @@ export namespace commands {
 		}
 	}
 	export class AIStorageInfo {
+	    mode: string;
+	    rootPath: string;
+	    dataPath: string;
+	    databasePath: string;
+	    logsPath: string;
 	    modelsPath: string;
 	    runtimesPath: string;
+	    semanticIndexPath: string;
+	    webviewDataPath: string;
+	    preferredRootPath?: string;
+	    legacyPath?: string;
+	    legacyDetected: boolean;
+	    usingLegacy: boolean;
+	    migrationAvailable: boolean;
+	    migrationPending: boolean;
+	    migrationSourcePath?: string;
+	    migrationTargetPath?: string;
+	    migrationRequiresRestart: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIStorageInfo(source);
@@ -198,8 +214,24 @@ export namespace commands {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.rootPath = source["rootPath"];
+	        this.dataPath = source["dataPath"];
+	        this.databasePath = source["databasePath"];
+	        this.logsPath = source["logsPath"];
 	        this.modelsPath = source["modelsPath"];
 	        this.runtimesPath = source["runtimesPath"];
+	        this.semanticIndexPath = source["semanticIndexPath"];
+	        this.webviewDataPath = source["webviewDataPath"];
+	        this.preferredRootPath = source["preferredRootPath"];
+	        this.legacyPath = source["legacyPath"];
+	        this.legacyDetected = source["legacyDetected"];
+	        this.usingLegacy = source["usingLegacy"];
+	        this.migrationAvailable = source["migrationAvailable"];
+	        this.migrationPending = source["migrationPending"];
+	        this.migrationSourcePath = source["migrationSourcePath"];
+	        this.migrationTargetPath = source["migrationTargetPath"];
+	        this.migrationRequiresRestart = source["migrationRequiresRestart"];
 	    }
 	}
 	export class AdvancedVisionCandidateInfo {

@@ -20,6 +20,7 @@ import (
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
+	"github.com/kataage/lumine/internal/infrastructure/storage"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -111,12 +112,32 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	slog.Info("starting Lumine")
 
-	appDir, err := db.EnsureAppDir()
+	storageOptions := storage.ResolveOptions{Mode: distributionMode}
+	storageLayout, err := storage.Resolve(storageOptions)
 	if err != nil {
-		log.Fatal("failed to create app directory:", err)
+		log.Fatal("failed to resolve Lumine storage:", err)
 	}
+	if migrated, migrationErr := storage.ApplyPendingLegacyCopy(storageLayout); migrationErr != nil {
+		slog.Error("scheduled Lumine storage migration failed; continuing with current storage", "error", migrationErr)
+	} else if migrated {
+		storageLayout, err = storage.Resolve(storageOptions)
+		if err != nil {
+			log.Fatal("failed to resolve migrated Lumine storage:", err)
+		}
+		slog.Info("scheduled Lumine storage migration completed", "root", storageLayout.RootDir)
+	}
+	if err := storage.Prepare(storageLayout); err != nil {
+		log.Fatal("failed to prepare Lumine storage:", err)
+	}
+	slog.Info(
+		"Lumine storage resolved",
+		"mode", storageLayout.Mode,
+		"root", storageLayout.RootDir,
+		"data", storageLayout.DataDir,
+		"using_legacy", storageLayout.UsingLegacy,
+	)
 
-	database, err := db.Open(appDir)
+	database, err := db.Open(storageLayout.DataDir)
 	if err != nil {
 		log.Fatal("failed to open database:", err)
 	}
@@ -131,14 +152,15 @@ func main() {
 		db.NewJobLogRepo(database),
 	)
 	cmd := commands.New(database, scanSvc)
-	commands.ConfigureSemanticIndexRoot(cmd, filepath.Join(appDir, "semantic-index"))
-	aiManager := ai.NewManager(filepath.Join(appDir, "models"), cmd.GetAISettings)
+	commands.ConfigureStorageLayout(cmd, storageLayout)
+	commands.ConfigureSemanticIndexRoot(cmd, storageLayout.SemanticIndexDir)
+	aiManager := ai.NewManager(storageLayout.ModelsDir, cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
 	if err := aiManager.RegisterEngine(siglip2.EngineID, siglip2.NewEngine); err != nil {
 		log.Fatal("failed to register SigLIP2 engine:", err)
 	}
 
-	llamaRuntimeStore := llamacpp.NewRuntimeStore(filepath.Join(appDir, "runtimes", "llama.cpp"))
+	llamaRuntimeStore := llamacpp.NewRuntimeStore(filepath.Join(storageLayout.RuntimesDir, "llama.cpp"))
 	cmd.SetLlamaRuntimeStore(llamaRuntimeStore)
 	if err := aiManager.RegisterEngine(llamacpp.EngineID, func() ai.Engine {
 		return llamacpp.NewEngine(llamaRuntimeStore)
@@ -238,6 +260,7 @@ func main() {
 		// and multi-monitor movement retain their normal shell behaviour. The
 		// native frame is themed to visually continue Lumine's app header.
 		Windows: &windows.Options{
+			WebviewUserDataPath:  storageLayout.WebviewDataDir,
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			Theme:                windows.Dark,

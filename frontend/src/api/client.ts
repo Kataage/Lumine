@@ -215,8 +215,24 @@ export interface DeleteAssetFilesResult {
 export type AIRuntimeState = "disabled" | "model_not_installed" | "not_loaded" | "ready" | "running" | "error";
 
 export interface AIStorageInfo {
+  mode: "installed" | "portable";
+  rootPath: string;
+  dataPath: string;
+  databasePath: string;
+  logsPath: string;
   modelsPath: string;
   runtimesPath: string;
+  semanticIndexPath: string;
+  webviewDataPath: string;
+  preferredRootPath?: string;
+  legacyPath?: string;
+  legacyDetected: boolean;
+  usingLegacy: boolean;
+  migrationAvailable: boolean;
+  migrationPending: boolean;
+  migrationSourcePath?: string;
+  migrationTargetPath?: string;
+  migrationRequiresRestart: boolean;
 }
 
 export interface SemanticModelInfo {
@@ -710,6 +726,32 @@ function normalizeRuntimeStatus(value: {
   };
 }
 
+function normalizeAIStorageInfo(value: cmds.AIStorageInfo): AIStorageInfo {
+  if (value.mode !== "installed" && value.mode !== "portable") {
+    throw new Error(`未知のLumine storage modeです: ${value.mode}`);
+  }
+  return {
+    mode: value.mode,
+    rootPath: value.rootPath,
+    dataPath: value.dataPath,
+    databasePath: value.databasePath,
+    logsPath: value.logsPath,
+    modelsPath: value.modelsPath,
+    runtimesPath: value.runtimesPath,
+    semanticIndexPath: value.semanticIndexPath,
+    webviewDataPath: value.webviewDataPath,
+    preferredRootPath: value.preferredRootPath,
+    legacyPath: value.legacyPath,
+    legacyDetected: value.legacyDetected,
+    usingLegacy: value.usingLegacy,
+    migrationAvailable: value.migrationAvailable,
+    migrationPending: value.migrationPending,
+    migrationSourcePath: value.migrationSourcePath,
+    migrationTargetPath: value.migrationTargetPath,
+    migrationRequiresRestart: value.migrationRequiresRestart,
+  };
+}
+
 function normalizeLightweightAnalysisState(
   state: string,
 ): LightweightVisionAnalysis["state"] {
@@ -797,7 +839,15 @@ export async function getAIHealthSnapshot(): Promise<AIHealthSnapshot> {
 }
 
 export async function getAIStorageInfo(): Promise<AIStorageInfo> {
-  return Go.GetAIStorageInfo();
+  return normalizeAIStorageInfo(await Go.GetAIStorageInfo());
+}
+
+export async function requestLegacyStorageMigration(): Promise<AIStorageInfo> {
+  return normalizeAIStorageInfo(await Go.RequestLegacyStorageMigration());
+}
+
+export async function cancelLegacyStorageMigration(): Promise<AIStorageInfo> {
+  return normalizeAIStorageInfo(await Go.CancelLegacyStorageMigration());
 }
 
 export async function setAISettings(settings: AISettings): Promise<AISettings> {
