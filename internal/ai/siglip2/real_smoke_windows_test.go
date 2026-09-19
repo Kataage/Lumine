@@ -119,6 +119,24 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 	}
 
 	runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
+
+	if os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1" {
+		if err := engine.Unload(context.Background()); err != nil {
+			t.Fatalf("unload CPU engine before DirectML smoke: %v", err)
+		}
+		if err := engine.Load(ctx, installed, ai.LoadOptions{AllowGPU: true}); err != nil {
+			t.Fatalf("load real SigLIP2 DirectML engine: %v", err)
+		}
+		diagnostics = engine.(ai.RuntimeDiagnosticsProvider).RuntimeDiagnostics()
+		if diagnostics.ExecutionProvider != "directml" {
+			t.Fatalf(
+				"GPU smoke did not activate DirectML: provider=%q warning=%q",
+				diagnostics.ExecutionProvider,
+				diagnostics.Warning,
+			)
+		}
+		runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
+	}
 }
 
 func TestRealSigLIP2DirectMLSmoke(t *testing.T) {
