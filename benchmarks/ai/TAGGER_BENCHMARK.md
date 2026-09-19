@@ -134,6 +134,30 @@ go run ./cmd/ai-bench validate-catalog `
   -fixtures-dir D:\LumineBench\lumine-ai-core-v2
 ```
 
+## Recommended one-command Windows run
+
+For the controlled Issue #165 comparison, prefer the checked-in runner instead of launching each profile manually:
+
+```powershell
+.\benchmarks\ai\run_tagger_benchmark.ps1 \
+  -FixtureDir "D:\LumineBench\lumine-ai-core-v2" \
+  -HardwareId "main-pc-cpu8"
+```
+
+On the first run, the script creates the ONNX and PixAI v1 virtual environments and installs the pinned dependencies. Pass `-Setup` later when you intentionally want to reinstall the pinned requirements.
+
+The runner performs these steps in one sequence:
+
+1. validates the private fixture pack against `catalog.json`;
+2. records the current Lumine git commit, CPU description and installed RAM;
+3. runs WD v3, PixAI v0.9, Camie v2 and PixAI v1.0 under the same hardware ID and CPU-only benchmark policy;
+4. validates every generated result;
+5. writes `tagger-comparison.md` and `tagger-run-info.json` into `benchmarks/ai/results/local` by default.
+
+`-SkipPixAIV1` exists only for troubleshooting the lighter ONNX candidates. A run that skips PixAI v1.0 is not the full current Issue #165 comparison and must not be used as final adoption evidence.
+
+The manual commands below remain useful for debugging a single candidate or reproducing one result.
+
 ## Benchmark environment
 
 Use the same machine, power plan, CPU thread policy, OS session and fixture pack for every candidate used in a controlled comparison.
