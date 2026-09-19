@@ -39,6 +39,7 @@ type Engine struct {
 	sidecar *ai.SidecarProcess
 	baseURL string
 	model   ai.InstalledModel
+	config  modelRuntimeConfig
 }
 
 func NewEngine(runtimeStore *RuntimeStore) ai.Engine {
@@ -52,7 +53,7 @@ func (e *Engine) ID() string {
 	return EngineID
 }
 
-func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOptions) error {
+func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {
 	if e.runtimeStore == nil {
 		return errors.New("llama.cpp runtime store is not configured")
 	}
@@ -63,12 +64,21 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 		return fmt.Errorf("pinned llama.cpp runtime supports windows/amd64, current platform is %s/%s", goruntime.GOOS, goruntime.GOARCH)
 	}
 
-	runtimeInfo, err := e.runtimeStore.Verify(DefaultRuntimeManifest())
+	config, err := parseModelRuntimeConfig(model)
 	if err != nil {
-		return fmt.Errorf("verify llama.cpp runtime: %w", err)
+		return fmt.Errorf("parse llama.cpp model runtime config: %w", err)
 	}
-	modelPath := filepath.Join(model.RootDir, defaultVisionModelFile)
-	mmprojPath := filepath.Join(model.RootDir, defaultVisionMMProjFile)
+	runtimeManifest := RuntimeManifestForGPU(options.AllowGPU)
+	runtimeInfo, err := e.runtimeStore.Verify(runtimeManifest)
+	if err != nil {
+		mode := "CPU"
+		if options.AllowGPU {
+			mode = "Vulkan GPU"
+		}
+		return fmt.Errorf("verify llama.cpp %s runtime: %w", mode, err)
+	}
+	modelPath := filepath.Join(model.RootDir, filepath.FromSlash(config.mainFile))
+	mmprojPath := filepath.Join(model.RootDir, filepath.FromSlash(config.mmprojFile))
 	for _, path := range []string{modelPath, mmprojPath} {
 		info, statErr := os.Stat(path)
 		if statErr != nil || info.IsDir() {
@@ -84,17 +94,9 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 		return err
 	}
 	sidecar := ai.NewSidecarProcess()
-	args := []string{
-		"-m", modelPath,
-		"--mmproj", mmprojPath,
-		"--host", "127.0.0.1",
-		"--port", fmt.Sprintf("%d", port),
-		"--ctx-size", "4096",
-		"--threads", "8",
-		"--parallel", "1",
-		"--no-mmproj-offload",
-		"-ngl", "0",
-	}
+	config.mainFile = modelPath
+	config.mmprojFile = mmprojPath
+	args := config.serverArgs(port, options.AllowGPU)
 	if err := sidecar.Start(ctx, runtimeInfo.ExecutablePath, args, nil); err != nil {
 		return err
 	}
@@ -120,6 +122,7 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 	e.sidecar = sidecar
 	e.baseURL = baseURL
 	e.model = model
+	e.config = config
 	e.mu.Unlock()
 	return nil
 }
@@ -165,7 +168,16 @@ func (e *Engine) Infer(
 	ctx context.Context,
 	request ai.InferenceRequest,
 ) (ai.InferenceResponse, error) {
-	if request.Operation != "analyze_image" {
+	switch request.Operation {
+	case "advanced_analyze":
+		return e.inferAdvanced(ctx, request, "")
+	case "compare_images":
+		return e.inferAdvanced(ctx, request, "compare")
+	case "reverse_prompt_support":
+		return e.inferAdvanced(ctx, request, "reverse_prompt_support")
+	case "analyze_image":
+		// Existing Lightweight Vision operation.
+	default:
 		return ai.InferenceResponse{}, fmt.Errorf("unsupported llama.cpp VLM operation %q", request.Operation)
 	}
 	filePath, _ := request.Payload["filePath"].(string)
@@ -193,7 +205,7 @@ func (e *Engine) Infer(
 
 	payload := map[string]any{
 		"temperature": 0,
-		"max_tokens":  512,
+		"max_tokens":  max(e.config.maxTokens, 64),
 		"messages": []any{
 			map[string]any{
 				"role": "user",
@@ -268,6 +280,7 @@ func (e *Engine) Unload(_ context.Context) error {
 	e.sidecar = nil
 	e.baseURL = ""
 	e.model = ai.InstalledModel{}
+	e.config = modelRuntimeConfig{}
 	e.mu.Unlock()
 	if sidecar == nil {
 		return nil
