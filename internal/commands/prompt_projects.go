@@ -23,6 +23,7 @@ type PromptLoRADTO struct {
 }
 
 type PromptVersionDTO struct {
+	SchemaVersion       int    `json:"schemaVersion"`
 	ID                  int64  `json:"id"`
 	VariantID           int64  `json:"variantId"`
 	ParentVersionID     int64  `json:"parentVersionId,omitempty"`
@@ -48,6 +49,7 @@ type PromptVariantDTO struct {
 }
 
 type PromptProjectDTO struct {
+	SchemaVersion      int                `json:"schemaVersion"`
 	ID                int64              `json:"id"`
 	Title             string             `json:"title"`
 	Idea              string             `json:"idea"`
@@ -136,6 +138,7 @@ func promptLoRADTOs(values []domain.PromptLoRA) []PromptLoRADTO {
 
 func promptVersionDTO(version domain.PromptVersion) PromptVersionDTO {
 	dto := PromptVersionDTO{
+		SchemaVersion: version.SchemaVersion,
 		ID: version.ID,
 		VariantID: version.VariantID,
 		Positive: version.Positive,
@@ -166,6 +169,7 @@ func (c *AppCommands) promptProjectDTO(repo *db.PromptProjectRepo, project domai
 		return PromptProjectDTO{}, err
 	}
 	dto := PromptProjectDTO{
+		SchemaVersion: project.SchemaVersion,
 		ID: project.ID,
 		Title: project.Title,
 		Idea: project.Idea,
