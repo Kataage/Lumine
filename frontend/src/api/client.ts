@@ -310,6 +310,8 @@ export interface PromptEngineRequest {
   negative?: string;
   sourceProfile?: string;
   targetProfile?: string;
+  sourceProfileId?: string;
+  targetProfileId?: string;
   instruction?: string;
   characters?: string[];
   loras?: string[];
@@ -326,6 +328,40 @@ export interface PromptEngineResult {
   engine: string;
   modelId: string;
   modelVersion: string;
+}
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  family: string;
+  checkpointName: string;
+  promptStyle: string;
+  qualityTags: string[];
+  negativePromptPolicy: string;
+  tagOrder: string[];
+  triggerWords: string[];
+  loraTriggerSyntax: string;
+  weightSyntax: string;
+  systemGuidance: string;
+  notes: string;
+  builtIn: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ModelProfileInput {
+  name: string;
+  family: string;
+  checkpointName: string;
+  promptStyle: string;
+  qualityTags: string[];
+  negativePromptPolicy: string;
+  tagOrder: string[];
+  triggerWords: string[];
+  loraTriggerSyntax: string;
+  weightSyntax: string;
+  systemGuidance: string;
+  notes: string;
 }
 
 export const selectFolder = Go.SelectFolder;
@@ -375,6 +411,12 @@ type DynamicCommands = {
   RemovePromptEngineModel?: (modelId: string) => Promise<void>;
   LoadPromptEngineModel?: (modelId: string) => Promise<void>;
   RunPromptEngine?: (request: PromptEngineRequest) => Promise<PromptEngineResult | null>;
+  ListModelProfiles?: () => Promise<ModelProfile[]>;
+  GetModelProfile?: (id: string) => Promise<ModelProfile | null>;
+  CreateModelProfile?: (input: ModelProfileInput) => Promise<ModelProfile | null>;
+  UpdateModelProfile?: (id: string, input: ModelProfileInput) => Promise<ModelProfile | null>;
+  DuplicateModelProfile?: (id: string, newName: string) => Promise<ModelProfile | null>;
+  DeleteModelProfile?: (id: string) => Promise<void>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -616,6 +658,48 @@ export async function runPromptEngine(request: PromptEngineRequest): Promise<Pro
     loras: value.loras ?? [],
     notes: value.notes ?? [],
   };
+}
+
+function normalizeModelProfile(profile: ModelProfile): ModelProfile {
+  return {
+    ...profile,
+    qualityTags: profile.qualityTags ?? [],
+    tagOrder: profile.tagOrder ?? [],
+    triggerWords: profile.triggerWords ?? [],
+  };
+}
+
+export async function listModelProfiles(): Promise<ModelProfile[]> {
+  const values = (await requireDynamic("ListModelProfiles")()) ?? [];
+  return values.map(normalizeModelProfile);
+}
+
+export async function getModelProfile(id: string): Promise<ModelProfile> {
+  const value = await requireDynamic("GetModelProfile")(id);
+  if (!value) throw new Error("Model Profileが見つかりません。");
+  return normalizeModelProfile(value);
+}
+
+export async function createModelProfile(input: ModelProfileInput): Promise<ModelProfile> {
+  const value = await requireDynamic("CreateModelProfile")(input);
+  if (!value) throw new Error("Model Profileを作成できませんでした。");
+  return normalizeModelProfile(value);
+}
+
+export async function updateModelProfile(id: string, input: ModelProfileInput): Promise<ModelProfile> {
+  const value = await requireDynamic("UpdateModelProfile")(id, input);
+  if (!value) throw new Error("Model Profileを更新できませんでした。");
+  return normalizeModelProfile(value);
+}
+
+export async function duplicateModelProfile(id: string, newName = ""): Promise<ModelProfile> {
+  const value = await requireDynamic("DuplicateModelProfile")(id, newName);
+  if (!value) throw new Error("Model Profileを複製できませんでした。");
+  return normalizeModelProfile(value);
+}
+
+export async function deleteModelProfile(id: string): Promise<void> {
+  await requireDynamic("DeleteModelProfile")(id);
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {
