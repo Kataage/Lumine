@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "../App";
 import { useAppDialog } from "./AppDialogProvider";
@@ -30,7 +30,7 @@ function localTime(value: string): string {
 }
 
 function profileName(profiles: Array<{ id: string; name: string }>, id: string): string {
-  return profiles.find((profile) => profile.id === id)?.name ?? id || "未指定";
+  return profiles.find((profile) => profile.id === id)?.name ?? (id || "未指定");
 }
 
 export function PromptProjectsPanel() {
@@ -121,7 +121,7 @@ function EditorLabel({ children }: { children: string }) {
   return <label className="ui-label mb-1">{children}</label>;
 }
 
-function MiniInfo({ children }: { children: React.ReactNode }) {
+function MiniInfo({ children }: { children: ReactNode }) {
   return <span className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground">{children}</span>;
 }
 
