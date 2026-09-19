@@ -92,6 +92,8 @@ export namespace ai {
 	    modelId?: string;
 	    version?: string;
 	    engine?: string;
+	    executionProvider?: string;
+	    warning?: string;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -105,6 +107,8 @@ export namespace ai {
 	        this.modelId = source["modelId"];
 	        this.version = source["version"];
 	        this.engine = source["engine"];
+	        this.executionProvider = source["executionProvider"];
+	        this.warning = source["warning"];
 	        this.error = source["error"];
 	    }
 	}
