@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -54,6 +55,7 @@ func (c *AppCommands) installSharedLlamaRuntimeBundle(
 	if allowGPU {
 		installOrder = append(installOrder, llamacpp.VulkanRuntimeManifest())
 	}
+	installedGPU := false
 	for _, manifest := range installOrder {
 		if _, err := c.llamaRuntimeStore.Verify(manifest); err == nil {
 			continue
@@ -69,9 +71,72 @@ func (c *AppCommands) installSharedLlamaRuntimeBundle(
 			}
 			return &info, err
 		}
+		if manifest.ID == llamacpp.VulkanRuntimeManifest().ID {
+			installedGPU = true
+		}
 	}
+
+	// A GPU-requested session can already be running on the CPU fallback.
+	// Merely installing Vulkan does not change LoadOptions, so Manager.Load's
+	// idempotent fast path would keep that CPU session forever. Reload loaded
+	// llama capabilities exactly once after a new Vulkan runtime is committed.
+	if installedGPU {
+		if err := c.reloadSharedLlamaCapabilities(ctx, true); err != nil {
+			info := c.currentLlamaRuntimeInfo(allowGPU)
+			return &info, fmt.Errorf("Vulkan runtime installed but active llama.cpp runtime reload failed: %w", err)
+		}
+	}
+
 	info := c.currentLlamaRuntimeInfo(allowGPU)
 	return &info, nil
+}
+
+func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGPU bool) error {
+	if c.aiManager == nil {
+		return nil
+	}
+	type loadedRuntime struct {
+		capability domain.AICapability
+		modelID    string
+		version    string
+	}
+	var loaded []loadedRuntime
+	for _, capability := range []domain.AICapability{
+		domain.AICapabilityLightweightVision,
+		domain.AICapabilityAdvancedVision,
+		domain.AICapabilityPromptEngine,
+	} {
+		status := c.aiManager.Status(capability)
+		if status.ModelID == "" || status.Version == "" {
+			continue
+		}
+		switch status.State {
+		case ai.RuntimeStateReady, ai.RuntimeStateRunning:
+			loaded = append(loaded, loadedRuntime{
+				capability: capability,
+				modelID:    status.ModelID,
+				version:    status.Version,
+			})
+		}
+	}
+
+	var combined error
+	for _, current := range loaded {
+		if err := c.aiManager.Unload(ctx, current.capability); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("unload %s for Vulkan activation: %w", current.capability, err))
+			continue
+		}
+		if err := c.aiManager.Load(
+			ctx,
+			current.capability,
+			current.modelID,
+			current.version,
+			ai.LoadOptions{AllowGPU: allowGPU},
+		); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("reload %s for Vulkan activation: %w", current.capability, err))
+		}
+	}
+	return combined
 }
 
 func (c *AppCommands) verifyUsableLlamaRuntime(allowGPU bool) error {
