@@ -522,13 +522,13 @@ export function AISettingsPanel() {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <p className="text-xs font-medium">
-                {!settingsLoaded ? (settingsError ? "AI状態を取得できません" : "AI状態を確認中") : settings.enabled ? "AIを使用する" : "AIは停止中"}
+                {settingsError ? "AI状態を取得できません" : !settingsLoaded ? "AI状態を確認中" : settings.enabled ? "AIを使用する" : "AIは停止中"}
               </p>
               <p className="text-[10px] text-muted-foreground">
-                {!settingsLoaded ? (settingsError ?? "保存済み設定を読み込んでいます") : settings.enabled ? `${enabledCount}機能が有効` : "モデルは実行されません"}
+                {settingsError ? settingsError : !settingsLoaded ? "保存済み設定を読み込んでいます" : settings.enabled ? `${enabledCount}機能が有効` : "モデルは実行されません"}
               </p>
             </div>
-            <Switch checked={settingsLoaded && settings.enabled} disabled={saving || !settingsLoaded} label="AI機能全体" onChange={(enabled) => void update({ enabled }).catch(() => undefined)} />
+            <Switch checked={settingsLoaded && settings.enabled} disabled={saving || !settingsReadyForActions} label="AI機能全体" onChange={(enabled) => void update({ enabled }).catch(() => undefined)} />
             <button
               type="button"
               className="ml-1 flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -807,10 +807,10 @@ export function AISettingsPanel() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="text-[11px] font-semibold">ローカルAI</p>
-                {!settingsLoaded ? (
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
-                    {settingsError ? "ERR" : "確認中"}
-                  </span>
+                {settingsError ? (
+                  <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[9px] font-medium text-red-200">ERR</span>
+                ) : !settingsLoaded ? (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">確認中</span>
                 ) : errorCount > 0 ? (
                   <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[9px] font-medium text-red-200">要確認</span>
                 ) : settings.enabled ? (
@@ -820,9 +820,11 @@ export function AISettingsPanel() {
                 )}
               </div>
               <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                {!settingsLoaded
-                  ? settingsError ? "AI状態を取得できません" : "状態を確認中…"
-                  : loading
+                {settingsError
+                  ? "AI状態を取得できません"
+                  : !settingsLoaded
+                    ? "状態を確認中…"
+                    : loading
                     ? "状態を更新中…"
                     : settings.enabled
                       ? `${enabledCount}機能が有効 · ${readyCount} runtime ready`
