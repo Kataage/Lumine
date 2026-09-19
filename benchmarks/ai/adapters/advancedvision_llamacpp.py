@@ -148,12 +148,21 @@ def free_port() -> int:
 
 
 class Server:
-    def __init__(self, executable: Path, model_path: Path, mmproj_path: Path, threads: int, context: int) -> None:
+    def __init__(
+        self,
+        executable: Path,
+        model_path: Path,
+        mmproj_path: Path,
+        threads: int,
+        context: int,
+        extra_args: list[str] | None = None,
+    ) -> None:
         self.executable = executable
         self.model_path = model_path
         self.mmproj_path = mmproj_path
         self.threads = threads
         self.context = context
+        self.extra_args = list(extra_args or [])
         self.port = free_port()
         self.process: subprocess.Popen[bytes] | None = None
 
@@ -168,6 +177,7 @@ class Server:
             "--ctx-size", str(self.context), "--threads", str(self.threads),
             "--parallel", "1", "--no-mmproj-offload", "-ngl", "0", "--no-webui",
         ]
+        args.extend(self.extra_args)
         self.process = subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -286,13 +296,27 @@ def main() -> None:
         server_exe = resolve_server(profile)
         threads = max(1, int(param(profile, "threads", "8")))
         context = max(2048, int(param(profile, "context", "8192")))
+        extra_args_raw = param(profile, "serverArgsJson", "[]")
+        try:
+            extra_args_value = json.loads(extra_args_raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid serverArgsJson: {exc}") from exc
+        if not isinstance(extra_args_value, list) or not all(isinstance(item, str) for item in extra_args_value):
+            raise ValueError("serverArgsJson must be a JSON string array")
+        extra_args = list(extra_args_value)
 
         if category == "model_size":
             size = model_path.stat().st_size + mmproj_path.stat().st_size
             emit({
                 "status": "ok", "score": 1.0,
                 "metrics": {"modelSizeMb": size / (1024.0 * 1024.0)},
-                "output": {"modelBytes": model_path.stat().st_size, "mmprojBytes": mmproj_path.stat().st_size},
+                "output": {
+                    "modelBytes": model_path.stat().st_size,
+                    "mmprojBytes": mmproj_path.stat().st_size,
+                    "modelSha256": hash_file(model_path),
+                    "mmprojSha256": hash_file(mmproj_path),
+                    "profilePinned": bool(param(profile, "modelSha256")) and bool(param(profile, "mmprojSha256")) and str(profile.get("version") or "") not in {"", "main"},
+                },
             })
             return
 
@@ -303,7 +327,7 @@ def main() -> None:
         )
 
         def new_server() -> Server:
-            return Server(server_exe, model_path, mmproj_path, threads, context)
+            return Server(server_exe, model_path, mmproj_path, threads, context, extra_args)
 
         if category == "cold_start":
             runs = max(1, int((fixture.get("input") or {}).get("measureRuns") or 2))
