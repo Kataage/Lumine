@@ -144,6 +144,27 @@ def resolve_server(model: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+def server_extra_args(model: dict[str, Any]) -> list[str]:
+    raw = param(model, "serverArgsJson", "").strip()
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid serverArgsJson: {exc}") from exc
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("serverArgsJson must be a JSON array of strings")
+
+    protected = {
+        "-m", "--model", "--mmproj", "--host", "--port", "--ctx-size",
+        "--threads", "--parallel", "-ngl", "--n-gpu-layers", "--media-path",
+    }
+    for item in value:
+        if item in protected:
+            raise ValueError(f"serverArgsJson may not override protected option {item}")
+    return list(value)
+
+
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -299,14 +320,7 @@ def main() -> None:
         server_exe = resolve_server(profile)
         threads = max(1, int(param(profile, "threads", "8")))
         context = max(2048, int(param(profile, "context", "8192")))
-        extra_args_raw = param(profile, "serverArgsJson", "[]")
-        try:
-            extra_args_value = json.loads(extra_args_raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid serverArgsJson: {exc}") from exc
-        if not isinstance(extra_args_value, list) or not all(isinstance(item, str) for item in extra_args_value):
-            raise ValueError("serverArgsJson must be a JSON string array")
-        extra_args = list(extra_args_value)
+        extra_args = server_extra_args(profile)
 
         if category == "model_size":
             size = model_path.stat().st_size + mmproj_path.stat().st_size
