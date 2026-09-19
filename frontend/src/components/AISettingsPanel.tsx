@@ -853,6 +853,7 @@ export function AISettingsPanel() {
                       ["Models", storageInfo.modelsPath],
                       ["Runtime", storageInfo.runtimesPath],
                       ["Semantic index", storageInfo.semanticIndexPath],
+                      ["WebView2 data", storageInfo.webviewDataPath],
                     ].map(([label, value]) => (
                       <div key={label} className="min-w-0">
                         <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
