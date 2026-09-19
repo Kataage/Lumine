@@ -614,6 +614,16 @@ func (i *semanticMemoryIndex) Search(
 	if !i.ready {
 		return nil, errSemanticIndexNotReady
 	}
+	if len(eligibleIDs) == 0 || i.loadedCountLocked() == 0 {
+		if onProgress != nil {
+			onProgress(0, 0)
+		}
+		return &db.SemanticSearchResult{
+			Hits:       []domain.SemanticSearchHit{},
+			TotalCount: 0,
+			RankedHits: []domain.SemanticSearchHit{},
+		}, nil
+	}
 	if i.dimensions == 0 || len(needle) != i.dimensions {
 		return nil, fmt.Errorf("semantic query dimensions %d do not match index dimensions %d", len(needle), i.dimensions)
 	}
