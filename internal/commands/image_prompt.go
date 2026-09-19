@@ -329,7 +329,21 @@ func (c *AppCommands) collectImagePromptSources(request ImagePromptRequestDTO) (
 	}}
 
 	if metadata, metadataErr := c.loadAssetGenerationMetadata(request.AssetID, false); metadataErr == nil && metadata != nil && metadata.Present {
-		encoded, _ := json.Marshal(metadata)
+		encoded, _ := json.Marshal(map[string]any{
+			"assetId": metadata.AssetID,
+			"positive": metadata.Positive,
+			"negative": metadata.Negative,
+			"checkpoint": metadata.Checkpoint,
+			"loras": metadata.LoRAs,
+			"sampler": metadata.Sampler,
+			"scheduler": metadata.Scheduler,
+			"cfg": metadata.CFG,
+			"steps": metadata.Steps,
+			"seed": metadata.Seed,
+			"width": metadata.Width,
+			"height": metadata.Height,
+			"suggestedProfileId": metadata.SuggestedProfileID,
+		})
 		sources = append(sources, ImagePromptSourceDTO{
 			Kind: "generation_metadata", Label: "Embedded generation metadata",
 			State: "ready", DataJSON: boundedSourceJSON(string(encoded)),
@@ -598,8 +612,7 @@ func (c *AppCommands) CreatePromptProjectFromImage(request ImagePromptRequestDTO
 			"seed": importedMetadata.Seed,
 			"width": importedMetadata.Width,
 			"height": importedMetadata.Height,
-			"rawPromptJson": importedMetadata.RawPromptJSON,
-			"rawWorkflowJson": importedMetadata.RawWorkflowJSON,
+			"generationMetadataAssetId": request.AssetID,
 		})
 		if _, versionErr := c.CreatePromptVersion(PromptVersionInput{
 			VariantID:         originalVariant.ID,
