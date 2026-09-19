@@ -72,11 +72,18 @@ func (c *AppCommands) TaggerAnalysisHandler(
 		return ai.AnalysisOutput{}, errors.New("Tagger runtime provenance is incomplete")
 	}
 
+	thresholdOverrides, err := c.getTaggerThresholdOverrides()
+	if err != nil {
+		return ai.AnalysisOutput{}, err
+	}
+	payload := map[string]any{
+		"filePath": asset.FilePath,
+	}
+	addTaggerThresholdOverridesToPayload(payload, thresholdOverrides)
+
 	response, err := c.aiManager.Infer(ctx, domain.AICapabilityTagger, ai.InferenceRequest{
 		Operation: "tag_image",
-		Payload: map[string]any{
-			"filePath": asset.FilePath,
-		},
+		Payload:   payload,
 	})
 	if err != nil {
 		return ai.AnalysisOutput{}, fmt.Errorf("tag image %d: %w", asset.ID, err)
@@ -85,6 +92,7 @@ func (c *AppCommands) TaggerAnalysisHandler(
 	if err != nil {
 		return ai.AnalysisOutput{}, err
 	}
+	applyTaggerThresholdOverrides(&result, thresholdOverrides)
 	suggestions := taggerSuggestionsFromResult(result)
 	if err := c.tagSuggestionRepo.ReplaceForAsset(
 		asset.ID,
