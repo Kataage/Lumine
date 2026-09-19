@@ -1,0 +1,35 @@
+{
+  "id": "ibm-granite/granite-vision-4.1-4b-GGUF",
+  "version": "0687c7b1b30ba08e9a5ebef4ca4a51d8dbc36995",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q4_K_M + mmproj F16",
+  "artifactSha256": "973a58c4cfc2b3f58dedc515a89f73c372fe0910da515ecefcebe966131f769f",
+  "modelSizeBytes": 3261858176,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "ibm-granite/granite-vision-4.1-4b-GGUF",
+    "modelFile": "granite-vision-4.1-4b-Q4_K_M.gguf",
+    "modelSha256": "973a58c4cfc2b3f58dedc515a89f73c372fe0910da515ecefcebe966131f769f",
+    "modelSizeBytes": "2099510240",
+    "mmprojFile": "mmproj-model-f16.gguf",
+    "mmprojSha256": "573dd2579f6043649299f0b2225000a5691d92f320aabe909fb4c6e75450cad2",
+    "mmprojSizeBytes": "1162347936",
+    "family": "granite-vision-4.1",
+    "variant": "official-gguf",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "8192",
+    "device": "cpu"
+  }
+}
