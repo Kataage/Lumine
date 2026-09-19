@@ -402,7 +402,9 @@ func (i *semanticMemoryIndex) Warm(
 				i.wait = nil
 				count := i.loadedCountLocked()
 				dimensions := i.dimensions
+				keepPath := snapshot.path
 				i.mu.Unlock()
+				cleanupSemanticSnapshots(i.storageRoot, keepPath)
 				slog.Info("semantic persistent index opened",
 					"model", modelID,
 					"vectors", count,
@@ -412,7 +414,7 @@ func (i *semanticMemoryIndex) Warm(
 			}
 			if errors.Is(snapshotErr, errSemanticSnapshotCorrupt) {
 				slog.Warn("semantic persistent index corrupt; rebuilding", "error", snapshotErr)
-				_ = os.Remove(semanticSnapshotPath(i.storageRoot))
+				_ = os.Remove(semanticSnapshotPath(i.storageRoot, key, dbGeneration))
 			} else if !errors.Is(snapshotErr, errSemanticSnapshotUnavailable) &&
 				!errors.Is(snapshotErr, errSemanticSnapshotStale) {
 				slog.Warn("semantic persistent index open failed; rebuilding", "error", snapshotErr)
@@ -701,6 +703,9 @@ func (i *semanticMemoryIndex) MarkPersistDirty(engine, modelID, version string) 
 	if i.storageRoot == "" || i.key != key {
 		return false
 	}
+	if i.ready && i.mappedReadOnly && len(i.overlay) == 0 {
+		return false
+	}
 	i.persistEpoch++
 	if i.persistWorker {
 		return false
@@ -778,7 +783,18 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 		i.total = i.loaded
 		i.updatedAt = time.Now()
 		stable := i.persistEpoch == epoch
+		if stable {
+			// No in-memory Upsert raced this snapshot build, therefore every
+			// overlay value is represented by the immutable snapshot we just
+			// adopted. Drop the duplicate heap copy.
+			i.overlay = make(map[int64][]float32)
+			i.overlayExtra = 0
+			i.loaded = len(i.positions)
+			i.total = i.loaded
+		}
+		keepPath := snapshot.path
 		i.mu.Unlock()
+		cleanupSemanticSnapshots(i.storageRoot, keepPath)
 		if stable {
 			return nil
 		}
