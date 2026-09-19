@@ -57,6 +57,11 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 	if c.aiManager != nil {
 		info.Runtime = c.aiManager.Status(domain.AICapabilityAdvancedVision)
 		info.ActiveModelID = info.Runtime.ModelID
+		if info.ActiveModelID == "" {
+			if active, err := c.getAdvancedVisionActiveModelID(); err == nil {
+				info.ActiveModelID = active
+			}
+		}
 	}
 	if c.llamaRuntimeStore != nil {
 		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
@@ -76,6 +81,9 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 		if c.aiManager != nil {
 			if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
 				candidate.Installed = true
+			}
+			if manifest.ID == info.ActiveModelID {
+				info.Runtime = runtimeStatusForInstalledModel(info.Runtime, manifest, candidate.Installed)
 			}
 		}
 		info.Models = append(info.Models, candidate)
