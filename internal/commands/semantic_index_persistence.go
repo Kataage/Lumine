@@ -20,7 +20,7 @@ const (
 	semanticSnapshotMagic      = "LUMSIDX1"
 	semanticSnapshotVersion    = uint32(1)
 	semanticSnapshotHeaderSize = 4096
-	semanticSnapshotName       = "semantic-exact-v1.bin"
+	semanticSnapshotPrefix     = "semantic-exact-v1-"
 	semanticSnapshotMetaOffset = 88
 )
 
@@ -52,8 +52,26 @@ type semanticSnapshotHeader struct {
 	checksum      [sha256.Size]byte
 }
 
-func semanticSnapshotPath(root string) string {
-	return filepath.Join(root, semanticSnapshotName)
+func semanticSnapshotPath(root string, key semanticIndexKey, generation uint64) string {
+	keyHash := sha256.Sum256([]byte(key.engine + "\x00" + key.modelID + "\x00" + key.version))
+	name := fmt.Sprintf("%s%x-%016x.bin", semanticSnapshotPrefix, keyHash[:8], generation)
+	return filepath.Join(root, name)
+}
+
+func cleanupSemanticSnapshots(root, keepPath string) {
+	if root == "" {
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(root, semanticSnapshotPrefix+"*.bin"))
+	if err != nil {
+		return
+	}
+	for _, path := range matches {
+		if path == keepPath {
+			continue
+		}
+		_ = os.Remove(path)
+	}
 }
 
 func alignSemanticSnapshot(value int) int {
@@ -186,7 +204,7 @@ func openSemanticPersistentSnapshot(
 	if root == "" {
 		return nil, errSemanticSnapshotUnavailable
 	}
-	path := semanticSnapshotPath(root)
+	path := semanticSnapshotPath(root, key, generation)
 	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -301,6 +319,15 @@ func writeSemanticPersistentSnapshot(
 		return nil, err
 	}
 
+	// Snapshot files are immutable and generation-addressed. Reuse an already
+	// valid file instead of trying to replace a file that may currently be
+	// memory-mapped (Windows rejects deletion of mapped files).
+	if existing, openErr := openSemanticPersistentSnapshot(root, key, info.Generation); openErr == nil {
+		return existing, nil
+	} else if errors.Is(openErr, errSemanticSnapshotCorrupt) || errors.Is(openErr, errSemanticSnapshotStale) {
+		_ = os.Remove(semanticSnapshotPath(root, key, info.Generation))
+	}
+
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("create semantic index directory: %w", err)
 	}
@@ -393,16 +420,9 @@ func writeSemanticPersistentSnapshot(
 	}
 	closed = true
 
-	target := semanticSnapshotPath(root)
+	target := semanticSnapshotPath(root, key, endGeneration)
 	if err := os.Rename(tempPath, target); err != nil {
-		// Go's Windows implementation normally replaces an existing file. Keep
-		// a safe rebuild fallback for filesystems that reject replacement.
-		if removeErr := os.Remove(target); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return nil, fmt.Errorf("replace semantic snapshot: %w", err)
-		}
-		if retryErr := os.Rename(tempPath, target); retryErr != nil {
-			return nil, fmt.Errorf("replace semantic snapshot: %w", retryErr)
-		}
+		return nil, fmt.Errorf("publish semantic snapshot: %w", err)
 	}
 
 	return openSemanticPersistentSnapshot(root, key, endGeneration)
