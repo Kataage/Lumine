@@ -34,7 +34,7 @@ import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
 import { useAppDialog } from "./AppDialogProvider";
 import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
 
-type FeatureStatus = "off" | "setup" | "ready" | "running" | "error" | "preview";
+type FeatureStatus = "off" | "setup" | "unloaded" | "ready" | "running" | "error" | "preview";
 
 const FEATURE_META: Record<AIModelFeatureKey, {
   title: string;
@@ -142,6 +142,11 @@ function StatusChip({ status }: { status: FeatureStatus }) {
       label: "セットアップが必要",
       className: "border-amber-500/25 bg-amber-500/[0.07] text-amber-200",
       dot: "bg-amber-400",
+    },
+    unloaded: {
+      label: "インストール済み・未ロード",
+      className: "border-sky-500/25 bg-sky-500/[0.07] text-sky-200",
+      dot: "bg-sky-400",
     },
     ready: {
       label: "利用可能",
@@ -452,6 +457,8 @@ export function AISettingsPanel() {
     ? "off"
     : semanticModel?.runtime.state === "error"
       ? "error"
+      : semanticModel?.runtime.state === "not_loaded"
+        ? "unloaded"
       : semanticModel?.runtime.state === "running"
         ? "running"
         : semanticModel?.runtime.state === "ready"
@@ -462,6 +469,8 @@ export function AISettingsPanel() {
     ? "off"
     : lightweightModel?.runtime.state === "error"
       ? "error"
+      : lightweightModel?.runtime.state === "not_loaded"
+        ? "unloaded"
       : lightweightModel?.runtime.state === "running"
         ? "running"
         : lightweightModel?.runtime.state === "ready"
@@ -474,6 +483,7 @@ export function AISettingsPanel() {
   ): FeatureStatus => {
     if (!settings.enabled || !settings[key]) return "off";
     if (runtimeState === "error") return "error";
+    if (runtimeState === "not_loaded") return "unloaded";
     if (runtimeState === "running") return "running";
     if (runtimeState === "ready") return "ready";
     return "setup";
