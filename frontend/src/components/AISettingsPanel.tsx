@@ -30,6 +30,7 @@ import {
   type AISettings,
 } from "../utils/aiSettings";
 import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
+import { useAppDialog } from "./AppDialogProvider";
 import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
 
 type FeatureStatus = "off" | "setup" | "ready" | "running" | "error" | "preview";
@@ -211,6 +212,7 @@ function SettingsRow({
 }
 
 export function AISettingsPanel() {
+  const dialog = useAppDialog();
   const [settings, setSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
   const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
@@ -380,7 +382,14 @@ export function AISettingsPanel() {
   };
 
   const removeVisionModel = async () => {
-    if (visionBusy || !window.confirm("Lightweight Visionモデルをローカルから削除しますか？")) return;
+    if (visionBusy) return;
+    const approved = await dialog.confirm({
+      title: "Lightweight Visionモデルを削除しますか？",
+      description: "ローカルに保存されているモデルを削除します。必要になれば再度セットアップできます。",
+      confirmLabel: "モデルを削除",
+      tone: "danger",
+    });
+    if (!approved) return;
     setVisionBusy(true);
     try {
       await removeDefaultLightweightVisionModel();
@@ -393,7 +402,14 @@ export function AISettingsPanel() {
   };
 
   const removeVisionRuntime = async () => {
-    if (visionBusy || !window.confirm("共有llama.cpp runtimeを削除しますか？ Advanced Vision / Prompt Engineも停止します。")) return;
+    if (visionBusy) return;
+    const approved = await dialog.confirm({
+      title: "共有runtimeを削除しますか？",
+      description: "llama.cpp runtimeを削除します。Lightweight Vision / Advanced Vision / Prompt Engineの実行中runtimeは停止します。",
+      confirmLabel: "runtimeを削除",
+      tone: "danger",
+    });
+    if (!approved) return;
     setVisionBusy(true);
     try {
       await removeLightweightVisionRuntime();
