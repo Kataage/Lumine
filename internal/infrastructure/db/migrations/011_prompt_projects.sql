@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS prompt_projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schema_version INTEGER NOT NULL DEFAULT 1,
     title TEXT NOT NULL,
     idea TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS prompt_variants (
 CREATE TABLE IF NOT EXISTS prompt_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     variant_id INTEGER NOT NULL REFERENCES prompt_variants(id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL DEFAULT 1,
     parent_version_id INTEGER REFERENCES prompt_versions(id) ON DELETE SET NULL,
     positive TEXT NOT NULL DEFAULT '',
     negative TEXT NOT NULL DEFAULT '',
