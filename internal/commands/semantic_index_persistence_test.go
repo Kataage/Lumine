@@ -348,6 +348,71 @@ func BenchmarkSemanticPersistentSnapshotOpen100K(b *testing.B) {
 	benchmarkSemanticPersistentSnapshotOpen(b, 100_000)
 }
 
+func TestSemanticIndexGenerationIgnoresNonReadyLifecycle(t *testing.T) {
+	cmd := setupCommands(t)
+	library := createTestLibrary(t, cmd, "Semantic generation lifecycle", t.TempDir())
+	assetRepo := db.NewAssetRepo(cmd.db)
+	assetID, err := assetRepo.Create(makeAsset(library.ID, "/tmp/semantic-index", "lifecycle.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.db.Exec(`
+		INSERT INTO ai_asset_analysis (
+			asset_id, capability, state, engine, model_id, model_version, result_json
+		) VALUES (?, 'semantic_search', 'queued', ?, ?, ?, '{}')
+	`, assetID, testSemanticEngine, testSemanticModel, testSemanticVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.db.Exec(
+		"UPDATE ai_asset_analysis SET state = 'running' WHERE asset_id = ? AND capability = 'semantic_search'",
+		assetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.semanticRepo.Upsert(
+		assetID,
+		testSemanticEngine,
+		testSemanticModel,
+		testSemanticVersion,
+		[]float32{1, 0},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.db.Exec(
+		"UPDATE ai_asset_analysis SET state = 'failed' WHERE asset_id = ? AND capability = 'semantic_search'",
+		assetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	nonReadyGeneration, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nonReadyGeneration != before {
+		t.Fatalf("non-ready lifecycle invalidated semantic snapshot: before=%d after=%d", before, nonReadyGeneration)
+	}
+
+	if _, err := cmd.db.Exec(
+		"UPDATE ai_asset_analysis SET state = 'ready' WHERE asset_id = ? AND capability = 'semantic_search'",
+		assetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	readyGeneration, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readyGeneration <= nonReadyGeneration {
+		t.Fatalf("ready transition did not invalidate semantic snapshot: before=%d after=%d", nonReadyGeneration, readyGeneration)
+	}
+}
+
 func TestSemanticIndexGenerationAdvancesForReadyChanges(t *testing.T) {
 	cmd := setupCommands(t)
 	library := createTestLibrary(t, cmd, "Semantic generation", t.TempDir())
