@@ -273,7 +273,7 @@ func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 	if query.FolderPath != "" {
 		if query.Recurse {
 			where += " AND (a.folder_path = ? OR a.folder_path LIKE ? OR a.folder_path LIKE ?)"
-			args = append(args, query.FolderPath, query.FolderPath+"/%", query.FolderPath+"\%")
+			args = append(args, query.FolderPath, query.FolderPath+"/%", query.FolderPath+"\\%")
 		} else {
 			where += " AND a.folder_path = ?"
 			args = append(args, query.FolderPath)
