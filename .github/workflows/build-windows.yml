@@ -41,12 +41,6 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
 
-      - name: Real SigLIP2 smoke test
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/siglip2-runtime-and-ai-settings-quality'
-        run: go test ./internal/ai/siglip2 -run TestRealSigLIP2Smoke -count=1 -v
-        env:
-          LUMINE_SIGLIP2_REAL_SMOKE: "1"
-
       - name: Build Windows app
         run: wails build -platform windows/amd64
         env:
