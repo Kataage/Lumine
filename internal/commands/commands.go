@@ -40,6 +40,7 @@ type AppCommands struct {
 	semanticIndex *semanticMemoryIndex
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
+	storageInfo AIStorageInfo
 
 	aiSettingsMu    sync.Mutex
 	lifecycleMu     sync.Mutex
