@@ -113,6 +113,20 @@ if (-not $SkipPixAIV1) {
     Ensure-Venv $PixAIVenv $PixAIPython $PixAIRequirements "PixAI v1"
 }
 
+$RuntimeInspector = Join-Path $RepoRoot "benchmarks\ai\adapters\tagger_runtime_inspect.py"
+$RuntimeInfoPath = Join-Path $ResultsDir "tagger-runtime-info.json"
+$InspectionProfiles = @(
+    (Join-Path $RepoRoot "benchmarks\ai\profiles\wd-vit-tagger-v3.json"),
+    (Join-Path $RepoRoot "benchmarks\ai\profiles\pixai-tagger-v0.9.json"),
+    (Join-Path $RepoRoot "benchmarks\ai\profiles\camie-tagger-v2.json"),
+    (Join-Path $RepoRoot "benchmarks\ai\profiles\pixai-tagger-v1.0.json")
+)
+Write-Host "Inspecting pinned Tagger runtime metadata..."
+& $OnnxPython $RuntimeInspector --out $RuntimeInfoPath @InspectionProfiles
+if ($LASTEXITCODE -ne 0) {
+    throw "Tagger runtime inspection failed."
+}
+
 $candidates = @(
     [PSCustomObject]@{
         Name = "wd-vit-tagger-v3"
@@ -213,6 +227,7 @@ $runInfo = [ordered]@{
     candidates = @($candidates | ForEach-Object { $_.Name })
     resultFiles = @($resultPaths | ForEach-Object { Split-Path $_ -Leaf })
     comparisonReport = (Split-Path $reportPath -Leaf)
+    runtimeInspection = (Split-Path $RuntimeInfoPath -Leaf)
     pixaiV1Skipped = [bool]$SkipPixAIV1
 }
 $runInfoPath = Join-Path $ResultsDir "tagger-run-info.json"
@@ -220,8 +235,9 @@ $runInfo | ConvertTo-Json -Depth 5 | Set-Content -Path $runInfoPath -Encoding UT
 
 Write-Host ""
 Write-Host "Tagger benchmark complete."
-Write-Host "Comparison: $reportPath"
-Write-Host "Run info  : $runInfoPath"
+Write-Host "Comparison : $reportPath"
+Write-Host "Runtime info: $RuntimeInfoPath"
+Write-Host "Run info   : $runInfoPath"
 if ($SkipPixAIV1) {
     Write-Warning "PixAI Tagger v1.0 was skipped. This run is useful for diagnostics, but it is not the full current Issue #165 candidate comparison."
 }
