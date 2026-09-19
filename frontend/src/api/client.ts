@@ -215,8 +215,18 @@ export interface DeleteAssetFilesResult {
 export type AIRuntimeState = "disabled" | "model_not_installed" | "not_loaded" | "ready" | "running" | "error";
 
 export interface AIStorageInfo {
+  mode: "installed" | "portable";
+  rootPath: string;
+  dataPath: string;
+  databasePath: string;
+  logsPath: string;
   modelsPath: string;
   runtimesPath: string;
+  semanticIndexPath: string;
+  preferredRootPath?: string;
+  legacyPath?: string;
+  legacyDetected: boolean;
+  usingLegacy: boolean;
 }
 
 export interface SemanticModelInfo {
