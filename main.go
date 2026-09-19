@@ -183,6 +183,9 @@ func main() {
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
 		log.Fatal("failed to register Semantic Search job handler:", err)
 	}
+	if err := aiJobQueue.RegisterHandler(domain.AICapabilityTagger, cmd.TaggerAnalysisHandler); err != nil {
+		log.Fatal("failed to register Tagger job handler:", err)
+	}
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilityLightweightVision, cmd.LightweightVisionAnalysisHandler); err != nil {
 		log.Fatal("failed to register Lightweight Vision job handler:", err)
 	}

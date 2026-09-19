@@ -186,6 +186,7 @@ func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 
 	for _, capability := range []domain.AICapability{
 		domain.AICapabilitySemanticSearch,
+		domain.AICapabilityTagger,
 		domain.AICapabilityLightweightVision,
 	} {
 		if _, err := c.aiJobQueue.MarkStaleForAssets(capability, assetIDs); err != nil {
@@ -197,11 +198,15 @@ func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 	if err != nil {
 		return semanticCreated, err
 	}
+	taggerCreated, err := c.EnqueueAutomaticTaggerAssets(assetIDs)
+	if err != nil {
+		return semanticCreated + taggerCreated, err
+	}
 	visionCreated, err := c.EnqueueAutomaticLightweightVisionAssets(assetIDs)
 	if err != nil {
-		return semanticCreated + visionCreated, err
+		return semanticCreated + taggerCreated + visionCreated, err
 	}
-	return semanticCreated + visionCreated, nil
+	return semanticCreated + taggerCreated + visionCreated, nil
 }
 
 func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, error) {

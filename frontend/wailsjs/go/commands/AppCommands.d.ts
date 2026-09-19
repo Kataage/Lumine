@@ -89,6 +89,8 @@ export function EnqueueAutomaticLightweightVisionAssets(arg1:Array<number>):Prom
 
 export function EnqueueAutomaticSemanticAssets(arg1:Array<number>):Promise<number>;
 
+export function EnqueueAutomaticTaggerAssets(arg1:Array<number>):Promise<number>;
+
 export function EnqueueLightweightVisionBackfill():Promise<number>;
 
 export function EnqueueSemanticBackfill():Promise<number>;
@@ -144,6 +146,8 @@ export function GetSemanticIndexStatus():Promise<commands.SemanticIndexStatus>;
 export function GetSetting(arg1:string):Promise<string>;
 
 export function GetSupportedExtensions():Promise<Array<string>>;
+
+export function GetTaggerReviewJSON(arg1:number):Promise<string>;
 
 export function GetViewerAssetDetail(arg1:number):Promise<commands.AssetDTO>;
 
@@ -247,6 +251,8 @@ export function RestorePromptProject(arg1:number):Promise<void>;
 
 export function RetryAIJob(arg1:number):Promise<void>;
 
+export function ReviewTaggerSuggestions(arg1:number,arg2:number,arg3:string):Promise<void>;
+
 export function RunAdvancedVision(arg1:string,arg2:Array<number>,arg3:string):Promise<commands.AdvancedVisionRunDTO>;
 
 export function RunPromptEngine(arg1:commands.PromptEngineRequestDTO):Promise<commands.PromptEngineResultDTO>;
@@ -290,6 +296,8 @@ export function ShutdownBackground(arg1:context.Context):Promise<void>;
 export function StartAIRestore():Promise<boolean>;
 
 export function SyncLibraryViewer(arg1:number):Promise<scanner.SyncResult>;
+
+export function TaggerAnalysisHandler(arg1:context.Context,arg2:domain.AIJob):Promise<ai.AnalysisOutput>;
 
 export function ToggleAssetFavorite(arg1:number,arg2:boolean):Promise<void>;
 

@@ -28,7 +28,9 @@ import {
   getAISettings,
   getAIStorageInfo,
   getDefaultSemanticModelInfo,
+  getTaggerReview,
   requestLegacyStorageMigration,
+  reviewTaggerSuggestions,
   semanticSearchAssets,
 } from "../api/client";
 
@@ -54,6 +56,30 @@ describe("typed AI Wails bridge", () => {
       assets: [],
       totalCount: 999,
     }));
+    const dynamicGetTaggerReviewJSON = vi.fn(async () => JSON.stringify({
+      assetId: 7,
+      state: "ready",
+      engine: "tagger-engine",
+      modelId: "tagger-model",
+      modelVersion: "1",
+      suggestions: [
+        {
+          id: 10,
+          assetId: 7,
+          kind: "general",
+          name: "1girl",
+          confidence: 0.97,
+          state: "pending",
+          threshold: 0.35,
+          engine: "tagger-engine",
+          modelId: "tagger-model",
+          modelVersion: "1",
+          createdAt: "2026-09-20T00:00:00Z",
+          updatedAt: "2026-09-20T00:00:00Z",
+        },
+      ],
+    }));
+    const dynamicReviewTaggerSuggestions = vi.fn(async () => undefined);
 
     (window as unknown as {
       go?: {
@@ -61,6 +87,8 @@ describe("typed AI Wails bridge", () => {
           AppCommands?: {
             GetAISettings?: typeof dynamicGetAISettings;
             SemanticSearchAssetsWithID?: typeof dynamicSemanticSearch;
+            GetTaggerReviewJSON?: typeof dynamicGetTaggerReviewJSON;
+            ReviewTaggerSuggestions?: typeof dynamicReviewTaggerSuggestions;
           };
         };
       };
@@ -69,6 +97,8 @@ describe("typed AI Wails bridge", () => {
         AppCommands: {
           GetAISettings: dynamicGetAISettings,
           SemanticSearchAssetsWithID: dynamicSemanticSearch,
+          GetTaggerReviewJSON: dynamicGetTaggerReviewJSON,
+          ReviewTaggerSuggestions: dynamicReviewTaggerSuggestions,
         },
       },
     };
@@ -213,6 +243,32 @@ describe("typed AI Wails bridge", () => {
     const info = await getDefaultSemanticModelInfo();
     expect(info.installed).toBe(true);
     expect(info.runtime.state).toBe("not_loaded");
+  });
+
+  it("Tagger review JSONをparseしreview actionを渡す", async () => {
+    const review = await getTaggerReview(7);
+    expect(review?.state).toBe("ready");
+    expect(review?.suggestions).toHaveLength(1);
+    expect(review?.suggestions[0]).toMatchObject({
+      kind: "general",
+      name: "1girl",
+      confidence: 0.97,
+    });
+
+    await reviewTaggerSuggestions(7, 10, "accept");
+    const dynamic = (window as unknown as {
+      go: {
+        commands: {
+          AppCommands: {
+            GetTaggerReviewJSON: ReturnType<typeof vi.fn>;
+            ReviewTaggerSuggestions: ReturnType<typeof vi.fn>;
+          };
+        };
+      };
+    }).go.commands.AppCommands;
+
+    expect(dynamic.GetTaggerReviewJSON).toHaveBeenCalledWith(7);
+    expect(dynamic.ReviewTaggerSuggestions).toHaveBeenCalledWith(7, 10, "accept");
   });
 
   it("未知のruntime stateは誤表示せず拒否する", async () => {
