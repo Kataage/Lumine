@@ -288,8 +288,8 @@ func (r *windowsORT) runSingle(
 		uintptr(unsafe.Pointer(&inputValues[0])),
 		1,
 		uintptr(unsafe.Pointer(&outputNames[0])),
-		uintptr(unsafe.Pointer(&outputValues[0])),
 		1,
+		uintptr(unsafe.Pointer(&outputValues[0])),
 	)
 	runtime.KeepAlive(inputShape)
 	runtime.KeepAlive(outputShape)
