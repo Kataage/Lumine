@@ -145,9 +145,43 @@ export function AdvancedVisionSettingsCard({
           status.llamaRuntime.installed ? "bg-emerald-500/[0.08] text-emerald-200" : "bg-muted/55"
         }`}>
           <span className={`h-1.5 w-1.5 rounded-full ${status.llamaRuntime.installed ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
-          llama.cpp {status.llamaRuntime.installed ? "導入済み" : "セットアップ時に導入"}
+          llama.cpp {status.llamaRuntime.backend === "vulkan" ? "Vulkan" : "CPU"} · {
+            status.llamaRuntime.installed
+              ? "導入済み"
+              : status.llamaRuntime.fallbackInstalled
+                ? "CPU fallbackのみ"
+                : "未導入"
+          }
         </span>
         <span>{formatFileSize(status.llamaRuntime.sizeBytes)}</span>
+        {ready && status.runtime.executionProvider && (
+          <span className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+            実行: {status.runtime.executionProvider === "vulkan" ? "Vulkan (GPU)" : status.runtime.executionProvider.toUpperCase()}
+          </span>
+        )}
+        {!status.llamaRuntime.installed && (
+          <button
+            type="button"
+            className="ui-secondary-button ml-auto"
+            disabled={!!busy}
+            onClick={() => {
+              void (async () => {
+                setBusy("runtime-install");
+                setError(null);
+                try {
+                  await installAdvancedVisionRuntime();
+                  await refresh();
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setBusy("");
+                }
+              })();
+            }}
+          >
+            {busy === "runtime-install" ? "準備中…" : status.llamaRuntime.backend === "vulkan" ? "GPU runtimeを追加" : "runtimeを導入"}
+          </button>
+        )}
         {status.llamaRuntime.installed && (
           <button
             type="button"
@@ -225,6 +259,11 @@ export function AdvancedVisionSettingsCard({
       {!enabled && (
         <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
           セットアップを開始すると、ローカルAI全体とAdvanced Visionを自動で有効にします。
+        </p>
+      )}
+      {status.runtime.warning && (
+        <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] leading-relaxed text-amber-100">
+          GPU runtime: {status.runtime.warning}
         </p>
       )}
       {status.runtime.error && <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{status.runtime.error}</p>}
