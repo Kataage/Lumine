@@ -381,7 +381,7 @@ func (e *Engine) Infer(
 	}, nil
 }
 
-func (e *Engine) Unload(_ context.Context) error {
+func (e *Engine) Unload(ctx context.Context) error {
 	e.mu.Lock()
 	sidecar := e.sidecar
 	e.sidecar = nil
@@ -391,7 +391,10 @@ func (e *Engine) Unload(_ context.Context) error {
 	if sidecar == nil {
 		return nil
 	}
-	stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return sidecar.Stop(stopCtx)
 }
