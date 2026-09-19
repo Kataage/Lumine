@@ -44,6 +44,36 @@ export interface AIJobQueueStatus {
   pausedCapabilities: string[];
 }
 
+export type TaggerSuggestionKind = "general" | "character" | "rating";
+export type TaggerSuggestionState = "pending" | "accepted" | "rejected";
+
+export interface TaggerSuggestion {
+  id: number;
+  assetId: number;
+  kind: TaggerSuggestionKind;
+  name: string;
+  confidence: number;
+  state: TaggerSuggestionState;
+  threshold: number;
+  engine: string;
+  modelId: string;
+  modelVersion: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaggerReview {
+  assetId: number;
+  state: "queued" | "running" | "ready" | "failed" | "stale";
+  engine?: string;
+  modelId?: string;
+  modelVersion?: string;
+  suggestions: TaggerSuggestion[];
+  errorMessage?: string;
+  analyzedAt?: string;
+  updatedAt?: string;
+}
+
 export interface AIRuntimeStatus {
   capability: string;
   state: AIRuntimeState;
@@ -623,6 +653,8 @@ type DynamicCommands = {
   CreatePostRecord?: (request: PostRecordRequest) => Promise<PostRecordDTO | null>;
   ListPostRecords?: (offset: number, limit: number) => Promise<PostRecordDTO[]>;
   GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
+  GetTaggerReviewJSON?: (assetId: number) => Promise<string>;
+  ReviewTaggerSuggestions?: (assetId: number, suggestionId: number, action: string) => Promise<void>;
   ListWorks?: (limit: number) => Promise<WorkDTO[]>;
   CreateWork?: (title: string, description: string, assetIds: number[]) => Promise<WorkDTO | null>;
   AddAssetsToWork?: (workId: number, assetIds: number[]) => Promise<void>;
@@ -636,6 +668,48 @@ type DynamicCommands = {
 
 function appCommands(): DynamicCommands | undefined {
   return (window as unknown as { go?: { commands?: { AppCommands?: DynamicCommands } } }).go?.commands?.AppCommands;
+}
+
+function isTaggerReview(value: unknown): value is TaggerReview {
+  if (!value || typeof value !== "object") return false;
+  const source = value as Partial<TaggerReview>;
+  if (typeof source.assetId !== "number" || typeof source.state !== "string") return false;
+  if (!["queued", "running", "ready", "failed", "stale"].includes(source.state)) return false;
+  return Array.isArray(source.suggestions);
+}
+
+export async function getTaggerReview(assetId: number): Promise<TaggerReview | null> {
+  const method = appCommands()?.GetTaggerReviewJSON;
+  if (!method) return null;
+  const encoded = await method(assetId);
+  if (!encoded) return null;
+  const parsed: unknown = JSON.parse(encoded);
+  if (!isTaggerReview(parsed)) {
+    throw new Error("Tagger解析結果の形式が不正です。");
+  }
+  return {
+    ...parsed,
+    suggestions: parsed.suggestions.map((value) => ({
+      ...value,
+      confidence: Number.isFinite(value.confidence) ? value.confidence : 0,
+      threshold: Number.isFinite(value.threshold) ? value.threshold : 0,
+    })),
+  };
+}
+
+export async function reviewTaggerSuggestions(
+  assetId: number,
+  suggestionId: number,
+  action: "accept" | "reject" | "accept_all" | "reject_all",
+): Promise<void> {
+  const method = appCommands()?.ReviewTaggerSuggestions;
+  if (!method) throw new Error("TaggerレビューAPIが利用できません。最新版のLumineを起動してください。");
+  await method(assetId, suggestionId, action);
+}
+
+export async function getAIRuntimeStatuses(): Promise<AIRuntimeStatus[]> {
+  const values = await Go.GetAIRuntimeStatuses();
+  return (values ?? []).map((value) => normalizeRuntimeStatus(value));
 }
 
 export async function getAssetDetail(assetId: number): Promise<AssetDTO | null> {
