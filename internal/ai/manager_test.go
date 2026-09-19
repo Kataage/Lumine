@@ -566,3 +566,39 @@ func TestManagerUnloadHonorsContextWhileInferenceIsRunning(t *testing.T) {
 		t.Fatalf("final unload: %v", err)
 	}
 }
+
+
+func TestManagerCancelledInferenceDoesNotPoisonRuntime(t *testing.T) {
+	manager, engine, _ := newLoadedBlockingManager(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.Infer(
+			ctx,
+			domain.AICapabilitySemanticSearch,
+			InferenceRequest{Operation: "cancel-me"},
+		)
+		done <- err
+	}()
+
+	select {
+	case <-engine.started:
+	case <-time.After(time.Second):
+		t.Fatal("inference did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Infer error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled inference did not return")
+	}
+
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateReady {
+		t.Fatalf("runtime after caller cancellation = %+v, want ready", status)
+	}
+}
