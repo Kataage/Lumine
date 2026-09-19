@@ -214,12 +214,19 @@ export function AISettingsPanel() {
     };
   }, []);
 
+  const ensureFeatureEnabled = async (feature: AIModelFeatureKey) => {
+    const next = { ...settings, enabled: true, [feature]: true } as AISettings;
+    const saved = await setAISettings(next);
+    setSettings(saved);
+  };
+
   const installSemanticModel = async () => {
     if (modelBusy) return;
     setModelBusy(true);
     setError(null);
     setDownloadProgress({ downloaded: 0, total: semanticModel?.sizeBytes ?? 0 });
     try {
+      await ensureFeatureEnabled("semanticSearch");
       await installDefaultSemanticModel();
       setSemanticModel(await getDefaultSemanticModelInfo());
     } catch (cause) {
@@ -293,6 +300,35 @@ export function AISettingsPanel() {
       setVisionBusy(false);
     }
   };
+  const setupLightweightVision = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      await ensureFeatureEnabled("lightweightVision");
+      let current = await getDefaultLightweightVisionModelInfo();
+      if (!current.llamaRuntime.installed) {
+        setRuntimeProgress({ downloaded: 0, total: current.llamaRuntime.sizeBytes });
+        await installLightweightVisionRuntime();
+        setRuntimeProgress(null);
+        current = await getDefaultLightweightVisionModelInfo();
+      }
+      if (!current.installed) {
+        setVisionModelProgress({ downloaded: 0, total: current.sizeBytes });
+        await installDefaultLightweightVisionModel();
+        setVisionModelProgress(null);
+      }
+      await loadDefaultLightweightVisionModel();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRuntimeProgress(null);
+      setVisionModelProgress(null);
+      setVisionBusy(false);
+    }
+  };
+
 
   const removeVisionModel = async () => {
     if (visionBusy) return;
