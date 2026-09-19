@@ -244,6 +244,7 @@ export function AISettingsPanel() {
     setModelBusy(true);
     setError(null);
     try {
+      await ensureFeatureEnabled("semanticSearch");
       await loadDefaultSemanticModel();
       setSemanticModel(await getDefaultSemanticModelInfo());
     } catch (cause) {
@@ -257,51 +258,6 @@ export function AISettingsPanel() {
     setLightweightModel(await getDefaultLightweightVisionModelInfo());
   };
 
-  const installVisionRuntime = async () => {
-    if (visionBusy) return;
-    setVisionBusy(true);
-    setError(null);
-    setRuntimeProgress({ downloaded: 0, total: lightweightModel?.llamaRuntime.sizeBytes ?? 0 });
-    try {
-      await installLightweightVisionRuntime();
-      await refreshLightweightModel();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setVisionBusy(false);
-      setRuntimeProgress(null);
-    }
-  };
-
-  const installVisionModel = async () => {
-    if (visionBusy) return;
-    setVisionBusy(true);
-    setError(null);
-    setVisionModelProgress({ downloaded: 0, total: lightweightModel?.sizeBytes ?? 0 });
-    try {
-      await installDefaultLightweightVisionModel();
-      await refreshLightweightModel();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setVisionBusy(false);
-      setVisionModelProgress(null);
-    }
-  };
-
-  const loadVisionModel = async () => {
-    if (visionBusy) return;
-    setVisionBusy(true);
-    setError(null);
-    try {
-      await loadDefaultLightweightVisionModel();
-      await refreshLightweightModel();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setVisionBusy(false);
-    }
-  };
   const setupLightweightVision = async () => {
     if (visionBusy) return;
     setVisionBusy(true);
