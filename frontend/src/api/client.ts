@@ -33,6 +33,31 @@ export interface SemanticIndexStatus {
   modelId?: string;
   error?: string;
 }
+
+export interface AIJobQueueStatus {
+  started: boolean;
+  workers: number;
+  activeCount: number;
+  activeCapabilities: string[];
+  pausedCapabilities: string[];
+}
+
+export interface AIHealthSnapshot {
+  settings: AISettings;
+  settingsPersisted: boolean;
+  settingsUpdatedAt?: string;
+  semanticRuntime: RuntimeStatus;
+  semanticIndex: SemanticIndexStatus;
+  queue: AIJobQueueStatus;
+  shuttingDown: boolean;
+  semanticSearchEnabled: boolean;
+}
+
+export interface AIBridgeStatus {
+  available: boolean;
+  missing: string[];
+}
+
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
 export type MoveRequest = cmds.MoveRequest;
@@ -549,6 +574,7 @@ export const listAssets = Go.ListAssets;
 
 type DynamicCommands = {
   GetAISettings?: () => Promise<AISettings | null>;
+  GetAIHealthSnapshot?: () => Promise<AIHealthSnapshot | null>;
   GetAIStorageInfo?: () => Promise<AIStorageInfo | null>;
   SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
   IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
@@ -691,6 +717,36 @@ function requireDynamic<K extends keyof DynamicCommands>(name: K): NonNullable<D
 export async function getAISettings(): Promise<AISettings> {
   const value = await requireDynamic("GetAISettings")();
   return normalizeAISettings(value);
+}
+
+export function getAIBridgeStatus(): AIBridgeStatus {
+  const commands = appCommands();
+  const required = [
+    "GetAISettings",
+    "GetAIHealthSnapshot",
+    "GetDefaultSemanticModelInfo",
+    "SemanticSearchAssetsWithID",
+    "GetSemanticIndexStatus",
+    "CancelSemanticSearch",
+  ] as const;
+  const missing = required.filter((name) => typeof commands?.[name] !== "function");
+  return { available: missing.length === 0, missing: [...missing] };
+}
+
+export async function getAIHealthSnapshot(): Promise<AIHealthSnapshot> {
+  const value = await requireDynamic("GetAIHealthSnapshot")();
+  if (!value) throw new Error("AI状態を取得できませんでした。");
+  return {
+    ...value,
+    settings: normalizeAISettings(value.settings),
+    queue: {
+      started: value.queue?.started === true,
+      workers: Number(value.queue?.workers ?? 0),
+      activeCount: Number(value.queue?.activeCount ?? 0),
+      activeCapabilities: value.queue?.activeCapabilities ?? [],
+      pausedCapabilities: value.queue?.pausedCapabilities ?? [],
+    },
+  };
 }
 
 export async function getAIStorageInfo(): Promise<AIStorageInfo> {
