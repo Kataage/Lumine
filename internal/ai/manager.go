@@ -384,11 +384,31 @@ func (m *Manager) unloadLocked(ctx context.Context, capability domain.AICapabili
 }
 
 func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings) error {
+	type reloadRequest struct {
+		capability domain.AICapability
+		modelID    string
+		version    string
+	}
+
 	m.mu.Lock()
 	var toUnload []domain.AICapability
+	var toReload []reloadRequest
 	for capability, session := range m.sessions {
-		if !settings.CapabilityEnabled(capability) || (session.options.AllowGPU && !settings.GPUAcceleration) {
+		if !settings.CapabilityEnabled(capability) {
 			toUnload = append(toUnload, capability)
+			continue
+		}
+
+		gpuCapable := false
+		if engine, ok := session.engine.(GPUCapableEngine); ok {
+			gpuCapable = engine.SupportsGPU()
+		}
+		if gpuCapable && session.options.AllowGPU != settings.GPUAcceleration {
+			toReload = append(toReload, reloadRequest{
+				capability: capability,
+				modelID:    session.model.Manifest.ID,
+				version:    session.model.Manifest.Version,
+			})
 		}
 	}
 	m.mu.Unlock()
@@ -397,6 +417,21 @@ func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings)
 	for _, capability := range toUnload {
 		if err := m.Unload(ctx, capability); err != nil {
 			combined = errors.Join(combined, err)
+		}
+	}
+	for _, request := range toReload {
+		if err := m.Unload(ctx, request.capability); err != nil {
+			combined = errors.Join(combined, err)
+			continue
+		}
+		if err := m.Load(
+			ctx,
+			request.capability,
+			request.modelID,
+			request.version,
+			LoadOptions{AllowGPU: settings.GPUAcceleration},
+		); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("reload %s after GPU policy change: %w", request.capability, err))
 		}
 	}
 	return combined
@@ -417,7 +452,7 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 	if session == nil {
 		return RuntimeStatus{Capability: capability, State: RuntimeStateModelNotInstalled}
 	}
-	return RuntimeStatus{
+	status := RuntimeStatus{
 		Capability: capability,
 		State:      session.state,
 		ModelID:    session.model.Manifest.ID,
@@ -425,6 +460,12 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 		Engine:     session.model.Manifest.Engine,
 		Error:      session.lastErr,
 	}
+	if reporter, ok := session.engine.(RuntimeDiagnosticsProvider); ok {
+		diagnostics := reporter.RuntimeDiagnostics()
+		status.ExecutionProvider = diagnostics.ExecutionProvider
+		status.Warning = diagnostics.Warning
+	}
+	return status
 }
 
 func (m *Manager) Close(ctx context.Context) error {

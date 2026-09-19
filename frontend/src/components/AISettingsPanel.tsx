@@ -276,9 +276,17 @@ export function AISettingsPanel() {
 
   useEffect(() => {
     const offSettingsChanged = EventsOn("ai:settings-changed", () => {
-      void getAISettings()
-        .then((next) => {
+      void Promise.all([
+        getAISettings(),
+        getDefaultSemanticModelInfo().catch(() => null),
+        getAdvancedVisionStatus().catch(() => null),
+        getPromptEngineStatus().catch(() => null),
+      ])
+        .then(([next, semantic, advanced, prompt]) => {
           setSettings(next);
+          setSemanticModel(semantic);
+          setAdvancedStatus(advanced);
+          setPromptStatus(prompt);
           setSettingsLoaded(true);
           setSettingsError(null);
           setError(null);
@@ -697,14 +705,30 @@ export function AISettingsPanel() {
                               </button>
                             )}
                             {(status === "ready" || status === "running") && (
-                              <div className="inline-flex items-center gap-2 text-[11px] font-medium text-emerald-300">
-                                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                                検索に使用できます
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <div className="inline-flex items-center gap-2 text-[11px] font-medium text-emerald-300">
+                                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                                  検索に使用できます
+                                </div>
+                                {semanticModel.runtime.executionProvider && (
+                                  <span className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                                    {semanticModel.runtime.executionProvider === "directml"
+                                      ? "DirectML (GPU)"
+                                      : semanticModel.runtime.warning
+                                        ? "CPU fallback"
+                                        : semanticModel.runtime.executionProvider.toUpperCase()}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
                           {semanticProgress && semanticProgress.total > 0 && (
                             <div className="mt-3"><ProgressBar downloaded={semanticProgress.downloaded} total={semanticProgress.total} label="SigLIP2をダウンロード" /></div>
+                          )}
+                          {semanticModel.runtime.warning && (
+                            <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] leading-relaxed text-amber-100">
+                              GPU runtime: {semanticModel.runtime.warning}
+                            </p>
                           )}
                           {semanticModel.runtime.error && (
                             <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{semanticModel.runtime.error}</p>

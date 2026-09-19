@@ -4,6 +4,8 @@ package siglip2
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -19,13 +21,15 @@ import (
 )
 
 const (
-	ortAPIVersion = uintptr(29)
+	ortAPIVersion = uintptr(24)
 
 	ortFnGetErrorMessage                  = uintptr(2)
 	ortFnCreateEnv                        = uintptr(3)
 	ortFnCreateSession                    = uintptr(7)
 	ortFnRun                              = uintptr(9)
 	ortFnCreateSessionOptions             = uintptr(10)
+	ortFnSetSessionExecutionMode          = uintptr(13)
+	ortFnDisableMemPattern                = uintptr(17)
 	ortFnSetSessionGraphOptimizationLevel = uintptr(23)
 	ortFnCreateTensorWithDataAsOrtValue   = uintptr(49)
 	ortFnCreateCpuMemoryInfo              = uintptr(69)
@@ -37,6 +41,7 @@ const (
 	ortFnReleaseSessionOptions            = uintptr(100)
 
 	ortLoggingWarning = uintptr(2)
+	ortSequential     = uintptr(0)
 	ortEnableAll      = uintptr(99)
 	ortArenaAllocator = uintptr(1)
 	ortMemTypeDefault = uintptr(0)
@@ -45,35 +50,62 @@ const (
 
 	siglipEmbeddingSize = 768
 	siglipPoolerOutput  = "pooler_output"
+
+	ortRuntimeVersion = "1.24.4"
+
+	ortDLLArchivePath       = "runtimes/win-x64/native/onnxruntime.dll"
+	ortSharedArchivePath    = "runtimes/win-x64/native/onnxruntime_providers_shared.dll"
+	directMLDLLArchivePath  = "bin/x64-win/DirectML.dll"
+
+	ortDLLSize       = uint64(17328152)
+	ortSharedDLLSize = uint64(22040)
+	directMLDLLSize  = uint64(18527776)
+
+	ortDLLSHA256       = "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40"
+	ortSharedDLLSHA256 = "265c8daf29637cb259cac8be9f08f2cd45f3883f0f0e4949cbfddd5b4cbec3b6"
+	directMLDLLSHA256  = "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
 )
 
 var ortExtractMu sync.Mutex
 
 type windowsORT struct {
 	dll           *syscall.DLL
+	directMLDLL   *syscall.DLL
 	api           uintptr
 	env           uintptr
 	memoryInfo    uintptr
 	textSession   uintptr
 	visionSession uintptr
+	runMu         sync.Mutex
+	provider      string
+	warning       string
 }
 
 func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error) {
-	// The first implementation intentionally uses the CPU execution provider.
-	// GPU opt-in remains authoritative globally; this engine simply has no GPU
-	// provider to activate, so it never consumes GPU resources implicitly.
-	_ = options
-
-	dllPath, err := extractORTDLL(modelRoot)
+	dllPath, err := extractORTRuntime(modelRoot)
 	if err != nil {
 		return nil, err
 	}
-	dll, err := syscall.LoadDLL(dllPath)
-	if err != nil {
-		return nil, fmt.Errorf("load ONNX Runtime DLL: %w", err)
+
+	backend := &windowsORT{}
+	if options.AllowGPU {
+		directMLPath := filepath.Join(filepath.Dir(dllPath), "DirectML.dll")
+		if directMLDLL, loadErr := syscall.LoadDLL(directMLPath); loadErr != nil {
+			backend.warning = fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
+		} else {
+			backend.directMLDLL = directMLDLL
+		}
 	}
 
-	backend := &windowsORT{dll: dll}
+	dll, err := syscall.LoadDLL(dllPath)
+	if err != nil {
+		if backend.directMLDLL != nil {
+			_ = backend.directMLDLL.Release()
+			backend.directMLDLL = nil
+		}
+		return nil, fmt.Errorf("load ONNX Runtime DLL: %w", err)
+	}
+	backend.dll = dll
 	ok := false
 	defer func() {
 		if !ok {
@@ -100,8 +132,8 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 
 	versionPtr, _, _ := syscall.SyscallN(versionFn)
 	version := readCString(versionPtr)
-	if !strings.HasPrefix(version, "1.29.") {
-		return nil, fmt.Errorf("unexpected ONNX Runtime version %q; expected 1.29.x", version)
+	if version != ortRuntimeVersion {
+		return nil, fmt.Errorf("unexpected ONNX Runtime version %q; expected %s", version, ortRuntimeVersion)
 	}
 
 	logID := append([]byte("lumine-siglip2"), 0)
@@ -113,6 +145,7 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 	); err != nil {
 		return nil, fmt.Errorf("create ONNX Runtime environment: %w", err)
 	}
+	runtime.KeepAlive(logID)
 
 	if err := backend.callStatus(
 		ortFnCreateCpuMemoryInfo,
@@ -123,48 +156,72 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 		return nil, fmt.Errorf("create ONNX Runtime memory info: %w", err)
 	}
 
-	optionsPtr, err := backend.createSessionOptions()
-	if err != nil {
+	if options.AllowGPU && backend.directMLDLL != nil {
+		if gpuErr := backend.createSessions(modelRoot, true); gpuErr == nil {
+			backend.provider = "directml"
+			ok = true
+			return backend, nil
+		} else {
+			backend.warning = fmt.Sprintf("DirectML unavailable; using CPU fallback: %v", gpuErr)
+		}
+	}
+
+	if err := backend.createSessions(modelRoot, false); err != nil {
+		if backend.warning != "" {
+			return nil, fmt.Errorf("%s; CPU fallback failed: %w", backend.warning, err)
+		}
 		return nil, err
 	}
-	defer backend.release(ortFnReleaseSessionOptions, optionsPtr)
-
-	textPath, err := syscall.UTF16PtrFromString(filepath.Join(modelRoot, textModelPath))
-	if err != nil {
-		return nil, fmt.Errorf("encode text model path: %w", err)
-	}
-	if err := backend.callStatus(
-		ortFnCreateSession,
-		backend.env,
-		uintptr(unsafe.Pointer(textPath)),
-		optionsPtr,
-		uintptr(unsafe.Pointer(&backend.textSession)),
-	); err != nil {
-		return nil, fmt.Errorf("create SigLIP2 text session: %w", err)
-	}
-
-	visionPath, err := syscall.UTF16PtrFromString(filepath.Join(modelRoot, visionModelPath))
-	if err != nil {
-		return nil, fmt.Errorf("encode vision model path: %w", err)
-	}
-	if err := backend.callStatus(
-		ortFnCreateSession,
-		backend.env,
-		uintptr(unsafe.Pointer(visionPath)),
-		optionsPtr,
-		uintptr(unsafe.Pointer(&backend.visionSession)),
-	); err != nil {
-		return nil, fmt.Errorf("create SigLIP2 vision session: %w", err)
-	}
-
-	runtime.KeepAlive(logID)
-	runtime.KeepAlive(textPath)
-	runtime.KeepAlive(visionPath)
+	backend.provider = "cpu"
 	ok = true
 	return backend, nil
 }
 
-func (r *windowsORT) createSessionOptions() (uintptr, error) {
+func (r *windowsORT) createSessions(modelRoot string, useDirectML bool) error {
+	r.releaseSessions()
+
+	optionsPtr, err := r.createSessionOptions(useDirectML)
+	if err != nil {
+		return err
+	}
+	defer r.release(ortFnReleaseSessionOptions, optionsPtr)
+
+	textPath, err := syscall.UTF16PtrFromString(filepath.Join(modelRoot, textModelPath))
+	if err != nil {
+		return fmt.Errorf("encode text model path: %w", err)
+	}
+	if err := r.callStatus(
+		ortFnCreateSession,
+		r.env,
+		uintptr(unsafe.Pointer(textPath)),
+		optionsPtr,
+		uintptr(unsafe.Pointer(&r.textSession)),
+	); err != nil {
+		return fmt.Errorf("create SigLIP2 text session: %w", err)
+	}
+
+	visionPath, err := syscall.UTF16PtrFromString(filepath.Join(modelRoot, visionModelPath))
+	if err != nil {
+		r.releaseSessions()
+		return fmt.Errorf("encode vision model path: %w", err)
+	}
+	if err := r.callStatus(
+		ortFnCreateSession,
+		r.env,
+		uintptr(unsafe.Pointer(visionPath)),
+		optionsPtr,
+		uintptr(unsafe.Pointer(&r.visionSession)),
+	); err != nil {
+		r.releaseSessions()
+		return fmt.Errorf("create SigLIP2 vision session: %w", err)
+	}
+
+	runtime.KeepAlive(textPath)
+	runtime.KeepAlive(visionPath)
+	return nil
+}
+
+func (r *windowsORT) createSessionOptions(useDirectML bool) (uintptr, error) {
 	var options uintptr
 	if err := r.callStatus(
 		ortFnCreateSessionOptions,
@@ -172,15 +229,54 @@ func (r *windowsORT) createSessionOptions() (uintptr, error) {
 	); err != nil {
 		return 0, fmt.Errorf("create ONNX Runtime session options: %w", err)
 	}
+	releaseOnError := func(err error) (uintptr, error) {
+		r.release(ortFnReleaseSessionOptions, options)
+		return 0, err
+	}
+
 	if err := r.callStatus(
 		ortFnSetSessionGraphOptimizationLevel,
 		options,
 		ortEnableAll,
 	); err != nil {
-		r.release(ortFnReleaseSessionOptions, options)
-		return 0, fmt.Errorf("enable ONNX graph optimizations: %w", err)
+		return releaseOnError(fmt.Errorf("enable ONNX graph optimizations: %w", err))
 	}
+
+	if useDirectML {
+		if err := r.callStatus(ortFnDisableMemPattern, options); err != nil {
+			return releaseOnError(fmt.Errorf("disable memory pattern for DirectML: %w", err))
+		}
+		if err := r.callStatus(ortFnSetSessionExecutionMode, options, ortSequential); err != nil {
+			return releaseOnError(fmt.Errorf("set sequential execution for DirectML: %w", err))
+		}
+		if err := r.appendDirectML(options); err != nil {
+			return releaseOnError(fmt.Errorf("enable DirectML execution provider: %w", err))
+		}
+	}
+
 	return options, nil
+}
+
+func (r *windowsORT) appendDirectML(options uintptr) error {
+	if r.dll == nil {
+		return errors.New("ONNX Runtime DLL is not loaded")
+	}
+	proc, err := r.dll.FindProc("OrtSessionOptionsAppendExecutionProvider_DML")
+	if err != nil {
+		return fmt.Errorf("find DirectML provider factory: %w", err)
+	}
+	status, _, _ := proc.Call(options, 0)
+	return r.consumeStatus(status)
+}
+
+func (r *windowsORT) RuntimeDiagnostics() ai.RuntimeDiagnostics {
+	if r == nil {
+		return ai.RuntimeDiagnostics{}
+	}
+	return ai.RuntimeDiagnostics{
+		ExecutionProvider: r.provider,
+		Warning:           r.warning,
+	}
 }
 
 func (r *windowsORT) EmbedText(input [siglipTextLength]int64) ([]float32, error) {
@@ -244,6 +340,9 @@ func (r *windowsORT) runSingle(
 	outputShape []int64,
 	outputType uintptr,
 ) error {
+	r.runMu.Lock()
+	defer r.runMu.Unlock()
+
 	if session == 0 || r.memoryInfo == 0 {
 		return errors.New("ONNX Runtime session is not initialized")
 	}
@@ -311,10 +410,7 @@ func (r *windowsORT) runSingle(
 	return err
 }
 
-func (r *windowsORT) Close() error {
-	if r == nil {
-		return nil
-	}
+func (r *windowsORT) releaseSessions() {
 	if r.visionSession != 0 {
 		r.release(ortFnReleaseSession, r.visionSession)
 		r.visionSession = 0
@@ -323,6 +419,16 @@ func (r *windowsORT) Close() error {
 		r.release(ortFnReleaseSession, r.textSession)
 		r.textSession = 0
 	}
+}
+
+func (r *windowsORT) Close() error {
+	if r == nil {
+		return nil
+	}
+	r.runMu.Lock()
+	defer r.runMu.Unlock()
+
+	r.releaseSessions()
 	if r.memoryInfo != 0 {
 		r.release(ortFnReleaseMemoryInfo, r.memoryInfo)
 		r.memoryInfo = 0
@@ -331,12 +437,18 @@ func (r *windowsORT) Close() error {
 		r.release(ortFnReleaseEnv, r.env)
 		r.env = 0
 	}
+	var closeErr error
 	if r.dll != nil {
-		err := r.dll.Release()
+		closeErr = r.dll.Release()
 		r.dll = nil
-		return err
 	}
-	return nil
+	if r.directMLDLL != nil {
+		if err := r.directMLDLL.Release(); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		r.directMLDLL = nil
+	}
+	return closeErr
 }
 
 func (r *windowsORT) callStatus(index uintptr, args ...uintptr) error {
@@ -348,10 +460,16 @@ func (r *windowsORT) callStatus(index uintptr, args ...uintptr) error {
 		return fmt.Errorf("ONNX Runtime API function %d is unavailable", index)
 	}
 	status, _, _ := syscall.SyscallN(fn, args...)
+	return r.consumeStatus(status)
+}
+
+func (r *windowsORT) consumeStatus(status uintptr) error {
 	if status == 0 {
 		return nil
 	}
-
+	if r.api == 0 {
+		return errors.New("ONNX Runtime returned an error before API initialization")
+	}
 	messageFn := *(*uintptr)(unsafe.Pointer(r.api + ortFnGetErrorMessage*unsafe.Sizeof(uintptr(0))))
 	messagePtr, _, _ := syscall.SyscallN(messageFn, status)
 	message := readCString(messagePtr)
@@ -388,104 +506,172 @@ func readCString(pointer uintptr) string {
 	return string(data)
 }
 
-func extractedDLLMatches(path string, expected uint64) bool {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
-		return false
-	}
-	return uint64(info.Size()) == expected
+type runtimeDLLSpec struct {
+	archivePath string
+	targetName  string
+	size        uint64
+	sha256      string
 }
 
-func extractORTDLL(modelRoot string) (string, error) {
-	// Model loads can race during startup (automatic restore) and Settings
-	// interaction. The runtime DLL is immutable for a pinned model version, so
-	// never rewrite a valid DLL that may already be mapped into this process.
+func extractedDLLMatches(path string, expectedSize uint64, expectedSHA256 string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || uint64(info.Size()) != expectedSize {
+		return false
+	}
+	input, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer input.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, input); err != nil {
+		return false
+	}
+	return strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), expectedSHA256)
+}
+
+func extractORTRuntime(modelRoot string) (string, error) {
+	// Runtime files are immutable for a pinned model version. Serialize
+	// extraction so startup restore and Settings reload cannot race a DLL that
+	// another goroutine is about to map.
 	ortExtractMu.Lock()
 	defer ortExtractMu.Unlock()
-
-	zipPath := filepath.Join(modelRoot, runtimeZipPath)
-	reader, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return "", fmt.Errorf("open ONNX Runtime archive: %w", err)
-	}
-	defer reader.Close()
-
-	var source *zip.File
-	for _, file := range reader.File {
-		name := strings.ReplaceAll(file.Name, "\\", "/")
-		if strings.HasSuffix(strings.ToLower(name), "/lib/onnxruntime.dll") {
-			source = file
-			break
-		}
-	}
-	if source == nil {
-		return "", errors.New("onnxruntime.dll was not found in runtime archive")
-	}
 
 	runtimeDir := filepath.Join(modelRoot, ".runtime")
 	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
 		return "", fmt.Errorf("create ONNX Runtime directory: %w", err)
 	}
-	target := filepath.Join(runtimeDir, "onnxruntime.dll")
 
-	// A valid extraction is reusable across reloads and app launches. This is
-	// especially important on Windows, where an already-loaded DLL cannot be
-	// deleted/replaced and previously caused "Access is denied" on re-load.
-	if extractedDLLMatches(target, source.UncompressedSize64) {
-		return target, nil
+	groups := []struct {
+		archive string
+		files   []runtimeDLLSpec
+	}{
+		{
+			archive: filepath.Join(modelRoot, ortDirectMLPackagePath),
+			files: []runtimeDLLSpec{
+				{
+					archivePath: ortDLLArchivePath,
+					targetName:  "onnxruntime.dll",
+					size:        ortDLLSize,
+					sha256:      ortDLLSHA256,
+				},
+				{
+					archivePath: ortSharedArchivePath,
+					targetName:  "onnxruntime_providers_shared.dll",
+					size:        ortSharedDLLSize,
+					sha256:      ortSharedDLLSHA256,
+				},
+			},
+		},
+		{
+			archive: filepath.Join(modelRoot, directMLPackagePath),
+			files: []runtimeDLLSpec{
+				{
+					archivePath: directMLDLLArchivePath,
+					targetName:  "DirectML.dll",
+					size:        directMLDLLSize,
+					sha256:      directMLDLLSHA256,
+				},
+			},
+		},
 	}
 
-	if _, err := os.Stat(target); err == nil {
-		if err := os.Remove(target); err != nil {
-			return "", fmt.Errorf("remove invalid ONNX Runtime DLL before repair: %w", err)
+	for _, group := range groups {
+		if err := extractPinnedRuntimeFiles(group.archive, runtimeDir, group.files); err != nil {
+			return "", err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("inspect extracted ONNX Runtime DLL: %w", err)
+	}
+	return filepath.Join(runtimeDir, "onnxruntime.dll"), nil
+}
+
+func extractPinnedRuntimeFiles(archivePath, runtimeDir string, specs []runtimeDLLSpec) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("open runtime package %s: %w", filepath.Base(archivePath), err)
+	}
+	defer reader.Close()
+
+	byName := make(map[string]*zip.File, len(reader.File))
+	for _, file := range reader.File {
+		normalized := strings.ToLower(strings.ReplaceAll(file.Name, "\\", "/"))
+		byName[normalized] = file
 	}
 
-	input, err := source.Open()
-	if err != nil {
-		return "", fmt.Errorf("open ONNX Runtime DLL from archive: %w", err)
-	}
-	defer input.Close()
+	for _, spec := range specs {
+		target := filepath.Join(runtimeDir, spec.targetName)
+		if extractedDLLMatches(target, spec.size, spec.sha256) {
+			continue
+		}
 
-	output, err := os.CreateTemp(runtimeDir, "onnxruntime.dll-*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("create temporary ONNX Runtime DLL: %w", err)
-	}
-	temp := output.Name()
-	committed := false
-	defer func() {
-		if !committed {
+		source := byName[strings.ToLower(spec.archivePath)]
+		if source == nil {
+			return fmt.Errorf("%s was not found in %s", spec.archivePath, filepath.Base(archivePath))
+		}
+		if source.UncompressedSize64 != spec.size {
+			return fmt.Errorf(
+				"runtime package entry %s has size %d, want %d",
+				spec.archivePath,
+				source.UncompressedSize64,
+				spec.size,
+			)
+		}
+
+		if _, err := os.Stat(target); err == nil {
+			if err := os.Remove(target); err != nil {
+				return fmt.Errorf("remove invalid runtime DLL %s before repair: %w", spec.targetName, err)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect runtime DLL %s: %w", spec.targetName, err)
+		}
+
+		input, err := source.Open()
+		if err != nil {
+			return fmt.Errorf("open %s from runtime package: %w", spec.archivePath, err)
+		}
+
+		output, err := os.CreateTemp(runtimeDir, spec.targetName+"-*.tmp")
+		if err != nil {
+			_ = input.Close()
+			return fmt.Errorf("create temporary runtime DLL %s: %w", spec.targetName, err)
+		}
+		temp := output.Name()
+		copyErr := func() error {
+			defer input.Close()
+			if _, err := io.Copy(output, input); err != nil {
+				return err
+			}
+			if err := output.Sync(); err != nil {
+				return err
+			}
+			return output.Close()
+		}()
+		if copyErr != nil {
+			_ = output.Close()
 			_ = os.Remove(temp)
+			return fmt.Errorf("extract runtime DLL %s: %w", spec.targetName, copyErr)
 		}
-	}()
 
-	if _, err := io.Copy(output, input); err != nil {
-		_ = output.Close()
-		return "", fmt.Errorf("extract ONNX Runtime DLL: %w", err)
-	}
-	if err := output.Sync(); err != nil {
-		_ = output.Close()
-		return "", fmt.Errorf("sync extracted ONNX Runtime DLL: %w", err)
-	}
-	if err := output.Close(); err != nil {
-		return "", fmt.Errorf("close extracted ONNX Runtime DLL: %w", err)
-	}
-
-	// Another Lumine process may have completed the same immutable extraction
-	// while this process was copying. Prefer the now-valid target rather than
-	// trying to replace a DLL that might already be mapped by that process.
-	if extractedDLLMatches(target, source.UncompressedSize64) {
-		return target, nil
-	}
-
-	if err := os.Rename(temp, target); err != nil {
-		if extractedDLLMatches(target, source.UncompressedSize64) {
-			return target, nil
+		if !extractedDLLMatches(temp, spec.size, spec.sha256) {
+			_ = os.Remove(temp)
+			return fmt.Errorf("runtime DLL integrity check failed for %s", spec.targetName)
 		}
-		return "", fmt.Errorf("commit ONNX Runtime DLL extraction: %w", err)
+
+		// Another process may have published the same immutable file while we
+		// were extracting. Never replace a valid DLL that could already be
+		// mapped in that process.
+		if extractedDLLMatches(target, spec.size, spec.sha256) {
+			_ = os.Remove(temp)
+			continue
+		}
+		if err := os.Rename(temp, target); err != nil {
+			if extractedDLLMatches(target, spec.size, spec.sha256) {
+				_ = os.Remove(temp)
+				continue
+			}
+			_ = os.Remove(temp)
+			return fmt.Errorf("publish runtime DLL %s: %w", spec.targetName, err)
+		}
 	}
-	committed = true
-	return target, nil
+
+	return nil
 }

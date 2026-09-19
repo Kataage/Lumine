@@ -29,6 +29,10 @@ func (f *fakeORT) EmbedImage(input []float32) ([]float32, error) {
 	return []float32{0, 5}, nil
 }
 
+func (f *fakeORT) RuntimeDiagnostics() ai.RuntimeDiagnostics {
+	return ai.RuntimeDiagnostics{ExecutionProvider: "test"}
+}
+
 func (f *fakeORT) Close() error { return nil }
 
 func syntheticTokenizer(t *testing.T) *siglipTokenizer {
@@ -262,7 +266,7 @@ func TestDefaultManifestIsPinnedAndComplete(t *testing.T) {
 	if manifest.Engine != EngineID || manifest.ID != DefaultModelID || manifest.Version != DefaultModelVersion {
 		t.Fatalf("unexpected manifest identity: %+v", manifest)
 	}
-	if manifest.SizeBytes != 492000167 || len(manifest.Files) != 4 {
+	if manifest.SizeBytes != 627105913 || len(manifest.Files) != 5 {
 		t.Fatalf("unexpected manifest footprint: %+v", manifest)
 	}
 	for _, file := range manifest.Files {

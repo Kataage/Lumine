@@ -13,6 +13,7 @@ import (
 type ortBackend interface {
 	EmbedText(input [siglipTextLength]int64) ([]float32, error)
 	EmbedImage(input []float32) ([]float32, error)
+	RuntimeDiagnostics() ai.RuntimeDiagnostics
 	Close() error
 }
 
@@ -28,6 +29,17 @@ func NewEngine() ai.Engine {
 
 func (e *Engine) ID() string {
 	return EngineID
+}
+
+func (e *Engine) SupportsGPU() bool {
+	return true
+}
+
+func (e *Engine) RuntimeDiagnostics() ai.RuntimeDiagnostics {
+	if e.runtime == nil {
+		return ai.RuntimeDiagnostics{}
+	}
+	return e.runtime.RuntimeDiagnostics()
 }
 
 func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {

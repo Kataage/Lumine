@@ -13,10 +13,12 @@ import (
 )
 
 type dummyEngine struct {
-	mu       sync.Mutex
-	loaded   bool
-	unloaded bool
-	options  LoadOptions
+	mu          sync.Mutex
+	loaded      bool
+	unloaded    bool
+	options     LoadOptions
+	gpuCapable  bool
+	diagnostics RuntimeDiagnostics
 }
 
 func (e *dummyEngine) ID() string { return "dummy" }
@@ -26,6 +28,11 @@ func (e *dummyEngine) Load(_ context.Context, _ InstalledModel, options LoadOpti
 	defer e.mu.Unlock()
 	e.loaded = true
 	e.options = options
+	if options.AllowGPU {
+		e.diagnostics.ExecutionProvider = "directml"
+	} else {
+		e.diagnostics.ExecutionProvider = "cpu"
+	}
 	return nil
 }
 
@@ -43,6 +50,18 @@ func (e *dummyEngine) Unload(_ context.Context) error {
 	defer e.mu.Unlock()
 	e.unloaded = true
 	return nil
+}
+
+func (e *dummyEngine) SupportsGPU() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.gpuCapable
+}
+
+func (e *dummyEngine) RuntimeDiagnostics() RuntimeDiagnostics {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.diagnostics
 }
 
 func TestManagerFullLifecycleAndSettingsGate(t *testing.T) {
@@ -695,5 +714,125 @@ func TestManagerLifecycleWaitHonorsContext(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("lifecycle wait ignored context timeout: %s", elapsed)
+	}
+}
+
+func TestManagerReloadsGPUCapableRuntimeWhenGPUPolicyChanges(t *testing.T) {
+	data := []byte("gpu-capable dummy model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{
+		Enabled:         true,
+		SemanticSearch:  true,
+		GPUAcceleration: false,
+	}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+
+	var engines []*dummyEngine
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		engine := &dummyEngine{gpuCapable: true}
+		engines = append(engines, engine)
+		return engine
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{AllowGPU: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(engines) != 1 {
+		t.Fatalf("initial runtime engine count = %d, want 1", len(engines))
+	}
+	if engines[0].options.AllowGPU {
+		t.Fatalf("initial runtime should be CPU: options=%+v", engines[0].options)
+	}
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.ExecutionProvider != "cpu" {
+		t.Fatalf("initial provider = %q, want cpu", status.ExecutionProvider)
+	}
+
+	settings.GPUAcceleration = true
+	if err := manager.ApplySettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	if !engines[0].unloaded {
+		t.Fatal("GPU policy change did not unload GPU-capable CPU runtime")
+	}
+	if len(engines) != 2 {
+		t.Fatalf("GPU policy change should reload immediately: engines=%d, want 2", len(engines))
+	}
+	if !engines[1].options.AllowGPU {
+		t.Fatalf("GPU reload did not request acceleration: options=%+v", engines[1].options)
+	}
+	status := manager.Status(domain.AICapabilitySemanticSearch)
+	if status.ExecutionProvider != "directml" {
+		t.Fatalf("GPU provider = %q, want directml", status.ExecutionProvider)
+	}
+
+	settings.GPUAcceleration = false
+	if err := manager.ApplySettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(engines) != 3 {
+		t.Fatalf("CPU policy restore should reload immediately: engines=%d, want 3", len(engines))
+	}
+	if engines[2].options.AllowGPU {
+		t.Fatalf("CPU reload unexpectedly requested GPU: options=%+v", engines[2].options)
+	}
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.ExecutionProvider != "cpu" {
+		t.Fatalf("provider after GPU disable = %q, want cpu", status.ExecutionProvider)
+	}
+}
+
+func TestManagerDoesNotReloadCPUOnlyRuntimeWhenGPUEnabled(t *testing.T) {
+	data := []byte("cpu-only dummy model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) { return settings, nil })
+	var engine *dummyEngine
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		engine = &dummyEngine{gpuCapable: false}
+		return engine
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{AllowGPU: false},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	settings.GPUAcceleration = true
+	if err := manager.ApplySettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	if engine.unloaded {
+		t.Fatal("CPU-only runtime should not be unloaded when global GPU setting turns on")
 	}
 }

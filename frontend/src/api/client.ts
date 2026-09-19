@@ -50,6 +50,8 @@ export interface AIRuntimeStatus {
   modelId?: string;
   version?: string;
   engine?: string;
+  executionProvider?: string;
+  warning?: string;
   error?: string;
 }
 
@@ -249,6 +251,8 @@ export interface SemanticModelInfo {
     modelId?: string;
     version?: string;
     engine?: string;
+    executionProvider?: string;
+    warning?: string;
     error?: string;
   };
 }
@@ -714,6 +718,8 @@ function normalizeRuntimeStatus(value: {
   modelId?: string;
   version?: string;
   engine?: string;
+  executionProvider?: string;
+  warning?: string;
   error?: string;
 }): AIRuntimeStatus {
   return {
@@ -722,6 +728,8 @@ function normalizeRuntimeStatus(value: {
     modelId: value.modelId,
     version: value.version,
     engine: value.engine,
+    executionProvider: value.executionProvider,
+    warning: value.warning,
     error: value.error,
   };
 }
