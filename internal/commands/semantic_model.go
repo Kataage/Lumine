@@ -156,7 +156,7 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 		if backfillCtx.Err() != nil {
 			return
 		}
-		if _, err := c.EnqueueSemanticBackfill(); err != nil && backfillCtx.Err() == nil {
+		if _, err := c.enqueueSemanticBackfillContext(backfillCtx); err != nil && backfillCtx.Err() == nil {
 			// Backfill is recoverable and can be retried from Settings.
 			return
 		}
