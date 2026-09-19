@@ -146,3 +146,60 @@ func TestSemanticMemoryIndexPrepareBuffersEarlyUpserts(t *testing.T) {
 		t.Fatalf("pending vector length = %d, want 2", len(vector))
 	}
 }
+
+
+func TestSemanticMemoryIndexPrepareInvalidatesInFlightWarm(t *testing.T) {
+	index := newSemanticMemoryIndex()
+	oldKey := semanticKey("engine", "old-model", "1")
+	index.key = oldKey
+	index.generation = 7
+	index.warming = true
+	index.wait = make(chan struct{})
+	wait := index.wait
+
+	index.Prepare("engine", "new-model", "2")
+
+	select {
+	case <-wait:
+	default:
+		t.Fatal("model switch did not wake old warm waiters")
+	}
+
+	index.mu.RLock()
+	defer index.mu.RUnlock()
+	if index.warming {
+		t.Fatal("index remained warming after model switch")
+	}
+	if index.wait != nil {
+		t.Fatal("stale warm wait channel was retained")
+	}
+	if index.key != semanticKey("engine", "new-model", "2") {
+		t.Fatalf("index key = %+v, want new model", index.key)
+	}
+	if index.generation != 8 {
+		t.Fatalf("generation = %d, want 8", index.generation)
+	}
+	if index.ready {
+		t.Fatal("new model index must not inherit ready state")
+	}
+}
+
+func TestSemanticMemoryIndexStaleWarmCannotPublishErrorState(t *testing.T) {
+	index := newSemanticMemoryIndex()
+	oldKey := semanticKey("engine", "old-model", "1")
+	index.key = oldKey
+	index.generation = 3
+	index.warming = true
+	index.wait = make(chan struct{})
+	oldWait := index.wait
+
+	index.Prepare("engine", "new-model", "2")
+	if index.finishWarm(oldWait, oldKey, 3, fmt.Errorf("old warm failed")) {
+		t.Fatal("superseded warm unexpectedly finalized current index")
+	}
+
+	status := index.Status()
+	if status.State != "idle" || status.ModelID != "new-model" || status.Error != "" {
+		t.Fatalf("stale warm mutated new model status: %+v", status)
+	}
+}
