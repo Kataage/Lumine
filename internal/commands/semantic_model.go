@@ -45,7 +45,11 @@ func (c *AppCommands) GetDefaultSemanticModelInfo() SemanticModelInfo {
 	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
 		info.Installed = true
 	}
-	info.Runtime = c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	info.Runtime = runtimeStatusForInstalledModel(
+		c.aiManager.Status(domain.AICapabilitySemanticSearch),
+		manifest,
+		info.Installed,
+	)
 	return info
 }
 

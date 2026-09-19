@@ -4,7 +4,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AIHealthSnapshot, AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
   cancelSemanticSearch,
-  getAIBridgeStatus,
   getAIHealthSnapshot,
   getSemanticIndexStatus,
   listAssets,
@@ -148,10 +147,6 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           await cancelSemanticSearch(previous.id).catch(() => undefined);
         }
 
-        const bridge = getAIBridgeStatus();
-        if (!bridge.available) {
-          throw new Error(`AI bridgeが不完全です: ${bridge.missing.join(", ")}`);
-        }
         const health = await getAIHealthSnapshot();
         if (health.shuttingDown) {
           throw new Error("Lumineは終了処理中です。アプリを再起動してください。");
@@ -505,7 +500,6 @@ function SemanticSearchProgressOverlay({
   const currentID = requestRef.current?.id;
   const current = progress?.requestId === currentID ? progress : null;
   const stage = current?.stage ?? "";
-  const bridge = getAIBridgeStatus();
   const waitingMs = Math.max(0, Date.now() - waitStartedAt);
   const warming = stage === "warming_index" || (
     !stage && indexStatus != null && indexStatus.state !== "ready" && indexStatus.state !== "idle"
@@ -517,10 +511,7 @@ function SemanticSearchProgressOverlay({
   let total = 0;
   let elapsedMs = current?.elapsedMs ?? waitingMs;
 
-  if (!bridge.available) {
-    label = "AI bridgeが不完全です";
-    detail = `不足API: ${bridge.missing.join(", ")}`;
-  } else if (diagnosticError && !current) {
+  if (diagnosticError && !current) {
     label = "AI状態を取得できません";
     detail = diagnosticError;
   } else if (health && !health.settings.enabled) {

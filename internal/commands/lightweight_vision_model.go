@@ -67,7 +67,11 @@ func (c *AppCommands) GetDefaultLightweightVisionModelInfo() LightweightVisionMo
 		if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
 			info.Installed = true
 		}
-		info.Runtime = c.aiManager.Status(domain.AICapabilityLightweightVision)
+		info.Runtime = runtimeStatusForInstalledModel(
+			c.aiManager.Status(domain.AICapabilityLightweightVision),
+			manifest,
+			info.Installed,
+		)
 	}
 	if c.llamaRuntimeStore != nil {
 		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
