@@ -594,6 +594,7 @@ type DynamicCommands = {
   GetSemanticIndexStatus?: () => Promise<SemanticIndexStatus>;
   ListSimilarAssets?: (assetId: number, request: AssetListRequest) => Promise<AssetListResponse | null>;
   GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
+  EnsureSemanticSearchReady?: () => Promise<void>;
   InstallDefaultSemanticModel?: () => Promise<unknown>;
   LoadDefaultSemanticModel?: () => Promise<void>;
   GetDefaultLightweightVisionModelInfo?: () => Promise<LightweightVisionModelInfo | null>;
@@ -734,6 +735,7 @@ export function getAIBridgeStatus(): AIBridgeStatus {
     "GetAISettings",
     "GetAIHealthSnapshot",
     "GetDefaultSemanticModelInfo",
+    "EnsureSemanticSearchReady",
     "SemanticSearchAssetsWithID",
     "GetSemanticIndexStatus",
     "CancelSemanticSearch",
@@ -818,6 +820,10 @@ export async function getDefaultSemanticModelInfo(): Promise<SemanticModelInfo> 
   const value = await requireDynamic("GetDefaultSemanticModelInfo")();
   if (!value) throw new Error("Semantic Searchモデル情報を取得できませんでした。");
   return value;
+}
+
+export async function ensureSemanticSearchReady(): Promise<void> {
+  await requireDynamic("EnsureSemanticSearchReady")();
 }
 
 export async function installDefaultSemanticModel(): Promise<void> {
