@@ -313,6 +313,7 @@ export interface PromptEngineRequest {
   sourceProfileId?: string;
   targetProfileId?: string;
   instruction?: string;
+  contextJson?: string;
   characters?: string[];
   loras?: string[];
 }
@@ -328,6 +329,45 @@ export interface PromptEngineResult {
   engine: string;
   modelId: string;
   modelVersion: string;
+}
+
+export interface ImagePromptRequest {
+  assetId: number;
+  targetProfileId: string;
+  instruction?: string;
+  useAdvancedVision: boolean;
+}
+
+export interface ImagePromptSource {
+  kind: string;
+  label: string;
+  state: string;
+  engine?: string;
+  modelId?: string;
+  modelVersion?: string;
+  dataJson?: string;
+  note?: string;
+}
+
+export interface ImagePromptResult {
+  assetId: number;
+  targetProfileId: string;
+  positive: string;
+  negative: string;
+  characters: string[];
+  loras: string[];
+  composition: string;
+  notes: string[];
+  sources: ImagePromptSource[];
+  promptEngineUsed: boolean;
+  aiEngine?: string;
+  aiModelId?: string;
+  aiModelVersion?: string;
+}
+
+export interface ImagePromptProjectResult {
+  project: PromptProject;
+  result: ImagePromptResult;
 }
 
 export interface ModelProfile {
@@ -485,6 +525,8 @@ type DynamicCommands = {
   RemovePromptEngineModel?: (modelId: string) => Promise<void>;
   LoadPromptEngineModel?: (modelId: string) => Promise<void>;
   RunPromptEngine?: (request: PromptEngineRequest) => Promise<PromptEngineResult | null>;
+  BuildImagePrompt?: (request: ImagePromptRequest) => Promise<ImagePromptResult | null>;
+  CreatePromptProjectFromImage?: (request: ImagePromptRequest) => Promise<ImagePromptProjectResult | null>;
   ListModelProfiles?: () => Promise<ModelProfile[]>;
   GetModelProfile?: (id: string) => Promise<ModelProfile | null>;
   CreateModelProfile?: (input: ModelProfileInput) => Promise<ModelProfile | null>;
@@ -739,6 +781,32 @@ export async function runPromptEngine(request: PromptEngineRequest): Promise<Pro
     characters: value.characters ?? [],
     loras: value.loras ?? [],
     notes: value.notes ?? [],
+  };
+}
+
+function normalizeImagePromptResult(value: ImagePromptResult): ImagePromptResult {
+  return {
+    ...value,
+    characters: value.characters ?? [],
+    loras: value.loras ?? [],
+    notes: value.notes ?? [],
+    sources: value.sources ?? [],
+  };
+}
+
+export async function buildImagePrompt(request: ImagePromptRequest): Promise<ImagePromptResult> {
+  const value = await requireDynamic("BuildImagePrompt")(request);
+  if (!value) throw new Error("Image → Promptの結果を取得できませんでした。");
+  return normalizeImagePromptResult(value);
+}
+
+export async function createPromptProjectFromImage(request: ImagePromptRequest): Promise<ImagePromptProjectResult> {
+  const value = await requireDynamic("CreatePromptProjectFromImage")(request);
+  if (!value) throw new Error("画像からPrompt Projectを作成できませんでした。");
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  return {
+    project: normalizePromptProject(value.project),
+    result: normalizeImagePromptResult(value.result),
   };
 }
 

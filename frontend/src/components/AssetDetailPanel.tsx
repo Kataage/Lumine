@@ -21,6 +21,7 @@ import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
 import { TagPicker } from "./TagPicker";
 import { AdvancedVisionAssetPanel } from "./AdvancedVisionAssetPanel";
+import { ImagePromptAssetPanel } from "./ImagePromptAssetPanel";
 
 interface AssetDetailPanelProps {
   asset: AssetDTO;
@@ -398,6 +399,8 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
 
           {activeView === "ai" && (
             <div className="p-3 space-y-3">
+              <PanelIntro title="AI制作支援" />
+              <ImagePromptAssetPanel assetId={assetId} />
               <PanelIntro title="Advanced Vision" />
               <AdvancedVisionAssetPanel assetId={assetId} />
             </div>

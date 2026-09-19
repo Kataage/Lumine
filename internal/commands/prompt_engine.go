@@ -24,6 +24,7 @@ type PromptEngineRequestDTO struct {
 	SourceProfileID string   `json:"sourceProfileId,omitempty"`
 	TargetProfileID string   `json:"targetProfileId,omitempty"`
 	Instruction   string   `json:"instruction,omitempty"`
+	ContextJSON   string   `json:"contextJson,omitempty"`
 	Characters    []string `json:"characters,omitempty"`
 	LoRAs         []string `json:"loras,omitempty"`
 }
@@ -74,6 +75,16 @@ func (c *AppCommands) RunPromptEngine(request PromptEngineRequestDTO) (*PromptEn
 		"characters":    cleanPromptInputList(request.Characters),
 		"loras":         cleanPromptInputList(request.LoRAs),
 	}
+	if raw := strings.TrimSpace(request.ContextJSON); raw != "" {
+		if len([]rune(raw)) > 128000 {
+			return nil, errors.New("Prompt Engine context is too long")
+		}
+		var contextValue map[string]any
+		if err := json.Unmarshal([]byte(raw), &contextValue); err != nil {
+			return nil, fmt.Errorf("decode Prompt Engine context JSON: %w", err)
+		}
+		payload["context"] = contextValue
+	}
 	if profileID := strings.TrimSpace(request.SourceProfileID); profileID != "" {
 		profile, err := c.resolveModelProfile(profileID)
 		if err != nil {
@@ -121,7 +132,8 @@ func validatePromptEngineRequest(request PromptEngineRequestDTO) error {
 		len([]rune(request.SourceProfile)) > 2000 ||
 		len([]rune(request.TargetProfile)) > 2000 ||
 		len([]rune(request.SourceProfileID)) > 512 ||
-		len([]rune(request.TargetProfileID)) > 512 {
+		len([]rune(request.TargetProfileID)) > 512 ||
+		len([]rune(request.ContextJSON)) > 128000 {
 		return errors.New("Prompt Engine request is too long")
 	}
 	switch request.Operation {
