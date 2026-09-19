@@ -5,12 +5,14 @@ import "github.com/kataage/lumine/internal/ai"
 const (
 	EngineID            = "siglip2-onnx"
 	DefaultModelID      = "siglip2-base-patch16-224-int8"
-	DefaultModelVersion = "onnx-ba1f3b0-ort1.29.0"
+	DefaultModelVersion = "onnx-ba1f3b0-ort1.24.4-dml1.15.4"
 
 	visionModelPath = "onnx/vision_model_int8.onnx"
 	textModelPath   = "onnx/text_model_int8.onnx"
 	tokenizerPath   = "tokenizer.json"
-	runtimeZipPath  = "runtime/onnxruntime-win-x64-1.29.0.zip"
+
+	ortDirectMLPackagePath = "runtime/Microsoft.ML.OnnxRuntime.DirectML.1.24.4.nupkg"
+	directMLPackagePath    = "runtime/Microsoft.AI.DirectML.1.15.4.nupkg"
 )
 
 func DefaultManifest() ai.ModelManifest {
@@ -20,8 +22,8 @@ func DefaultManifest() ai.ModelManifest {
 		Version:     DefaultModelVersion,
 		Engine:      EngineID,
 		DisplayName: "SigLIP 2 Base 224 (INT8)",
-		License:     "Apache-2.0 + MIT runtime",
-		SizeBytes:   492000167,
+		License:     "Apache-2.0 + Microsoft ONNX Runtime/DirectML redistributables",
+		SizeBytes:   627105913,
 		Files: []ai.ModelFile{
 			{
 				Path:      visionModelPath,
@@ -42,11 +44,23 @@ func DefaultManifest() ai.ModelManifest {
 				SizeBytes: 34363039,
 			},
 			{
-				Path:      runtimeZipPath,
-				URL:       "https://github.com/microsoft/onnxruntime/releases/download/v1.29.0/onnxruntime-win-x64-1.29.0.zip",
-				SHA256:    "c9b4b7086b529ad814f428c1bad028e20a25d7dc0699836775faace4ab5b78b2",
-				SizeBytes: 79645520,
+				Path:      ortDirectMLPackagePath,
+				URL:       "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg",
+				SHA256:    "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681",
+				SizeBytes: 12458649,
+				Role:      "onnxruntime-directml",
 			},
+			{
+				Path:      directMLPackagePath,
+				URL:       "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg",
+				SHA256:    "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9",
+				SizeBytes: 202292617,
+				Role:      "directml-redist",
+			},
+		},
+		Parameters: map[string]string{
+			"ort_version":      "1.24.4",
+			"directml_version": "1.15.4",
 		},
 	}
 }
