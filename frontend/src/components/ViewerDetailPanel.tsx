@@ -58,7 +58,10 @@ export function ViewerDetailPanel({ assetId, onClose }: ViewerDetailPanelProps) 
     queryFn: () => getLightweightVisionAnalysis(assetId),
     enabled: assetId > 0,
     staleTime: 1000,
-    refetchInterval: 1500,
+    refetchInterval: (query) => {
+      const current = query.state.data as { state?: string } | null | undefined;
+      return current?.state === "queued" || current?.state === "running" ? 1500 : false;
+    },
   });
   const [noteContent, setNoteContent] = useState("");
   const [noteDirty, setNoteDirty] = useState(false);
