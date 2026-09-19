@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/kataage/lumine/internal/infrastructure/db"
@@ -143,5 +144,109 @@ func TestAISettingsPersistAcrossDatabaseReopen(t *testing.T) {
 	}
 	if !health.SettingsPersisted || !health.Settings.Enabled || !health.SemanticSearchEnabled {
 		t.Fatalf("unexpected AI health after reopen: %+v", health)
+	}
+}
+
+
+func TestPatchAISettingsPreservesUnrelatedFields(t *testing.T) {
+	cmd := setupCommands(t)
+
+	initial := domain.AISettings{
+		Enabled:           true,
+		SemanticSearch:    true,
+		LightweightVision: true,
+		AdvancedVision:    true,
+		PromptEngine:      true,
+		AutoAnalyze:       true,
+		GPUAcceleration:   true,
+	}
+	if _, err := cmd.SetAISettings(initial); err != nil {
+		t.Fatalf("SetAISettings: %v", err)
+	}
+
+	updated, err := cmd.PatchAISettings(map[string]bool{
+		"semanticSearch": false,
+	})
+	if err != nil {
+		t.Fatalf("PatchAISettings: %v", err)
+	}
+
+	want := initial
+	want.SemanticSearch = false
+	if updated != want {
+		t.Fatalf("patched settings = %+v, want %+v", updated, want)
+	}
+
+	reloaded, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatalf("GetAISettings: %v", err)
+	}
+	if reloaded != want {
+		t.Fatalf("persisted settings = %+v, want %+v", reloaded, want)
+	}
+}
+
+func TestPatchAISettingsRejectsUnknownFieldsWithoutMutation(t *testing.T) {
+	cmd := setupCommands(t)
+
+	initial := domain.AISettings{
+		Enabled:      true,
+		PromptEngine: true,
+	}
+	if _, err := cmd.SetAISettings(initial); err != nil {
+		t.Fatalf("SetAISettings: %v", err)
+	}
+
+	if _, err := cmd.PatchAISettings(map[string]bool{"unknownField": true}); err == nil {
+		t.Fatal("unknown patch field should fail")
+	}
+
+	got, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatalf("GetAISettings: %v", err)
+	}
+	if got != initial {
+		t.Fatalf("settings mutated after rejected patch: got %+v want %+v", got, initial)
+	}
+}
+
+
+func TestConcurrentAISettingsPatchesMergeInsteadOfClobbering(t *testing.T) {
+	cmd := setupCommands(t)
+	if _, err := cmd.SetAISettings(domain.AISettings{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, patch := range []map[string]bool{
+		{"semanticSearch": true},
+		{"promptEngine": true},
+	} {
+		patch := patch
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := cmd.PatchAISettings(patch)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("PatchAISettings: %v", err)
+		}
+	}
+
+	got, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || !got.SemanticSearch || !got.PromptEngine {
+		t.Fatalf("concurrent patches clobbered settings: %+v", got)
 	}
 }

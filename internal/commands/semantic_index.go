@@ -143,6 +143,34 @@ func (i *semanticMemoryIndex) Status() SemanticIndexStatus {
 	return status
 }
 
+func (i *semanticMemoryIndex) Prepare(engine, modelID, version string) {
+	key := semanticKey(engine, modelID, version)
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.key == key {
+		if i.pending == nil {
+			i.pending = make(map[int64][]float32)
+		}
+		return
+	}
+	// Semantic Search currently has one active model. Selecting the model
+	// synchronously before background warm/backfill prevents early completed
+	// embeddings from being dropped before Warm gets CPU time.
+	i.key = key
+	i.ready = false
+	i.stage = "idle"
+	i.positions = make(map[int64]int)
+	i.data = nil
+	i.dimensions = 0
+	i.pending = make(map[int64][]float32)
+	i.lastErr = nil
+	i.loaded = 0
+	i.total = 0
+	i.startedAt = time.Time{}
+	i.finishedAt = time.Time{}
+	i.updatedAt = time.Now()
+}
+
 func (i *semanticMemoryIndex) Upsert(
 	assetID int64,
 	engine string,
@@ -161,11 +189,11 @@ func (i *semanticMemoryIndex) Upsert(
 	if i.key != key {
 		return
 	}
-	if i.warming {
+	if i.warming || !i.ready {
+		if i.pending == nil {
+			i.pending = make(map[int64][]float32)
+		}
 		i.pending[assetID] = normalized
-		return
-	}
-	if !i.ready {
 		return
 	}
 	if i.dimensions == 0 {
@@ -225,14 +253,18 @@ func (i *semanticMemoryIndex) Warm(
 			}
 		}
 
-		i.key = key
+		if i.key != key {
+			i.key = key
+			i.pending = make(map[int64][]float32)
+		} else if i.pending == nil {
+			i.pending = make(map[int64][]float32)
+		}
 		i.ready = false
 		i.warming = true
 		i.lastErr = nil
 		i.positions = make(map[int64]int)
 		i.data = nil
 		i.dimensions = 0
-		i.pending = make(map[int64][]float32)
 		i.wait = make(chan struct{})
 		i.startedAt = time.Now()
 		i.finishedAt = time.Time{}

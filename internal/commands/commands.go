@@ -41,6 +41,7 @@ type AppCommands struct {
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
 
+	aiSettingsMu    sync.Mutex
 	lifecycleMu     sync.Mutex
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc

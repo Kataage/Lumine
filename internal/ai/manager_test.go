@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -408,4 +409,197 @@ func (e *countingEngine) Unload(ctx context.Context) error {
 		e.onUnload()
 	}
 	return e.inner.Unload(ctx)
+}
+
+
+type blockingInferenceEngine struct {
+	dummyEngine
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingInferenceEngine) Infer(ctx context.Context, request InferenceRequest) (InferenceResponse, error) {
+	e.once.Do(func() { close(e.started) })
+	select {
+	case <-e.release:
+	case <-ctx.Done():
+		return InferenceResponse{}, ctx.Err()
+	}
+	return InferenceResponse{Payload: request.Payload}, nil
+}
+
+func newLoadedBlockingManager(t *testing.T) (*Manager, *blockingInferenceEngine, ModelManifest) {
+	t.Helper()
+
+	data := []byte("blocking inference model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	t.Cleanup(server.Close)
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+	engine := &blockingInferenceEngine{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	if err := manager.RegisterEngine("dummy", func() Engine { return engine }); err != nil {
+		t.Fatal(err)
+	}
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	return manager, engine, manifest
+}
+
+func TestManagerConcurrentInferenceDoesNotDeadlock(t *testing.T) {
+	manager, engine, _ := newLoadedBlockingManager(t)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := manager.Infer(
+			context.Background(),
+			domain.AICapabilitySemanticSearch,
+			InferenceRequest{Operation: "first"},
+		)
+		firstDone <- err
+	}()
+
+	select {
+	case <-engine.started:
+	case <-time.After(time.Second):
+		t.Fatal("first inference did not start")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, err := manager.Infer(
+			ctx,
+			domain.AICapabilitySemanticSearch,
+			InferenceRequest{Operation: "second"},
+		)
+		secondDone <- err
+	}()
+
+	// Give the second call enough time to reach the runtime-operation wait. In
+	// the old implementation it held Manager.mu here, deadlocking the first
+	// inference when it tried to publish completion.
+	time.Sleep(75 * time.Millisecond)
+	close(engine.release)
+
+	for name, done := range map[string]<-chan error{
+		"first":  firstDone,
+		"second": secondDone,
+	} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("%s inference: %v", name, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s inference deadlocked", name)
+		}
+	}
+}
+
+func TestManagerUnloadHonorsContextWhileInferenceIsRunning(t *testing.T) {
+	manager, engine, _ := newLoadedBlockingManager(t)
+
+	inferDone := make(chan error, 1)
+	go func() {
+		_, err := manager.Infer(
+			context.Background(),
+			domain.AICapabilitySemanticSearch,
+			InferenceRequest{Operation: "blocking"},
+		)
+		inferDone <- err
+	}()
+	select {
+	case <-engine.started:
+	case <-time.After(time.Second):
+		t.Fatal("inference did not start")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err := manager.Unload(ctx, domain.AICapabilitySemanticSearch)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Unload error = %v, want context deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Unload ignored context timeout: %s", elapsed)
+	}
+
+	// A timed-out unload must keep the session tracked instead of orphaning a
+	// live engine that shutdown can no longer reach.
+	status := manager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != RuntimeStateRunning {
+		t.Fatalf("runtime after timed-out unload = %s, want running", status.State)
+	}
+
+	close(engine.release)
+	select {
+	case err := <-inferDone:
+		if err != nil {
+			t.Fatalf("blocking inference: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocking inference did not finish")
+	}
+
+	if err := manager.Unload(context.Background(), domain.AICapabilitySemanticSearch); err != nil {
+		t.Fatalf("final unload: %v", err)
+	}
+}
+
+
+func TestManagerCancelledInferenceDoesNotPoisonRuntime(t *testing.T) {
+	manager, engine, _ := newLoadedBlockingManager(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := manager.Infer(
+			ctx,
+			domain.AICapabilitySemanticSearch,
+			InferenceRequest{Operation: "cancel-me"},
+		)
+		done <- err
+	}()
+
+	select {
+	case <-engine.started:
+	case <-time.After(time.Second):
+		t.Fatal("inference did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Infer error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled inference did not return")
+	}
+
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateReady {
+		t.Fatalf("runtime after caller cancellation = %+v, want ready", status)
+	}
 }

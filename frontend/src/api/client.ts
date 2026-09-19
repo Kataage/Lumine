@@ -586,6 +586,7 @@ type DynamicCommands = {
   GetAIHealthSnapshot?: () => Promise<AIHealthSnapshot | null>;
   GetAIStorageInfo?: () => Promise<AIStorageInfo | null>;
   SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
+  PatchAISettings?: (patch: Record<string, boolean>) => Promise<AISettings | null>;
   IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
   SemanticSearchAssets?: (request: AssetListRequest) => Promise<AssetListResponse | null>;
   SemanticSearchAssetsWithID?: (request: AssetListRequest, requestId: string) => Promise<AssetListResponse | null>;
@@ -733,6 +734,7 @@ export function getAIBridgeStatus(): AIBridgeStatus {
   const commands = appCommands();
   const required = [
     "GetAISettings",
+    "PatchAISettings",
     "GetAIHealthSnapshot",
     "GetDefaultSemanticModelInfo",
     "EnsureSemanticSearchReady",
@@ -769,6 +771,12 @@ export async function getAIStorageInfo(): Promise<AIStorageInfo> {
 export async function setAISettings(settings: AISettings): Promise<AISettings> {
   const value = await requireDynamic("SetAISettings")(settings);
   return normalizeAISettings(value ?? settings);
+}
+
+export async function patchAISettings(patch: Partial<Record<keyof AISettings, boolean>>): Promise<AISettings> {
+  const value = await requireDynamic("PatchAISettings")(patch as Record<string, boolean>);
+  if (!value) throw new Error("AI設定を更新できませんでした。");
+  return normalizeAISettings(value);
 }
 
 export async function isAICapabilityEnabled(capability: string): Promise<boolean> {

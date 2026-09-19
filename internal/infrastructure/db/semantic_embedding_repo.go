@@ -205,6 +205,26 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 	afterID int64,
 	limit int,
 ) ([]int64, error) {
+	return r.ListNeedingEmbeddingContext(
+		context.Background(),
+		libraryID,
+		engine,
+		modelID,
+		modelVersion,
+		afterID,
+		limit,
+	)
+}
+
+func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingContext(
+	ctx context.Context,
+	libraryID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	afterID int64,
+	limit int,
+) ([]int64, error) {
 	if libraryID <= 0 {
 		return nil, errors.New("library id must be positive")
 	}
@@ -214,8 +234,11 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 	if limit <= 0 || limit > 5000 {
 		limit = 1000
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	rows, err := r.db.Query(`
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.id
 		FROM assets a
 		WHERE a.library_id = ?
@@ -244,13 +267,19 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 
 	ids := make([]int64, 0, limit)
 	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scan asset needing semantic embedding: %w", err)
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (r *SemanticEmbeddingRepo) CountReadyEmbeddings(

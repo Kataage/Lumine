@@ -203,8 +203,22 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 }
 
 func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.enqueueSemanticBackfillContext(ctx)
+}
+
+func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, error) {
 	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	if err := c.requireSemanticSearchEnabled(); err != nil {
 		return 0, err
@@ -225,12 +239,19 @@ func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
 
 	total := 0
 	for _, library := range libraries {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
 		if !library.IsEnabled {
 			continue
 		}
 		var afterID int64
 		for {
-			ids, err := c.semanticRepo.ListNeedingEmbedding(
+			if err := ctx.Err(); err != nil {
+				return total, err
+			}
+			ids, err := c.semanticRepo.ListNeedingEmbeddingContext(
+				ctx,
 				library.ID,
 				status.Engine,
 				status.ModelID,
@@ -339,6 +360,15 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		if err := c.EnsureSemanticSearchReady(); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSemanticModelNotReady, err)
+		}
+		status = c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	}
+	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		if status.Error != "" {
+			return nil, fmt.Errorf("%w: %s: %s", ErrSemanticModelNotReady, status.State, status.Error)
+		}
 		return nil, fmt.Errorf("%w: %s", ErrSemanticModelNotReady, status.State)
 	}
 

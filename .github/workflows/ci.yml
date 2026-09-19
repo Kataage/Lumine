@@ -31,6 +31,7 @@ jobs:
       - name: Verify AI bindings
         run: |
           grep -q "GetAISettings" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "PatchAISettings" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "GetAIHealthSnapshot" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "EnsureSemanticSearchReady" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "SemanticSearchAssetsWithID" frontend/wailsjs/go/commands/AppCommands.js
@@ -41,6 +42,9 @@ jobs:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify generated bindings are committed
+        run: git diff --exit-code -- frontend/wailsjs/go/commands/AppCommands.js frontend/wailsjs/go/commands/AppCommands.d.ts frontend/wailsjs/go/models.ts
 
       - name: Install frontend deps
         working-directory: frontend
