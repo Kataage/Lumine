@@ -197,6 +197,9 @@ func extractTaggerTags(raw string) []string {
 }
 
 type fallbackVisionEvidence struct {
+	OriginalPositive string
+	OriginalNegative string
+	OriginalLoRAs    []string
 	ShortCaption    string
 	DetailedCaption string
 	Subject         string
@@ -223,6 +226,17 @@ func fallbackEvidence(sources []ImagePromptSourceDTO) (tags []string, vision fal
 			}
 		case "tagger":
 			tags = uniqueImagePromptStrings(tags, extractTaggerTags(source.DataJSON))
+		case "generation_metadata":
+			var result AssetGenerationMetadataDTO
+			if json.Unmarshal([]byte(source.DataJSON), &result) == nil {
+				vision.OriginalPositive = strings.TrimSpace(result.Positive)
+				vision.OriginalNegative = strings.TrimSpace(result.Negative)
+				for _, lora := range result.LoRAs {
+					if strings.TrimSpace(lora.Name) != "" {
+						vision.OriginalLoRAs = append(vision.OriginalLoRAs, lora.Name)
+					}
+				}
+			}
 		case "lightweight_vision":
 			var result LightweightVisionResult
 			if json.Unmarshal([]byte(source.DataJSON), &result) == nil {
@@ -264,7 +278,10 @@ func fallbackImagePrompt(profile domain.ModelProfile, sources []ImagePromptSourc
 	}, vision.AdvancedHints)
 
 	var positive string
-	if strings.EqualFold(profile.Family, "flux") {
+	if strings.TrimSpace(vision.OriginalPositive) != "" {
+		positive = strings.TrimSpace(vision.OriginalPositive)
+	}
+	if strings.EqualFold(profile.Family, "flux") && positive == "" {
 		parts := append([]string{}, descriptions...)
 		if len(tags) > 0 {
 			parts = append(parts, "Visual keywords: "+strings.Join(tags, ", "))
@@ -273,7 +290,7 @@ func fallbackImagePrompt(profile domain.ModelProfile, sources []ImagePromptSourc
 			parts = append(parts, "Visible text: "+strings.Join(vision.VisibleText, ", "))
 		}
 		positive = strings.Join(uniqueImagePromptStrings(parts), ". ")
-	} else {
+	} else if positive == "" {
 		parts := uniqueImagePromptStrings(tags, descriptions, profile.QualityTags)
 		positive = strings.Join(parts, ", ")
 	}
@@ -284,9 +301,9 @@ func fallbackImagePrompt(profile domain.ModelProfile, sources []ImagePromptSourc
 	notes := []string{"Prompt Engine was unavailable; Lumine built this fallback prompt only from available local evidence."}
 	return PromptEngineResultDTO{
 		Positive:    positive,
-		Negative:    "",
+		Negative:    strings.TrimSpace(vision.OriginalNegative),
 		Characters:  []string{},
-		LoRAs:       []string{},
+		LoRAs:       uniqueImagePromptStrings(vision.OriginalLoRAs),
 		Composition: vision.Composition,
 		Notes:       notes,
 	}
@@ -310,6 +327,23 @@ func (c *AppCommands) collectImagePromptSources(request ImagePromptRequestDTO) (
 		State:    "ready",
 		DataJSON: string(manualJSON),
 	}}
+
+	if metadata, metadataErr := c.loadAssetGenerationMetadata(request.AssetID, false); metadataErr == nil && metadata != nil && metadata.Present {
+		encoded, _ := json.Marshal(metadata)
+		sources = append(sources, ImagePromptSourceDTO{
+			Kind: "generation_metadata", Label: "Embedded generation metadata",
+			State: "ready", DataJSON: boundedSourceJSON(string(encoded)),
+		})
+	} else {
+		note := "No reusable generation metadata was found."
+		if metadataErr != nil {
+			note = metadataErr.Error()
+		}
+		sources = append(sources, ImagePromptSourceDTO{
+			Kind: "generation_metadata", Label: "Embedded generation metadata",
+			State: "unavailable", Note: note,
+		})
+	}
 
 	analyses, err := dbAIAnalysesByAsset(c, request.AssetID)
 	if err != nil {
@@ -397,6 +431,11 @@ func (c *AppCommands) BuildImagePrompt(request ImagePromptRequestDTO) (*ImagePro
 		return nil, fmt.Errorf("image-to-prompt asset not found: %d", request.AssetID)
 	}
 	profileID := strings.TrimSpace(request.TargetProfileID)
+	if profileID == "" {
+		if metadata, metadataErr := c.loadAssetGenerationMetadata(request.AssetID, false); metadataErr == nil && metadata != nil {
+			profileID = strings.TrimSpace(metadata.SuggestedProfileID)
+		}
+	}
 	if profileID == "" {
 		profileID = "illustrious-xl"
 	}
@@ -491,11 +530,22 @@ func (c *AppCommands) CreatePromptProjectFromImage(request ImagePromptRequestDTO
 	if strings.TrimSpace(title) == "" {
 		title = fmt.Sprintf("Image %d", request.AssetID)
 	}
+	var importedMetadata *AssetGenerationMetadataDTO
+	projectLoRAs := []PromptLoRADTO{}
+	if metadata, metadataErr := c.loadAssetGenerationMetadata(request.AssetID, false); metadataErr == nil && metadata != nil && metadata.Present {
+		importedMetadata = metadata
+		for _, lora := range metadata.LoRAs {
+			projectLoRAs = append(projectLoRAs, PromptLoRADTO{
+				Name: lora.Name, Weight: lora.Weight, TriggerWords: append([]string{}, lora.TriggerWords...),
+			})
+		}
+	}
 	project, err := c.CreatePromptProject(PromptProjectInput{
 		Title:             title + " Prompt",
 		Idea:              strings.TrimSpace(request.Instruction),
 		TargetProfileID:   result.TargetProfileID,
 		Characters:        result.Characters,
+		LoRAs:             projectLoRAs,
 		ReferenceAssetIDs: []int64{request.AssetID},
 		RelatedAssetIDs:   []int64{},
 	})
@@ -531,6 +581,37 @@ func (c *AppCommands) CreatePromptProjectFromImage(request ImagePromptRequestDTO
 		MetadataJSON:      string(metadata),
 	}); err != nil {
 		return nil, err
+	}
+	if importedMetadata != nil && (strings.TrimSpace(importedMetadata.Positive) != "" || strings.TrimSpace(importedMetadata.Negative) != "") {
+		originalVariant, variantErr := c.CreatePromptVariant(project.ID, "Original metadata", 0)
+		if variantErr != nil {
+			return nil, variantErr
+		}
+		originalMetadata, _ := json.Marshal(map[string]any{
+			"generationMetadataSchemaVersion": 1,
+			"checkpoint": importedMetadata.Checkpoint,
+			"loras": importedMetadata.LoRAs,
+			"sampler": importedMetadata.Sampler,
+			"scheduler": importedMetadata.Scheduler,
+			"cfg": importedMetadata.CFG,
+			"steps": importedMetadata.Steps,
+			"seed": importedMetadata.Seed,
+			"width": importedMetadata.Width,
+			"height": importedMetadata.Height,
+			"rawPromptJson": importedMetadata.RawPromptJSON,
+			"rawWorkflowJson": importedMetadata.RawWorkflowJSON,
+		})
+		if _, versionErr := c.CreatePromptVersion(PromptVersionInput{
+			VariantID:         originalVariant.ID,
+			Positive:          importedMetadata.Positive,
+			Negative:          importedMetadata.Negative,
+			Source:            "metadata",
+			ChangeInstruction: "Imported from embedded generation metadata",
+			ProfileID:         importedMetadata.SuggestedProfileID,
+			MetadataJSON:      string(originalMetadata),
+		}); versionErr != nil {
+			return nil, versionErr
+		}
 	}
 	refreshed, err := c.GetPromptProject(project.ID, false)
 	if err != nil {
