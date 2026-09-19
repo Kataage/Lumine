@@ -144,10 +144,12 @@ func (c *AppCommands) RemoveDefaultLightweightVisionModel() error {
 		return errors.New("AI model manager is not available")
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
-	if err := c.aiManager.Unload(context.Background(), domain.AICapabilityLightweightVision); err != nil {
+	ctx, cancel := c.aiLifecycleOperationContext()
+	defer cancel()
+	if err := c.aiManager.Unload(ctx, domain.AICapabilityLightweightVision); err != nil {
 		return err
 	}
-	return c.aiManager.RemoveModel(manifest.ID, manifest.Version)
+	return c.aiManager.RemoveModelContext(ctx, manifest.ID, manifest.Version)
 }
 
 func (c *AppCommands) LoadDefaultLightweightVisionModel() error {

@@ -75,7 +75,9 @@ func (c *AppCommands) RemoveAIModel(modelID, version string) error {
 	if c.aiManager == nil {
 		return fmt.Errorf("AI model manager is not available")
 	}
-	return c.aiManager.RemoveModel(modelID, version)
+	ctx, cancel := c.aiLifecycleOperationContext()
+	defer cancel()
+	return c.aiManager.RemoveModelContext(ctx, modelID, version)
 }
 
 func (c *AppCommands) GetAIModelCachePath() string {

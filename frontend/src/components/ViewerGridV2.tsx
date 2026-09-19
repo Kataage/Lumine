@@ -4,7 +4,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AIHealthSnapshot, AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
   cancelSemanticSearch,
-  ensureSemanticSearchReady,
   getAIBridgeStatus,
   getAIHealthSnapshot,
   getSemanticIndexStatus,
@@ -145,7 +144,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           state.filterTagIds.join(","),
         ].join("|");
         const previous = semanticRequestRef.current;
-        if (previous && previous.key !== key) {
+        if (previous) {
           await cancelSemanticSearch(previous.id).catch(() => undefined);
         }
 
@@ -153,7 +152,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
         if (!bridge.available) {
           throw new Error(`AI bridgeが不完全です: ${bridge.missing.join(", ")}`);
         }
-        let health = await getAIHealthSnapshot();
+        const health = await getAIHealthSnapshot();
         if (health.shuttingDown) {
           throw new Error("Lumineは終了処理中です。アプリを再起動してください。");
         }
@@ -163,18 +162,18 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
         if (!health.settings.semanticSearch || !health.semanticSearchEnabled) {
           throw new Error("意味検索が無効です。AI設定でSemantic Searchを有効にしてください。");
         }
-        if (health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
-          await ensureSemanticSearchReady();
-          health = await getAIHealthSnapshot();
-        }
-        if (health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
-          const detail = health.semanticRuntime.error ? `: ${health.semanticRuntime.error}` : "";
-          throw new Error(`Semantic Search runtimeが利用できません (state=${health.semanticRuntime.state})${detail}`);
-        }
 
+        // The backend owns runtime restore so the same requestId cancellation
+        // covers readiness, query embedding, index warm, and scoring.
         const requestId = newSemanticRequestID();
         semanticRequestRef.current = { id: requestId, key };
-        return semanticSearchAssets(request, requestId);
+        try {
+          return await semanticSearchAssets(request, requestId);
+        } finally {
+          if (semanticRequestRef.current?.id === requestId) {
+            semanticRequestRef.current = null;
+          }
+        }
       }
       const result = await listAssets(request);
       return result ?? { assets: [], totalCount: 0 };

@@ -23,6 +23,7 @@ var (
 const (
 	semanticSearchSessionTTL = 15 * time.Minute
 	semanticSearchSessionMax = 8
+	semanticSearchCancelTTL  = 5 * time.Minute
 )
 
 type semanticSearchSession struct {
@@ -32,10 +33,11 @@ type semanticSearchSession struct {
 }
 
 type semanticSearchState struct {
-	mu       sync.Mutex
-	seq      uint64
-	cancels  map[string]context.CancelFunc
-	sessions map[string]semanticSearchSession
+	mu        sync.Mutex
+	seq       uint64
+	cancels   map[string]context.CancelFunc
+	cancelled map[string]time.Time
+	sessions  map[string]semanticSearchSession
 }
 
 type SemanticSearchProgressDTO struct {
@@ -48,8 +50,9 @@ type SemanticSearchProgressDTO struct {
 
 func newSemanticSearchState() *semanticSearchState {
 	return &semanticSearchState{
-		cancels:  make(map[string]context.CancelFunc),
-		sessions: make(map[string]semanticSearchSession),
+		cancels:   make(map[string]context.CancelFunc),
+		cancelled: make(map[string]time.Time),
+		sessions:  make(map[string]semanticSearchSession),
 	}
 }
 
@@ -60,6 +63,13 @@ func (s *semanticSearchState) begin(requestID string, parent context.Context) (c
 	}
 
 	s.mu.Lock()
+	s.pruneCancelledLocked(time.Now())
+	if _, cancelled := s.cancelled[requestID]; cancelled {
+		delete(s.cancelled, requestID)
+		s.mu.Unlock()
+		cancel()
+		return ctx, cancel
+	}
 	if previous := s.cancels[requestID]; previous != nil {
 		previous()
 	}
@@ -81,12 +91,27 @@ func (s *semanticSearchState) cancel(requestID string) {
 	if requestID == "" {
 		return
 	}
+	now := time.Now()
 	s.mu.Lock()
+	s.pruneCancelledLocked(now)
 	cancel := s.cancels[requestID]
 	delete(s.cancels, requestID)
+	if cancel == nil {
+		// Cancellation can arrive before the Wails call reaches begin(). Keep a
+		// short-lived tombstone so that stale requests are cancelled on arrival.
+		s.cancelled[requestID] = now
+	}
 	s.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+}
+
+func (s *semanticSearchState) pruneCancelledLocked(now time.Time) {
+	for id, cancelledAt := range s.cancelled {
+		if now.Sub(cancelledAt) > semanticSearchCancelTTL {
+			delete(s.cancelled, id)
+		}
 	}
 }
 func (s *semanticSearchState) cancelAll() {
@@ -98,6 +123,7 @@ func (s *semanticSearchState) cancelAll() {
 		}
 	}
 	s.cancels = make(map[string]context.CancelFunc)
+	s.cancelled = make(map[string]time.Time)
 	s.sessions = make(map[string]semanticSearchSession)
 	s.mu.Unlock()
 
@@ -358,9 +384,22 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		return nil, ErrSemanticModelNotReady
 	}
 
+	parent := c.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	searchCtx, cancel := c.semanticSearchState.begin(requestID, parent)
+	defer func() {
+		cancel()
+		c.semanticSearchState.finish(requestID)
+	}()
+	if err := searchCtx.Err(); err != nil {
+		return nil, err
+	}
+
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
-		if err := c.EnsureSemanticSearchReady(); err != nil {
+		if err := c.ensureSemanticSearchReadyContext(searchCtx); err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrSemanticModelNotReady, err)
 		}
 		status = c.aiManager.Status(domain.AICapabilitySemanticSearch)
@@ -371,16 +410,6 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		}
 		return nil, fmt.Errorf("%w: %s", ErrSemanticModelNotReady, status.State)
 	}
-
-	parent := c.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	searchCtx, cancel := c.semanticSearchState.begin(requestID, parent)
-	defer func() {
-		cancel()
-		c.semanticSearchState.finish(requestID)
-	}()
 
 	searchStarted := time.Now()
 	emitProgress := func(stage string, scanned, total int) {

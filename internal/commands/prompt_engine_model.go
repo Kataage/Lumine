@@ -149,13 +149,15 @@ func (c *AppCommands) RemovePromptEngineModel(modelID string) error {
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrPromptEngineModelNotFound, modelID)
 	}
+	ctx, cancel := c.aiLifecycleOperationContext()
+	defer cancel()
 	status := c.aiManager.Status(domain.AICapabilityPromptEngine)
 	if status.ModelID == manifest.ID {
-		if err := c.aiManager.Unload(context.Background(), domain.AICapabilityPromptEngine); err != nil {
+		if err := c.aiManager.Unload(ctx, domain.AICapabilityPromptEngine); err != nil {
 			return err
 		}
 	}
-	if err := c.aiManager.RemoveModel(manifest.ID, manifest.Version); err != nil {
+	if err := c.aiManager.RemoveModelContext(ctx, manifest.ID, manifest.Version); err != nil {
 		return err
 	}
 	active, _ := c.getPromptEngineActiveModelID()

@@ -169,8 +169,22 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 }
 
 func (c *AppCommands) EnsureSemanticSearchReady() error {
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.ensureSemanticSearchReadyContext(ctx)
+}
+
+func (c *AppCommands) ensureSemanticSearchReadyContext(ctx context.Context) error {
 	if c.aiManager == nil {
 		return errors.New("AI model manager is not available")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	settings, err := c.GetAISettings()
 	if err != nil {
@@ -188,10 +202,6 @@ func (c *AppCommands) EnsureSemanticSearchReady() error {
 	manifest := siglip2.DefaultManifest()
 	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
 		return fmt.Errorf("Semantic Search model is not installed or invalid: %w", err)
-	}
-	ctx := c.ctx
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	if err := c.loadDefaultSemanticModel(ctx, settings); err != nil {
 		return fmt.Errorf("restore Semantic Search runtime: %w", err)
