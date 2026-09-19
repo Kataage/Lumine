@@ -12,6 +12,21 @@ import {
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 
+function Progress({ downloaded, total, label }: { downloaded: number; total: number; label: string }) {
+  const percent = total > 0 ? Math.min(100, (downloaded / total) * 100) : 0;
+  return (
+    <div className="mt-3 rounded-xl border border-border/70 bg-background/45 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-muted-foreground">{formatFileSize(downloaded)} / {formatFileSize(total)}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export function AdvancedVisionSettingsCard({
   enabled,
   onEnable,
@@ -20,7 +35,7 @@ export function AdvancedVisionSettingsCard({
   onEnable: () => Promise<void>;
 }) {
   const [status, setStatus] = useState<AdvancedVisionStatusInfo | null>(null);
-  const [busy, setBusy] = useState<string>("");
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ label: string; downloaded: number; total: number } | null>(null);
 
@@ -38,16 +53,11 @@ export function AdvancedVisionSettingsCard({
 
   useEffect(() => {
     EventsOn("ai:model-download", (raw: unknown) => {
-      const value = raw as {
-        modelId?: string;
-        bytesDownloaded?: number;
-        bytesTotal?: number;
-        done?: boolean;
-      };
-      const modelId = String(value.modelId ?? "");
-      if (!modelId.includes("qwen3-vl") && !modelId.includes("minicpm-v")) return;
+      const value = raw as { modelId?: string; bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
+      const modelID = String(value.modelId ?? "");
+      if (!modelID.includes("qwen3-vl") && !modelID.includes("minicpm-v")) return;
       setProgress({
-        label: modelId,
+        label: "モデルをダウンロード",
         downloaded: Math.max(0, Number(value.bytesDownloaded ?? 0)),
         total: Math.max(0, Number(value.bytesTotal ?? 0)),
       });
@@ -59,7 +69,7 @@ export function AdvancedVisionSettingsCard({
     EventsOn("ai:runtime-download", (raw: unknown) => {
       const value = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       setProgress({
-        label: "llama.cpp runtime",
+        label: "llama.cpp runtimeをダウンロード",
         downloaded: Math.max(0, Number(value.bytesDownloaded ?? 0)),
         total: Math.max(0, Number(value.bytesTotal ?? 0)),
       });
@@ -74,20 +84,7 @@ export function AdvancedVisionSettingsCard({
     };
   }, [refresh]);
 
-  const run = async (key: string, action: () => Promise<void>) => {
-    if (busy) return;
-    setBusy(key);
-    setError(null);
-    try {
-      await action();
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy("");
-    }
-  };
-  const setupModel = async (modelId: string) => {
+  const setup = async (modelId: string) => {
     if (busy) return;
     setBusy(`setup:${modelId}`);
     setError(null);
@@ -98,10 +95,8 @@ export function AdvancedVisionSettingsCard({
         await installAdvancedVisionRuntime();
         current = await getAdvancedVisionStatus();
       }
-      const model = current.models.find((candidate) => candidate.id === modelId);
-      if (!model?.installed) {
-        await installAdvancedVisionModel(modelId);
-      }
+      const candidate = current.models.find((model) => model.id === modelId);
+      if (!candidate?.installed) await installAdvancedVisionModel(modelId);
       await loadAdvancedVisionModel(modelId);
       await refresh();
     } catch (cause) {
@@ -111,103 +106,92 @@ export function AdvancedVisionSettingsCard({
     }
   };
 
+  const removeModel = async (modelId: string, displayName: string) => {
+    if (busy || !window.confirm(`${displayName} をローカルから削除しますか？`)) return;
+    setBusy(`remove:${modelId}`);
+    setError(null);
+    try {
+      await removeAdvancedVisionModel(modelId);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy("");
+    }
+  };
 
   if (!status) {
-    return <p className="mt-2 border-t border-border/60 pt-2 text-[9px] text-muted-foreground">Advanced Visionの状態を読み込んでいます…</p>;
+    return <p className="pt-4 text-[11px] text-muted-foreground">Advanced Visionの状態を確認しています…</p>;
   }
 
-  const runtimeState = status.runtime.state;
-  const runtimeLabel =
-    runtimeState === "ready" ? "利用可能" :
-    runtimeState === "running" ? "処理中" :
-    runtimeState === "error" ? "エラー" :
-    runtimeState === "disabled" ? "機能OFF" : "セットアップが必要";
+  const ready = status.runtime.state === "ready" || status.runtime.state === "running";
 
   return (
-    <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
-      <div className="flex items-center justify-between gap-2 text-[9px]">
-        <span className="text-muted-foreground">Advanced runtime</span>
-        <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">{runtimeLabel}</span>
+    <div className="pt-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+          status.llamaRuntime.installed ? "bg-emerald-500/[0.08] text-emerald-200" : "bg-muted/55"
+        }`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status.llamaRuntime.installed ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
+          llama.cpp {status.llamaRuntime.installed ? "導入済み" : "セットアップ時に導入"}
+        </span>
+        <span>{formatFileSize(status.llamaRuntime.sizeBytes)}</span>
+        {status.llamaRuntime.installed && (
+          <button
+            type="button"
+            className="ml-auto text-[11px] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+            disabled={!!busy}
+            onClick={() => {
+              if (!window.confirm("共有llama.cpp runtimeを削除しますか？ Lightweight Vision / Prompt Engineも停止します。")) return;
+              setBusy("runtime-remove");
+              void removeAdvancedVisionRuntime()
+                .then(refresh)
+                .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                .finally(() => setBusy(""));
+            }}
+          >
+            runtimeを管理
+          </button>
+        )}
       </div>
 
-      <div className="rounded-md border border-border/60 p-2 text-[9px]">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-medium text-foreground">共有 llama.cpp runtime</p>
-            <p className="mt-0.5 text-muted-foreground">{formatFileSize(status.llamaRuntime.sizeBytes)} · {status.llamaRuntime.installed ? "導入済み" : "未導入"}</p>
-            <p className="mt-0.5 text-muted-foreground/70">Lightweight Visionと共有します。</p>
-          </div>
-          {status.llamaRuntime.installed ? (
-            <button
-              type="button"
-              className="ui-secondary-button"
-              disabled={!!busy}
-              onClick={() => {
-                if (!window.confirm("共有llama.cpp runtimeを削除します。Lightweight Vision / Prompt Engineも停止します。続行しますか？")) return;
-                void run("runtime-remove", removeAdvancedVisionRuntime);
-              }}
-            >
-              {busy === "runtime-remove" ? "削除中…" : "削除"}
-            </button>
-          ) : (
-            <span className="rounded-full border border-amber-500/25 px-2 py-0.5 text-amber-300">セットアップ時に自動導入</span>
-          )}
-        </div>
-      </div>
+      {progress && progress.total > 0 && <Progress {...progress} />}
 
-      {progress && progress.total > 0 && (
-        <div className="space-y-1">
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-primary transition-[width]" style={{ width: `${Math.min(100, (progress.downloaded / progress.total) * 100)}%` }} />
-          </div>
-          <p className="text-[9px] text-muted-foreground">
-            {progress.label}: {formatFileSize(progress.downloaded)} / {formatFileSize(progress.total)}
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {status.models.map((model) => {
-          const active = status.activeModelId === model.id && (runtimeState === "ready" || runtimeState === "running");
+          const active = status.activeModelId === model.id && ready;
           return (
-            <div key={model.id} className={`rounded-md border p-2 text-[9px] ${active ? "border-primary/50 bg-primary/5" : "border-border/60"}`}>
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="font-medium text-foreground">{model.displayName}</p>
-                    {active && <span className="rounded-full border border-primary/40 px-1.5 py-0.5 text-primary">使用中</span>}
-                  </div>
-                  <p className="mt-0.5 text-muted-foreground">{formatFileSize(model.sizeBytes)} · {model.license} · {model.installed ? "導入済み" : "未導入"}</p>
+            <div
+              key={model.id}
+              className={`grid gap-3 rounded-xl border px-3.5 py-3 sm:grid-cols-[1fr_auto] sm:items-center ${
+                active ? "border-primary/25 bg-primary/[0.05]" : "border-border/70 bg-background/25"
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[12px] font-semibold">{model.displayName}</p>
+                  {active && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">使用中</span>}
                 </div>
-                <div className="flex flex-wrap justify-end gap-1">
-                  {!active && (
-                    <button
-                      type="button"
-                      className="ui-primary-button"
-                      disabled={!!busy}
-                      onClick={() => void setupModel(model.id)}
-                    >
-                      {busy === `setup:${model.id}`
-                        ? "セットアップ中…"
-                        : model.installed
-                          ? "このモデルを使用"
-                          : "導入して使用"}
-                    </button>
-                  )}
-                  {model.installed && (
-                    <button
-                      type="button"
-                      className="ui-secondary-button"
-                      disabled={!!busy}
-                      onClick={() => {
-                        if (!window.confirm(`${model.displayName} をローカルから削除しますか？`)) return;
-                        void run(`remove:${model.id}`, () => removeAdvancedVisionModel(model.id));
-                      }}
-                    >
-                      {busy === `remove:${model.id}` ? "削除中…" : "削除"}
-                    </button>
-                  )}
-                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {formatFileSize(model.sizeBytes)} · {model.license} · {model.installed ? "インストール済み" : "未インストール"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 sm:justify-end">
+                {!active && (
+                  <button type="button" className="ui-primary-button min-w-[126px]" disabled={!!busy} onClick={() => void setup(model.id)}>
+                    {busy === `setup:${model.id}` ? "準備しています…" : model.installed ? "このモデルを使用" : "セットアップ"}
+                  </button>
+                )}
+                {model.installed && (
+                  <button
+                    type="button"
+                    className="ui-secondary-button"
+                    disabled={!!busy}
+                    onClick={() => void removeModel(model.id, model.displayName)}
+                  >
+                    削除
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -215,13 +199,12 @@ export function AdvancedVisionSettingsCard({
       </div>
 
       {!enabled && (
-        <p className="text-[9px] text-muted-foreground">「導入して使用」を押すとAI全体とAdvanced Visionを自動でONにします。</p>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          セットアップを開始すると、ローカルAI全体とAdvanced Visionを自動で有効にします。
+        </p>
       )}
-      {status.runtime.error && <p className="text-[9px] text-destructive break-all">{status.runtime.error}</p>}
-      {error && <p className="text-[9px] text-destructive break-all">{error}</p>}
-      <p className="text-[9px] leading-relaxed text-muted-foreground">
-        モデル導入・runtime導入は明示操作のみです。Advanced Visionはscan時に自動解析しません。
-      </p>
+      {status.runtime.error && <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{status.runtime.error}</p>}
+      {error && <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{error}</p>}
     </div>
   );
 }
