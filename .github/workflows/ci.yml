@@ -1,5 +1,8 @@
 name: ci
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main, master, develop]
@@ -52,6 +55,28 @@ jobs:
             frontend/wailsjs/go/commands/AppCommands.d.ts
             frontend/wailsjs/go/models.ts
           if-no-files-found: error
+
+      - name: Sync generated Wails bindings on audit branch
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/ai-audit-correctness'
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/wailsjs; then
+            exit 0
+          fi
+          tmpdir="$(mktemp -d)"
+          cp frontend/wailsjs/go/commands/AppCommands.js "$tmpdir/AppCommands.js"
+          cp frontend/wailsjs/go/commands/AppCommands.d.ts "$tmpdir/AppCommands.d.ts"
+          cp frontend/wailsjs/go/models.ts "$tmpdir/models.ts"
+          git fetch origin "$GITHUB_HEAD_REF"
+          git checkout -B "$GITHUB_HEAD_REF" "origin/$GITHUB_HEAD_REF"
+          cp "$tmpdir/AppCommands.js" frontend/wailsjs/go/commands/AppCommands.js
+          cp "$tmpdir/AppCommands.d.ts" frontend/wailsjs/go/commands/AppCommands.d.ts
+          cp "$tmpdir/models.ts" frontend/wailsjs/go/models.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/wailsjs
+          git commit -m "chore(wails): sync generated bindings"
+          git push origin "HEAD:$GITHUB_HEAD_REF"
 
       - name: Install frontend deps
         working-directory: frontend
