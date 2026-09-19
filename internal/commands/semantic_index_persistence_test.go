@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
@@ -250,6 +251,121 @@ func TestSemanticPersistentSnapshotPathIsGenerationAddressed(t *testing.T) {
 	}
 	if first == otherModel {
 		t.Fatal("snapshot path did not include model provenance")
+	}
+}
+
+func TestSemanticPersistWorkerWaitsUntilIncrementalEmbeddingIsReady(t *testing.T) {
+	cmd, root, key, ids := buildPersistentSemanticFixture(t)
+
+	index := newSemanticMemoryIndex()
+	index.persistDebounce = 10 * time.Millisecond
+	index.SetStorageRoot(root)
+	index.Prepare(key.engine, key.modelID, key.version)
+	if err := index.Warm(context.Background(), cmd.semanticRepo, key.engine, key.modelID, key.version); err != nil {
+		t.Fatalf("open initial persistent snapshot: %v", err)
+	}
+	defer releaseSemanticTestIndex(index)
+	if !index.Status().Persistent {
+		t.Fatal("initial snapshot was not memory-mapped")
+	}
+
+	libraries, err := cmd.ListLibraries()
+	if err != nil || len(libraries) != 1 {
+		t.Fatalf("list test library: %v count=%d", err, len(libraries))
+	}
+	assetRepo := db.NewAssetRepo(cmd.db)
+	newID, err := assetRepo.Create(makeAsset(libraries[0].ID, "/tmp/semantic-index", "incremental.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.db.Exec(`
+		INSERT INTO ai_asset_analysis (
+			asset_id, capability, state, engine, model_id, model_version, result_json
+		) VALUES (?, 'semantic_search', 'running', ?, ?, ?, '{}')
+	`, newID, key.engine, key.modelID, key.version); err != nil {
+		t.Fatal(err)
+	}
+
+	generationBeforeEmbedding, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	vector := []float32{0, 1}
+	if err := cmd.semanticRepo.Upsert(newID, key.engine, key.modelID, key.version, vector); err != nil {
+		t.Fatal(err)
+	}
+	generationWhileRunning, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generationWhileRunning != generationBeforeEmbedding {
+		t.Fatalf("non-ready embedding unexpectedly invalidated snapshot: before=%d after=%d", generationBeforeEmbedding, generationWhileRunning)
+	}
+
+	index.Upsert(newID, key.engine, key.modelID, key.version, vector)
+	if !index.MarkPersistDirty(key.engine, key.modelID, key.version) {
+		t.Fatal("incremental embedding did not start persistence worker")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version)
+	}()
+
+	// Let at least one persistence pass observe the embedding while its
+	// analysis row is still non-ready. The overlay must survive that pass.
+	time.Sleep(35 * time.Millisecond)
+	index.mu.RLock()
+	_, overlayStillPresent := index.overlay[newID]
+	index.mu.RUnlock()
+	if !overlayStillPresent {
+		t.Fatal("non-ready incremental overlay was dropped before DB ready transition")
+	}
+
+	if _, err := cmd.db.Exec(
+		"UPDATE ai_asset_analysis SET state = 'ready' WHERE asset_id = ? AND capability = 'semantic_search'",
+		newID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("persist incremental embedding: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("persist worker did not converge after ready transition: %v", ctx.Err())
+	}
+
+	status := index.Status()
+	if !status.Persistent {
+		t.Fatalf("final incremental index is not persistent: %+v", status)
+	}
+	if status.OverlayCount != 0 {
+		t.Fatalf("represented overlay was not compacted: %+v", status)
+	}
+	if status.LoadedCount != len(ids)+1 {
+		t.Fatalf("persistent count = %d, want %d", status.LoadedCount, len(ids)+1)
+	}
+
+	currentGeneration, err := cmd.semanticRepo.SemanticIndexGeneration(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(semanticSnapshotPath(root, key, currentGeneration)); err != nil {
+		t.Fatalf("current generation snapshot missing: %v", err)
+	}
+
+	eligible := append(append([]int64(nil), ids...), newID)
+	result, err := index.Search(context.Background(), []float32{0, 1}, eligible, 0, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.RankedHits) == 0 || result.RankedHits[0].AssetID != newID {
+		t.Fatalf("incremental embedding is not searchable after compaction: %+v", result.RankedHits)
 	}
 }
 
