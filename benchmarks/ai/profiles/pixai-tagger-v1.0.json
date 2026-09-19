@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "pixai-labs/pixai-tagger-v1.0",
+  "version": "f33cfdb53c0c90b049bab9ce066eea1118970ef8",
+  "engine": "python-transformers-cpu",
+  "quantization": "FP32",
+  "artifactSha256": "f29e475205cbcbc25b52a075840c7809d6215be15f45375113ba09c49bf90292",
+  "modelSizeBytes": 1945425796,
+  "runtime": "transformers-cpu",
+  "benchmarkCategories": [
+    "danbooru_tagging",
+    "character_tagging",
+    "rating_tagging",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "family": "pixai-v1.0",
+    "repoId": "pixai-labs/pixai-tagger-v1.0",
+    "modelFile": "model.safetensors",
+    "generalThreshold": "0.17",
+    "characterThreshold": "0.27",
+    "styleThreshold": "0.15",
+    "copyrightThreshold": "0.24",
+    "metaThreshold": "0.17",
+    "ratingThreshold": "0.41",
+    "provider": "CPUExecutionProvider",
+    "imageSize": "1008",
+    "ratingSupported": "true",
+    "licenseStatus": "upstream-model-card-unspecified"
+  }
+}
