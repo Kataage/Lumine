@@ -223,6 +223,7 @@ export interface AIStorageInfo {
   modelsPath: string;
   runtimesPath: string;
   semanticIndexPath: string;
+  webviewDataPath: string;
   preferredRootPath?: string;
   legacyPath?: string;
   legacyDetected: boolean;
@@ -738,6 +739,7 @@ function normalizeAIStorageInfo(value: cmds.AIStorageInfo): AIStorageInfo {
     modelsPath: value.modelsPath,
     runtimesPath: value.runtimesPath,
     semanticIndexPath: value.semanticIndexPath,
+    webviewDataPath: value.webviewDataPath,
     preferredRootPath: value.preferredRootPath,
     legacyPath: value.legacyPath,
     legacyDetected: value.legacyDetected,
