@@ -16,8 +16,11 @@ separately pinned CPU runtime as the deterministic fallback.
 
 ## Pinned release line
 
-The implementation currently pins official llama.cpp prerelease `b11053`
-(2026-09-19) for both Windows x64 backends.
+The implementation deliberately pins the verified official llama.cpp prerelease `b11053`
+(2026-09-19) for both Windows x64 backends. Newer rolling prereleases are not
+automatically adopted: `b11054`-`b11056` appeared later the same day and their
+three intervening commits are Hexagon-only, so they do not change this verified
+Windows CPU/Vulkan runtime choice.
 
 | Backend | Asset | Size | SHA-256 |
 | --- | --- | ---: | --- |
