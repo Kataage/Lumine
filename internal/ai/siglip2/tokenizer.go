@@ -403,7 +403,13 @@ func normalizeSigLIP2Text(text string) string {
 	if text == "" {
 		return ""
 	}
-	return strings.ReplaceAll(text, " ", "▁")
+	// Search queries frequently contain repeated spaces/newlines from copy/paste.
+	// Normalize those to a single space before applying SigLIP2's metaspace rule.
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.ReplaceAll(strings.Join(fields, " "), " ", "▁")
 }
 
 func normalizeLegacyUnigramText(text string) string {
