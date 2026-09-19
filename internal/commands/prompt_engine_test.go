@@ -13,6 +13,7 @@ func TestValidatePromptEngineRequest(t *testing.T) {
 		{Operation: llamacpp.PromptOperationIdea, Idea: "idea"},
 		{Operation: llamacpp.PromptOperationImprove, Positive: "1girl"},
 		{Operation: llamacpp.PromptOperationConvert, Positive: "1girl", TargetProfile: "FLUX"},
+		{Operation: llamacpp.PromptOperationConvert, Positive: "1girl", TargetProfileID: "flux"},
 		{Operation: llamacpp.PromptOperationEdit, Positive: "1girl", Instruction: "背景だけ変更"},
 	}
 	for _, request := range valid {
