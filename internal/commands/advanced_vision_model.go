@@ -284,14 +284,3 @@ func advancedVisionManifest(modelID string) (ai.ModelManifest, bool) {
 	return ai.ModelManifest{}, false
 }
 
-func installedModelInfo(installed ai.InstalledModel) *ai.InstalledModelInfo {
-	return &ai.InstalledModelInfo{
-		ID:          installed.Manifest.ID,
-		Version:     installed.Manifest.Version,
-		Engine:      installed.Manifest.Engine,
-		DisplayName: installed.Manifest.DisplayName,
-		License:     installed.Manifest.License,
-		SizeBytes:   installed.Manifest.SizeBytes,
-		RootDir:     installed.RootDir,
-	}
-}
