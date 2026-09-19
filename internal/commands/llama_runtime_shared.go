@@ -191,6 +191,7 @@ func (c *AppCommands) removeSharedLlamaRuntime() error {
 	for _, manifest := range []llamacpp.RuntimeManifest{
 		llamacpp.VulkanRuntimeManifest(),
 		llamacpp.CPURuntimeManifest(),
+		llamacpp.LegacyCPURuntimeManifest(),
 	} {
 		if err := c.llamaRuntimeStore.Remove(manifest); err != nil {
 			combined = errors.Join(combined, err)
