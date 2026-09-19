@@ -112,73 +112,67 @@ func (i *semanticMemoryIndex) Warm(
 	}
 	key := semanticKey(engine, modelID, version)
 
-	i.mu.Lock()
-	if i.ready && i.key == key {
-		i.mu.Unlock()
-		return nil
-	}
-	if i.warming && i.key == key {
-		wait := i.wait
-		i.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-wait:
-			i.mu.RLock()
-			err := i.lastErr
-			ready := i.ready
-			i.mu.RUnlock()
-			if err != nil {
-				return err
-			}
-			if !ready {
-				return errSemanticIndexNotReady
-			}
+	for {
+		i.mu.Lock()
+		if i.ready && i.key == key {
+			i.mu.Unlock()
 			return nil
 		}
-	}
-
-	i.key = key
-	i.ready = false
-	i.warming = true
-	i.lastErr = nil
-	i.pending = make(map[int64][]float32)
-	i.wait = make(chan struct{})
-	wait := i.wait
-	i.mu.Unlock()
-
-	started := time.Now()
-	loaded := make(map[int64][]float32)
-	err := repo.WalkReadyEmbeddings(ctx, engine, modelID, version, func(assetID int64, vector []float32) error {
-		loaded[assetID] = vector
-		return nil
-	})
-
-	i.mu.Lock()
-	if err == nil && i.key == key {
-		for assetID, vector := range i.pending {
-			loaded[assetID] = vector
+		if i.warming {
+			wait := i.wait
+			i.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-wait:
+				// A previous warm (possibly for another model) finished.
+				// Re-check state under the loop before starting another load.
+				continue
+			}
 		}
-		i.vectors = loaded
-		i.ready = true
-		i.lastErr = nil
-	} else if err != nil {
-		i.lastErr = err
-	}
-	i.pending = make(map[int64][]float32)
-	i.warming = false
-	close(wait)
-	i.mu.Unlock()
 
-	if err != nil {
-		return err
+		i.key = key
+		i.ready = false
+		i.warming = true
+		i.lastErr = nil
+		i.pending = make(map[int64][]float32)
+		i.wait = make(chan struct{})
+		wait := i.wait
+		i.mu.Unlock()
+
+		started := time.Now()
+		loaded := make(map[int64][]float32)
+		err := repo.WalkReadyEmbeddings(ctx, engine, modelID, version, func(assetID int64, vector []float32) error {
+			loaded[assetID] = vector
+			return nil
+		})
+
+		i.mu.Lock()
+		if err == nil {
+			for assetID, vector := range i.pending {
+				loaded[assetID] = vector
+			}
+			i.vectors = loaded
+			i.ready = true
+			i.lastErr = nil
+		} else {
+			i.lastErr = err
+		}
+		i.pending = make(map[int64][]float32)
+		i.warming = false
+		close(wait)
+		i.mu.Unlock()
+
+		if err != nil {
+			return err
+		}
+		slog.Info("semantic memory index ready",
+			"vectors", len(loaded),
+			"elapsed", time.Since(started),
+			"model", modelID,
+		)
+		return nil
 	}
-	slog.Info("semantic memory index ready",
-		"vectors", len(loaded),
-		"elapsed", time.Since(started),
-		"model", modelID,
-	)
-	return nil
 }
 
 func (i *semanticMemoryIndex) Search(
