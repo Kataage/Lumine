@@ -23,6 +23,7 @@ type Layout struct {
 	ModelsDir         string
 	RuntimesDir       string
 	SemanticIndexDir  string
+	WebviewDataDir    string
 	PreferredRootDir  string
 	LegacyRootDir     string
 	LegacyDetected    bool
@@ -76,6 +77,7 @@ func Resolve(options ResolveOptions) (Layout, error) {
 			ModelsDir:        filepath.Join(root, "models"),
 			RuntimesDir:      filepath.Join(root, "runtimes"),
 			SemanticIndexDir: filepath.Join(dataDir, "semantic-index"),
+			WebviewDataDir:   filepath.Join(dataDir, "webview2"),
 			PreferredRootDir: root,
 			LegacyRootDir:    legacyRoot,
 			LegacyDetected:   legacyDetected,
@@ -126,6 +128,7 @@ func installedLayout(root string) Layout {
 		ModelsDir:        filepath.Join(root, "models"),
 		RuntimesDir:      filepath.Join(root, "runtimes"),
 		SemanticIndexDir: filepath.Join(root, "semantic-index"),
+		WebviewDataDir:   filepath.Join(root, "webview2"),
 	}
 }
 
@@ -136,6 +139,7 @@ func Prepare(layout Layout) error {
 		layout.ModelsDir,
 		layout.RuntimesDir,
 		layout.SemanticIndexDir,
+		layout.WebviewDataDir,
 	} {
 		if dir == "" {
 			return errors.New("Lumine storage layout contains an empty directory")
@@ -198,6 +202,7 @@ func layoutHasPersistentData(layout Layout) bool {
 		layout.ModelsDir,
 		layout.RuntimesDir,
 		layout.SemanticIndexDir,
+		layout.WebviewDataDir,
 	} {
 		if _, err := os.Stat(candidate); err == nil {
 			return true
