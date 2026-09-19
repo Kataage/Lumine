@@ -145,6 +145,11 @@ func main() {
 	}); err != nil {
 		log.Fatal("failed to register llama.cpp Advanced Vision engine:", err)
 	}
+	if err := aiManager.RegisterEngine(llamacpp.PromptEngineID, func() ai.Engine {
+		return llamacpp.NewPromptEngine(llamaRuntimeStore)
+	}); err != nil {
+		log.Fatal("failed to register llama.cpp Prompt Engine:", err)
+	}
 
 	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
 	cmd.SetAIJobQueue(aiJobQueue)
@@ -200,6 +205,9 @@ func main() {
 				}
 				if err := cmd.RestoreAdvancedVisionModel(); err != nil {
 					slog.Warn("failed to restore Advanced Vision runtime", "error", err)
+				}
+				if err := cmd.RestorePromptEngineModel(); err != nil {
+					slog.Warn("failed to restore Prompt Engine runtime", "error", err)
 				}
 			}()
 		},
