@@ -120,17 +120,31 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 
 	runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
 
-	if os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1" {
+	requestGPU := os.Getenv("LUMINE_SIGLIP2_GPU_REQUEST_SMOKE") == "1" ||
+		os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1"
+	if requestGPU {
 		if err := engine.Unload(context.Background()); err != nil {
-			t.Fatalf("unload CPU engine before DirectML smoke: %v", err)
+			t.Fatalf("unload CPU engine before GPU-request smoke: %v", err)
 		}
 		if err := engine.Load(ctx, installed, ai.LoadOptions{AllowGPU: true}); err != nil {
-			t.Fatalf("load real SigLIP2 DirectML engine: %v", err)
+			t.Fatalf("load real SigLIP2 GPU-request engine: %v", err)
 		}
 		diagnostics = engine.(ai.RuntimeDiagnosticsProvider).RuntimeDiagnostics()
-		if diagnostics.ExecutionProvider != "directml" {
+		if diagnostics.ExecutionProvider != "directml" && diagnostics.ExecutionProvider != "cpu" {
+			t.Fatalf("unexpected GPU-request provider=%q", diagnostics.ExecutionProvider)
+		}
+		if diagnostics.ExecutionProvider == "cpu" && diagnostics.Warning == "" {
+			t.Fatal("GPU request fell back to CPU without a diagnostic warning")
+		}
+		t.Logf(
+			"GPU-request provider=%s warning=%q",
+			diagnostics.ExecutionProvider,
+			diagnostics.Warning,
+		)
+		if os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1" &&
+			diagnostics.ExecutionProvider != "directml" {
 			t.Fatalf(
-				"GPU smoke did not activate DirectML: provider=%q warning=%q",
+				"strict GPU smoke did not activate DirectML: provider=%q warning=%q",
 				diagnostics.ExecutionProvider,
 				diagnostics.Warning,
 			)
