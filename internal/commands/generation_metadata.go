@@ -118,10 +118,12 @@ func (c *AppCommands) inferModelProfileFromCheckpoint(checkpoint string) string 
 	if key == "" {
 		return ""
 	}
-	if custom, err := db.NewModelProfileRepo(c.db).List(); err == nil {
-		for _, profile := range custom {
-			if normalizeCheckpointKey(profile.CheckpointName) == key {
-				return profile.ID
+	if c != nil && c.db != nil {
+		if custom, err := db.NewModelProfileRepo(c.db).List(); err == nil {
+			for _, profile := range custom {
+				if normalizeCheckpointKey(profile.CheckpointName) == key {
+					return profile.ID
+				}
 			}
 		}
 	}
