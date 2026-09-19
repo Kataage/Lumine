@@ -104,6 +104,24 @@ func RuntimeBackend(manifest RuntimeManifest) string {
 	return "cpu"
 }
 
+type runtimeCandidate struct {
+	manifest RuntimeManifest
+	allowGPU bool
+	provider string
+}
+
+func runtimeCandidates(allowGPU bool) []runtimeCandidate {
+	if allowGPU {
+		return []runtimeCandidate{
+			{manifest: VulkanRuntimeManifest(), allowGPU: true, provider: "vulkan"},
+			{manifest: CPURuntimeManifest(), allowGPU: false, provider: "cpu"},
+		}
+	}
+	return []runtimeCandidate{
+		{manifest: CPURuntimeManifest(), allowGPU: false, provider: "cpu"},
+	}
+}
+
 func NewRuntimeStore(root string) *RuntimeStore {
 	return &RuntimeStore{
 		root:   root,
