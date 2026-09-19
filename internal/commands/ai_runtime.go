@@ -19,9 +19,41 @@ func (c *AppCommands) SetAIManager(manager *ai.Manager) {
 	c.aiManager = manager
 }
 
+
+func runtimeStatusForInstalledModel(
+	status ai.RuntimeStatus,
+	manifest ai.ModelManifest,
+	installed bool,
+) ai.RuntimeStatus {
+	if !installed || status.State != ai.RuntimeStateModelNotInstalled {
+		return status
+	}
+	status.State = ai.RuntimeStateNotLoaded
+	status.ModelID = manifest.ID
+	status.Version = manifest.Version
+	status.Engine = manifest.Engine
+	status.Error = ""
+	return status
+}
+
 func (c *AppCommands) GetAIRuntimeStatuses() []ai.RuntimeStatus {
 	statuses := make([]ai.RuntimeStatus, 0, len(modelBackedAICapabilities))
 	for _, capability := range modelBackedAICapabilities {
+		switch capability {
+		case domain.AICapabilitySemanticSearch:
+			statuses = append(statuses, c.GetDefaultSemanticModelInfo().Runtime)
+			continue
+		case domain.AICapabilityLightweightVision:
+			statuses = append(statuses, c.GetDefaultLightweightVisionModelInfo().Runtime)
+			continue
+		case domain.AICapabilityAdvancedVision:
+			statuses = append(statuses, c.GetAdvancedVisionStatus().Runtime)
+			continue
+		case domain.AICapabilityPromptEngine:
+			statuses = append(statuses, c.GetPromptEngineStatus().Runtime)
+			continue
+		}
+
 		if c.aiManager == nil {
 			enabled, err := c.IsAICapabilityEnabled(string(capability))
 			if err != nil {
