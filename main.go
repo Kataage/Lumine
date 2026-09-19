@@ -142,7 +142,7 @@ func main() {
 		db.NewJobLogRepo(database),
 	)
 	cmd := commands.New(database, scanSvc)
-	cmd.SetStorageLayout(storageLayout)
+	commands.ConfigureStorageLayout(cmd, storageLayout)
 	commands.ConfigureSemanticIndexRoot(cmd, storageLayout.SemanticIndexDir)
 	aiManager := ai.NewManager(storageLayout.ModelsDir, cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
