@@ -276,6 +276,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		t.Fatalf("repository advanced vision catalog: %v", err)
 	}
 
+	var promptCatalog Catalog
+	readJSONForTest(t, filepath.Join(root, "catalogs", "prompt-engine-v1.json"), &promptCatalog)
+	if err := ValidateCatalog(promptCatalog); err != nil {
+		t.Fatalf("repository prompt engine catalog: %v", err)
+	}
+
 	var thresholds Thresholds
 	readJSONForTest(t, filepath.Join(root, "thresholds.json"), &thresholds)
 	if err := ValidateThresholds(thresholds); err != nil {
@@ -301,6 +307,10 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"advanced-smolvlm2-2.2b-q4.json",
 		"advanced-minicpm-v4.6-q4.json",
 		"advanced-granite-vision-4.1-4b-q4.json",
+		"prompt-neohorse-1-4b-abliterated-q4.json",
+		"prompt-spark-x2.5-4b-heretic-jp-q4.json",
+		"prompt-qwen3.5-4b-abliterated-q4.json",
+		"prompt-qwen3.5-4b-control-q4.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)

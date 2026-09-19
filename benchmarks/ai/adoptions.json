@@ -20,15 +20,45 @@
     {
       "capability": "prompt_engine",
       "status": "candidate",
-      "modelId": "NeoHorse-1-4B Abliterated",
-      "rationale": "Candidate for the local prompt engine; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "modelId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Current NeoHorse 4B abliterated GGUF candidate. The repository is very new, so the checked-in profile is exploratory until an immutable revision, exact GGUF filename/size and SHA-256 are pinned from a controlled run.",
       "updatedAt": "2026-09-19"
     },
     {
       "capability": "prompt_engine",
       "status": "candidate",
-      "modelId": "Spark-X2.5-4B-Heretic-jp",
-      "rationale": "Japanese-focused prompt-engine candidate; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "modelId": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu-custom-spark",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Japanese-focused Heretic candidate. Spark2_5 requires a Spark-compatible XHToken/llama.cpp fork, so both model and custom runtime must be immutably pinned before evidence can justify adoption.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "kaineone/Qwen3.5-4B-abliterated-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Qwen3.5-4B abliterated upstream-llama.cpp control used to separate prompt quality/refusal effects from NeoHorse/Spark fine-tuning. Adoption requires immutable revision and artifact SHA-256 evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "openresearchtools/Qwen3.5-4B-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Base-lineage Qwen3.5-4B GGUF control for measuring whether derivative/abliterated candidates improve Lumine prompt work without unacceptable instruction-following or structured-output regressions.",
       "updatedAt": "2026-09-19"
     },
     {
