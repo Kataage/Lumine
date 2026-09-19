@@ -136,16 +136,16 @@ go run ./cmd/ai-bench validate-catalog `
 
 ## Benchmark environment
 
-Use the same machine, power plan, CPU thread count, OS session and fixture pack for both candidates.
+Use the same machine, power plan, CPU thread policy, OS session and fixture pack for every candidate used in a controlled comparison.
 
 The checked-in profiles pin:
 
-- CPU Execution Provider only;
-- 8 intra-op threads;
-- 1 inter-op thread;
-- exact candidate revision, artifact hash, thresholds and preprocessing family.
+- CPU-only execution for the controlled fallback benchmark;
+- 8 compute threads and 1 inter-op thread where the runtime exposes those controls;
+- exact candidate revision, artifact hash, thresholds and preprocessing family;
+- separate dependency environments when runtime stacks differ (ONNX Runtime vs PyTorch/Transformers).
 
-If the benchmark machine needs a different thread count, create two new profiles with the same changed value. Never modify only one candidate.
+If the benchmark machine needs a different thread count, create matching profiles for every candidate in that comparison. Never change the CPU policy for only one candidate.
 
 Install the ONNX research environment for WD v3 / PixAI v0.9 / Camie v2:
 
@@ -161,7 +161,7 @@ py -3 -m venv .venv-tagger-pixai-v1
 .\.venv-tagger-pixai-v1\Scripts\python -m pip install -r benchmarks\ai\adapters\requirements-tagger-pixai-v1.txt
 ```
 
-## Run both candidates
+## Run the candidate set
 
 The adapter is Python research tooling only. It is not the Lumine product runtime used by #166.
 
