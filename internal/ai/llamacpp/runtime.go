@@ -77,6 +77,19 @@ func CPURuntimeManifest() RuntimeManifest {
 	}
 }
 
+func LegacyCPURuntimeManifest() RuntimeManifest {
+	return RuntimeManifest{
+		ID:             "llama.cpp-win-cpu-x64",
+		Version:        "b10964",
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-cpu-x64.zip",
+		SHA256:         "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+		SizeBytes:      18427629,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+}
+
 func VulkanRuntimeManifest() RuntimeManifest {
 	return RuntimeManifest{
 		ID:             "llama.cpp-win-vulkan-x64",
