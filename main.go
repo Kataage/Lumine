@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
@@ -121,6 +122,9 @@ func main() {
 	}
 	defer database.Close()
 
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
 	scanSvc := scanner.NewScanner(
 		db.NewAssetRepo(database),
 		db.NewLibraryRepo(database),
@@ -160,7 +164,7 @@ func main() {
 		log.Fatal("failed to register Lightweight Vision job handler:", err)
 	}
 	aiManager.SetModelActivatedHook(aiJobQueue.HandleModelActivated)
-	if err := aiJobQueue.Start(context.Background()); err != nil {
+	if err := aiJobQueue.Start(appCtx); err != nil {
 		log.Fatal("failed to start AI job queue:", err)
 	}
 
@@ -170,17 +174,40 @@ func main() {
 		}
 	})
 
-	// Stop workers before unloading runtimes and before closing SQLite.
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := aiJobQueue.Stop(shutdownCtx); err != nil {
-			slog.Warn("failed to stop AI job queue cleanly", "error", err)
-		}
-		if err := aiManager.Close(context.Background()); err != nil {
-			slog.Warn("failed to close AI runtime", "error", err)
-		}
-	}()
+	var shutdownOnce sync.Once
+	shutdown := func(source string) {
+		shutdownOnce.Do(func() {
+			slog.Info("shutting down Lumine", "source", source)
+
+			// Cancel application-owned contexts first so active inference and
+			// workers can stop before we join background goroutines.
+			appCancel()
+
+			backgroundCtx, backgroundCancel := context.WithTimeout(context.Background(), 6*time.Second)
+			if err := cmd.ShutdownBackground(backgroundCtx); err != nil {
+				slog.Warn("background work did not stop cleanly", "error", err)
+			}
+			backgroundCancel()
+
+			queueCtx, queueCancel := context.WithTimeout(context.Background(), 6*time.Second)
+			if err := aiJobQueue.Stop(queueCtx); err != nil {
+				slog.Warn("AI job queue did not stop cleanly", "error", err)
+			}
+			queueCancel()
+
+			runtimeCtx, runtimeCancel := context.WithTimeout(context.Background(), 12*time.Second)
+			if err := aiManager.Close(runtimeCtx); err != nil {
+				slog.Warn("AI runtimes did not stop cleanly", "error", err)
+			}
+			runtimeCancel()
+
+			slog.Info("Lumine shutdown cleanup completed")
+		})
+	}
+
+	// OnShutdown is the primary path. This defer is a fallback for startup/run
+	// failures so child runtimes and workers are still cleaned up exactly once.
+	defer shutdown("main-return")
 
 	err = wails.Run(&options.App{
 		Title:     "Lumine",
@@ -196,20 +223,12 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			cmd.SetContext(ctx)
 			slog.Info("Lumine started")
-			go func() {
-				if err := cmd.RestoreDefaultSemanticModel(); err != nil {
-					slog.Warn("failed to restore Semantic Search runtime", "error", err)
-				}
-				if err := cmd.RestoreDefaultLightweightVisionModel(); err != nil {
-					slog.Warn("failed to restore Lightweight Vision runtime", "error", err)
-				}
-				if err := cmd.RestoreAdvancedVisionModel(); err != nil {
-					slog.Warn("failed to restore Advanced Vision runtime", "error", err)
-				}
-				if err := cmd.RestorePromptEngineModel(); err != nil {
-					slog.Warn("failed to restore Prompt Engine runtime", "error", err)
-				}
-			}()
+			if !cmd.StartAIRestore() {
+				slog.Warn("AI restore was not started because Lumine is shutting down")
+			}
+		},
+		OnShutdown: func(_ context.Context) {
+			shutdown("wails")
 		},
 		Bind: []interface{}{
 			cmd,

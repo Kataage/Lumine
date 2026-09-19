@@ -483,7 +483,7 @@ func promptJSONSchema() map[string]any {
 	}
 }
 
-func (e *PromptEngine) Unload(_ context.Context) error {
+func (e *PromptEngine) Unload(ctx context.Context) error {
 	e.mu.Lock()
 	sidecar := e.sidecar
 	e.sidecar = nil
@@ -493,7 +493,10 @@ func (e *PromptEngine) Unload(_ context.Context) error {
 	if sidecar == nil {
 		return nil
 	}
-	stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return sidecar.Stop(stopCtx)
 }

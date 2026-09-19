@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/ai/llamacpp"
@@ -38,7 +40,14 @@ type AppCommands struct {
 	semanticIndex *semanticMemoryIndex
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
-	ctx         context.Context
+
+	lifecycleMu     sync.Mutex
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+	backgroundWG   sync.WaitGroup
+	shuttingDown   bool
+
+	ctx context.Context
 }
 
 func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
@@ -67,7 +76,77 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 }
 
 func (c *AppCommands) SetContext(ctx context.Context) {
-	c.ctx = ctx
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	if c.lifecycleCancel != nil {
+		c.lifecycleCancel()
+	}
+	lifecycleCtx, cancel := context.WithCancel(ctx)
+	c.lifecycleCtx = lifecycleCtx
+	c.lifecycleCancel = cancel
+	c.ctx = lifecycleCtx
+	c.shuttingDown = false
+}
+
+func (c *AppCommands) startBackgroundTask(work func(context.Context)) bool {
+	if work == nil {
+		return false
+	}
+
+	c.lifecycleMu.Lock()
+	if c.shuttingDown {
+		c.lifecycleMu.Unlock()
+		return false
+	}
+	ctx := c.lifecycleCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c.backgroundWG.Add(1)
+	c.lifecycleMu.Unlock()
+
+	go func() {
+		defer c.backgroundWG.Done()
+		work(ctx)
+	}()
+	return true
+}
+
+func (c *AppCommands) ShutdownBackground(ctx context.Context) error {
+	c.lifecycleMu.Lock()
+	if !c.shuttingDown {
+		c.shuttingDown = true
+		if c.lifecycleCancel != nil {
+			c.lifecycleCancel()
+		}
+		if c.scanSvc != nil {
+			c.scanSvc.Cancel()
+		}
+		if c.semanticSearchState != nil {
+			c.semanticSearchState.cancelAll()
+		}
+	}
+	c.lifecycleMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		c.backgroundWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *AppCommands) IsShuttingDown() bool {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+	return c.shuttingDown
 }
 
 type LibraryDTO struct {
@@ -600,7 +679,7 @@ func (c *AppCommands) ScanLibrary(libraryID int64) error {
 		return err
 	}
 
-	go func() {
+	if !c.startBackgroundTask(func(ctx context.Context) {
 		if err := c.scanSvc.ScanLibrary(lib, excludedDirs, func(p scanner.ScanProgress) {
 			slog.Info("scan progress",
 				"library", lib.Name,
@@ -611,10 +690,10 @@ func (c *AppCommands) ScanLibrary(libraryID int64) error {
 				"failed", p.FailedCount,
 				"done", p.IsDone,
 			)
-			if c.ctx != nil {
+			if ctx.Err() == nil && c.ctx != nil {
 				runtime.EventsEmit(c.ctx, "scan:progress", p)
 			}
-		}); err != nil {
+		}); err != nil && ctx.Err() == nil {
 			slog.Error("scan failed", "library", lib.Name, "error", err)
 			if c.ctx != nil {
 				runtime.EventsEmit(c.ctx, "scan:progress", scanner.ScanProgress{
@@ -624,7 +703,9 @@ func (c *AppCommands) ScanLibrary(libraryID int64) error {
 				})
 			}
 		}
-	}()
+	}) {
+		return errors.New("Lumine is shutting down")
+	}
 	return nil
 }
 
