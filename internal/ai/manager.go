@@ -387,7 +387,12 @@ func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings)
 	m.mu.Lock()
 	var toUnload []domain.AICapability
 	for capability, session := range m.sessions {
-		if !settings.CapabilityEnabled(capability) || (session.options.AllowGPU && !settings.GPUAcceleration) {
+		gpuCapable := false
+		if engine, ok := session.engine.(GPUCapableEngine); ok {
+			gpuCapable = engine.SupportsGPU()
+		}
+		gpuPolicyChanged := gpuCapable && session.options.AllowGPU != settings.GPUAcceleration
+		if !settings.CapabilityEnabled(capability) || gpuPolicyChanged {
 			toUnload = append(toUnload, capability)
 		}
 	}
@@ -417,7 +422,7 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 	if session == nil {
 		return RuntimeStatus{Capability: capability, State: RuntimeStateModelNotInstalled}
 	}
-	return RuntimeStatus{
+	status := RuntimeStatus{
 		Capability: capability,
 		State:      session.state,
 		ModelID:    session.model.Manifest.ID,
@@ -425,6 +430,12 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 		Engine:     session.model.Manifest.Engine,
 		Error:      session.lastErr,
 	}
+	if reporter, ok := session.engine.(RuntimeDiagnosticsProvider); ok {
+		diagnostics := reporter.RuntimeDiagnostics()
+		status.ExecutionProvider = diagnostics.ExecutionProvider
+		status.Warning = diagnostics.Warning
+	}
+	return status
 }
 
 func (m *Manager) Close(ctx context.Context) error {
