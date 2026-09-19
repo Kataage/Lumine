@@ -240,7 +240,7 @@ func buildPromptServerArgs(
 	if allowGPU {
 		args = append(args, "-ngl", "99")
 	} else {
-		args = append(args, "-ngl", "0")
+		args = append(args, "--device", "none", "-ngl", "0")
 	}
 	return append(args, extraArgs...)
 }
