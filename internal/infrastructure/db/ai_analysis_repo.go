@@ -563,6 +563,56 @@ func (r *AIAnalysisRepo) MarkStaleForModel(
 	return count, nil
 }
 
+func (r *AIAnalysisRepo) ListNeedingAnalysis(
+	libraryID int64,
+	capability domain.AICapability,
+	engine string,
+	modelID string,
+	modelVersion string,
+	afterID int64,
+	limit int,
+) ([]int64, error) {
+	if libraryID <= 0 {
+		return nil, fmt.Errorf("library id must be positive")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+
+	rows, err := r.db.Query(`
+		SELECT a.id
+		FROM assets a
+		LEFT JOIN ai_asset_analysis x
+		  ON x.asset_id = a.id
+		 AND x.capability = ?
+		WHERE a.library_id = ?
+		  AND a.id > ?
+		  AND (
+			x.id IS NULL
+			OR x.state <> 'ready'
+			OR x.engine <> ?
+			OR x.model_id <> ?
+			OR x.model_version <> ?
+		  )
+		ORDER BY a.id ASC
+		LIMIT ?
+	`, capability, libraryID, afterID, engine, modelID, modelVersion, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list assets needing AI analysis: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan asset needing AI analysis: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (r *AIAnalysisRepo) GetByAsset(assetID int64) ([]domain.AIAnalysis, error) {
 	rows, err := r.db.Query(`
 		SELECT id, asset_id, capability, state, engine, model_id, model_version,

@@ -4,9 +4,17 @@ import {
   EventsOn,
   getAISettings,
   getDefaultSemanticModelInfo,
+  getDefaultLightweightVisionModelInfo,
+  enqueueLightweightVisionBackfill,
   installDefaultSemanticModel,
+  installDefaultLightweightVisionModel,
+  installLightweightVisionRuntime,
   loadDefaultSemanticModel,
+  loadDefaultLightweightVisionModel,
+  removeDefaultLightweightVisionModel,
+  removeLightweightVisionRuntime,
   setAISettings,
+  type LightweightVisionModelInfo,
   type SemanticModelInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
@@ -90,6 +98,22 @@ function Toggle({
   );
 }
 
+function DownloadBar({ downloaded, total, label }: { downloaded: number; total: number; label: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-primary transition-[width]"
+          style={{ width: `${Math.min(100, total > 0 ? (downloaded / total) * 100 : 0)}%` }}
+        />
+      </div>
+      <p className="text-[9px] text-muted-foreground">
+        {label}: {formatFileSize(downloaded)} / {formatFileSize(total)}
+      </p>
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: AIEngineStatus }) {
   return (
     <span
@@ -114,19 +138,25 @@ export function AISettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
+  const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
+  const [visionBusy, setVisionBusy] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
+  const [visionModelProgress, setVisionModelProgress] = useState<{ downloaded: number; total: number } | null>(null);
+  const [runtimeProgress, setRuntimeProgress] = useState<{ downloaded: number; total: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [nextSettings, model] = await Promise.all([
+      const [nextSettings, model, visionModel] = await Promise.all([
         getAISettings(),
         getDefaultSemanticModelInfo().catch(() => null),
+        getDefaultLightweightVisionModelInfo().catch(() => null),
       ]);
       setSettings(nextSettings);
       setSemanticModel(model);
+      setLightweightModel(visionModel);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -140,14 +170,42 @@ export function AISettingsPanel() {
 
   useEffect(() => {
     EventsOn("ai:model-download", (raw: unknown) => {
+      const progress = raw as {
+        modelId?: string;
+        bytesDownloaded?: number;
+        bytesTotal?: number;
+        done?: boolean;
+      };
+      const next = {
+        downloaded: Math.max(0, Number(progress.bytesDownloaded ?? 0)),
+        total: Math.max(0, Number(progress.bytesTotal ?? 0)),
+      };
+      if (String(progress.modelId ?? "").includes("smolvlm")) {
+        setVisionModelProgress(next);
+      } else {
+        setDownloadProgress(next);
+      }
+      if (progress.done) {
+        void Promise.all([
+          getDefaultSemanticModelInfo().then(setSemanticModel).catch(() => undefined),
+          getDefaultLightweightVisionModelInfo().then(setLightweightModel).catch(() => undefined),
+        ]);
+      }
+    });
+    EventsOn("ai:runtime-download", (raw: unknown) => {
       const progress = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
-      setDownloadProgress({
+      setRuntimeProgress({
         downloaded: Math.max(0, Number(progress.bytesDownloaded ?? 0)),
         total: Math.max(0, Number(progress.bytesTotal ?? 0)),
       });
-      if (progress.done) void getDefaultSemanticModelInfo().then(setSemanticModel).catch(() => undefined);
+      if (progress.done) {
+        void getDefaultLightweightVisionModelInfo().then(setLightweightModel).catch(() => undefined);
+      }
     });
-    return () => EventsOff("ai:model-download");
+    return () => {
+      EventsOff("ai:model-download");
+      EventsOff("ai:runtime-download");
+    };
   }, []);
 
   const installSemanticModel = async () => {
@@ -177,6 +235,98 @@ export function AISettingsPanel() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setModelBusy(false);
+    }
+  };
+
+  const refreshLightweightModel = async () => {
+    setLightweightModel(await getDefaultLightweightVisionModelInfo());
+  };
+
+  const installVisionRuntime = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    setRuntimeProgress({ downloaded: 0, total: lightweightModel?.llamaRuntime.sizeBytes ?? 0 });
+    try {
+      await installLightweightVisionRuntime();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+      setRuntimeProgress(null);
+    }
+  };
+
+  const installVisionModel = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    setVisionModelProgress({ downloaded: 0, total: lightweightModel?.sizeBytes ?? 0 });
+    try {
+      await installDefaultLightweightVisionModel();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+      setVisionModelProgress(null);
+    }
+  };
+
+  const loadVisionModel = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      await loadDefaultLightweightVisionModel();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
+  const removeVisionModel = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      await removeDefaultLightweightVisionModel();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
+  const removeVisionRuntime = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      await removeLightweightVisionRuntime();
+      await refreshLightweightModel();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
+  const backfillVision = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      const created = await enqueueLightweightVisionBackfill();
+      window.alert(created > 0 ? `${created}件をLightweight Vision解析キューへ追加しました。` : "再解析が必要な既存画像はありません。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
     }
   };
 
@@ -226,7 +376,9 @@ export function AISettingsPanel() {
         {MODEL_FEATURES.map((feature) => {
           const status = feature.key === "semanticSearch" && semanticModel
             ? semanticModel.runtime.state
-            : getInitialAIEngineStatus(settings, feature.key);
+            : feature.key === "lightweightVision" && lightweightModel
+              ? lightweightModel.runtime.state
+              : getInitialAIEngineStatus(settings, feature.key);
           return (
             <div key={feature.key} className="rounded-lg border border-border/70 bg-background/30 p-2.5">
               <div className="flex items-center gap-2">
@@ -291,6 +443,79 @@ export function AISettingsPanel() {
                   )}
                   {semanticModel.runtime.error && (
                     <p className="text-[9px] leading-relaxed text-destructive break-all">{semanticModel.runtime.error}</p>
+                  )}
+                </div>
+              )}
+              {feature.key === "lightweightVision" && lightweightModel && (
+                <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
+                  <div className="grid grid-cols-2 gap-2 text-[9px]">
+                    <div className="rounded-md border border-border/60 p-2">
+                      <p className="font-medium text-foreground">llama.cpp runtime</p>
+                      <p className="mt-0.5 text-muted-foreground">{formatFileSize(lightweightModel.llamaRuntime.sizeBytes)}</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {lightweightModel.llamaRuntime.installed ? "導入済み" : "未導入"}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-border/60 p-2">
+                      <p className="font-medium text-foreground truncate" title={lightweightModel.displayName}>{lightweightModel.displayName}</p>
+                      <p className="mt-0.5 text-muted-foreground">{formatFileSize(lightweightModel.sizeBytes)}</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {lightweightModel.installed ? "導入済み" : "未導入"} · {lightweightModel.license}
+                      </p>
+                    </div>
+                  </div>
+
+                  {runtimeProgress && runtimeProgress.total > 0 && (
+                    <DownloadBar downloaded={runtimeProgress.downloaded} total={runtimeProgress.total} label="runtime" />
+                  )}
+                  {visionModelProgress && visionModelProgress.total > 0 && (
+                    <DownloadBar downloaded={visionModelProgress.downloaded} total={visionModelProgress.total} label="model" />
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {!lightweightModel.llamaRuntime.installed ? (
+                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionRuntime()}>
+                        {visionBusy ? "処理中…" : "runtimeを導入"}
+                      </button>
+                    ) : (
+                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionRuntime()}>
+                        runtimeを削除
+                      </button>
+                    )}
+                    {!lightweightModel.installed ? (
+                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionModel()}>
+                        {visionBusy ? "処理中…" : "SmolVLMを導入"}
+                      </button>
+                    ) : (
+                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionModel()}>
+                        モデルを削除
+                      </button>
+                    )}
+                    {lightweightModel.installed &&
+                      lightweightModel.llamaRuntime.installed &&
+                      status !== "ready" &&
+                      status !== "running" &&
+                      settings.enabled &&
+                      settings.lightweightVision && (
+                        <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void loadVisionModel()}>
+                          {visionBusy ? "読み込み中…" : "Lightweight Visionを読み込む"}
+                        </button>
+                      )}
+                    {lightweightModel.installed &&
+                      lightweightModel.llamaRuntime.installed &&
+                      (status === "ready" || status === "running") &&
+                      settings.enabled &&
+                      settings.lightweightVision && (
+                        <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
+                          既存画像を解析キューへ
+                        </button>
+                      )}
+                  </div>
+                  <p className="text-[9px] leading-relaxed text-muted-foreground">
+                    設定ONだけではダウンロードしません。runtimeとモデルは明示操作でのみローカル保存されます。
+                  </p>
+                  {lightweightModel.runtime.error && (
+                    <p className="text-[9px] leading-relaxed text-destructive break-all">{lightweightModel.runtime.error}</p>
                   )}
                 </div>
               )}

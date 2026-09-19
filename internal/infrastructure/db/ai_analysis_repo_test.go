@@ -328,3 +328,58 @@ func TestAIAnalysisRepoBatchPriorityAndCapabilityClaim(t *testing.T) {
 		t.Fatalf("expected high-priority tagger job for third asset: %+v", claimedTagger)
 	}
 }
+
+
+func TestAIAnalysisRepoListsOnlyAssetsNeedingCurrentModel(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	repo := NewAIAnalysisRepo(database)
+
+	lib, err := NewLibraryRepo(database).Create("Vision Backfill", "/tmp/vision-backfill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRepo := NewAssetRepo(database)
+	var ids []int64
+	for _, name := range []string{"ready.png", "stale.png", "missing.png"} {
+		id, err := assetRepo.Create(&domain.Asset{
+			LibraryID: lib.ID,
+			FolderPath: "/tmp/vision-backfill",
+			FileName: name,
+			FilePath: "/tmp/vision-backfill/" + name,
+			Extension: ".png",
+			FileSize: 10,
+			ThumbStatus: domain.ThumbStatusNone,
+			StatusLabel: domain.StatusUnsorted,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+
+	readyJob, _, err := repo.Enqueue(ids[0], domain.AICapabilityLightweightVision, domain.AIJobSourceManual, 0, 3)
+	if err != nil { t.Fatal(err) }
+	if _, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilityLightweightVision}); err != nil { t.Fatal(err) }
+	if err := repo.CompleteJob(readyJob.ID, "engine", "model", "1", `{"shortCaption":"ready"}`); err != nil { t.Fatal(err) }
+
+	staleJob, _, err := repo.Enqueue(ids[1], domain.AICapabilityLightweightVision, domain.AIJobSourceManual, 0, 3)
+	if err != nil { t.Fatal(err) }
+	if _, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilityLightweightVision}); err != nil { t.Fatal(err) }
+	if err := repo.CompleteJob(staleJob.ID, "engine", "model", "0", `{"shortCaption":"old"}`); err != nil { t.Fatal(err) }
+
+	needing, err := repo.ListNeedingAnalysis(
+		lib.ID,
+		domain.AICapabilityLightweightVision,
+		"engine",
+		"model",
+		"1",
+		0,
+		100,
+	)
+	if err != nil {
+		t.Fatalf("ListNeedingAnalysis: %v", err)
+	}
+	if len(needing) != 2 || needing[0] != ids[1] || needing[1] != ids[2] {
+		t.Fatalf("needing = %v, want [%d %d]", needing, ids[1], ids[2])
+	}
+}

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getAssetDetail,
+  getLightweightVisionAnalysis,
   getPostsByAsset,
   listTags,
+  reanalyzeAssets,
   setAssetTags,
   toggleAssetFavorite,
   updateAssetColorLabel,
@@ -51,9 +53,21 @@ export function ViewerDetailPanel({ assetId, onClose }: ViewerDetailPanelProps) 
     enabled: assetId > 0,
     staleTime: Infinity,
   });
+  const { data: visionAnalysis, refetch: refetchVisionAnalysis } = useQuery({
+    queryKey: ["lightweightVisionAnalysis", assetId],
+    queryFn: () => getLightweightVisionAnalysis(assetId),
+    enabled: assetId > 0,
+    staleTime: 1000,
+    refetchInterval: (query) => {
+      const current = query.state.data as { state?: string } | null | undefined;
+      return current?.state === "queued" || current?.state === "running" ? 1500 : false;
+    },
+  });
   const [noteContent, setNoteContent] = useState("");
   const [noteDirty, setNoteDirty] = useState(false);
   const [pathCopied, setPathCopied] = useState(false);
+  const [visionReanalyzing, setVisionReanalyzing] = useState(false);
+  const [visionError, setVisionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (asset?.noteContent !== undefined) {
@@ -96,6 +110,20 @@ export function ViewerDetailPanel({ assetId, onClose }: ViewerDetailPanelProps) 
       window.setTimeout(() => setPathCopied(false), 1500);
     } catch (copyError) {
       console.error("Copy path failed", copyError);
+    }
+  };
+
+  const reanalyzeVision = async () => {
+    if (!asset || visionReanalyzing) return;
+    setVisionReanalyzing(true);
+    setVisionError(null);
+    try {
+      await reanalyzeAssets([asset.id], "lightweight_vision", 200);
+      await refetchVisionAnalysis();
+    } catch (cause) {
+      setVisionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionReanalyzing(false);
     }
   };
 
@@ -271,6 +299,59 @@ export function ViewerDetailPanel({ assetId, onClose }: ViewerDetailPanelProps) 
           </div>
         </DetailSection>
 
+        <DetailSection title="Lightweight Vision">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] text-muted-foreground">
+                  {visionAnalysis ? visionStateLabel(visionAnalysis.state) : "未解析"}
+                </p>
+                {visionAnalysis?.modelId && (
+                  <p className="text-[9px] text-muted-foreground/70 break-all">
+                    {visionAnalysis.modelId} · {visionAnalysis.modelVersion ?? ""}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => void reanalyzeVision()}
+                disabled={visionReanalyzing || visionAnalysis?.state === "running" || visionAnalysis?.state === "queued"}
+                className="text-[9px] px-2.5 py-1.5 rounded-md border border-border bg-muted hover:bg-accent disabled:opacity-50"
+              >
+                {visionReanalyzing ? "登録中…" : visionAnalysis ? "この画像を再解析" : "この画像を解析"}
+              </button>
+            </div>
+
+            {visionAnalysis?.state === "failed" && visionAnalysis.errorMessage && (
+              <p className="text-[9px] text-destructive break-all">{visionAnalysis.errorMessage}</p>
+            )}
+            {visionError && <p className="text-[9px] text-destructive break-all">{visionError}</p>}
+
+            {visionAnalysis?.result && (
+              <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-2.5">
+                {visionAnalysis.result.shortCaption && (
+                  <VisionField label="短い説明" value={visionAnalysis.result.shortCaption} />
+                )}
+                {visionAnalysis.result.detailedCaption && (
+                  <VisionField label="詳細説明" value={visionAnalysis.result.detailedCaption} />
+                )}
+                {visionAnalysis.result.subject && <VisionField label="被写体" value={visionAnalysis.result.subject} />}
+                {visionAnalysis.result.background && <VisionField label="背景" value={visionAnalysis.result.background} />}
+                {visionAnalysis.result.composition && <VisionField label="構図" value={visionAnalysis.result.composition} />}
+                {visionAnalysis.result.viewpoint && <VisionField label="視点" value={visionAnalysis.result.viewpoint} />}
+                {visionAnalysis.result.visibleText?.length > 0 && (
+                  <VisionField label="画像内テキスト" value={visionAnalysis.result.visibleText.join(" / ")} />
+                )}
+                {visionAnalysis.result.notes?.length > 0 && (
+                  <p className="text-[9px] leading-relaxed text-muted-foreground">
+                    {visionAnalysis.result.notes.join(" ")}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </DetailSection>
+
         <DetailSection title="タグ">
           <div className="flex flex-wrap gap-1.5">
             {allTags && allTags.length > 0 ? allTags.map((tag) => {
@@ -334,6 +415,32 @@ export function ViewerDetailPanel({ assetId, onClose }: ViewerDetailPanelProps) 
         )}
       </div>
     </aside>
+  );
+}
+
+function visionStateLabel(state: string): string {
+  switch (state) {
+    case "queued":
+      return "解析待ち";
+    case "running":
+      return "解析中";
+    case "ready":
+      return "解析済み";
+    case "failed":
+      return "解析失敗";
+    case "stale":
+      return "再解析が必要";
+    default:
+      return state;
+  }
+}
+
+function VisionField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[9px] font-medium text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[10px] leading-relaxed text-foreground whitespace-pre-wrap break-words">{value}</p>
+    </div>
   );
 }
 
