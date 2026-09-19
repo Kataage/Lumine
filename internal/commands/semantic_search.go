@@ -354,6 +354,7 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	}
 	if c.semanticIndex != nil {
 		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, status.Version, vector)
+		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
 	}
 
 	summary, _ := json.Marshal(map[string]any{
