@@ -438,6 +438,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	jobCtx, cancel := context.WithCancel(parent)
 	q.mu.Lock()
 	q.active[job.ID] = activeAIJob{capability: job.Capability, cancel: cancel}
+	paused := q.paused[job.Capability] > 0
 	q.mu.Unlock()
 
 	cleanup := func() {
@@ -445,6 +446,14 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 		q.mu.Lock()
 		delete(q.active, job.ID)
 		q.mu.Unlock()
+	}
+
+	if paused {
+		if err := q.repo.RequeueInterrupted(job.ID, "yielded to a foreground AI request"); err != nil {
+			slog.Error("failed to yield claimed AI job to foreground request", "job", job.ID, "error", err)
+		}
+		cleanup()
+		return
 	}
 
 	latest, err := q.repo.GetJob(job.ID)
