@@ -11,6 +11,21 @@ import {
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 
+function Progress({ downloaded, total, label }: { downloaded: number; total: number; label: string }) {
+  const percent = total > 0 ? Math.min(100, (downloaded / total) * 100) : 0;
+  return (
+    <div className="mt-3 rounded-xl border border-border/70 bg-background/45 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-muted-foreground">{formatFileSize(downloaded)} / {formatFileSize(total)}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export function PromptEngineSettingsCard({
   enabled,
   onEnable,
@@ -37,16 +52,11 @@ export function PromptEngineSettingsCard({
 
   useEffect(() => {
     EventsOn("ai:model-download", (raw: unknown) => {
-      const value = raw as {
-        modelId?: string;
-        bytesDownloaded?: number;
-        bytesTotal?: number;
-        done?: boolean;
-      };
-      const modelId = String(value.modelId ?? "");
-      if (!modelId.includes("qwen3.5")) return;
+      const value = raw as { modelId?: string; bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
+      const modelID = String(value.modelId ?? "");
+      if (!modelID.includes("qwen3.5")) return;
       setProgress({
-        label: modelId,
+        label: "Promptモデルをダウンロード",
         downloaded: Math.max(0, Number(value.bytesDownloaded ?? 0)),
         total: Math.max(0, Number(value.bytesTotal ?? 0)),
       });
@@ -58,7 +68,7 @@ export function PromptEngineSettingsCard({
     EventsOn("ai:runtime-download", (raw: unknown) => {
       const value = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       setProgress({
-        label: "llama.cpp runtime",
+        label: "llama.cpp runtimeをダウンロード",
         downloaded: Math.max(0, Number(value.bytesDownloaded ?? 0)),
         total: Math.max(0, Number(value.bytesTotal ?? 0)),
       });
@@ -84,10 +94,8 @@ export function PromptEngineSettingsCard({
         await installPromptEngineRuntime();
         current = await getPromptEngineStatus();
       }
-      const model = current.models.find((candidate) => candidate.id === modelId);
-      if (!model?.installed) {
-        await installPromptEngineModel(modelId);
-      }
+      const candidate = current.models.find((model) => model.id === modelId);
+      if (!candidate?.installed) await installPromptEngineModel(modelId);
       await loadPromptEngineModel(modelId);
       await refresh();
     } catch (cause) {
@@ -97,8 +105,8 @@ export function PromptEngineSettingsCard({
     }
   };
 
-  const removeModel = async (modelId: string) => {
-    if (busy) return;
+  const removeModel = async (modelId: string, displayName: string) => {
+    if (busy || !window.confirm(`${displayName} をローカルから削除しますか？`)) return;
     setBusy(`remove:${modelId}`);
     setError(null);
     try {
@@ -112,110 +120,76 @@ export function PromptEngineSettingsCard({
   };
 
   if (!status) {
-    return <p className="mt-2 border-t border-border/60 pt-2 text-[9px] text-muted-foreground">Prompt Engineの状態を読み込んでいます…</p>;
+    return <p className="pt-4 text-[11px] text-muted-foreground">Prompt Engineの状態を確認しています…</p>;
   }
 
   const ready = status.runtime.state === "ready" || status.runtime.state === "running";
 
   return (
-    <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
-      <div className="grid grid-cols-2 gap-2 text-[9px]">
-        <div className="rounded-md border border-border/60 p-2">
-          <p className="font-medium text-foreground">共有 llama.cpp runtime</p>
-          <p className="mt-0.5 text-muted-foreground">
-            {status.llamaRuntime.installed ? "導入済み" : "未導入"} · {formatFileSize(status.llamaRuntime.sizeBytes)}
-          </p>
-        </div>
-        <div className="rounded-md border border-border/60 p-2">
-          <p className="font-medium text-foreground">実行状態</p>
-          <p className="mt-0.5 text-muted-foreground">
-            {ready ? "利用可能" : enabled ? "セットアップが必要" : "機能OFF"}
-          </p>
-        </div>
+    <div className="pt-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+          status.llamaRuntime.installed ? "bg-emerald-500/[0.08] text-emerald-200" : "bg-muted/55"
+        }`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${status.llamaRuntime.installed ? "bg-emerald-400" : "bg-muted-foreground/40"}`} />
+          llama.cpp {status.llamaRuntime.installed ? "導入済み" : "セットアップ時に導入"}
+        </span>
+        <span>{formatFileSize(status.llamaRuntime.sizeBytes)}</span>
       </div>
 
-      {progress && progress.total > 0 && (
-        <div className="space-y-1">
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-primary transition-[width]"
-              style={{ width: `${Math.min(100, (progress.downloaded / progress.total) * 100)}%` }}
-            />
-          </div>
-          <p className="text-[9px] text-muted-foreground">
-            {progress.label}: {formatFileSize(progress.downloaded)} / {formatFileSize(progress.total)}
-          </p>
-        </div>
-      )}
+      {progress && progress.total > 0 && <Progress {...progress} />}
 
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {status.models.map((model) => {
           const active = status.activeModelId === model.id && ready;
           return (
             <div
               key={model.id}
-              className={`rounded-md border p-2 text-[9px] ${active ? "border-emerald-500/35 bg-emerald-500/5" : "border-border/60"}`}
+              className={`grid gap-3 rounded-xl border px-3.5 py-3 sm:grid-cols-[1fr_auto] sm:items-center ${
+                active ? "border-primary/25 bg-primary/[0.05]" : "border-border/70 bg-background/25"
+              }`}
             >
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="font-medium text-foreground">{model.displayName}</p>
-                    {model.reference && (
-                      <span className="rounded-full border border-amber-500/30 px-1.5 py-0.5 text-amber-300">reference</span>
-                    )}
-                    {active && (
-                      <span className="rounded-full border border-emerald-500/30 px-1.5 py-0.5 text-emerald-300">使用中</span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-muted-foreground">
-                    {formatFileSize(model.sizeBytes)} · {model.license} · {model.installed ? "導入済み" : "未導入"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap justify-end gap-1">
-                  {!active && (
-                    <button
-                      type="button"
-                      className="ui-primary-button"
-                      disabled={!!busy}
-                      onClick={() => void setup(model.id)}
-                    >
-                      {busy === `setup:${model.id}`
-                        ? "セットアップ中…"
-                        : model.installed
-                          ? "このモデルを使用"
-                          : "導入して使用"}
-                    </button>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[12px] font-semibold">{model.displayName}</p>
+                  {model.reference && (
+                    <span className="rounded-full bg-amber-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-amber-200">検証用</span>
                   )}
-                  {model.installed && (
-                    <button
-                      type="button"
-                      className="ui-secondary-button"
-                      disabled={!!busy}
-                      onClick={() => {
-                        if (!window.confirm(`${model.displayName} をローカルから削除しますか？`)) return;
-                        void removeModel(model.id);
-                      }}
-                    >
-                      削除
-                    </button>
+                  {active && (
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">使用中</span>
                   )}
                 </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {formatFileSize(model.sizeBytes)} · {model.license} · {model.installed ? "インストール済み" : "未インストール"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 sm:justify-end">
+                {!active && (
+                  <button type="button" className="ui-primary-button min-w-[126px]" disabled={!!busy} onClick={() => void setup(model.id)}>
+                    {busy === `setup:${model.id}` ? "準備しています…" : model.installed ? "このモデルを使用" : "セットアップ"}
+                  </button>
+                )}
+                {model.installed && (
+                  <button type="button" className="ui-secondary-button" disabled={!!busy} onClick={() => void removeModel(model.id, model.displayName)}>
+                    削除
+                  </button>
+                )}
               </div>
             </div>
           );
         })}
       </div>
 
-      <p className="rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[9px] leading-relaxed text-muted-foreground">
+      <p className="mt-3 rounded-xl bg-muted/[0.18] px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
         {status.selectionNote}
       </p>
       {!enabled && (
-        <p className="text-[9px] text-muted-foreground">
-          「導入して使用」を押すとAI全体とPrompt Engineを自動でONにします。
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          セットアップを開始すると、ローカルAI全体とPrompt Engineを自動で有効にします。
         </p>
       )}
-      {status.runtime.error && <p className="text-[9px] text-destructive break-all">{status.runtime.error}</p>}
-      {error && <p className="text-[9px] text-destructive break-all">{error}</p>}
+      {status.runtime.error && <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{status.runtime.error}</p>}
+      {error && <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{error}</p>}
     </div>
   );
 }
