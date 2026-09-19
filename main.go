@@ -16,6 +16,7 @@ import (
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/ai/siglip2"
+	"github.com/kataage/lumine/internal/ai/tagger"
 	"github.com/kataage/lumine/internal/commands"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
@@ -158,6 +159,10 @@ func main() {
 	cmd.SetAIManager(aiManager)
 	if err := aiManager.RegisterEngine(siglip2.EngineID, siglip2.NewEngine); err != nil {
 		log.Fatal("failed to register SigLIP2 engine:", err)
+	}
+
+	if err := aiManager.RegisterEngine(tagger.EngineID, tagger.NewEngine); err != nil {
+		log.Fatal("failed to register Tagger ONNX engine:", err)
 	}
 
 	llamaRuntimeStore := llamacpp.NewRuntimeStore(filepath.Join(storageLayout.RuntimesDir, "llama.cpp"))
