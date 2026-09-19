@@ -19,6 +19,37 @@ func readySemanticIndex(vectors map[int64][]float32) *semanticMemoryIndex {
 	return index
 }
 
+func TestSemanticMemoryIndexSearchEmptyReadyIndexReturnsEmptyResult(t *testing.T) {
+	index := newSemanticMemoryIndex()
+	index.key = semanticKey("engine", "model", "1")
+	index.ready = true
+	index.stage = "ready"
+
+	progressCalled := false
+	result, err := index.Search(
+		context.Background(),
+		[]float32{1, 0},
+		nil,
+		0,
+		10,
+		func(scanned, total int) {
+			progressCalled = true
+			if scanned != 0 || total != 0 {
+				t.Fatalf("empty progress = %d/%d, want 0/0", scanned, total)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("empty ready index search: %v", err)
+	}
+	if result.TotalCount != 0 || len(result.Hits) != 0 || len(result.RankedHits) != 0 {
+		t.Fatalf("unexpected empty result: %+v", result)
+	}
+	if !progressCalled {
+		t.Fatal("empty search did not emit completion progress")
+	}
+}
+
 func TestSemanticMemoryIndexSearchPreservesExactRanking(t *testing.T) {
 	index := readySemanticIndex(map[int64][]float32{
 		1: {1, 0},
