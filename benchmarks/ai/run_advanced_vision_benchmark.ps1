@@ -86,10 +86,17 @@ function Ensure-Venv {
 }
 
 function Invoke-AIBench([string[]]$Arguments) {
-    & go run ./cmd/ai-bench @Arguments
+    & go run ./cmd/ai-bench @Arguments | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
         throw "ai-bench failed: $($Arguments -join ' ')"
     }
+}
+
+function Get-OptionalProperty($Object, [string]$Name) {
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
 }
 
 function Test-ProfilePinned([string]$ProfilePath) {
