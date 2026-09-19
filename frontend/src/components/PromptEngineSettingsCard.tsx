@@ -28,9 +28,11 @@ function Progress({ downloaded, total, label }: { downloaded: number; total: num
 export function PromptEngineSettingsCard({
   enabled,
   onEnable,
+  onStatusChange,
 }: {
   enabled: boolean;
   onEnable: () => Promise<void>;
+  onStatusChange?: (status: PromptEngineStatusInfo) => void;
 }) {
   const [status, setStatus] = useState<PromptEngineStatusInfo | null>(null);
   const [busy, setBusy] = useState("");
@@ -39,11 +41,13 @@ export function PromptEngineSettingsCard({
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await getPromptEngineStatus());
+      const next = await getPromptEngineStatus();
+      setStatus(next);
+      onStatusChange?.(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, []);
+  }, [onStatusChange]);
 
   useEffect(() => {
     void refresh();
