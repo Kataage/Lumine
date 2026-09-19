@@ -23,7 +23,6 @@ var (
 const (
 	semanticSearchSessionTTL = 15 * time.Minute
 	semanticSearchSessionMax = 8
-	semanticSearchPreviewMax = 80
 )
 
 type semanticSearchSession struct {
@@ -40,10 +39,9 @@ type semanticSearchState struct {
 }
 
 type SemanticSearchProgressDTO struct {
-	RequestID    string     `json:"requestId"`
-	Assets       []AssetDTO `json:"assets"`
-	ScannedCount int        `json:"scannedCount"`
-	TotalCount   int        `json:"totalCount"`
+	RequestID    string `json:"requestId"`
+	ScannedCount int    `json:"scannedCount"`
+	TotalCount   int    `json:"totalCount"`
 }
 
 func newSemanticSearchState() *semanticSearchState {
@@ -288,6 +286,9 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	); err != nil {
 		return ai.AnalysisOutput{}, err
 	}
+	if c.semanticIndex != nil {
+		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, status.Version, vector)
+	}
 
 	summary, _ := json.Marshal(map[string]any{
 		"dimensions": len(vector),
@@ -352,29 +353,43 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		return nil, err
 	}
 
-	result, err := c.semanticRepo.SearchWithProgress(
-		searchCtx,
-		vector,
-		semanticQueryFromAssetRequest(req, status, 0),
-		semanticSearchPreviewMax,
-		func(progress db.SemanticSearchProgress) {
-			if requestID == "" || c.ctx == nil || searchCtx.Err() != nil {
-				return
+	searchQuery := semanticQueryFromAssetRequest(req, status, 0)
+	var result *db.SemanticSearchResult
+	if c.semanticIndex != nil {
+		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
+			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
+				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
-			preview, previewErr := c.semanticHitsToAssets(progress.Hits, progress.TotalCount, "")
-			if previewErr != nil {
-				return
-			}
-			runtime.EventsEmit(c.ctx, "semantic-search:progress", SemanticSearchProgressDTO{
-				RequestID:    requestID,
-				Assets:       preview.Assets,
-				ScannedCount: progress.ScannedCount,
-				TotalCount:   progress.TotalCount,
-			})
-		},
-	)
-	if err != nil {
-		return nil, err
+		}
+		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(searchCtx, searchQuery)
+		if err != nil {
+			return nil, err
+		}
+		result, err = c.semanticIndex.Search(
+			searchCtx,
+			vector,
+			eligibleIDs,
+			searchQuery.Offset,
+			searchQuery.Limit,
+			func(scanned, total int) {
+				if requestID == "" || c.ctx == nil || searchCtx.Err() != nil {
+					return
+				}
+				runtime.EventsEmit(c.ctx, "semantic-search:progress", SemanticSearchProgressDTO{
+					RequestID:    requestID,
+					ScannedCount: scanned,
+					TotalCount:   total,
+				})
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		result, err = c.semanticRepo.SearchWithProgress(searchCtx, vector, searchQuery, 0, nil)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sessionID := c.semanticSearchState.store(result.RankedHits, result.TotalCount)
