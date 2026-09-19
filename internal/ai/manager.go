@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -17,6 +18,7 @@ var (
 
 type runtimeSession struct {
 	opMu     sync.Mutex
+	closing  bool
 	engine   Engine
 	model    InstalledModel
 	options  LoadOptions
@@ -196,6 +198,28 @@ func (m *Manager) Load(
 	return nil
 }
 
+func lockRuntimeSession(ctx context.Context, session *runtimeSession) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if session.opMu.TryLock() {
+		return nil
+	}
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if session.opMu.TryLock() {
+				return nil
+			}
+		}
+	}
+}
+
 func (m *Manager) Infer(
 	ctx context.Context,
 	capability domain.AICapability,
@@ -210,23 +234,36 @@ func (m *Manager) Infer(
 		return InferenceResponse{}, ErrCapabilityDisabled
 	}
 
+	// Never wait for the per-runtime operation lock while holding Manager.mu.
+	// Doing so deadlocks when the currently-running inference needs Manager.mu
+	// to publish its result before it can release opMu.
 	m.mu.Lock()
 	session := m.sessions[capability]
-	if session == nil {
+	if session == nil || session.closing {
 		m.mu.Unlock()
 		return InferenceResponse{}, ErrRuntimeNotLoaded
 	}
-	// Acquire the per-session operation lock before releasing the manager lock.
-	// Unload first removes the session from the manager, then waits for this
-	// lock, so an in-flight inference always completes before engine teardown.
-	session.opMu.Lock()
+	m.mu.Unlock()
+
+	if err := lockRuntimeSession(ctx, session); err != nil {
+		return InferenceResponse{}, fmt.Errorf("wait for %s runtime: %w", capability, err)
+	}
+	defer session.opMu.Unlock()
+
+	// Unload may have won the race between taking the session pointer and
+	// acquiring opMu. Revalidate ownership before invoking the engine.
+	m.mu.Lock()
+	if current := m.sessions[capability]; current != session || session.closing {
+		m.mu.Unlock()
+		return InferenceResponse{}, ErrRuntimeNotLoaded
+	}
 	session.state = RuntimeStateRunning
 	m.mu.Unlock()
 
 	response, inferErr := session.engine.Infer(ctx, request)
 
 	m.mu.Lock()
-	if current := m.sessions[capability]; current == session {
+	if current := m.sessions[capability]; current == session && !session.closing {
 		if inferErr != nil {
 			session.state = RuntimeStateError
 			session.lastErr = inferErr.Error()
@@ -236,7 +273,6 @@ func (m *Manager) Infer(
 		}
 	}
 	m.mu.Unlock()
-	session.opMu.Unlock()
 
 	if inferErr != nil {
 		return InferenceResponse{}, inferErr
@@ -257,11 +293,29 @@ func (m *Manager) unloadLocked(ctx context.Context, capability domain.AICapabili
 		m.mu.Unlock()
 		return nil
 	}
-	delete(m.sessions, capability)
+	if session.closing {
+		m.mu.Unlock()
+		return nil
+	}
+	session.closing = true
 	m.mu.Unlock()
 
-	session.opMu.Lock()
+	if err := lockRuntimeSession(ctx, session); err != nil {
+		m.mu.Lock()
+		if current := m.sessions[capability]; current == session {
+			session.closing = false
+		}
+		m.mu.Unlock()
+		return fmt.Errorf("wait to unload engine %s: %w", session.engine.ID(), err)
+	}
 	defer session.opMu.Unlock()
+
+	m.mu.Lock()
+	if current := m.sessions[capability]; current == session {
+		delete(m.sessions, capability)
+	}
+	m.mu.Unlock()
+
 	if err := session.engine.Unload(ctx); err != nil {
 		return fmt.Errorf("unload engine %s: %w", session.engine.ID(), err)
 	}
