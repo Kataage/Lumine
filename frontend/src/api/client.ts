@@ -227,6 +227,11 @@ export interface AIStorageInfo {
   legacyPath?: string;
   legacyDetected: boolean;
   usingLegacy: boolean;
+  migrationAvailable: boolean;
+  migrationPending: boolean;
+  migrationSourcePath?: string;
+  migrationTargetPath?: string;
+  migrationRequiresRestart: boolean;
 }
 
 export interface SemanticModelInfo {
@@ -808,6 +813,14 @@ export async function getAIHealthSnapshot(): Promise<AIHealthSnapshot> {
 
 export async function getAIStorageInfo(): Promise<AIStorageInfo> {
   return Go.GetAIStorageInfo();
+}
+
+export async function requestLegacyStorageMigration(): Promise<AIStorageInfo> {
+  return Go.RequestLegacyStorageMigration();
+}
+
+export async function cancelLegacyStorageMigration(): Promise<AIStorageInfo> {
+  return Go.CancelLegacyStorageMigration();
 }
 
 export async function setAISettings(settings: AISettings): Promise<AISettings> {
