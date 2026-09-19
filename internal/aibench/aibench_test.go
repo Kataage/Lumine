@@ -243,6 +243,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		t.Fatalf("repository lightweight vision catalog: %v", err)
 	}
 
+	var advancedCatalog Catalog
+	readJSONForTest(t, filepath.Join(root, "catalogs", "advanced-vision-v1.json"), &advancedCatalog)
+	if err := ValidateCatalog(advancedCatalog); err != nil {
+		t.Fatalf("repository advanced vision catalog: %v", err)
+	}
+
 	var thresholds Thresholds
 	readJSONForTest(t, filepath.Join(root, "thresholds.json"), &thresholds)
 	if err := ValidateThresholds(thresholds); err != nil {
@@ -261,6 +267,10 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"pixai-tagger-v0.9.json",
 		"florence-2-base.json",
 		"smolvlm-500m-q8.json",
+		"advanced-qwen3-vl-2b-q4.json",
+		"advanced-qwen3-vl-2b-abliterated-q4.json",
+		"advanced-internvl3.5-2b-q4.json",
+		"advanced-smolvlm2-2.2b-q4.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)
