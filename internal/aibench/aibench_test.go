@@ -300,6 +300,7 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"advanced-internvl3.5-2b-q4.json",
 		"advanced-smolvlm2-2.2b-q4.json",
 		"advanced-minicpm-v4.6-q4.json",
+		"advanced-granite-vision-4.1-4b-q4.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)
