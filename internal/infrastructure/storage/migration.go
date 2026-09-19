@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 )
 
@@ -337,7 +339,14 @@ func samePath(a, b string) bool {
 	absA, errA := filepath.Abs(a)
 	absB, errB := filepath.Abs(b)
 	if errA != nil || errB != nil {
-		return filepath.Clean(a) == filepath.Clean(b)
+		absA = filepath.Clean(a)
+		absB = filepath.Clean(b)
+	} else {
+		absA = filepath.Clean(absA)
+		absB = filepath.Clean(absB)
 	}
-	return filepath.Clean(absA) == filepath.Clean(absB)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(absA, absB)
+	}
+	return absA == absB
 }
