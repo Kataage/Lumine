@@ -28,6 +28,7 @@ func TestAIStorageInfoReflectsResolvedLayoutAndMigrationState(t *testing.T) {
 		ModelsDir:         filepath.Join(legacy, "models"),
 		RuntimesDir:       filepath.Join(legacy, "runtimes"),
 		SemanticIndexDir:  filepath.Join(legacy, "semantic-index"),
+		WebviewDataDir:    filepath.Join(legacy, "webview2"),
 		PreferredRootDir:  target,
 		LegacyRootDir:     legacy,
 		LegacyDetected:    true,
@@ -38,6 +39,9 @@ func TestAIStorageInfoReflectsResolvedLayoutAndMigrationState(t *testing.T) {
 	info := cmd.GetAIStorageInfo()
 	if info.Mode != "installed" || info.RootPath != legacy || info.DatabasePath != filepath.Join(legacy, "lumine.db") {
 		t.Fatalf("unexpected storage info: %+v", info)
+	}
+	if info.WebviewDataPath != filepath.Join(legacy, "webview2") {
+		t.Fatalf("WebView2 storage path = %q", info.WebviewDataPath)
 	}
 	if !info.UsingLegacy || !info.MigrationAvailable || info.MigrationPending {
 		t.Fatalf("unexpected initial migration state: %+v", info)
