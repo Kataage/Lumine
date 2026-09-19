@@ -121,6 +121,8 @@ export namespace commands {
 	    elapsedMs: number;
 	    updatedAgoMs: number;
 	    modelId?: string;
+	    persistent: boolean;
+	    overlayCount: number;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -136,6 +138,8 @@ export namespace commands {
 	        this.elapsedMs = source["elapsedMs"];
 	        this.updatedAgoMs = source["updatedAgoMs"];
 	        this.modelId = source["modelId"];
+	        this.persistent = source["persistent"];
+	        this.overlayCount = source["overlayCount"];
 	        this.error = source["error"];
 	    }
 	}

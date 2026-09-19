@@ -131,6 +131,7 @@ func main() {
 		db.NewJobLogRepo(database),
 	)
 	cmd := commands.New(database, scanSvc)
+	commands.ConfigureSemanticIndexRoot(cmd, filepath.Join(appDir, "semantic-index"))
 	aiManager := ai.NewManager(filepath.Join(appDir, "models"), cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
 	if err := aiManager.RegisterEngine(siglip2.EngineID, siglip2.NewEngine); err != nil {

@@ -31,6 +31,8 @@ export interface SemanticIndexStatus {
   elapsedMs: number;
   updatedAgoMs: number;
   modelId?: string;
+  persistent: boolean;
+  overlayCount: number;
   error?: string;
 }
 

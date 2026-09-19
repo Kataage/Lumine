@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -34,6 +35,8 @@ type SemanticIndexStatus struct {
 	ElapsedMs    int64  `json:"elapsedMs"`
 	UpdatedAgoMs int64  `json:"updatedAgoMs"`
 	ModelID      string `json:"modelId,omitempty"`
+	Persistent   bool   `json:"persistent"`
+	OverlayCount int    `json:"overlayCount"`
 	Error        string `json:"error,omitempty"`
 }
 
@@ -44,6 +47,16 @@ type semanticMemoryIndex struct {
 	positions  map[int64]int
 	data       []float32
 	dimensions int
+
+	storageRoot    string
+	mapped         []byte
+	unmap          func() error
+	mappedReadOnly bool
+	overlay        map[int64][]float32
+	overlayExtra   int
+	persistEpoch    uint64
+	persistWorker   bool
+	persistDebounce time.Duration
 
 	ready      bool
 	warming    bool
@@ -63,8 +76,58 @@ type semanticMemoryIndex struct {
 func newSemanticMemoryIndex() *semanticMemoryIndex {
 	return &semanticMemoryIndex{
 		positions: make(map[int64]int),
-		pending:   make(map[int64][]float32),
-		stage:     "idle",
+		overlay:         make(map[int64][]float32),
+		pending:         make(map[int64][]float32),
+		persistDebounce: 2 * time.Second,
+		stage:           "idle",
+	}
+}
+
+func (i *semanticMemoryIndex) SetStorageRoot(root string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.storageRoot = root
+}
+
+func (i *semanticMemoryIndex) releaseMappingLocked() {
+	i.data = nil
+	i.mappedReadOnly = false
+	i.mapped = nil
+	if i.unmap != nil {
+		_ = i.unmap()
+		i.unmap = nil
+	}
+}
+
+func (i *semanticMemoryIndex) loadedCountLocked() int {
+	return len(i.positions) + i.overlayExtra
+}
+
+func (i *semanticMemoryIndex) adoptSnapshotLocked(
+	snapshot *semanticPersistentSnapshot,
+	preserveOverlay bool,
+) {
+	previousOverlay := i.overlay
+	i.releaseMappingLocked()
+	i.positions = snapshot.positions
+	i.data = snapshot.data
+	i.dimensions = snapshot.dimensions
+	i.mapped = snapshot.mapped
+	i.unmap = snapshot.unmap
+	i.mappedReadOnly = true
+	snapshot.mapped = nil
+	snapshot.unmap = nil
+
+	if preserveOverlay {
+		i.overlay = previousOverlay
+	} else {
+		i.overlay = make(map[int64][]float32)
+	}
+	i.overlayExtra = 0
+	for assetID := range i.overlay {
+		if _, exists := i.positions[assetID]; !exists {
+			i.overlayExtra++
+		}
 	}
 }
 
@@ -140,6 +203,8 @@ func (i *semanticMemoryIndex) Status() SemanticIndexStatus {
 		ElapsedMs:    elapsedMs,
 		UpdatedAgoMs: updatedAgoMs,
 		ModelID:      i.key.modelID,
+		Persistent:   i.mappedReadOnly,
+		OverlayCount: len(i.overlay),
 	}
 	if i.lastErr != nil {
 		status.Error = i.lastErr.Error()
@@ -172,12 +237,15 @@ func (i *semanticMemoryIndex) Prepare(engine, modelID, version string) {
 	// Semantic Search currently has one active model. Selecting the model
 	// synchronously before background warm/backfill prevents early completed
 	// embeddings from being dropped before Warm gets CPU time.
+	i.releaseMappingLocked()
 	i.key = key
 	i.ready = false
 	i.stage = "idle"
 	i.positions = make(map[int64]int)
 	i.data = nil
 	i.dimensions = 0
+	i.overlay = make(map[int64][]float32)
+	i.overlayExtra = 0
 	i.pending = make(map[int64][]float32)
 	i.lastErr = nil
 	i.loaded = 0
@@ -218,18 +286,20 @@ func (i *semanticMemoryIndex) Upsert(
 	if len(normalized) != i.dimensions {
 		return
 	}
-	if position, ok := i.positions[assetID]; ok {
-		start := position * i.dimensions
-		copy(i.data[start:start+i.dimensions], normalized)
-	} else {
-		position := len(i.positions)
-		i.positions[assetID] = position
-		i.data = append(i.data, normalized...)
+	if i.overlay == nil {
+		i.overlay = make(map[int64][]float32)
 	}
-	i.loaded = len(i.positions)
+	if _, alreadyOverlay := i.overlay[assetID]; !alreadyOverlay {
+		if _, inBase := i.positions[assetID]; !inBase {
+			i.overlayExtra++
+		}
+	}
+	i.overlay[assetID] = normalized
+	i.loaded = i.loadedCountLocked()
 	if i.total < i.loaded {
 		i.total = i.loaded
 	}
+	i.persistEpoch++
 	i.updatedAt = time.Now()
 }
 
@@ -285,29 +355,99 @@ func (i *semanticMemoryIndex) Warm(
 		i.ready = false
 		i.warming = true
 		i.lastErr = nil
+		i.releaseMappingLocked()
 		i.positions = make(map[int64]int)
 		i.data = nil
 		i.dimensions = 0
+		i.overlay = make(map[int64][]float32)
+		i.overlayExtra = 0
 		i.wait = make(chan struct{})
 		i.startedAt = time.Now()
 		i.finishedAt = time.Time{}
 		i.setProgressLocked("counting", 0, 0)
 		wait := i.wait
-		generation := i.generation
+		indexGeneration := i.generation
 		i.mu.Unlock()
 
 		slog.Info("semantic index warm started", "model", modelID)
 
+		if dbGeneration, generationErr := repo.SemanticIndexGeneration(ctx); generationErr == nil {
+			snapshot, snapshotErr := openSemanticPersistentSnapshot(i.storageRoot, key, dbGeneration)
+			if snapshotErr == nil {
+				i.mu.Lock()
+				if i.generation != indexGeneration || i.key != key || i.wait != wait {
+					i.mu.Unlock()
+					if snapshot.unmap != nil {
+						_ = snapshot.unmap()
+					}
+					return errSemanticIndexSuperseded
+				}
+				i.adoptSnapshotLocked(snapshot, true)
+				for assetID, vector := range i.pending {
+					if len(vector) != i.dimensions {
+						continue
+					}
+					if _, alreadyOverlay := i.overlay[assetID]; !alreadyOverlay {
+						if _, inBase := i.positions[assetID]; !inBase {
+							i.overlayExtra++
+						}
+					}
+					i.overlay[assetID] = vector
+				}
+				i.pending = make(map[int64][]float32)
+				i.ready = true
+				i.lastErr = nil
+				i.finishedAt = time.Now()
+				i.setProgressLocked("ready", i.loadedCountLocked(), i.loadedCountLocked())
+				i.warming = false
+				close(wait)
+				i.wait = nil
+				count := i.loadedCountLocked()
+				dimensions := i.dimensions
+				keepPath := snapshot.path
+				i.mu.Unlock()
+				cleanupSemanticSnapshots(i.storageRoot, key, keepPath)
+				slog.Info("semantic persistent index opened",
+					"model", modelID,
+					"vectors", count,
+					"dimensions", dimensions,
+				)
+				return nil
+			}
+			if errors.Is(snapshotErr, errSemanticSnapshotCorrupt) {
+				slog.Warn("semantic persistent index corrupt; rebuilding", "error", snapshotErr)
+				_ = os.Remove(semanticSnapshotPath(i.storageRoot, key, dbGeneration))
+			} else if !errors.Is(snapshotErr, errSemanticSnapshotUnavailable) &&
+				!errors.Is(snapshotErr, errSemanticSnapshotStale) {
+				slog.Warn("semantic persistent index open failed; rebuilding", "error", snapshotErr)
+			}
+		} else {
+			slog.Warn("semantic index generation unavailable; rebuilding from SQLite", "error", generationErr)
+		}
+
+		i.mu.Lock()
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
+			i.mu.Unlock()
+			return errSemanticIndexSuperseded
+		}
+		i.releaseMappingLocked()
+		i.positions = make(map[int64]int)
+		i.data = nil
+		i.dimensions = 0
+		i.overlay = make(map[int64][]float32)
+		i.overlayExtra = 0
+		i.mu.Unlock()
+
 		total, err := repo.CountReadyEmbeddings(ctx, engine, modelID, version)
 		if err != nil {
-			if !i.finishWarm(wait, key, generation, err) {
+			if !i.finishWarm(wait, key, indexGeneration, err) {
 				return errSemanticIndexSuperseded
 			}
 			return err
 		}
 
 		i.mu.Lock()
-		if i.generation != generation || i.key != key || i.wait != wait {
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
 			i.mu.Unlock()
 			return errSemanticIndexSuperseded
 		}
@@ -321,7 +461,7 @@ func (i *semanticMemoryIndex) Warm(
 		err = repo.WalkReadyEmbeddingBlobs(ctx, engine, modelID, version, func(assetID int64, dimensions int, blob []byte) error {
 			i.mu.Lock()
 			defer i.mu.Unlock()
-			if i.generation != generation || i.key != key || i.wait != wait {
+			if i.generation != indexGeneration || i.key != key || i.wait != wait {
 				return errSemanticIndexSuperseded
 			}
 
@@ -370,7 +510,7 @@ func (i *semanticMemoryIndex) Warm(
 		})
 
 		i.mu.Lock()
-		if i.generation != generation || i.key != key || i.wait != wait {
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
 			i.mu.Unlock()
 			return errSemanticIndexSuperseded
 		}
@@ -476,6 +616,16 @@ func (i *semanticMemoryIndex) Search(
 	if !i.ready {
 		return nil, errSemanticIndexNotReady
 	}
+	if len(eligibleIDs) == 0 || i.loadedCountLocked() == 0 {
+		if onProgress != nil {
+			onProgress(0, 0)
+		}
+		return &db.SemanticSearchResult{
+			Hits:       []domain.SemanticSearchHit{},
+			TotalCount: 0,
+			RankedHits: []domain.SemanticSearchHit{},
+		}, nil
+	}
 	if i.dimensions == 0 || len(needle) != i.dimensions {
 		return nil, fmt.Errorf("semantic query dimensions %d do not match index dimensions %d", len(needle), i.dimensions)
 	}
@@ -490,12 +640,18 @@ func (i *semanticMemoryIndex) Search(
 			default:
 			}
 		}
-		position, ok := i.positions[assetID]
-		if !ok {
-			continue
+		candidate, overlayHit := i.overlay[assetID]
+		if !overlayHit {
+			position, ok := i.positions[assetID]
+			if !ok {
+				continue
+			}
+			start := position * i.dimensions
+			candidate = i.data[start : start+i.dimensions]
 		}
-		start := position * i.dimensions
-		candidate := i.data[start : start+i.dimensions]
+		if len(candidate) != i.dimensions {
+			return nil, errSemanticSnapshotCorrupt
+		}
 		var score float32
 		for dimension, queryValue := range needle {
 			score += queryValue * candidate[dimension]
@@ -537,7 +693,141 @@ func (i *semanticMemoryIndex) Search(
 func (i *semanticMemoryIndex) Stats() (ready bool, count int, key string) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.ready, len(i.positions), fmt.Sprintf("%s/%s/%s", i.key.engine, i.key.modelID, i.key.version)
+	return i.ready, i.loadedCountLocked(), fmt.Sprintf("%s/%s/%s", i.key.engine, i.key.modelID, i.key.version)
+}
+
+// ConfigureSemanticIndexRoot configures internal persistent-index storage.
+// It is intentionally a package function rather than an AppCommands method so
+// Wails does not expose filesystem configuration to the frontend bridge.
+func ConfigureSemanticIndexRoot(c *AppCommands, root string) {
+	if c != nil && c.semanticIndex != nil {
+		c.semanticIndex.SetStorageRoot(root)
+	}
+}
+
+func (i *semanticMemoryIndex) cancelPersistWorkerStart() {
+	i.mu.Lock()
+	i.persistWorker = false
+	i.mu.Unlock()
+}
+
+func (i *semanticMemoryIndex) MarkPersistDirty(engine, modelID, version string) bool {
+	key := semanticKey(engine, modelID, version)
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.storageRoot == "" || i.key != key {
+		return false
+	}
+	if i.ready && i.mappedReadOnly && len(i.overlay) == 0 {
+		return false
+	}
+	i.persistEpoch++
+	if i.persistWorker {
+		return false
+	}
+	i.persistWorker = true
+	return true
+}
+
+func (i *semanticMemoryIndex) PersistWhenStable(
+	ctx context.Context,
+	repo *db.SemanticEmbeddingRepo,
+	engine string,
+	modelID string,
+	version string,
+) error {
+	key := semanticKey(engine, modelID, version)
+	defer func() {
+		i.mu.Lock()
+		i.persistWorker = false
+		i.mu.Unlock()
+	}()
+
+	for {
+		i.mu.RLock()
+		if i.key != key || i.storageRoot == "" {
+			i.mu.RUnlock()
+			return nil
+		}
+		epoch := i.persistEpoch
+		ready := i.ready
+		i.mu.RUnlock()
+		if !ready {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+				continue
+			}
+		}
+
+		debounce := i.persistDebounce
+		if debounce <= 0 {
+			debounce = 2 * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(debounce):
+		}
+
+		i.mu.RLock()
+		changed := i.key != key || i.persistEpoch != epoch
+		i.mu.RUnlock()
+		if changed {
+			continue
+		}
+
+		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key)
+		if errors.Is(err, errSemanticSnapshotGenerationChanged) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		i.mu.Lock()
+		if i.key != key {
+			i.mu.Unlock()
+			if snapshot.unmap != nil {
+				_ = snapshot.unmap()
+			}
+			return nil
+		}
+		// Keep the overlay even after a successful snapshot. It is small in the
+		// normal case and guarantees that a completion racing the final DB
+		// generation read cannot disappear from the current process.
+		i.adoptSnapshotLocked(snapshot, true)
+		epochStable := i.persistEpoch == epoch
+		if epochStable {
+			// An embedding can be written just before its analysis row becomes
+			// ready. Only drop overlay entries that the new snapshot actually
+			// contains; missing entries keep the worker alive until the ready
+			// transition advances DB generation and the next snapshot includes
+			// them.
+			for assetID := range i.overlay {
+				if _, represented := i.positions[assetID]; represented {
+					delete(i.overlay, assetID)
+				}
+			}
+			i.overlayExtra = 0
+			for assetID := range i.overlay {
+				if _, represented := i.positions[assetID]; !represented {
+					i.overlayExtra++
+				}
+			}
+		}
+		i.loaded = i.loadedCountLocked()
+		i.total = i.loaded
+		i.updatedAt = time.Now()
+		stable := epochStable && len(i.overlay) == 0
+		keepPath := snapshot.path
+		i.mu.Unlock()
+		cleanupSemanticSnapshots(i.storageRoot, key, keepPath)
+		if stable {
+			return nil
+		}
+	}
 }
 
 func (c *AppCommands) GetSemanticIndexStatus() SemanticIndexStatus {

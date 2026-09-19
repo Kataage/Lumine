@@ -95,5 +95,14 @@ jobs:
       - name: Semantic search perf smoke
         run: go test ./internal/commands -run=^NO_TESTS$ -bench=^BenchmarkSemanticMemoryIndexSearch20K$ -benchtime=1x -benchmem
 
+      - name: Persistent semantic index open smoke
+        run: go test ./internal/commands -run=^NO_TESTS$ -bench=^BenchmarkSemanticPersistentSnapshotOpen20K$ -benchtime=1x -benchmem
+
+      - name: Semantic search 100k perf sample
+        run: go test ./internal/commands -run=^NO_TESTS$ -bench=^BenchmarkSemanticMemoryIndexSearch100K$ -benchtime=1x -benchmem
+
+      - name: Persistent semantic index 100k open sample
+        run: go test ./internal/commands -run=^NO_TESTS$ -bench=^BenchmarkSemanticPersistentSnapshotOpen100K$ -benchtime=1x -benchmem
+
       - name: Validate AI benchmark Python tooling
         run: python3 -m py_compile benchmarks/ai/adapters/tagger_onnx.py benchmarks/ai/adapters/tagger_report.py benchmarks/ai/adapters/vision_common.py benchmarks/ai/adapters/lightvision_florence.py benchmarks/ai/adapters/lightvision_smolvlm.py benchmarks/ai/adapters/lightvision_report.py benchmarks/ai/adapters/advancedvision_common.py benchmarks/ai/adapters/advancedvision_llamacpp.py benchmarks/ai/adapters/advancedvision_report.py benchmarks/ai/adapters/prompt_common.py benchmarks/ai/adapters/prompt_llamacpp.py benchmarks/ai/adapters/prompt_report.py

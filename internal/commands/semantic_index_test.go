@@ -19,6 +19,37 @@ func readySemanticIndex(vectors map[int64][]float32) *semanticMemoryIndex {
 	return index
 }
 
+func TestSemanticMemoryIndexSearchEmptyReadyIndexReturnsEmptyResult(t *testing.T) {
+	index := newSemanticMemoryIndex()
+	index.key = semanticKey("engine", "model", "1")
+	index.ready = true
+	index.stage = "ready"
+
+	progressCalled := false
+	result, err := index.Search(
+		context.Background(),
+		[]float32{1, 0},
+		nil,
+		0,
+		10,
+		func(scanned, total int) {
+			progressCalled = true
+			if scanned != 0 || total != 0 {
+				t.Fatalf("empty progress = %d/%d, want 0/0", scanned, total)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("empty ready index search: %v", err)
+	}
+	if result.TotalCount != 0 || len(result.Hits) != 0 || len(result.RankedHits) != 0 {
+		t.Fatalf("unexpected empty result: %+v", result)
+	}
+	if !progressCalled {
+		t.Fatal("empty search did not emit completion progress")
+	}
+}
+
 func TestSemanticMemoryIndexSearchPreservesExactRanking(t *testing.T) {
 	index := readySemanticIndex(map[int64][]float32{
 		1: {1, 0},
@@ -99,21 +130,25 @@ func TestSemanticMemoryIndexUpsertUpdatesReadyIndex(t *testing.T) {
 	}
 }
 
-func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
-	const (
-		count = 20_000
-		dims  = 768
-	)
-	vectors := make(map[int64][]float32, count)
+func benchmarkSemanticMemoryIndexSearch(b *testing.B, count int) {
+	const dims = 768
+	index := newSemanticMemoryIndex()
+	index.key = semanticKey("engine", "model", "1")
+	index.ready = true
+	index.stage = "ready"
+	index.dimensions = dims
+	index.positions = make(map[int64]int, count)
+	index.data = make([]float32, count*dims)
+	index.loaded = count
+	index.total = count
+
 	eligible := make([]int64, count)
 	for asset := 0; asset < count; asset++ {
-		vector := make([]float32, dims)
-		vector[asset%dims] = 1
 		id := int64(asset + 1)
-		vectors[id] = vector
+		index.positions[id] = asset
+		index.data[asset*dims+(asset%dims)] = 1
 		eligible[asset] = id
 	}
-	index := readySemanticIndex(vectors)
 	query := make([]float32, dims)
 	query[0] = 1
 
@@ -128,6 +163,14 @@ func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
 			b.Fatal(fmt.Sprintf("hits = %d", len(result.Hits)))
 		}
 	}
+}
+
+func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
+	benchmarkSemanticMemoryIndexSearch(b, 20_000)
+}
+
+func BenchmarkSemanticMemoryIndexSearch100K(b *testing.B) {
+	benchmarkSemanticMemoryIndexSearch(b, 100_000)
 }
 
 

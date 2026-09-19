@@ -531,7 +531,9 @@ function SemanticSearchProgressOverlay({
     detail = [
       `応答待ち ${formatSearchElapsed(waitingMs)}`,
       queue ? `AI queue: ${queue.started ? "started" : "stopped"} / active ${queue.activeCount}` : "",
-      indexStatus ? `index: ${indexStatus.state}` : "",
+      indexStatus
+        ? `index: ${indexStatus.state}${indexStatus.persistent ? " (mmap)" : ""}${indexStatus.overlayCount > 0 ? ` + overlay ${indexStatus.overlayCount}` : ""}`
+        : "",
     ].filter(Boolean).join(" · ");
   } else if (warming && indexStatus) {
     elapsedMs = indexStatus.elapsedMs;
@@ -555,6 +557,12 @@ function SemanticSearchProgressOverlay({
     } else if (indexStatus.state === "error") {
       label = "検索インデックスの準備に失敗しました";
       detail = indexStatus.error ?? "原因不明のエラー";
+    } else if (indexStatus.state === "ready" && indexStatus.persistent) {
+      label = "永続検索インデックスを開きました";
+      detail = [
+        `${indexStatus.loadedCount.toLocaleString()}件 · mmap exact index`,
+        indexStatus.overlayCount > 0 ? `未compact差分 ${indexStatus.overlayCount.toLocaleString()}件` : "",
+      ].filter(Boolean).join(" · ");
     } else {
       label = "検索インデックスを準備しています";
     }
@@ -573,7 +581,13 @@ function SemanticSearchProgressOverlay({
         completed = current?.scanned ?? 0;
         total = current?.total ?? 0;
         detail = total > 0
-          ? `${completed.toLocaleString()} / ${total.toLocaleString()}件 · exact検索`
+          ? [
+              `${completed.toLocaleString()} / ${total.toLocaleString()}件`,
+              indexStatus?.persistent ? "mmap exact検索" : "RAM exact検索",
+              (indexStatus?.overlayCount ?? 0) > 0
+                ? `overlay ${indexStatus!.overlayCount.toLocaleString()}件`
+                : "",
+            ].filter(Boolean).join(" · ")
           : "検索対象を準備中";
         break;
       case "formatting":

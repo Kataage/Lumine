@@ -282,6 +282,77 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingContext(
 	return ids, nil
 }
 
+
+
+type SemanticIndexSnapshotInfo struct {
+	Generation uint64
+	Count      int
+	Dimensions int
+}
+
+func (r *SemanticEmbeddingRepo) SemanticIndexGeneration(ctx context.Context) (uint64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var generation uint64
+	if err := r.db.QueryRowContext(
+		ctx,
+		"SELECT generation FROM ai_semantic_index_generation WHERE id = 1",
+	).Scan(&generation); err != nil {
+		return 0, fmt.Errorf("read semantic index generation: %w", err)
+	}
+	return generation, nil
+}
+
+func (r *SemanticEmbeddingRepo) ReadyEmbeddingSnapshotInfo(
+	ctx context.Context,
+	engine string,
+	modelID string,
+	modelVersion string,
+) (SemanticIndexSnapshotInfo, error) {
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return SemanticIndexSnapshotInfo{}, errors.New("semantic embedding provenance is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	generation, err := r.SemanticIndexGeneration(ctx)
+	if err != nil {
+		return SemanticIndexSnapshotInfo{}, err
+	}
+
+	var count int
+	var minDimensions, maxDimensions sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*), MIN(e.dimensions), MAX(e.dimensions)
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa
+		  ON aa.asset_id = e.asset_id
+		 AND aa.capability = 'semantic_search'
+		 AND aa.state = 'ready'
+		 AND aa.engine = e.engine
+		 AND aa.model_id = e.model_id
+		 AND aa.model_version = e.model_version
+		WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
+	`, engine, modelID, modelVersion).Scan(&count, &minDimensions, &maxDimensions); err != nil {
+		return SemanticIndexSnapshotInfo{}, fmt.Errorf("read semantic snapshot info: %w", err)
+	}
+
+	dimensions := 0
+	if count > 0 {
+		if !minDimensions.Valid || !maxDimensions.Valid || minDimensions.Int64 <= 0 || minDimensions.Int64 != maxDimensions.Int64 {
+			return SemanticIndexSnapshotInfo{}, ErrSemanticVectorInvalid
+		}
+		dimensions = int(minDimensions.Int64)
+	}
+	return SemanticIndexSnapshotInfo{
+		Generation: generation,
+		Count:      count,
+		Dimensions: dimensions,
+	}, nil
+}
+
 func (r *SemanticEmbeddingRepo) CountReadyEmbeddings(
 	ctx context.Context,
 	engine string,

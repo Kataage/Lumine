@@ -132,6 +132,28 @@ func (c *AppCommands) RestoreDefaultSemanticModel() error {
 	return c.loadDefaultSemanticModel(ctx, settings)
 }
 
+func (c *AppCommands) scheduleSemanticIndexPersist(engine, modelID, version string) {
+	if c.semanticIndex == nil || c.semanticRepo == nil {
+		return
+	}
+	if !c.semanticIndex.MarkPersistDirty(engine, modelID, version) {
+		return
+	}
+	if !c.startBackgroundTask(func(persistCtx context.Context) {
+		if err := c.semanticIndex.PersistWhenStable(
+			persistCtx,
+			c.semanticRepo,
+			engine,
+			modelID,
+			version,
+		); err != nil && persistCtx.Err() == nil {
+			slog.Warn("semantic persistent index save failed", "error", err)
+		}
+	}) {
+		c.semanticIndex.cancelPersistWorkerStart()
+	}
+}
+
 func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings domain.AISettings) error {
 	manifest := siglip2.DefaultManifest()
 	if err := c.aiManager.Load(
@@ -153,6 +175,9 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 				// not depend on a cache warm succeeding.
 				slog.Warn("semantic index warm failed", "error", err)
 				return
+			}
+			if warmCtx.Err() == nil {
+				c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
 			}
 		})
 	}
