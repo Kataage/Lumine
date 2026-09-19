@@ -276,9 +276,17 @@ export function AISettingsPanel() {
 
   useEffect(() => {
     const offSettingsChanged = EventsOn("ai:settings-changed", () => {
-      void getAISettings()
-        .then((next) => {
+      void Promise.all([
+        getAISettings(),
+        getDefaultSemanticModelInfo().catch(() => null),
+        getAdvancedVisionStatus().catch(() => null),
+        getPromptEngineStatus().catch(() => null),
+      ])
+        .then(([next, semantic, advanced, prompt]) => {
           setSettings(next);
+          setSemanticModel(semantic);
+          setAdvancedStatus(advanced);
+          setPromptStatus(prompt);
           setSettingsLoaded(true);
           setSettingsError(null);
           setError(null);
