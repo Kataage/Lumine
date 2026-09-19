@@ -112,9 +112,19 @@ func (h *localFileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	slog.Info("starting Lumine")
 
-	storageLayout, err := storage.Resolve(storage.ResolveOptions{Mode: distributionMode})
+	storageOptions := storage.ResolveOptions{Mode: distributionMode}
+	storageLayout, err := storage.Resolve(storageOptions)
 	if err != nil {
 		log.Fatal("failed to resolve Lumine storage:", err)
+	}
+	if migrated, migrationErr := storage.ApplyPendingLegacyCopy(storageLayout); migrationErr != nil {
+		slog.Error("scheduled Lumine storage migration failed; continuing with current storage", "error", migrationErr)
+	} else if migrated {
+		storageLayout, err = storage.Resolve(storageOptions)
+		if err != nil {
+			log.Fatal("failed to resolve migrated Lumine storage:", err)
+		}
+		slog.Info("scheduled Lumine storage migration completed", "root", storageLayout.RootDir)
 	}
 	if err := storage.Prepare(storageLayout); err != nil {
 		log.Fatal("failed to prepare Lumine storage:", err)
