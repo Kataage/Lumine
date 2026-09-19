@@ -14,13 +14,14 @@ type ModelFile struct {
 }
 
 type ModelManifest struct {
-	ID          string      `json:"id"`
-	Version     string      `json:"version"`
-	Engine      string      `json:"engine"`
-	DisplayName string      `json:"displayName"`
-	License     string      `json:"license"`
-	SizeBytes   int64       `json:"sizeBytes"`
-	Files       []ModelFile `json:"files"`
+	ID                string            `json:"id"`
+	Version           string            `json:"version"`
+	Engine            string            `json:"engine"`
+	DisplayName       string            `json:"displayName"`
+	License           string            `json:"license"`
+	SizeBytes         int64             `json:"sizeBytes"`
+	Files             []ModelFile       `json:"files"`
+	RuntimeParameters map[string]string `json:"runtimeParameters,omitempty"`
 }
 
 type InstalledModel struct {
