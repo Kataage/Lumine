@@ -43,6 +43,7 @@ const (
 	ortTensorInt64    = uintptr(7)
 
 	siglipEmbeddingSize = 768
+	siglipPoolerOutput  = "pooler_output"
 )
 
 type windowsORT struct {
@@ -188,7 +189,7 @@ func (r *windowsORT) EmbedText(input [siglipTextLength]int64) ([]float32, error)
 		uintptr(len(input))*unsafe.Sizeof(input[0]),
 		[]int64{1, siglipTextLength},
 		ortTensorInt64,
-		"pooler_output",
+		siglipPoolerOutput,
 		uintptr(unsafe.Pointer(&output[0])),
 		uintptr(len(output))*unsafe.Sizeof(output[0]),
 		[]int64{1, siglipEmbeddingSize},
@@ -214,7 +215,7 @@ func (r *windowsORT) EmbedImage(input []float32) ([]float32, error) {
 		uintptr(len(input))*unsafe.Sizeof(input[0]),
 		[]int64{1, siglipChannels, siglipImageSize, siglipImageSize},
 		ortTensorFloat,
-		"pooler_output",
+		siglipPoolerOutput,
 		uintptr(unsafe.Pointer(&output[0])),
 		uintptr(len(output))*unsafe.Sizeof(output[0]),
 		[]int64{1, siglipEmbeddingSize},
@@ -280,6 +281,11 @@ func (r *windowsORT) runSingle(
 	inputValues := []uintptr{inputValue}
 	outputValues := []uintptr{outputValue}
 
+	// OrtApi::Run ABI is:
+	// session, run_options, input_names, inputs, input_len,
+	// output_names, output_names_len, outputs.
+	// Keep the count before the output pointer: swapping these two values makes
+	// ORT interpret a pointer as a huge output count and surfaces as "bad allocation".
 	err := r.callStatus(
 		ortFnRun,
 		session,
