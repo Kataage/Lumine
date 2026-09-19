@@ -66,6 +66,9 @@ func TestAITagSuggestionRepoReviewLifecycle(t *testing.T) {
 	} else if acceptedRating != nil {
 		t.Fatalf("rating acceptance must not create a normal tag: %+v", acceptedRating)
 	}
+	if err := repo.Reject(generalID); err == nil {
+		t.Fatal("accepted suggestion must not be changed to rejected")
+	}
 
 	assigned, err := tagRepo.GetByAssetID(assetID)
 	if err != nil {
