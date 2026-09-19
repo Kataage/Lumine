@@ -1,10 +1,10 @@
 {
   "id": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
-  "version": "main",
+  "version": "f01809e437fb3046ae9afd31d684556f9ae5dd46",
   "engine": "llama.cpp-text-cpu",
   "quantization": "Q4_K_M",
-  "artifactSha256": "",
-  "modelSizeBytes": 0,
+  "artifactSha256": "8700b9cb4be2ddf1a6b4a9230f7b9d030aeb923d0528301bc546bb5a74f21cd7",
+  "modelSizeBytes": 2600224384,
   "runtime": "llama.cpp-b10964-cpu-x64",
   "benchmarkCategories": [
     "ja_to_prompt",
@@ -23,10 +23,10 @@
   "parameters": {
     "repoId": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
     "modelFile": "Spark-X2.5-4B-Heretic-jp-Q4_K_M.gguf",
-    "modelSha256": "",
-    "modelSizeBytes": "0",
+    "modelSha256": "8700b9cb4be2ddf1a6b4a9230f7b9d030aeb923d0528301bc546bb5a74f21cd7",
+    "modelSizeBytes": "2600224384",
     "runtimeFamily": "upstream-llamacpp",
-    "pinStatus": "exploratory-only-needs-immutable-revision-and-model-sha256-before-evidence",
+    "pinStatus": "pinned-immutable-hf-revision-and-sha256",
     "threads": "8",
     "context": "8192",
     "maxTokens": "2048",
