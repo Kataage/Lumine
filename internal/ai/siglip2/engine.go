@@ -18,7 +18,7 @@ type ortBackend interface {
 
 type Engine struct {
 	model     ai.InstalledModel
-	tokenizer *unigramTokenizer
+	tokenizer *siglipTokenizer
 	runtime   ortBackend
 }
 
