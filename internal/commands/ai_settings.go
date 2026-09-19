@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -89,23 +90,29 @@ func (c *AppCommands) persistAISettings(settings domain.AISettings) (domain.AISe
 		return domain.AISettings{}, fmt.Errorf("save AI settings: %w", err)
 	}
 
-	if c.aiManager != nil {
-		applyContext := c.ctx
-		if applyContext == nil {
-			applyContext = context.Background()
-		}
-		if err := c.aiManager.ApplySettings(applyContext, settings); err != nil {
-			// The persisted setting is authoritative. Runtime shutdown failures are
-			// surfaced through logs/status but must not roll the user's setting back.
-			slog.Error("failed to apply AI settings to runtime", "error", err)
-		}
-	}
-
+	// Cancel model-backed background jobs first. Their inference contexts then
+	// release runtime operation locks before the manager attempts to unload a
+	// newly-disabled capability.
 	if c.aiJobQueue != nil {
 		if err := c.aiJobQueue.ApplySettings(settings); err != nil {
 			// The persisted setting remains authoritative. Queue shutdown failures
 			// are diagnostic and must not silently restore a disabled feature.
 			slog.Error("failed to apply AI settings to job queue", "error", err)
+		}
+	}
+
+	if c.aiManager != nil {
+		parent := c.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		applyContext, cancel := context.WithTimeout(parent, 10*time.Second)
+		err := c.aiManager.ApplySettings(applyContext, settings)
+		cancel()
+		if err != nil {
+			// The persisted setting is authoritative. Runtime shutdown failures are
+			// surfaced through logs/status but must not roll the user's setting back.
+			slog.Error("failed to apply AI settings to runtime", "error", err)
 		}
 	}
 
