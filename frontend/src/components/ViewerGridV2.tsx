@@ -144,7 +144,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           state.filterTagIds.join(","),
         ].join("|");
         const previous = semanticRequestRef.current;
-        if (previous && previous.key !== key) {
+        if (previous) {
           await cancelSemanticSearch(previous.id).catch(() => undefined);
         }
 
