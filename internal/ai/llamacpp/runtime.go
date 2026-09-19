@@ -158,6 +158,10 @@ func (s *RuntimeStore) Install(
 	if err := s.downloadArchive(ctx, manifest, archivePath, progress); err != nil {
 		return InstalledRuntime{}, err
 	}
+	downloadedTotal := manifest.SizeBytes
+	if info, statErr := os.Stat(archivePath); statErr == nil {
+		downloadedTotal = info.Size()
+	}
 	extractRoot := filepath.Join(staging, "files")
 	if err := extractZipSafely(archivePath, extractRoot); err != nil {
 		return InstalledRuntime{}, fmt.Errorf("extract runtime: %w", err)
@@ -234,8 +238,8 @@ func (s *RuntimeStore) Install(
 		progress(RuntimeDownloadProgress{
 			RuntimeID:       manifest.ID,
 			Version:         manifest.Version,
-			BytesDownloaded: max(manifest.SizeBytes, 0),
-			BytesTotal:      max(manifest.SizeBytes, 0),
+			BytesDownloaded: downloadedTotal,
+			BytesTotal:      downloadedTotal,
 			Done:            true,
 		})
 	}
