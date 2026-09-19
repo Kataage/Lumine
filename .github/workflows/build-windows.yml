@@ -39,42 +39,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Shutdown sidecar smoke
-        run: go test ./internal/ai -run '^TestSidecarStopTerminatesRunningProcess      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
-
-      - name: Build Windows app
-        run: wails build -platform windows/amd64
-        env:
-          CGO_ENABLED: "0"
-
-      - name: Build Windows portable
-        run: wails build -platform windows/amd64 -ldflags "-H windowsgui" -o Lumine-portable.exe
-        env:
-          CGO_ENABLED: "0"
-
-      - name: Upload exe artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lumine-windows
-          path: build/bin/Lumine.exe
-          if-no-files-found: error
-
-      # upload-artifact itself produces the single downloadable ZIP wrapper.
-      # Upload the portable EXE directly so users do not get ZIP-inside-ZIP.
-      - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lumine-windows-portable
-          path: build/bin/Lumine-portable.exe
-          if-no-files-found: error
-
-      - name: Upload full bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: lumine-windows-bundle
-          path: build/bin/*
-          if-no-files-found: error
- -count=1 -v
+        run: go test ./internal/ai -run TestSidecarStopTerminatesRunningProcess -count=1 -v
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
