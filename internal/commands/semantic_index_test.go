@@ -132,16 +132,23 @@ func TestSemanticMemoryIndexUpsertUpdatesReadyIndex(t *testing.T) {
 
 func benchmarkSemanticMemoryIndexSearch(b *testing.B, count int) {
 	const dims = 768
-	vectors := make(map[int64][]float32, count)
+	index := newSemanticMemoryIndex()
+	index.key = semanticKey("engine", "model", "1")
+	index.ready = true
+	index.stage = "ready"
+	index.dimensions = dims
+	index.positions = make(map[int64]int, count)
+	index.data = make([]float32, count*dims)
+	index.loaded = count
+	index.total = count
+
 	eligible := make([]int64, count)
 	for asset := 0; asset < count; asset++ {
-		vector := make([]float32, dims)
-		vector[asset%dims] = 1
 		id := int64(asset + 1)
-		vectors[id] = vector
+		index.positions[id] = asset
+		index.data[asset*dims+(asset%dims)] = 1
 		eligible[asset] = id
 	}
-	index := readySemanticIndex(vectors)
 	query := make([]float32, dims)
 	query[0] = 1
 
