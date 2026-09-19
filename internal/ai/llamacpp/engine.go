@@ -384,19 +384,37 @@ func (e *Engine) Infer(
 func (e *Engine) Unload(ctx context.Context) error {
 	e.mu.Lock()
 	sidecar := e.sidecar
-	e.sidecar = nil
-	e.baseURL = ""
-	e.model = ai.InstalledModel{}
 	e.mu.Unlock()
 	if sidecar == nil {
+		e.mu.Lock()
+		e.baseURL = ""
+		e.model = ai.InstalledModel{}
+		e.mu.Unlock()
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	return sidecar.Stop(stopCtx)
+	stopErr := sidecar.Stop(stopCtx)
+	cancel()
+
+	// Stop may return the caller's context error after it has already forced
+	// the child down. Only retain the reference when the child is still alive;
+	// otherwise cleanup is complete and future loads must not see a stale
+	// sidecar.
+	if stopErr != nil && sidecar.Running() {
+		return stopErr
+	}
+
+	e.mu.Lock()
+	if e.sidecar == sidecar {
+		e.sidecar = nil
+		e.baseURL = ""
+		e.model = ai.InstalledModel{}
+	}
+	e.mu.Unlock()
+	return nil
 }
 
 func parseVisionChatResponse(body []byte) (VisionResult, int, error) {
