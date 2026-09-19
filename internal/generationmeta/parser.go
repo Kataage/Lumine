@@ -516,7 +516,11 @@ func parseComfyPrompt(raw string, result *domain.GenerationMetadata) {
 				var triggers []string
 				for key, value := range node.Inputs {
 					if strings.Contains(strings.ToLower(key), "trigger") || strings.Contains(strings.ToLower(key), "trained_word") {
-						triggers = append(triggers, stringsFromAny(value)...)
+						for _, candidate := range stringsFromAny(value) {
+							triggers = append(triggers, strings.FieldsFunc(candidate, func(r rune) bool {
+								return r == ',' || r == '\n' || r == ';'
+							})...)
+						}
 					}
 				}
 				result.LoRAs = append(result.LoRAs, domain.GenerationLoRA{
