@@ -32,7 +32,7 @@ def fail(message: str) -> None:
 try:
     import psutil
     import requests
-    from huggingface_hub import hf_hub_download, model_info
+    from huggingface_hub import hf_hub_download, model_info, model_info
 except Exception as exc:
     fail(f"Advanced Vision adapter dependency error: {exc}")
 
@@ -144,6 +144,24 @@ def resolve_server(model: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+def server_extra_args(model: dict[str, Any]) -> list[str]:
+    raw = param(model, "serverArgsJson", "").strip()
+    if not raw:
+        return []
+    value = json.loads(raw)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("serverArgsJson must be a JSON array of strings")
+
+    protected = {
+        "-m", "--model", "--mmproj", "--host", "--port", "--ctx-size",
+        "--threads", "--parallel", "-ngl", "--n-gpu-layers", "--media-path",
+    }
+    for item in value:
+        if item in protected:
+            raise ValueError(f"serverArgsJson may not override protected option {item}")
+    return value
+
+
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -180,6 +198,7 @@ class Server:
             "--ctx-size", str(self.context), "--threads", str(self.threads),
             "--parallel", "1", "--no-mmproj-offload", "-ngl", "0", "--no-webui",
         ]
+        args.extend(self.extra_args)
         args.extend(self.extra_args)
         self.process = subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
