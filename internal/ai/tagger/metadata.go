@@ -3,7 +3,9 @@ package tagger
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -60,7 +62,7 @@ func loadCSVTags(path string) ([]tagRow, error) {
 	for {
 		record, err := reader.Read()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, fmt.Errorf("read Tagger tag metadata: %w", err)
