@@ -205,13 +205,12 @@ func (c *AppCommands) DuplicateModelProfile(id, newName string) (*ModelProfileDT
 	if err != nil {
 		return nil, err
 	}
+	originalName := source.Name
 	source.ID = newID
 	source.BuiltIn = false
-	source.CreatedAt = source.CreatedAt.Add(0)
-	source.UpdatedAt = source.UpdatedAt.Add(0)
 	source.Name = strings.TrimSpace(newName)
 	if source.Name == "" {
-		source.Name = modelProfileDTO(source).Name + " Copy"
+		source.Name = originalName + " Copy"
 	}
 	created, err := db.NewModelProfileRepo(c.db).Create(&source)
 	if err != nil {
