@@ -278,6 +278,56 @@ export interface AdvancedVisionRun {
   completedAt?: string;
 }
 
+export interface PromptEngineCandidateInfo {
+  id: string;
+  version: string;
+  engine: string;
+  displayName: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+  reference: boolean;
+}
+
+export interface PromptEngineStatusInfo {
+  runtime: SemanticModelInfo["runtime"];
+  llamaRuntime: LightweightRuntimeInfo;
+  models: PromptEngineCandidateInfo[];
+  activeModelId?: string;
+  selectionNote: string;
+}
+
+export type PromptEngineOperation =
+  | "idea_to_prompt"
+  | "improve_prompt"
+  | "convert_prompt"
+  | "edit_prompt";
+
+export interface PromptEngineRequest {
+  operation: PromptEngineOperation;
+  idea?: string;
+  positive?: string;
+  negative?: string;
+  sourceProfile?: string;
+  targetProfile?: string;
+  instruction?: string;
+  characters?: string[];
+  loras?: string[];
+}
+
+export interface PromptEngineResult {
+  positive: string;
+  negative: string;
+  characters: string[];
+  loras: string[];
+  composition: string;
+  notes: string[];
+  completionTokens?: number;
+  engine: string;
+  modelId: string;
+  modelVersion: string;
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -318,6 +368,13 @@ type DynamicCommands = {
   RunAdvancedVision?: (operation: string, assetIds: number[], instruction: string) => Promise<AdvancedVisionRun | null>;
   GetAdvancedVisionRun?: (runId: number) => Promise<AdvancedVisionRun | null>;
   ListAdvancedVisionRunsForAsset?: (assetId: number, limit: number) => Promise<AdvancedVisionRun[]>;
+  GetPromptEngineStatus?: () => Promise<PromptEngineStatusInfo | null>;
+  InstallPromptEngineRuntime?: () => Promise<LightweightRuntimeInfo | null>;
+  RemovePromptEngineRuntime?: () => Promise<void>;
+  InstallPromptEngineModel?: (modelId: string) => Promise<unknown>;
+  RemovePromptEngineModel?: (modelId: string) => Promise<void>;
+  LoadPromptEngineModel?: (modelId: string) => Promise<void>;
+  RunPromptEngine?: (request: PromptEngineRequest) => Promise<PromptEngineResult | null>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -519,6 +576,46 @@ export async function getAdvancedVisionRun(runId: number): Promise<AdvancedVisio
 
 export async function listAdvancedVisionRunsForAsset(assetId: number, limit = 20): Promise<AdvancedVisionRun[]> {
   return (await requireDynamic("ListAdvancedVisionRunsForAsset")(assetId, limit)) ?? [];
+}
+
+export async function getPromptEngineStatus(): Promise<PromptEngineStatusInfo> {
+  const value = await requireDynamic("GetPromptEngineStatus")();
+  if (!value) throw new Error("Prompt Engineの状態を取得できませんでした。");
+  return {
+    ...value,
+    models: value.models ?? [],
+  };
+}
+
+export async function installPromptEngineRuntime(): Promise<void> {
+  await requireDynamic("InstallPromptEngineRuntime")();
+}
+
+export async function removePromptEngineRuntime(): Promise<void> {
+  await requireDynamic("RemovePromptEngineRuntime")();
+}
+
+export async function installPromptEngineModel(modelId: string): Promise<void> {
+  await requireDynamic("InstallPromptEngineModel")(modelId);
+}
+
+export async function removePromptEngineModel(modelId: string): Promise<void> {
+  await requireDynamic("RemovePromptEngineModel")(modelId);
+}
+
+export async function loadPromptEngineModel(modelId: string): Promise<void> {
+  await requireDynamic("LoadPromptEngineModel")(modelId);
+}
+
+export async function runPromptEngine(request: PromptEngineRequest): Promise<PromptEngineResult> {
+  const value = await requireDynamic("RunPromptEngine")(request);
+  if (!value) throw new Error("Prompt Engineの結果を取得できませんでした。");
+  return {
+    ...value,
+    characters: value.characters ?? [],
+    loras: value.loras ?? [],
+    notes: value.notes ?? [],
+  };
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {
