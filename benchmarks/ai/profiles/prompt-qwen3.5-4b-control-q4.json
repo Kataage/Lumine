@@ -1,10 +1,10 @@
 {
   "id": "TheStageAI/Qwen3.5-4B-GGUF",
-  "version": "main",
+  "version": "9e325bb0db1f4eb8a51450142227bb6a7e4d37f1",
   "engine": "llama.cpp-text-cpu",
   "quantization": "M-TS-Q4_K_M",
-  "artifactSha256": "",
-  "modelSizeBytes": 0,
+  "artifactSha256": "f8e45572b9cc35161d4772b09bccfd383fe0bb03fc6d69b40a9138731302290b",
+  "modelSizeBytes": 2385660192,
   "runtime": "llama.cpp-b10964-cpu-x64",
   "benchmarkCategories": [
     "ja_to_prompt",
@@ -23,10 +23,10 @@
   "parameters": {
     "repoId": "TheStageAI/Qwen3.5-4B-GGUF",
     "modelFile": "Qwen3.5-4B-M-TS-Q4_K_M.gguf",
-    "modelSha256": "",
-    "modelSizeBytes": "0",
+    "modelSha256": "f8e45572b9cc35161d4772b09bccfd383fe0bb03fc6d69b40a9138731302290b",
+    "modelSizeBytes": "2385660192",
     "runtimeFamily": "upstream-llamacpp",
-    "pinStatus": "exploratory-reproducible-control-needs-repo-revision-and-artifact-sha256-before-evidence",
+    "pinStatus": "pinned-immutable-hf-revision-and-sha256",
     "upstreamBaseRevision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "llamaRelease": "b10964",
     "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
