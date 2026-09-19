@@ -12,6 +12,9 @@ vi.mock("../../wailsjs/go/commands/AppCommands", async (importOriginal) => {
   return {
     ...actual,
     GetAISettings: vi.fn(),
+    GetAIStorageInfo: vi.fn(),
+    RequestLegacyStorageMigration: vi.fn(),
+    CancelLegacyStorageMigration: vi.fn(),
     SemanticSearchAssets: vi.fn(),
     SemanticSearchAssetsWithID: vi.fn(),
     GetDefaultSemanticModelInfo: vi.fn(),
@@ -21,8 +24,11 @@ vi.mock("../../wailsjs/go/commands/AppCommands", async (importOriginal) => {
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { commands, domain } from "../../wailsjs/go/models";
 import {
+  cancelLegacyStorageMigration,
   getAISettings,
+  getAIStorageInfo,
   getDefaultSemanticModelInfo,
+  requestLegacyStorageMigration,
   semanticSearchAssets,
 } from "../api/client";
 
@@ -79,6 +85,47 @@ describe("typed AI Wails bridge", () => {
       go: { commands: { AppCommands: { GetAISettings: ReturnType<typeof vi.fn> } } };
     }).go.commands.AppCommands.GetAISettings;
     expect(dynamic).not.toHaveBeenCalled();
+  });
+
+  it("storage診断と移行操作はgenerated bindingを使う", async () => {
+    const base = new commands.AIStorageInfo({
+      mode: "installed",
+      rootPath: "C:\\old\\lumine",
+      dataPath: "C:\\old\\lumine",
+      databasePath: "C:\\old\\lumine\\lumine.db",
+      logsPath: "C:\\old\\lumine\\logs",
+      modelsPath: "C:\\old\\lumine\\models",
+      runtimesPath: "C:\\old\\lumine\\runtimes\\llama.cpp",
+      semanticIndexPath: "C:\\old\\lumine\\semantic-index",
+      preferredRootPath: "C:\\Users\\user\\AppData\\Local\\Lumine",
+      legacyPath: "C:\\old\\lumine",
+      legacyDetected: true,
+      usingLegacy: true,
+      migrationAvailable: true,
+      migrationPending: false,
+      migrationSourcePath: "C:\\old\\lumine",
+      migrationTargetPath: "C:\\Users\\user\\AppData\\Local\\Lumine",
+      migrationRequiresRestart: true,
+    });
+    vi.mocked(Go.GetAIStorageInfo).mockResolvedValue(base);
+    vi.mocked(Go.RequestLegacyStorageMigration).mockResolvedValue(
+      new commands.AIStorageInfo({ ...base, migrationPending: true }),
+    );
+    vi.mocked(Go.CancelLegacyStorageMigration).mockResolvedValue(
+      new commands.AIStorageInfo({ ...base, migrationPending: false }),
+    );
+
+    const info = await getAIStorageInfo();
+    expect(info.usingLegacy).toBe(true);
+    expect(info.migrationAvailable).toBe(true);
+
+    const pending = await requestLegacyStorageMigration();
+    expect(Go.RequestLegacyStorageMigration).toHaveBeenCalledTimes(1);
+    expect(pending.migrationPending).toBe(true);
+
+    const cancelled = await cancelLegacyStorageMigration();
+    expect(Go.CancelLegacyStorageMigration).toHaveBeenCalledTimes(1);
+    expect(cancelled.migrationPending).toBe(false);
   });
 
   it("request ID付き意味検索はgenerated bindingへ直接渡す", async () => {
