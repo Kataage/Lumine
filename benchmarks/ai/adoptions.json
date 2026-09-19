@@ -188,6 +188,30 @@
       "issue": "#189",
       "rationale": "Official Apache-2.0 4B-class llama.cpp candidate. Included as an upper-cost comparison point to measure whether materially better Advanced Vision quality justifies its larger CPU/RAM/disk footprint.",
       "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "tagger",
+      "status": "candidate",
+      "modelId": "pixai-labs/pixai-tagger-v1.0",
+      "version": "f33cfdb53c0c90b049bab9ce066eea1118970ef8",
+      "engine": "python-transformers-cpu",
+      "quantization": "FP32",
+      "artifactSha256": "f29e475205cbcbc25b52a075840c7809d6215be15f45375113ba09c49bf90292",
+      "issue": "#165",
+      "rationale": "Current quality-focused PixAI candidate with May 2026 cutoff, 30,877 tags and direct rating output. Benchmark through the pinned upstream Transformers custom pipeline; adoption is blocked until controlled Lumine evidence and explicit redistribution/license status are both available.",
+      "updatedAt": "2026-09-20"
+    },
+    {
+      "capability": "tagger",
+      "status": "candidate",
+      "modelId": "Camais03/camie-tagger-v2",
+      "version": "7d40c1b85b86ab4f607b2caf26b1b50c99db743e",
+      "engine": "python-onnxruntime-cpu",
+      "quantization": "FP32",
+      "artifactSha256": "ab0aaf253e3d546090001bec9bebc776c354ab6800f442ab9167af87b4a953ac",
+      "issue": "#165",
+      "rationale": "Wide-vocabulary ONNX comparison candidate with general/character/rating outputs. GPL-3.0 and the larger runtime/model footprint are explicit adoption trade-offs; controlled Lumine evidence is still required.",
+      "updatedAt": "2026-09-20"
     }
   ]
 }
