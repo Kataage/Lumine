@@ -157,8 +157,9 @@ def server_extra_args(model: dict[str, Any]) -> list[str]:
         "--threads", "--parallel", "-ngl", "--n-gpu-layers", "--media-path",
     }
     for item in value:
-        if item in protected:
-            raise ValueError(f"serverArgsJson may not override protected option {item}")
+        option = item.split("=", 1)[0]
+        if option in protected:
+            raise ValueError(f"serverArgsJson may not override protected option {option}")
     return value
 
 
@@ -198,7 +199,6 @@ class Server:
             "--ctx-size", str(self.context), "--threads", str(self.threads),
             "--parallel", "1", "--no-mmproj-offload", "-ngl", "0", "--no-webui",
         ]
-        args.extend(self.extra_args)
         args.extend(self.extra_args)
         self.process = subprocess.Popen(
             args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
