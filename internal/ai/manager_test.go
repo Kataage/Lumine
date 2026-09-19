@@ -603,3 +603,90 @@ func TestManagerCancelledInferenceDoesNotPoisonRuntime(t *testing.T) {
 		t.Fatalf("runtime after caller cancellation = %+v, want ready", status)
 	}
 }
+
+
+type failOnceUnloadEngine struct {
+	dummyEngine
+	mu       sync.Mutex
+	attempts int
+}
+
+func (e *failOnceUnloadEngine) Unload(ctx context.Context) error {
+	e.mu.Lock()
+	e.attempts++
+	attempt := e.attempts
+	e.mu.Unlock()
+	if attempt == 1 {
+		return errors.New("synthetic unload failure")
+	}
+	return e.dummyEngine.Unload(ctx)
+}
+
+func TestManagerUnloadFailureKeepsRuntimeTrackedForRetry(t *testing.T) {
+	data := []byte("retryable unload model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+
+	engine := &failOnceUnloadEngine{}
+	if err := manager.RegisterEngine("dummy", func() Engine { return engine }); err != nil {
+		t.Fatal(err)
+	}
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.Unload(context.Background(), domain.AICapabilitySemanticSearch); err == nil {
+		t.Fatal("first unload should fail")
+	}
+	status := manager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != RuntimeStateError {
+		t.Fatalf("status after failed unload = %s, want error", status.State)
+	}
+	if status.ModelID != manifest.ID || status.Version != manifest.Version {
+		t.Fatalf("failed unload lost runtime provenance: %+v", status)
+	}
+
+	if err := manager.Unload(context.Background(), domain.AICapabilitySemanticSearch); err != nil {
+		t.Fatalf("retry unload: %v", err)
+	}
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateModelNotInstalled {
+		t.Fatalf("status after successful retry = %+v", status)
+	}
+}
+
+func TestManagerLifecycleWaitHonorsContext(t *testing.T) {
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return domain.AISettings{Enabled: true, SemanticSearch: true}, nil
+	})
+
+	manager.lifecycleMu.Lock()
+	defer manager.lifecycleMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err := manager.Unload(ctx, domain.AICapabilitySemanticSearch)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Unload lifecycle wait error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("lifecycle wait ignored context timeout: %s", elapsed)
+	}
+}
