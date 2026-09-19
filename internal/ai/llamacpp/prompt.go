@@ -39,10 +39,12 @@ type PromptEngine struct {
 	runtimeStore *RuntimeStore
 	client       *http.Client
 
-	mu      sync.Mutex
-	sidecar *ai.SidecarProcess
-	baseURL string
-	model   ai.InstalledModel
+	mu                sync.Mutex
+	sidecar           *ai.SidecarProcess
+	baseURL           string
+	model             ai.InstalledModel
+	executionProvider string
+	runtimeWarning    string
 }
 
 func NewPromptEngine(runtimeStore *RuntimeStore) ai.Engine {
@@ -56,6 +58,19 @@ func (e *PromptEngine) ID() string {
 	return PromptEngineID
 }
 
+func (e *PromptEngine) SupportsGPU() bool {
+	return true
+}
+
+func (e *PromptEngine) RuntimeDiagnostics() ai.RuntimeDiagnostics {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return ai.RuntimeDiagnostics{
+		ExecutionProvider: e.executionProvider,
+		Warning:           e.runtimeWarning,
+	}
+}
+
 func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {
 	if e.runtimeStore == nil {
 		return errors.New("llama.cpp runtime store is not configured")
@@ -67,10 +82,6 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 		return fmt.Errorf("pinned llama.cpp runtime supports windows/amd64, current platform is %s/%s", goruntime.GOOS, goruntime.GOARCH)
 	}
 
-	runtimeInfo, err := e.runtimeStore.Verify(DefaultRuntimeManifest())
-	if err != nil {
-		return fmt.Errorf("verify llama.cpp runtime: %w", err)
-	}
 	modelPath, err := resolveTextModelPath(model)
 	if err != nil {
 		return err
@@ -88,31 +99,16 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 		return err
 	}
 
-	port, err := reserveLocalPort()
-	if err != nil {
-		return err
-	}
-	sidecar := ai.NewSidecarProcess()
-	args := buildPromptServerArgs(
+	sidecar, baseURL, provider, warning, err := e.startPromptRuntime(
+		ctx,
 		modelPath,
-		port,
 		contextSize,
 		threads,
 		options.AllowGPU,
 		extraArgs,
 	)
-	if err := sidecar.Start(ctx, runtimeInfo.ExecutablePath, args, nil); err != nil {
+	if err != nil {
 		return err
-	}
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	startupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	if err := e.waitUntilReady(startupCtx, sidecar, baseURL); err != nil {
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = sidecar.Stop(stopCtx)
-		stopCancel()
-		stdout, stderr := sidecar.Logs()
-		return fmt.Errorf("start llama.cpp Prompt Engine server: %w; stdout=%q stderr=%q", err, tailLog(stdout), tailLog(stderr))
 	}
 
 	e.mu.Lock()
@@ -126,8 +122,102 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 	e.sidecar = sidecar
 	e.baseURL = baseURL
 	e.model = model
+	e.executionProvider = provider
+	e.runtimeWarning = warning
 	e.mu.Unlock()
 	return nil
+}
+
+func (e *PromptEngine) startPromptRuntime(
+	ctx context.Context,
+	modelPath string,
+	contextSize int,
+	threads int,
+	allowGPU bool,
+	extraArgs []string,
+) (*ai.SidecarProcess, string, string, string, error) {
+	var gpuFailures []string
+	for _, candidate := range runtimeCandidates(allowGPU) {
+		runtimeInfo, verifyErr := e.runtimeStore.Verify(candidate.manifest)
+		if verifyErr != nil {
+			if candidate.provider == "vulkan" {
+				gpuFailures = append(gpuFailures, "verify Vulkan runtime: "+verifyErr.Error())
+				continue
+			}
+			if len(gpuFailures) > 0 {
+				return nil, "", "", "", fmt.Errorf(
+					"verify llama.cpp CPU fallback: %w; Vulkan attempt: %s",
+					verifyErr,
+					strings.Join(gpuFailures, " | "),
+				)
+			}
+			return nil, "", "", "", fmt.Errorf("verify llama.cpp CPU runtime: %w", verifyErr)
+		}
+
+		port, portErr := reserveLocalPort()
+		if portErr != nil {
+			return nil, "", "", "", portErr
+		}
+		sidecar := ai.NewSidecarProcess()
+		args := buildPromptServerArgs(
+			modelPath,
+			port,
+			contextSize,
+			threads,
+			candidate.allowGPU,
+			extraArgs,
+		)
+		if startErr := sidecar.Start(ctx, runtimeInfo.ExecutablePath, args, nil); startErr != nil {
+			if ctx != nil && ctx.Err() != nil {
+				return nil, "", "", "", ctx.Err()
+			}
+			if candidate.provider == "vulkan" {
+				gpuFailures = append(gpuFailures, "start Vulkan runtime: "+startErr.Error())
+				continue
+			}
+			return nil, "", "", "", fmt.Errorf("start llama.cpp CPU Prompt Engine server: %w", startErr)
+		}
+
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		startupCtx := ctx
+		if startupCtx == nil {
+			startupCtx = context.Background()
+		}
+		startupCtx, cancel := context.WithTimeout(startupCtx, 2*time.Minute)
+		readyErr := e.waitUntilReady(startupCtx, sidecar, baseURL)
+		cancel()
+		if readyErr != nil {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = sidecar.Stop(stopCtx)
+			stopCancel()
+			stdout, stderr := sidecar.Logs()
+			attemptErr := fmt.Errorf(
+				"start llama.cpp %s Prompt Engine server: %w; stdout=%q stderr=%q",
+				candidate.provider,
+				readyErr,
+				tailLog(stdout),
+				tailLog(stderr),
+			)
+			if ctx != nil && ctx.Err() != nil {
+				return nil, "", "", "", ctx.Err()
+			}
+			if candidate.provider == "vulkan" {
+				gpuFailures = append(gpuFailures, attemptErr.Error())
+				continue
+			}
+			if len(gpuFailures) > 0 {
+				return nil, "", "", "", fmt.Errorf("%w; Vulkan attempt: %s", attemptErr, strings.Join(gpuFailures, " | "))
+			}
+			return nil, "", "", "", attemptErr
+		}
+
+		warning := ""
+		if candidate.provider == "cpu" && len(gpuFailures) > 0 {
+			warning = "Vulkan unavailable; using CPU fallback: " + strings.Join(gpuFailures, " | ")
+		}
+		return sidecar, baseURL, candidate.provider, warning, nil
+	}
+	return nil, "", "", "", errors.New("no usable llama.cpp runtime is installed")
 }
 
 func buildPromptServerArgs(
