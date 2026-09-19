@@ -146,6 +146,18 @@
       "issue": "#189",
       "rationale": "Exploratory Heretic candidate for direct refusal/quality comparison. Immutable revision and model/mmproj SHA-256 must be recorded before its result may be used as adoption evidence.",
       "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "ibm-granite/granite-vision-4.1-4b-GGUF",
+      "version": "0687c7b1b30ba08e9a5ebef4ca4a51d8dbc36995",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj F16",
+      "artifactSha256": "973a58c4cfc2b3f58dedc515a89f73c372fe0910da515ecefcebe966131f769f",
+      "issue": "#189",
+      "rationale": "Official Apache-2.0 4B-class llama.cpp candidate. Included as an upper-cost comparison point to measure whether materially better Advanced Vision quality justifies its larger CPU/RAM/disk footprint.",
+      "updatedAt": "2026-09-19"
     }
   ]
 }
