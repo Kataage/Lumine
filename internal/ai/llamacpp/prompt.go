@@ -320,9 +320,7 @@ func promptMessages(request ai.InferenceRequest) ([]any, error) {
 		},
 		map[string]any{
 			"role": "user",
-			"content": promptOperationInstruction(request.Operation) + "
-Input JSON:
-" + string(encoded),
+			"content": promptOperationInstruction(request.Operation) + "\nInput JSON:\n" + string(encoded),
 		},
 	}, nil
 }
