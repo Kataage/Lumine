@@ -86,9 +86,6 @@ jobs:
       - name: Create frontend/dist for embed
         run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 
-      - name: Inspect pinned DirectML packages
-        run: python3 benchmarks/ai/inspect_directml_packages.py
-
       - name: Go mod tidy
         run: go mod tidy
 
