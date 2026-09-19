@@ -33,12 +33,54 @@ func (c *AppCommands) GetAISettings() (domain.AISettings, error) {
 	return settings, nil
 }
 
-// SetAISettings persists the complete AI policy atomically.
+// SetAISettings replaces the complete AI policy atomically.
 //
-// Enabling a feature here never downloads a model. Model installation is an
-// explicit action owned by the Model Manager (#162). The event gives that
-// future runtime a restart-free contract for stopping/starting allowed work.
+// Prefer PatchAISettings for UI interactions so a stale frontend snapshot
+// cannot overwrite unrelated feature switches. Full replacement remains for
+// migration/tests and callers that intentionally own the whole settings object.
 func (c *AppCommands) SetAISettings(settings domain.AISettings) (domain.AISettings, error) {
+	c.aiSettingsMu.Lock()
+	defer c.aiSettingsMu.Unlock()
+	return c.persistAISettings(settings)
+}
+
+// PatchAISettings performs a backend-side read/modify/write under one lock.
+// This makes persisted settings authoritative even if the frontend is still
+// loading or has an older snapshot.
+func (c *AppCommands) PatchAISettings(patch map[string]bool) (domain.AISettings, error) {
+	c.aiSettingsMu.Lock()
+	defer c.aiSettingsMu.Unlock()
+
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return domain.AISettings{}, err
+	}
+	for key, value := range patch {
+		switch key {
+		case "enabled":
+			settings.Enabled = value
+		case "semanticSearch":
+			settings.SemanticSearch = value
+		case "tagger":
+			settings.Tagger = value
+		case "lightweightVision":
+			settings.LightweightVision = value
+		case "advancedVision":
+			settings.AdvancedVision = value
+		case "promptEngine":
+			settings.PromptEngine = value
+		case "autoAnalyze":
+			settings.AutoAnalyze = value
+		case "gpuAcceleration":
+			settings.GPUAcceleration = value
+		default:
+			return domain.AISettings{}, fmt.Errorf("unknown AI settings field %q", key)
+		}
+	}
+	return c.persistAISettings(settings)
+}
+
+func (c *AppCommands) persistAISettings(settings domain.AISettings) (domain.AISettings, error) {
 	value, err := json.Marshal(settings)
 	if err != nil {
 		return domain.AISettings{}, fmt.Errorf("encode AI settings: %w", err)
