@@ -91,9 +91,9 @@ func syntheticTokenizer(t *testing.T) *siglipTokenizer {
 	return tokenizer
 }
 
-func TestTokenizerNormalizesPadsAndAddsEOS(t *testing.T) {
+func TestTokenizerLowercasesRightPadsAndAddsEOS(t *testing.T) {
 	tokenizer := syntheticTokenizer(t)
-	ids, err := tokenizer.Encode64("  HELLO   WORLD  ")
+	ids, err := tokenizer.Encode64("  HELLO WORLD  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +103,20 @@ func TestTokenizerNormalizesPadsAndAddsEOS(t *testing.T) {
 	for i := 3; i < len(ids); i++ {
 		if ids[i] != siglipPadID {
 			t.Fatalf("token %d = %d, want pad", i, ids[i])
+		}
+	}
+}
+
+func TestTokenizerPreservesRepeatedSpacesAsMetaspace(t *testing.T) {
+	tokenizer := syntheticTokenizer(t)
+	ids, err := tokenizer.Encode64("hello   world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{12, 13, 13, 21, siglipEOSID}
+	for index, expected := range want {
+		if ids[index] != expected {
+			t.Fatalf("token %d = %d, want %d; prefix=%v", index, ids[index], expected, ids[:8])
 		}
 	}
 }
