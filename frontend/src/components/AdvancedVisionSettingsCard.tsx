@@ -29,9 +29,11 @@ function Progress({ downloaded, total, label }: { downloaded: number; total: num
 export function AdvancedVisionSettingsCard({
   enabled,
   onEnable,
+  onStatusChange,
 }: {
   enabled: boolean;
   onEnable: () => Promise<void>;
+  onStatusChange?: (status: AdvancedVisionStatusInfo) => void;
 }) {
   const [status, setStatus] = useState<AdvancedVisionStatusInfo | null>(null);
   const [busy, setBusy] = useState("");
@@ -40,11 +42,13 @@ export function AdvancedVisionSettingsCard({
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await getAdvancedVisionStatus());
+      const next = await getAdvancedVisionStatus();
+      setStatus(next);
+      onStatusChange?.(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, []);
+  }, [onStatusChange]);
 
   useEffect(() => {
     void refresh();
