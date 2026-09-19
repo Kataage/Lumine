@@ -46,6 +46,10 @@ export function CancelAIJob(arg1) {
   return window['go']['commands']['AppCommands']['CancelAIJob'](arg1);
 }
 
+export function CancelLegacyStorageMigration() {
+  return window['go']['commands']['AppCommands']['CancelLegacyStorageMigration']();
+}
+
 export function CancelScan() {
   return window['go']['commands']['AppCommands']['CancelScan']();
 }
@@ -448,6 +452,10 @@ export function RemovePromptEngineModel(arg1) {
 
 export function RemovePromptEngineRuntime() {
   return window['go']['commands']['AppCommands']['RemovePromptEngineRuntime']();
+}
+
+export function RequestLegacyStorageMigration() {
+  return window['go']['commands']['AppCommands']['RequestLegacyStorageMigration']();
 }
 
 export function RestoreAdvancedVisionModel() {
