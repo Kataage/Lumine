@@ -69,6 +69,8 @@ func (m *Manager) RegisterEngine(engineID string, factory EngineFactory) error {
 }
 
 func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
 	}
@@ -76,6 +78,8 @@ func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, prog
 }
 
 func (m *Manager) UpdateModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
 	}
@@ -91,6 +95,8 @@ func (m *Manager) ListInstalledModels() ([]InstalledModelInfo, error) {
 }
 
 func (m *Manager) RemoveModel(modelID, version string) error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	m.mu.Lock()
 	for capability, session := range m.sessions {
 		if session.model.Manifest.ID == modelID && session.model.Manifest.Version == version {
