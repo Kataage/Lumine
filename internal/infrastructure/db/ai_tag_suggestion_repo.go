@@ -207,7 +207,7 @@ func (r *AITagSuggestionRepo) AcceptAll(assetID int64) ([]domain.Tag, error) {
 
 func (r *AITagSuggestionRepo) Reject(id int64) error {
 	result, err := r.db.Exec(
-		"UPDATE ai_tag_suggestions SET state = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		"UPDATE ai_tag_suggestions SET state = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND state = 'pending'",
 		id,
 	)
 	if err != nil {
@@ -217,10 +217,19 @@ func (r *AITagSuggestionRepo) Reject(id int64) error {
 	if err != nil {
 		return err
 	}
-	if changed == 0 {
+	if changed == 1 {
+		return nil
+	}
+
+	var state domain.AITagSuggestionState
+	err = r.db.QueryRow("SELECT state FROM ai_tag_suggestions WHERE id = ?", id).Scan(&state)
+	if err == sql.ErrNoRows {
 		return ErrAITagSuggestionNotFound
 	}
-	return nil
+	if err != nil {
+		return fmt.Errorf("read AI tag suggestion %d after reject: %w", id, err)
+	}
+	return fmt.Errorf("AI tag suggestion %d is not pending (state=%s)", id, state)
 }
 
 func (r *AITagSuggestionRepo) RejectAll(assetID int64) error {
