@@ -253,6 +253,86 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 	return ids, rows.Err()
 }
 
+func (r *SemanticEmbeddingRepo) CountReadyEmbeddings(
+	ctx context.Context,
+	engine string,
+	modelID string,
+	modelVersion string,
+) (int, error) {
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return 0, errors.New("semantic embedding provenance is required")
+	}
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa
+		  ON aa.asset_id = e.asset_id
+		 AND aa.capability = 'semantic_search'
+		 AND aa.state = 'ready'
+		 AND aa.engine = e.engine
+		 AND aa.model_id = e.model_id
+		 AND aa.model_version = e.model_version
+		WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
+	`, engine, modelID, modelVersion).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count ready semantic embeddings: %w", err)
+	}
+	return count, nil
+}
+
+func (r *SemanticEmbeddingRepo) WalkReadyEmbeddingBlobs(
+	ctx context.Context,
+	engine string,
+	modelID string,
+	modelVersion string,
+	visit func(assetID int64, dimensions int, blob []byte) error,
+) error {
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return errors.New("semantic embedding provenance is required")
+	}
+	if visit == nil {
+		return errors.New("semantic embedding blob visitor is required")
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT e.asset_id, e.dimensions, e.vector
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa
+		  ON aa.asset_id = e.asset_id
+		 AND aa.capability = 'semantic_search'
+		 AND aa.state = 'ready'
+		 AND aa.engine = e.engine
+		 AND aa.model_id = e.model_id
+		 AND aa.model_version = e.model_version
+		WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
+		ORDER BY e.asset_id
+	`, engine, modelID, modelVersion)
+	if err != nil {
+		return fmt.Errorf("walk ready semantic embedding blobs: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var assetID int64
+		var dimensions int
+		var blob []byte
+		if err := rows.Scan(&assetID, &dimensions, &blob); err != nil {
+			return fmt.Errorf("scan ready semantic embedding blob: %w", err)
+		}
+		if dimensions <= 0 || len(blob) != dimensions*4 {
+			return fmt.Errorf("invalid semantic embedding blob for asset %d: %w", assetID, ErrSemanticVectorInvalid)
+		}
+		if err := visit(assetID, dimensions, blob); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 func (r *SemanticEmbeddingRepo) WalkReadyEmbeddings(
 	ctx context.Context,
 	engine string,
