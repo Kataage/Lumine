@@ -17,7 +17,7 @@ import {
   loadDefaultSemanticModel,
   removeDefaultLightweightVisionModel,
   removeLightweightVisionRuntime,
-  setAISettings,
+  patchAISettings,
   type AdvancedVisionStatusInfo,
   type AIStorageInfo,
   type LightweightVisionModelInfo,
@@ -327,12 +327,11 @@ export function AISettingsPanel() {
 
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
-    const next = { ...settings, ...patch };
-    setSettings(next);
+    setSettings((current) => ({ ...current, ...patch }));
     setSaving(true);
     setError(null);
     try {
-      const saved = await setAISettings(next);
+      const saved = await patchAISettings(patch);
       setSettings(saved);
       setSettingsLoaded(true);
       setSettingsError(null);
@@ -347,12 +346,13 @@ export function AISettingsPanel() {
   };
 
   const ensureFeatureEnabled = async (feature: AIModelFeatureKey) => {
-    const next = { ...settings, enabled: true, [feature]: true } as AISettings;
-    const saved = await setAISettings(next);
+    const saved = await patchAISettings({ enabled: true, [feature]: true } as Partial<AISettings>);
     setSettings(saved);
     setSettingsLoaded(true);
     setSettingsError(null);
   };
+
+  const settingsReadyForActions = settingsLoaded && !settingsError;
 
   const setupSemantic = async () => {
     if (semanticBusy) return;
@@ -481,6 +481,7 @@ export function AISettingsPanel() {
   const promptFeatureStatus = runtimeStatus("promptEngine", promptStatus?.runtime.state);
 
   const featureStatus = (key: AIModelFeatureKey): FeatureStatus => {
+    if (!settingsLoaded) return "preview";
     if (key === "tagger") return "preview";
     if (key === "semanticSearch") return semanticStatus;
     if (key === "lightweightVision") return lightweightStatus;
@@ -609,7 +610,7 @@ export function AISettingsPanel() {
                         {!isTagger && (
                           <Switch
                             checked={enabled}
-                            disabled={saving}
+                            disabled={saving || !settingsReadyForActions}
                             label={meta.title}
                             onChange={(checked) => {
                               if (checked) void ensureFeatureEnabled(key).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
@@ -635,7 +636,7 @@ export function AISettingsPanel() {
                               </p>
                             </div>
                             {status !== "ready" && status !== "running" && (
-                              <button type="button" className="ui-primary-button min-w-[150px]" disabled={semanticBusy} onClick={() => void setupSemantic()}>
+                              <button type="button" className="ui-primary-button min-w-[150px]" disabled={semanticBusy || !settingsReadyForActions} onClick={() => void setupSemantic()}>
                                 {semanticBusy ? "準備しています…" : semanticModel.installed ? "再読み込み" : "セットアップ"}
                               </button>
                             )}
@@ -670,11 +671,11 @@ export function AISettingsPanel() {
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-2">
                               {status !== "ready" && status !== "running" ? (
-                                <button type="button" className="ui-primary-button min-w-[150px]" disabled={visionBusy} onClick={() => void setupLightweightVision()}>
+                                <button type="button" className="ui-primary-button min-w-[150px]" disabled={visionBusy || !settingsReadyForActions} onClick={() => void setupLightweightVision()}>
                                   {visionBusy ? "準備しています…" : lightweightModel.installed && lightweightModel.llamaRuntime.installed ? "再読み込み" : "セットアップ"}
                                 </button>
                               ) : (
-                                <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void enqueueLightweightVisionBackfill().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>
+                                <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void enqueueLightweightVisionBackfill().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>
                                   既存画像を解析
                                 </button>
                               )}
@@ -693,8 +694,8 @@ export function AISettingsPanel() {
                             <details className="mt-3">
                               <summary className="cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">インストール済みデータを管理</summary>
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {lightweightModel.installed && <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionModel()}>モデルを削除</button>}
-                                {lightweightModel.llamaRuntime.installed && <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionRuntime()}>共有runtimeを削除</button>}
+                                {lightweightModel.installed && <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void removeVisionModel()}>モデルを削除</button>}
+                                {lightweightModel.llamaRuntime.installed && <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void removeVisionRuntime()}>共有runtimeを削除</button>}
                               </div>
                             </details>
                           )}
@@ -703,20 +704,28 @@ export function AISettingsPanel() {
 
                       {key === "advancedVision" && (
                         <div className="border-t border-border/70 px-4 pb-4">
-                          <AdvancedVisionSettingsCard
-                            enabled={enabled}
-                            onEnable={() => ensureFeatureEnabled("advancedVision")}
-                            onStatusChange={setAdvancedStatus}
-                          />
+                          {settingsReadyForActions ? (
+                            <AdvancedVisionSettingsCard
+                              enabled={enabled}
+                              onEnable={() => ensureFeatureEnabled("advancedVision")}
+                              onStatusChange={setAdvancedStatus}
+                            />
+                          ) : (
+                            <p className="pt-4 text-[11px] text-muted-foreground">保存済みAI設定を確認してから操作できます。</p>
+                          )}
                         </div>
                       )}
                       {key === "promptEngine" && (
                         <div className="border-t border-border/70 px-4 pb-4">
-                          <PromptEngineSettingsCard
-                            enabled={enabled}
-                            onEnable={() => ensureFeatureEnabled("promptEngine")}
-                            onStatusChange={setPromptStatus}
-                          />
+                          {settingsReadyForActions ? (
+                            <PromptEngineSettingsCard
+                              enabled={enabled}
+                              onEnable={() => ensureFeatureEnabled("promptEngine")}
+                              onStatusChange={setPromptStatus}
+                            />
+                          ) : (
+                            <p className="pt-4 text-[11px] text-muted-foreground">保存済みAI設定を確認してから操作できます。</p>
+                          )}
                         </div>
                       )}
                     </article>
@@ -735,7 +744,7 @@ export function AISettingsPanel() {
                   title="インポート・スキャン後に自動解析"
                   description="有効なSemantic Search / Lightweight Visionを新しい画像に自動適用します。"
                   checked={settings.enabled && settings.autoAnalyze}
-                  disabled={saving}
+                  disabled={saving || !settingsReadyForActions}
                   onChange={(checked) => {
                     const next = checked ? { enabled: true, autoAnalyze: true } : { autoAnalyze: false };
                     void update(next).catch(() => undefined);
@@ -745,7 +754,7 @@ export function AISettingsPanel() {
                   title="GPUアクセラレーションを許可"
                   description="GPU対応runtimeではGPUを優先します。非対応機能はCPUで安全に動作します。"
                   checked={settings.gpuAcceleration}
-                  disabled={saving}
+                  disabled={saving || !settingsReadyForActions}
                   onChange={(checked) => void update({ gpuAcceleration: checked }).catch(() => undefined)}
                 />
               </div>
