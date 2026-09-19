@@ -100,22 +100,15 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.L
 		return err
 	}
 	sidecar := ai.NewSidecarProcess()
-	args := []string{
-		"-m", modelPath,
-		"--mmproj", mmprojPath,
-		"--host", "127.0.0.1",
-		"--port", fmt.Sprintf("%d", port),
-		"--ctx-size", strconv.Itoa(contextSize),
-		"--threads", strconv.Itoa(threads),
-		"--parallel", "1",
-		"--no-webui",
-	}
-	if options.AllowGPU {
-		args = append(args, "-ngl", "99")
-	} else {
-		args = append(args, "--no-mmproj-offload", "-ngl", "0")
-	}
-	args = append(args, extraArgs...)
+	args := buildLlamaServerArgs(
+		modelPath,
+		mmprojPath,
+		port,
+		contextSize,
+		threads,
+		options.AllowGPU,
+		extraArgs,
+	)
 	if err := sidecar.Start(ctx, runtimeInfo.ExecutablePath, args, nil); err != nil {
 		return err
 	}
@@ -143,6 +136,33 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.L
 	e.model = model
 	e.mu.Unlock()
 	return nil
+}
+
+func buildLlamaServerArgs(
+	modelPath string,
+	mmprojPath string,
+	port int,
+	contextSize int,
+	threads int,
+	allowGPU bool,
+	extraArgs []string,
+) []string {
+	args := []string{
+		"-m", modelPath,
+		"--mmproj", mmprojPath,
+		"--host", "127.0.0.1",
+		"--port", strconv.Itoa(port),
+		"--ctx-size", strconv.Itoa(contextSize),
+		"--threads", strconv.Itoa(threads),
+		"--parallel", "1",
+		"--no-webui",
+	}
+	if allowGPU {
+		args = append(args, "-ngl", "99")
+	} else {
+		args = append(args, "--no-mmproj-offload", "-ngl", "0")
+	}
+	return append(args, extraArgs...)
 }
 
 func resolveVLMModelPaths(model ai.InstalledModel) (string, string, error) {
