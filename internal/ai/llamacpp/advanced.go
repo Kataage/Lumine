@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/kataage/lumine/internal/ai"
 )
 
 const (
