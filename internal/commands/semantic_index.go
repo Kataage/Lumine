@@ -52,6 +52,7 @@ type semanticMemoryIndex struct {
 	loaded     int
 	total      int
 	startedAt  time.Time
+	finishedAt time.Time
 	updatedAt  time.Time
 }
 
@@ -117,7 +118,11 @@ func (i *semanticMemoryIndex) Status() SemanticIndexStatus {
 	now := time.Now()
 	var elapsedMs int64
 	if !i.startedAt.IsZero() {
-		elapsedMs = now.Sub(i.startedAt).Milliseconds()
+		end := now
+		if !i.finishedAt.IsZero() {
+			end = i.finishedAt
+		}
+		elapsedMs = end.Sub(i.startedAt).Milliseconds()
 	}
 	var updatedAgoMs int64
 	if !i.updatedAt.IsZero() {
@@ -230,6 +235,7 @@ func (i *semanticMemoryIndex) Warm(
 		i.pending = make(map[int64][]float32)
 		i.wait = make(chan struct{})
 		i.startedAt = time.Now()
+		i.finishedAt = time.Time{}
 		i.setProgressLocked("counting", 0, 0)
 		wait := i.wait
 		i.mu.Unlock()
@@ -270,8 +276,13 @@ func (i *semanticMemoryIndex) Warm(
 			position := len(i.positions)
 			i.positions[assetID] = position
 			start := len(i.data)
-			i.data = append(i.data, make([]float32, dimensions)...)
-			if err := decodeIndexBlobInto(i.data[start:start+dimensions], blob, dimensions); err != nil {
+			end := start + dimensions
+			if end <= cap(i.data) {
+				i.data = i.data[:end]
+			} else {
+				i.data = append(i.data, make([]float32, dimensions)...)
+			}
+			if err := decodeIndexBlobInto(i.data[start:end], blob, dimensions); err != nil {
 				return fmt.Errorf("decode semantic embedding for asset %d: %w", assetID, err)
 			}
 			loaded++
@@ -313,9 +324,11 @@ func (i *semanticMemoryIndex) Warm(
 			}
 			i.ready = true
 			i.lastErr = nil
+			i.finishedAt = time.Now()
 			i.setProgressLocked("ready", len(i.positions), len(i.positions))
 		} else {
 			i.lastErr = err
+			i.finishedAt = time.Now()
 			i.setProgressLocked("error", loaded, total)
 		}
 		i.pending = make(map[int64][]float32)
@@ -350,6 +363,7 @@ func (i *semanticMemoryIndex) finishWarm(wait chan struct{}, err error) {
 	defer i.mu.Unlock()
 	i.lastErr = err
 	i.warming = false
+	i.finishedAt = time.Now()
 	i.stage = "error"
 	i.updatedAt = time.Now()
 	if i.wait == wait {
