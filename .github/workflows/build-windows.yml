@@ -50,11 +50,18 @@ jobs:
             exit 1
           fi
 
-      - name: Validate Tagger benchmark runner syntax
+      - name: Validate AI benchmark runner syntax
         shell: pwsh
         run: |
-          $source = Get-Content benchmarks/ai/run_tagger_benchmark.ps1 -Raw
-          [void][scriptblock]::Create($source)
+          $runners = Get-ChildItem benchmarks/ai/run_*_benchmark.ps1
+          if (-not $runners) {
+            throw "No AI benchmark runners found."
+          }
+          foreach ($runner in $runners) {
+            Write-Host "Parsing $($runner.FullName)"
+            $source = Get-Content $runner.FullName -Raw
+            [void][scriptblock]::Create($source)
+          }
 
       - uses: actions/setup-node@v4
         with:

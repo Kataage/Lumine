@@ -105,6 +105,33 @@ go run ./cmd/ai-bench validate-catalog `
 
 Do not replace an image/sidecar while retaining the same pack ID after evidence exists. Create `lumine-advanced-vision-v2` instead.
 
+## Recommended one-command Windows run
+
+Use the checked-in runner for the controlled #189 comparison:
+
+```powershell
+.\benchmarks\ai\run_advanced_vision_benchmark.ps1 \
+  -FixtureDir "D:\LumineBench\lumine-advanced-vision-v1" \
+  -HardwareId "main-pc-cpu8"
+```
+
+The runner validates the fixture pack, records CPU/RAM/current Lumine commit, runs every immutably pinned Advanced Vision candidate, validates each result, and writes `advanced-vision-comparison.md` plus `advanced-vision-run-info.json`.
+
+The Heretic profile is automatically included only after its revision/model/mmproj hashes and sizes are immutably pinned. While it is still exploratory, run:
+
+```powershell
+.\benchmarks\ai\run_advanced_vision_benchmark.ps1 \
+  -FixtureDir "D:\LumineBench\lumine-advanced-vision-v1" \
+  -HardwareId "main-pc-cpu8" \
+  -RunHereticDiscovery
+```
+
+That discovery result is excluded from the evidence comparison and its model-size output is written to `advanced-heretic-pin-info.json`.
+
+For controlled evidence, clear `LUMINE_LLAMA_SERVER`. `-AllowLlamaServerOverride` exists for debugging only.
+
+The manual commands below remain available for single-candidate debugging.
+
 ## Environment
 
 ```powershell
