@@ -779,19 +779,29 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 		// normal case and guarantees that a completion racing the final DB
 		// generation read cannot disappear from the current process.
 		i.adoptSnapshotLocked(snapshot, true)
+		epochStable := i.persistEpoch == epoch
+		if epochStable {
+			// An embedding can be written just before its analysis row becomes
+			// ready. Only drop overlay entries that the new snapshot actually
+			// contains; missing entries keep the worker alive until the ready
+			// transition advances DB generation and the next snapshot includes
+			// them.
+			for assetID := range i.overlay {
+				if _, represented := i.positions[assetID]; represented {
+					delete(i.overlay, assetID)
+				}
+			}
+			i.overlayExtra = 0
+			for assetID := range i.overlay {
+				if _, represented := i.positions[assetID]; !represented {
+					i.overlayExtra++
+				}
+			}
+		}
 		i.loaded = i.loadedCountLocked()
 		i.total = i.loaded
 		i.updatedAt = time.Now()
-		stable := i.persistEpoch == epoch
-		if stable {
-			// No in-memory Upsert raced this snapshot build, therefore every
-			// overlay value is represented by the immutable snapshot we just
-			// adopted. Drop the duplicate heap copy.
-			i.overlay = make(map[int64][]float32)
-			i.overlayExtra = 0
-			i.loaded = len(i.positions)
-			i.total = i.loaded
-		}
+		stable := epochStable && len(i.overlay) == 0
 		keepPath := snapshot.path
 		i.mu.Unlock()
 		cleanupSemanticSnapshots(i.storageRoot, keepPath)
