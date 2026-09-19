@@ -149,10 +149,13 @@ On the first run, the script creates the ONNX and PixAI v1 virtual environments 
 The runner performs these steps in one sequence:
 
 1. validates the private fixture pack against `catalog.json`;
-2. records the current Lumine git commit, CPU description and installed RAM;
-3. runs WD v3, PixAI v0.9, Camie v2 and PixAI v1.0 under the same hardware ID and CPU-only benchmark policy;
-4. validates every generated result;
-5. writes `tagger-comparison.md` and `tagger-run-info.json` into `benchmarks/ai/results/local` by default.
+2. inspects every pinned candidate and writes `tagger-runtime-info.json`;
+3. records the current Lumine git commit, CPU description and installed RAM;
+4. runs WD v3, PixAI v0.9, Camie v2 and PixAI v1.0 under the same hardware ID and CPU-only benchmark policy;
+5. validates every generated result;
+6. writes `tagger-comparison.md`, `tagger-runtime-info.json` and `tagger-run-info.json` into `benchmarks/ai/results/local` by default.
+
+`tagger-runtime-info.json` is the bridge from #165 research to the native #166 product engine. For ONNX candidates it records the actual input/output tensor names and shapes, selected output, tag count, immutable model/tag sidecar URLs, sizes and SHA-256 values, plus the exact manifest parameters expected by `tagger-onnx`. Non-ONNX candidates are explicitly marked as not directly eligible for that runtime instead of inventing an export.
 
 `-SkipPixAIV1` exists only for troubleshooting the lighter ONNX candidates. A run that skips PixAI v1.0 is not the full current Issue #165 comparison and must not be used as final adoption evidence.
 
