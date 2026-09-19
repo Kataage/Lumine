@@ -1,10 +1,10 @@
 {
   "id": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
-  "version": "main",
+  "version": "fb32df77e9e1852d558d1013501e19666a3eb0bb",
   "engine": "llama.cpp-text-cpu",
   "quantization": "Q4_K",
-  "artifactSha256": "",
-  "modelSizeBytes": 0,
+  "artifactSha256": "0900451ccd4f0a65bf0e8d3f2c224eff02ae9c961cb064de8b87e8a2118af3c2",
+  "modelSizeBytes": 2783446464,
   "runtime": "llama.cpp-b10964-cpu-x64",
   "benchmarkCategories": [
     "ja_to_prompt",
@@ -23,10 +23,10 @@
   "parameters": {
     "repoId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
     "modelFile": "Huihui-NeoHorse-1-4B-abliterated-Q4_K.gguf",
-    "modelSha256": "",
-    "modelSizeBytes": "0",
+    "modelSha256": "0900451ccd4f0a65bf0e8d3f2c224eff02ae9c961cb064de8b87e8a2118af3c2",
+    "modelSizeBytes": "2783446464",
     "runtimeFamily": "upstream-llamacpp",
-    "pinStatus": "exploratory-only-needs-immutable-revision-and-sha256-before-evidence",
+    "pinStatus": "pinned-immutable-hf-revision-and-sha256",
     "llamaRelease": "b10964",
     "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
     "threads": "8",
