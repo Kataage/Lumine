@@ -12,6 +12,14 @@ export type AssetListRequest = cmds.AssetListRequest;
 export interface AssetListResponse {
   assets: AssetDTO[];
   totalCount: number;
+  semanticSearchSessionId?: string;
+}
+
+export interface SemanticSearchProgress {
+  requestId: string;
+  assets: AssetDTO[];
+  scannedCount: number;
+  totalCount: number;
 }
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
@@ -533,6 +541,9 @@ type DynamicCommands = {
   SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
   IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
   SemanticSearchAssets?: (request: AssetListRequest) => Promise<AssetListResponse | null>;
+  SemanticSearchAssetsWithID?: (request: AssetListRequest, requestId: string) => Promise<AssetListResponse | null>;
+  SemanticSearchPage?: (sessionId: string, offset: number, limit: number) => Promise<AssetListResponse | null>;
+  CancelSemanticSearch?: (requestId: string) => Promise<void>;
   ListSimilarAssets?: (assetId: number, request: AssetListRequest) => Promise<AssetListResponse | null>;
   GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
   InstallDefaultSemanticModel?: () => Promise<unknown>;
@@ -684,8 +695,26 @@ export async function isAICapabilityEnabled(capability: string): Promise<boolean
   return requireDynamic("IsAICapabilityEnabled")(capability);
 }
 
-export async function semanticSearchAssets(request: AssetListRequest): Promise<AssetListResponse> {
+export async function semanticSearchAssets(request: AssetListRequest, requestId = ""): Promise<AssetListResponse> {
+  const commands = appCommands();
+  if (requestId && commands?.SemanticSearchAssetsWithID) {
+    return (await commands.SemanticSearchAssetsWithID(request, requestId)) ?? { assets: [], totalCount: 0 };
+  }
   return (await requireDynamic("SemanticSearchAssets")(request)) ?? { assets: [], totalCount: 0 };
+}
+
+export async function semanticSearchPage(sessionId: string, offset: number, limit: number): Promise<AssetListResponse> {
+  return (await requireDynamic("SemanticSearchPage")(sessionId, offset, limit)) ?? { assets: [], totalCount: 0 };
+}
+
+export async function cancelSemanticSearch(requestId: string): Promise<void> {
+  if (!requestId) return;
+  const method = appCommands()?.CancelSemanticSearch;
+  if (method) await method(requestId);
+}
+
+export function onSemanticSearchProgress(callback: (progress: SemanticSearchProgress) => void): () => void {
+  return EventsOn("semantic-search:progress", (value: unknown) => callback(value as SemanticSearchProgress));
 }
 
 export async function listSimilarAssets(assetId: number, request: AssetListRequest): Promise<AssetListResponse> {
