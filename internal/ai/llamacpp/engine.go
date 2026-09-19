@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ type VisionResult struct {
 }
 
 type Engine struct {
+	id           string
 	runtimeStore *RuntimeStore
 	client       *http.Client
 
@@ -42,22 +44,31 @@ type Engine struct {
 }
 
 func NewEngine(runtimeStore *RuntimeStore) ai.Engine {
+	return newEngine(runtimeStore, EngineID)
+}
+
+func NewAdvancedEngine(runtimeStore *RuntimeStore) ai.Engine {
+	return newEngine(runtimeStore, AdvancedEngineID)
+}
+
+func newEngine(runtimeStore *RuntimeStore, engineID string) *Engine {
 	return &Engine{
+		id:           engineID,
 		runtimeStore: runtimeStore,
 		client:       &http.Client{Timeout: 3 * time.Minute},
 	}
 }
 
 func (e *Engine) ID() string {
-	return EngineID
+	return e.id
 }
 
-func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOptions) error {
+func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {
 	if e.runtimeStore == nil {
 		return errors.New("llama.cpp runtime store is not configured")
 	}
-	if model.Manifest.Engine != EngineID {
-		return fmt.Errorf("model engine %q is incompatible with %q", model.Manifest.Engine, EngineID)
+	if model.Manifest.Engine != e.id {
+		return fmt.Errorf("model engine %q is incompatible with %q", model.Manifest.Engine, e.id)
 	}
 	if goruntime.GOOS != "windows" || goruntime.GOARCH != "amd64" {
 		return fmt.Errorf("pinned llama.cpp runtime supports windows/amd64, current platform is %s/%s", goruntime.GOOS, goruntime.GOARCH)
@@ -67,16 +78,21 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 	if err != nil {
 		return fmt.Errorf("verify llama.cpp runtime: %w", err)
 	}
-	modelPath := filepath.Join(model.RootDir, defaultVisionModelFile)
-	mmprojPath := filepath.Join(model.RootDir, defaultVisionMMProjFile)
-	for _, path := range []string{modelPath, mmprojPath} {
-		info, statErr := os.Stat(path)
-		if statErr != nil || info.IsDir() {
-			if statErr == nil {
-				statErr = errors.New("path is a directory")
-			}
-			return fmt.Errorf("required VLM file %s is unavailable: %w", filepath.Base(path), statErr)
-		}
+	modelPath, mmprojPath, err := resolveVLMModelPaths(model)
+	if err != nil {
+		return err
+	}
+	contextSize, err := manifestPositiveInt(model.Manifest, "context", 4096)
+	if err != nil {
+		return err
+	}
+	threads, err := manifestPositiveInt(model.Manifest, "threads", 8)
+	if err != nil {
+		return err
+	}
+	extraArgs, err := manifestServerArgs(model.Manifest)
+	if err != nil {
+		return err
 	}
 
 	port, err := reserveLocalPort()
@@ -89,12 +105,17 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 		"--mmproj", mmprojPath,
 		"--host", "127.0.0.1",
 		"--port", fmt.Sprintf("%d", port),
-		"--ctx-size", "4096",
-		"--threads", "8",
+		"--ctx-size", strconv.Itoa(contextSize),
+		"--threads", strconv.Itoa(threads),
 		"--parallel", "1",
-		"--no-mmproj-offload",
-		"-ngl", "0",
+		"--no-webui",
 	}
+	if options.AllowGPU {
+		args = append(args, "-ngl", "99")
+	} else {
+		args = append(args, "--no-mmproj-offload", "-ngl", "0")
+	}
+	args = append(args, extraArgs...)
 	if err := sidecar.Start(ctx, runtimeInfo.ExecutablePath, args, nil); err != nil {
 		return err
 	}
@@ -122,6 +143,77 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, _ ai.LoadOpt
 	e.model = model
 	e.mu.Unlock()
 	return nil
+}
+
+func resolveVLMModelPaths(model ai.InstalledModel) (string, string, error) {
+	var modelRelative, mmprojRelative string
+	for _, file := range model.Manifest.Files {
+		switch file.Role {
+		case "model":
+			modelRelative = file.Path
+		case "mmproj":
+			mmprojRelative = file.Path
+		}
+	}
+
+	// Backward compatibility for SmolVLM installs created before model-file
+	// roles were added to ModelManifest.
+	if modelRelative == "" && model.Manifest.ID == DefaultVisionModelID {
+		modelRelative = defaultVisionModelFile
+	}
+	if mmprojRelative == "" && model.Manifest.ID == DefaultVisionModelID {
+		mmprojRelative = defaultVisionMMProjFile
+	}
+	if modelRelative == "" || mmprojRelative == "" {
+		return "", "", errors.New("VLM manifest requires unique model and mmproj file roles")
+	}
+
+	modelPath := filepath.Join(model.RootDir, filepath.FromSlash(modelRelative))
+	mmprojPath := filepath.Join(model.RootDir, filepath.FromSlash(mmprojRelative))
+	for _, path := range []string{modelPath, mmprojPath} {
+		info, statErr := os.Stat(path)
+		if statErr != nil || info.IsDir() {
+			if statErr == nil {
+				statErr = errors.New("path is a directory")
+			}
+			return "", "", fmt.Errorf("required VLM file %s is unavailable: %w", filepath.Base(path), statErr)
+		}
+	}
+	return modelPath, mmprojPath, nil
+}
+
+func manifestPositiveInt(manifest ai.ModelManifest, key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(manifest.Parameters[key])
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("model parameter %s must be a positive integer", key)
+	}
+	return value, nil
+}
+
+func manifestServerArgs(manifest ai.ModelManifest) ([]string, error) {
+	raw := strings.TrimSpace(manifest.Parameters["serverArgsJson"])
+	if raw == "" {
+		return nil, nil
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		return nil, fmt.Errorf("decode model serverArgsJson: %w", err)
+	}
+	protected := map[string]struct{}{
+		"-m": {}, "--model": {}, "--mmproj": {}, "--host": {}, "--port": {},
+		"--ctx-size": {}, "--threads": {}, "--parallel": {}, "-ngl": {},
+		"--n-gpu-layers": {}, "--media-path": {},
+	}
+	for _, arg := range args {
+		if _, exists := protected[arg]; exists {
+			return nil, fmt.Errorf("model serverArgsJson may not override %s", arg)
+		}
+	}
+	return args, nil
 }
 
 func (e *Engine) waitUntilReady(
