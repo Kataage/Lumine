@@ -112,3 +112,16 @@ jobs:
 
       - name: Validate AI benchmark Python tooling
         run: python3 -m py_compile benchmarks/ai/adapters/tagger_onnx.py benchmarks/ai/adapters/tagger_pixai_v1.py benchmarks/ai/adapters/tagger_report.py benchmarks/ai/adapters/tagger_runtime_inspect.py benchmarks/ai/adapters/vision_common.py benchmarks/ai/adapters/lightvision_florence.py benchmarks/ai/adapters/lightvision_smolvlm.py benchmarks/ai/adapters/lightvision_report.py benchmarks/ai/adapters/advancedvision_common.py benchmarks/ai/adapters/advancedvision_llamacpp.py benchmarks/ai/adapters/advancedvision_report.py benchmarks/ai/adapters/prompt_common.py benchmarks/ai/adapters/prompt_llamacpp.py benchmarks/ai/adapters/prompt_report.py benchmarks/ai/adapters/prompt_pin_inspect.py
+
+      # Temporary on PR #238 only: resolve public model metadata once so the
+      # exploratory profiles can be pinned. This step is removed before merge.
+      - name: Resolve Prompt candidate pins for PR 238
+        run: |
+          python3 -m pip install --disable-pip-version-check -r benchmarks/ai/adapters/requirements-prompt.txt
+          python3 benchmarks/ai/adapters/prompt_pin_inspect.py \
+            --out /tmp/prompt-pins.json \
+            benchmarks/ai/profiles/prompt-neohorse-1-4b-abliterated-q4.json \
+            benchmarks/ai/profiles/prompt-spark-x2.5-4b-heretic-jp-q4.json \
+            benchmarks/ai/profiles/prompt-qwen3.5-4b-abliterated-q4.json \
+            benchmarks/ai/profiles/prompt-qwen3.5-4b-control-q4.json
+          cat /tmp/prompt-pins.json
