@@ -99,9 +99,11 @@ func Resolve(options ResolveOptions) (Layout, error) {
 	preferred.LegacyDetected = legacyDetected
 
 	// Existing users keep using the old root until they explicitly migrate.
-	// This avoids presenting a fresh empty library or silently copying/moving
-	// potentially tens of GB of AI models during an upgrade.
-	if !installedDatabaseExists(preferredRoot) && installedDatabaseExists(legacyRoot) {
+	// A pending migration also pins the old root even if a previous copy attempt
+	// already produced a target DB; only removing the request marker after a
+	// complete copy allows the preferred root to become active.
+	migrationPending := fileExists(filepath.Join(preferredRoot, legacyImportMarkerName))
+	if (!installedDatabaseExists(preferredRoot) || migrationPending) && installedDatabaseExists(legacyRoot) {
 		legacy := installedLayout(legacyRoot)
 		legacy.PreferredRootDir = preferredRoot
 		legacy.LegacyRootDir = legacyRoot
@@ -164,6 +166,11 @@ func defaultInstalledDataBase() (string, error) {
 		return "", fmt.Errorf("resolve user application data: %w", err)
 	}
 	return dir, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func installedDatabaseExists(root string) bool {
