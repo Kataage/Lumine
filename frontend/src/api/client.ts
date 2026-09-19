@@ -42,11 +42,20 @@ export interface AIJobQueueStatus {
   pausedCapabilities: string[];
 }
 
+export interface AIRuntimeStatus {
+  capability: string;
+  state: AIRuntimeState;
+  modelId?: string;
+  version?: string;
+  engine?: string;
+  error?: string;
+}
+
 export interface AIHealthSnapshot {
   settings: AISettings;
   settingsPersisted: boolean;
   settingsUpdatedAt?: string;
-  semanticRuntime: RuntimeStatus;
+  semanticRuntime: AIRuntimeStatus;
   semanticIndex: SemanticIndexStatus;
   queue: AIJobQueueStatus;
   shuttingDown: boolean;
