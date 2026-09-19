@@ -123,11 +123,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($InspectOnly) {
+    if ($ApplyPins) {
+        foreach ($candidate in $candidates) {
+            $profilePath = Join-Path $RepoRoot $candidate.Profile
+            if (-not (Test-ProfilePinned $profilePath)) {
+                throw "Applied Prompt profile is still not fully pinned: $($candidate.Profile)"
+            }
+        }
+    }
+
     Write-Host ""
     Write-Host "Prompt pin inspection complete."
     Write-Host "Pin info: $pinInfoPath"
     if ($ApplyPins) {
-        Write-Host "Profiles were explicitly updated with the resolved immutable pins."
+        Write-Host "Profiles were explicitly updated and revalidated as immutable."
     } else {
         Write-Host "Profiles were not modified. Re-run with -InspectOnly -ApplyPins to apply them explicitly."
     }
