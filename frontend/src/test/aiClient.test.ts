@@ -163,6 +163,33 @@ describe("typed AI Wails bridge", () => {
     expect(dynamic).not.toHaveBeenCalled();
   });
 
+  it("SigLIP2 execution providerとfallback warningを保持する", async () => {
+    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue(
+      new commands.SemanticModelInfo({
+        id: "siglip2",
+        version: "1",
+        engine: "siglip2",
+        displayName: "SigLIP2",
+        license: "Apache-2.0",
+        sizeBytes: 123,
+        installed: true,
+        runtime: {
+          capability: "semantic_search",
+          state: "ready",
+          modelId: "siglip2",
+          version: "1",
+          engine: "siglip2",
+          executionProvider: "cpu",
+          warning: "DirectML unavailable; using CPU fallback",
+        },
+      }),
+    );
+
+    const info = await getDefaultSemanticModelInfo();
+    expect(info.runtime.executionProvider).toBe("cpu");
+    expect(info.runtime.warning).toContain("DirectML unavailable");
+  });
+
   it("not_loaded runtime stateを保持する", async () => {
     vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue(
       new commands.SemanticModelInfo({
