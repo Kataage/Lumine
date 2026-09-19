@@ -33,6 +33,19 @@ type TaggerResult struct {
 	RatingThreshold    float64       `json:"ratingThreshold,omitempty"`
 }
 
+type TaggerAnalysisDTO struct {
+	AssetID      int64                    `json:"assetId"`
+	State        domain.AIAnalysisState   `json:"state"`
+	Engine       string                   `json:"engine,omitempty"`
+	ModelID      string                   `json:"modelId,omitempty"`
+	ModelVersion string                   `json:"modelVersion,omitempty"`
+	Suggestions  []domain.AITagSuggestion `json:"suggestions"`
+	ErrorMessage string                   `json:"errorMessage,omitempty"`
+	AnalyzedAt   string                   `json:"analyzedAt,omitempty"`
+	UpdatedAt    string                   `json:"updatedAt,omitempty"`
+}
+
+
 func (c *AppCommands) TaggerAnalysisHandler(
 	ctx context.Context,
 	job domain.AIJob,
@@ -247,6 +260,57 @@ func taggerSuggestionsFromResult(result TaggerResult) []domain.AITagSuggestion {
 		})
 	}
 	return suggestions
+}
+
+func (c *AppCommands) GetTaggerAnalysis(assetID int64) (*TaggerAnalysisDTO, error) {
+	suggestions := []domain.AITagSuggestion{}
+	if c.tagSuggestionRepo != nil {
+		values, err := c.tagSuggestionRepo.ListByAsset(assetID)
+		if err != nil {
+			return nil, err
+		}
+		suggestions = values
+	}
+
+	var analysis *domain.AIAnalysis
+	if c.aiJobQueue != nil {
+		values, err := c.aiJobQueue.GetAnalysesByAsset(assetID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range values {
+			if values[i].Capability == domain.AICapabilityTagger {
+				value := values[i]
+				analysis = &value
+				break
+			}
+		}
+	}
+	if analysis == nil {
+		if len(suggestions) == 0 {
+			return nil, nil
+		}
+		return &TaggerAnalysisDTO{
+			AssetID:     assetID,
+			State:       domain.AIAnalysisStale,
+			Suggestions: suggestions,
+		}, nil
+	}
+
+	dto := &TaggerAnalysisDTO{
+		AssetID:      assetID,
+		State:        analysis.State,
+		Engine:       analysis.Engine,
+		ModelID:      analysis.ModelID,
+		ModelVersion: analysis.ModelVersion,
+		Suggestions:  suggestions,
+		ErrorMessage: analysis.ErrorMessage,
+		UpdatedAt:    analysis.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+	}
+	if analysis.AnalyzedAt != nil {
+		dto.AnalyzedAt = analysis.AnalyzedAt.Format("2006-01-02T15:04:05Z")
+	}
+	return dto, nil
 }
 
 func (c *AppCommands) GetAITagSuggestions(assetID int64) ([]domain.AITagSuggestion, error) {
