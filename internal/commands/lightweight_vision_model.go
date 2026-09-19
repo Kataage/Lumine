@@ -28,13 +28,16 @@ type LightweightVisionModelInfo struct {
 }
 
 type LightweightRuntimeInfo struct {
-	ID               string `json:"id"`
-	Version          string `json:"version"`
-	SizeBytes        int64  `json:"sizeBytes"`
-	Installed        bool   `json:"installed"`
-	ExecutablePath   string `json:"executablePath,omitempty"`
-	Platform         string `json:"platform"`
-	Architecture     string `json:"architecture"`
+	ID                string `json:"id"`
+	Version           string `json:"version"`
+	Backend           string `json:"backend"`
+	SizeBytes         int64  `json:"sizeBytes"`
+	Installed         bool   `json:"installed"`
+	ExecutablePath    string `json:"executablePath,omitempty"`
+	Platform          string `json:"platform"`
+	Architecture      string `json:"architecture"`
+	FallbackInstalled bool   `json:"fallbackInstalled"`
+	FallbackSizeBytes int64  `json:"fallbackSizeBytes,omitempty"`
 }
 
 func (c *AppCommands) SetLlamaRuntimeStore(store *llamacpp.RuntimeStore) {
