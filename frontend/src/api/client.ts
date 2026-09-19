@@ -62,11 +62,6 @@ export interface AIHealthSnapshot {
   semanticSearchEnabled: boolean;
 }
 
-export interface AIBridgeStatus {
-  available: boolean;
-  missing: string[];
-}
-
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
 export type MoveRequest = cmds.MoveRequest;
@@ -215,7 +210,7 @@ export interface DeleteAssetFilesResult {
   errors?: string[];
 }
 
-export type AIRuntimeState = "disabled" | "model_not_installed" | "ready" | "running" | "error";
+export type AIRuntimeState = "disabled" | "model_not_installed" | "not_loaded" | "ready" | "running" | "error";
 
 export interface AIStorageInfo {
   modelsPath: string;
@@ -582,50 +577,6 @@ export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
 
 type DynamicCommands = {
-  GetAISettings?: () => Promise<AISettings | null>;
-  GetAIHealthSnapshot?: () => Promise<AIHealthSnapshot | null>;
-  GetAIStorageInfo?: () => Promise<AIStorageInfo | null>;
-  SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
-  PatchAISettings?: (patch: Record<string, boolean>) => Promise<AISettings | null>;
-  IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
-  SemanticSearchAssets?: (request: AssetListRequest) => Promise<AssetListResponse | null>;
-  SemanticSearchAssetsWithID?: (request: AssetListRequest, requestId: string) => Promise<AssetListResponse | null>;
-  SemanticSearchPage?: (sessionId: string, offset: number, limit: number) => Promise<AssetListResponse | null>;
-  CancelSemanticSearch?: (requestId: string) => Promise<void>;
-  GetSemanticIndexStatus?: () => Promise<SemanticIndexStatus>;
-  ListSimilarAssets?: (assetId: number, request: AssetListRequest) => Promise<AssetListResponse | null>;
-  GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
-  EnsureSemanticSearchReady?: () => Promise<void>;
-  InstallDefaultSemanticModel?: () => Promise<unknown>;
-  LoadDefaultSemanticModel?: () => Promise<void>;
-  GetDefaultLightweightVisionModelInfo?: () => Promise<LightweightVisionModelInfo | null>;
-  InstallLightweightVisionRuntime?: () => Promise<LightweightRuntimeInfo | null>;
-  RemoveLightweightVisionRuntime?: () => Promise<void>;
-  InstallDefaultLightweightVisionModel?: () => Promise<unknown>;
-  RemoveDefaultLightweightVisionModel?: () => Promise<void>;
-  LoadDefaultLightweightVisionModel?: () => Promise<void>;
-  GetLightweightVisionAnalysis?: (assetId: number) => Promise<LightweightVisionAnalysis | null>;
-  EnqueueLightweightVisionBackfill?: () => Promise<number>;
-  ReanalyzeAssets?: (assetIds: number[], capability: string, priority: number) => Promise<number>;
-  GetAdvancedVisionStatus?: () => Promise<AdvancedVisionStatusInfo | null>;
-  InstallAdvancedVisionRuntime?: () => Promise<LightweightRuntimeInfo | null>;
-  RemoveAdvancedVisionRuntime?: () => Promise<void>;
-  InstallAdvancedVisionModel?: (modelId: string) => Promise<unknown>;
-  RemoveAdvancedVisionModel?: (modelId: string) => Promise<void>;
-  LoadAdvancedVisionModel?: (modelId: string) => Promise<void>;
-  RunAdvancedVision?: (operation: string, assetIds: number[], instruction: string) => Promise<AdvancedVisionRun | null>;
-  GetAdvancedVisionRun?: (runId: number) => Promise<AdvancedVisionRun | null>;
-  ListAdvancedVisionRunsForAsset?: (assetId: number, limit: number) => Promise<AdvancedVisionRun[]>;
-  GetPromptEngineStatus?: () => Promise<PromptEngineStatusInfo | null>;
-  InstallPromptEngineRuntime?: () => Promise<LightweightRuntimeInfo | null>;
-  RemovePromptEngineRuntime?: () => Promise<void>;
-  InstallPromptEngineModel?: (modelId: string) => Promise<unknown>;
-  RemovePromptEngineModel?: (modelId: string) => Promise<void>;
-  LoadPromptEngineModel?: (modelId: string) => Promise<void>;
-  RunPromptEngine?: (request: PromptEngineRequest) => Promise<PromptEngineResult | null>;
-  BuildImagePrompt?: (request: ImagePromptRequest) => Promise<ImagePromptResult | null>;
-  CreatePromptProjectFromImage?: (request: ImagePromptRequest) => Promise<ImagePromptProjectResult | null>;
-  GetAssetGenerationMetadata?: (assetId: number, refresh: boolean) => Promise<AssetGenerationMetadata | null>;
   ListModelProfiles?: () => Promise<ModelProfile[]>;
   GetModelProfile?: (id: string) => Promise<ModelProfile | null>;
   CreateModelProfile?: (input: ModelProfileInput) => Promise<ModelProfile | null>;
@@ -725,33 +676,112 @@ function requireDynamic<K extends keyof DynamicCommands>(name: K): NonNullable<D
   return method as NonNullable<DynamicCommands[K]>;
 }
 
-export async function getAISettings(): Promise<AISettings> {
-  const value = await requireDynamic("GetAISettings")();
-  return normalizeAISettings(value);
+function normalizeRuntimeState(state: string): AIRuntimeState {
+  switch (state) {
+    case "disabled":
+    case "model_not_installed":
+    case "not_loaded":
+    case "ready":
+    case "running":
+    case "error":
+      return state;
+    default:
+      throw new Error(`未知のAI runtime stateです: ${state}`);
+  }
 }
 
-export function getAIBridgeStatus(): AIBridgeStatus {
-  const commands = appCommands();
-  const required = [
-    "GetAISettings",
-    "PatchAISettings",
-    "GetAIHealthSnapshot",
-    "GetDefaultSemanticModelInfo",
-    "EnsureSemanticSearchReady",
-    "SemanticSearchAssetsWithID",
-    "GetSemanticIndexStatus",
-    "CancelSemanticSearch",
-  ] as const;
-  const missing = required.filter((name) => typeof commands?.[name] !== "function");
-  return { available: missing.length === 0, missing: [...missing] };
+function normalizeRuntimeStatus(value: {
+  capability: string;
+  state: string;
+  modelId?: string;
+  version?: string;
+  engine?: string;
+  error?: string;
+}): AIRuntimeStatus {
+  return {
+    capability: value.capability,
+    state: normalizeRuntimeState(value.state),
+    modelId: value.modelId,
+    version: value.version,
+    engine: value.engine,
+    error: value.error,
+  };
+}
+
+function normalizeLightweightAnalysisState(
+  state: string,
+): LightweightVisionAnalysis["state"] {
+  switch (state) {
+    case "queued":
+    case "running":
+    case "ready":
+    case "failed":
+    case "stale":
+      return state;
+    default:
+      throw new Error(`未知のLightweight Vision stateです: ${state}`);
+  }
+}
+
+function normalizeAdvancedOperation(
+  operation: string,
+): AdvancedVisionRun["operation"] {
+  switch (operation) {
+    case "analyze_deep":
+    case "compare_images":
+    case "reverse_prompt_support":
+      return operation;
+    default:
+      throw new Error(`未知のAdvanced Vision operationです: ${operation}`);
+  }
+}
+
+function normalizeAdvancedState(state: string): AdvancedVisionRun["state"] {
+  switch (state) {
+    case "running":
+    case "ready":
+    case "failed":
+      return state;
+    default:
+      throw new Error(`未知のAdvanced Vision stateです: ${state}`);
+  }
+}
+
+function normalizeAdvancedRun(value: cmds.AdvancedVisionRunDTO): AdvancedVisionRun {
+  return {
+    ...value,
+    operation: normalizeAdvancedOperation(value.operation),
+    state: normalizeAdvancedState(value.state),
+    assetIds: value.assetIds ?? [],
+    result: value.result
+      ? {
+          ...value.result,
+          subjects: value.result.subjects ?? [],
+          actions: value.result.actions ?? [],
+          relationships: value.result.relationships ?? [],
+          differences: value.result.differences ?? [],
+          commonalities: value.result.commonalities ?? [],
+          reversePromptHints: value.result.reversePromptHints ?? [],
+          visibleText: value.result.visibleText ?? [],
+          notes: value.result.notes ?? [],
+        }
+      : undefined,
+  };
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  return normalizeAISettings(await Go.GetAISettings());
 }
 
 export async function getAIHealthSnapshot(): Promise<AIHealthSnapshot> {
-  const value = await requireDynamic("GetAIHealthSnapshot")();
-  if (!value) throw new Error("AI状態を取得できませんでした。");
+  const value = await Go.GetAIHealthSnapshot();
   return {
-    ...value,
     settings: normalizeAISettings(value.settings),
+    settingsPersisted: value.settingsPersisted,
+    settingsUpdatedAt:
+      typeof value.settingsUpdatedAt === "string" ? value.settingsUpdatedAt : undefined,
+    semanticRuntime: normalizeRuntimeStatus(value.semanticRuntime),
+    semanticIndex: value.semanticIndex,
     queue: {
       started: value.queue?.started === true,
       workers: Number(value.queue?.workers ?? 0),
@@ -759,151 +789,171 @@ export async function getAIHealthSnapshot(): Promise<AIHealthSnapshot> {
       activeCapabilities: value.queue?.activeCapabilities ?? [],
       pausedCapabilities: value.queue?.pausedCapabilities ?? [],
     },
+    shuttingDown: value.shuttingDown,
+    semanticSearchEnabled: value.semanticSearchEnabled,
   };
 }
 
 export async function getAIStorageInfo(): Promise<AIStorageInfo> {
-  const value = await requireDynamic("GetAIStorageInfo")();
-  if (!value) throw new Error("AI保存先を取得できませんでした。");
-  return value;
+  return Go.GetAIStorageInfo();
 }
 
 export async function setAISettings(settings: AISettings): Promise<AISettings> {
-  const value = await requireDynamic("SetAISettings")(settings);
-  return normalizeAISettings(value ?? settings);
+  return normalizeAISettings(await Go.SetAISettings(settings));
 }
 
-export async function patchAISettings(patch: Partial<Record<keyof AISettings, boolean>>): Promise<AISettings> {
-  const value = await requireDynamic("PatchAISettings")(patch as Record<string, boolean>);
-  if (!value) throw new Error("AI設定を更新できませんでした。");
-  return normalizeAISettings(value);
+export async function patchAISettings(
+  patch: Partial<Record<keyof AISettings, boolean>>,
+): Promise<AISettings> {
+  return normalizeAISettings(await Go.PatchAISettings(patch as Record<string, boolean>));
 }
 
 export async function isAICapabilityEnabled(capability: string): Promise<boolean> {
-  return requireDynamic("IsAICapabilityEnabled")(capability);
+  return Go.IsAICapabilityEnabled(capability);
 }
 
-export async function semanticSearchAssets(request: AssetListRequest, requestId = ""): Promise<AssetListResponse> {
-  const commands = appCommands();
-  if (requestId && commands?.SemanticSearchAssetsWithID) {
-    return (await commands.SemanticSearchAssetsWithID(request, requestId)) ?? { assets: [], totalCount: 0 };
-  }
-  return (await requireDynamic("SemanticSearchAssets")(request)) ?? { assets: [], totalCount: 0 };
+export async function semanticSearchAssets(
+  request: AssetListRequest,
+  requestId = "",
+): Promise<AssetListResponse> {
+  return requestId
+    ? Go.SemanticSearchAssetsWithID(request, requestId)
+    : Go.SemanticSearchAssets(request);
 }
 
-export async function semanticSearchPage(sessionId: string, offset: number, limit: number): Promise<AssetListResponse> {
-  return (await requireDynamic("SemanticSearchPage")(sessionId, offset, limit)) ?? { assets: [], totalCount: 0 };
+export async function semanticSearchPage(
+  sessionId: string,
+  offset: number,
+  limit: number,
+): Promise<AssetListResponse> {
+  return Go.SemanticSearchPage(sessionId, offset, limit);
 }
 
 export async function cancelSemanticSearch(requestId: string): Promise<void> {
   if (!requestId) return;
-  const method = appCommands()?.CancelSemanticSearch;
-  if (method) await method(requestId);
+  await Go.CancelSemanticSearch(requestId);
 }
 
 export async function getSemanticIndexStatus(): Promise<SemanticIndexStatus> {
-  const method = appCommands()?.GetSemanticIndexStatus;
-  if (!method) {
-    return {
-      state: "unavailable",
-      loadedCount: 0,
-      totalCount: 0,
-      dimensions: 0,
-      elapsedMs: 0,
-      updatedAgoMs: 0,
-    };
-  }
-  return method();
+  return Go.GetSemanticIndexStatus();
 }
 
 export function onSemanticSearchProgress(callback: (progress: SemanticSearchProgress) => void): () => void {
   return EventsOn("semantic-search:progress", (value: unknown) => callback(value as SemanticSearchProgress));
 }
 
-export async function listSimilarAssets(assetId: number, request: AssetListRequest): Promise<AssetListResponse> {
-  return (await requireDynamic("ListSimilarAssets")(assetId, request)) ?? { assets: [], totalCount: 0 };
+export async function listSimilarAssets(
+  assetId: number,
+  request: AssetListRequest,
+): Promise<AssetListResponse> {
+  return Go.ListSimilarAssets(assetId, request);
 }
 
 export async function getDefaultSemanticModelInfo(): Promise<SemanticModelInfo> {
-  const value = await requireDynamic("GetDefaultSemanticModelInfo")();
-  if (!value) throw new Error("Semantic Searchモデル情報を取得できませんでした。");
-  return value;
+  const value = await Go.GetDefaultSemanticModelInfo();
+  return {
+    ...value,
+    runtime: normalizeRuntimeStatus(value.runtime),
+  };
 }
 
 export async function ensureSemanticSearchReady(): Promise<void> {
-  await requireDynamic("EnsureSemanticSearchReady")();
+  await Go.EnsureSemanticSearchReady();
 }
 
 export async function installDefaultSemanticModel(): Promise<void> {
-  await requireDynamic("InstallDefaultSemanticModel")();
+  await Go.InstallDefaultSemanticModel();
 }
 
 export async function loadDefaultSemanticModel(): Promise<void> {
-  await requireDynamic("LoadDefaultSemanticModel")();
+  await Go.LoadDefaultSemanticModel();
 }
 
 export async function getDefaultLightweightVisionModelInfo(): Promise<LightweightVisionModelInfo> {
-  const value = await requireDynamic("GetDefaultLightweightVisionModelInfo")();
-  if (!value) throw new Error("Lightweight Visionモデル情報を取得できませんでした。");
-  return value;
+  const value = await Go.GetDefaultLightweightVisionModelInfo();
+  return {
+    ...value,
+    runtime: normalizeRuntimeStatus(value.runtime),
+  };
 }
 
 export async function installLightweightVisionRuntime(): Promise<void> {
-  await requireDynamic("InstallLightweightVisionRuntime")();
+  await Go.InstallLightweightVisionRuntime();
 }
 
 export async function removeLightweightVisionRuntime(): Promise<void> {
-  await requireDynamic("RemoveLightweightVisionRuntime")();
+  await Go.RemoveLightweightVisionRuntime();
 }
 
 export async function installDefaultLightweightVisionModel(): Promise<void> {
-  await requireDynamic("InstallDefaultLightweightVisionModel")();
+  await Go.InstallDefaultLightweightVisionModel();
 }
 
 export async function removeDefaultLightweightVisionModel(): Promise<void> {
-  await requireDynamic("RemoveDefaultLightweightVisionModel")();
+  await Go.RemoveDefaultLightweightVisionModel();
 }
 
 export async function loadDefaultLightweightVisionModel(): Promise<void> {
-  await requireDynamic("LoadDefaultLightweightVisionModel")();
+  await Go.LoadDefaultLightweightVisionModel();
 }
 
-export async function getLightweightVisionAnalysis(assetId: number): Promise<LightweightVisionAnalysis | null> {
-  return requireDynamic("GetLightweightVisionAnalysis")(assetId);
+export async function getLightweightVisionAnalysis(
+  assetId: number,
+): Promise<LightweightVisionAnalysis | null> {
+  const value = await Go.GetLightweightVisionAnalysis(assetId);
+  if (!value) return null;
+  return {
+    ...value,
+    state: normalizeLightweightAnalysisState(value.state),
+    result: value.result
+      ? {
+          ...value.result,
+          visibleText: value.result.visibleText ?? [],
+          notes: value.result.notes ?? [],
+        }
+      : undefined,
+  };
 }
 
 export async function enqueueLightweightVisionBackfill(): Promise<number> {
-  return requireDynamic("EnqueueLightweightVisionBackfill")();
+  return Go.EnqueueLightweightVisionBackfill();
 }
 
-export async function reanalyzeAssets(assetIds: number[], capability: string, priority = 100): Promise<number> {
-  return requireDynamic("ReanalyzeAssets")(assetIds, capability, priority);
+export async function reanalyzeAssets(
+  assetIds: number[],
+  capability: string,
+  priority = 100,
+): Promise<number> {
+  return Go.ReanalyzeAssets(assetIds, capability, priority);
 }
 
 export async function getAdvancedVisionStatus(): Promise<AdvancedVisionStatusInfo> {
-  const value = await requireDynamic("GetAdvancedVisionStatus")();
-  if (!value) throw new Error("Advanced Visionの状態を取得できませんでした。");
-  return value;
+  const value = await Go.GetAdvancedVisionStatus();
+  return {
+    ...value,
+    runtime: normalizeRuntimeStatus(value.runtime),
+    models: value.models ?? [],
+  };
 }
 
 export async function installAdvancedVisionRuntime(): Promise<void> {
-  await requireDynamic("InstallAdvancedVisionRuntime")();
+  await Go.InstallAdvancedVisionRuntime();
 }
 
 export async function removeAdvancedVisionRuntime(): Promise<void> {
-  await requireDynamic("RemoveAdvancedVisionRuntime")();
+  await Go.RemoveAdvancedVisionRuntime();
 }
 
 export async function installAdvancedVisionModel(modelId: string): Promise<void> {
-  await requireDynamic("InstallAdvancedVisionModel")(modelId);
+  await Go.InstallAdvancedVisionModel(modelId);
 }
 
 export async function removeAdvancedVisionModel(modelId: string): Promise<void> {
-  await requireDynamic("RemoveAdvancedVisionModel")(modelId);
+  await Go.RemoveAdvancedVisionModel(modelId);
 }
 
 export async function loadAdvancedVisionModel(modelId: string): Promise<void> {
-  await requireDynamic("LoadAdvancedVisionModel")(modelId);
+  await Go.LoadAdvancedVisionModel(modelId);
 }
 
 export async function runAdvancedVision(
@@ -911,51 +961,52 @@ export async function runAdvancedVision(
   assetIds: number[],
   instruction = "",
 ): Promise<AdvancedVisionRun> {
-  const value = await requireDynamic("RunAdvancedVision")(operation, assetIds, instruction);
-  if (!value) throw new Error("Advanced Visionの結果を取得できませんでした。");
-  return value;
+  return normalizeAdvancedRun(await Go.RunAdvancedVision(operation, assetIds, instruction));
 }
 
 export async function getAdvancedVisionRun(runId: number): Promise<AdvancedVisionRun | null> {
-  return requireDynamic("GetAdvancedVisionRun")(runId);
+  const value = await Go.GetAdvancedVisionRun(runId);
+  return value ? normalizeAdvancedRun(value) : null;
 }
 
-export async function listAdvancedVisionRunsForAsset(assetId: number, limit = 20): Promise<AdvancedVisionRun[]> {
-  return (await requireDynamic("ListAdvancedVisionRunsForAsset")(assetId, limit)) ?? [];
+export async function listAdvancedVisionRunsForAsset(
+  assetId: number,
+  limit = 20,
+): Promise<AdvancedVisionRun[]> {
+  return (await Go.ListAdvancedVisionRunsForAsset(assetId, limit)).map(normalizeAdvancedRun);
 }
 
 export async function getPromptEngineStatus(): Promise<PromptEngineStatusInfo> {
-  const value = await requireDynamic("GetPromptEngineStatus")();
-  if (!value) throw new Error("Prompt Engineの状態を取得できませんでした。");
+  const value = await Go.GetPromptEngineStatus();
   return {
     ...value,
+    runtime: normalizeRuntimeStatus(value.runtime),
     models: value.models ?? [],
   };
 }
 
 export async function installPromptEngineRuntime(): Promise<void> {
-  await requireDynamic("InstallPromptEngineRuntime")();
+  await Go.InstallPromptEngineRuntime();
 }
 
 export async function removePromptEngineRuntime(): Promise<void> {
-  await requireDynamic("RemovePromptEngineRuntime")();
+  await Go.RemovePromptEngineRuntime();
 }
 
 export async function installPromptEngineModel(modelId: string): Promise<void> {
-  await requireDynamic("InstallPromptEngineModel")(modelId);
+  await Go.InstallPromptEngineModel(modelId);
 }
 
 export async function removePromptEngineModel(modelId: string): Promise<void> {
-  await requireDynamic("RemovePromptEngineModel")(modelId);
+  await Go.RemovePromptEngineModel(modelId);
 }
 
 export async function loadPromptEngineModel(modelId: string): Promise<void> {
-  await requireDynamic("LoadPromptEngineModel")(modelId);
+  await Go.LoadPromptEngineModel(modelId);
 }
 
 export async function runPromptEngine(request: PromptEngineRequest): Promise<PromptEngineResult> {
-  const value = await requireDynamic("RunPromptEngine")(request);
-  if (!value) throw new Error("Prompt Engineの結果を取得できませんでした。");
+  const value = await Go.RunPromptEngine(request);
   return {
     ...value,
     characters: value.characters ?? [],
@@ -964,7 +1015,9 @@ export async function runPromptEngine(request: PromptEngineRequest): Promise<Pro
   };
 }
 
-function normalizeImagePromptResult(value: ImagePromptResult): ImagePromptResult {
+function normalizeImagePromptResult(
+  value: cmds.ImagePromptResultDTO,
+): ImagePromptResult {
   return {
     ...value,
     characters: value.characters ?? [],
@@ -975,24 +1028,25 @@ function normalizeImagePromptResult(value: ImagePromptResult): ImagePromptResult
 }
 
 export async function buildImagePrompt(request: ImagePromptRequest): Promise<ImagePromptResult> {
-  const value = await requireDynamic("BuildImagePrompt")(request);
-  if (!value) throw new Error("Image → Promptの結果を取得できませんでした。");
-  return normalizeImagePromptResult(value);
+  return normalizeImagePromptResult(await Go.BuildImagePrompt(request));
 }
 
-export async function createPromptProjectFromImage(request: ImagePromptRequest): Promise<ImagePromptProjectResult> {
-  const value = await requireDynamic("CreatePromptProjectFromImage")(request);
-  if (!value) throw new Error("画像からPrompt Projectを作成できませんでした。");
+export async function createPromptProjectFromImage(
+  request: ImagePromptRequest,
+): Promise<ImagePromptProjectResult> {
+  const value = await Go.CreatePromptProjectFromImage(request);
   await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
   return {
-    project: normalizePromptProject(value.project),
+    project: normalizePromptProject(value.project as unknown as PromptProject),
     result: normalizeImagePromptResult(value.result),
   };
 }
 
-export async function getAssetGenerationMetadata(assetId: number, refresh = false): Promise<AssetGenerationMetadata> {
-  const value = await requireDynamic("GetAssetGenerationMetadata")(assetId, refresh);
-  if (!value) throw new Error("生成metadataを取得できませんでした。");
+export async function getAssetGenerationMetadata(
+  assetId: number,
+  refresh = false,
+): Promise<AssetGenerationMetadata> {
+  const value = await Go.GetAssetGenerationMetadata(assetId, refresh);
   return {
     ...value,
     loras: (value.loras ?? []).map((lora) => ({
