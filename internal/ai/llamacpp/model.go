@@ -5,6 +5,7 @@ import "github.com/kataage/lumine/internal/ai"
 const (
 	EngineID         = "llamacpp-vlm"
 	AdvancedEngineID = "llamacpp-advanced-vlm"
+	PromptEngineID   = "llamacpp-prompt"
 
 	DefaultVisionModelID      = "smolvlm-500m-instruct-q8"
 	DefaultVisionModelVersion = "72e986006ef53e37cdd3f6d4241c90b0f01df376"
