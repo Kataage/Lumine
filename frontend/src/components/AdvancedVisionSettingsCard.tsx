@@ -12,7 +12,13 @@ import {
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 
-export function AdvancedVisionSettingsCard({ enabled }: { enabled: boolean }) {
+export function AdvancedVisionSettingsCard({
+  enabled,
+  onEnable,
+}: {
+  enabled: boolean;
+  onEnable: () => Promise<void>;
+}) {
   const [status, setStatus] = useState<AdvancedVisionStatusInfo | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +87,30 @@ export function AdvancedVisionSettingsCard({ enabled }: { enabled: boolean }) {
       setBusy("");
     }
   };
+  const setupModel = async (modelId: string) => {
+    if (busy) return;
+    setBusy(`setup:${modelId}`);
+    setError(null);
+    try {
+      await onEnable();
+      let current = await getAdvancedVisionStatus();
+      if (!current.llamaRuntime.installed) {
+        await installAdvancedVisionRuntime();
+        current = await getAdvancedVisionStatus();
+      }
+      const model = current.models.find((candidate) => candidate.id === modelId);
+      if (!model?.installed) {
+        await installAdvancedVisionModel(modelId);
+      }
+      await loadAdvancedVisionModel(modelId);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy("");
+    }
+  };
+
 
   if (!status) {
     return <p className="mt-2 border-t border-border/60 pt-2 text-[9px] text-muted-foreground">Advanced Visionの状態を読み込んでいます…</p>;
@@ -157,36 +187,32 @@ export function AdvancedVisionSettingsCard({ enabled }: { enabled: boolean }) {
                   <p className="mt-0.5 text-muted-foreground">{formatFileSize(model.sizeBytes)} · {model.license} · {model.installed ? "導入済み" : "未導入"}</p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-1">
-                  {!model.installed ? (
+                  {!active && (
                     <button
                       type="button"
                       className="ui-primary-button"
                       disabled={!!busy}
-                      onClick={() => void run(`install:${model.id}`, () => installAdvancedVisionModel(model.id))}
+                      onClick={() => void setupModel(model.id)}
                     >
-                      {busy === `install:${model.id}` ? "導入中…" : "導入"}
+                      {busy === `setup:${model.id}`
+                        ? "セットアップ中…"
+                        : model.installed
+                          ? "このモデルを使用"
+                          : "導入して使用"}
                     </button>
-                  ) : (
-                    <>
-                      {!active && (
-                        <button
-                          type="button"
-                          className="ui-primary-button"
-                          disabled={!!busy || !enabled || !status.llamaRuntime.installed}
-                          onClick={() => void run(`load:${model.id}`, () => loadAdvancedVisionModel(model.id))}
-                        >
-                          {busy === `load:${model.id}` ? "読込中…" : "読み込む"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="ui-secondary-button"
-                        disabled={!!busy}
-                        onClick={() => void run(`remove:${model.id}`, () => removeAdvancedVisionModel(model.id))}
-                      >
-                        {busy === `remove:${model.id}` ? "削除中…" : "削除"}
-                      </button>
-                    </>
+                  )}
+                  {model.installed && (
+                    <button
+                      type="button"
+                      className="ui-secondary-button"
+                      disabled={!!busy}
+                      onClick={() => {
+                        if (!window.confirm(`${model.displayName} をローカルから削除しますか？`)) return;
+                        void run(`remove:${model.id}`, () => removeAdvancedVisionModel(model.id));
+                      }}
+                    >
+                      {busy === `remove:${model.id}` ? "削除中…" : "削除"}
+                    </button>
                   )}
                 </div>
               </div>
@@ -196,7 +222,7 @@ export function AdvancedVisionSettingsCard({ enabled }: { enabled: boolean }) {
       </div>
 
       {!enabled && (
-        <p className="text-[9px] text-muted-foreground">Advanced VisionをONにすると、導入済みモデルを読み込めます。</p>
+        <p className="text-[9px] text-muted-foreground">「導入して使用」を押すとAI全体とAdvanced Visionを自動でONにします。</p>
       )}
       {status.runtime.error && <p className="text-[9px] text-destructive break-all">{status.runtime.error}</p>}
       {error && <p className="text-[9px] text-destructive break-all">{error}</p>}
