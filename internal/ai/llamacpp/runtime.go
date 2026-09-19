@@ -84,6 +84,13 @@ func VulkanRuntimeManifest() RuntimeManifest {
 	}
 }
 
+func RuntimeManifestForGPU(allowGPU bool) RuntimeManifest {
+	if allowGPU {
+		return VulkanRuntimeManifest()
+	}
+	return DefaultRuntimeManifest()
+}
+
 func NewRuntimeStore(root string) *RuntimeStore {
 	return &RuntimeStore{
 		root:   root,
