@@ -201,6 +201,11 @@ export namespace commands {
 	    legacyPath?: string;
 	    legacyDetected: boolean;
 	    usingLegacy: boolean;
+	    migrationAvailable: boolean;
+	    migrationPending: boolean;
+	    migrationSourcePath?: string;
+	    migrationTargetPath?: string;
+	    migrationRequiresRestart: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIStorageInfo(source);
@@ -220,6 +225,11 @@ export namespace commands {
 	        this.legacyPath = source["legacyPath"];
 	        this.legacyDetected = source["legacyDetected"];
 	        this.usingLegacy = source["usingLegacy"];
+	        this.migrationAvailable = source["migrationAvailable"];
+	        this.migrationPending = source["migrationPending"];
+	        this.migrationSourcePath = source["migrationSourcePath"];
+	        this.migrationTargetPath = source["migrationTargetPath"];
+	        this.migrationRequiresRestart = source["migrationRequiresRestart"];
 	    }
 	}
 	export class AdvancedVisionCandidateInfo {
