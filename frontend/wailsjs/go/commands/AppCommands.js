@@ -286,6 +286,10 @@ export function GetTaggerReviewJSON(arg1) {
   return window['go']['commands']['AppCommands']['GetTaggerReviewJSON'](arg1);
 }
 
+export function GetTaggerThresholdOverridesJSON() {
+  return window['go']['commands']['AppCommands']['GetTaggerThresholdOverridesJSON']();
+}
+
 export function GetViewerAssetDetail(arg1) {
   return window['go']['commands']['AppCommands']['GetViewerAssetDetail'](arg1);
 }
@@ -568,6 +572,10 @@ export function SetSetting(arg1, arg2) {
 
 export function SetSupportedExtensions(arg1) {
   return window['go']['commands']['AppCommands']['SetSupportedExtensions'](arg1);
+}
+
+export function SetTaggerThresholdOverridesJSON(arg1) {
+  return window['go']['commands']['AppCommands']['SetTaggerThresholdOverridesJSON'](arg1);
 }
 
 export function ShutdownBackground(arg1) {
