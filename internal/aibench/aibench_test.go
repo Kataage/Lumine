@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -225,6 +226,32 @@ func TestFixturePackManifestBuildAndVerify(t *testing.T) {
 	}
 	if err := VerifyFixturePack(catalog, dir); err == nil {
 		t.Fatal("modified fixture should fail hash verification")
+	}
+}
+
+func TestAdoptedModelRequiresArtifactHash(t *testing.T) {
+	ledger := AdoptionLedger{
+		SchemaVersion: SchemaVersion,
+		Decisions: []AdoptionDecision{
+			{
+				Capability:      "advanced_vision",
+				Status:          AdoptionAdopted,
+				ModelID:         "example/model",
+				Version:         "deadbeef",
+				Engine:          "llama.cpp",
+				Quantization:    "Q4_K_M",
+				EvidenceResults: []string{"benchmarks/ai/results/evidence/example.json"},
+				Rationale:       "test",
+			},
+		},
+	}
+	if err := ValidateAdoptionLedger(ledger); err == nil {
+		t.Fatal("adopted model without artifactSha256 should fail")
+	}
+
+	ledger.Decisions[0].ArtifactSHA256 = strings.Repeat("a", 64)
+	if err := ValidateAdoptionLedger(ledger); err != nil {
+		t.Fatalf("adopted model with immutable hash should validate: %v", err)
 	}
 }
 
