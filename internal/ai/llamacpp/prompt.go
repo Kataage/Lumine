@@ -579,6 +579,8 @@ func (e *PromptEngine) Unload(ctx context.Context) error {
 	e.sidecar = nil
 	e.baseURL = ""
 	e.model = ai.InstalledModel{}
+	e.executionProvider = ""
+	e.runtimeWarning = ""
 	e.mu.Unlock()
 	if sidecar == nil {
 		return nil
