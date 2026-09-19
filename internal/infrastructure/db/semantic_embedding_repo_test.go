@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
@@ -263,5 +264,30 @@ func TestSemanticSearchProgressivePreviewAndRanking(t *testing.T) {
 		if semanticHitBetter(last.Hits[i], last.Hits[i-1]) {
 			t.Fatalf("preview is not sorted descending: %+v", last.Hits)
 		}
+	}
+}
+
+
+func TestListNeedingEmbeddingContextHonorsCancellation(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic Cancel", "/tmp/semantic-cancel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = repo.ListNeedingEmbeddingContext(
+		ctx,
+		lib.ID,
+		"engine",
+		"model",
+		"1",
+		0,
+		1000,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ListNeedingEmbeddingContext error = %v, want context.Canceled", err)
 	}
 }
