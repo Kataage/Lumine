@@ -21,6 +21,14 @@ func DefaultVisionModelManifest() ai.ModelManifest {
 		DisplayName: "SmolVLM 500M Instruct Q8_0",
 		License:     "Apache-2.0",
 		SizeBytes:   545590272,
+		RuntimeParameters: map[string]string{
+			"mainFile":   defaultVisionModelFile,
+			"mmprojFile": defaultVisionMMProjFile,
+			"context":    "4096",
+			"threads":    "8",
+			"maxTokens":  "512",
+			"reasoning":  "auto",
+		},
 		Files: []ai.ModelFile{
 			{
 				Path:      defaultVisionModelFile,
