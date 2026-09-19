@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AIHealthSnapshot, AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
   cancelSemanticSearch,
+  ensureSemanticSearchReady,
   getAIBridgeStatus,
   getAIHealthSnapshot,
   getSemanticIndexStatus,
@@ -152,7 +153,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
         if (!bridge.available) {
           throw new Error(`AI bridgeが不完全です: ${bridge.missing.join(", ")}`);
         }
-        const health = await getAIHealthSnapshot();
+        let health = await getAIHealthSnapshot();
         if (health.shuttingDown) {
           throw new Error("Lumineは終了処理中です。アプリを再起動してください。");
         }
@@ -161,6 +162,10 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
         }
         if (!health.settings.semanticSearch || !health.semanticSearchEnabled) {
           throw new Error("意味検索が無効です。AI設定でSemantic Searchを有効にしてください。");
+        }
+        if (health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
+          await ensureSemanticSearchReady();
+          health = await getAIHealthSnapshot();
         }
         if (health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
           const detail = health.semanticRuntime.error ? `: ${health.semanticRuntime.error}` : "";
