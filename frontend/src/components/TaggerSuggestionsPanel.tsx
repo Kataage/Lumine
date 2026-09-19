@@ -38,7 +38,7 @@ const STATE_LABEL: Record<TaggerReview["state"], string> = {
 };
 
 function confidenceLabel(value: number): string {
-  return \`\${Math.round(Math.max(0, Math.min(1, value)) * 100)}%\`;
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 function SuggestionRow({
@@ -86,11 +86,11 @@ function SuggestionRow({
           </button>
         </div>
       ) : (
-        <span className={\`shrink-0 rounded-full px-2 py-1 text-[9px] font-medium \${
+        <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-medium ${
           value.state === "accepted"
             ? "bg-emerald-500/10 text-emerald-300"
             : "bg-muted text-muted-foreground"
-        }\`}>
+        }`}>
           {value.state === "accepted" ? "採用済み" : "却下済み"}
         </span>
       )}
@@ -193,13 +193,13 @@ export function TaggerSuggestionsPanel({ assetId }: TaggerSuggestionsPanelProps)
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-[12px] font-semibold">Anime / Danbooru Tagger</h4>
             {review && (
-              <span className={\`rounded-full border px-2 py-0.5 text-[9px] font-medium \${
+              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${
                 review.state === "ready"
                   ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300"
                   : review.state === "failed"
                     ? "border-destructive/30 bg-destructive/10 text-destructive"
                     : "border-border bg-muted/35 text-muted-foreground"
-              }\`}>
+              }`}>
                 {STATE_LABEL[review.state]}
               </span>
             )}
@@ -225,7 +225,7 @@ export function TaggerSuggestionsPanel({ assetId }: TaggerSuggestionsPanelProps)
           {runtime?.state === "disabled"
             ? "Taggerは現在OFFです。採用モデルの統合後、AI設定から有効化できます。"
             : runtime?.state === "error"
-              ? \`Tagger runtimeエラー: \${runtime.error || "詳細不明"}\`
+              ? `Tagger runtimeエラー: ${runtime.error || "詳細不明"}`
               : "Taggerモデル/runtimeはまだ準備されていません。"}
         </div>
       )}
@@ -239,7 +239,7 @@ export function TaggerSuggestionsPanel({ assetId }: TaggerSuggestionsPanelProps)
       {review && (review.engine || review.modelId) && (
         <p className="mt-2 break-all text-[9px] text-muted-foreground/75">
           {review.engine || "engine不明"} · {review.modelId || "model不明"}
-          {review.modelVersion ? \` @ \${review.modelVersion}\` : ""}
+          {review.modelVersion ? ` @ ${review.modelVersion}` : ""}
         </p>
       )}
 
