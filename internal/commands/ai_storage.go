@@ -16,6 +16,7 @@ type AIStorageInfo struct {
 	ModelsPath                string `json:"modelsPath"`
 	RuntimesPath              string `json:"runtimesPath"`
 	SemanticIndexPath         string `json:"semanticIndexPath"`
+	WebviewDataPath           string `json:"webviewDataPath"`
 	PreferredRootPath         string `json:"preferredRootPath,omitempty"`
 	LegacyPath                string `json:"legacyPath,omitempty"`
 	LegacyDetected            bool   `json:"legacyDetected"`
@@ -41,6 +42,7 @@ func ConfigureStorageLayout(c *AppCommands, layout storage.Layout) {
 		ModelsPath:        layout.ModelsDir,
 		RuntimesPath:      filepath.Join(layout.RuntimesDir, "llama.cpp"),
 		SemanticIndexPath: layout.SemanticIndexDir,
+		WebviewDataPath:   layout.WebviewDataDir,
 		PreferredRootPath: layout.PreferredRootDir,
 		LegacyPath:        layout.LegacyRootDir,
 		LegacyDetected:    layout.LegacyDetected,
