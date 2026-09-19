@@ -170,7 +170,7 @@ func (c *AppCommands) RemoveAdvancedVisionModel(modelID string) error {
 	}
 	active, _ := c.getAdvancedVisionActiveModelID()
 	if active == manifest.ID {
-		_ = c.settingRepo.Set(advancedVisionActiveModelKey, """")
+		_ = c.settingRepo.Set(advancedVisionActiveModelKey, "\"\"")
 	}
 	return nil
 }
