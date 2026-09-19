@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AssetDTO, AssetListRequest, AssetListResponse } from "../api/client";
 import {
@@ -49,8 +49,6 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
-  const [semanticPreview, setSemanticPreview] = useState<AssetDTO[]>([]);
-  const [semanticProgress, setSemanticProgress] = useState<{ scanned: number; total: number } | null>(null);
   const semanticRequestRef = useRef<{ id: string; key: string } | null>(null);
   const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
 
@@ -69,22 +67,12 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    return onSemanticSearchProgress((progress) => {
-      const active = semanticRequestRef.current;
-      if (!active || progress.requestId !== active.id) return;
-      setSemanticPreview(progress.assets ?? []);
-      setSemanticProgress({
-        scanned: Math.max(0, progress.scannedCount ?? 0),
-        total: Math.max(0, progress.totalCount ?? 0),
-      });
-    });
-  }, []);
-
   useEffect(() => () => {
     const active = semanticRequestRef.current;
     if (active) void cancelSemanticSearch(active.id);
   }, []);
+
+  const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
 
   const buildQuery = useCallback((offset: number): AssetListRequest => ({
     libraryId: state.selectedLibraryId ?? 0,
@@ -112,6 +100,8 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const {
     data,
     isLoading,
+    isFetching,
+    isPlaceholderData,
     isError,
     error,
     fetchNextPage,
@@ -157,16 +147,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
 
         const requestId = newSemanticRequestID();
         semanticRequestRef.current = { id: requestId, key };
-        setSemanticPreview([]);
-        setSemanticProgress({ scanned: 0, total: 0 });
-        try {
-          return await semanticSearchAssets(request, requestId);
-        } finally {
-          if (semanticRequestRef.current?.id === requestId) {
-            setSemanticProgress(null);
-            setSemanticPreview([]);
-          }
-        }
+        return semanticSearchAssets(request, requestId);
       }
       const result = await listAssets(request);
       return result ?? { assets: [], totalCount: 0 };
@@ -184,23 +165,19 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     enabled: !!state.selectedLibraryId,
     staleTime: Infinity,
     gcTime: Infinity,
+    placeholderData: semanticSearchActive ? keepPreviousData : undefined,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  const settledAssets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
-  const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
-  const showingSemanticPreview = semanticSearchActive && isLoading && semanticPreview.length > 0;
-  const assets = showingSemanticPreview ? semanticPreview : settledAssets;
-  const totalCount = data?.pages[0]?.totalCount ?? semanticProgress?.total ?? 0;
+  const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
+  const totalCount = data?.pages[0]?.totalCount ?? 0;
 
   useEffect(() => {
     if (semanticSearchActive) return;
     const active = semanticRequestRef.current;
     if (!active) return;
     semanticRequestRef.current = null;
-    setSemanticPreview([]);
-    setSemanticProgress(null);
     void cancelSemanticSearch(active.id).catch(() => undefined);
   }, [semanticSearchActive]);
 
@@ -248,23 +225,23 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   }, [columns, state.thumbnailSize, state.viewMode, virtualizer]);
 
   useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage) return;
+    if (isPlaceholderData || !hasNextPage || isFetchingNextPage) return;
     const last = virtualItems[virtualItems.length - 1];
     if (last && shouldFetchViewerPageAhead(last.index, itemCount, containerHeight, itemExtent)) {
       void fetchNextPage();
     }
-  }, [containerHeight, fetchNextPage, hasNextPage, isFetchingNextPage, itemCount, itemExtent, virtualItems]);
+  }, [containerHeight, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, itemCount, itemExtent, virtualItems]);
 
   const previewIndex = previewAsset ? assets.findIndex((asset) => asset.id === previewAsset.id) : -1;
 
   useEffect(() => {
-    if (!previewAsset || !hasNextPage || isFetchingNextPage || previewIndex < 0) return;
+    if (isPlaceholderData || !previewAsset || !hasNextPage || isFetchingNextPage || previewIndex < 0) return;
     const threshold = Math.max(8, columns * 2);
     if (previewIndex >= assets.length - threshold) void fetchNextPage();
-  }, [assets.length, columns, fetchNextPage, hasNextPage, isFetchingNextPage, previewAsset, previewIndex]);
+  }, [assets.length, columns, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, previewAsset, previewIndex]);
 
   const goNext = useCallback(async () => {
-    if (previewIndex < 0) return;
+    if (isPlaceholderData || previewIndex < 0) return;
     if (previewIndex < assets.length - 1) {
       setPreviewAsset(assets[previewIndex + 1]);
       return;
@@ -277,7 +254,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     if (currentIndex >= 0 && currentIndex < nextAssets.length - 1) {
       setPreviewAsset(nextAssets[currentIndex + 1]);
     }
-  }, [assets, fetchNextPage, hasNextPage, isFetchingNextPage, previewAsset, previewIndex]);
+  }, [assets, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, previewAsset, previewIndex]);
 
   if (!state.selectedLibraryId) {
     return (
@@ -374,26 +351,10 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           </div>
         )}
 
-        {showingSemanticPreview && semanticProgress && (
-          <div className="sticky bottom-3 z-20 mx-auto mt-3 w-fit max-w-[calc(100%-24px)] rounded-xl border border-border/80 bg-card/95 px-3.5 py-2.5 shadow-xl backdrop-blur-md">
-            <div className="flex items-center gap-2.5 text-[11px]">
-              <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
-              <span className="font-medium">意味検索中</span>
-              <span className="tabular-nums text-muted-foreground">
-                {semanticProgress.scanned.toLocaleString()} / {semanticProgress.total.toLocaleString()}件
-              </span>
-              <span className="text-muted-foreground">· 上位候補を更新中</span>
-            </div>
-            {semanticProgress.total > 0 && (
-              <div className="mt-2 h-1 w-64 max-w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width]"
-                  style={{ width: `${Math.min(100, (semanticProgress.scanned / semanticProgress.total) * 100)}%` }}
-                />
-              </div>
-            )}
-          </div>
-        )}
+        <SemanticSearchProgressOverlay
+          requestRef={semanticRequestRef}
+          active={semanticSearchActive && isFetching}
+        />
 
         {isLoading && assets.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-sm text-muted-foreground">
@@ -438,6 +399,56 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
         />
       )}
     </>
+  );
+}
+
+function SemanticSearchProgressOverlay({
+  requestRef,
+  active,
+}: {
+  requestRef: React.MutableRefObject<{ id: string; key: string } | null>;
+  active: boolean;
+}) {
+  const [progress, setProgress] = useState<{ requestId: string; scanned: number; total: number } | null>(null);
+
+  useEffect(() => {
+    return onSemanticSearchProgress((value) => {
+      const current = requestRef.current;
+      if (!current || value.requestId !== current.id) return;
+      setProgress({
+        requestId: value.requestId,
+        scanned: Math.max(0, value.scannedCount ?? 0),
+        total: Math.max(0, value.totalCount ?? 0),
+      });
+    });
+  }, [requestRef]);
+
+  if (!active) return null;
+  const currentID = requestRef.current?.id;
+  const current = progress?.requestId === currentID ? progress : null;
+
+  return (
+    <div className="sticky bottom-3 z-20 mx-auto mt-3 w-fit max-w-[calc(100%-24px)] rounded-xl border border-border/80 bg-card/95 px-3.5 py-2.5 shadow-xl backdrop-blur-md">
+      <div className="flex items-center gap-2.5 text-[11px]">
+        <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
+        <span className="font-medium">意味検索中</span>
+        {current && current.total > 0 ? (
+          <span className="tabular-nums text-muted-foreground">
+            {current.scanned.toLocaleString()} / {current.total.toLocaleString()}件
+          </span>
+        ) : (
+          <span className="text-muted-foreground">検索インデックスを準備しています…</span>
+        )}
+      </div>
+      {current && current.total > 0 && (
+        <div className="mt-2 h-1 w-64 max-w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${Math.min(100, (current.scanned / current.total) * 100)}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -17,7 +17,6 @@ export interface AssetListResponse {
 
 export interface SemanticSearchProgress {
   requestId: string;
-  assets: AssetDTO[];
   scannedCount: number;
   totalCount: number;
 }

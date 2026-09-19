@@ -35,6 +35,7 @@ type AppCommands struct {
 	aiJobQueue  *ai.JobQueue
 	llamaRuntimeStore *llamacpp.RuntimeStore
 	semanticRepo *db.SemanticEmbeddingRepo
+	semanticIndex *semanticMemoryIndex
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
 	ctx         context.Context
@@ -58,6 +59,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		settingRepo: settingRepo,
 		folderRepo:   folderRepo,
 		semanticRepo: db.NewSemanticEmbeddingRepo(database),
+		semanticIndex: newSemanticMemoryIndex(),
 		advancedVisionRepo: db.NewAdvancedVisionRunRepo(database),
 		semanticSearchState: newSemanticSearchState(),
 		scanSvc:      scanSvc,
