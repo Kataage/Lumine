@@ -46,6 +46,27 @@ The catalog catalogs/prompt-engine-v1.json covers:
 
 The adult-only case is intentionally non-graphic and exists to detect unrelated refusal or silent content deletion. It is a product-quality test, not a request to generate benchmark imagery.
 
+## Recommended one-command Windows run
+
+Prompt fixtures are text-only, so the current #169 discovery matrix can be run directly:
+
+```powershell
+.\benchmarks\ai\run_prompt_engine_benchmark.ps1 \
+  -HardwareId "main-pc-cpu8"
+```
+
+The runner records CPU/RAM/current Lumine commit, runs NeoHorse, Spark-X2.5 Heretic-jp, Qwen3.5 abliterated and the base-lineage Qwen3.5 control under the same CPU policy, validates every result, and writes:
+
+- `prompt-comparison.md`
+- `prompt-pin-info.json`
+- `prompt-run-info.json`
+
+`prompt-pin-info.json` extracts the resolved revision, model filename, SHA-256, exact size and runtime information from each model-size case. While any profile remains `main`/unhashed, `prompt-run-info.json` records `evidenceReady: false`; pin the profiles from the discovery data and rerun before adoption.
+
+For controlled evidence, clear `LUMINE_PROMPT_LLAMA_SERVER`. `-AllowLlamaServerOverride` exists for debugging only.
+
+The manual commands below remain available for single-candidate debugging.
+
 ## Environment
 
 Use the same Windows machine, power plan, CPU thread count, llama.cpp build, context size and quantization class for comparable candidates whenever the model architecture permits it.
