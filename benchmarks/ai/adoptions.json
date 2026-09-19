@@ -126,6 +126,26 @@
       "issue": "#189",
       "rationale": "Official ggml 2.2B-class comparison candidate with multi-image-oriented model lineage; adoption pending Lumine-specific evidence.",
       "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "ggml-org/MiniCPM-V-4.6-GGUF",
+      "version": "1ed3097dca9264536da79039fd63c436509be6bf",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "b1a5aa76b5ef039c2e579272ea33d4bbed7e79b49bb3ff1efdb23316d6af5199",
+      "issue": "#189",
+      "rationale": "Current small official GGUF candidate with llama.cpp support; measured against the same deep/multi-image/Japanese/OCR/adult-only fixtures before adoption.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "mradermacher/Qwen-3-VL-2B-Instruct-heretic-GGUF",
+      "issue": "#189",
+      "rationale": "Exploratory Heretic candidate for direct refusal/quality comparison. Immutable revision and model/mmproj SHA-256 must be recorded before its result may be used as adoption evidence.",
+      "updatedAt": "2026-09-19"
     }
   ]
 }
