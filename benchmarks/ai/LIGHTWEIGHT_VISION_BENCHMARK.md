@@ -83,6 +83,22 @@ go run ./cmd/ai-bench validate-catalog `
   -fixtures-dir D:\LumineBench\lumine-lightweight-vision-v1
 ```
 
+## Recommended one-command Windows run
+
+Use the checked-in runner for the controlled #183 comparison:
+
+```powershell
+.\benchmarks\ai\run_lightweight_vision_benchmark.ps1 \
+  -FixtureDir "D:\LumineBench\lumine-lightweight-vision-v1" \
+  -HardwareId "main-pc-cpu8"
+```
+
+The first run creates the pinned Python environment automatically. Use `-Setup` to reinstall the pinned requirements intentionally. The runner validates the fixture pack, records CPU/RAM/current Lumine commit, runs Florence-2-base and SmolVLM-500M under the same hardware ID, validates both results, and writes `lightvision-comparison.md` plus `lightvision-run-info.json`.
+
+For controlled evidence, clear `LUMINE_LLAMA_SERVER`; the runner rejects that override so SmolVLM cannot silently use an unpinned server.
+
+The manual commands below remain available for single-candidate debugging.
+
 ## Python environment
 
 ```powershell
