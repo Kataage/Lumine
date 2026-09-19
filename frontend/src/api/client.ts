@@ -371,6 +371,7 @@ export interface PromptProjectLoRA {
 }
 
 export interface PromptVersion {
+  schemaVersion: number;
   id: number;
   variantId: number;
   parentVersionId?: number;
@@ -396,6 +397,7 @@ export interface PromptVariant {
 }
 
 export interface PromptProject {
+  schemaVersion: number;
   id: number;
   title: string;
   idea: string;
