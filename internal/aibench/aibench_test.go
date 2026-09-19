@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -228,6 +229,32 @@ func TestFixturePackManifestBuildAndVerify(t *testing.T) {
 	}
 }
 
+func TestAdoptedModelRequiresArtifactHash(t *testing.T) {
+	ledger := AdoptionLedger{
+		SchemaVersion: SchemaVersion,
+		Decisions: []AdoptionDecision{
+			{
+				Capability:      "advanced_vision",
+				Status:          AdoptionAdopted,
+				ModelID:         "example/model",
+				Version:         "deadbeef",
+				Engine:          "llama.cpp",
+				Quantization:    "Q4_K_M",
+				EvidenceResults: []string{"benchmarks/ai/results/evidence/example.json"},
+				Rationale:       "test",
+			},
+		},
+	}
+	if err := ValidateAdoptionLedger(ledger); err == nil {
+		t.Fatal("adopted model without artifactSha256 should fail")
+	}
+
+	ledger.Decisions[0].ArtifactSHA256 = strings.Repeat("a", 64)
+	if err := ValidateAdoptionLedger(ledger); err != nil {
+		t.Fatalf("adopted model with immutable hash should validate: %v", err)
+	}
+}
+
 func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 	root := filepath.Join("..", "..", "benchmarks", "ai")
 
@@ -241,6 +268,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 	readJSONForTest(t, filepath.Join(root, "catalogs", "lightweight-vision-v1.json"), &lightweightCatalog)
 	if err := ValidateCatalog(lightweightCatalog); err != nil {
 		t.Fatalf("repository lightweight vision catalog: %v", err)
+	}
+
+	var advancedCatalog Catalog
+	readJSONForTest(t, filepath.Join(root, "catalogs", "advanced-vision-v1.json"), &advancedCatalog)
+	if err := ValidateCatalog(advancedCatalog); err != nil {
+		t.Fatalf("repository advanced vision catalog: %v", err)
 	}
 
 	var thresholds Thresholds
@@ -261,6 +294,12 @@ func TestRepositoryBenchmarkDefinitionsValidate(t *testing.T) {
 		"pixai-tagger-v0.9.json",
 		"florence-2-base.json",
 		"smolvlm-500m-q8.json",
+		"advanced-qwen3-vl-2b-q4.json",
+		"advanced-qwen3-vl-2b-abliterated-q4.json",
+		"advanced-qwen3-vl-2b-heretic-q4.json",
+		"advanced-internvl3.5-2b-q4.json",
+		"advanced-smolvlm2-2.2b-q4.json",
+		"advanced-minicpm-v4.6-q4.json",
 	} {
 		var profile ModelProfile
 		readJSONForTest(t, filepath.Join(root, "profiles", name), &profile)

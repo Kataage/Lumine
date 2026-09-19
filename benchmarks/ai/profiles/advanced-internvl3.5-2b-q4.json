@@ -1,0 +1,35 @@
+{
+  "id": "lmstudio-community/InternVL3_5-2B-GGUF",
+  "version": "cb0dccd56d81831b11b7b3784c836ab183024cd3",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q4_K_M + mmproj F16",
+  "artifactSha256": "701018149d6f0a59978333ba38e2de8f642dbc75842301d49809a67e70b53db3",
+  "modelSizeBytes": 1918542048,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "lmstudio-community/InternVL3_5-2B-GGUF",
+    "modelFile": "InternVL3_5-2B-Q4_K_M.gguf",
+    "modelSha256": "701018149d6f0a59978333ba38e2de8f642dbc75842301d49809a67e70b53db3",
+    "modelSizeBytes": "1282435904",
+    "mmprojFile": "mmproj-model-f16.gguf",
+    "mmprojSha256": "e83ba6e675b747f7801557dc24594f43c17a7850b6129d4972d55e3e9b010359",
+    "mmprojSizeBytes": "636106144",
+    "family": "internvl3.5",
+    "variant": "official-base-quant",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "8192",
+    "device": "cpu"
+  }
+}

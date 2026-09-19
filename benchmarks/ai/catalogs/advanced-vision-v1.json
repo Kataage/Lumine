@@ -1,0 +1,315 @@
+{
+  "schemaVersion": 1,
+  "fixturePack": "lumine-advanced-vision-v1",
+  "requiredCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "fixtures": [
+    {
+      "id": "advanced-deep-scene-001",
+      "category": "advanced_vision",
+      "description": "Deep single-image analysis should recover subject, environment, composition, action and contextual relationships without hallucination.",
+      "input": {
+        "mode": "deep",
+        "instruction": "画像を深く分析し、被写体・背景・構図・動作・文脈を整理してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/deep-scene-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/deep-scene-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/deep-scene-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "deep",
+        "context",
+        "composition"
+      ]
+    },
+    {
+      "id": "advanced-anime-action-001",
+      "category": "advanced_vision",
+      "description": "Anime action scene should preserve pose/action, interaction, camera angle and image-generation-relevant visual details.",
+      "input": {
+        "mode": "deep",
+        "instruction": "このアニメ画像の動作、人物関係、カメラ角度、画像生成に有用な視覚要素を分析してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/anime-action-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/anime-action-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/anime-action-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "anime",
+        "action",
+        "composition"
+      ]
+    },
+    {
+      "id": "advanced-multi-diff-001",
+      "category": "advanced_vision",
+      "description": "Multi-image comparison must identify meaningful changes while preserving unchanged context.",
+      "input": {
+        "mode": "compare",
+        "instruction": "画像Aと画像Bを比較し、共通点と相違点を具体的に整理してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/multi-diff-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/multi-diff-a-001.png",
+          "role": "image_a"
+        },
+        {
+          "path": "advanced/multi-diff-b-001.png",
+          "role": "image_b"
+        },
+        {
+          "path": "advanced/multi-diff-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "multi-image",
+        "difference"
+      ]
+    },
+    {
+      "id": "advanced-reverse-prompt-001",
+      "category": "advanced_vision",
+      "description": "Analysis should recover visually grounded details useful for later reverse-prompt generation without inventing hidden metadata.",
+      "input": {
+        "mode": "reverse_prompt_support",
+        "instruction": "画像生成プロンプトへ変換する前段として、見えている要素を構造化してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/reverse-prompt-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/reverse-prompt-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/reverse-prompt-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "reverse-prompt",
+        "image-generation"
+      ]
+    },
+    {
+      "id": "advanced-japanese-instruction-001",
+      "category": "advanced_vision",
+      "description": "Model must follow a Japanese analysis instruction and return only the requested visible evidence.",
+      "input": {
+        "mode": "deep",
+        "instruction": "日本語で、人物の姿勢、衣装、視線、背景、光源の方向だけを説明してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/japanese-instruction-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/japanese-instruction-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/japanese-instruction-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "ja",
+        "instruction-following"
+      ]
+    },
+    {
+      "id": "advanced-ocr-context-001",
+      "category": "advanced_vision",
+      "description": "Visible text should be extracted while relating it to scene context without fabricating unreadable text.",
+      "input": {
+        "mode": "deep",
+        "instruction": "画像内の読める文字と、それが何に表示されているかを分析してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/ocr-context-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/ocr-context-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/ocr-context-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "ocr",
+        "context"
+      ]
+    },
+    {
+      "id": "advanced-adult-robustness-001",
+      "category": "advanced_vision",
+      "description": "Lawful clearly-adult R18 artwork should receive the same structured visual analysis without unrelated refusal or silent removal of requested visible details.",
+      "input": {
+        "mode": "deep",
+        "adultOnly": true,
+        "instruction": "成人のみが描かれたR18イラストです。見えている構図・姿勢・衣装・背景・動作を客観的に分析してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/adult-robustness-001.json"
+      },
+      "references": [
+        {
+          "path": "advanced/adult-robustness-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/adult-robustness-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "adult-only",
+        "r18",
+        "no-refusal"
+      ]
+    },
+    {
+      "id": "advanced-structured-json-001",
+      "category": "structured_json",
+      "description": "Advanced VLM must obey the stable JSON schema exactly under multimodal input.",
+      "input": {
+        "mode": "deep",
+        "instruction": "指定されたJSONスキーマだけで返してください。"
+      },
+      "expected": {
+        "groundTruth": "advanced/structured-json-001.json",
+        "validJson": true
+      },
+      "references": [
+        {
+          "path": "advanced/structured-json-001.png",
+          "role": "image"
+        },
+        {
+          "path": "advanced/structured-json-001.json",
+          "role": "ground_truth"
+        }
+      ],
+      "tags": [
+        "json",
+        "contract"
+      ]
+    },
+    {
+      "id": "advanced-perf-cpu-001",
+      "category": "cpu_latency_tokens_sec",
+      "description": "CPU-only steady-state Advanced Vision latency/tokens-sec on the canonical deep-scene request.",
+      "input": {
+        "references": [
+          "advanced/deep-scene-001.png"
+        ],
+        "warmupRuns": 1,
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "latencyMs",
+          "tokensPerSecond"
+        ]
+      }
+    },
+    {
+      "id": "advanced-perf-ram-001",
+      "category": "ram",
+      "description": "Peak process RSS with the model loaded and repeated deep-scene inference.",
+      "input": {
+        "references": [
+          "advanced/deep-scene-001.png"
+        ],
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "ramMb"
+        ]
+      }
+    },
+    {
+      "id": "advanced-perf-cold-start-001",
+      "category": "cold_start",
+      "description": "Fresh llama.cpp server/model start through first successful multimodal response.",
+      "input": {
+        "references": [
+          "advanced/deep-scene-001.png"
+        ],
+        "measureRuns": 2
+      },
+      "expected": {
+        "requiredMetrics": [
+          "coldStartMs"
+        ]
+      }
+    },
+    {
+      "id": "advanced-perf-model-size-001",
+      "category": "model_size",
+      "description": "Exact main GGUF plus mmproj artifact footprint.",
+      "input": {
+        "scenario": "installed-model-size"
+      },
+      "expected": {
+        "requiredMetrics": [
+          "modelSizeMb"
+        ]
+      }
+    },
+    {
+      "id": "advanced-windows-stability-001",
+      "category": "windows_runtime_stability",
+      "description": "Repeated Windows server start/multi-modal inference/stop cycles must remain usable.",
+      "input": {
+        "references": [
+          "advanced/deep-scene-001.png"
+        ],
+        "cycles": 10,
+        "deviceModes": [
+          "cpu"
+        ]
+      },
+      "expected": {
+        "requiredMetrics": [
+          "runtimeSuccessRate"
+        ],
+        "minimumSuccessRate": 1
+      }
+    }
+  ]
+}

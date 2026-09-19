@@ -257,6 +257,12 @@ func ValidateAdoptionLedger(ledger AdoptionLedger) error {
 			if decision.Version == "" || decision.Engine == "" || decision.Quantization == "" {
 				return fmt.Errorf("adopted model %s must record version, engine and quantization", decision.ModelID)
 			}
+			if len(decision.ArtifactSHA256) != 64 {
+				return fmt.Errorf("adopted model %s must record a 64-character artifactSha256", decision.ModelID)
+			}
+			if _, err := hex.DecodeString(decision.ArtifactSHA256); err != nil {
+				return fmt.Errorf("adopted model %s has invalid artifactSha256: %w", decision.ModelID, err)
+			}
 			if len(decision.EvidenceResults) == 0 {
 				return fmt.Errorf("adopted model %s must reference benchmark evidence", decision.ModelID)
 			}

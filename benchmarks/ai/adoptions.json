@@ -78,6 +78,74 @@
       "issue": "#183",
       "rationale": "Small Apache-2.0 llama.cpp multimodal candidate with pinned Q8 model and mmproj; attractive for product integration if quality/CPU results are adequate.",
       "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+      "version": "d38d39f5972e27cd58023f9b1e9f994b0c85ca47",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+      "issue": "#189",
+      "rationale": "Official Qwen3-VL 2B GGUF baseline. Adoption is pending controlled Advanced Vision fixture evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "mradermacher/Qwen3-VL-2B-Instruct-abliterated-GGUF",
+      "version": "eff36d50ac46c34a7437a83af78c66e5526421ca",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "2cd12743be873492bc66d14faba56e7d59eec2a7e0f82970e1596a484a60bc5a",
+      "issue": "#189",
+      "rationale": "Abliterated Qwen3-VL 2B candidate used to directly measure lawful adult-only refusal/weakening behavior and any quality trade-off versus the official model.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "lmstudio-community/InternVL3_5-2B-GGUF",
+      "version": "cb0dccd56d81831b11b7b3784c836ab183024cd3",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj F16",
+      "artifactSha256": "701018149d6f0a59978333ba38e2de8f642dbc75842301d49809a67e70b53db3",
+      "issue": "#189",
+      "rationale": "Independent 2B-class llama.cpp candidate for deep image understanding and Japanese/multi-image comparison.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+      "version": "1bc3c9f74ceafd4c8d4411cc9cf188bba3798f91",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "0cf76814555b8665149075b74ab6b5c1d428ea1d3d01c1918c12012e8d7c9f58",
+      "issue": "#189",
+      "rationale": "Official ggml 2.2B-class comparison candidate with multi-image-oriented model lineage; adoption pending Lumine-specific evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "ggml-org/MiniCPM-V-4.6-GGUF",
+      "version": "1ed3097dca9264536da79039fd63c436509be6bf",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "b1a5aa76b5ef039c2e579272ea33d4bbed7e79b49bb3ff1efdb23316d6af5199",
+      "issue": "#189",
+      "rationale": "Current small official GGUF candidate with llama.cpp support; measured against the same deep/multi-image/Japanese/OCR/adult-only fixtures before adoption.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "advanced_vision",
+      "status": "candidate",
+      "modelId": "mradermacher/Qwen-3-VL-2B-Instruct-heretic-GGUF",
+      "issue": "#189",
+      "rationale": "Exploratory Heretic candidate for direct refusal/quality comparison. Immutable revision and model/mmproj SHA-256 must be recorded before its result may be used as adoption evidence.",
+      "updatedAt": "2026-09-19"
     }
   ]
 }

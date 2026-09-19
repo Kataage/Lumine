@@ -1,0 +1,35 @@
+{
+  "id": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+  "version": "1bc3c9f74ceafd4c8d4411cc9cf188bba3798f91",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q4_K_M + mmproj Q8_0",
+  "artifactSha256": "0cf76814555b8665149075b74ab6b5c1d428ea1d3d01c1918c12012e8d7c9f58",
+  "modelSizeBytes": 1705125856,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "ggml-org/SmolVLM2-2.2B-Instruct-GGUF",
+    "modelFile": "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf",
+    "modelSha256": "0cf76814555b8665149075b74ab6b5c1d428ea1d3d01c1918c12012e8d7c9f58",
+    "modelSizeBytes": "1112602656",
+    "mmprojFile": "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf",
+    "mmprojSha256": "ae07ea1facd07dd3230c4483b63e8cda96c6944ad2481f33d531f79e892dd024",
+    "mmprojSizeBytes": "592523200",
+    "family": "smolvlm2",
+    "variant": "official-ggml",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "8192",
+    "device": "cpu"
+  }
+}

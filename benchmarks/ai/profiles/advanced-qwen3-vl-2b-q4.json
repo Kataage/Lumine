@@ -1,0 +1,35 @@
+{
+  "id": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+  "version": "d38d39f5972e27cd58023f9b1e9f994b0c85ca47",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q4_K_M + mmproj Q8_0",
+  "artifactSha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+  "modelSizeBytes": 1552463168,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+    "modelFile": "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+    "modelSha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+    "modelSizeBytes": "1107409952",
+    "mmprojFile": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+    "mmprojSha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
+    "mmprojSizeBytes": "445053216",
+    "family": "qwen3-vl",
+    "variant": "official",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "8192",
+    "device": "cpu"
+  }
+}
