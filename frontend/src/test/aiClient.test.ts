@@ -5,12 +5,18 @@ vi.mock("../../wailsjs/runtime/runtime", () => ({
   EventsOff: vi.fn(),
 }));
 
-vi.mock("../../wailsjs/go/commands/AppCommands", () => ({
-  GetAISettings: vi.fn(),
-  SemanticSearchAssets: vi.fn(),
-  SemanticSearchAssetsWithID: vi.fn(),
-  GetDefaultSemanticModelInfo: vi.fn(),
-}));
+vi.mock("../../wailsjs/go/commands/AppCommands", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../wailsjs/go/commands/AppCommands")
+  >();
+  return {
+    ...actual,
+    GetAISettings: vi.fn(),
+    SemanticSearchAssets: vi.fn(),
+    SemanticSearchAssetsWithID: vi.fn(),
+    GetDefaultSemanticModelInfo: vi.fn(),
+  };
+});
 
 import * as Go from "../../wailsjs/go/commands/AppCommands";
 import { commands, domain } from "../../wailsjs/go/models";
