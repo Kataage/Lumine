@@ -18,6 +18,10 @@ Set-StrictMode -Version Latest
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepoRoot
 
+if (-not [string]::IsNullOrWhiteSpace($env:LUMINE_LLAMA_SERVER)) {
+    throw "LUMINE_LLAMA_SERVER is set. Controlled Lightweight Vision evidence must use the pinned runtime. Clear the override before running this benchmark."
+}
+
 if (-not (Test-Path $FixtureDir -PathType Container)) {
     throw "FixtureDir does not exist: $FixtureDir"
 }
