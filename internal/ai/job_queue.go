@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -45,6 +46,14 @@ type activeAIJob struct {
 	cancel     context.CancelFunc
 }
 
+type JobQueueStatus struct {
+	Started            bool     `json:"started"`
+	Workers            int      `json:"workers"`
+	ActiveCount        int      `json:"activeCount"`
+	ActiveCapabilities []string `json:"activeCapabilities"`
+	PausedCapabilities []string `json:"pausedCapabilities"`
+}
+
 type JobQueue struct {
 	repo     AnalysisJobRepository
 	settings SettingsProvider
@@ -74,6 +83,36 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		active:   make(map[int64]activeAIJob),
 		paused:   make(map[domain.AICapability]int),
 		wake:     make(chan struct{}, 1),
+	}
+}
+
+func (q *JobQueue) Status() JobQueueStatus {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	activeSet := make(map[string]struct{})
+	for _, job := range q.active {
+		activeSet[string(job.capability)] = struct{}{}
+	}
+	active := make([]string, 0, len(activeSet))
+	for capability := range activeSet {
+		active = append(active, capability)
+	}
+	paused := make([]string, 0, len(q.paused))
+	for capability, count := range q.paused {
+		if count > 0 {
+			paused = append(paused, string(capability))
+		}
+	}
+	sort.Strings(active)
+	sort.Strings(paused)
+
+	return JobQueueStatus{
+		Started:            q.started,
+		Workers:            q.workers,
+		ActiveCount:        len(q.active),
+		ActiveCapabilities: active,
+		PausedCapabilities: paused,
 	}
 }
 
