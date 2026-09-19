@@ -143,15 +143,64 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 	if c.semanticIndex != nil && status.Engine != "" && status.ModelID != "" && status.Version != "" {
 		c.startBackgroundTask(func(warmCtx context.Context) {
 			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
-				// Search can still retry the warm synchronously later. Startup
-				// must remain usable even if the cache warm fails.
+				// Search can retry the warm synchronously. Runtime readiness must
+				// not depend on a cache warm succeeding.
 				return
 			}
 		})
 	}
 
-	_, err := c.EnqueueSemanticBackfill()
-	return err
+	// Enumerating a large library and enqueueing missing embeddings can take a
+	// long time. Do not make runtime load/search readiness wait for that work.
+	c.startBackgroundTask(func(backfillCtx context.Context) {
+		if backfillCtx.Err() != nil {
+			return
+		}
+		if _, err := c.EnqueueSemanticBackfill(); err != nil && backfillCtx.Err() == nil {
+			// Backfill is recoverable and can be retried from Settings.
+			return
+		}
+	})
+	return nil
+}
+
+func (c *AppCommands) EnsureSemanticSearchReady() error {
+	if c.aiManager == nil {
+		return errors.New("AI model manager is not available")
+	}
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilitySemanticSearch) {
+		return ErrSemanticSearchDisabled
+	}
+
+	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	if status.State == ai.RuntimeStateReady || status.State == ai.RuntimeStateRunning {
+		return nil
+	}
+
+	manifest := siglip2.DefaultManifest()
+	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+		return fmt.Errorf("Semantic Search model is not installed or invalid: %w", err)
+	}
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := c.loadDefaultSemanticModel(ctx, settings); err != nil {
+		return fmt.Errorf("restore Semantic Search runtime: %w", err)
+	}
+
+	status = c.aiManager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		if status.Error != "" {
+			return fmt.Errorf("Semantic Search runtime state=%s: %s", status.State, status.Error)
+		}
+		return fmt.Errorf("Semantic Search runtime state=%s", status.State)
+	}
+	return nil
 }
 
 func installedModelInfo(installed ai.InstalledModel) *ai.InstalledModelInfo {
