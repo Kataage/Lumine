@@ -6,6 +6,7 @@ import { AssetDetailPanel } from "./components/AssetDetailPanel";
 import { CreativeOrganizeModal } from "./components/CreativeOrganizeModal";
 import { PostRecordModal } from "./components/PostRecordModal";
 import { AdvancedVisionCompareModal } from "./components/AdvancedVisionCompareModal";
+import { PromptStudioWorkspace } from "./components/PromptStudio";
 import { useAppDialog } from "./components/AppDialogProvider";
 import type { AssetDTO, LibraryDTO } from "./api/client";
 import {
@@ -27,7 +28,7 @@ import { computeViewerSelection, isEditableShortcutTarget } from "./utils/viewer
 
 type ViewMode = "grid" | "list";
 type SearchMode = "normal" | "semantic";
-type SidebarView = "libraries" | "folders" | "tags" | "posts" | "settings";
+type SidebarView = "libraries" | "folders" | "tags" | "prompt" | "posts" | "settings";
 
 interface AppState {
   libraries: LibraryDTO[];
@@ -51,6 +52,7 @@ interface AppState {
   filterRating: number;
   filterTagIds: number[];
   allAssetIds: number[];
+  selectedPromptProjectId: number | null;
 }
 
 const defaultState: AppState = {
@@ -75,6 +77,7 @@ const defaultState: AppState = {
   filterRating: 0,
   filterTagIds: [],
   allAssetIds: [],
+  selectedPromptProjectId: null,
 };
 
 const AppContext = createContext<{
@@ -382,8 +385,16 @@ export default function App() {
     return <div className="h-screen bg-background text-foreground flex items-center justify-center p-8"><div className="max-w-lg text-center space-y-4 rounded-2xl border border-border bg-card p-8"><h1 className="text-lg font-semibold">ライブラリ情報を読み込めませんでした</h1><p className="text-sm text-muted-foreground">Lumineのデータベースを開く際にエラーが発生しました。</p><p className="text-xs text-muted-foreground/70 break-words font-mono">{bootstrapError}</p><button onClick={() => void loadBootstrap()} className="ui-primary-button">再試行</button></div></div>;
   }
 
-  if (state.libraries.length === 0 && !state.selectedLibraryId) {
-    return <QueryClientProvider client={queryClient}><WelcomeScreenV2 onSelectFolder={handleSelectFolder} busy={addingLibrary} /></QueryClientProvider>;
+  if (state.libraries.length === 0 && !state.selectedLibraryId && state.sidebarView !== "prompt") {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <WelcomeScreenV2
+          onSelectFolder={handleSelectFolder}
+          onOpenPromptStudio={() => setState((current) => ({ ...current, sidebarView: "prompt" }))}
+          busy={addingLibrary}
+        />
+      </QueryClientProvider>
+    );
   }
 
   return (
@@ -392,35 +403,41 @@ export default function App() {
         <div className="app-shell flex h-screen bg-background text-foreground overflow-hidden">
           {state.sidebarOpen && <SidebarV2 />}
           <div className="flex flex-col flex-1 min-w-0">
-            <ToolbarV2 />
+            {state.sidebarView !== "prompt" && <ToolbarV2 />}
             <div className="app-main-region relative flex flex-1 min-h-0 min-w-0">
-              <div className="flex-1 min-w-0 flex">
-                <ViewerGridV2 onSelectAsset={handleSelectAsset} onOpenDetail={handleOpenDetail} onAssetsLoaded={handleAssetsLoaded} />
-              </div>
-
-              {state.detailOpen && state.detailAsset && (
-                <div className="absolute inset-y-0 right-0 z-30 flex pointer-events-none">
-                  <div className="h-full pointer-events-auto">
-                    <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />
+              {state.sidebarView === "prompt" ? (
+                <PromptStudioWorkspace />
+              ) : (
+                <>
+                  <div className="flex-1 min-w-0 flex">
+                    <ViewerGridV2 onSelectAsset={handleSelectAsset} onOpenDetail={handleOpenDetail} onAssetsLoaded={handleAssetsLoaded} />
                   </div>
-                </div>
-              )}
 
-              {state.selectedAssets.size > 1 && (
-                <div className="absolute inset-x-3 bottom-3 z-40 flex justify-center pointer-events-none">
-                  <BulkActionsBar
-                    count={state.selectedAssets.size}
-                    onRate={handleBulkRate}
-                    onStatus={handleBulkStatus}
-                    onFavorite={handleBulkFavorite}
-                    onColorLabel={handleBulkColorLabel}
-                    onCreativeOrganize={() => setCreativeOrganizeOpen(true)}
-                    onAdvancedCompare={() => setAdvancedCompareOpen(true)}
-                    onPostRecord={() => setBulkPostRecordOpen(true)}
-                    onDelete={handleDeleteFiles}
-                    onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
-                  />
-                </div>
+                  {state.detailOpen && state.detailAsset && (
+                    <div className="absolute inset-y-0 right-0 z-30 flex pointer-events-none">
+                      <div className="h-full pointer-events-auto">
+                        <AssetDetailPanel asset={state.detailAsset} onClose={handleCloseDetail} />
+                      </div>
+                    </div>
+                  )}
+
+                  {state.selectedAssets.size > 1 && (
+                    <div className="absolute inset-x-3 bottom-3 z-40 flex justify-center pointer-events-none">
+                      <BulkActionsBar
+                        count={state.selectedAssets.size}
+                        onRate={handleBulkRate}
+                        onStatus={handleBulkStatus}
+                        onFavorite={handleBulkFavorite}
+                        onColorLabel={handleBulkColorLabel}
+                        onCreativeOrganize={() => setCreativeOrganizeOpen(true)}
+                        onAdvancedCompare={() => setAdvancedCompareOpen(true)}
+                        onPostRecord={() => setBulkPostRecordOpen(true)}
+                        onDelete={handleDeleteFiles}
+                        onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
