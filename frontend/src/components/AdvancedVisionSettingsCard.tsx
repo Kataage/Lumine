@@ -118,10 +118,10 @@ export function AdvancedVisionSettingsCard({
 
   const runtimeState = status.runtime.state;
   const runtimeLabel =
-    runtimeState === "ready" ? "準備完了" :
+    runtimeState === "ready" ? "利用可能" :
     runtimeState === "running" ? "処理中" :
     runtimeState === "error" ? "エラー" :
-    runtimeState === "disabled" ? "無効" : "モデル未読込";
+    runtimeState === "disabled" ? "機能OFF" : "セットアップが必要";
 
   return (
     <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
@@ -137,27 +137,20 @@ export function AdvancedVisionSettingsCard({
             <p className="mt-0.5 text-muted-foreground">{formatFileSize(status.llamaRuntime.sizeBytes)} · {status.llamaRuntime.installed ? "導入済み" : "未導入"}</p>
             <p className="mt-0.5 text-muted-foreground/70">Lightweight Visionと共有します。</p>
           </div>
-          {!status.llamaRuntime.installed ? (
-            <button
-              type="button"
-              className="ui-primary-button"
-              disabled={!!busy}
-              onClick={() => void run("runtime-install", installAdvancedVisionRuntime)}
-            >
-              {busy === "runtime-install" ? "導入中…" : "導入"}
-            </button>
-          ) : (
+          {status.llamaRuntime.installed ? (
             <button
               type="button"
               className="ui-secondary-button"
               disabled={!!busy}
               onClick={() => {
-                if (!window.confirm("共有llama.cpp runtimeを削除します。Lightweight Visionの実行中runtimeも停止します。続行しますか？")) return;
+                if (!window.confirm("共有llama.cpp runtimeを削除します。Lightweight Vision / Prompt Engineも停止します。続行しますか？")) return;
                 void run("runtime-remove", removeAdvancedVisionRuntime);
               }}
             >
               {busy === "runtime-remove" ? "削除中…" : "削除"}
             </button>
+          ) : (
+            <span className="rounded-full border border-amber-500/25 px-2 py-0.5 text-amber-300">セットアップ時に自動導入</span>
           )}
         </div>
       </div>
