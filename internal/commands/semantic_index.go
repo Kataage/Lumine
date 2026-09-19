@@ -54,8 +54,9 @@ type semanticMemoryIndex struct {
 	mappedReadOnly bool
 	overlay        map[int64][]float32
 	overlayExtra   int
-	persistEpoch   uint64
-	persistWorker  bool
+	persistEpoch    uint64
+	persistWorker   bool
+	persistDebounce time.Duration
 
 	ready      bool
 	warming    bool
@@ -75,9 +76,10 @@ type semanticMemoryIndex struct {
 func newSemanticMemoryIndex() *semanticMemoryIndex {
 	return &semanticMemoryIndex{
 		positions: make(map[int64]int),
-		overlay:   make(map[int64][]float32),
-		pending:   make(map[int64][]float32),
-		stage:     "idle",
+		overlay:         make(map[int64][]float32),
+		pending:         make(map[int64][]float32),
+		persistDebounce: 2 * time.Second,
+		stage:           "idle",
 	}
 }
 
@@ -759,10 +761,14 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 			}
 		}
 
+		debounce := i.persistDebounce
+		if debounce <= 0 {
+			debounce = 2 * time.Second
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(debounce):
 		}
 
 		i.mu.RLock()
