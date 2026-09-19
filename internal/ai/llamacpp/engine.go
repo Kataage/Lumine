@@ -257,6 +257,9 @@ func (e *Engine) Infer(
 	ctx context.Context,
 	request ai.InferenceRequest,
 ) (ai.InferenceResponse, error) {
+	if e.id == AdvancedEngineID {
+		return e.inferAdvanced(ctx, request)
+	}
 	if request.Operation != "analyze_image" {
 		return ai.InferenceResponse{}, fmt.Errorf("unsupported llama.cpp VLM operation %q", request.Operation)
 	}
