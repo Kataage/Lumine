@@ -36,6 +36,7 @@ func TestInstalledLegacyMigrationCopiesToPreferredAndPreservesSource(t *testing.
 	writeTestFile(t, filepath.Join(legacy, "models", "model.gguf"), "legacy-model")
 	writeTestFile(t, filepath.Join(legacy, "runtimes", "llama.cpp", "server.exe"), "legacy-runtime")
 	writeTestFile(t, filepath.Join(legacy, "semantic-index", "index.bin"), "legacy-index")
+	writeTestFile(t, filepath.Join(legacy, "webview2", "Default", "Preferences"), "legacy-webview")
 	writeTestFile(t, filepath.Join(legacy, "logs", "lumine.log"), "legacy-log")
 
 	layout, err := Resolve(ResolveOptions{
@@ -83,6 +84,7 @@ func TestInstalledLegacyMigrationCopiesToPreferredAndPreservesSource(t *testing.
 		filepath.Join(preferred, "models", "model.gguf"):             "legacy-model",
 		filepath.Join(preferred, "runtimes", "llama.cpp", "server.exe"): "legacy-runtime",
 		filepath.Join(preferred, "semantic-index", "index.bin"):      "legacy-index",
+		filepath.Join(preferred, "webview2", "Default", "Preferences"): "legacy-webview",
 		filepath.Join(preferred, "logs", "lumine.log"):               "legacy-log",
 	} {
 		if got := readTestFile(t, path); got != want {
