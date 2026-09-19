@@ -5,6 +5,7 @@ import {
   getAISettings,
   getDefaultSemanticModelInfo,
   getDefaultLightweightVisionModelInfo,
+  enqueueLightweightVisionBackfill,
   installDefaultSemanticModel,
   installDefaultLightweightVisionModel,
   installLightweightVisionRuntime,
@@ -315,6 +316,20 @@ export function AISettingsPanel() {
     }
   };
 
+  const backfillVision = async () => {
+    if (visionBusy) return;
+    setVisionBusy(true);
+    setError(null);
+    try {
+      const created = await enqueueLightweightVisionBackfill();
+      window.alert(created > 0 ? `${created}件をLightweight Vision解析キューへ追加しました。` : "再解析が必要な既存画像はありません。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setVisionBusy(false);
+    }
+  };
+
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
     const next = { ...settings, ...patch };
@@ -484,6 +499,15 @@ export function AISettingsPanel() {
                       settings.lightweightVision && (
                         <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void loadVisionModel()}>
                           {visionBusy ? "読み込み中…" : "Lightweight Visionを読み込む"}
+                        </button>
+                      )}
+                    {lightweightModel.installed &&
+                      lightweightModel.llamaRuntime.installed &&
+                      (status === "ready" || status === "running") &&
+                      settings.enabled &&
+                      settings.lightweightVision && (
+                        <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
+                          既存画像を解析キューへ
                         </button>
                       )}
                   </div>
