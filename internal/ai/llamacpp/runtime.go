@@ -97,6 +97,13 @@ func PreferredRuntimeManifest(allowGPU bool) RuntimeManifest {
 	return CPURuntimeManifest()
 }
 
+func RuntimeManifestsForPolicy(allowGPU bool) []RuntimeManifest {
+	if allowGPU {
+		return []RuntimeManifest{VulkanRuntimeManifest(), CPURuntimeManifest()}
+	}
+	return []RuntimeManifest{CPURuntimeManifest()}
+}
+
 func RuntimeBackend(manifest RuntimeManifest) string {
 	if manifest.ID == VulkanRuntimeManifest().ID {
 		return "vulkan"
