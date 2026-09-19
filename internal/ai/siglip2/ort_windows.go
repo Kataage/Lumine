@@ -70,6 +70,7 @@ var ortExtractMu sync.Mutex
 
 type windowsORT struct {
 	dll           *syscall.DLL
+	directMLDLL   *syscall.DLL
 	api           uintptr
 	env           uintptr
 	memoryInfo    uintptr
@@ -85,12 +86,26 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 	if err != nil {
 		return nil, err
 	}
-	dll, err := syscall.LoadDLL(dllPath)
-	if err != nil {
-		return nil, fmt.Errorf("load ONNX Runtime DLL: %w", err)
+
+	backend := &windowsORT{}
+	if options.AllowGPU {
+		directMLPath := filepath.Join(filepath.Dir(dllPath), "DirectML.dll")
+		if directMLDLL, loadErr := syscall.LoadDLL(directMLPath); loadErr != nil {
+			backend.warning = fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
+		} else {
+			backend.directMLDLL = directMLDLL
+		}
 	}
 
-	backend := &windowsORT{dll: dll}
+	dll, err := syscall.LoadDLL(dllPath)
+	if err != nil {
+		if backend.directMLDLL != nil {
+			_ = backend.directMLDLL.Release()
+			backend.directMLDLL = nil
+		}
+		return nil, fmt.Errorf("load ONNX Runtime DLL: %w", err)
+	}
+	backend.dll = dll
 	ok := false
 	defer func() {
 		if !ok {
@@ -141,7 +156,7 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 		return nil, fmt.Errorf("create ONNX Runtime memory info: %w", err)
 	}
 
-	if options.AllowGPU {
+	if options.AllowGPU && backend.directMLDLL != nil {
 		if gpuErr := backend.createSessions(modelRoot, true); gpuErr == nil {
 			backend.provider = "directml"
 			ok = true
@@ -422,12 +437,18 @@ func (r *windowsORT) Close() error {
 		r.release(ortFnReleaseEnv, r.env)
 		r.env = 0
 	}
+	var closeErr error
 	if r.dll != nil {
-		err := r.dll.Release()
+		closeErr = r.dll.Release()
 		r.dll = nil
-		return err
 	}
-	return nil
+	if r.directMLDLL != nil {
+		if err := r.directMLDLL.Release(); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		r.directMLDLL = nil
+	}
+	return closeErr
 }
 
 func (r *windowsORT) callStatus(index uintptr, args ...uintptr) error {
