@@ -1,0 +1,297 @@
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/llamacpp"
+	"github.com/kataage/lumine/internal/domain"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+const advancedVisionActiveModelKey = "advancedVisionActiveModelV1"
+
+var (
+	ErrAdvancedVisionDisabled      = errors.New("Advanced Vision is disabled")
+	ErrAdvancedVisionModelNotFound = errors.New("Advanced Vision model candidate not found")
+)
+
+type AdvancedVisionCandidateInfo struct {
+	ID          string `json:"id"`
+	Version     string `json:"version"`
+	Engine      string `json:"engine"`
+	DisplayName string `json:"displayName"`
+	License     string `json:"license"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	Installed   bool   `json:"installed"`
+}
+
+type AdvancedVisionStatusInfo struct {
+	Runtime       ai.RuntimeStatus              `json:"runtime"`
+	LlamaRuntime  LightweightRuntimeInfo        `json:"llamaRuntime"`
+	Models        []AdvancedVisionCandidateInfo `json:"models"`
+	ActiveModelID string                        `json:"activeModelId,omitempty"`
+}
+
+func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
+	runtimeManifest := llamacpp.DefaultRuntimeManifest()
+	info := AdvancedVisionStatusInfo{
+		Runtime: ai.RuntimeStatus{
+			Capability: domain.AICapabilityAdvancedVision,
+			State:      ai.RuntimeStateModelNotInstalled,
+		},
+		LlamaRuntime: LightweightRuntimeInfo{
+			ID:           runtimeManifest.ID,
+			Version:      runtimeManifest.Version,
+			SizeBytes:    runtimeManifest.SizeBytes,
+			Platform:     runtimeManifest.Platform,
+			Architecture: runtimeManifest.Architecture,
+		},
+	}
+
+	if c.aiManager != nil {
+		info.Runtime = c.aiManager.Status(domain.AICapabilityAdvancedVision)
+		info.ActiveModelID = info.Runtime.ModelID
+	}
+	if c.llamaRuntimeStore != nil {
+		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
+			info.LlamaRuntime.Installed = true
+			info.LlamaRuntime.ExecutablePath = installed.ExecutablePath
+		}
+	}
+	for _, manifest := range llamacpp.AdvancedVisionCandidateManifests() {
+		candidate := AdvancedVisionCandidateInfo{
+			ID:          manifest.ID,
+			Version:     manifest.Version,
+			Engine:      manifest.Engine,
+			DisplayName: manifest.DisplayName,
+			License:     manifest.License,
+			SizeBytes:   manifest.SizeBytes,
+		}
+		if c.aiManager != nil {
+			if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
+				candidate.Installed = true
+			}
+		}
+		info.Models = append(info.Models, candidate)
+	}
+	return info
+}
+
+func (c *AppCommands) InstallAdvancedVisionRuntime() (*LightweightRuntimeInfo, error) {
+	if c.llamaRuntimeStore == nil {
+		return nil, errors.New("llama.cpp runtime store is not available")
+	}
+	manifest := llamacpp.DefaultRuntimeManifest()
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	installed, err := c.llamaRuntimeStore.Install(ctx, manifest, func(progress llamacpp.RuntimeDownloadProgress) {
+		if c.ctx != nil {
+			runtime.EventsEmit(c.ctx, "ai:runtime-download", progress)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &LightweightRuntimeInfo{
+		ID:             installed.ID,
+		Version:        installed.Version,
+		SizeBytes:      manifest.SizeBytes,
+		Installed:      true,
+		ExecutablePath: installed.ExecutablePath,
+		Platform:       installed.Platform,
+		Architecture:   installed.Architecture,
+	}, nil
+}
+
+func (c *AppCommands) RemoveAdvancedVisionRuntime() error {
+	if c.llamaRuntimeStore == nil {
+		return errors.New("llama.cpp runtime store is not available")
+	}
+	if c.aiManager != nil {
+		for _, capability := range []domain.AICapability{
+			domain.AICapabilityAdvancedVision,
+			domain.AICapabilityLightweightVision,
+		} {
+			if err := c.aiManager.Unload(context.Background(), capability); err != nil {
+				return err
+			}
+		}
+	}
+	return c.llamaRuntimeStore.Remove(llamacpp.DefaultRuntimeManifest())
+}
+
+func (c *AppCommands) InstallAdvancedVisionModel(modelID string) (*ai.InstalledModelInfo, error) {
+	if c.aiManager == nil {
+		return nil, errors.New("AI model manager is not available")
+	}
+	manifest, ok := advancedVisionManifest(modelID)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+	}
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	installed, err := c.aiManager.InstallModel(ctx, manifest, func(progress ai.DownloadProgress) {
+		if c.ctx != nil {
+			runtime.EventsEmit(c.ctx, "ai:model-download", progress)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return installedModelInfo(installed), nil
+}
+
+func (c *AppCommands) RemoveAdvancedVisionModel(modelID string) error {
+	if c.aiManager == nil {
+		return errors.New("AI model manager is not available")
+	}
+	manifest, ok := advancedVisionManifest(modelID)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+	}
+	status := c.aiManager.Status(domain.AICapabilityAdvancedVision)
+	if status.ModelID == manifest.ID {
+		if err := c.aiManager.Unload(context.Background(), domain.AICapabilityAdvancedVision); err != nil {
+			return err
+		}
+	}
+	if err := c.aiManager.RemoveModel(manifest.ID, manifest.Version); err != nil {
+		return err
+	}
+	active, _ := c.getAdvancedVisionActiveModelID()
+	if active == manifest.ID {
+		_ = c.settingRepo.Set(advancedVisionActiveModelKey, """")
+	}
+	return nil
+}
+
+func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
+	if c.aiManager == nil {
+		return errors.New("AI model manager is not available")
+	}
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilityAdvancedVision) {
+		return ErrAdvancedVisionDisabled
+	}
+	if c.llamaRuntimeStore == nil {
+		return errors.New("llama.cpp runtime store is not available")
+	}
+	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
+		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
+	}
+	manifest, ok := advancedVisionManifest(modelID)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+	}
+
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := c.aiManager.Load(
+		ctx,
+		domain.AICapabilityAdvancedVision,
+		manifest.ID,
+		manifest.Version,
+		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
+	); err != nil {
+		return err
+	}
+	value, _ := json.Marshal(manifest.ID)
+	return c.settingRepo.Set(advancedVisionActiveModelKey, string(value))
+}
+
+// RestoreAdvancedVisionModel never downloads. It only restores the model that
+// the user explicitly loaded before, when both runtime and model still verify.
+func (c *AppCommands) RestoreAdvancedVisionModel() error {
+	if c.aiManager == nil || c.llamaRuntimeStore == nil {
+		return nil
+	}
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilityAdvancedVision) {
+		return nil
+	}
+	modelID, err := c.getAdvancedVisionActiveModelID()
+	if err != nil || modelID == "" {
+		return err
+	}
+	manifest, ok := advancedVisionManifest(modelID)
+	if !ok {
+		return nil
+	}
+	runtimeManifest := llamacpp.DefaultRuntimeManifest()
+	if _, err := c.llamaRuntimeStore.Verify(runtimeManifest); err != nil {
+		metadata := filepath.Join(c.llamaRuntimeStore.Root(), runtimeManifest.ID, runtimeManifest.Version, "runtime.json")
+		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+		metadata := filepath.Join(c.aiManager.Store().Root(), manifest.ID, manifest.Version, "manifest.json")
+		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.aiManager.Load(
+		ctx,
+		domain.AICapabilityAdvancedVision,
+		manifest.ID,
+		manifest.Version,
+		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
+	)
+}
+
+func (c *AppCommands) getAdvancedVisionActiveModelID() (string, error) {
+	setting, err := c.settingRepo.Get(advancedVisionActiveModelKey)
+	if err != nil || setting == nil || setting.ValueJSON == "" {
+		return "", err
+	}
+	var modelID string
+	if err := json.Unmarshal([]byte(setting.ValueJSON), &modelID); err != nil {
+		return "", fmt.Errorf("decode Advanced Vision active model: %w", err)
+	}
+	return modelID, nil
+}
+
+func advancedVisionManifest(modelID string) (ai.ModelManifest, bool) {
+	for _, manifest := range llamacpp.AdvancedVisionCandidateManifests() {
+		if manifest.ID == modelID {
+			return manifest, true
+		}
+	}
+	return ai.ModelManifest{}, false
+}
+
+func installedModelInfo(installed ai.InstalledModel) *ai.InstalledModelInfo {
+	return &ai.InstalledModelInfo{
+		ID:          installed.Manifest.ID,
+		Version:     installed.Manifest.Version,
+		Engine:      installed.Manifest.Engine,
+		DisplayName: installed.Manifest.DisplayName,
+		License:     installed.Manifest.License,
+		SizeBytes:   installed.Manifest.SizeBytes,
+		RootDir:     installed.RootDir,
+	}
+}
