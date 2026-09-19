@@ -17,9 +17,10 @@ var (
 )
 
 type runtimeSession struct {
-	opMu     sync.Mutex
-	closing  bool
-	engine   Engine
+	opMu        sync.Mutex
+	closing     bool
+	cleanupOnly bool
+	engine      Engine
 	model    InstalledModel
 	options  LoadOptions
 	state    RuntimeState
@@ -196,6 +197,7 @@ func (m *Manager) Load(
 		loadErr := fmt.Errorf("load engine %s: %w", engine.ID(), err)
 		if cleanupErr := unloadEngineBounded(engine); cleanupErr != nil {
 			session.state = RuntimeStateError
+			session.cleanupOnly = true
 			session.lastErr = errors.Join(loadErr, cleanupErr).Error()
 			m.mu.Lock()
 			m.sessions[capability] = session
@@ -213,6 +215,7 @@ func (m *Manager) Load(
 			activateErr := fmt.Errorf("activate model metadata for %s: %w", capability, err)
 			if cleanupErr := unloadEngineBounded(engine); cleanupErr != nil {
 				session.state = RuntimeStateError
+				session.cleanupOnly = true
 				session.lastErr = errors.Join(activateErr, cleanupErr).Error()
 				m.mu.Lock()
 				m.sessions[capability] = session
@@ -280,7 +283,7 @@ func (m *Manager) Infer(
 	// to publish its result before it can release opMu.
 	m.mu.Lock()
 	session := m.sessions[capability]
-	if session == nil || session.closing {
+	if session == nil || session.closing || session.cleanupOnly {
 		m.mu.Unlock()
 		return InferenceResponse{}, ErrRuntimeNotLoaded
 	}
@@ -294,7 +297,7 @@ func (m *Manager) Infer(
 	// Unload may have won the race between taking the session pointer and
 	// acquiring opMu. Revalidate ownership before invoking the engine.
 	m.mu.Lock()
-	if current := m.sessions[capability]; current != session || session.closing {
+	if current := m.sessions[capability]; current != session || session.closing || session.cleanupOnly {
 		m.mu.Unlock()
 		return InferenceResponse{}, ErrRuntimeNotLoaded
 	}
@@ -364,6 +367,7 @@ func (m *Manager) unloadLocked(ctx context.Context, capability domain.AICapabili
 		m.mu.Lock()
 		if current := m.sessions[capability]; current == session {
 			session.closing = false
+			session.cleanupOnly = true
 			session.state = RuntimeStateError
 			session.lastErr = unloadErr.Error()
 		}
