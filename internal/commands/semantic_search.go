@@ -332,6 +332,12 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		c.semanticSearchState.finish(requestID)
 	}()
 
+	resumeBackground := func() {}
+	if c.aiJobQueue != nil {
+		resumeBackground = c.aiJobQueue.PauseCapabilityForForeground(domain.AICapabilitySemanticSearch)
+	}
+	defer resumeBackground()
+
 	response, err := c.aiManager.Infer(searchCtx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_text",
 		Payload: map[string]any{
