@@ -19,8 +19,10 @@ type PromptEngineRequestDTO struct {
 	Idea          string   `json:"idea,omitempty"`
 	Positive      string   `json:"positive,omitempty"`
 	Negative      string   `json:"negative,omitempty"`
-	SourceProfile string   `json:"sourceProfile,omitempty"`
-	TargetProfile string   `json:"targetProfile,omitempty"`
+	SourceProfile   string   `json:"sourceProfile,omitempty"`
+	TargetProfile   string   `json:"targetProfile,omitempty"`
+	SourceProfileID string   `json:"sourceProfileId,omitempty"`
+	TargetProfileID string   `json:"targetProfileId,omitempty"`
 	Instruction   string   `json:"instruction,omitempty"`
 	Characters    []string `json:"characters,omitempty"`
 	LoRAs         []string `json:"loras,omitempty"`
@@ -72,6 +74,24 @@ func (c *AppCommands) RunPromptEngine(request PromptEngineRequestDTO) (*PromptEn
 		"characters":    cleanPromptInputList(request.Characters),
 		"loras":         cleanPromptInputList(request.LoRAs),
 	}
+	if profileID := strings.TrimSpace(request.SourceProfileID); profileID != "" {
+		profile, err := c.resolveModelProfile(profileID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve source model profile: %w", err)
+		}
+		payload["sourceProfile"] = profile.Name
+		payload["sourceProfileId"] = profile.ID
+		payload["sourceProfileSpec"] = modelProfilePromptSpec(profile)
+	}
+	if profileID := strings.TrimSpace(request.TargetProfileID); profileID != "" {
+		profile, err := c.resolveModelProfile(profileID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve target model profile: %w", err)
+		}
+		payload["targetProfile"] = profile.Name
+		payload["targetProfileId"] = profile.ID
+		payload["targetProfileSpec"] = modelProfilePromptSpec(profile)
+	}
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -99,7 +119,9 @@ func validatePromptEngineRequest(request PromptEngineRequestDTO) error {
 		len([]rune(request.Negative)) > 12000 ||
 		len([]rune(request.Instruction)) > 8000 ||
 		len([]rune(request.SourceProfile)) > 2000 ||
-		len([]rune(request.TargetProfile)) > 2000 {
+		len([]rune(request.TargetProfile)) > 2000 ||
+		len([]rune(request.SourceProfileID)) > 512 ||
+		len([]rune(request.TargetProfileID)) > 512 {
 		return errors.New("Prompt Engine request is too long")
 	}
 	switch request.Operation {
@@ -112,8 +134,9 @@ func validatePromptEngineRequest(request PromptEngineRequestDTO) error {
 			return errors.New("improve_prompt requires positive")
 		}
 	case llamacpp.PromptOperationConvert:
-		if strings.TrimSpace(request.Positive) == "" || strings.TrimSpace(request.TargetProfile) == "" {
-			return errors.New("convert_prompt requires positive and targetProfile")
+		if strings.TrimSpace(request.Positive) == "" ||
+			(strings.TrimSpace(request.TargetProfile) == "" && strings.TrimSpace(request.TargetProfileID) == "") {
+			return errors.New("convert_prompt requires positive and targetProfile/targetProfileId")
 		}
 	case llamacpp.PromptOperationEdit:
 		if strings.TrimSpace(request.Positive) == "" || strings.TrimSpace(request.Instruction) == "" {
