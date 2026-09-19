@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  EventsOff,
   EventsOn,
   enqueueLightweightVisionBackfill,
   getAISettings,
@@ -247,7 +246,7 @@ export function AISettingsPanel() {
   }, [refresh]);
 
   useEffect(() => {
-    EventsOn("ai:model-download", (raw: unknown) => {
+    const offModelDownload = EventsOn("ai:model-download", (raw: unknown) => {
       const progress = raw as {
         modelId?: string;
         bytesDownloaded?: number;
@@ -268,7 +267,7 @@ export function AISettingsPanel() {
         ]);
       }
     });
-    EventsOn("ai:runtime-download", (raw: unknown) => {
+    const offRuntimeDownload = EventsOn("ai:runtime-download", (raw: unknown) => {
       const progress = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       setRuntimeProgress({
         downloaded: Math.max(0, Number(progress.bytesDownloaded ?? 0)),
@@ -279,8 +278,8 @@ export function AISettingsPanel() {
       }
     });
     return () => {
-      EventsOff("ai:model-download");
-      EventsOff("ai:runtime-download");
+      offModelDownload();
+      offRuntimeDownload();
     };
   }, []);
 
