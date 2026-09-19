@@ -21,45 +21,49 @@
       "capability": "prompt_engine",
       "status": "candidate",
       "modelId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
-      "version": "main",
+      "version": "fb32df77e9e1852d558d1013501e19666a3eb0bb",
       "engine": "llama.cpp-text-cpu",
-      "quantization": "Q4_K_M",
+      "quantization": "Q4_K",
       "issue": "#169",
-      "rationale": "Current NeoHorse 4B abliterated GGUF candidate. The repository is very new, so the checked-in profile is exploratory until an immutable revision, exact GGUF filename/size and SHA-256 are pinned from a controlled run.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Immutable NeoHorse Prompt Engine candidate pinned to the published Q4_K GGUF (the repository does not publish Q4_K_M). Controlled evidence uses the current llama.cpp b11053 CPU runtime; adoption remains pending same-hardware #169 measurements.",
+      "updatedAt": "2026-09-20",
+      "artifactSha256": "0900451ccd4f0a65bf0e8d3f2c224eff02ae9c961cb064de8b87e8a2118af3c2"
     },
     {
       "capability": "prompt_engine",
       "status": "candidate",
       "modelId": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
-      "version": "main",
+      "version": "f01809e437fb3046ae9afd31d684556f9ae5dd46",
       "engine": "llama.cpp-text-cpu",
       "quantization": "Q4_K_M",
       "issue": "#169",
-      "rationale": "Japanese-focused Heretic candidate. Upstream llama.cpp v0.4.1 added native Spark2.5 support (#27868), so the controlled run uses the same pinned b10964 CPU runtime family as the other prompt candidates. Adoption still requires immutable model revision and artifact SHA-256 evidence.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Immutable Japanese-focused Heretic candidate. Spark2.5 is supported by upstream llama.cpp; controlled evidence uses the same pinned b11053 CPU runtime as the other Prompt candidates. Adoption remains pending same-hardware #169 measurements.",
+      "updatedAt": "2026-09-20",
+      "artifactSha256": "8700b9cb4be2ddf1a6b4a9230f7b9d030aeb923d0528301bc546bb5a74f21cd7"
     },
     {
       "capability": "prompt_engine",
       "status": "candidate",
       "modelId": "kaineone/Qwen3.5-4B-abliterated-GGUF",
-      "version": "main",
+      "version": "551991a575c1d4221ca0f0cfca74037d26268411",
       "engine": "llama.cpp-text-cpu",
       "quantization": "Q4_K_M",
       "issue": "#169",
-      "rationale": "Qwen3.5-4B abliterated upstream-llama.cpp control used to separate prompt quality/refusal effects from NeoHorse/Spark fine-tuning. Adoption requires immutable revision and artifact SHA-256 evidence.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Immutable Qwen3.5-4B abliterated control used to separate prompt-quality/refusal effects from NeoHorse/Spark fine-tuning. Controlled evidence uses llama.cpp b11053 and remains pending same-hardware #169 measurements.",
+      "updatedAt": "2026-09-20",
+      "artifactSha256": "6505da672f3e1a5946bc7c4675328a06f79280b470b9fe6db63833a3df2e1d43"
     },
     {
       "capability": "prompt_engine",
       "status": "candidate",
       "modelId": "TheStageAI/Qwen3.5-4B-GGUF",
-      "version": "main",
+      "version": "9e325bb0db1f4eb8a51450142227bb6a7e4d37f1",
       "engine": "llama.cpp-text-cpu",
       "quantization": "M-TS-Q4_K_M",
       "issue": "#169",
-      "rationale": "Reproducible Qwen3.5-4B base-lineage control. TheStageAI publishes an exact upstream base revision, release manifest and quantization quality measurements; the M tier is used as the compact instruction-following reference. Adoption evidence still requires pinning this GGUF repository revision and artifact SHA-256.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Immutable reproducible Qwen3.5-4B base-lineage control using the M-TS-Q4_K_M GGUF. Controlled evidence uses llama.cpp b11053 and remains pending same-hardware #169 measurements.",
+      "updatedAt": "2026-09-20",
+      "artifactSha256": "f8e45572b9cc35161d4772b09bccfd383fe0bb03fc6d69b40a9138731302290b"
     },
     {
       "capability": "tagger",
