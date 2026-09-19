@@ -2,7 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AssetDTO, AssetListRequest } from "../api/client";
-import { listAssets, listSimilarAssets, semanticSearchAssets } from "../api/client";
+import {
+  cancelSemanticSearch,
+  listAssets,
+  listSimilarAssets,
+  onSemanticSearchProgress,
+  semanticSearchAssets,
+  semanticSearchPage,
+} from "../api/client";
 import { useApp } from "../App";
 import { formatFileSize } from "../utils/format";
 import {
@@ -21,6 +28,15 @@ const GAP = 8;
 const GRID_PADDING = 24;
 const LIST_ROW_HEIGHT = 60;
 
+type ViewerPageParam = number | { offset: number; semanticSessionId: string };
+
+function newSemanticRequestID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `semantic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 interface ViewerGridV2Props {
   onSelectAsset: (asset: AssetDTO, multi: boolean, range: boolean) => void;
   onOpenDetail: (asset: AssetDTO) => void;
@@ -33,6 +49,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
+  const [semanticPreview, setSemanticPreview] = useState<AssetDTO[]>([]);
+  const [semanticProgress, setSemanticProgress] = useState<{ scanned: number; total: number } | null>(null);
+  const semanticRequestRef = useRef<{ id: string; key: string } | null>(null);
   const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
 
   useEffect(() => registerViewerOpenHandler(openPreview), [openPreview]);
@@ -48,6 +67,23 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     observer.observe(element);
     updateSize();
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return onSemanticSearchProgress((progress) => {
+      const active = semanticRequestRef.current;
+      if (!active || progress.requestId !== active.id) return;
+      setSemanticPreview(progress.assets ?? []);
+      setSemanticProgress({
+        scanned: Math.max(0, progress.scannedCount ?? 0),
+        total: Math.max(0, progress.totalCount ?? 0),
+      });
+    });
+  }, []);
+
+  useEffect(() => () => {
+    const active = semanticRequestRef.current;
+    if (active) void cancelSemanticSearch(active.id);
   }, []);
 
   const buildQuery = useCallback((offset: number): AssetListRequest => ({
@@ -95,22 +131,53 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       state.filterRating,
       state.filterTagIds.join(","),
     ],
-    queryFn: async ({ pageParam = 0 }) => {
-      const request = buildQuery(Number(pageParam));
+    queryFn: async ({ pageParam = 0 as ViewerPageParam }) => {
+      const offset = typeof pageParam === "number" ? pageParam : pageParam.offset;
+      const request = buildQuery(offset);
       if (state.similarAssetId) {
         return listSimilarAssets(state.similarAssetId, request);
       }
       if (state.searchMode === "semantic" && state.searchQuery.trim()) {
-        return semanticSearchAssets(request);
+        if (typeof pageParam !== "number" && pageParam.semanticSessionId) {
+          return semanticSearchPage(pageParam.semanticSessionId, offset, PAGE_SIZE);
+        }
+
+        const key = [
+          state.selectedLibraryId,
+          state.selectedFolderPath,
+          state.searchQuery.trim(),
+          state.filterStatusLabel,
+          state.filterRating,
+          state.filterTagIds.join(","),
+        ].join("|");
+        const previous = semanticRequestRef.current;
+        if (previous && previous.key !== key) {
+          await cancelSemanticSearch(previous.id).catch(() => undefined);
+        }
+
+        const requestId = newSemanticRequestID();
+        semanticRequestRef.current = { id: requestId, key };
+        setSemanticPreview([]);
+        setSemanticProgress({ scanned: 0, total: 0 });
+        try {
+          return await semanticSearchAssets(request, requestId);
+        } finally {
+          if (semanticRequestRef.current?.id === requestId) {
+            setSemanticProgress(null);
+            setSemanticPreview([]);
+          }
+        }
       }
       const result = await listAssets(request);
       return result ?? { assets: [], totalCount: 0 };
     },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
+    initialPageParam: 0 as ViewerPageParam,
+    getNextPageParam: (lastPage, allPages): ViewerPageParam | undefined => {
       const loaded = allPages.reduce((sum, page) => sum + page.assets.length, 0);
       const total = allPages[0]?.totalCount ?? 0;
-      return lastPage.assets.length === 0 || loaded >= total ? undefined : loaded;
+      if (lastPage.assets.length === 0 || loaded >= total) return undefined;
+      const sessionId = allPages[0]?.semanticSearchSessionId ?? lastPage.semanticSearchSessionId;
+      return sessionId ? { offset: loaded, semanticSessionId: sessionId } : loaded;
     },
     enabled: !!state.selectedLibraryId,
     staleTime: Infinity,
@@ -119,8 +186,11 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     refetchOnMount: false,
   });
 
-  const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
-  const totalCount = data?.pages[0]?.totalCount ?? 0;
+  const settledAssets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
+  const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
+  const showingSemanticPreview = semanticSearchActive && isLoading && semanticPreview.length > 0;
+  const assets = showingSemanticPreview ? semanticPreview : settledAssets;
+  const totalCount = data?.pages[0]?.totalCount ?? semanticProgress?.total ?? 0;
 
   useEffect(() => onAssetsLoaded(assets.map((asset) => asset.id)), [assets, onAssetsLoaded]);
 
@@ -292,10 +362,31 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           </div>
         )}
 
-        {isLoading && (
+        {showingSemanticPreview && semanticProgress && (
+          <div className="sticky bottom-3 z-20 mx-auto mt-3 w-fit max-w-[calc(100%-24px)] rounded-xl border border-border/80 bg-card/95 px-3.5 py-2.5 shadow-xl backdrop-blur-md">
+            <div className="flex items-center gap-2.5 text-[11px]">
+              <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
+              <span className="font-medium">意味検索中</span>
+              <span className="tabular-nums text-muted-foreground">
+                {semanticProgress.scanned.toLocaleString()} / {semanticProgress.total.toLocaleString()}件
+              </span>
+              <span className="text-muted-foreground">· 上位候補を更新中</span>
+            </div>
+            {semanticProgress.total > 0 && (
+              <div className="mt-2 h-1 w-64 max-w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${Math.min(100, (semanticProgress.scanned / semanticProgress.total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {isLoading && assets.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-sm text-muted-foreground">
             <div className="w-7 h-7 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-            画像一覧を読み込んでいます…
+            {semanticSearchActive ? "意味検索を開始しています…" : "画像一覧を読み込んでいます…"}
           </div>
         )}
 
