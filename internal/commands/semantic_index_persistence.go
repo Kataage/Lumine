@@ -52,17 +52,21 @@ type semanticSnapshotHeader struct {
 	checksum      [sha256.Size]byte
 }
 
-func semanticSnapshotPath(root string, key semanticIndexKey, generation uint64) string {
+func semanticSnapshotKeyPrefix(key semanticIndexKey) string {
 	keyHash := sha256.Sum256([]byte(key.engine + "\x00" + key.modelID + "\x00" + key.version))
-	name := fmt.Sprintf("%s%x-%016x.bin", semanticSnapshotPrefix, keyHash[:8], generation)
+	return fmt.Sprintf("%s%x-", semanticSnapshotPrefix, keyHash[:8])
+}
+
+func semanticSnapshotPath(root string, key semanticIndexKey, generation uint64) string {
+	name := fmt.Sprintf("%s%016x.bin", semanticSnapshotKeyPrefix(key), generation)
 	return filepath.Join(root, name)
 }
 
-func cleanupSemanticSnapshots(root, keepPath string) {
+func cleanupSemanticSnapshots(root string, key semanticIndexKey, keepPath string) {
 	if root == "" {
 		return
 	}
-	matches, err := filepath.Glob(filepath.Join(root, semanticSnapshotPrefix+"*.bin"))
+	matches, err := filepath.Glob(filepath.Join(root, semanticSnapshotKeyPrefix(key)+"*.bin"))
 	if err != nil {
 		return
 	}
