@@ -18,6 +18,7 @@ import {
   type SemanticModelInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
+import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
 import {
   DEFAULT_AI_SETTINGS,
   getInitialAIEngineStatus,
@@ -385,7 +386,7 @@ export function AISettingsPanel() {
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <p className="text-[10px] font-medium">{feature.label}</p>
-                    <StatusBadge status={status} />
+                    {feature.key !== "advancedVision" && <StatusBadge status={status} />}
                   </div>
                   <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
                     {feature.description}
@@ -399,6 +400,9 @@ export function AISettingsPanel() {
                 />
               </div>
 
+              {feature.key === "advancedVision" && (
+                <AdvancedVisionSettingsCard enabled={settings.enabled && settings.advancedVision} />
+              )}
               {feature.key === "semanticSearch" && semanticModel && (
                 <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
                   <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">

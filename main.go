@@ -198,6 +198,9 @@ func main() {
 				if err := cmd.RestoreDefaultLightweightVisionModel(); err != nil {
 					slog.Warn("failed to restore Lightweight Vision runtime", "error", err)
 				}
+				if err := cmd.RestoreAdvancedVisionModel(); err != nil {
+					slog.Warn("failed to restore Advanced Vision runtime", "error", err)
+				}
 			}()
 		},
 		Bind: []interface{}{

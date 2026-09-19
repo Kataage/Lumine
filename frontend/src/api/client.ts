@@ -228,6 +228,56 @@ export interface LightweightVisionAnalysis {
   updatedAt: string;
 }
 
+export interface AdvancedVisionCandidateInfo {
+  id: string;
+  version: string;
+  engine: string;
+  displayName: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+}
+
+export interface AdvancedVisionStatusInfo {
+  runtime: SemanticModelInfo["runtime"];
+  llamaRuntime: LightweightRuntimeInfo;
+  models: AdvancedVisionCandidateInfo[];
+  activeModelId?: string;
+}
+
+export interface AdvancedVisionResult {
+  schemaVersion: number;
+  summary: string;
+  subjects: string[];
+  environment: string;
+  composition: string;
+  viewpoint: string;
+  actions: string[];
+  relationships: string[];
+  context: string;
+  differences: string[];
+  commonalities: string[];
+  reversePromptHints: string[];
+  visibleText: string[];
+  notes: string[];
+  completionTokens?: number;
+}
+
+export interface AdvancedVisionRun {
+  id: number;
+  operation: "analyze_deep" | "compare_images" | "reverse_prompt_support";
+  instruction: string;
+  state: "running" | "ready" | "failed";
+  engine: string;
+  modelId: string;
+  modelVersion: string;
+  assetIds: number[];
+  result?: AdvancedVisionResult;
+  errorMessage?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -259,6 +309,15 @@ type DynamicCommands = {
   GetLightweightVisionAnalysis?: (assetId: number) => Promise<LightweightVisionAnalysis | null>;
   EnqueueLightweightVisionBackfill?: () => Promise<number>;
   ReanalyzeAssets?: (assetIds: number[], capability: string, priority: number) => Promise<number>;
+  GetAdvancedVisionStatus?: () => Promise<AdvancedVisionStatusInfo | null>;
+  InstallAdvancedVisionRuntime?: () => Promise<LightweightRuntimeInfo | null>;
+  RemoveAdvancedVisionRuntime?: () => Promise<void>;
+  InstallAdvancedVisionModel?: (modelId: string) => Promise<unknown>;
+  RemoveAdvancedVisionModel?: (modelId: string) => Promise<void>;
+  LoadAdvancedVisionModel?: (modelId: string) => Promise<void>;
+  RunAdvancedVision?: (operation: string, assetIds: number[], instruction: string) => Promise<AdvancedVisionRun | null>;
+  GetAdvancedVisionRun?: (runId: number) => Promise<AdvancedVisionRun | null>;
+  ListAdvancedVisionRunsForAsset?: (assetId: number, limit: number) => Promise<AdvancedVisionRun[]>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -416,6 +475,50 @@ export async function enqueueLightweightVisionBackfill(): Promise<number> {
 
 export async function reanalyzeAssets(assetIds: number[], capability: string, priority = 100): Promise<number> {
   return requireDynamic("ReanalyzeAssets")(assetIds, capability, priority);
+}
+
+export async function getAdvancedVisionStatus(): Promise<AdvancedVisionStatusInfo> {
+  const value = await requireDynamic("GetAdvancedVisionStatus")();
+  if (!value) throw new Error("Advanced Visionの状態を取得できませんでした。");
+  return value;
+}
+
+export async function installAdvancedVisionRuntime(): Promise<void> {
+  await requireDynamic("InstallAdvancedVisionRuntime")();
+}
+
+export async function removeAdvancedVisionRuntime(): Promise<void> {
+  await requireDynamic("RemoveAdvancedVisionRuntime")();
+}
+
+export async function installAdvancedVisionModel(modelId: string): Promise<void> {
+  await requireDynamic("InstallAdvancedVisionModel")(modelId);
+}
+
+export async function removeAdvancedVisionModel(modelId: string): Promise<void> {
+  await requireDynamic("RemoveAdvancedVisionModel")(modelId);
+}
+
+export async function loadAdvancedVisionModel(modelId: string): Promise<void> {
+  await requireDynamic("LoadAdvancedVisionModel")(modelId);
+}
+
+export async function runAdvancedVision(
+  operation: AdvancedVisionRun["operation"],
+  assetIds: number[],
+  instruction = "",
+): Promise<AdvancedVisionRun> {
+  const value = await requireDynamic("RunAdvancedVision")(operation, assetIds, instruction);
+  if (!value) throw new Error("Advanced Visionの結果を取得できませんでした。");
+  return value;
+}
+
+export async function getAdvancedVisionRun(runId: number): Promise<AdvancedVisionRun | null> {
+  return requireDynamic("GetAdvancedVisionRun")(runId);
+}
+
+export async function listAdvancedVisionRunsForAsset(assetId: number, limit = 20): Promise<AdvancedVisionRun[]> {
+  return (await requireDynamic("ListAdvancedVisionRunsForAsset")(assetId, limit)) ?? [];
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {

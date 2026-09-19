@@ -20,6 +20,7 @@ import { CreativeContextPanel } from "./CreativeContextPanel";
 import { MemoryImage } from "./MemoryImage";
 import { PostRecordModal } from "./PostRecordModal";
 import { TagPicker } from "./TagPicker";
+import { AdvancedVisionAssetPanel } from "./AdvancedVisionAssetPanel";
 
 interface AssetDetailPanelProps {
   asset: AssetDTO;
@@ -35,11 +36,12 @@ const STATUS_OPTIONS = [
 
 const COLORS = ["", "red", "orange", "yellow", "green", "blue", "purple"];
 
-type DetailView = "organize" | "creative" | "publication" | "info";
+type DetailView = "organize" | "creative" | "ai" | "publication" | "info";
 
 const DETAIL_VIEWS: Array<{ key: DetailView; label: string }> = [
   { key: "organize", label: "整理" },
   { key: "creative", label: "制作" },
+  { key: "ai", label: "AI解析" },
   { key: "publication", label: "公開" },
   { key: "info", label: "情報" },
 ];
@@ -391,6 +393,13 @@ export function AssetDetailPanel({ asset: listAsset, onClose }: AssetDetailPanel
             <div className="p-3 space-y-3">
               <PanelIntro title="制作コンテキスト" />
               <CreativeContextPanel assetId={assetId} />
+            </div>
+          )}
+
+          {activeView === "ai" && (
+            <div className="p-3 space-y-3">
+              <PanelIntro title="Advanced Vision" />
+              <AdvancedVisionAssetPanel assetId={assetId} />
             </div>
           )}
 
