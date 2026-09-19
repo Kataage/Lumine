@@ -7,8 +7,8 @@ import zipfile
 PACKAGES = [
     (
         "Microsoft.ML.OnnxRuntime.DirectML",
-        "1.29.0",
-        "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.29.0/microsoft.ml.onnxruntime.directml.1.29.0.nupkg",
+        "1.24.4",
+        "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg",
     ),
     (
         "Microsoft.AI.DirectML",
