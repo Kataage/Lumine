@@ -71,6 +71,19 @@ func DefaultRuntimeManifest() RuntimeManifest {
 	}
 }
 
+func VulkanRuntimeManifest() RuntimeManifest {
+	return RuntimeManifest{
+		ID:             "llama.cpp-win-vulkan-x64",
+		Version:        "b10964",
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-vulkan-x64.zip",
+		SHA256:         "1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642",
+		SizeBytes:      0,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+}
+
 func NewRuntimeStore(root string) *RuntimeStore {
 	return &RuntimeStore{
 		root:   root,
@@ -108,8 +121,8 @@ func ValidateRuntimeManifest(manifest RuntimeManifest) error {
 	if _, err := hex.DecodeString(manifest.SHA256); err != nil {
 		return fmt.Errorf("invalid runtime sha256: %w", err)
 	}
-	if manifest.SizeBytes <= 0 {
-		return errors.New("runtime size must be positive")
+	if manifest.SizeBytes < 0 {
+		return errors.New("runtime size cannot be negative")
 	}
 	if filepath.Base(manifest.ExecutableName) != manifest.ExecutableName || manifest.ExecutableName == "." {
 		return fmt.Errorf("invalid runtime executable name %q", manifest.ExecutableName)
@@ -221,8 +234,8 @@ func (s *RuntimeStore) Install(
 		progress(RuntimeDownloadProgress{
 			RuntimeID:       manifest.ID,
 			Version:         manifest.Version,
-			BytesDownloaded: manifest.SizeBytes,
-			BytesTotal:      manifest.SizeBytes,
+			BytesDownloaded: max(manifest.SizeBytes, 0),
+			BytesTotal:      max(manifest.SizeBytes, 0),
 			Done:            true,
 		})
 	}
@@ -246,6 +259,10 @@ func (s *RuntimeStore) downloadArchive(
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("download runtime: HTTP %s", response.Status)
+	}
+	totalBytes := manifest.SizeBytes
+	if totalBytes <= 0 && response.ContentLength > 0 {
+		totalBytes = response.ContentLength
 	}
 
 	output, err := os.Create(target)
@@ -277,7 +294,7 @@ func (s *RuntimeStore) downloadArchive(
 					RuntimeID:       manifest.ID,
 					Version:         manifest.Version,
 					BytesDownloaded: downloaded,
-					BytesTotal:      manifest.SizeBytes,
+					BytesTotal:      totalBytes,
 				})
 			}
 		}
@@ -292,7 +309,7 @@ func (s *RuntimeStore) downloadArchive(
 	if err := output.Close(); err != nil {
 		return fmt.Errorf("close runtime archive: %w", err)
 	}
-	if downloaded != manifest.SizeBytes {
+	if manifest.SizeBytes > 0 && downloaded != manifest.SizeBytes {
 		return fmt.Errorf("runtime size mismatch: got %d, want %d", downloaded, manifest.SizeBytes)
 	}
 	actual := hex.EncodeToString(hasher.Sum(nil))
