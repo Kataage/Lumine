@@ -662,6 +662,13 @@ func TestManagerUnloadFailureKeepsRuntimeTrackedForRetry(t *testing.T) {
 	if status.ModelID != manifest.ID || status.Version != manifest.Version {
 		t.Fatalf("failed unload lost runtime provenance: %+v", status)
 	}
+	if _, err := manager.Infer(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		InferenceRequest{Operation: "must-not-run"},
+	); !errors.Is(err, ErrRuntimeNotLoaded) {
+		t.Fatalf("Infer after failed unload = %v, want runtime not loaded", err)
+	}
 
 	if err := manager.Unload(context.Background(), domain.AICapabilitySemanticSearch); err != nil {
 		t.Fatalf("retry unload: %v", err)
