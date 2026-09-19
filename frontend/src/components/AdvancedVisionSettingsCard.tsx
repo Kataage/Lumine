@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  EventsOff,
   EventsOn,
   getAdvancedVisionStatus,
   installAdvancedVisionModel,
@@ -52,7 +51,7 @@ export function AdvancedVisionSettingsCard({
   }, [refresh]);
 
   useEffect(() => {
-    EventsOn("ai:model-download", (raw: unknown) => {
+    const offModelDownload = EventsOn("ai:model-download", (raw: unknown) => {
       const value = raw as { modelId?: string; bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       const modelID = String(value.modelId ?? "");
       if (!modelID.includes("qwen3-vl") && !modelID.includes("minicpm-v")) return;
@@ -66,7 +65,7 @@ export function AdvancedVisionSettingsCard({
         void refresh();
       }
     });
-    EventsOn("ai:runtime-download", (raw: unknown) => {
+    const offRuntimeDownload = EventsOn("ai:runtime-download", (raw: unknown) => {
       const value = raw as { bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       setProgress({
         label: "llama.cpp runtimeをダウンロード",
@@ -79,8 +78,8 @@ export function AdvancedVisionSettingsCard({
       }
     });
     return () => {
-      EventsOff("ai:model-download");
-      EventsOff("ai:runtime-download");
+      offModelDownload();
+      offRuntimeDownload();
     };
   }, [refresh]);
 
