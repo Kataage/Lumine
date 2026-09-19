@@ -53,12 +53,12 @@
     {
       "capability": "prompt_engine",
       "status": "candidate",
-      "modelId": "openresearchtools/Qwen3.5-4B-GGUF",
+      "modelId": "TheStageAI/Qwen3.5-4B-GGUF",
       "version": "main",
       "engine": "llama.cpp-text-cpu",
-      "quantization": "Q4_K_M",
+      "quantization": "M-TS-Q4_K_M",
       "issue": "#169",
-      "rationale": "Base-lineage Qwen3.5-4B GGUF control for measuring whether derivative/abliterated candidates improve Lumine prompt work without unacceptable instruction-following or structured-output regressions.",
+      "rationale": "Reproducible Qwen3.5-4B base-lineage control. TheStageAI publishes an exact upstream base revision, release manifest and quantization quality measurements; the M tier is used as the compact instruction-following reference. Adoption evidence still requires pinning this GGUF repository revision and artifact SHA-256.",
       "updatedAt": "2026-09-19"
     },
     {

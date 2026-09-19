@@ -1,8 +1,8 @@
 {
-  "id": "openresearchtools/Qwen3.5-4B-GGUF",
+  "id": "TheStageAI/Qwen3.5-4B-GGUF",
   "version": "main",
   "engine": "llama.cpp-text-cpu",
-  "quantization": "Q4_K_M",
+  "quantization": "M-TS-Q4_K_M",
   "artifactSha256": "",
   "modelSizeBytes": 0,
   "runtime": "llama.cpp-b10964-cpu-x64",
@@ -21,12 +21,13 @@
     "windows_runtime_stability"
   ],
   "parameters": {
-    "repoId": "openresearchtools/Qwen3.5-4B-GGUF",
-    "modelFile": "Qwen3.5-4B-Q4_K_M.gguf",
+    "repoId": "TheStageAI/Qwen3.5-4B-GGUF",
+    "modelFile": "Qwen3.5-4B-M-TS-Q4_K_M.gguf",
     "modelSha256": "",
     "modelSizeBytes": "0",
     "runtimeFamily": "upstream-llamacpp",
-    "pinStatus": "exploratory-official-lineage-control-needs-immutable-revision-and-sha256-before-evidence",
+    "pinStatus": "exploratory-reproducible-control-needs-repo-revision-and-artifact-sha256-before-evidence",
+    "upstreamBaseRevision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "llamaRelease": "b10964",
     "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
     "threads": "8",

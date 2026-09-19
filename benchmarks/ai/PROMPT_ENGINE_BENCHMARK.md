@@ -11,7 +11,13 @@ The initial two-candidate issue remains the starting point, but the controlled s
 - huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF
 - soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf
 - kaineone/Qwen3.5-4B-abliterated-GGUF
-- openresearchtools/Qwen3.5-4B-GGUF as a base-lineage control
+- TheStageAI/Qwen3.5-4B-GGUF (M-TS-Q4_K_M) as a reproducible base-lineage control
+
+### Candidates reviewed but not in the first matrix
+
+- allenai/Tmax-4B: valid 4B Qwen3.5-derived llama.cpp candidate, but it is RL-specialized for terminal/software-engineering tasks rather than Japanese creative prompt work. Keep as an optional control if the first matrix is inconclusive.
+- Ornith-1.5: the practical small GGUF is 9B-class, outside this phase's 4B-ish CPU footprint target.
+- Qwen3.6 small-active MoE derivatives: current practical GGUFs have much larger total footprints (roughly 12-15 GB for representative 3B-active variants), so they are deferred from the first CPU-oriented matrix.
 
 The checked-in profiles are initially exploratory (version: main, no artifact SHA-256). They may be used to discover the exact immutable revision and artifact hash, but they must not be used as adoption evidence. After a candidate is downloaded and inspected, copy the adapter-reported resolvedRevision, modelSha256, exact file size, runtime version and runtime hash into a pinned profile before producing evidence under results/evidence/.
 
