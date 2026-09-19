@@ -1,12 +1,13 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$HardwareId,
+    [string]$HardwareId = "",
 
     [string]$Cpu = "",
     [Int64]$RamBytes = 0,
     [string]$ResultsDir = "",
     [string]$CaseTimeout = "20m",
     [switch]$Setup,
+    [switch]$InspectOnly,
+    [switch]$ApplyPins,
     [switch]$AllowLlamaServerOverride
 )
 
@@ -15,6 +16,10 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepoRoot
+
+if ($ApplyPins -and -not $InspectOnly) {
+    throw "-ApplyPins is only valid together with -InspectOnly."
+}
 
 if (-not $AllowLlamaServerOverride -and -not [string]::IsNullOrWhiteSpace($env:LUMINE_PROMPT_LLAMA_SERVER)) {
     throw "LUMINE_PROMPT_LLAMA_SERVER is set. Controlled Prompt Engine evidence must use the pinned runtime. Clear it or pass -AllowLlamaServerOverride for debugging only."
@@ -32,9 +37,6 @@ function Require-Command([string]$Name) {
     }
 }
 
-Require-Command "go"
-Require-Command "git"
-
 $PythonBootstrap = $null
 $PythonBootstrapArgs = @()
 if (Get-Command "py" -ErrorAction SilentlyContinue) {
@@ -46,20 +48,13 @@ if (Get-Command "py" -ErrorAction SilentlyContinue) {
     throw "Python 3 is required. Install Python so either 'py' or 'python' is available."
 }
 
-if ([string]::IsNullOrWhiteSpace($Cpu)) {
-    $Cpu = ((Get-CimInstance Win32_Processor | ForEach-Object { $_.Name.Trim() }) -join " + ")
-}
-if ($RamBytes -le 0) {
-    $RamBytes = [Int64](Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
-}
-$LumineVersion = (& git rev-parse HEAD).Trim()
-
 $Catalog = Join-Path $RepoRoot "benchmarks\ai\catalogs\prompt-engine-v1.json"
 $Requirements = Join-Path $RepoRoot "benchmarks\ai\adapters\requirements-prompt.txt"
 $Venv = Join-Path $RepoRoot ".venv-prompt-bench"
 $Python = Join-Path $Venv "Scripts\python.exe"
 $Adapter = Join-Path $RepoRoot "benchmarks\ai\adapters\prompt_llamacpp.py"
 $Reporter = Join-Path $RepoRoot "benchmarks\ai\adapters\prompt_report.py"
+$PinInspector = Join-Path $RepoRoot "benchmarks\ai\adapters\prompt_pin_inspect.py"
 
 function Ensure-Venv {
     $created = $false
@@ -83,21 +78,21 @@ function Invoke-AIBench([string[]]$Arguments) {
     }
 }
 
-function Get-OptionalProperty($Object, [string]$Name) {
-    if ($null -eq $Object) { return $null }
-    $property = $Object.PSObject.Properties[$Name]
-    if ($null -eq $property) { return $null }
-    return $property.Value
-}
-
 function Test-ProfilePinned([string]$ProfilePath) {
     $profile = Get-Content $ProfilePath -Raw | ConvertFrom-Json
-    $modelHash = [string]$profile.parameters.modelSha256
+    $artifactHash = ([string]$profile.artifactSha256).Trim()
+    $modelHash = ([string]$profile.parameters.modelSha256).Trim()
+    $runtimeHash = ([string]$profile.parameters.llamaWindowsCpuArchiveSha256).Trim()
+    $modelFile = ([string]$profile.parameters.modelFile).Trim()
+    $runtimeRelease = ([string]$profile.parameters.llamaRelease).Trim()
     return (
         ([string]$profile.version) -ne "main" -and
-        -not [string]::IsNullOrWhiteSpace([string]$profile.artifactSha256) -and
+        $artifactHash.Length -eq 64 -and
         [Int64]$profile.modelSizeBytes -gt 0 -and
-        -not [string]::IsNullOrWhiteSpace($modelHash)
+        $modelHash.Length -eq 64 -and
+        -not [string]::IsNullOrWhiteSpace($modelFile) -and
+        -not [string]::IsNullOrWhiteSpace($runtimeRelease) -and
+        $runtimeHash.Length -eq 64
     )
 }
 
@@ -110,6 +105,54 @@ $candidates = @(
     [PSCustomObject]@{ Name="qwen3.5-4b-control"; Profile="benchmarks\ai\profiles\prompt-qwen3.5-4b-control-q4.json"; Result="prompt-qwen35-control.json" }
 )
 
+$pinInfoPath = Join-Path $ResultsDir "prompt-pin-info.json"
+$profilePaths = @($candidates | ForEach-Object { Join-Path $RepoRoot $_.Profile })
+$inspectArgs = @($PinInspector, "--out", $pinInfoPath)
+if ($ApplyPins) {
+    $inspectArgs += "--apply"
+}
+$inspectArgs += $profilePaths
+
+Write-Host "Resolving immutable Prompt candidate metadata..."
+& $Python @inspectArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Prompt candidate pin inspection failed."
+}
+
+if ($InspectOnly) {
+    if ($ApplyPins) {
+        foreach ($candidate in $candidates) {
+            $profilePath = Join-Path $RepoRoot $candidate.Profile
+            if (-not (Test-ProfilePinned $profilePath)) {
+                throw "Applied Prompt profile is still not fully pinned: $($candidate.Profile)"
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Prompt pin inspection complete."
+    Write-Host "Pin info: $pinInfoPath"
+    if ($ApplyPins) {
+        Write-Host "Profiles were explicitly updated and revalidated as immutable."
+    } else {
+        Write-Host "Profiles were not modified. Re-run with -InspectOnly -ApplyPins to apply them explicitly."
+    }
+    return
+}
+
+if ([string]::IsNullOrWhiteSpace($HardwareId)) {
+    throw "-HardwareId is required unless -InspectOnly is used."
+}
+Require-Command "go"
+Require-Command "git"
+if ([string]::IsNullOrWhiteSpace($Cpu)) {
+    $Cpu = ((Get-CimInstance Win32_Processor | ForEach-Object { $_.Name.Trim() }) -join " + ")
+}
+if ($RamBytes -le 0) {
+    $RamBytes = [Int64](Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+}
+$LumineVersion = (& git rev-parse HEAD).Trim()
+
 Write-Host ""
 Write-Host "Benchmark environment"
 Write-Host "  Hardware ID : $HardwareId"
@@ -120,7 +163,6 @@ Write-Host "  Results     : $ResultsDir"
 Write-Host ""
 
 $resultPaths = @()
-$pinRows = @()
 $allPinned = $true
 
 foreach ($candidate in $candidates) {
@@ -153,36 +195,12 @@ foreach ($candidate in $candidates) {
     )
     $resultPaths += $resultPath
 
-    $result = Get-Content $resultPath -Raw | ConvertFrom-Json
-    $modelSizeCase = $result.cases | Where-Object { $_.fixtureId -eq "prompt-perf-model-size-001" } | Select-Object -First 1
-    $output = if ($null -ne $modelSizeCase) { $modelSizeCase.output } else { $null }
-    $profile = Get-Content $profilePath -Raw | ConvertFrom-Json
-    $modelSelector = Get-OptionalProperty $profile.parameters "modelFile"
-    if ([string]::IsNullOrWhiteSpace([string]$modelSelector)) {
-        $modelSelector = Get-OptionalProperty $profile.parameters "modelFileRegex"
-    }
-    $pinRows += [PSCustomObject]@{
-        candidate = $candidate.Name
-        profile = $candidate.Profile
-        profilePinned = [bool]$pinned
-        requestedRevision = Get-OptionalProperty $output "requestedRevision"
-        resolvedRevision = Get-OptionalProperty $output "resolvedRevision"
-        modelSelector = $modelSelector
-        modelSha256 = Get-OptionalProperty $output "modelSha256"
-        modelSizeBytes = Get-OptionalProperty $output "modelBytes"
-        runtime = Get-OptionalProperty $profile "runtime"
-        llamaRelease = Get-OptionalProperty $profile.parameters "llamaRelease"
-        runtimeArchiveSha256 = Get-OptionalProperty $profile.parameters "llamaWindowsCpuArchiveSha256"
-    }
 }
 
 $reportPath = Join-Path $ResultsDir "prompt-comparison.md"
 $reportOutput = & $Python $Reporter @resultPaths
 if ($LASTEXITCODE -ne 0) { throw "Failed to render Prompt Engine comparison report." }
 $reportOutput | Set-Content -Path $reportPath -Encoding UTF8
-
-$pinInfoPath = Join-Path $ResultsDir "prompt-pin-info.json"
-$pinRows | ConvertTo-Json -Depth 8 | Set-Content -Path $pinInfoPath -Encoding UTF8
 
 $runInfo = [ordered]@{
     schemaVersion = 1
