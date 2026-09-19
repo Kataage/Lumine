@@ -27,6 +27,7 @@ type AppCommands struct {
 	assetRepo   *db.AssetRepo
 	noteRepo    *db.AssetNoteRepo
 	tagRepo     *db.TagRepo
+	tagSuggestionRepo *db.AITagSuggestionRepo
 	postRepo    *db.PostRepo
 	targetRepo  *db.PostTargetRepo
 	accountRepo *db.PostAccountRepo
@@ -65,6 +66,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		assetRepo:   db.NewAssetRepo(database),
 		noteRepo:    db.NewAssetNoteRepo(database),
 		tagRepo:     db.NewTagRepo(database),
+		tagSuggestionRepo: db.NewAITagSuggestionRepo(database),
 		postRepo:    db.NewPostRepo(database),
 		targetRepo:  db.NewPostTargetRepo(database),
 		accountRepo: db.NewPostAccountRepo(database),
