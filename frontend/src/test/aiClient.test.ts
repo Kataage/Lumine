@@ -13,6 +13,7 @@ vi.mock("../../wailsjs/go/commands/AppCommands", () => ({
 }));
 
 import * as Go from "../../wailsjs/go/commands/AppCommands";
+import { commands, domain } from "../../wailsjs/go/models";
 import {
   getAISettings,
   getDefaultSemanticModelInfo,
@@ -62,7 +63,7 @@ describe("typed AI Wails bridge", () => {
   });
 
   it("AI設定はwindow.go fallbackではなくgenerated bindingを使う", async () => {
-    vi.mocked(Go.GetAISettings).mockResolvedValue(SETTINGS);
+    vi.mocked(Go.GetAISettings).mockResolvedValue(new domain.AISettings(SETTINGS));
 
     const settings = await getAISettings();
 
@@ -75,11 +76,13 @@ describe("typed AI Wails bridge", () => {
   });
 
   it("request ID付き意味検索はgenerated bindingへ直接渡す", async () => {
-    vi.mocked(Go.SemanticSearchAssetsWithID).mockResolvedValue({
-      assets: [],
-      totalCount: 7,
-      semanticSearchSessionId: "session-1",
-    });
+    vi.mocked(Go.SemanticSearchAssetsWithID).mockResolvedValue(
+      new commands.AssetListResponse({
+        assets: [],
+        totalCount: 7,
+        semanticSearchSessionId: "session-1",
+      }),
+    );
 
     const result = await semanticSearchAssets(
       {
@@ -107,22 +110,24 @@ describe("typed AI Wails bridge", () => {
   });
 
   it("not_loaded runtime stateを保持する", async () => {
-    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue({
-      id: "siglip2",
-      version: "1",
-      engine: "siglip2",
-      displayName: "SigLIP2",
-      license: "Apache-2.0",
-      sizeBytes: 123,
-      installed: true,
-      runtime: {
-        capability: "semantic_search",
-        state: "not_loaded",
-        modelId: "siglip2",
+    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue(
+      new commands.SemanticModelInfo({
+        id: "siglip2",
         version: "1",
         engine: "siglip2",
-      },
-    });
+        displayName: "SigLIP2",
+        license: "Apache-2.0",
+        sizeBytes: 123,
+        installed: true,
+        runtime: {
+          capability: "semantic_search",
+          state: "not_loaded",
+          modelId: "siglip2",
+          version: "1",
+          engine: "siglip2",
+        },
+      }),
+    );
 
     const info = await getDefaultSemanticModelInfo();
     expect(info.installed).toBe(true);
@@ -130,19 +135,21 @@ describe("typed AI Wails bridge", () => {
   });
 
   it("未知のruntime stateは誤表示せず拒否する", async () => {
-    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue({
-      id: "siglip2",
-      version: "1",
-      engine: "siglip2",
-      displayName: "SigLIP2",
-      license: "Apache-2.0",
-      sizeBytes: 123,
-      installed: true,
-      runtime: {
-        capability: "semantic_search",
-        state: "future_state",
-      },
-    });
+    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue(
+      new commands.SemanticModelInfo({
+        id: "siglip2",
+        version: "1",
+        engine: "siglip2",
+        displayName: "SigLIP2",
+        license: "Apache-2.0",
+        sizeBytes: 123,
+        installed: true,
+        runtime: {
+          capability: "semantic_search",
+          state: "future_state",
+        },
+      }),
+    );
 
     await expect(getDefaultSemanticModelInfo()).rejects.toThrow(
       "未知のAI runtime state",
