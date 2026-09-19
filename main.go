@@ -140,6 +140,11 @@ func main() {
 	}); err != nil {
 		log.Fatal("failed to register llama.cpp VLM engine:", err)
 	}
+	if err := aiManager.RegisterEngine(llamacpp.AdvancedEngineID, func() ai.Engine {
+		return llamacpp.NewAdvancedEngine(llamaRuntimeStore)
+	}); err != nil {
+		log.Fatal("failed to register llama.cpp Advanced Vision engine:", err)
+	}
 
 	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
 	cmd.SetAIJobQueue(aiJobQueue)
