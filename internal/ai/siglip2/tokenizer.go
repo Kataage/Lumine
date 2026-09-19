@@ -403,13 +403,10 @@ func normalizeSigLIP2Text(text string) string {
 	if text == "" {
 		return ""
 	}
-	// Search queries frequently contain repeated spaces/newlines from copy/paste.
-	// Normalize those to a single space before applying SigLIP2's metaspace rule.
-	fields := strings.Fields(text)
-	if len(fields) == 0 {
-		return ""
-	}
-	return strings.ReplaceAll(strings.Join(fields, " "), " ", "▁")
+	// Match SigLIP2's tokenizer backend: lowercase first, then replace literal
+	// spaces with the Gemma metaspace marker. The pinned ONNX tokenizer config
+	// adds EOS and right-pads/truncates to 64 tokens.
+	return strings.ReplaceAll(text, " ", "▁")
 }
 
 func normalizeLegacyUnigramText(text string) string {
