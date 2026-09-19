@@ -58,12 +58,27 @@ func ValidateManifest(manifest ModelManifest) error {
 	}
 
 	var declaredTotal int64
+	roles := make(map[string]struct{})
 	for _, file := range manifest.Files {
 		if err := validateModelFile(file); err != nil {
 			return fmt.Errorf("invalid model file %q: %w", file.Path, err)
 		}
+		if file.Role != "" {
+			if !safeComponentPattern.MatchString(file.Role) {
+				return fmt.Errorf("invalid model file role %q", file.Role)
+			}
+			if _, exists := roles[file.Role]; exists {
+				return fmt.Errorf("duplicate model file role %q", file.Role)
+			}
+			roles[file.Role] = struct{}{}
+		}
 		if file.SizeBytes > 0 {
 			declaredTotal += file.SizeBytes
+		}
+	}
+	for key := range manifest.Parameters {
+		if !safeComponentPattern.MatchString(key) {
+			return fmt.Errorf("invalid model parameter key %q", key)
 		}
 	}
 	if manifest.SizeBytes > 0 && declaredTotal > 0 && manifest.SizeBytes != declaredTotal {

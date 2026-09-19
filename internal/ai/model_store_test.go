@@ -154,3 +154,32 @@ func TestValidateManifestRejectsTraversal(t *testing.T) {
 		t.Fatal("path traversal should be rejected")
 	}
 }
+
+
+func TestValidateManifestRejectsDuplicateRolesAndUnsafeParameterKeys(t *testing.T) {
+	data := []byte("x")
+	manifest := testManifest("https://example.invalid", data)
+	manifest.Files = append(manifest.Files, ModelFile{
+		Path: "projector.bin",
+		URL: "https://example.invalid/projector.bin",
+		SHA256: testSHA256(data),
+		SizeBytes: int64(len(data)),
+	})
+	manifest.SizeBytes = int64(len(data) * 2)
+	manifest.Files[0].Role = "model"
+	manifest.Files[1].Role = "model"
+	if err := ValidateManifest(manifest); err == nil {
+		t.Fatal("duplicate model file roles should be rejected")
+	}
+
+	manifest.Files[1].Role = "mmproj"
+	manifest.Parameters = map[string]string{"../unsafe": "value"}
+	if err := ValidateManifest(manifest); err == nil {
+		t.Fatal("unsafe parameter keys should be rejected")
+	}
+
+	manifest.Parameters = map[string]string{"context": "8192"}
+	if err := ValidateManifest(manifest); err != nil {
+		t.Fatalf("valid roles and parameters should pass: %v", err)
+	}
+}
