@@ -15,7 +15,10 @@ import (
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
 
-var errSemanticIndexNotReady = errors.New("semantic memory index is not ready")
+var (
+	errSemanticIndexNotReady   = errors.New("semantic memory index is not ready")
+	errSemanticIndexSuperseded = errors.New("semantic memory index warm was superseded")
+)
 
 type semanticIndexKey struct {
 	engine  string
@@ -42,11 +45,12 @@ type semanticMemoryIndex struct {
 	data       []float32
 	dimensions int
 
-	ready   bool
-	warming bool
-	wait    chan struct{}
-	pending map[int64][]float32
-	lastErr error
+	ready      bool
+	warming    bool
+	wait       chan struct{}
+	generation uint64
+	pending    map[int64][]float32
+	lastErr    error
 
 	stage      string
 	loaded     int
@@ -153,6 +157,18 @@ func (i *semanticMemoryIndex) Prepare(engine, modelID, version string) {
 		}
 		return
 	}
+	// A model/version switch invalidates an in-flight warm. Wake waiters now;
+	// the old loader checks generation/key before every shared-state write and
+	// will return errSemanticIndexSuperseded without publishing old vectors.
+	if i.warming {
+		i.warming = false
+		if i.wait != nil {
+			close(i.wait)
+			i.wait = nil
+		}
+	}
+	i.generation++
+
 	// Semantic Search currently has one active model. Selecting the model
 	// synchronously before background warm/backfill prevents early completed
 	// embeddings from being dropped before Warm gets CPU time.
@@ -249,11 +265,18 @@ func (i *semanticMemoryIndex) Warm(
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-wait:
+				i.mu.RLock()
+				superseded := i.key != key
+				i.mu.RUnlock()
+				if superseded {
+					return errSemanticIndexSuperseded
+				}
 				continue
 			}
 		}
 
 		if i.key != key {
+			i.generation++
 			i.key = key
 			i.pending = make(map[int64][]float32)
 		} else if i.pending == nil {
@@ -270,17 +293,24 @@ func (i *semanticMemoryIndex) Warm(
 		i.finishedAt = time.Time{}
 		i.setProgressLocked("counting", 0, 0)
 		wait := i.wait
+		generation := i.generation
 		i.mu.Unlock()
 
 		slog.Info("semantic index warm started", "model", modelID)
 
 		total, err := repo.CountReadyEmbeddings(ctx, engine, modelID, version)
 		if err != nil {
-			i.finishWarm(wait, err)
+			if !i.finishWarm(wait, key, generation, err) {
+				return errSemanticIndexSuperseded
+			}
 			return err
 		}
 
 		i.mu.Lock()
+		if i.generation != generation || i.key != key || i.wait != wait {
+			i.mu.Unlock()
+			return errSemanticIndexSuperseded
+		}
 		i.positions = make(map[int64]int, total)
 		i.setProgressLocked("loading", 0, total)
 		i.mu.Unlock()
@@ -291,6 +321,9 @@ func (i *semanticMemoryIndex) Warm(
 		err = repo.WalkReadyEmbeddingBlobs(ctx, engine, modelID, version, func(assetID int64, dimensions int, blob []byte) error {
 			i.mu.Lock()
 			defer i.mu.Unlock()
+			if i.generation != generation || i.key != key || i.wait != wait {
+				return errSemanticIndexSuperseded
+			}
 
 			if i.dimensions == 0 {
 				i.dimensions = dimensions
@@ -337,6 +370,10 @@ func (i *semanticMemoryIndex) Warm(
 		})
 
 		i.mu.Lock()
+		if i.generation != generation || i.key != key || i.wait != wait {
+			i.mu.Unlock()
+			return errSemanticIndexSuperseded
+		}
 		if err == nil {
 			for assetID, vector := range i.pending {
 				if i.dimensions == 0 {
@@ -366,6 +403,7 @@ func (i *semanticMemoryIndex) Warm(
 		i.pending = make(map[int64][]float32)
 		i.warming = false
 		close(wait)
+		i.wait = nil
 		elapsed := time.Since(i.startedAt)
 		count := len(i.positions)
 		i.mu.Unlock()
@@ -390,17 +428,25 @@ func (i *semanticMemoryIndex) Warm(
 	}
 }
 
-func (i *semanticMemoryIndex) finishWarm(wait chan struct{}, err error) {
+func (i *semanticMemoryIndex) finishWarm(
+	wait chan struct{},
+	key semanticIndexKey,
+	generation uint64,
+	err error,
+) bool {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.wait != wait || i.key != key || i.generation != generation {
+		return false
+	}
 	i.lastErr = err
 	i.warming = false
 	i.finishedAt = time.Now()
 	i.stage = "error"
 	i.updatedAt = time.Now()
-	if i.wait == wait {
-		close(wait)
-	}
+	close(wait)
+	i.wait = nil
+	return true
 }
 
 func (i *semanticMemoryIndex) Search(
