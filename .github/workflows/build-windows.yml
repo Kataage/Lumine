@@ -43,6 +43,12 @@ jobs:
           grep -q "EnsureSemanticSearchReady" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "SemanticSearchAssetsWithID" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "GetSemanticIndexStatus" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "RequestLegacyStorageMigration" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "CancelLegacyStorageMigration" frontend/wailsjs/go/commands/AppCommands.js
+          if grep -q "ConfigureStorageLayout" frontend/wailsjs/go/commands/AppCommands.js; then
+            echo "internal ConfigureStorageLayout leaked into Wails bindings" >&2
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
