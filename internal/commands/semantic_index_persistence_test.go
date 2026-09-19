@@ -309,19 +309,33 @@ func TestSemanticPersistWorkerWaitsUntilIncrementalEmbeddingIsReady(t *testing.T
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	index.mu.RLock()
+	updatedBeforeWorker := index.updatedAt
+	index.mu.RUnlock()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version)
 	}()
 
-	// Let at least one persistence pass observe the embedding while its
-	// analysis row is still non-ready. The overlay must survive that pass.
-	time.Sleep(35 * time.Millisecond)
-	index.mu.RLock()
-	_, overlayStillPresent := index.overlay[newID]
-	index.mu.RUnlock()
-	if !overlayStillPresent {
-		t.Fatal("non-ready incremental overlay was dropped before DB ready transition")
+	// Wait until a persistence pass has actually adopted/validated a snapshot
+	// while the analysis row is still non-ready. This avoids timing-based
+	// flakiness while proving the overlay survives that pass.
+	passDeadline := time.Now().Add(750 * time.Millisecond)
+	for {
+		index.mu.RLock()
+		passObserved := index.updatedAt.After(updatedBeforeWorker)
+		_, overlayStillPresent := index.overlay[newID]
+		index.mu.RUnlock()
+		if passObserved {
+			if !overlayStillPresent {
+				t.Fatal("non-ready incremental overlay was dropped before DB ready transition")
+			}
+			break
+		}
+		if time.Now().After(passDeadline) {
+			t.Fatal("persistence pass was not observed before ready transition")
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 
 	if _, err := cmd.db.Exec(
