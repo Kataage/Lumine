@@ -69,8 +69,12 @@ func TestInstalledLegacyMigrationCopiesToPreferredAndPreservesSource(t *testing.
 	if !migrated {
 		t.Fatal("scheduled installed migration was not applied")
 	}
-	if LegacyMigrationStatus(layout).Pending {
+	completedStatus := LegacyMigrationStatus(layout)
+	if completedStatus.Pending {
 		t.Fatal("migration marker remained after successful copy")
+	}
+	if completedStatus.Available {
+		t.Fatal("completed legacy migration should not be offered again")
 	}
 
 	preferred := filepath.Join(local, "Lumine")
@@ -166,6 +170,9 @@ func TestPortableLegacyMigrationBacksUpCurrentDatabase(t *testing.T) {
 
 	if got := readTestFile(t, filepath.Join(legacy, "lumine.db")); got != "legacy-db" {
 		t.Fatalf("legacy source was mutated: %q", got)
+	}
+	if status := LegacyMigrationStatus(layout); status.Pending || status.Available {
+		t.Fatalf("completed portable import should not be offered again: %+v", status)
 	}
 }
 
