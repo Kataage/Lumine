@@ -133,6 +133,13 @@ func TestManifestServerArgsProtectRuntimeControls(t *testing.T) {
 	if _, err := manifestServerArgs(blocked); err == nil {
 		t.Fatal("overriding host must fail")
 	}
+
+	blockedEquals := ai.ModelManifest{Parameters: map[string]string{
+		"serverArgsJson": "[\"--host=0.0.0.0\"]",
+	}}
+	if _, err := manifestServerArgs(blockedEquals); err == nil {
+		t.Fatal("equals-form host override must fail")
+	}
 }
 
 func TestBuildLlamaServerArgsCPUAndGPU(t *testing.T) {
