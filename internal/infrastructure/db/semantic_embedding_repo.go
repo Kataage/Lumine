@@ -1,6 +1,8 @@
 package db
 
 import (
+	"container/heap"
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"errors"
@@ -8,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -47,6 +50,49 @@ type SemanticSearchQuery struct {
 type SemanticSearchResult struct {
 	Hits       []domain.SemanticSearchHit
 	TotalCount int
+	RankedHits []domain.SemanticSearchHit
+}
+
+type SemanticSearchProgress struct {
+	Hits         []domain.SemanticSearchHit
+	ScannedCount int
+	TotalCount   int
+}
+
+type semanticTopHeap []domain.SemanticSearchHit
+
+func (h semanticTopHeap) Len() int { return len(h) }
+func (h semanticTopHeap) Less(i, j int) bool {
+	if h[i].Score == h[j].Score {
+		return h[i].AssetID > h[j].AssetID
+	}
+	return h[i].Score < h[j].Score
+}
+func (h semanticTopHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *semanticTopHeap) Push(value any) {
+	*h = append(*h, value.(domain.SemanticSearchHit))
+}
+func (h *semanticTopHeap) Pop() any {
+	old := *h
+	last := len(old) - 1
+	value := old[last]
+	*h = old[:last]
+	return value
+}
+
+func semanticHitBetter(a, b domain.SemanticSearchHit) bool {
+	if a.Score == b.Score {
+		return a.AssetID < b.AssetID
+	}
+	return a.Score > b.Score
+}
+
+func snapshotSemanticTop(h semanticTopHeap) []domain.SemanticSearchHit {
+	result := append([]domain.SemanticSearchHit(nil), h...)
+	sort.Slice(result, func(i, j int) bool {
+		return semanticHitBetter(result[i], result[j])
+	})
+	return result
 }
 
 func (r *SemanticEmbeddingRepo) Upsert(
@@ -208,23 +254,10 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 }
 
 func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQuery) (*SemanticSearchResult, error) {
-	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
-		return nil, errors.New("semantic search provenance is required")
-	}
-	needle, err := normalizeSemanticVector(vector)
-	if err != nil {
-		return nil, err
-	}
-	if query.Limit <= 0 {
-		query.Limit = 100
-	}
-	if query.Limit > 500 {
-		query.Limit = 500
-	}
-	if query.Offset < 0 {
-		query.Offset = 0
-	}
+	return r.SearchWithProgress(context.Background(), vector, query, 0, nil)
+}
 
+func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 	where := `WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
 		AND aa.capability = 'semantic_search'
 		AND aa.state = 'ready'
@@ -240,7 +273,7 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 	if query.FolderPath != "" {
 		if query.Recurse {
 			where += " AND (a.folder_path = ? OR a.folder_path LIKE ? OR a.folder_path LIKE ?)"
-			args = append(args, query.FolderPath, query.FolderPath+"/%", query.FolderPath+"\\%")
+			args = append(args, query.FolderPath, query.FolderPath+"/%", query.FolderPath+"\%")
 		} else {
 			where += " AND a.folder_path = ?"
 			args = append(args, query.FolderPath)
@@ -288,6 +321,65 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 			strings.Join(placeholders, ","),
 		)
 	}
+	return where, args
+}
+
+func semanticDotBlob(needle []float32, blob []byte, dimensions int) (float32, error) {
+	if dimensions != len(needle) || dimensions <= 0 || len(blob) != dimensions*4 {
+		return 0, ErrSemanticVectorInvalid
+	}
+	var score float32
+	for i, value := range needle {
+		candidate := math.Float32frombits(binary.LittleEndian.Uint32(blob[i*4:]))
+		if math.IsNaN(float64(candidate)) || math.IsInf(float64(candidate), 0) {
+			return 0, ErrSemanticVectorInvalid
+		}
+		score += value * candidate
+	}
+	return score, nil
+}
+
+func (r *SemanticEmbeddingRepo) SearchWithProgress(
+	ctx context.Context,
+	vector []float32,
+	query SemanticSearchQuery,
+	previewLimit int,
+	onProgress func(SemanticSearchProgress),
+) (*SemanticSearchResult, error) {
+	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
+		return nil, errors.New("semantic search provenance is required")
+	}
+	needle, err := normalizeSemanticVector(vector)
+	if err != nil {
+		return nil, err
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 500 {
+		query.Limit = 500
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+	if previewLimit < 0 {
+		previewLimit = 0
+	}
+	if previewLimit > 200 {
+		previewLimit = 200
+	}
+
+	where, args := semanticSearchWhere(query)
+	var eligibleCount int
+	if err := r.db.QueryRow(fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa ON aa.asset_id = e.asset_id
+		JOIN assets a ON a.id = e.asset_id
+		%s
+	`, where), args...).Scan(&eligibleCount); err != nil {
+		return nil, fmt.Errorf("count semantic embeddings: %w", err)
+	}
 
 	rows, err := r.db.Query(fmt.Sprintf(`
 		SELECT e.asset_id, e.dimensions, e.vector
@@ -301,36 +393,77 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 	}
 	defer rows.Close()
 
-	hits := make([]domain.SemanticSearchHit, 0)
+	hits := make([]domain.SemanticSearchHit, 0, eligibleCount)
+	top := &semanticTopHeap{}
+	if previewLimit > 0 {
+		heap.Init(top)
+	}
+	scanned := 0
+	lastProgress := time.Now()
+
+	emitProgress := func(force bool) {
+		if onProgress == nil || previewLimit == 0 || len(*top) == 0 {
+			return
+		}
+		if !force && scanned < 256 && time.Since(lastProgress) < 120*time.Millisecond {
+			return
+		}
+		if !force && scanned%2048 != 0 && time.Since(lastProgress) < 150*time.Millisecond {
+			return
+		}
+		lastProgress = time.Now()
+		onProgress(SemanticSearchProgress{
+			Hits:         snapshotSemanticTop(*top),
+			ScannedCount: scanned,
+			TotalCount:   eligibleCount,
+		})
+	}
+
 	for rows.Next() {
+		if scanned%256 == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+		}
+
 		var assetID int64
 		var dimensions int
 		var blob []byte
 		if err := rows.Scan(&assetID, &dimensions, &blob); err != nil {
 			return nil, fmt.Errorf("scan semantic embedding: %w", err)
 		}
+		scanned++
 		if dimensions != len(needle) {
+			emitProgress(false)
 			continue
 		}
-		candidate, err := decodeSemanticVector(blob, dimensions)
+
+		score, err := semanticDotBlob(needle, blob, dimensions)
 		if err != nil {
-			return nil, fmt.Errorf("decode semantic embedding for asset %d: %w", assetID, err)
+			return nil, fmt.Errorf("score semantic embedding for asset %d: %w", assetID, err)
 		}
-		var score float32
-		for i := range needle {
-			score += needle[i] * candidate[i]
+		hit := domain.SemanticSearchHit{AssetID: assetID, Score: score}
+		hits = append(hits, hit)
+
+		if previewLimit > 0 {
+			if top.Len() < previewLimit {
+				heap.Push(top, hit)
+			} else if semanticHitBetter(hit, (*top)[0]) {
+				(*top)[0] = hit
+				heap.Fix(top, 0)
+			}
 		}
-		hits = append(hits, domain.SemanticSearchHit{AssetID: assetID, Score: score})
+		emitProgress(false)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].Score == hits[j].Score {
-			return hits[i].AssetID < hits[j].AssetID
-		}
-		return hits[i].Score > hits[j].Score
+	emitProgress(true)
+	sort.Slice(hits, func(i, j int) bool {
+		return semanticHitBetter(hits[i], hits[j])
 	})
 
 	total := len(hits)
@@ -345,6 +478,7 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 	return &SemanticSearchResult{
 		Hits:       hits[start:end],
 		TotalCount: total,
+		RankedHits: hits,
 	}, nil
 }
 
