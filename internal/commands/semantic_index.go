@@ -404,7 +404,7 @@ func (i *semanticMemoryIndex) Warm(
 				dimensions := i.dimensions
 				keepPath := snapshot.path
 				i.mu.Unlock()
-				cleanupSemanticSnapshots(i.storageRoot, keepPath)
+				cleanupSemanticSnapshots(i.storageRoot, key, keepPath)
 				slog.Info("semantic persistent index opened",
 					"model", modelID,
 					"vectors", count,
@@ -807,7 +807,7 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 		stable := epochStable && len(i.overlay) == 0
 		keepPath := snapshot.path
 		i.mu.Unlock()
-		cleanupSemanticSnapshots(i.storageRoot, keepPath)
+		cleanupSemanticSnapshots(i.storageRoot, key, keepPath)
 		if stable {
 			return nil
 		}
