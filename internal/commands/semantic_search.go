@@ -21,7 +21,7 @@ var (
 )
 
 const (
-	semanticSearchSessionTTL = 3 * time.Minute
+	semanticSearchSessionTTL = 15 * time.Minute
 	semanticSearchSessionMax = 8
 	semanticSearchPreviewMax = 80
 )
