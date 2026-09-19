@@ -33,7 +33,7 @@ type TaggerResult struct {
 	RatingThreshold    float64       `json:"ratingThreshold,omitempty"`
 }
 
-type TaggerAnalysisDTO struct {
+type taggerAnalysisDTO struct {
 	AssetID      int64                    `json:"assetId"`
 	State        domain.AIAnalysisState   `json:"state"`
 	Engine       string                   `json:"engine,omitempty"`
@@ -262,7 +262,7 @@ func taggerSuggestionsFromResult(result TaggerResult) []domain.AITagSuggestion {
 	return suggestions
 }
 
-func (c *AppCommands) GetTaggerAnalysis(assetID int64) (*TaggerAnalysisDTO, error) {
+func (c *AppCommands) getTaggerAnalysis(assetID int64) (*taggerAnalysisDTO, error) {
 	suggestions := []domain.AITagSuggestion{}
 	if c.tagSuggestionRepo != nil {
 		values, err := c.tagSuggestionRepo.ListByAsset(assetID)
@@ -290,14 +290,14 @@ func (c *AppCommands) GetTaggerAnalysis(assetID int64) (*TaggerAnalysisDTO, erro
 		if len(suggestions) == 0 {
 			return nil, nil
 		}
-		return &TaggerAnalysisDTO{
+		return &taggerAnalysisDTO{
 			AssetID:     assetID,
 			State:       domain.AIAnalysisStale,
 			Suggestions: suggestions,
 		}, nil
 	}
 
-	dto := &TaggerAnalysisDTO{
+	dto := &taggerAnalysisDTO{
 		AssetID:      assetID,
 		State:        analysis.State,
 		Engine:       analysis.Engine,
@@ -313,49 +313,61 @@ func (c *AppCommands) GetTaggerAnalysis(assetID int64) (*TaggerAnalysisDTO, erro
 	return dto, nil
 }
 
-func (c *AppCommands) GetAITagSuggestions(assetID int64) ([]domain.AITagSuggestion, error) {
-	if c.tagSuggestionRepo == nil {
-		return []domain.AITagSuggestion{}, nil
+func (c *AppCommands) GetTaggerReviewJSON(assetID int64) (string, error) {
+	dto, err := c.getTaggerAnalysis(assetID)
+	if err != nil {
+		return "", err
 	}
-	return c.tagSuggestionRepo.ListByAsset(assetID)
+	if dto == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(dto)
+	if err != nil {
+		return "", fmt.Errorf("encode Tagger review: %w", err)
+	}
+	return string(encoded), nil
 }
 
-func (c *AppCommands) AcceptAITagSuggestion(id int64) error {
-	if c.tagSuggestionRepo == nil {
-		return errors.New("AI tag suggestion repository is not available")
-	}
-	_, err := c.tagSuggestionRepo.Accept(id)
-	return err
-}
-
-func (c *AppCommands) AcceptAllAITagSuggestions(assetID int64) error {
-	if c.tagSuggestionRepo == nil {
-		return errors.New("AI tag suggestion repository is not available")
-	}
-	_, err := c.tagSuggestionRepo.AcceptAll(assetID)
-	return err
-}
-
-func (c *AppCommands) RejectAITagSuggestion(id int64) error {
+// ReviewTaggerSuggestions performs one review action without exposing database
+// structs through Wails. For single-item actions suggestionID must belong to
+// assetID; bulk actions ignore suggestionID.
+func (c *AppCommands) ReviewTaggerSuggestions(assetID, suggestionID int64, action string) error {
 	if c.tagSuggestionRepo == nil {
 		return errors.New("AI tag suggestion repository is not available")
 	}
-	return c.tagSuggestionRepo.Reject(id)
+	switch strings.TrimSpace(action) {
+	case "accept":
+		if err := c.requireSuggestionForAsset(assetID, suggestionID); err != nil {
+			return err
+		}
+		_, err := c.tagSuggestionRepo.Accept(suggestionID)
+		return err
+	case "reject":
+		if err := c.requireSuggestionForAsset(assetID, suggestionID); err != nil {
+			return err
+		}
+		return c.tagSuggestionRepo.Reject(suggestionID)
+	case "accept_all":
+		_, err := c.tagSuggestionRepo.AcceptAll(assetID)
+		return err
+	case "reject_all":
+		return c.tagSuggestionRepo.RejectAll(assetID)
+	default:
+		return fmt.Errorf("unsupported Tagger review action %q", action)
+	}
 }
 
-func (c *AppCommands) RejectAllAITagSuggestions(assetID int64) error {
-	if c.tagSuggestionRepo == nil {
-		return errors.New("AI tag suggestion repository is not available")
+func (c *AppCommands) requireSuggestionForAsset(assetID, suggestionID int64) error {
+	values, err := c.tagSuggestionRepo.ListByAsset(assetID)
+	if err != nil {
+		return err
 	}
-	return c.tagSuggestionRepo.RejectAll(assetID)
-}
-
-func (c *AppCommands) ReanalyzeTaggerAsset(assetID int64, priority int) (bool, error) {
-	if c.aiJobQueue == nil {
-		return false, errors.New("AI job queue is not available")
+	for _, value := range values {
+		if value.ID == suggestionID {
+			return nil
+		}
 	}
-	_, created, err := c.aiJobQueue.Enqueue(assetID, domain.AICapabilityTagger, priority, false)
-	return created, err
+	return fmt.Errorf("AI tag suggestion %d does not belong to asset %d", suggestionID, assetID)
 }
 
 func (c *AppCommands) EnqueueAutomaticTaggerAssets(assetIDs []int64) (int, error) {
