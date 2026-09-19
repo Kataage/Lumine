@@ -86,6 +86,9 @@ jobs:
       - name: Create frontend/dist for embed
         run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 
+      - name: Inspect pinned llama.cpp CPU/Vulkan packages
+        run: python3 benchmarks/ai/inspect_llamacpp_runtime.py
+
       - name: Go mod tidy
         run: go mod tidy
 
