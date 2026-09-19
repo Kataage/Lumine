@@ -685,8 +685,8 @@ func (i *semanticMemoryIndex) Stats() (ready bool, count int, key string) {
 }
 
 // ConfigureSemanticIndexRoot configures internal persistent-index storage.
- // It is intentionally a package function rather than an AppCommands method so
- // Wails does not expose filesystem configuration to the frontend bridge.
+// It is intentionally a package function rather than an AppCommands method so
+// Wails does not expose filesystem configuration to the frontend bridge.
 func ConfigureSemanticIndexRoot(c *AppCommands, root string) {
 	if c != nil && c.semanticIndex != nil {
 		c.semanticIndex.SetStorageRoot(root)
