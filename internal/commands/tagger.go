@@ -88,6 +88,9 @@ func (c *AppCommands) TaggerAnalysisHandler(
 	if err != nil {
 		return ai.AnalysisOutput{}, fmt.Errorf("tag image %d: %w", asset.ID, err)
 	}
+	if err := validateTaggerThresholdEcho(response, thresholdOverrides); err != nil {
+		return ai.AnalysisOutput{}, err
+	}
 	result, err := taggerResultFromResponse(response)
 	if err != nil {
 		return ai.AnalysisOutput{}, err
