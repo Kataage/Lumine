@@ -129,3 +129,20 @@ func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
 		}
 	}
 }
+
+
+func TestSemanticMemoryIndexPrepareBuffersEarlyUpserts(t *testing.T) {
+	index := newSemanticMemoryIndex()
+	index.Prepare("engine", "model", "1")
+	index.Upsert(42, "engine", "model", "1", []float32{1, 0})
+
+	index.mu.RLock()
+	defer index.mu.RUnlock()
+	vector, ok := index.pending[42]
+	if !ok {
+		t.Fatal("embedding completed before warm start was dropped")
+	}
+	if len(vector) != 2 {
+		t.Fatalf("pending vector length = %d, want 2", len(vector))
+	}
+}
