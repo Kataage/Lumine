@@ -22,7 +22,7 @@
   ],
   "parameters": {
     "repoId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
-    "modelFileRegex": "(?i).*Q4_K_M.*\\.gguf",
+    "modelFileRegex": "(?i)^(?!.*(?:mmproj|mtp)).*Q4_K_M.*\\.gguf$",
     "modelSha256": "",
     "modelSizeBytes": "0",
     "runtimeFamily": "upstream-llamacpp",

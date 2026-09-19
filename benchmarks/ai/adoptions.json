@@ -33,10 +33,10 @@
       "status": "candidate",
       "modelId": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
       "version": "main",
-      "engine": "llama.cpp-text-cpu-custom-spark",
+      "engine": "llama.cpp-text-cpu",
       "quantization": "Q4_K_M",
       "issue": "#169",
-      "rationale": "Japanese-focused Heretic candidate. Spark2_5 requires a Spark-compatible XHToken/llama.cpp fork, so both model and custom runtime must be immutably pinned before evidence can justify adoption.",
+      "rationale": "Japanese-focused Heretic candidate. Upstream llama.cpp v0.4.1 added native Spark2.5 support (#27868), so the controlled run uses the same pinned b10964 CPU runtime family as the other prompt candidates. Adoption still requires immutable model revision and artifact SHA-256 evidence.",
       "updatedAt": "2026-09-19"
     },
     {

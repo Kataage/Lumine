@@ -133,14 +133,6 @@ def resolve_server(model: dict[str, Any]) -> Path:
             raise ValueError(f"LUMINE_PROMPT_LLAMA_SERVER not found: {path}")
         return path
 
-    runtime_family = param(model, "runtimeFamily", "upstream-llamacpp")
-    if runtime_family == "spark-x2.5-fork":
-        raise ValueError(
-            "this Spark-X2.5 profile requires a Spark-compatible llama.cpp server; "
-            "set LUMINE_PROMPT_LLAMA_SERVER to a trusted XHToken/llama.cpp-compatible "
-            "llama-server executable and record that runtime in the benchmark notes"
-        )
-
     release = param(model, "llamaRelease")
     expected_hash = param(model, "llamaWindowsCpuArchiveSha256")
     if not release or not expected_hash:
@@ -350,10 +342,6 @@ def main() -> None:
         category = str(fixture.get("category") or "")
 
         model_path, resolved_revision, actual_hash = resolve_model(profile)
-        server_exe = resolve_server(profile)
-        threads = max(1, int(param(profile, "threads", "8")))
-        context = max(2048, int(param(profile, "context", "8192")))
-        extra_args = server_extra_args(profile)
 
         if category == "model_size":
             emit({
@@ -370,6 +358,11 @@ def main() -> None:
                 },
             })
             return
+
+        server_exe = resolve_server(profile)
+        threads = max(1, int(param(profile, "threads", "8")))
+        context = max(2048, int(param(profile, "context", "8192")))
+        extra_args = server_extra_args(profile)
 
         effective_fixture = (
             perf_fixture(fixture)

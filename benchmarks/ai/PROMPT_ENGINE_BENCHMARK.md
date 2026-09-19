@@ -15,15 +15,11 @@ The initial two-candidate issue remains the starting point, but the controlled s
 
 The checked-in profiles are initially exploratory (version: main, no artifact SHA-256). They may be used to discover the exact immutable revision and artifact hash, but they must not be used as adoption evidence. After a candidate is downloaded and inspected, copy the adapter-reported resolvedRevision, modelSha256, exact file size, runtime version and runtime hash into a pinned profile before producing evidence under results/evidence/.
 
-### Spark runtime caveat
+### Spark runtime status
 
-Spark-X2.5-4B-Heretic-jp uses the Spark2_5 architecture. Its model card requires a Spark-compatible XHToken/llama.cpp fork rather than upstream llama.cpp.
+Spark-X2.5-4B-Heretic-jp uses the Spark2_5 architecture. Older model-card text says a Spark-specific llama.cpp fork is required, but upstream llama.cpp added native Spark2.5 support in v0.4.1 (#27868). Lumine's benchmark runtime is pinned to nightly b10964, which is the v0.4.1 release commit, so Spark is evaluated with the same upstream runtime family as the Qwen/NeoHorse candidates.
 
-The Prompt adapter therefore refuses to silently launch upstream llama.cpp for the Spark profile. Set:
-
-    $env:LUMINE_PROMPT_LLAMA_SERVER = "C:\path\to\spark-compatible\llama-server.exe"
-
-Before any adoption evidence is recorded, pin the exact fork revision/build and binary SHA-256 in the evidence notes/profile. An unpinned custom server run is exploratory only.
+If the model repository documentation and upstream runtime support disagree, upstream llama.cpp release/support state is the runtime source of truth for Lumine. A custom server override remains available through LUMINE_PROMPT_LLAMA_SERVER for debugging, but is not required for the controlled Spark run.
 
 ## What is measured
 
@@ -73,7 +69,7 @@ Prompt fixtures are text-only, so no private fixture directory is required for t
 
 For NeoHorse, the exploratory profile deliberately resolves exactly one Q4_K_M GGUF by regex because the GGUF repository was published very recently. Pin the exact filename/revision/hash before evidence.
 
-For Spark, set LUMINE_PROMPT_LLAMA_SERVER to the validated Spark-compatible server before running.
+For Spark, use the checked-in upstream llama.cpp b10964/v0.4.1 runtime profile. The optional LUMINE_PROMPT_LLAMA_SERVER override is for debugging only and should not be used for controlled evidence unless that alternate runtime is explicitly pinned.
 
 ## Review
 
@@ -89,7 +85,7 @@ Generate a side-by-side table:
 Do not mark any Prompt Engine record adopted until:
 
 1. candidates used as evidence have immutable model revision + artifact SHA-256;
-2. the runtime is pinned, including the Spark fork when applicable;
+2. the runtime is pinned; the controlled Spark run uses upstream llama.cpp b10964/v0.4.1 with native Spark2.5 support;
 3. result files share the same catalog/evaluator/hardware identity;
 4. structured-output failures and runtime crashes are retained rather than excluded;
 5. Japanese, IL/ILXL, edit-preservation, LoRA, adult-only robustness and CPU/resource results have all been reviewed.
