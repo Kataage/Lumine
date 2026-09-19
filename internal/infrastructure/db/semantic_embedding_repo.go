@@ -253,6 +253,97 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbedding(
 	return ids, rows.Err()
 }
 
+func (r *SemanticEmbeddingRepo) WalkReadyEmbeddings(
+	ctx context.Context,
+	engine string,
+	modelID string,
+	modelVersion string,
+	visit func(assetID int64, vector []float32) error,
+) error {
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return errors.New("semantic embedding provenance is required")
+	}
+	if visit == nil {
+		return errors.New("semantic embedding visitor is required")
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT e.asset_id, e.dimensions, e.vector
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa
+		  ON aa.asset_id = e.asset_id
+		 AND aa.capability = 'semantic_search'
+		 AND aa.state = 'ready'
+		 AND aa.engine = e.engine
+		 AND aa.model_id = e.model_id
+		 AND aa.model_version = e.model_version
+		WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
+		ORDER BY e.asset_id
+	`, engine, modelID, modelVersion)
+	if err != nil {
+		return fmt.Errorf("walk ready semantic embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var assetID int64
+		var dimensions int
+		var blob []byte
+		if err := rows.Scan(&assetID, &dimensions, &blob); err != nil {
+			return fmt.Errorf("scan ready semantic embedding: %w", err)
+		}
+		vector, err := decodeSemanticVector(blob, dimensions)
+		if err != nil {
+			return fmt.Errorf("decode ready semantic embedding for asset %d: %w", assetID, err)
+		}
+		if err := visit(assetID, vector); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func (r *SemanticEmbeddingRepo) ListEligibleSemanticAssetIDs(
+	ctx context.Context,
+	query SemanticSearchQuery,
+) ([]int64, error) {
+	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
+		return nil, errors.New("semantic search provenance is required")
+	}
+	where, args := semanticSearchWhere(query)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT e.asset_id
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa ON aa.asset_id = e.asset_id
+		JOIN assets a ON a.id = e.asset_id
+		%s
+		ORDER BY e.asset_id
+	`, where), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list eligible semantic assets: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, 1024)
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan eligible semantic asset: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQuery) (*SemanticSearchResult, error) {
 	return r.SearchWithProgress(context.Background(), vector, query, 0, nil)
 }
