@@ -146,6 +146,9 @@ func main() {
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
 		log.Fatal("failed to register Semantic Search job handler:", err)
 	}
+	if err := aiJobQueue.RegisterHandler(domain.AICapabilityLightweightVision, cmd.LightweightVisionAnalysisHandler); err != nil {
+		log.Fatal("failed to register Lightweight Vision job handler:", err)
+	}
 	aiManager.SetModelActivatedHook(aiJobQueue.HandleModelActivated)
 	if err := aiJobQueue.Start(context.Background()); err != nil {
 		log.Fatal("failed to start AI job queue:", err)
