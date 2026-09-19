@@ -10,6 +10,7 @@ import (
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/domain"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var ErrLightweightVisionDisabled = errors.New("Lightweight Vision is disabled")
