@@ -197,6 +197,7 @@ export namespace commands {
 	    modelsPath: string;
 	    runtimesPath: string;
 	    semanticIndexPath: string;
+	    webviewDataPath: string;
 	    preferredRootPath?: string;
 	    legacyPath?: string;
 	    legacyDetected: boolean;
@@ -221,6 +222,7 @@ export namespace commands {
 	        this.modelsPath = source["modelsPath"];
 	        this.runtimesPath = source["runtimesPath"];
 	        this.semanticIndexPath = source["semanticIndexPath"];
+	        this.webviewDataPath = source["webviewDataPath"];
 	        this.preferredRootPath = source["preferredRootPath"];
 	        this.legacyPath = source["legacyPath"];
 	        this.legacyDetected = source["legacyDetected"];
