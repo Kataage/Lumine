@@ -145,3 +145,66 @@ func TestAISettingsPersistAcrossDatabaseReopen(t *testing.T) {
 		t.Fatalf("unexpected AI health after reopen: %+v", health)
 	}
 }
+
+
+func TestPatchAISettingsPreservesUnrelatedFields(t *testing.T) {
+	cmd := setupCommands(t)
+
+	initial := domain.AISettings{
+		Enabled:           true,
+		SemanticSearch:    true,
+		LightweightVision: true,
+		AdvancedVision:    true,
+		PromptEngine:      true,
+		AutoAnalyze:       true,
+		GPUAcceleration:   true,
+	}
+	if _, err := cmd.SetAISettings(initial); err != nil {
+		t.Fatalf("SetAISettings: %v", err)
+	}
+
+	updated, err := cmd.PatchAISettings(map[string]bool{
+		"semanticSearch": false,
+	})
+	if err != nil {
+		t.Fatalf("PatchAISettings: %v", err)
+	}
+
+	want := initial
+	want.SemanticSearch = false
+	if updated != want {
+		t.Fatalf("patched settings = %+v, want %+v", updated, want)
+	}
+
+	reloaded, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatalf("GetAISettings: %v", err)
+	}
+	if reloaded != want {
+		t.Fatalf("persisted settings = %+v, want %+v", reloaded, want)
+	}
+}
+
+func TestPatchAISettingsRejectsUnknownFieldsWithoutMutation(t *testing.T) {
+	cmd := setupCommands(t)
+
+	initial := domain.AISettings{
+		Enabled:      true,
+		PromptEngine: true,
+	}
+	if _, err := cmd.SetAISettings(initial); err != nil {
+		t.Fatalf("SetAISettings: %v", err)
+	}
+
+	if _, err := cmd.PatchAISettings(map[string]bool{"unknownField": true}); err == nil {
+		t.Fatal("unknown patch field should fail")
+	}
+
+	got, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatalf("GetAISettings: %v", err)
+	}
+	if got != initial {
+		t.Fatalf("settings mutated after rejected patch: got %+v want %+v", got, initial)
+	}
+}
