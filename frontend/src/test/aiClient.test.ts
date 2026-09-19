@@ -1,0 +1,151 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../wailsjs/runtime/runtime", () => ({
+  EventsOn: vi.fn(),
+  EventsOff: vi.fn(),
+}));
+
+vi.mock("../../wailsjs/go/commands/AppCommands", () => ({
+  GetAISettings: vi.fn(),
+  SemanticSearchAssets: vi.fn(),
+  SemanticSearchAssetsWithID: vi.fn(),
+  GetDefaultSemanticModelInfo: vi.fn(),
+}));
+
+import * as Go from "../../wailsjs/go/commands/AppCommands";
+import {
+  getAISettings,
+  getDefaultSemanticModelInfo,
+  semanticSearchAssets,
+} from "../api/client";
+
+const SETTINGS = {
+  enabled: true,
+  semanticSearch: true,
+  tagger: false,
+  lightweightVision: false,
+  advancedVision: false,
+  promptEngine: false,
+  autoAnalyze: false,
+  gpuAcceleration: false,
+};
+
+describe("typed AI Wails bridge", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const dynamicGetAISettings = vi.fn(async () => ({
+      ...SETTINGS,
+      enabled: false,
+    }));
+    const dynamicSemanticSearch = vi.fn(async () => ({
+      assets: [],
+      totalCount: 999,
+    }));
+
+    (window as unknown as {
+      go?: {
+        commands?: {
+          AppCommands?: {
+            GetAISettings?: typeof dynamicGetAISettings;
+            SemanticSearchAssetsWithID?: typeof dynamicSemanticSearch;
+          };
+        };
+      };
+    }).go = {
+      commands: {
+        AppCommands: {
+          GetAISettings: dynamicGetAISettings,
+          SemanticSearchAssetsWithID: dynamicSemanticSearch,
+        },
+      },
+    };
+  });
+
+  it("AI設定はwindow.go fallbackではなくgenerated bindingを使う", async () => {
+    vi.mocked(Go.GetAISettings).mockResolvedValue(SETTINGS);
+
+    const settings = await getAISettings();
+
+    expect(Go.GetAISettings).toHaveBeenCalledTimes(1);
+    expect(settings.enabled).toBe(true);
+    const dynamic = (window as unknown as {
+      go: { commands: { AppCommands: { GetAISettings: ReturnType<typeof vi.fn> } } };
+    }).go.commands.AppCommands.GetAISettings;
+    expect(dynamic).not.toHaveBeenCalled();
+  });
+
+  it("request ID付き意味検索はgenerated bindingへ直接渡す", async () => {
+    vi.mocked(Go.SemanticSearchAssetsWithID).mockResolvedValue({
+      assets: [],
+      totalCount: 7,
+      semanticSearchSessionId: "session-1",
+    });
+
+    const result = await semanticSearchAssets(
+      {
+        libraryId: 1,
+        folderPath: "",
+        recurse: true,
+        search: "blue sky",
+        sortBy: "",
+        sortDesc: false,
+        offset: 0,
+        limit: 50,
+      },
+      "request-1",
+    );
+
+    expect(Go.SemanticSearchAssetsWithID).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "blue sky" }),
+      "request-1",
+    );
+    expect(result.totalCount).toBe(7);
+    const dynamic = (window as unknown as {
+      go: { commands: { AppCommands: { SemanticSearchAssetsWithID: ReturnType<typeof vi.fn> } } };
+    }).go.commands.AppCommands.SemanticSearchAssetsWithID;
+    expect(dynamic).not.toHaveBeenCalled();
+  });
+
+  it("not_loaded runtime stateを保持する", async () => {
+    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue({
+      id: "siglip2",
+      version: "1",
+      engine: "siglip2",
+      displayName: "SigLIP2",
+      license: "Apache-2.0",
+      sizeBytes: 123,
+      installed: true,
+      runtime: {
+        capability: "semantic_search",
+        state: "not_loaded",
+        modelId: "siglip2",
+        version: "1",
+        engine: "siglip2",
+      },
+    });
+
+    const info = await getDefaultSemanticModelInfo();
+    expect(info.installed).toBe(true);
+    expect(info.runtime.state).toBe("not_loaded");
+  });
+
+  it("未知のruntime stateは誤表示せず拒否する", async () => {
+    vi.mocked(Go.GetDefaultSemanticModelInfo).mockResolvedValue({
+      id: "siglip2",
+      version: "1",
+      engine: "siglip2",
+      displayName: "SigLIP2",
+      license: "Apache-2.0",
+      sizeBytes: 123,
+      installed: true,
+      runtime: {
+        capability: "semantic_search",
+        state: "future_state",
+      },
+    });
+
+    await expect(getDefaultSemanticModelInfo()).rejects.toThrow(
+      "未知のAI runtime state",
+    );
+  });
+});
