@@ -166,6 +166,10 @@ export function EnqueueAutomaticSemanticAssets(arg1) {
   return window['go']['commands']['AppCommands']['EnqueueAutomaticSemanticAssets'](arg1);
 }
 
+export function EnqueueAutomaticTaggerAssets(arg1) {
+  return window['go']['commands']['AppCommands']['EnqueueAutomaticTaggerAssets'](arg1);
+}
+
 export function EnqueueLightweightVisionBackfill() {
   return window['go']['commands']['AppCommands']['EnqueueLightweightVisionBackfill']();
 }
