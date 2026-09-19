@@ -682,6 +682,18 @@ func (i *semanticMemoryIndex) Stats() (ready bool, count int, key string) {
 	return i.ready, i.loadedCountLocked(), fmt.Sprintf("%s/%s/%s", i.key.engine, i.key.modelID, i.key.version)
 }
 
+func (c *AppCommands) SetSemanticIndexRoot(root string) {
+	if c.semanticIndex != nil {
+		c.semanticIndex.SetStorageRoot(root)
+	}
+}
+
+func (i *semanticMemoryIndex) cancelPersistWorkerStart() {
+	i.mu.Lock()
+	i.persistWorker = false
+	i.mu.Unlock()
+}
+
 func (i *semanticMemoryIndex) MarkPersistDirty(engine, modelID, version string) bool {
 	key := semanticKey(engine, modelID, version)
 	i.mu.Lock()
