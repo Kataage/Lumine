@@ -2,7 +2,7 @@
   "id": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
   "version": "main",
   "engine": "llama.cpp-text-cpu",
-  "quantization": "Q4_K_M",
+  "quantization": "Q4_K",
   "artifactSha256": "",
   "modelSizeBytes": 0,
   "runtime": "llama.cpp-b10964-cpu-x64",
@@ -22,7 +22,7 @@
   ],
   "parameters": {
     "repoId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
-    "modelFileRegex": "(?i)^(?!.*(?:mmproj|mtp)).*Q4_K_M.*\\.gguf$",
+    "modelFile": "Huihui-NeoHorse-1-4B-abliterated-Q4_K.gguf",
     "modelSha256": "",
     "modelSizeBytes": "0",
     "runtimeFamily": "upstream-llamacpp",
