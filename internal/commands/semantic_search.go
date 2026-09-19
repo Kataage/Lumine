@@ -6,16 +6,135 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var (
 	ErrSemanticSearchDisabled = errors.New("Semantic Search is disabled")
 	ErrSemanticModelNotReady  = errors.New("Semantic Search model is not loaded")
 )
+
+const (
+	semanticSearchSessionTTL = 15 * time.Minute
+	semanticSearchSessionMax = 8
+	semanticSearchPreviewMax = 80
+)
+
+type semanticSearchSession struct {
+	hits      []domain.SemanticSearchHit
+	total     int
+	createdAt time.Time
+}
+
+type semanticSearchState struct {
+	mu       sync.Mutex
+	seq      uint64
+	cancels  map[string]context.CancelFunc
+	sessions map[string]semanticSearchSession
+}
+
+type SemanticSearchProgressDTO struct {
+	RequestID    string     `json:"requestId"`
+	Assets       []AssetDTO `json:"assets"`
+	ScannedCount int        `json:"scannedCount"`
+	TotalCount   int        `json:"totalCount"`
+}
+
+func newSemanticSearchState() *semanticSearchState {
+	return &semanticSearchState{
+		cancels:  make(map[string]context.CancelFunc),
+		sessions: make(map[string]semanticSearchSession),
+	}
+}
+
+func (s *semanticSearchState) begin(requestID string, parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	if requestID == "" {
+		return ctx, cancel
+	}
+
+	s.mu.Lock()
+	if previous := s.cancels[requestID]; previous != nil {
+		previous()
+	}
+	s.cancels[requestID] = cancel
+	s.mu.Unlock()
+	return ctx, cancel
+}
+
+func (s *semanticSearchState) finish(requestID string) {
+	if requestID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.cancels, requestID)
+	s.mu.Unlock()
+}
+
+func (s *semanticSearchState) cancel(requestID string) {
+	if requestID == "" {
+		return
+	}
+	s.mu.Lock()
+	cancel := s.cancels[requestID]
+	delete(s.cancels, requestID)
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for id, session := range s.sessions {
+		if now.Sub(session.createdAt) > semanticSearchSessionTTL {
+			delete(s.sessions, id)
+		}
+	}
+	for len(s.sessions) >= semanticSearchSessionMax {
+		var oldestID string
+		var oldest time.Time
+		for id, session := range s.sessions {
+			if oldestID == "" || session.createdAt.Before(oldest) {
+				oldestID = id
+				oldest = session.createdAt
+			}
+		}
+		delete(s.sessions, oldestID)
+	}
+
+	s.seq++
+	id := fmt.Sprintf("semantic-%x", s.seq)
+	s.sessions[id] = semanticSearchSession{
+		hits:      append([]domain.SemanticSearchHit(nil), hits...),
+		total:     total,
+		createdAt: now,
+	}
+	return id
+}
+
+func (s *semanticSearchState) get(id string) (semanticSearchSession, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[id]
+	if !ok {
+		return semanticSearchSession{}, false
+	}
+	if time.Since(session.createdAt) > semanticSearchSessionTTL {
+		delete(s.sessions, id)
+		return semanticSearchSession{}, false
+	}
+	return session, true
+}
 
 func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 	if len(assetIDs) == 0 || c.aiJobQueue == nil {
@@ -183,6 +302,10 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 }
 
 func (c *AppCommands) SemanticSearchAssets(req AssetListRequest) (*AssetListResponse, error) {
+	return c.SemanticSearchAssetsWithID(req, "")
+}
+
+func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID string) (*AssetListResponse, error) {
 	queryText := strings.TrimSpace(req.Search)
 	if queryText == "" {
 		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: 0}, nil
@@ -199,11 +322,23 @@ func (c *AppCommands) SemanticSearchAssets(req AssetListRequest) (*AssetListResp
 		return nil, fmt.Errorf("%w: %s", ErrSemanticModelNotReady, status.State)
 	}
 
-	ctx := c.ctx
-	if ctx == nil {
-		ctx = context.Background()
+	parent := c.ctx
+	if parent == nil {
+		parent = context.Background()
 	}
-	response, err := c.aiManager.Infer(ctx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
+	searchCtx, cancel := c.semanticSearchState.begin(requestID, parent)
+	defer func() {
+		cancel()
+		c.semanticSearchState.finish(requestID)
+	}()
+
+	resumeBackground := func() {}
+	if c.aiJobQueue != nil {
+		resumeBackground = c.aiJobQueue.PauseCapabilityForForeground(domain.AICapabilitySemanticSearch)
+	}
+	defer resumeBackground()
+
+	response, err := c.aiManager.Infer(searchCtx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_text",
 		Payload: map[string]any{
 			"text": queryText,
@@ -217,11 +352,61 @@ func (c *AppCommands) SemanticSearchAssets(req AssetListRequest) (*AssetListResp
 		return nil, err
 	}
 
-	result, err := c.semanticRepo.Search(vector, semanticQueryFromAssetRequest(req, status, 0))
+	result, err := c.semanticRepo.SearchWithProgress(
+		searchCtx,
+		vector,
+		semanticQueryFromAssetRequest(req, status, 0),
+		semanticSearchPreviewMax,
+		func(progress db.SemanticSearchProgress) {
+			if requestID == "" || c.ctx == nil || searchCtx.Err() != nil {
+				return
+			}
+			preview, previewErr := c.semanticHitsToAssets(progress.Hits, progress.TotalCount, "")
+			if previewErr != nil {
+				return
+			}
+			runtime.EventsEmit(c.ctx, "semantic-search:progress", SemanticSearchProgressDTO{
+				RequestID:    requestID,
+				Assets:       preview.Assets,
+				ScannedCount: progress.ScannedCount,
+				TotalCount:   progress.TotalCount,
+			})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	return c.semanticResultToAssets(result)
+
+	sessionID := c.semanticSearchState.store(result.RankedHits, result.TotalCount)
+	return c.semanticHitsToAssets(result.Hits, result.TotalCount, sessionID)
+}
+
+func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*AssetListResponse, error) {
+	session, ok := c.semanticSearchState.get(strings.TrimSpace(sessionID))
+	if !ok {
+		return nil, errors.New("semantic search session expired")
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset > len(session.hits) {
+		offset = len(session.hits)
+	}
+	end := offset + limit
+	if end > len(session.hits) {
+		end = len(session.hits)
+	}
+	return c.semanticHitsToAssets(session.hits[offset:end], session.total, sessionID)
+}
+
+func (c *AppCommands) CancelSemanticSearch(requestID string) {
+	c.semanticSearchState.cancel(strings.TrimSpace(requestID))
 }
 
 func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*AssetListResponse, error) {
@@ -249,17 +434,28 @@ func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*A
 }
 
 func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*AssetListResponse, error) {
-	if result == nil || len(result.Hits) == 0 {
-		total := 0
-		if result != nil {
-			total = result.TotalCount
-		}
-		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: total}, nil
+	if result == nil {
+		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: 0}, nil
+	}
+	return c.semanticHitsToAssets(result.Hits, result.TotalCount, "")
+}
+
+func (c *AppCommands) semanticHitsToAssets(
+	hits []domain.SemanticSearchHit,
+	total int,
+	sessionID string,
+) (*AssetListResponse, error) {
+	if len(hits) == 0 {
+		return &AssetListResponse{
+			Assets:                  []AssetDTO{},
+			TotalCount:              total,
+			SemanticSearchSessionID: sessionID,
+		}, nil
 	}
 
-	ids := make([]int64, len(result.Hits))
-	scoreByID := make(map[int64]float32, len(result.Hits))
-	for i, hit := range result.Hits {
+	ids := make([]int64, len(hits))
+	scoreByID := make(map[int64]float32, len(hits))
+	for i, hit := range hits {
 		ids[i] = hit.AssetID
 		scoreByID[hit.AssetID] = hit.Score
 	}
@@ -273,7 +469,11 @@ func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*
 		dto.SemanticScore = scoreByID[dto.ID]
 		dtos = append(dtos, dto)
 	}
-	return &AssetListResponse{Assets: dtos, TotalCount: result.TotalCount}, nil
+	return &AssetListResponse{
+		Assets:                  dtos,
+		TotalCount:              total,
+		SemanticSearchSessionID: sessionID,
+	}, nil
 }
 
 func semanticQueryFromAssetRequest(

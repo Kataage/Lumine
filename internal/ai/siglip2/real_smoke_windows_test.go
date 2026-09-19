@@ -63,6 +63,13 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 	}
 	defer engine.Unload(context.Background())
 
+	// The runtime DLL is already mapped at this point. Re-resolving the
+	// extraction must reuse the immutable file instead of trying to replace it,
+	// which Windows rejects with "Access is denied".
+	if _, err := extractORTDLL(installed.RootDir); err != nil {
+		t.Fatalf("reuse loaded ONNX Runtime DLL: %v", err)
+	}
+
 	for iteration := 0; iteration < 5; iteration++ {
 		imageResult, err := engine.Infer(ctx, ai.InferenceRequest{
 			Operation: "embed_image",

@@ -53,6 +53,7 @@ type JobQueue struct {
 	mu       sync.Mutex
 	handlers map[domain.AICapability]AnalysisHandler
 	active   map[int64]activeAIJob
+	paused   map[domain.AICapability]int
 	started  bool
 	cancel   context.CancelFunc
 	wake     chan struct{}
@@ -71,6 +72,7 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		workers:  workers,
 		handlers: make(map[domain.AICapability]AnalysisHandler),
 		active:   make(map[int64]activeAIJob),
+		paused:   make(map[domain.AICapability]int),
 		wake:     make(chan struct{}, 1),
 	}
 }
@@ -257,6 +259,41 @@ func (q *JobQueue) Retry(jobID int64) error {
 	return nil
 }
 
+func (q *JobQueue) PauseCapabilityForForeground(capability domain.AICapability) func() {
+	q.mu.Lock()
+	q.paused[capability]++
+	active := make(map[int64]activeAIJob)
+	for id, job := range q.active {
+		if job.capability == capability {
+			active[id] = job
+		}
+	}
+	q.mu.Unlock()
+
+	// Preserve an active background job without consuming its retry budget.
+	for id, job := range active {
+		if err := q.repo.RequeueInterrupted(id, "yielded to a foreground AI request"); err != nil {
+			slog.Debug("failed to requeue AI job for foreground request", "job", id, "error", err)
+			continue
+		}
+		job.cancel()
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			q.mu.Lock()
+			if count := q.paused[capability]; count <= 1 {
+				delete(q.paused, capability)
+			} else {
+				q.paused[capability] = count - 1
+			}
+			q.mu.Unlock()
+			q.signal()
+		})
+	}
+}
+
 func (q *JobQueue) ApplySettings(settings domain.AISettings) error {
 	q.mu.Lock()
 	active := make(map[int64]activeAIJob)
@@ -382,7 +419,7 @@ func (q *JobQueue) runnableCapabilities() ([]domain.AICapability, error) {
 	defer q.mu.Unlock()
 	capabilities := make([]domain.AICapability, 0, len(q.handlers))
 	for capability := range q.handlers {
-		if settings.CapabilityEnabled(capability) {
+		if settings.CapabilityEnabled(capability) && q.paused[capability] == 0 {
 			capabilities = append(capabilities, capability)
 		}
 	}
@@ -401,6 +438,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	jobCtx, cancel := context.WithCancel(parent)
 	q.mu.Lock()
 	q.active[job.ID] = activeAIJob{capability: job.Capability, cancel: cancel}
+	paused := q.paused[job.Capability] > 0
 	q.mu.Unlock()
 
 	cleanup := func() {
@@ -408,6 +446,14 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 		q.mu.Lock()
 		delete(q.active, job.ID)
 		q.mu.Unlock()
+	}
+
+	if paused {
+		if err := q.repo.RequeueInterrupted(job.ID, "yielded to a foreground AI request"); err != nil {
+			slog.Error("failed to yield claimed AI job to foreground request", "job", job.ID, "error", err)
+		}
+		cleanup()
+		return
 	}
 
 	latest, err := q.repo.GetJob(job.ID)

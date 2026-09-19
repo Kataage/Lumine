@@ -29,9 +29,10 @@ type Manager struct {
 	settings       SettingsProvider
 	modelActivated func(domain.AICapability, InstalledModel) error
 
-	mu         sync.Mutex
-	factories  map[string]EngineFactory
-	sessions   map[domain.AICapability]*runtimeSession
+	mu          sync.Mutex
+	lifecycleMu sync.Mutex
+	factories   map[string]EngineFactory
+	sessions    map[domain.AICapability]*runtimeSession
 }
 
 func NewManager(root string, settings SettingsProvider) *Manager {
@@ -68,6 +69,8 @@ func (m *Manager) RegisterEngine(engineID string, factory EngineFactory) error {
 }
 
 func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
 	}
@@ -75,6 +78,8 @@ func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, prog
 }
 
 func (m *Manager) UpdateModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
 	}
@@ -90,6 +95,8 @@ func (m *Manager) ListInstalledModels() ([]InstalledModelInfo, error) {
 }
 
 func (m *Manager) RemoveModel(modelID, version string) error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	m.mu.Lock()
 	for capability, session := range m.sessions {
 		if session.model.Manifest.ID == modelID && session.model.Manifest.Version == version {
@@ -108,6 +115,12 @@ func (m *Manager) Load(
 	version string,
 	options LoadOptions,
 ) error {
+	// Runtime lifecycle changes are rare but expensive. Serialize them so
+	// startup restore, Settings actions, and model switching cannot construct
+	// two engines for the same capability at once or race DLL extraction.
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+
 	settings, err := m.currentSettings()
 	if err != nil {
 		return err
@@ -131,7 +144,7 @@ func (m *Manager) Load(
 	}
 
 	if current != nil {
-		if err := m.Unload(ctx, capability); err != nil {
+		if err := m.unloadLocked(ctx, capability); err != nil {
 			return fmt.Errorf("unload current runtime: %w", err)
 		}
 	}
@@ -223,6 +236,12 @@ func (m *Manager) Infer(
 }
 
 func (m *Manager) Unload(ctx context.Context, capability domain.AICapability) error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+	return m.unloadLocked(ctx, capability)
+}
+
+func (m *Manager) unloadLocked(ctx context.Context, capability domain.AICapability) error {
 	m.mu.Lock()
 	session := m.sessions[capability]
 	if session == nil {

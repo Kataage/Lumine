@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -45,6 +46,8 @@ const (
 	siglipEmbeddingSize = 768
 	siglipPoolerOutput  = "pooler_output"
 )
+
+var ortExtractMu sync.Mutex
 
 type windowsORT struct {
 	dll           *syscall.DLL
@@ -385,7 +388,21 @@ func readCString(pointer uintptr) string {
 	return string(data)
 }
 
+func extractedDLLMatches(path string, expected uint64) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
+		return false
+	}
+	return uint64(info.Size()) == expected
+}
+
 func extractORTDLL(modelRoot string) (string, error) {
+	// Model loads can race during startup (automatic restore) and Settings
+	// interaction. The runtime DLL is immutable for a pinned model version, so
+	// never rewrite a valid DLL that may already be mapped into this process.
+	ortExtractMu.Lock()
+	defer ortExtractMu.Unlock()
+
 	zipPath := filepath.Join(modelRoot, runtimeZipPath)
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -410,36 +427,65 @@ func extractORTDLL(modelRoot string) (string, error) {
 		return "", fmt.Errorf("create ONNX Runtime directory: %w", err)
 	}
 	target := filepath.Join(runtimeDir, "onnxruntime.dll")
-	temp := target + ".tmp"
+
+	// A valid extraction is reusable across reloads and app launches. This is
+	// especially important on Windows, where an already-loaded DLL cannot be
+	// deleted/replaced and previously caused "Access is denied" on re-load.
+	if extractedDLLMatches(target, source.UncompressedSize64) {
+		return target, nil
+	}
+
+	if _, err := os.Stat(target); err == nil {
+		if err := os.Remove(target); err != nil {
+			return "", fmt.Errorf("remove invalid ONNX Runtime DLL before repair: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect extracted ONNX Runtime DLL: %w", err)
+	}
 
 	input, err := source.Open()
 	if err != nil {
 		return "", fmt.Errorf("open ONNX Runtime DLL from archive: %w", err)
 	}
-	output, err := os.Create(temp)
+	defer input.Close()
+
+	output, err := os.CreateTemp(runtimeDir, "onnxruntime.dll-*.tmp")
 	if err != nil {
-		input.Close()
-		return "", fmt.Errorf("create extracted ONNX Runtime DLL: %w", err)
+		return "", fmt.Errorf("create temporary ONNX Runtime DLL: %w", err)
 	}
-	_, copyErr := io.Copy(output, input)
-	closeOutErr := output.Close()
-	closeInErr := input.Close()
-	if copyErr != nil {
-		_ = os.Remove(temp)
-		return "", fmt.Errorf("extract ONNX Runtime DLL: %w", copyErr)
+	temp := output.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(temp)
+		}
+	}()
+
+	if _, err := io.Copy(output, input); err != nil {
+		_ = output.Close()
+		return "", fmt.Errorf("extract ONNX Runtime DLL: %w", err)
 	}
-	if closeOutErr != nil {
-		_ = os.Remove(temp)
-		return "", closeOutErr
+	if err := output.Sync(); err != nil {
+		_ = output.Close()
+		return "", fmt.Errorf("sync extracted ONNX Runtime DLL: %w", err)
 	}
-	if closeInErr != nil {
-		_ = os.Remove(temp)
-		return "", closeInErr
+	if err := output.Close(); err != nil {
+		return "", fmt.Errorf("close extracted ONNX Runtime DLL: %w", err)
 	}
-	_ = os.Remove(target)
+
+	// Another Lumine process may have completed the same immutable extraction
+	// while this process was copying. Prefer the now-valid target rather than
+	// trying to replace a DLL that might already be mapped by that process.
+	if extractedDLLMatches(target, source.UncompressedSize64) {
+		return target, nil
+	}
+
 	if err := os.Rename(temp, target); err != nil {
-		_ = os.Remove(temp)
+		if extractedDLLMatches(target, source.UncompressedSize64) {
+			return target, nil
+		}
 		return "", fmt.Errorf("commit ONNX Runtime DLL extraction: %w", err)
 	}
+	committed = true
 	return target, nil
 }
