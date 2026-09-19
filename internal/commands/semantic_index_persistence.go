@@ -54,7 +54,7 @@ type semanticSnapshotHeader struct {
 
 func semanticSnapshotKeyPrefix(key semanticIndexKey) string {
 	keyHash := sha256.Sum256([]byte(key.engine + "\x00" + key.modelID + "\x00" + key.version))
-	return fmt.Sprintf("%s%x-", semanticSnapshotPrefix, keyHash[:8])
+	return fmt.Sprintf("%s%x-", semanticSnapshotPrefix, keyHash[:16])
 }
 
 func semanticSnapshotPath(root string, key semanticIndexKey, generation uint64) string {
@@ -426,6 +426,12 @@ func writeSemanticPersistentSnapshot(
 
 	target := semanticSnapshotPath(root, key, endGeneration)
 	if err := os.Rename(tempPath, target); err != nil {
+		// Another Lumine process may have published the same immutable
+		// generation first. Never replace/remove its mmap target; accept it
+		// only after the same validation path succeeds.
+		if existing, openErr := openSemanticPersistentSnapshot(root, key, endGeneration); openErr == nil {
+			return existing, nil
+		}
 		return nil, fmt.Errorf("publish semantic snapshot: %w", err)
 	}
 
