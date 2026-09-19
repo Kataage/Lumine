@@ -484,20 +484,20 @@ export function AISettingsPanel() {
                       disabled={modelBusy}
                       onClick={() => void installSemanticModel()}
                     >
-                      {modelBusy ? "モデルを導入中…" : "SigLIP 2を導入"}
+                      {modelBusy ? "セットアップ中…" : "SigLIP 2を導入して使用"}
                     </button>
-                  ) : status !== "ready" && status !== "running" && settings.enabled && settings.semanticSearch ? (
+                  ) : status !== "ready" && status !== "running" ? (
                     <button
                       type="button"
-                      className="ui-secondary-button w-full justify-center"
+                      className="ui-primary-button w-full justify-center"
                       disabled={modelBusy}
                       onClick={() => void loadSemanticModel()}
                     >
-                      {modelBusy ? "モデルを読み込み中…" : "導入済みモデルを読み込む"}
+                      {modelBusy ? "読み込み中…" : "SigLIP 2を使用"}
                     </button>
                   ) : (
-                    <p className="text-[9px] text-muted-foreground">
-                      {semanticModel.installed ? "モデル導入済み · ローカル保存" : ""}
+                    <p className="rounded-md border border-emerald-500/25 bg-emerald-500/5 px-2 py-1.5 text-[9px] text-emerald-300">
+                      利用可能 · {semanticModel.displayName}
                     </p>
                   )}
                   {semanticModel.runtime.error && (
@@ -532,46 +532,54 @@ export function AISettingsPanel() {
                   )}
 
                   <div className="flex flex-wrap gap-1.5">
-                    {!lightweightModel.llamaRuntime.installed ? (
-                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionRuntime()}>
-                        {visionBusy ? "処理中…" : "runtimeを導入"}
-                      </button>
-                    ) : (
-                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionRuntime()}>
-                        runtimeを削除
+                    {(status !== "ready" && status !== "running") && (
+                      <button
+                        type="button"
+                        className="ui-primary-button"
+                        disabled={visionBusy}
+                        onClick={() => void setupLightweightVision()}
+                      >
+                        {visionBusy
+                          ? "セットアップ中…"
+                          : lightweightModel.installed && lightweightModel.llamaRuntime.installed
+                            ? "Lightweight Visionを使用"
+                            : "Lightweight Visionを導入して使用"}
                       </button>
                     )}
-                    {!lightweightModel.installed ? (
-                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionModel()}>
-                        {visionBusy ? "処理中…" : "SmolVLMを導入"}
+                    {(status === "ready" || status === "running") && (
+                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
+                        既存画像を解析キューへ
                       </button>
-                    ) : (
-                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionModel()}>
+                    )}
+                    {lightweightModel.installed && (
+                      <button
+                        type="button"
+                        className="ui-secondary-button"
+                        disabled={visionBusy}
+                        onClick={() => {
+                          if (!window.confirm("SmolVLMモデルをローカルから削除しますか？")) return;
+                          void removeVisionModel();
+                        }}
+                      >
                         モデルを削除
                       </button>
                     )}
-                    {lightweightModel.installed &&
-                      lightweightModel.llamaRuntime.installed &&
-                      status !== "ready" &&
-                      status !== "running" &&
-                      settings.enabled &&
-                      settings.lightweightVision && (
-                        <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void loadVisionModel()}>
-                          {visionBusy ? "読み込み中…" : "Lightweight Visionを読み込む"}
-                        </button>
-                      )}
-                    {lightweightModel.installed &&
-                      lightweightModel.llamaRuntime.installed &&
-                      (status === "ready" || status === "running") &&
-                      settings.enabled &&
-                      settings.lightweightVision && (
-                        <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
-                          既存画像を解析キューへ
-                        </button>
-                      )}
+                    {lightweightModel.llamaRuntime.installed && (
+                      <button
+                        type="button"
+                        className="ui-secondary-button"
+                        disabled={visionBusy}
+                        onClick={() => {
+                          if (!window.confirm("共有llama.cpp runtimeを削除します。Advanced Vision / Prompt Engineも停止します。続行しますか？")) return;
+                          void removeVisionRuntime();
+                        }}
+                      >
+                        runtimeを削除
+                      </button>
+                    )}
                   </div>
                   <p className="text-[9px] leading-relaxed text-muted-foreground">
-                    設定ONだけではダウンロードしません。runtimeとモデルは明示操作でのみローカル保存されます。
+                    「導入して使用」で必要なruntimeとモデルを順番に準備します。個別の導入順を考える必要はありません。
                   </p>
                   {lightweightModel.runtime.error && (
                     <p className="text-[9px] leading-relaxed text-destructive break-all">{lightweightModel.runtime.error}</p>
