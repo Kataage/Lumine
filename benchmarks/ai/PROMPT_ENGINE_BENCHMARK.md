@@ -46,6 +46,24 @@ The catalog catalogs/prompt-engine-v1.json covers:
 
 The adult-only case is intentionally non-graphic and exists to detect unrelated refusal or silent content deletion. It is a product-quality test, not a request to generate benchmark imagery.
 
+## Pin candidates before downloading weights
+
+The current Prompt profiles start exploratory. Resolve immutable repository/file metadata first without downloading multi-gigabyte GGUF weights:
+
+```powershell
+.\benchmarks\ai\run_prompt_engine_benchmark.ps1 -InspectOnly
+```
+
+This calls the official Hugging Face model metadata API with file metadata enabled and writes `prompt-pin-info.json` containing the full repository commit SHA, exact GGUF filename, LFS SHA-256 and byte size for all four candidates. It does not modify checked-in profiles.
+
+After reviewing that output, explicitly apply the pins:
+
+```powershell
+.\benchmarks\ai\run_prompt_engine_benchmark.ps1 -InspectOnly -ApplyPins
+```
+
+`-ApplyPins` is intentionally accepted only with `-InspectOnly`. It replaces `version: main` with the resolved immutable revision, stores the exact model file/SHA-256/size, removes a regex selector once an exact file is known, and marks the profile as pinned. Normal benchmark runs never mutate repository profiles.
+
 ## Recommended one-command Windows run
 
 Prompt fixtures are text-only, so the current #169 discovery matrix can be run directly:
@@ -61,7 +79,7 @@ The runner records CPU/RAM/current Lumine commit, runs NeoHorse, Spark-X2.5 Here
 - `prompt-pin-info.json`
 - `prompt-run-info.json`
 
-`prompt-pin-info.json` extracts the resolved revision, model filename, SHA-256, exact size and runtime information from each model-size case. While any profile remains `main`/unhashed, `prompt-run-info.json` records `evidenceReady: false`; pin the profiles from the discovery data and rerun before adoption.
+`prompt-pin-info.json` is now generated before inference from official Hugging Face repository/file metadata, so immutable revision, exact filename, SHA-256 and byte size are available without first downloading every GGUF. While any profile remains `main`/unhashed, `prompt-run-info.json` records `evidenceReady: false`; use the explicit inspect/apply flow above and rerun before adoption.
 
 For controlled evidence, clear `LUMINE_PROMPT_LLAMA_SERVER`. `-AllowLlamaServerOverride` exists for debugging only.
 
