@@ -252,7 +252,7 @@ func buildLlamaServerArgs(
 	if allowGPU {
 		args = append(args, "-ngl", "99")
 	} else {
-		args = append(args, "--no-mmproj-offload", "-ngl", "0")
+		args = append(args, "--device", "none", "--no-mmproj-offload", "-ngl", "0")
 	}
 	return append(args, extraArgs...)
 }
@@ -318,7 +318,7 @@ func manifestServerArgs(manifest ai.ModelManifest) ([]string, error) {
 	protected := map[string]struct{}{
 		"-m": {}, "--model": {}, "--mmproj": {}, "--host": {}, "--port": {},
 		"--ctx-size": {}, "--threads": {}, "--parallel": {}, "-ngl": {},
-		"--n-gpu-layers": {}, "--media-path": {},
+		"--n-gpu-layers": {}, "--device": {}, "--media-path": {},
 	}
 	for _, arg := range args {
 		option := arg
