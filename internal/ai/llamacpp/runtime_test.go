@@ -126,6 +126,51 @@ func TestRuntimeStoreRejectsZipTraversal(t *testing.T) {
 	}
 }
 
+func TestPinnedCPUAndVulkanRuntimeManifestsValidate(t *testing.T) {
+	cpu := CPURuntimeManifest()
+	vulkan := VulkanRuntimeManifest()
+	for name, manifest := range map[string]RuntimeManifest{
+		"cpu":    cpu,
+		"vulkan": vulkan,
+	} {
+		if err := ValidateRuntimeManifest(manifest); err != nil {
+			t.Fatalf("%s manifest: %v", name, err)
+		}
+		if manifest.Version != LlamaRuntimeVersion {
+			t.Fatalf("%s version = %q, want %q", name, manifest.Version, LlamaRuntimeVersion)
+		}
+	}
+	if cpu.ID == vulkan.ID {
+		t.Fatal("CPU and Vulkan runtime IDs must be distinct")
+	}
+	if cpu.SHA256 != "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc" || cpu.SizeBytes != 18453883 {
+		t.Fatalf("unexpected pinned CPU runtime: %+v", cpu)
+	}
+	if vulkan.SHA256 != "e9b796976a476e5c706a7858bdfb39b67d10e5651d17ddaba7c3f45479d6e331" || vulkan.SizeBytes != 31838165 {
+		t.Fatalf("unexpected pinned Vulkan runtime: %+v", vulkan)
+	}
+}
+
+func TestRuntimePolicyUsesVulkanThenCPUFallback(t *testing.T) {
+	gpu := RuntimeManifestsForPolicy(true)
+	if len(gpu) != 2 {
+		t.Fatalf("GPU runtime candidates = %d, want 2", len(gpu))
+	}
+	if RuntimeBackend(gpu[0]) != "vulkan" || RuntimeBackend(gpu[1]) != "cpu" {
+		t.Fatalf("GPU runtime order = %s -> %s, want vulkan -> cpu", RuntimeBackend(gpu[0]), RuntimeBackend(gpu[1]))
+	}
+	cpu := RuntimeManifestsForPolicy(false)
+	if len(cpu) != 1 || RuntimeBackend(cpu[0]) != "cpu" {
+		t.Fatalf("CPU runtime policy = %+v", cpu)
+	}
+	if PreferredRuntimeManifest(true).ID != VulkanRuntimeManifest().ID {
+		t.Fatal("GPU policy did not select Vulkan runtime")
+	}
+	if PreferredRuntimeManifest(false).ID != CPURuntimeManifest().ID {
+		t.Fatal("CPU policy did not select CPU runtime")
+	}
+}
+
 func TestPinnedRuntimeAndVisionModelManifestsValidate(t *testing.T) {
 	if err := ValidateRuntimeManifest(DefaultRuntimeManifest()); err != nil {
 		t.Fatalf("DefaultRuntimeManifest: %v", err)
