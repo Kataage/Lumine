@@ -247,6 +247,9 @@ func (c *AppCommands) CreatePromptProject(input PromptProjectInput) (*PromptProj
 		}
 	}
 	repo := db.NewPromptProjectRepo(c.db)
+	if err := c.rememberPromptProjectLoRATriggers(input.LoRAs); err != nil {
+		return nil, err
+	}
 	project, err := repo.Create(&domain.PromptProject{
 		Title: strings.TrimSpace(input.Title),
 		Idea: strings.TrimSpace(input.Idea),
@@ -294,6 +297,9 @@ func (c *AppCommands) UpdatePromptProject(id int64, input PromptProjectInput) (*
 		if _, err := c.resolveModelProfile(profileID); err != nil {
 			return nil, fmt.Errorf("resolve target model profile: %w", err)
 		}
+	}
+	if err := c.rememberPromptProjectLoRATriggers(input.LoRAs); err != nil {
+		return nil, err
 	}
 	current.Title = strings.TrimSpace(input.Title)
 	current.Idea = strings.TrimSpace(input.Idea)
