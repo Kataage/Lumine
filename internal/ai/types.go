@@ -97,6 +97,10 @@ type RuntimeDiagnosticsProvider interface {
 	RuntimeDiagnostics() RuntimeDiagnostics
 }
 
+type GPUCapableEngine interface {
+	SupportsGPU() bool
+}
+
 type RuntimeStatus struct {
 	Capability        domain.AICapability `json:"capability"`
 	State             RuntimeState        `json:"state"`
