@@ -378,7 +378,7 @@ func (r *PromptProjectRepo) GetVersion(id int64) (*domain.PromptVersion, error) 
 
 func (r *PromptProjectRepo) ListVersions(variantID int64) ([]domain.PromptVersion, error) {
 	rows, err := r.db.Query(`
-		SELECT id, variant_id, parent_version_id, positive, negative, source,
+		SELECT schema_version, id, variant_id, parent_version_id, positive, negative, source,
 			change_instruction, profile_id, profile_snapshot_json,
 			ai_engine, ai_model_id, ai_model_version, metadata_json, created_at
 		FROM prompt_versions WHERE variant_id = ? ORDER BY id DESC
@@ -392,7 +392,7 @@ func (r *PromptProjectRepo) ListVersions(variantID int64) ([]domain.PromptVersio
 		var version domain.PromptVersion
 		var parent sql.NullInt64
 		if err := rows.Scan(
-			&version.ID, &version.VariantID, &parent, &version.Positive, &version.Negative,
+			&version.SchemaVersion, &version.ID, &version.VariantID, &parent, &version.Positive, &version.Negative,
 			&version.Source, &version.ChangeInstruction, &version.ProfileID,
 			&version.ProfileSnapshotJSON, &version.AIEngine, &version.AIModelID,
 			&version.AIModelVersion, &version.MetadataJSON, &version.CreatedAt,
