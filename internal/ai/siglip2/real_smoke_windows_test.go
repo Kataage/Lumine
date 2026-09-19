@@ -63,16 +63,18 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 	}
 	defer engine.Unload(context.Background())
 
-	imageResult, err := engine.Infer(ctx, ai.InferenceRequest{
-		Operation: "embed_image",
-		Payload: map[string]any{"filePath": imagePath},
-	})
-	if err != nil {
-		t.Fatalf("real SigLIP2 image inference: %v", err)
-	}
-	imageVector, ok := imageResult.Payload["embedding"].([]float32)
-	if !ok || len(imageVector) != siglipEmbeddingSize {
-		t.Fatalf("unexpected image embedding: type=%T len=%d", imageResult.Payload["embedding"], len(imageVector))
+	for iteration := 0; iteration < 5; iteration++ {
+		imageResult, err := engine.Infer(ctx, ai.InferenceRequest{
+			Operation: "embed_image",
+			Payload: map[string]any{"filePath": imagePath},
+		})
+		if err != nil {
+			t.Fatalf("real SigLIP2 image inference iteration %d: %v", iteration+1, err)
+		}
+		imageVector, ok := imageResult.Payload["embedding"].([]float32)
+		if !ok || len(imageVector) != siglipEmbeddingSize {
+			t.Fatalf("unexpected image embedding iteration %d: type=%T len=%d", iteration+1, imageResult.Payload["embedding"], len(imageVector))
+		}
 	}
 
 	textResult, err := engine.Infer(ctx, ai.InferenceRequest{
