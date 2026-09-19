@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   EventsOn,
+  cancelLegacyStorageMigration,
   enqueueLightweightVisionBackfill,
   getAdvancedVisionStatus,
   getAIHealthSnapshot,
@@ -18,6 +19,7 @@ import {
   removeDefaultLightweightVisionModel,
   removeLightweightVisionRuntime,
   patchAISettings,
+  requestLegacyStorageMigration,
   type AdvancedVisionStatusInfo,
   type AIStorageInfo,
   type LightweightVisionModelInfo,
@@ -232,6 +234,7 @@ export function AISettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [semanticBusy, setSemanticBusy] = useState(false);
   const [visionBusy, setVisionBusy] = useState(false);
+  const [storageBusy, setStorageBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [semanticProgress, setSemanticProgress] = useState<{ downloaded: number; total: number } | null>(null);
   const [visionModelProgress, setVisionModelProgress] = useState<{ downloaded: number; total: number } | null>(null);
@@ -450,6 +453,47 @@ export function AISettingsPanel() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setVisionBusy(false);
+    }
+  };
+
+  const scheduleStorageMigration = async () => {
+    if (!storageInfo?.migrationAvailable || storageBusy) return;
+    const approved = await dialog.confirm({
+      title: storageInfo.mode === "portable"
+        ? "旧LumineデータをPortableへコピーしますか？"
+        : "旧Lumineデータを標準保存先へコピーしますか？",
+      description: [
+        "次回のLumine起動時、SQLiteを開く前にDB・モデル・runtime・検索indexをコピーします。",
+        "元のデータは削除しません。現在の保存先にDBがある場合は、コピー前にbackupを作成します。",
+        storageInfo.migrationSourcePath && storageInfo.migrationTargetPath
+          ? `${storageInfo.migrationSourcePath} → ${storageInfo.migrationTargetPath}`
+          : "",
+      ].filter(Boolean).join("\n\n"),
+      confirmLabel: "次回起動時にコピー",
+    });
+    if (!approved) return;
+
+    setStorageBusy(true);
+    setError(null);
+    try {
+      setStorageInfo(await requestLegacyStorageMigration());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStorageBusy(false);
+    }
+  };
+
+  const cancelStorageMigration = async () => {
+    if (storageBusy) return;
+    setStorageBusy(true);
+    setError(null);
+    try {
+      setStorageInfo(await cancelLegacyStorageMigration());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStorageBusy(false);
     }
   };
 
@@ -774,22 +818,92 @@ export function AISettingsPanel() {
 
             {storageInfo && (
               <section>
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold">ストレージ</h3>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">モデルとruntimeの現在の保存先です。</p>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">ストレージ</h3>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      DB・モデル・runtime・検索indexの実際の保存先です。
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                    {storageInfo.mode === "portable" ? "Portable" : "Installed"}
+                  </span>
                 </div>
+
+                {storageInfo.usingLegacy && (
+                  <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3.5 py-3 text-[11px] leading-relaxed text-amber-100">
+                    旧バージョンの保存先を互換モードで使用しています。データはそのまま利用できます。
+                    標準保存先へコピーしたい場合は下の移行操作を使用してください。
+                  </div>
+                )}
+
+                {storageInfo.mode === "portable" && (
+                  <div className="mb-3 rounded-xl border border-sky-500/20 bg-sky-500/[0.05] px-3.5 py-3 text-[11px] leading-relaxed text-sky-100">
+                    Portable版はこのexeの配置フォルダー配下だけを標準保存先として使用します。
+                    フォルダーごと移動するとDB・モデル・runtimeも一緒に移動できます。
+                  </div>
+                )}
+
                 <div className="rounded-2xl border border-border bg-background/35 p-4">
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Models</p>
-                      <p className="mt-1.5 break-all text-[11px] leading-relaxed">{storageInfo.modelsPath}</p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Runtime</p>
-                      <p className="mt-1.5 break-all text-[11px] leading-relaxed">{storageInfo.runtimesPath}</p>
-                    </div>
+                    {[
+                      ["Root", storageInfo.rootPath],
+                      ["Database", storageInfo.databasePath],
+                      ["Logs", storageInfo.logsPath],
+                      ["Models", storageInfo.modelsPath],
+                      ["Runtime", storageInfo.runtimesPath],
+                      ["Semantic index", storageInfo.semanticIndexPath],
+                    ].map(([label, value]) => (
+                      <div key={label} className="min-w-0">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                        <p className="mt-1.5 break-all text-[11px] leading-relaxed">{value}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
+
+                {storageInfo.migrationAvailable && (
+                  <div className="mt-3 rounded-2xl border border-border bg-background/35 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-semibold">
+                          {storageInfo.migrationPending ? "旧データのコピーを予約済み" : "旧データを再利用できます"}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                          {storageInfo.migrationPending
+                            ? "次回起動時、DBを開く前に安全にコピーします。元の旧データは削除しません。"
+                            : "DB・モデル・runtime・検索indexを次回起動時にコピーできます。再ダウンロードは不要です。"}
+                        </p>
+                        {storageInfo.migrationSourcePath && storageInfo.migrationTargetPath && (
+                          <div className="mt-2 space-y-1 text-[10px] leading-relaxed text-muted-foreground">
+                            <p className="break-all">コピー元: {storageInfo.migrationSourcePath}</p>
+                            <p className="break-all">コピー先: {storageInfo.migrationTargetPath}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {storageInfo.migrationPending ? (
+                        <button
+                          type="button"
+                          disabled={storageBusy}
+                          onClick={() => void cancelStorageMigration()}
+                          className="rounded-lg border border-border bg-background px-3 py-2 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-50"
+                        >
+                          予約を取り消す
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={storageBusy}
+                          onClick={() => void scheduleStorageMigration()}
+                          className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
+                        >
+                          {storageBusy ? "処理中…" : "次回起動時にコピー"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </section>
             )}
           </div>
