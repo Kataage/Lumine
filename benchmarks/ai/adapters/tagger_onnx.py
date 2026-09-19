@@ -377,6 +377,24 @@ def _normalize_tag(value: str) -> str:
     return "_".join(value.strip().lower().replace("(", " ").replace(")", " ").split())
 
 
+def _canonical_rating(value: str) -> str:
+    normalized = _normalize_tag(value)
+    normalized = normalized.removeprefix("rating:")
+    normalized = normalized.removeprefix("rating_")
+    aliases = {
+        "g": "general",
+        "safe": "general",
+        "general": "general",
+        "s": "sensitive",
+        "sensitive": "sensitive",
+        "q": "questionable",
+        "questionable": "questionable",
+        "e": "explicit",
+        "explicit": "explicit",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def _classify(
     probabilities: np.ndarray,
     tags: list[TagRow],
@@ -518,8 +536,8 @@ def _run_quality_case(
             path = _ref_path(fixture_dir, fixture, str(role))
             probabilities, latency_ms = _infer(session, path, config)
             predicted = _classify(probabilities, tags, config)
-            predicted_rating = _normalize_tag(predicted["rating"])
-            expected_rating = _normalize_tag(str(role))
+            predicted_rating = _canonical_rating(predicted["rating"])
+            expected_rating = _canonical_rating(str(role))
             correct += int(predicted_rating == expected_rating)
             latencies.append(latency_ms)
             outputs.append(
