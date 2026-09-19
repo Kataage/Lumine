@@ -61,13 +61,18 @@ jobs:
       - name: Shutdown sidecar smoke
         run: go test ./internal/ai -run TestSidecarStopTerminatesRunningProcess -count=1 -v
 
+      - name: Distribution mode smoke
+        run: |
+          go test . -run TestDistributionModeInstalled -count=1
+          go test -tags portable . -run TestDistributionModePortable -count=1
+
       - name: Build Windows app
         run: wails build -platform windows/amd64
         env:
           CGO_ENABLED: "0"
 
       - name: Build Windows portable
-        run: wails build -platform windows/amd64 -ldflags "-H windowsgui" -o Lumine-portable.exe
+        run: wails build -platform windows/amd64 -tags portable -ldflags "-H windowsgui" -o Lumine-portable.exe
         env:
           CGO_ENABLED: "0"
 
