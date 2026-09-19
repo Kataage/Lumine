@@ -260,11 +260,14 @@ export interface SemanticModelInfo {
 export interface LightweightRuntimeInfo {
   id: string;
   version: string;
+  backend: "cpu" | "vulkan";
   sizeBytes: number;
   installed: boolean;
   executablePath?: string;
   platform: string;
   architecture: string;
+  fallbackInstalled: boolean;
+  fallbackSizeBytes?: number;
 }
 
 export interface LightweightVisionModelInfo {
