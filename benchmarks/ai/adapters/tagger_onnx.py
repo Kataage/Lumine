@@ -57,8 +57,10 @@ class RuntimeConfig:
     revision: str
     model_file: str
     tags_file: str
+    categories_file: str
     model_path: Path
     tags_path: Path
+    categories_path: Path | None
     image_size: int
     general_threshold: float
     character_threshold: float
@@ -84,6 +86,7 @@ def _resolve_runtime(model: dict[str, Any]) -> RuntimeConfig:
     revision = str(model.get("version") or "")
     model_file = _parameter(model, "modelFile", "model.onnx")
     tags_file = _parameter(model, "tagsFile")
+    categories_file = _parameter(model, "categoriesFile")
     family = _parameter(model, "family")
     if not repo_id or not revision or not tags_file or not family:
         raise ValueError("model profile is missing repoId/version/tagsFile/family")
@@ -93,6 +96,11 @@ def _resolve_runtime(model: dict[str, Any]) -> RuntimeConfig:
     )
     tags_path = Path(
         hf_hub_download(repo_id=repo_id, filename=tags_file, revision=revision)
+    )
+    categories_path = (
+        Path(hf_hub_download(repo_id=repo_id, filename=categories_file, revision=revision))
+        if categories_file
+        else None
     )
     expected_size = int(model.get("modelSizeBytes") or 0)
     if expected_size and model_path.stat().st_size != expected_size:
@@ -109,8 +117,10 @@ def _resolve_runtime(model: dict[str, Any]) -> RuntimeConfig:
         revision=revision,
         model_file=model_file,
         tags_file=tags_file,
+        categories_file=categories_file,
         model_path=model_path,
         tags_path=tags_path,
+        categories_path=categories_path,
         image_size=int(_parameter(model, "imageSize", "448")),
         general_threshold=float(_parameter(model, "generalThreshold", "0.35")),
         character_threshold=float(_parameter(model, "characterThreshold", "0.85")),
@@ -146,24 +156,82 @@ def _verify_hash_once(path: Path, expected: str) -> None:
         pass
 
 
-def _load_tags(path: Path) -> list[TagRow]:
-    rows: list[TagRow] = []
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if not reader.fieldnames:
-            raise ValueError("tag CSV has no header")
-        for row in reader:
-            name = (row.get("name") or row.get("tag") or row.get("tag_name") or "").strip()
-            category_raw = row.get("category") or row.get("type") or "0"
-            if not name:
-                continue
-            try:
-                category = int(float(category_raw))
-            except (TypeError, ValueError):
-                category = 0
-            rows.append(TagRow(name=name, category=category))
+CATEGORY_NAME_TO_ID = {
+    "general": 0,
+    "artist": 1,
+    "copyright": 3,
+    "character": 4,
+    "meta": 5,
+    "year": 6,
+    "rating": 9,
+}
+
+
+def _rows_from_index_mapping(
+    idx_to_tag: dict[str, Any],
+    tag_to_category: dict[str, Any],
+) -> list[TagRow]:
+    indexed: list[tuple[int, TagRow]] = []
+    seen: set[int] = set()
+    for raw_index, raw_name in idx_to_tag.items():
+        index = int(raw_index)
+        if index < 0 or index in seen:
+            raise ValueError("tag mapping contains invalid or duplicate output index")
+        seen.add(index)
+        name = str(raw_name).strip()
+        if not name:
+            raise ValueError(f"tag mapping contains empty name at index {index}")
+        raw_category = tag_to_category.get(name, 0)
+        if isinstance(raw_category, str):
+            category = CATEGORY_NAME_TO_ID.get(raw_category.strip().lower(), 0)
+        else:
+            category = int(raw_category)
+        indexed.append((index, TagRow(name=name, category=category)))
+    indexed.sort(key=lambda item: item[0])
+    if [index for index, _ in indexed] != list(range(len(indexed))):
+        raise ValueError("tag mapping output indices must be contiguous from zero")
+    return [row for _, row in indexed]
+
+
+def _load_tags(config: RuntimeConfig) -> list[TagRow]:
+    if config.family == "danbooru-tag-query":
+        if config.categories_path is None:
+            raise ValueError("DanbooruTagQuery profile requires categoriesFile")
+        tag_to_id = json.loads(config.tags_path.read_text(encoding="utf-8"))
+        tag_to_category = json.loads(config.categories_path.read_text(encoding="utf-8"))
+        if not isinstance(tag_to_id, dict) or not isinstance(tag_to_category, dict):
+            raise ValueError("DanbooruTagQuery sidecars must contain JSON objects")
+        idx_to_tag = {str(index): tag for tag, index in tag_to_id.items()}
+        rows = _rows_from_index_mapping(idx_to_tag, tag_to_category)
+    elif config.family == "camie-v2":
+        metadata = json.loads(config.tags_path.read_text(encoding="utf-8"))
+        if not isinstance(metadata, dict):
+            raise ValueError("Camie metadata must contain a JSON object")
+        dataset_info = metadata.get("dataset_info") or {}
+        tag_mapping = dataset_info.get("tag_mapping") or metadata.get("tag_mapping") or metadata
+        idx_to_tag = tag_mapping.get("idx_to_tag") or metadata.get("idx_to_tag") or {}
+        tag_to_category = tag_mapping.get("tag_to_category") or metadata.get("tag_to_category") or {}
+        if not isinstance(idx_to_tag, dict) or not isinstance(tag_to_category, dict):
+            raise ValueError("Camie metadata is missing idx_to_tag/tag_to_category")
+        rows = _rows_from_index_mapping(idx_to_tag, tag_to_category)
+    else:
+        rows = []
+        with config.tags_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames:
+                raise ValueError("tag CSV has no header")
+            for row in reader:
+                name = (row.get("name") or row.get("tag") or row.get("tag_name") or "").strip()
+                category_raw = row.get("category") or row.get("type") or "0"
+                if not name:
+                    continue
+                try:
+                    category = int(float(category_raw))
+                except (TypeError, ValueError):
+                    category = 0
+                rows.append(TagRow(name=name, category=category))
     if not rows:
-        raise ValueError("tag CSV contains no tags")
+        raise ValueError("tag metadata contains no tags")
     return rows
 
 
@@ -217,11 +285,65 @@ def _preprocess_pixai(path: Path, size: int) -> np.ndarray:
     return np.expand_dims(np.ascontiguousarray(array), axis=0)
 
 
+IMAGENET_MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def _preprocess_aspect_imagenet(
+    path: Path,
+    size: int,
+    *,
+    pad_color: tuple[int, int, int],
+    resample: Image.Resampling,
+) -> np.ndarray:
+    with Image.open(path) as source:
+        image = source.convert("RGB")
+        width, height = image.size
+        if width <= 0 or height <= 0:
+            raise ValueError("tagger image has invalid dimensions")
+        scale = size / max(width, height)
+        new_width = max(1, int(width * scale))
+        new_height = max(1, int(height * scale))
+        image = image.resize((new_width, new_height), resample)
+        canvas = Image.new("RGB", (size, size), pad_color)
+        canvas.paste(image, ((size - new_width) // 2, (size - new_height) // 2))
+        array = np.asarray(canvas, dtype=np.float32) / 255.0
+    array = (array - IMAGENET_MEAN) / IMAGENET_STD
+    array = np.transpose(array, (2, 0, 1))
+    return np.expand_dims(np.ascontiguousarray(array), axis=0)
+
+
+def _preprocess_danbooru_tag_query(path: Path, size: int) -> np.ndarray:
+    # Matches the upstream deploy/core.py: bilinear resize, black square padding,
+    # NCHW float32 and ImageNet normalization.
+    return _preprocess_aspect_imagenet(
+        path,
+        size,
+        pad_color=(0, 0, 0),
+        resample=Image.Resampling.BILINEAR,
+    )
+
+
+def _preprocess_camie_v2(path: Path, size: int) -> np.ndarray:
+    # Matches Camie's ONNX utility: LANCZOS resize and padding near the ImageNet
+    # mean before applying ImageNet normalization.
+    return _preprocess_aspect_imagenet(
+        path,
+        size,
+        pad_color=(124, 116, 104),
+        resample=Image.Resampling.LANCZOS,
+    )
+
+
 def _preprocess(path: Path, config: RuntimeConfig) -> np.ndarray:
     if config.family == "wd-v3":
         return _preprocess_wd(path, config.image_size)
     if config.family == "pixai-v0.9":
         return _preprocess_pixai(path, config.image_size)
+    if config.family == "danbooru-tag-query":
+        return _preprocess_danbooru_tag_query(path, config.image_size)
+    if config.family == "camie-v2":
+        return _preprocess_camie_v2(path, config.image_size)
     raise ValueError(f"unsupported tagger family {config.family!r}")
 
 
@@ -242,8 +364,9 @@ def _infer(
     latency_ms = (time.perf_counter() - started) * 1000.0
     if not outputs:
         raise ValueError("ONNX tagger returned no outputs")
-    values = np.asarray(outputs[0], dtype=np.float32).reshape(-1)
-    if config.family == "pixai-v0.9":
+    output = outputs[1] if config.family == "camie-v2" and len(outputs) > 1 else outputs[0]
+    values = np.asarray(output, dtype=np.float32).reshape(-1)
+    if config.family in {"pixai-v0.9", "danbooru-tag-query", "camie-v2"}:
         values = _sigmoid(values)
     if not np.all(np.isfinite(values)):
         raise ValueError("ONNX tagger returned non-finite scores")
@@ -252,6 +375,24 @@ def _infer(
 
 def _normalize_tag(value: str) -> str:
     return "_".join(value.strip().lower().replace("(", " ").replace(")", " ").split())
+
+
+def _canonical_rating(value: str) -> str:
+    normalized = _normalize_tag(value)
+    normalized = normalized.removeprefix("rating:")
+    normalized = normalized.removeprefix("rating_")
+    aliases = {
+        "g": "general",
+        "safe": "general",
+        "general": "general",
+        "s": "sensitive",
+        "sensitive": "sensitive",
+        "q": "questionable",
+        "questionable": "questionable",
+        "e": "explicit",
+        "explicit": "explicit",
+    }
+    return aliases.get(normalized, normalized)
 
 
 def _classify(
@@ -395,8 +536,8 @@ def _run_quality_case(
             path = _ref_path(fixture_dir, fixture, str(role))
             probabilities, latency_ms = _infer(session, path, config)
             predicted = _classify(probabilities, tags, config)
-            predicted_rating = _normalize_tag(predicted["rating"])
-            expected_rating = _normalize_tag(str(role))
+            predicted_rating = _canonical_rating(predicted["rating"])
+            expected_rating = _canonical_rating(str(role))
             correct += int(predicted_rating == expected_rating)
             latencies.append(latency_ms)
             outputs.append(
@@ -587,7 +728,7 @@ def main() -> None:
             raise ValueError("fixtureDir does not exist")
 
         config = _resolve_runtime(model)
-        tags = _load_tags(config.tags_path)
+        tags = _load_tags(config)
         category = str(fixture.get("category") or "")
 
         if category in PERFORMANCE_CATEGORIES:

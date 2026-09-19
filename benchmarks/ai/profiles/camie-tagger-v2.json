@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "Camais03/camie-tagger-v2",
+  "version": "7d40c1b85b86ab4f607b2caf26b1b50c99db743e",
+  "engine": "python-onnxruntime-cpu",
+  "quantization": "FP32",
+  "artifactSha256": "ab0aaf253e3d546090001bec9bebc776c354ab6800f442ab9167af87b4a953ac",
+  "modelSizeBytes": 788983561,
+  "runtime": "onnxruntime-cpu",
+  "benchmarkCategories": [
+    "danbooru_tagging",
+    "character_tagging",
+    "rating_tagging",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "family": "camie-v2",
+    "repoId": "Camais03/camie-tagger-v2",
+    "modelFile": "camie-tagger-v2.onnx",
+    "tagsFile": "camie-tagger-v2-metadata.json",
+    "generalThreshold": "0.492",
+    "characterThreshold": "0.492",
+    "provider": "CPUExecutionProvider",
+    "imageSize": "512",
+    "threads": "8",
+    "interOpThreads": "1",
+    "ratingSupported": "true",
+    "license": "GPL-3.0"
+  }
+}
