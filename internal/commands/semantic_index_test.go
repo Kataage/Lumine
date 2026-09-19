@@ -99,11 +99,8 @@ func TestSemanticMemoryIndexUpsertUpdatesReadyIndex(t *testing.T) {
 	}
 }
 
-func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
-	const (
-		count = 20_000
-		dims  = 768
-	)
+func benchmarkSemanticMemoryIndexSearch(b *testing.B, count int) {
+	const dims = 768
 	vectors := make(map[int64][]float32, count)
 	eligible := make([]int64, count)
 	for asset := 0; asset < count; asset++ {
@@ -128,6 +125,14 @@ func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
 			b.Fatal(fmt.Sprintf("hits = %d", len(result.Hits)))
 		}
 	}
+}
+
+func BenchmarkSemanticMemoryIndexSearch20K(b *testing.B) {
+	benchmarkSemanticMemoryIndexSearch(b, 20_000)
+}
+
+func BenchmarkSemanticMemoryIndexSearch100K(b *testing.B) {
+	benchmarkSemanticMemoryIndexSearch(b, 100_000)
 }
 
 
