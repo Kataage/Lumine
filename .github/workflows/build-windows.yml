@@ -33,29 +33,38 @@ jobs:
           $ErrorActionPreference = "Stop"
           $root = Join-Path $env:RUNNER_TEMP "lumine-directml-inspect"
           New-Item -ItemType Directory -Force -Path $root | Out-Null
-          $packages = @(
-            @{
-              Name = "Microsoft.ML.OnnxRuntime.DirectML"
-              Version = "1.29.0"
-              Url = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.29.0/microsoft.ml.onnxruntime.directml.1.29.0.nupkg"
-            },
-            @{
-              Name = "Microsoft.AI.DirectML"
-              Version = "1.15.4"
-              Url = "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"
-            }
-          )
-          foreach ($package in $packages) {
-            $file = Join-Path $root ($package.Name + "." + $package.Version + ".nupkg")
-            Invoke-WebRequest -Uri $package.Url -OutFile $file
-            $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
-            $size = (Get-Item $file).Length
-            Write-Host ("PACKAGE {0} {1} size={2} sha256={3}" -f $package.Name, $package.Version, $size, $hash)
 
-            $extract = Join-Path $root ($package.Name + "." + $package.Version)
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($file, $extract)
-            Get-ChildItem -Path $extract -Recurse -File |
-              Where-Object { $_.FullName -match 'runtimes[\\/]win-x64[\\/]native' -or $_.Name -match '^(onnxruntime|onnxruntime_providers_shared|DirectML)\.dll
+          $ortUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.29.0/microsoft.ml.onnxruntime.directml.1.29.0.nupkg"
+          $ortFile = Join-Path $root "Microsoft.ML.OnnxRuntime.DirectML.1.29.0.nupkg"
+          Invoke-WebRequest -Uri $ortUrl -OutFile $ortFile
+          $ortHash = (Get-FileHash -Algorithm SHA256 $ortFile).Hash.ToLowerInvariant()
+          $ortSize = (Get-Item $ortFile).Length
+          Write-Host ("PACKAGE Microsoft.ML.OnnxRuntime.DirectML 1.29.0 size={0} sha256={1}" -f $ortSize, $ortHash)
+          $ortExtract = Join-Path $root "ort"
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($ortFile, $ortExtract)
+          $ortNative = Join-Path $ortExtract "runtimes\win-x64\native"
+          if (-not (Test-Path $ortNative)) { throw "DirectML ORT x64 native folder missing" }
+          foreach ($item in Get-ChildItem -Path $ortNative -File) {
+            $itemHash = (Get-FileHash -Algorithm SHA256 $item.FullName).Hash.ToLowerInvariant()
+            Write-Host ("ORTFILE {0} size={1} sha256={2}" -f $item.Name, $item.Length, $itemHash)
+          }
+
+          $dmlUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"
+          $dmlFile = Join-Path $root "Microsoft.AI.DirectML.1.15.4.nupkg"
+          Invoke-WebRequest -Uri $dmlUrl -OutFile $dmlFile
+          $dmlHash = (Get-FileHash -Algorithm SHA256 $dmlFile).Hash.ToLowerInvariant()
+          $dmlSize = (Get-Item $dmlFile).Length
+          Write-Host ("PACKAGE Microsoft.AI.DirectML 1.15.4 size={0} sha256={1}" -f $dmlSize, $dmlHash)
+          $dmlExtract = Join-Path $root "directml"
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($dmlFile, $dmlExtract)
+          $dmlDlls = Get-ChildItem -Path $dmlExtract -Recurse -File -Filter "DirectML.dll"
+          if ($dmlDlls.Count -eq 0) { throw "DirectML.dll missing from Microsoft.AI.DirectML package" }
+          foreach ($item in $dmlDlls) {
+            $relative = [System.IO.Path]::GetRelativePath($dmlExtract, $item.FullName)
+            $itemHash = (Get-FileHash -Algorithm SHA256 $item.FullName).Hash.ToLowerInvariant()
+            Write-Host ("DMLFILE {0} size={1} sha256={2}" -f $relative, $item.Length, $itemHash)
+          }
+
       - name: Prepare frontend embed directory
         shell: bash
         run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
