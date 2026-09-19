@@ -58,17 +58,50 @@ type RuntimeStore struct {
 	client *http.Client
 }
 
+const LlamaRuntimeVersion = "b11053"
+
 func DefaultRuntimeManifest() RuntimeManifest {
+	return CPURuntimeManifest()
+}
+
+func CPURuntimeManifest() RuntimeManifest {
 	return RuntimeManifest{
 		ID:             "llama.cpp-win-cpu-x64",
-		Version:        "b10964",
-		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b10964/llama-b10964-bin-win-cpu-x64.zip",
-		SHA256:         "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
-		SizeBytes:      18427629,
+		Version:        LlamaRuntimeVersion,
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-cpu-x64.zip",
+		SHA256:         "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc",
+		SizeBytes:      18453883,
 		ExecutableName: "llama-server.exe",
 		Platform:       "windows",
 		Architecture:   "amd64",
 	}
+}
+
+func VulkanRuntimeManifest() RuntimeManifest {
+	return RuntimeManifest{
+		ID:             "llama.cpp-win-vulkan-x64",
+		Version:        LlamaRuntimeVersion,
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-vulkan-x64.zip",
+		SHA256:         "e9b796976a476e5c706a7858bdfb39b67d10e5651d17ddaba7c3f45479d6e331",
+		SizeBytes:      31838165,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+}
+
+func PreferredRuntimeManifest(allowGPU bool) RuntimeManifest {
+	if allowGPU {
+		return VulkanRuntimeManifest()
+	}
+	return CPURuntimeManifest()
+}
+
+func RuntimeBackend(manifest RuntimeManifest) string {
+	if manifest.ID == VulkanRuntimeManifest().ID {
+		return "vulkan"
+	}
+	return "cpu"
 }
 
 func NewRuntimeStore(root string) *RuntimeStore {
