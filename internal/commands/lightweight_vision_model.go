@@ -10,7 +10,6 @@ import (
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/ai/llamacpp"
 	"github.com/kataage/lumine/internal/domain"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var ErrLightweightVisionDisabled = errors.New("Lightweight Vision is disabled")
@@ -46,7 +45,7 @@ func (c *AppCommands) SetLlamaRuntimeStore(store *llamacpp.RuntimeStore) {
 
 func (c *AppCommands) GetDefaultLightweightVisionModelInfo() LightweightVisionModelInfo {
 	manifest := llamacpp.DefaultVisionModelManifest()
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
+	settings, _ := c.GetAISettings()
 	info := LightweightVisionModelInfo{
 		ID:          manifest.ID,
 		Version:     manifest.Version,
@@ -58,13 +57,7 @@ func (c *AppCommands) GetDefaultLightweightVisionModelInfo() LightweightVisionMo
 			Capability: domain.AICapabilityLightweightVision,
 			State:      ai.RuntimeStateModelNotInstalled,
 		},
-		LlamaRuntime: LightweightRuntimeInfo{
-			ID:           runtimeManifest.ID,
-			Version:      runtimeManifest.Version,
-			SizeBytes:    runtimeManifest.SizeBytes,
-			Platform:     runtimeManifest.Platform,
-			Architecture: runtimeManifest.Architecture,
-		},
+		LlamaRuntime: c.currentLlamaRuntimeInfo(settings.GPUAcceleration),
 	}
 	if c.aiManager != nil {
 		if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
@@ -76,12 +69,6 @@ func (c *AppCommands) GetDefaultLightweightVisionModelInfo() LightweightVisionMo
 			info.Installed,
 		)
 	}
-	if c.llamaRuntimeStore != nil {
-		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
-			info.LlamaRuntime.Installed = true
-			info.LlamaRuntime.ExecutablePath = installed.ExecutablePath
-		}
-	}
 	return info
 }
 
@@ -89,28 +76,17 @@ func (c *AppCommands) InstallLightweightVisionRuntime() (*LightweightRuntimeInfo
 	if c.llamaRuntimeStore == nil {
 		return nil, errors.New("llama.cpp runtime store is not available")
 	}
-	manifest := llamacpp.DefaultRuntimeManifest()
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return nil, err
+	}
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	installed, err := c.llamaRuntimeStore.Install(ctx, manifest, func(progress llamacpp.RuntimeDownloadProgress) {
-		if c.ctx != nil {
-			runtime.EventsEmit(c.ctx, "ai:runtime-download", progress)
-		}
-	})
+	info, err := c.installSharedLlamaRuntimeBundle(ctx, settings.GPUAcceleration)
 	if err != nil {
-		return nil, err
-	}
-
-	info := &LightweightRuntimeInfo{
-		ID:             installed.ID,
-		Version:        installed.Version,
-		SizeBytes:      manifest.SizeBytes,
-		Installed:      true,
-		ExecutablePath: installed.ExecutablePath,
-		Platform:       installed.Platform,
-		Architecture:   installed.Architecture,
+		return info, err
 	}
 	if err := c.tryLoadLightweightVisionAfterInstall(ctx); err != nil {
 		return info, fmt.Errorf("runtime installed but VLM load failed: %w", err)
@@ -190,15 +166,24 @@ func (c *AppCommands) RestoreDefaultLightweightVisionModel() error {
 	if !settings.CapabilityEnabled(domain.AICapabilityLightweightVision) {
 		return nil
 	}
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
-	if _, err := c.llamaRuntimeStore.Verify(runtimeManifest); err != nil {
-		metadata := filepath.Join(
-			c.llamaRuntimeStore.Root(),
-			runtimeManifest.ID,
-			runtimeManifest.Version,
-			"runtime.json",
-		)
-		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
+		candidates := llamacpp.RuntimeManifestsForPolicy(settings.GPUAcceleration)
+		missing := true
+		for _, runtimeManifest := range candidates {
+			metadata := filepath.Join(
+				c.llamaRuntimeStore.Root(),
+				runtimeManifest.ID,
+				runtimeManifest.Version,
+				"runtime.json",
+			)
+			if _, statErr := os.Stat(metadata); statErr == nil {
+				missing = false
+				break
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+		}
+		if missing {
 			return nil
 		}
 		return err
@@ -235,7 +220,7 @@ func (c *AppCommands) tryLoadLightweightVisionAfterInstall(ctx context.Context) 
 	if c.llamaRuntimeStore == nil || c.aiManager == nil {
 		return nil
 	}
-	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
 		return nil
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
@@ -249,7 +234,11 @@ func (c *AppCommands) loadDefaultLightweightVisionModel(ctx context.Context) err
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
 	}
-	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return err
+	}
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
@@ -258,6 +247,6 @@ func (c *AppCommands) loadDefaultLightweightVisionModel(ctx context.Context) err
 		domain.AICapabilityLightweightVision,
 		manifest.ID,
 		manifest.Version,
-		ai.LoadOptions{AllowGPU: false},
+		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
 	)
 }
