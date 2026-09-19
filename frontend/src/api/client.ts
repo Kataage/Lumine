@@ -734,6 +734,7 @@ export function getAIBridgeStatus(): AIBridgeStatus {
   const commands = appCommands();
   const required = [
     "GetAISettings",
+    "PatchAISettings",
     "GetAIHealthSnapshot",
     "GetDefaultSemanticModelInfo",
     "EnsureSemanticSearchReady",
