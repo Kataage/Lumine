@@ -87,6 +87,23 @@ func (s *semanticSearchState) cancel(requestID string) {
 		cancel()
 	}
 }
+func (s *semanticSearchState) cancelAll() {
+	s.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(s.cancels))
+	for _, cancel := range s.cancels {
+		if cancel != nil {
+			cancels = append(cancels, cancel)
+		}
+	}
+	s.cancels = make(map[string]context.CancelFunc)
+	s.sessions = make(map[string]semanticSearchSession)
+	s.mu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
 
 func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) string {
 	s.mu.Lock()
