@@ -3,6 +3,7 @@ import {
   EventsOff,
   EventsOn,
   getAISettings,
+  getAIStorageInfo,
   getDefaultSemanticModelInfo,
   getDefaultLightweightVisionModelInfo,
   enqueueLightweightVisionBackfill,
@@ -14,11 +15,13 @@ import {
   removeDefaultLightweightVisionModel,
   removeLightweightVisionRuntime,
   setAISettings,
+  type AIStorageInfo,
   type LightweightVisionModelInfo,
   type SemanticModelInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
+import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
 import {
   DEFAULT_AI_SETTINGS,
   getInitialAIEngineStatus,
@@ -86,15 +89,14 @@ function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "border-primary/50 bg-primary" : "border-border bg-muted"
+      className={`inline-flex h-7 min-w-[66px] flex-shrink-0 items-center justify-between gap-1 rounded-full border px-1.5 text-[9px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked
+          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+          : "border-border bg-muted/70 text-muted-foreground"
       }`}
     >
-      <span
-        className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? "translate-x-5" : "translate-x-1"
-        }`}
-      />
+      <span className="pl-0.5">{checked ? "ON" : "OFF"}</span>
+      <span className={`h-4 w-4 rounded-full shadow-sm transition-colors ${checked ? "bg-emerald-300" : "bg-zinc-500"}`} />
     </button>
   );
 }
@@ -123,9 +125,11 @@ function StatusBadge({ status }: { status: AIEngineStatus }) {
           ? "border-border text-muted-foreground"
           : status === "error"
             ? "border-destructive/40 text-destructive"
-            : status === "running"
-              ? "border-primary/40 text-primary"
-              : "border-amber-500/35 text-amber-300"
+            : status === "ready"
+              ? "border-emerald-500/35 bg-emerald-500/5 text-emerald-300"
+              : status === "running"
+                ? "border-primary/40 bg-primary/5 text-primary"
+                : "border-amber-500/35 bg-amber-500/5 text-amber-300"
       }`}
     >
       {STATUS_LABELS[status]}
@@ -140,6 +144,7 @@ export function AISettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
   const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
+  const [storageInfo, setStorageInfo] = useState<AIStorageInfo | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [visionBusy, setVisionBusy] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
@@ -150,14 +155,16 @@ export function AISettingsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSettings, model, visionModel] = await Promise.all([
+      const [nextSettings, model, visionModel, storage] = await Promise.all([
         getAISettings(),
         getDefaultSemanticModelInfo().catch(() => null),
         getDefaultLightweightVisionModelInfo().catch(() => null),
+        getAIStorageInfo().catch(() => null),
       ]);
       setSettings(nextSettings);
       setSemanticModel(model);
       setLightweightModel(visionModel);
+      setStorageInfo(storage);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -209,12 +216,19 @@ export function AISettingsPanel() {
     };
   }, []);
 
+  const ensureFeatureEnabled = async (feature: AIModelFeatureKey) => {
+    const next = { ...settings, enabled: true, [feature]: true } as AISettings;
+    const saved = await setAISettings(next);
+    setSettings(saved);
+  };
+
   const installSemanticModel = async () => {
     if (modelBusy) return;
     setModelBusy(true);
     setError(null);
     setDownloadProgress({ downloaded: 0, total: semanticModel?.sizeBytes ?? 0 });
     try {
+      await ensureFeatureEnabled("semanticSearch");
       await installDefaultSemanticModel();
       setSemanticModel(await getDefaultSemanticModelInfo());
     } catch (cause) {
@@ -230,6 +244,7 @@ export function AISettingsPanel() {
     setModelBusy(true);
     setError(null);
     try {
+      await ensureFeatureEnabled("semanticSearch");
       await loadDefaultSemanticModel();
       setSemanticModel(await getDefaultSemanticModelInfo());
     } catch (cause) {
@@ -243,51 +258,35 @@ export function AISettingsPanel() {
     setLightweightModel(await getDefaultLightweightVisionModelInfo());
   };
 
-  const installVisionRuntime = async () => {
-    if (visionBusy) return;
-    setVisionBusy(true);
-    setError(null);
-    setRuntimeProgress({ downloaded: 0, total: lightweightModel?.llamaRuntime.sizeBytes ?? 0 });
-    try {
-      await installLightweightVisionRuntime();
-      await refreshLightweightModel();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setVisionBusy(false);
-      setRuntimeProgress(null);
-    }
-  };
-
-  const installVisionModel = async () => {
-    if (visionBusy) return;
-    setVisionBusy(true);
-    setError(null);
-    setVisionModelProgress({ downloaded: 0, total: lightweightModel?.sizeBytes ?? 0 });
-    try {
-      await installDefaultLightweightVisionModel();
-      await refreshLightweightModel();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setVisionBusy(false);
-      setVisionModelProgress(null);
-    }
-  };
-
-  const loadVisionModel = async () => {
+  const setupLightweightVision = async () => {
     if (visionBusy) return;
     setVisionBusy(true);
     setError(null);
     try {
+      await ensureFeatureEnabled("lightweightVision");
+      let current = await getDefaultLightweightVisionModelInfo();
+      if (!current.llamaRuntime.installed) {
+        setRuntimeProgress({ downloaded: 0, total: current.llamaRuntime.sizeBytes });
+        await installLightweightVisionRuntime();
+        setRuntimeProgress(null);
+        current = await getDefaultLightweightVisionModelInfo();
+      }
+      if (!current.installed) {
+        setVisionModelProgress({ downloaded: 0, total: current.sizeBytes });
+        await installDefaultLightweightVisionModel();
+        setVisionModelProgress(null);
+      }
       await loadDefaultLightweightVisionModel();
       await refreshLightweightModel();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      setRuntimeProgress(null);
+      setVisionModelProgress(null);
       setVisionBusy(false);
     }
   };
+
 
   const removeVisionModel = async () => {
     if (visionBusy) return;
@@ -358,50 +357,106 @@ export function AISettingsPanel() {
 
   return (
     <section className="mx-3 mb-3 rounded-xl border border-border bg-muted/10 p-3 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold">ローカルAI</p>
-          <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
-            すべてローカルで動作します。ONにしてもモデルは自動ダウンロードされません。
-          </p>
+      <div className="rounded-xl border border-border/80 bg-background/40 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-semibold">ローカルAI</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
+                settings.enabled
+                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+                  : "border-border text-muted-foreground"
+              }`}>
+                AI全体 {settings.enabled ? "ON" : "OFF"}
+              </span>
+            </div>
+            <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+              すべてローカルで動作します。個別機能の「導入して使用」から必要なモデルだけセットアップできます。
+            </p>
+          </div>
+          <Toggle
+            checked={settings.enabled}
+            disabled={saving}
+            label="AI機能全体"
+            onChange={(enabled) => void update({ enabled })}
+          />
         </div>
-        <Toggle
-          checked={settings.enabled}
-          disabled={saving}
-          label="AI機能全体"
-          onChange={(enabled) => void update({ enabled })}
-        />
+        {storageInfo && (
+          <div className="mt-2.5 rounded-lg border border-border/60 bg-muted/20 p-2 text-[9px] leading-relaxed text-muted-foreground">
+            <p className="font-medium text-foreground">ローカル保存先</p>
+            <p className="mt-1 break-all"><span className="opacity-70">Models:</span> {storageInfo.modelsPath}</p>
+            <p className="break-all"><span className="opacity-70">Runtime:</span> {storageInfo.runtimesPath}</p>
+            <p className="mt-1 opacity-70">Portable版でもこのユーザーフォルダーを使用します。</p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1.5">
         {MODEL_FEATURES.map((feature) => {
+          const taggerUnavailable = feature.key === "tagger";
+          const effectiveEnabled = settings.enabled && settings[feature.key] && !taggerUnavailable;
           const status = feature.key === "semanticSearch" && semanticModel
             ? semanticModel.runtime.state
             : feature.key === "lightweightVision" && lightweightModel
               ? lightweightModel.runtime.state
               : getInitialAIEngineStatus(settings, feature.key);
           return (
-            <div key={feature.key} className="rounded-lg border border-border/70 bg-background/30 p-2.5">
+            <div
+              key={feature.key}
+              className={`rounded-lg border p-2.5 transition-colors ${
+                effectiveEnabled ? "border-primary/25 bg-primary/[0.03]" : "border-border/70 bg-background/30"
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <p className="text-[10px] font-medium">{feature.label}</p>
-                    {feature.key !== "advancedVision" && <StatusBadge status={status} />}
+                    {taggerUnavailable ? (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[9px] font-medium text-amber-300">
+                        準備中
+                      </span>
+                    ) : feature.key === "semanticSearch" || feature.key === "lightweightVision" ? (
+                      <StatusBadge status={status} />
+                    ) : (
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                        effectiveEnabled
+                          ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-300"
+                          : "border-border text-muted-foreground"
+                      }`}>
+                        機能 {effectiveEnabled ? "ON" : "OFF"}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
                     {feature.description}
+                    {taggerUnavailable ? " 現在はモデル選定・製品統合前のため有効化できません。" : ""}
                   </p>
                 </div>
                 <Toggle
-                  checked={settings[feature.key]}
-                  disabled={saving}
+                  checked={effectiveEnabled}
+                  disabled={saving || taggerUnavailable}
                   label={feature.label}
-                  onChange={(checked) => void update({ [feature.key]: checked } as Partial<AISettings>)}
+                  onChange={(checked) => {
+                    if (checked) {
+                      void ensureFeatureEnabled(feature.key);
+                    } else {
+                      void update({ [feature.key]: false } as Partial<AISettings>);
+                    }
+                  }}
                 />
               </div>
 
               {feature.key === "advancedVision" && (
-                <AdvancedVisionSettingsCard enabled={settings.enabled && settings.advancedVision} />
+                <AdvancedVisionSettingsCard
+                  enabled={effectiveEnabled}
+                  onEnable={() => ensureFeatureEnabled("advancedVision")}
+                />
+              )}
+              {feature.key === "promptEngine" && (
+                <PromptEngineSettingsCard
+                  enabled={effectiveEnabled}
+                  onEnable={() => ensureFeatureEnabled("promptEngine")}
+                />
               )}
               {feature.key === "semanticSearch" && semanticModel && (
                 <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
@@ -429,20 +484,20 @@ export function AISettingsPanel() {
                       disabled={modelBusy}
                       onClick={() => void installSemanticModel()}
                     >
-                      {modelBusy ? "モデルを導入中…" : "SigLIP 2を導入"}
+                      {modelBusy ? "セットアップ中…" : "SigLIP 2を導入して使用"}
                     </button>
-                  ) : status !== "ready" && status !== "running" && settings.enabled && settings.semanticSearch ? (
+                  ) : status !== "ready" && status !== "running" ? (
                     <button
                       type="button"
-                      className="ui-secondary-button w-full justify-center"
+                      className="ui-primary-button w-full justify-center"
                       disabled={modelBusy}
                       onClick={() => void loadSemanticModel()}
                     >
-                      {modelBusy ? "モデルを読み込み中…" : "導入済みモデルを読み込む"}
+                      {modelBusy ? "読み込み中…" : "SigLIP 2を使用"}
                     </button>
                   ) : (
-                    <p className="text-[9px] text-muted-foreground">
-                      {semanticModel.installed ? "モデル導入済み · ローカル保存" : ""}
+                    <p className="rounded-md border border-emerald-500/25 bg-emerald-500/5 px-2 py-1.5 text-[9px] text-emerald-300">
+                      利用可能 · {semanticModel.displayName}
                     </p>
                   )}
                   {semanticModel.runtime.error && (
@@ -477,46 +532,54 @@ export function AISettingsPanel() {
                   )}
 
                   <div className="flex flex-wrap gap-1.5">
-                    {!lightweightModel.llamaRuntime.installed ? (
-                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionRuntime()}>
-                        {visionBusy ? "処理中…" : "runtimeを導入"}
-                      </button>
-                    ) : (
-                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionRuntime()}>
-                        runtimeを削除
+                    {(status !== "ready" && status !== "running") && (
+                      <button
+                        type="button"
+                        className="ui-primary-button"
+                        disabled={visionBusy}
+                        onClick={() => void setupLightweightVision()}
+                      >
+                        {visionBusy
+                          ? "セットアップ中…"
+                          : lightweightModel.installed && lightweightModel.llamaRuntime.installed
+                            ? "Lightweight Visionを使用"
+                            : "Lightweight Visionを導入して使用"}
                       </button>
                     )}
-                    {!lightweightModel.installed ? (
-                      <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void installVisionModel()}>
-                        {visionBusy ? "処理中…" : "SmolVLMを導入"}
+                    {(status === "ready" || status === "running") && (
+                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
+                        既存画像を解析キューへ
                       </button>
-                    ) : (
-                      <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void removeVisionModel()}>
+                    )}
+                    {lightweightModel.installed && (
+                      <button
+                        type="button"
+                        className="ui-secondary-button"
+                        disabled={visionBusy}
+                        onClick={() => {
+                          if (!window.confirm("SmolVLMモデルをローカルから削除しますか？")) return;
+                          void removeVisionModel();
+                        }}
+                      >
                         モデルを削除
                       </button>
                     )}
-                    {lightweightModel.installed &&
-                      lightweightModel.llamaRuntime.installed &&
-                      status !== "ready" &&
-                      status !== "running" &&
-                      settings.enabled &&
-                      settings.lightweightVision && (
-                        <button type="button" className="ui-primary-button" disabled={visionBusy} onClick={() => void loadVisionModel()}>
-                          {visionBusy ? "読み込み中…" : "Lightweight Visionを読み込む"}
-                        </button>
-                      )}
-                    {lightweightModel.installed &&
-                      lightweightModel.llamaRuntime.installed &&
-                      (status === "ready" || status === "running") &&
-                      settings.enabled &&
-                      settings.lightweightVision && (
-                        <button type="button" className="ui-secondary-button" disabled={visionBusy} onClick={() => void backfillVision()}>
-                          既存画像を解析キューへ
-                        </button>
-                      )}
+                    {lightweightModel.llamaRuntime.installed && (
+                      <button
+                        type="button"
+                        className="ui-secondary-button"
+                        disabled={visionBusy}
+                        onClick={() => {
+                          if (!window.confirm("共有llama.cpp runtimeを削除します。Advanced Vision / Prompt Engineも停止します。続行しますか？")) return;
+                          void removeVisionRuntime();
+                        }}
+                      >
+                        runtimeを削除
+                      </button>
+                    )}
                   </div>
                   <p className="text-[9px] leading-relaxed text-muted-foreground">
-                    設定ONだけではダウンロードしません。runtimeとモデルは明示操作でのみローカル保存されます。
+                    「導入して使用」で必要なruntimeとモデルを順番に準備します。個別の導入順を考える必要はありません。
                   </p>
                   {lightweightModel.runtime.error && (
                     <p className="text-[9px] leading-relaxed text-destructive break-all">{lightweightModel.runtime.error}</p>
@@ -537,10 +600,19 @@ export function AISettingsPanel() {
             </p>
           </div>
           <Toggle
-            checked={settings.autoAnalyze}
+            checked={settings.enabled && settings.autoAnalyze}
             disabled={saving}
             label="インポート・スキャン後に自動解析"
-            onChange={(autoAnalyze) => void update({ autoAnalyze })}
+            onChange={(autoAnalyze) => {
+              if (autoAnalyze) {
+                void (async () => {
+                  const next = { ...settings, enabled: true, autoAnalyze: true };
+                  setSettings(await setAISettings(next));
+                })();
+              } else {
+                void update({ autoAnalyze: false });
+              }
+            }}
           />
         </div>
 
@@ -568,7 +640,7 @@ export function AISettingsPanel() {
 
       {error && (
         <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[10px] text-destructive">
-          <p>AI設定を保存できませんでした: {error}</p>
+          <p>AI操作に失敗しました: {error}</p>
           <button type="button" className="mt-1 underline" onClick={() => void load()}>
             再読み込み
           </button>
