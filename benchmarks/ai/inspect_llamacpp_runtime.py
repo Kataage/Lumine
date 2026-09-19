@@ -7,11 +7,11 @@ import zipfile
 ASSETS = [
     (
         "cpu",
-        "https://github.com/ggml-org/llama.cpp/releases/download/v0.4.1/llama-v0.4.1-bin-win-cpu-x64.zip",
+        "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-cpu-x64.zip",
     ),
     (
         "vulkan",
-        "https://github.com/ggml-org/llama.cpp/releases/download/v0.4.1/llama-v0.4.1-bin-win-vulkan-x64.zip",
+        "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-vulkan-x64.zip",
     ),
 ]
 
