@@ -6,16 +6,135 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var (
 	ErrSemanticSearchDisabled = errors.New("Semantic Search is disabled")
 	ErrSemanticModelNotReady  = errors.New("Semantic Search model is not loaded")
 )
+
+const (
+	semanticSearchSessionTTL = 3 * time.Minute
+	semanticSearchSessionMax = 8
+	semanticSearchPreviewMax = 80
+)
+
+type semanticSearchSession struct {
+	hits      []domain.SemanticSearchHit
+	total     int
+	createdAt time.Time
+}
+
+type semanticSearchState struct {
+	mu       sync.Mutex
+	seq      uint64
+	cancels  map[string]context.CancelFunc
+	sessions map[string]semanticSearchSession
+}
+
+type SemanticSearchProgressDTO struct {
+	RequestID    string     `json:"requestId"`
+	Assets       []AssetDTO `json:"assets"`
+	ScannedCount int        `json:"scannedCount"`
+	TotalCount   int        `json:"totalCount"`
+}
+
+func newSemanticSearchState() *semanticSearchState {
+	return &semanticSearchState{
+		cancels:  make(map[string]context.CancelFunc),
+		sessions: make(map[string]semanticSearchSession),
+	}
+}
+
+func (s *semanticSearchState) begin(requestID string, parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	if requestID == "" {
+		return ctx, cancel
+	}
+
+	s.mu.Lock()
+	if previous := s.cancels[requestID]; previous != nil {
+		previous()
+	}
+	s.cancels[requestID] = cancel
+	s.mu.Unlock()
+	return ctx, cancel
+}
+
+func (s *semanticSearchState) finish(requestID string) {
+	if requestID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.cancels, requestID)
+	s.mu.Unlock()
+}
+
+func (s *semanticSearchState) cancel(requestID string) {
+	if requestID == "" {
+		return
+	}
+	s.mu.Lock()
+	cancel := s.cancels[requestID]
+	delete(s.cancels, requestID)
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for id, session := range s.sessions {
+		if now.Sub(session.createdAt) > semanticSearchSessionTTL {
+			delete(s.sessions, id)
+		}
+	}
+	for len(s.sessions) >= semanticSearchSessionMax {
+		var oldestID string
+		var oldest time.Time
+		for id, session := range s.sessions {
+			if oldestID == "" || session.createdAt.Before(oldest) {
+				oldestID = id
+				oldest = session.createdAt
+			}
+		}
+		delete(s.sessions, oldestID)
+	}
+
+	s.seq++
+	id := fmt.Sprintf("semantic-%x", s.seq)
+	s.sessions[id] = semanticSearchSession{
+		hits:      append([]domain.SemanticSearchHit(nil), hits...),
+		total:     total,
+		createdAt: now,
+	}
+	return id
+}
+
+func (s *semanticSearchState) get(id string) (semanticSearchSession, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[id]
+	if !ok {
+		return semanticSearchSession{}, false
+	}
+	if time.Since(session.createdAt) > semanticSearchSessionTTL {
+		delete(s.sessions, id)
+		return semanticSearchSession{}, false
+	}
+	return session, true
+}
 
 func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 	if len(assetIDs) == 0 || c.aiJobQueue == nil {
