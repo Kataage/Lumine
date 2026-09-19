@@ -67,6 +67,9 @@ jobs:
       - name: Shutdown sidecar smoke
         run: go test ./internal/ai -run TestSidecarStopTerminatesRunningProcess -count=1 -v
 
+      - name: Storage resolver tests
+        run: go test ./internal/infrastructure/storage -count=1 -v
+
       - name: Distribution mode smoke
         run: |
           go test . -run TestDistributionModeInstalled -count=1
