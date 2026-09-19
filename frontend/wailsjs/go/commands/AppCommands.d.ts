@@ -89,6 +89,8 @@ export function EnqueueAutomaticLightweightVisionAssets(arg1:Array<number>):Prom
 
 export function EnqueueAutomaticSemanticAssets(arg1:Array<number>):Promise<number>;
 
+export function EnqueueAutomaticTaggerAssets(arg1:Array<number>):Promise<number>;
+
 export function EnqueueLightweightVisionBackfill():Promise<number>;
 
 export function EnqueueSemanticBackfill():Promise<number>;
