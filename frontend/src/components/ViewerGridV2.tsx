@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
+import type { AIHealthSnapshot, AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
   cancelSemanticSearch,
+  getAIBridgeStatus,
+  getAIHealthSnapshot,
   getSemanticIndexStatus,
   listAssets,
   listSimilarAssets,
@@ -146,6 +148,25 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           await cancelSemanticSearch(previous.id).catch(() => undefined);
         }
 
+        const bridge = getAIBridgeStatus();
+        if (!bridge.available) {
+          throw new Error(`AI bridgeが不完全です: ${bridge.missing.join(", ")}`);
+        }
+        const health = await getAIHealthSnapshot();
+        if (health.shuttingDown) {
+          throw new Error("Lumineは終了処理中です。アプリを再起動してください。");
+        }
+        if (!health.settings.enabled) {
+          throw new Error("ローカルAIが無効です。AI設定で「AIを使用する」を有効にしてください。");
+        }
+        if (!health.settings.semanticSearch || !health.semanticSearchEnabled) {
+          throw new Error("意味検索が無効です。AI設定でSemantic Searchを有効にしてください。");
+        }
+        if (health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
+          const detail = health.semanticRuntime.error ? `: ${health.semanticRuntime.error}` : "";
+          throw new Error(`Semantic Search runtimeが利用できません (state=${health.semanticRuntime.state})${detail}`);
+        }
+
         const requestId = newSemanticRequestID();
         semanticRequestRef.current = { id: requestId, key };
         return semanticSearchAssets(request, requestId);
@@ -167,6 +188,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     staleTime: Infinity,
     gcTime: Infinity,
     placeholderData: semanticSearchActive ? keepPreviousData : undefined,
+    retry: semanticSearchActive ? false : 3,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
@@ -427,6 +449,9 @@ function SemanticSearchProgressOverlay({
     elapsedMs: number;
   } | null>(null);
   const [indexStatus, setIndexStatus] = useState<SemanticIndexStatus | null>(null);
+  const [health, setHealth] = useState<AIHealthSnapshot | null>(null);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+  const [waitStartedAt, setWaitStartedAt] = useState(() => Date.now());
 
   useEffect(() => {
     return onSemanticSearchProgress((value) => {
@@ -444,13 +469,23 @@ function SemanticSearchProgressOverlay({
 
   useEffect(() => {
     if (!active) return;
+    setWaitStartedAt(Date.now());
     let disposed = false;
     const refresh = async () => {
       try {
-        const status = await getSemanticIndexStatus();
-        if (!disposed) setIndexStatus(status);
-      } catch {
-        // Search itself reports hard failures. Diagnostics must never break it.
+        const [status, snapshot] = await Promise.all([
+          getSemanticIndexStatus(),
+          getAIHealthSnapshot(),
+        ]);
+        if (!disposed) {
+          setIndexStatus(status);
+          setHealth(snapshot);
+          setDiagnosticError(null);
+        }
+      } catch (cause) {
+        if (!disposed) {
+          setDiagnosticError(cause instanceof Error ? cause.message : String(cause));
+        }
       }
     };
     void refresh();
@@ -466,6 +501,8 @@ function SemanticSearchProgressOverlay({
   const currentID = requestRef.current?.id;
   const current = progress?.requestId === currentID ? progress : null;
   const stage = current?.stage ?? "";
+  const bridge = getAIBridgeStatus();
+  const waitingMs = Math.max(0, Date.now() - waitStartedAt);
   const warming = stage === "warming_index" || (
     !stage && indexStatus != null && indexStatus.state !== "ready" && indexStatus.state !== "idle"
   );
@@ -474,9 +511,34 @@ function SemanticSearchProgressOverlay({
   let detail = "";
   let completed = 0;
   let total = 0;
-  let elapsedMs = current?.elapsedMs ?? 0;
+  let elapsedMs = current?.elapsedMs ?? waitingMs;
 
-  if (warming && indexStatus) {
+  if (!bridge.available) {
+    label = "AI bridgeが不完全です";
+    detail = `不足API: ${bridge.missing.join(", ")}`;
+  } else if (diagnosticError && !current) {
+    label = "AI状態を取得できません";
+    detail = diagnosticError;
+  } else if (health && !health.settings.enabled) {
+    label = "ローカルAIがOFFです";
+    detail = health.settingsPersisted
+      ? "保存済み設定でAI全体が無効になっています"
+      : "AI設定がまだ保存されていません";
+  } else if (health && !health.semanticSearchEnabled) {
+    label = "Semantic SearchがOFFです";
+    detail = "AI設定でSemantic Searchを有効にしてください";
+  } else if (health && health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
+    label = "Semantic Search runtimeを待っています";
+    detail = `runtime state: ${health.semanticRuntime.state}${health.semanticRuntime.error ? ` · ${health.semanticRuntime.error}` : ""}`;
+  } else if (!current && waitingMs >= 3000) {
+    label = "バックエンドの検索開始を待っています";
+    const queue = health?.queue;
+    detail = [
+      `応答待ち ${formatSearchElapsed(waitingMs)}`,
+      queue ? `AI queue: ${queue.started ? "started" : "stopped"} / active ${queue.activeCount}` : "",
+      indexStatus ? `index: ${indexStatus.state}` : "",
+    ].filter(Boolean).join(" · ");
+  } else if (warming && indexStatus) {
     elapsedMs = indexStatus.elapsedMs;
     if (indexStatus.state === "counting") {
       label = "保存済みembedding件数を確認しています";
