@@ -27,6 +27,124 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
 
+      - name: Inspect pinned DirectML NuGet artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "lumine-directml-inspect"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $packages = @(
+            @{
+              Name = "Microsoft.ML.OnnxRuntime.DirectML"
+              Version = "1.29.0"
+              Url = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.29.0/microsoft.ml.onnxruntime.directml.1.29.0.nupkg"
+            },
+            @{
+              Name = "Microsoft.AI.DirectML"
+              Version = "1.15.4"
+              Url = "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"
+            }
+          )
+          foreach ($package in $packages) {
+            $file = Join-Path $root ($package.Name + "." + $package.Version + ".nupkg")
+            Invoke-WebRequest -Uri $package.Url -OutFile $file
+            $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+            $size = (Get-Item $file).Length
+            Write-Host ("PACKAGE {0} {1} size={2} sha256={3}" -f $package.Name, $package.Version, $size, $hash)
+
+            $extract = Join-Path $root ($package.Name + "." + $package.Version)
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($file, $extract)
+            Get-ChildItem -Path $extract -Recurse -File |
+              Where-Object { $_.FullName -match 'runtimes[\\/]win-x64[\\/]native' -or $_.Name -match '^(onnxruntime|onnxruntime_providers_shared|DirectML)\.dll
+      - name: Prepare frontend embed directory
+        shell: bash
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
+      - name: Generate Wails bindings
+        run: wails generate module
+
+      - name: Verify AI bindings
+        shell: bash
+        run: |
+          grep -q "GetAISettings" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "PatchAISettings" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "GetAIHealthSnapshot" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "EnsureSemanticSearchReady" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "SemanticSearchAssetsWithID" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "GetSemanticIndexStatus" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "RequestLegacyStorageMigration" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "CancelLegacyStorageMigration" frontend/wailsjs/go/commands/AppCommands.js
+          if grep -q "ConfigureStorageLayout" frontend/wailsjs/go/commands/AppCommands.js; then
+            echo "internal ConfigureStorageLayout leaked into Wails bindings" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Shutdown sidecar smoke
+        run: go test ./internal/ai -run TestSidecarStopTerminatesRunningProcess -count=1 -v
+
+      - name: Storage resolver tests
+        run: go test ./internal/infrastructure/storage -count=1 -v
+
+      - name: Distribution mode smoke
+        run: |
+          go test . -run TestDistributionModeInstalled -count=1
+          go test -tags portable . -run TestDistributionModePortable -count=1
+
+      - name: Build Windows app
+        run: wails build -platform windows/amd64
+        env:
+          CGO_ENABLED: "0"
+
+      - name: Build Windows portable
+        run: wails build -platform windows/amd64 -tags portable -ldflags "-H windowsgui" -o Lumine-portable.exe
+        env:
+          CGO_ENABLED: "0"
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-windows
+          path: build/bin/Lumine.exe
+          if-no-files-found: error
+
+      # upload-artifact itself produces the single downloadable ZIP wrapper.
+      # Upload the portable EXE directly so users do not get ZIP-inside-ZIP.
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-windows-portable
+          path: build/bin/Lumine-portable.exe
+          if-no-files-found: error
+
+      - name: Upload full bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-windows-bundle
+          path: build/bin/*
+          if-no-files-found: error
+ } |
+              Sort-Object FullName |
+              ForEach-Object {
+                $dllHash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
+                $relative = [System.IO.Path]::GetRelativePath($extract, $_.FullName)
+                Write-Host ("FILE {0} size={1} sha256={2}" -f $relative, $_.Length, $dllHash)
+              }
+          }
+
       - name: Prepare frontend embed directory
         shell: bash
         run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
