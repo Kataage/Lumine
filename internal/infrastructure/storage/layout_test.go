@@ -40,6 +40,9 @@ func TestResolvePortableUsesExecutableDirectoryOnly(t *testing.T) {
 	if layout.SemanticIndexDir != filepath.Join(portableDir, "data", "semantic-index") {
 		t.Fatalf("portable semantic index = %q", layout.SemanticIndexDir)
 	}
+	if layout.WebviewDataDir != filepath.Join(portableDir, "data", "webview2") {
+		t.Fatalf("portable WebView2 data = %q", layout.WebviewDataDir)
+	}
 
 	if err := Prepare(layout); err != nil {
 		t.Fatal(err)
@@ -50,6 +53,7 @@ func TestResolvePortableUsesExecutableDirectoryOnly(t *testing.T) {
 		layout.ModelsDir,
 		layout.RuntimesDir,
 		layout.SemanticIndexDir,
+		layout.WebviewDataDir,
 	} {
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			t.Fatalf("portable directory %q was not created: %v", path, err)
