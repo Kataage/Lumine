@@ -6,7 +6,7 @@ Benchmark framework: #176
 
 This benchmark compares the local multimodal candidates for Lumine Advanced Vision under the **same private fixture pack, evaluator, llama.cpp runtime, CPU thread count, and Windows hardware ID**.
 
-The candidate list is intentionally broader than vendor-default models. Official Qwen, Heretic/Abliterated derivatives, InternVL, SmolVLM and MiniCPM are compared directly so that lower refusal behavior is measured together with any loss of visual understanding, Japanese instruction following, JSON reliability or runtime efficiency.
+The candidate list is intentionally broader than vendor-default models. Official Qwen, Heretic/Abliterated derivatives, InternVL, SmolVLM, MiniCPM and Granite Vision are compared directly so that lower refusal behavior is measured together with any loss of visual understanding, Japanese instruction following, JSON reliability or runtime efficiency.
 
 ## Candidate matrix
 
@@ -18,6 +18,7 @@ The candidate list is intentionally broader than vendor-default models. Official
 | `advanced-internvl3.5-2b-q4.json` | independent 2B-class baseline | immutable |
 | `advanced-smolvlm2-2.2b-q4.json` | official ggml multi-image-oriented candidate | immutable |
 | `advanced-minicpm-v4.6-q4.json` | current small MiniCPM official GGUF candidate | immutable |
+| `advanced-granite-vision-4.1-4b-q4.json` | official 4B-class upper-cost comparison candidate | immutable |
 
 MiniCPM-V 4.6 replaces the older MiniCPM-V 4.5 high-quality-control assumption. The 4.6 GGUF is small enough to be evaluated as a realistic Lumine candidate, not merely a large external control.
 
@@ -183,6 +184,7 @@ py -3 benchmarks\ai\adapters\advancedvision_report.py `
   benchmarks\ai\results\local\advanced-internvl3.5-2b-q4.json `
   benchmarks\ai\results\local\advanced-smolvlm2-2.2b-q4.json `
   benchmarks\ai\results\local\advanced-minicpm-v4.6-q4.json `
+  benchmarks\ai\results\local\advanced-granite-vision-4.1-4b-q4.json `
   > benchmarks\ai\results\local\advanced-vision-comparison.md
 ```
 
