@@ -1,0 +1,36 @@
+{
+  "id": "ggml-org/MiniCPM-V-4.6-GGUF",
+  "version": "1ed3097dca9264536da79039fd63c436509be6bf",
+  "engine": "llama.cpp-multimodal-cpu",
+  "quantization": "Q4_K_M + mmproj Q8_0",
+  "artifactSha256": "b1a5aa76b5ef039c2e579272ea33d4bbed7e79b49bb3ff1efdb23316d6af5199",
+  "modelSizeBytes": 1257056064,
+  "runtime": "llama.cpp-b10964-cpu-x64",
+  "benchmarkCategories": [
+    "advanced_vision",
+    "structured_json",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "parameters": {
+    "repoId": "ggml-org/MiniCPM-V-4.6-GGUF",
+    "modelFile": "MiniCPM-V-4.6-Q4_K_M.gguf",
+    "modelSha256": "b1a5aa76b5ef039c2e579272ea33d4bbed7e79b49bb3ff1efdb23316d6af5199",
+    "modelSizeBytes": "529101536",
+    "mmprojFile": "mmproj-MiniCPM-V-4.6-Q8_0.gguf",
+    "mmprojSha256": "3d8249cdd0e1cb699644eb021fbcc04320aad89fa5dc9234ef94db0846556581",
+    "mmprojSizeBytes": "727954528",
+    "family": "minicpm-v4.6",
+    "variant": "official-ggml",
+    "llamaRelease": "b10964",
+    "llamaVersion": "0.4.1",
+    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "threads": "8",
+    "context": "8192",
+    "device": "cpu",
+    "serverArgsJson": "[\"--reasoning\",\"off\"]"
+  }
+}
