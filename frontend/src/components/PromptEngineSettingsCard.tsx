@@ -9,6 +9,7 @@ import {
   type PromptEngineStatusInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
+import { useAppDialog } from "./AppDialogProvider";
 
 function Progress({ downloaded, total, label }: { downloaded: number; total: number; label: string }) {
   const percent = total > 0 ? Math.min(100, (downloaded / total) * 100) : 0;
@@ -34,6 +35,7 @@ export function PromptEngineSettingsCard({
   onEnable: () => Promise<void>;
   onStatusChange?: (status: PromptEngineStatusInfo) => void;
 }) {
+  const dialog = useAppDialog();
   const [status, setStatus] = useState<PromptEngineStatusInfo | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +111,14 @@ export function PromptEngineSettingsCard({
   };
 
   const removeModel = async (modelId: string, displayName: string) => {
-    if (busy || !window.confirm(`${displayName} をローカルから削除しますか？`)) return;
+    if (busy) return;
+    const approved = await dialog.confirm({
+      title: "Promptモデルを削除しますか？",
+      description: `${displayName} をローカルから削除します。`,
+      confirmLabel: "モデルを削除",
+      tone: "danger",
+    });
+    if (!approved) return;
     setBusy(`remove:${modelId}`);
     setError(null);
     try {
