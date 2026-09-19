@@ -71,7 +71,9 @@ func (m *Manager) RegisterEngine(engineID string, factory EngineFactory) error {
 }
 
 func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
-	m.lifecycleMu.Lock()
+	if err := lockContextMutex(ctx, &m.lifecycleMu); err != nil {
+		return InstalledModel{}, fmt.Errorf("wait for AI lifecycle: %w", err)
+	}
 	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
@@ -80,7 +82,9 @@ func (m *Manager) InstallModel(ctx context.Context, manifest ModelManifest, prog
 }
 
 func (m *Manager) UpdateModel(ctx context.Context, manifest ModelManifest, progress ProgressFunc) (InstalledModel, error) {
-	m.lifecycleMu.Lock()
+	if err := lockContextMutex(ctx, &m.lifecycleMu); err != nil {
+		return InstalledModel{}, fmt.Errorf("wait for AI lifecycle: %w", err)
+	}
 	defer m.lifecycleMu.Unlock()
 	if m.modelInUse(manifest.ID, manifest.Version) {
 		return InstalledModel{}, fmt.Errorf("model %s@%s is currently loaded", manifest.ID, manifest.Version)
@@ -97,7 +101,13 @@ func (m *Manager) ListInstalledModels() ([]InstalledModelInfo, error) {
 }
 
 func (m *Manager) RemoveModel(modelID, version string) error {
-	m.lifecycleMu.Lock()
+	return m.RemoveModelContext(context.Background(), modelID, version)
+}
+
+func (m *Manager) RemoveModelContext(ctx context.Context, modelID, version string) error {
+	if err := lockContextMutex(ctx, &m.lifecycleMu); err != nil {
+		return fmt.Errorf("wait for AI lifecycle: %w", err)
+	}
 	defer m.lifecycleMu.Unlock()
 	m.mu.Lock()
 	for capability, session := range m.sessions {
@@ -119,8 +129,12 @@ func (m *Manager) Load(
 ) error {
 	// Runtime lifecycle changes are rare but expensive. Serialize them so
 	// startup restore, Settings actions, and model switching cannot construct
-	// two engines for the same capability at once or race DLL extraction.
-	m.lifecycleMu.Lock()
+	// two engines for the same capability at once or race DLL extraction. The
+	// wait itself must honor ctx so shutdown cannot hang before reaching an
+	// engine-level timeout.
+	if err := lockContextMutex(ctx, &m.lifecycleMu); err != nil {
+		return fmt.Errorf("wait for AI lifecycle: %w", err)
+	}
 	defer m.lifecycleMu.Unlock()
 
 	settings, err := m.currentSettings()
@@ -175,11 +189,20 @@ func (m *Manager) Load(
 		state:   RuntimeStateReady,
 	}
 
-	// Do not publish the session until Load succeeds. This prevents inference
-	// from racing an engine that is only partially initialised.
+	// Do not publish a healthy session until Load succeeds. If cleanup of a
+	// partially loaded engine fails, however, retain it as an error session so
+	// later shutdown/unload can retry instead of orphaning a runtime.
 	if err := engine.Load(ctx, model, options); err != nil {
-		_ = engine.Unload(context.Background())
-		return fmt.Errorf("load engine %s: %w", engine.ID(), err)
+		loadErr := fmt.Errorf("load engine %s: %w", engine.ID(), err)
+		if cleanupErr := unloadEngineBounded(engine); cleanupErr != nil {
+			session.state = RuntimeStateError
+			session.lastErr = errors.Join(loadErr, cleanupErr).Error()
+			m.mu.Lock()
+			m.sessions[capability] = session
+			m.mu.Unlock()
+			return errors.Join(loadErr, fmt.Errorf("cleanup failed load: %w", cleanupErr))
+		}
+		return loadErr
 	}
 
 	m.mu.Lock()
@@ -187,8 +210,16 @@ func (m *Manager) Load(
 	m.mu.Unlock()
 	if hook != nil {
 		if err := hook(capability, model); err != nil {
-			_ = engine.Unload(context.Background())
-			return fmt.Errorf("activate model metadata for %s: %w", capability, err)
+			activateErr := fmt.Errorf("activate model metadata for %s: %w", capability, err)
+			if cleanupErr := unloadEngineBounded(engine); cleanupErr != nil {
+				session.state = RuntimeStateError
+				session.lastErr = errors.Join(activateErr, cleanupErr).Error()
+				m.mu.Lock()
+				m.sessions[capability] = session
+				m.mu.Unlock()
+				return errors.Join(activateErr, fmt.Errorf("cleanup failed activation: %w", cleanupErr))
+			}
+			return activateErr
 		}
 	}
 
@@ -198,11 +229,11 @@ func (m *Manager) Load(
 	return nil
 }
 
-func lockRuntimeSession(ctx context.Context, session *runtimeSession) error {
+func lockContextMutex(ctx context.Context, mu *sync.Mutex) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if session.opMu.TryLock() {
+	if mu.TryLock() {
 		return nil
 	}
 
@@ -213,11 +244,21 @@ func lockRuntimeSession(ctx context.Context, session *runtimeSession) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if session.opMu.TryLock() {
+			if mu.TryLock() {
 				return nil
 			}
 		}
 	}
+}
+
+func lockRuntimeSession(ctx context.Context, session *runtimeSession) error {
+	return lockContextMutex(ctx, &session.opMu)
+}
+
+func unloadEngineBounded(engine Engine) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return engine.Unload(ctx)
 }
 
 func (m *Manager) Infer(
@@ -287,7 +328,9 @@ func (m *Manager) Infer(
 }
 
 func (m *Manager) Unload(ctx context.Context, capability domain.AICapability) error {
-	m.lifecycleMu.Lock()
+	if err := lockContextMutex(ctx, &m.lifecycleMu); err != nil {
+		return fmt.Errorf("wait for AI lifecycle: %w", err)
+	}
 	defer m.lifecycleMu.Unlock()
 	return m.unloadLocked(ctx, capability)
 }
@@ -316,15 +359,23 @@ func (m *Manager) unloadLocked(ctx context.Context, capability domain.AICapabili
 	}
 	defer session.opMu.Unlock()
 
+	if err := session.engine.Unload(ctx); err != nil {
+		unloadErr := fmt.Errorf("unload engine %s: %w", session.engine.ID(), err)
+		m.mu.Lock()
+		if current := m.sessions[capability]; current == session {
+			session.closing = false
+			session.state = RuntimeStateError
+			session.lastErr = unloadErr.Error()
+		}
+		m.mu.Unlock()
+		return unloadErr
+	}
+
 	m.mu.Lock()
 	if current := m.sessions[capability]; current == session {
 		delete(m.sessions, capability)
 	}
 	m.mu.Unlock()
-
-	if err := session.engine.Unload(ctx); err != nil {
-		return fmt.Errorf("unload engine %s: %w", session.engine.ID(), err)
-	}
 	return nil
 }
 
