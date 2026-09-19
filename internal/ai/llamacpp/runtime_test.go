@@ -168,3 +168,55 @@ func TestRuntimeMetadataExecutablePathIsRelativeOnDisk(t *testing.T) {
 		t.Fatal("runtime metadata must not persist machine-specific absolute paths")
 	}
 }
+
+
+func TestRuntimeStoreSupportsHashOnlyManifestSize(t *testing.T) {
+	executable := []byte("fake vulkan llama server")
+	archive := makeRuntimeZip(t, "llama-server.exe", executable)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	defer server.Close()
+
+	manifest := RuntimeManifest{
+		ID:             "llama-vulkan-test",
+		Version:        "v1",
+		URL:            server.URL,
+		SHA256:         shaHex(archive),
+		SizeBytes:      0,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+	store := NewRuntimeStore(t.TempDir())
+	var final RuntimeDownloadProgress
+	if _, err := store.Install(context.Background(), manifest, func(progress RuntimeDownloadProgress) {
+		final = progress
+	}); err != nil {
+		t.Fatalf("Install hash-only runtime: %v", err)
+	}
+	if !final.Done ||
+		final.BytesDownloaded != int64(len(archive)) ||
+		final.BytesTotal != int64(len(archive)) {
+		t.Fatalf("unexpected final progress: %+v", final)
+	}
+	if _, err := store.Verify(manifest); err != nil {
+		t.Fatalf("Verify hash-only runtime: %v", err)
+	}
+}
+
+func TestPinnedVulkanRuntimeManifestValidates(t *testing.T) {
+	manifest := VulkanRuntimeManifest()
+	if err := ValidateRuntimeManifest(manifest); err != nil {
+		t.Fatalf("VulkanRuntimeManifest: %v", err)
+	}
+	if manifest.SHA256 != "1ee3ad952f4ba71f438bd6d7bebef19e1c7af04adcaa35d08b4ddabb27d4c642" {
+		t.Fatalf("unexpected Vulkan runtime hash: %s", manifest.SHA256)
+	}
+	if selected := RuntimeManifestForGPU(true); selected.ID != manifest.ID {
+		t.Fatalf("GPU runtime = %s, want %s", selected.ID, manifest.ID)
+	}
+	if selected := RuntimeManifestForGPU(false); selected.ID != DefaultRuntimeManifest().ID {
+		t.Fatalf("CPU runtime = %s", selected.ID)
+	}
+}
