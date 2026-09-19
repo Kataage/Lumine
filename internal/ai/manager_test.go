@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -230,5 +231,92 @@ func TestManagerCallsModelActivationHookBeforePublishingRuntime(t *testing.T) {
 	}
 	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateReady {
 		t.Fatalf("runtime status after hook = %+v", status)
+	}
+}
+
+
+type slowLifecycleEngine struct {
+	active *int
+	max    *int
+	mu     *sync.Mutex
+}
+
+func (e *slowLifecycleEngine) ID() string { return "dummy" }
+
+func (e *slowLifecycleEngine) Load(_ context.Context, _ InstalledModel, _ LoadOptions) error {
+	e.mu.Lock()
+	*e.active = *e.active + 1
+	if *e.active > *e.max {
+		*e.max = *e.active
+	}
+	e.mu.Unlock()
+
+	time.Sleep(60 * time.Millisecond)
+
+	e.mu.Lock()
+	*e.active = *e.active - 1
+	e.mu.Unlock()
+	return nil
+}
+
+func (e *slowLifecycleEngine) Infer(_ context.Context, request InferenceRequest) (InferenceResponse, error) {
+	return InferenceResponse{Payload: request.Payload}, nil
+}
+
+func (e *slowLifecycleEngine) Unload(_ context.Context) error { return nil }
+
+func TestManagerSerializesConcurrentLoads(t *testing.T) {
+	data := []byte("concurrent lifecycle model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+
+	var mu sync.Mutex
+	active := 0
+	maxConcurrent := 0
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		return &slowLifecycleEngine{active: &active, max: &maxConcurrent, mu: &mu}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			<-start
+			errs <- manager.Load(
+				context.Background(),
+				domain.AICapabilitySemanticSearch,
+				manifest.ID,
+				manifest.Version,
+				LoadOptions{},
+			)
+		}()
+	}
+	close(start)
+
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent Load: %v", err)
+		}
+	}
+
+	mu.Lock()
+	got := maxConcurrent
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("concurrent engine loads = %d, want 1", got)
 	}
 }
