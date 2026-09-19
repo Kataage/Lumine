@@ -213,6 +213,32 @@ func TestSemanticPersistentSnapshotGenerationChangeRejectsStaleData(t *testing.T
 	}
 }
 
+func TestCleanupSemanticSnapshotsPreservesOtherModels(t *testing.T) {
+	root := t.TempDir()
+	key := semanticKey("engine", "model", "1")
+	otherKey := semanticKey("engine", "other-model", "1")
+	oldPath := semanticSnapshotPath(root, key, 10)
+	keepPath := semanticSnapshotPath(root, key, 11)
+	otherPath := semanticSnapshotPath(root, otherKey, 10)
+	for _, path := range []string{oldPath, keepPath, otherPath} {
+		if err := os.WriteFile(path, []byte("snapshot"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cleanupSemanticSnapshots(root, key, keepPath)
+
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old same-model snapshot was not removed: %v", err)
+	}
+	if _, err := os.Stat(keepPath); err != nil {
+		t.Fatalf("current snapshot was removed: %v", err)
+	}
+	if _, err := os.Stat(otherPath); err != nil {
+		t.Fatalf("other-model snapshot was removed: %v", err)
+	}
+}
+
 func TestSemanticPersistentSnapshotPathIsGenerationAddressed(t *testing.T) {
 	root := t.TempDir()
 	key := semanticKey("engine", "model", "1")
