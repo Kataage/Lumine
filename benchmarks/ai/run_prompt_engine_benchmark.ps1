@@ -77,10 +77,17 @@ function Ensure-Venv {
 }
 
 function Invoke-AIBench([string[]]$Arguments) {
-    & go run ./cmd/ai-bench @Arguments
+    & go run ./cmd/ai-bench @Arguments | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
         throw "ai-bench failed: $($Arguments -join ' ')"
     }
+}
+
+function Get-OptionalProperty($Object, [string]$Name) {
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
 }
 
 function Test-ProfilePinned([string]$ProfilePath) {
@@ -149,16 +156,23 @@ foreach ($candidate in $candidates) {
     $result = Get-Content $resultPath -Raw | ConvertFrom-Json
     $modelSizeCase = $result.cases | Where-Object { $_.fixtureId -eq "prompt-perf-model-size-001" } | Select-Object -First 1
     $output = if ($null -ne $modelSizeCase) { $modelSizeCase.output } else { $null }
+    $profile = Get-Content $profilePath -Raw | ConvertFrom-Json
+    $modelSelector = Get-OptionalProperty $profile.parameters "modelFile"
+    if ([string]::IsNullOrWhiteSpace([string]$modelSelector)) {
+        $modelSelector = Get-OptionalProperty $profile.parameters "modelFileRegex"
+    }
     $pinRows += [PSCustomObject]@{
         candidate = $candidate.Name
         profile = $candidate.Profile
         profilePinned = [bool]$pinned
-        resolvedRevision = if ($null -ne $output) { $output.resolvedRevision } else { $null }
-        modelFile = if ($null -ne $output) { $output.modelFile } else { $null }
-        modelSha256 = if ($null -ne $output) { $output.modelSha256 } else { $null }
-        modelSizeBytes = if ($null -ne $output) { $output.modelSizeBytes } else { $null }
-        runtimeVersion = if ($null -ne $output) { $output.runtimeVersion } else { $null }
-        runtimeSha256 = if ($null -ne $output) { $output.runtimeSha256 } else { $null }
+        requestedRevision = Get-OptionalProperty $output "requestedRevision"
+        resolvedRevision = Get-OptionalProperty $output "resolvedRevision"
+        modelSelector = $modelSelector
+        modelSha256 = Get-OptionalProperty $output "modelSha256"
+        modelSizeBytes = Get-OptionalProperty $output "modelBytes"
+        runtime = Get-OptionalProperty $profile "runtime"
+        llamaRelease = Get-OptionalProperty $profile.parameters "llamaRelease"
+        runtimeArchiveSha256 = Get-OptionalProperty $profile.parameters "llamaWindowsCpuArchiveSha256"
     }
 }
 
