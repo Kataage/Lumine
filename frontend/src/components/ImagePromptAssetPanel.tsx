@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "../App";
 import {
   buildImagePrompt,
   createPromptProjectFromImage,
+  getAssetGenerationMetadata,
   listModelProfiles,
   type ImagePromptResult,
 } from "../api/client";
@@ -26,11 +27,28 @@ export function ImagePromptAssetPanel({ assetId }: { assetId: number }) {
     queryFn: listModelProfiles,
     staleTime: 60_000,
   });
-  const [targetProfileId, setTargetProfileId] = useState("illustrious-xl");
+  const { data: metadata, refetch: refetchMetadata } = useQuery({
+    queryKey: ["assetGenerationMetadata", assetId],
+    queryFn: () => getAssetGenerationMetadata(assetId),
+    enabled: assetId > 0,
+    staleTime: 60_000,
+  });
+  const [targetProfileId, setTargetProfileId] = useState("");
   const [instruction, setInstruction] = useState("");
   const [useAdvancedVision, setUseAdvancedVision] = useState(false);
   const [result, setResult] = useState<ImagePromptResult | null>(null);
   const [busy, setBusy] = useState<"preview" | "project" | null>(null);
+
+  useEffect(() => {
+    setTargetProfileId("");
+    setResult(null);
+  }, [assetId]);
+
+  const effectiveProfileLabel = targetProfileId
+    ? profiles.find((profile) => profile.id === targetProfileId)?.name ?? targetProfileId
+    : metadata?.suggestedProfileId
+      ? `Auto: ${profiles.find((profile) => profile.id === metadata.suggestedProfileId)?.name ?? metadata.suggestedProfileId}`
+      : "Auto: Illustrious / ILXL fallback";
 
   const request = () => ({
     assetId,
@@ -94,11 +112,36 @@ export function ImagePromptAssetPanel({ assetId }: { assetId: number }) {
         <div>
           <label className="ui-label mb-1">Target Model Profile</label>
           <select className="ui-input w-full" value={targetProfileId} onChange={(event) => setTargetProfileId(event.target.value)}>
+            <option value="">{effectiveProfileLabel}</option>
             {profiles.map((profile) => (
               <option key={profile.id} value={profile.id}>{profile.name}{profile.builtIn ? "" : " (Custom)"}</option>
             ))}
           </select>
         </div>
+
+        {metadata?.present && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-[10px] text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-foreground">埋め込み生成metadataを検出</span>
+              <button type="button" className="ui-mini-button" onClick={() => void refetchMetadata()}>再読込</button>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {metadata.checkpoint && <span className="rounded border border-border px-1.5 py-0.5">Checkpoint: {metadata.checkpoint}</span>}
+              {metadata.sampler && <span className="rounded border border-border px-1.5 py-0.5">{metadata.sampler}</span>}
+              {metadata.steps > 0 && <span className="rounded border border-border px-1.5 py-0.5">{metadata.steps} steps</span>}
+              {metadata.cfg > 0 && <span className="rounded border border-border px-1.5 py-0.5">CFG {metadata.cfg}</span>}
+              {metadata.width > 0 && metadata.height > 0 && <span className="rounded border border-border px-1.5 py-0.5">{metadata.width}×{metadata.height}</span>}
+            </div>
+            {metadata.loras.length > 0 && (
+              <p className="mt-1.5">
+                LoRA: {metadata.loras.map((lora) => `${lora.name} @ ${lora.weight}${lora.triggerWords.length ? ` [${lora.triggerWords.join(", ")}]` : ""}`).join(" / ")}
+              </p>
+            )}
+            {(metadata.positive || metadata.negative) && (
+              <p className="mt-1 opacity-80">元Promptは「Original metadata」Variantとして保存されます。</p>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="ui-label mb-1">追加指示</label>
@@ -124,10 +167,10 @@ export function ImagePromptAssetPanel({ assetId }: { assetId: number }) {
         </label>
 
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" className="ui-secondary-button" disabled={busy !== null || !targetProfileId} onClick={() => void preview()}>
+          <button type="button" className="ui-secondary-button" disabled={busy !== null} onClick={() => void preview()}>
             {busy === "preview" ? "生成中…" : "Preview"}
           </button>
-          <button type="button" className="ui-primary-button" disabled={busy !== null || !targetProfileId} onClick={() => void createProject()}>
+          <button type="button" className="ui-primary-button" disabled={busy !== null} onClick={() => void createProject()}>
             {busy === "project" ? "作成中…" : "Prompt Project作成"}
           </button>
         </div>

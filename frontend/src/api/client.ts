@@ -370,6 +370,37 @@ export interface ImagePromptProjectResult {
   result: ImagePromptResult;
 }
 
+export interface GenerationMetadataLoRA {
+  name: string;
+  weight: number;
+  triggerWords: string[];
+}
+
+export interface AssetGenerationMetadata {
+  assetId: number;
+  present: boolean;
+  schemaVersion: number;
+  parserVersion: number;
+  sourceFormat: string;
+  positive: string;
+  negative: string;
+  checkpoint: string;
+  loras: GenerationMetadataLoRA[];
+  sampler: string;
+  scheduler: string;
+  cfg: number;
+  steps: number;
+  seed: number;
+  width: number;
+  height: number;
+  suggestedProfileId?: string;
+  rawPromptJson?: string;
+  rawWorkflowJson?: string;
+  parameters?: string;
+  rawJson: string;
+  parsedAt?: string;
+}
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -527,6 +558,7 @@ type DynamicCommands = {
   RunPromptEngine?: (request: PromptEngineRequest) => Promise<PromptEngineResult | null>;
   BuildImagePrompt?: (request: ImagePromptRequest) => Promise<ImagePromptResult | null>;
   CreatePromptProjectFromImage?: (request: ImagePromptRequest) => Promise<ImagePromptProjectResult | null>;
+  GetAssetGenerationMetadata?: (assetId: number, refresh: boolean) => Promise<AssetGenerationMetadata | null>;
   ListModelProfiles?: () => Promise<ModelProfile[]>;
   GetModelProfile?: (id: string) => Promise<ModelProfile | null>;
   CreateModelProfile?: (input: ModelProfileInput) => Promise<ModelProfile | null>;
@@ -807,6 +839,18 @@ export async function createPromptProjectFromImage(request: ImagePromptRequest):
   return {
     project: normalizePromptProject(value.project),
     result: normalizeImagePromptResult(value.result),
+  };
+}
+
+export async function getAssetGenerationMetadata(assetId: number, refresh = false): Promise<AssetGenerationMetadata> {
+  const value = await requireDynamic("GetAssetGenerationMetadata")(assetId, refresh);
+  if (!value) throw new Error("生成metadataを取得できませんでした。");
+  return {
+    ...value,
+    loras: (value.loras ?? []).map((lora) => ({
+      ...lora,
+      triggerWords: lora.triggerWords ?? [],
+    })),
   };
 }
 

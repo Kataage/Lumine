@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -46,6 +47,12 @@ func (c *AppCommands) GetViewerAssetDetail(id int64) (*AssetDTO, error) {
 		if err := c.assetRepo.UpdateMetadata(asset); err != nil {
 			return nil, fmt.Errorf("persist viewer metadata for asset %d: %w", id, err)
 		}
+	}
+
+	if _, metadataErr := c.loadAssetGenerationMetadata(id, false); metadataErr != nil {
+		// Embedded generation metadata is optional. A malformed/unsupported
+		// metadata payload must never make the normal asset detail unusable.
+		slog.Debug("generation metadata parse skipped", "asset_id", id, "error", metadataErr)
 	}
 
 	dto := toAssetDTO(asset)
