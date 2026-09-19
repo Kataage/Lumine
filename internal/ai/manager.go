@@ -230,7 +230,7 @@ func (m *Manager) Infer(
 		return InferenceResponse{}, err
 	}
 	if !allowed {
-		_ = m.Unload(context.Background(), capability)
+		_ = m.Unload(ctx, capability)
 		return InferenceResponse{}, ErrCapabilityDisabled
 	}
 
@@ -264,12 +264,18 @@ func (m *Manager) Infer(
 
 	m.mu.Lock()
 	if current := m.sessions[capability]; current == session && !session.closing {
-		if inferErr != nil {
-			session.state = RuntimeStateError
-			session.lastErr = inferErr.Error()
-		} else {
+		switch {
+		case inferErr == nil:
 			session.state = RuntimeStateReady
 			session.lastErr = ""
+		case errors.Is(inferErr, context.Canceled), errors.Is(inferErr, context.DeadlineExceeded):
+			// Caller cancellation is normal control flow (search replacement,
+			// foreground priority, shutdown) and must not poison the runtime.
+			session.state = RuntimeStateReady
+			session.lastErr = ""
+		default:
+			session.state = RuntimeStateError
+			session.lastErr = inferErr.Error()
 		}
 	}
 	m.mu.Unlock()
