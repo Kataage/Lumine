@@ -31,22 +31,52 @@ func (f *fakeORT) EmbedImage(input []float32) ([]float32, error) {
 
 func (f *fakeORT) Close() error { return nil }
 
-func syntheticTokenizer(t *testing.T) *unigramTokenizer {
+func syntheticTokenizer(t *testing.T) *siglipTokenizer {
 	t.Helper()
 	payload := map[string]any{
 		"model": map[string]any{
-			"type":   "Unigram",
-			"unk_id": 3,
-			"vocab": []any{
-				[]any{"<pad>", 0},
-				[]any{"<eos>", 0},
-				[]any{"<bos>", 0},
-				[]any{"<unk>", 0},
-				[]any{"▁hello", 2.0},
-				[]any{"▁world", 2.0},
-				[]any{"▁", -1.0},
-				[]any{"hello", 1.0},
-				[]any{"world", 1.0},
+			"type":          "BPE",
+			"unk_token":     "<unk>",
+			"fuse_unk":      true,
+			"byte_fallback": true,
+			"vocab": map[string]int{
+				"<pad>": 0,
+				"<eos>": 1,
+				"<bos>": 2,
+				"<unk>": 3,
+				"<mask>": 4,
+				"h": 5,
+				"e": 6,
+				"l": 7,
+				"o": 8,
+				"he": 9,
+				"hel": 10,
+				"hell": 11,
+				"hello": 12,
+				"▁": 13,
+				"w": 14,
+				"r": 15,
+				"d": 16,
+				"▁w": 17,
+				"▁wo": 18,
+				"▁wor": 19,
+				"▁worl": 20,
+				"▁world": 21,
+				"<0xF0>": 22,
+				"<0x9F>": 23,
+				"<0x99>": 24,
+				"<0x82>": 25,
+			},
+			"merges": []string{
+				"h e",
+				"he l",
+				"hel l",
+				"hell o",
+				"▁ w",
+				"▁w o",
+				"▁wo r",
+				"▁wor l",
+				"▁worl d",
 			},
 		},
 	}
@@ -67,13 +97,58 @@ func TestTokenizerNormalizesPadsAndAddsEOS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids[0] != 4 || ids[1] != 5 || ids[2] != siglipEOSID {
+	if ids[0] != 12 || ids[1] != 21 || ids[2] != siglipEOSID {
 		t.Fatalf("unexpected tokenization prefix: %v", ids[:5])
 	}
 	for i := 3; i < len(ids); i++ {
 		if ids[i] != siglipPadID {
 			t.Fatalf("token %d = %d, want pad", i, ids[i])
 		}
+	}
+}
+
+func TestTokenizerSupportsBPEByteFallback(t *testing.T) {
+	tokenizer := syntheticTokenizer(t)
+	ids, err := tokenizer.Encode64("🙂")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{22, 23, 24, 25, siglipEOSID}
+	for index, expected := range want {
+		if ids[index] != expected {
+			t.Fatalf("token %d = %d, want %d; prefix=%v", index, ids[index], expected, ids[:8])
+		}
+	}
+}
+
+func TestTokenizerKeepsLegacyUnigramCompatibility(t *testing.T) {
+	payload := map[string]any{
+		"model": map[string]any{
+			"type":   "Unigram",
+			"unk_id": 3,
+			"vocab": []any{
+				[]any{"<pad>", 0},
+				[]any{"<eos>", 0},
+				[]any{"<bos>", 0},
+				[]any{"<unk>", 0},
+				[]any{"▁hello", 2.0},
+			},
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenizer, err := parseTokenizer(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := tokenizer.Encode64("HELLO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids[0] != 4 || ids[1] != siglipEOSID {
+		t.Fatalf("unexpected legacy tokenization: %v", ids[:4])
 	}
 }
 
@@ -135,7 +210,7 @@ func TestEngineInferenceNormalizesEmbeddings(t *testing.T) {
 	if math.Abs(float64(vector[0]-0.6)) > 1e-5 || math.Abs(float64(vector[1]-0.8)) > 1e-5 {
 		t.Fatalf("text embedding not unit-normalized: %+v", vector)
 	}
-	if runtime.textInput[0] != 4 || runtime.textInput[1] != siglipEOSID {
+	if runtime.textInput[0] != 12 || runtime.textInput[1] != siglipEOSID {
 		t.Fatalf("text tokenizer was not used: %v", runtime.textInput[:4])
 	}
 
