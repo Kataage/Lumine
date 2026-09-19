@@ -11,16 +11,18 @@ type ModelFile struct {
 	URL       string `json:"url"`
 	SHA256    string `json:"sha256"`
 	SizeBytes int64  `json:"sizeBytes"`
+	Role      string `json:"role,omitempty"`
 }
 
 type ModelManifest struct {
-	ID          string      `json:"id"`
-	Version     string      `json:"version"`
-	Engine      string      `json:"engine"`
-	DisplayName string      `json:"displayName"`
-	License     string      `json:"license"`
-	SizeBytes   int64       `json:"sizeBytes"`
-	Files       []ModelFile `json:"files"`
+	ID          string            `json:"id"`
+	Version     string            `json:"version"`
+	Engine      string            `json:"engine"`
+	DisplayName string            `json:"displayName"`
+	License     string            `json:"license"`
+	SizeBytes   int64             `json:"sizeBytes"`
+	Files       []ModelFile       `json:"files"`
+	Parameters  map[string]string `json:"parameters,omitempty"`
 }
 
 type InstalledModel struct {
