@@ -141,6 +141,7 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if c.semanticIndex != nil && status.Engine != "" && status.ModelID != "" && status.Version != "" {
+		c.semanticIndex.Prepare(status.Engine, status.ModelID, status.Version)
 		c.startBackgroundTask(func(warmCtx context.Context) {
 			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
 				// Search can retry the warm synchronously. Runtime readiness must
