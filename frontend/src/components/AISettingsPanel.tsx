@@ -3,6 +3,7 @@ import {
   EventsOff,
   EventsOn,
   getAISettings,
+  getAIStorageInfo,
   getDefaultSemanticModelInfo,
   getDefaultLightweightVisionModelInfo,
   enqueueLightweightVisionBackfill,
@@ -14,11 +15,13 @@ import {
   removeDefaultLightweightVisionModel,
   removeLightweightVisionRuntime,
   setAISettings,
+  type AIStorageInfo,
   type LightweightVisionModelInfo,
   type SemanticModelInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
+import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
 import {
   DEFAULT_AI_SETTINGS,
   getInitialAIEngineStatus,
@@ -86,15 +89,14 @@ function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "border-primary/50 bg-primary" : "border-border bg-muted"
+      className={`inline-flex h-7 min-w-[66px] flex-shrink-0 items-center justify-between gap-1 rounded-full border px-1.5 text-[9px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked
+          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+          : "border-border bg-muted/70 text-muted-foreground"
       }`}
     >
-      <span
-        className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? "translate-x-5" : "translate-x-1"
-        }`}
-      />
+      <span className="pl-0.5">{checked ? "ON" : "OFF"}</span>
+      <span className={`h-4 w-4 rounded-full shadow-sm transition-colors ${checked ? "bg-emerald-300" : "bg-zinc-500"}`} />
     </button>
   );
 }
@@ -140,6 +142,7 @@ export function AISettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
   const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
+  const [storageInfo, setStorageInfo] = useState<AIStorageInfo | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [visionBusy, setVisionBusy] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{ downloaded: number; total: number } | null>(null);
@@ -150,14 +153,16 @@ export function AISettingsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const [nextSettings, model, visionModel] = await Promise.all([
+      const [nextSettings, model, visionModel, storage] = await Promise.all([
         getAISettings(),
         getDefaultSemanticModelInfo().catch(() => null),
         getDefaultLightweightVisionModelInfo().catch(() => null),
+        getAIStorageInfo().catch(() => null),
       ]);
       setSettings(nextSettings);
       setSemanticModel(model);
       setLightweightModel(visionModel);
+      setStorageInfo(storage);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
