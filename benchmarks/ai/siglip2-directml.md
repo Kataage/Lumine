@@ -50,10 +50,15 @@ CPU fallback.
 
 ## Real smoke and benchmark
 
-CPU real-model smoke is run by the existing Windows SigLIP2 workflow:
+CPU real-model smoke is run by the existing Windows SigLIP2 workflow.
+Hosted Windows CI also requests GPU acceleration with
+`LUMINE_SIGLIP2_GPU_REQUEST_SMOKE=1`: if no valid GPU adapter is exposed, the
+test requires a diagnostic CPU fallback and still runs real image/text
+inference.
 
 ```powershell
 $env:LUMINE_SIGLIP2_REAL_SMOKE="1"
+$env:LUMINE_SIGLIP2_GPU_REQUEST_SMOKE="1"
 go test ./internal/ai/siglip2 -run TestRealSigLIP2Smoke -count=1 -v
 ```
 
