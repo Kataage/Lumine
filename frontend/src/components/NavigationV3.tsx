@@ -52,7 +52,7 @@ function AppIcon({ size, className = "" }: { size: number; className?: string })
   return <img src={APP_ICON_URL} alt="Lumine" width={size} height={size} className={`object-contain ${className}`} draggable={false} />;
 }
 
-export function WelcomeScreenV2({ onSelectFolder, busy = false }: { onSelectFolder: () => void; busy?: boolean }) {
+export function WelcomeScreenV2({ onSelectFolder, onOpenPromptStudio, busy = false }: { onSelectFolder: () => void; onOpenPromptStudio?: () => void; busy?: boolean }) {
   return (
     <div className="h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-xl rounded-3xl border border-border bg-card p-8 sm:p-10 text-center shadow-2xl">
@@ -66,6 +66,11 @@ export function WelcomeScreenV2({ onSelectFolder, busy = false }: { onSelectFold
         <button type="button" onClick={onSelectFolder} disabled={busy} className="ui-primary-button mt-6 w-full justify-center h-11 text-sm">
           {busy ? "画像を読み込んでいます…" : "画像フォルダーを追加"}
         </button>
+        {onOpenPromptStudio && (
+          <button type="button" onClick={onOpenPromptStudio} className="ui-secondary-button mt-2 w-full justify-center h-10 text-sm">
+            画像フォルダーなしでPrompt Studioを開く
+          </button>
+        )}
       </div>
     </div>
   );
