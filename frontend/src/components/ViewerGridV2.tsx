@@ -72,6 +72,8 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     if (active) void cancelSemanticSearch(active.id);
   }, []);
 
+  const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
+
   const buildQuery = useCallback((offset: number): AssetListRequest => ({
     libraryId: state.selectedLibraryId ?? 0,
     search: state.searchQuery || undefined,
@@ -163,13 +165,12 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     enabled: !!state.selectedLibraryId,
     staleTime: Infinity,
     gcTime: Infinity,
-    placeholderData: keepPreviousData,
+    placeholderData: semanticSearchActive ? keepPreviousData : undefined,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
   const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
-  const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
   const totalCount = data?.pages[0]?.totalCount ?? 0;
 
   useEffect(() => {
@@ -240,7 +241,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   }, [assets.length, columns, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, previewAsset, previewIndex]);
 
   const goNext = useCallback(async () => {
-    if (previewIndex < 0) return;
+    if (isPlaceholderData || previewIndex < 0) return;
     if (previewIndex < assets.length - 1) {
       setPreviewAsset(assets[previewIndex + 1]);
       return;
@@ -253,7 +254,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     if (currentIndex >= 0 && currentIndex < nextAssets.length - 1) {
       setPreviewAsset(nextAssets[currentIndex + 1]);
     }
-  }, [assets, fetchNextPage, hasNextPage, isFetchingNextPage, previewAsset, previewIndex]);
+  }, [assets, fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, previewAsset, previewIndex]);
 
   if (!state.selectedLibraryId) {
     return (
