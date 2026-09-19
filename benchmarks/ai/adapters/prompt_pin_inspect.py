@@ -36,14 +36,21 @@ def sibling_name(sibling: Any) -> str:
     return str(getattr(sibling, "rfilename", "") or "")
 
 
+def available_model_files(siblings: list[Any]) -> list[str]:
+    names = [sibling_name(item) for item in siblings if sibling_name(item)]
+    ggufs = [name for name in names if name.lower().endswith(".gguf")]
+    return sorted(ggufs or names)
+
+
 def resolve_sibling(info: Any, requested_file: str, file_regex: str) -> Any:
     siblings = list(getattr(info, "siblings", None) or [])
+    available = available_model_files(siblings)
     if requested_file:
         matches = [item for item in siblings if sibling_name(item) == requested_file]
         if len(matches) != 1:
             raise ValueError(
                 f"modelFile {requested_file!r} was not found exactly once; "
-                f"found {len(matches)} matches"
+                f"found {len(matches)} matches; available files: {available}"
             )
         return matches[0]
 
@@ -56,8 +63,9 @@ def resolve_sibling(info: Any, requested_file: str, file_regex: str) -> Any:
     ]
     if len(matches) != 1:
         raise ValueError(
-            f"modelFileRegex must match exactly one file; "
-            f"matched {[sibling_name(item) for item in matches]}"
+            f"modelFileRegex {file_regex!r} must match exactly one file; "
+            f"matched {[sibling_name(item) for item in matches]}; "
+            f"available files: {available}"
         )
     return matches[0]
 
