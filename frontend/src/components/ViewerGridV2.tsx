@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { AssetDTO, AssetListRequest } from "../api/client";
+import type { AssetDTO, AssetListRequest, AssetListResponse } from "../api/client";
 import {
   cancelSemanticSearch,
   listAssets,
@@ -176,7 +176,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       const loaded = allPages.reduce((sum, page) => sum + page.assets.length, 0);
       const total = allPages[0]?.totalCount ?? 0;
       if (lastPage.assets.length === 0 || loaded >= total) return undefined;
-      const sessionId = allPages[0]?.semanticSearchSessionId ?? lastPage.semanticSearchSessionId;
+      const firstPage = allPages[0] as AssetListResponse | undefined;
+      const latestPage = lastPage as AssetListResponse;
+      const sessionId = firstPage?.semanticSearchSessionId ?? latestPage.semanticSearchSessionId;
       return sessionId ? { offset: loaded, semanticSessionId: sessionId } : loaded;
     },
     enabled: !!state.selectedLibraryId,
