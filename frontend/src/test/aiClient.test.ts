@@ -97,6 +97,7 @@ describe("typed AI Wails bridge", () => {
       modelsPath: "C:\\old\\lumine\\models",
       runtimesPath: "C:\\old\\lumine\\runtimes\\llama.cpp",
       semanticIndexPath: "C:\\old\\lumine\\semantic-index",
+      webviewDataPath: "C:\\old\\lumine\\webview2",
       preferredRootPath: "C:\\Users\\user\\AppData\\Local\\Lumine",
       legacyPath: "C:\\old\\lumine",
       legacyDetected: true,
