@@ -229,8 +229,12 @@ func manifestServerArgs(manifest ai.ModelManifest) ([]string, error) {
 		"--n-gpu-layers": {}, "--media-path": {},
 	}
 	for _, arg := range args {
-		if _, exists := protected[arg]; exists {
-			return nil, fmt.Errorf("model serverArgsJson may not override %s", arg)
+		option := arg
+		if index := strings.IndexByte(option, '='); index >= 0 {
+			option = option[:index]
+		}
+		if _, exists := protected[option]; exists {
+			return nil, fmt.Errorf("model serverArgsJson may not override %s", option)
 		}
 	}
 	return args, nil
