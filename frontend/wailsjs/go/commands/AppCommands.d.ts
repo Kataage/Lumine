@@ -29,6 +29,8 @@ export function BulkUpdateStatus(arg1:Array<number>,arg2:string):Promise<void>;
 
 export function CancelAIJob(arg1:number):Promise<void>;
 
+export function CancelLegacyStorageMigration():Promise<commands.AIStorageInfo>;
+
 export function CancelScan():Promise<void>;
 
 export function CancelSemanticSearch(arg1:string):Promise<void>;
@@ -230,6 +232,8 @@ export function RemoveLightweightVisionRuntime():Promise<void>;
 export function RemovePromptEngineModel(arg1:string):Promise<void>;
 
 export function RemovePromptEngineRuntime():Promise<void>;
+
+export function RequestLegacyStorageMigration():Promise<commands.AIStorageInfo>;
 
 export function RestoreAdvancedVisionModel():Promise<void>;
 
