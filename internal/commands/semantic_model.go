@@ -141,17 +141,13 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if c.semanticIndex != nil && status.Engine != "" && status.ModelID != "" && status.Version != "" {
-		warmCtx := c.ctx
-		if warmCtx == nil {
-			warmCtx = context.Background()
-		}
-		go func() {
+		c.startBackgroundTask(func(warmCtx context.Context) {
 			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
 				// Search can still retry the warm synchronously later. Startup
 				// must remain usable even if the cache warm fails.
 				return
 			}
-		}()
+		})
 	}
 
 	_, err := c.EnqueueSemanticBackfill()
