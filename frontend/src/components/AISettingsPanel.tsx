@@ -239,6 +239,7 @@ export function AISettingsPanel() {
       setSettings(health.settings);
       setSettingsLoaded(true);
       setSettingsError(null);
+      setError(null);
 
       const [semantic, vision, advanced, prompt, storage] = await Promise.all([
         getDefaultSemanticModelInfo().catch(() => null),
@@ -272,6 +273,7 @@ export function AISettingsPanel() {
           setSettings(next);
           setSettingsLoaded(true);
           setSettingsError(null);
+          setError(null);
         })
         .catch((cause) => {
           setSettingsError(cause instanceof Error ? cause.message : String(cause));
