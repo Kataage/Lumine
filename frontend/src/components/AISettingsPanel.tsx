@@ -125,9 +125,11 @@ function StatusBadge({ status }: { status: AIEngineStatus }) {
           ? "border-border text-muted-foreground"
           : status === "error"
             ? "border-destructive/40 text-destructive"
-            : status === "running"
-              ? "border-primary/40 text-primary"
-              : "border-amber-500/35 text-amber-300"
+            : status === "ready"
+              ? "border-emerald-500/35 bg-emerald-500/5 text-emerald-300"
+              : status === "running"
+                ? "border-primary/40 bg-primary/5 text-primary"
+                : "border-amber-500/35 bg-amber-500/5 text-amber-300"
       }`}
     >
       {STATUS_LABELS[status]}
@@ -399,50 +401,106 @@ export function AISettingsPanel() {
 
   return (
     <section className="mx-3 mb-3 rounded-xl border border-border bg-muted/10 p-3 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold">ローカルAI</p>
-          <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
-            すべてローカルで動作します。ONにしてもモデルは自動ダウンロードされません。
-          </p>
+      <div className="rounded-xl border border-border/80 bg-background/40 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-semibold">ローカルAI</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
+                settings.enabled
+                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+                  : "border-border text-muted-foreground"
+              }`}>
+                AI全体 {settings.enabled ? "ON" : "OFF"}
+              </span>
+            </div>
+            <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+              すべてローカルで動作します。個別機能の「導入して使用」から必要なモデルだけセットアップできます。
+            </p>
+          </div>
+          <Toggle
+            checked={settings.enabled}
+            disabled={saving}
+            label="AI機能全体"
+            onChange={(enabled) => void update({ enabled })}
+          />
         </div>
-        <Toggle
-          checked={settings.enabled}
-          disabled={saving}
-          label="AI機能全体"
-          onChange={(enabled) => void update({ enabled })}
-        />
+        {storageInfo && (
+          <div className="mt-2.5 rounded-lg border border-border/60 bg-muted/20 p-2 text-[9px] leading-relaxed text-muted-foreground">
+            <p className="font-medium text-foreground">ローカル保存先</p>
+            <p className="mt-1 break-all"><span className="opacity-70">Models:</span> {storageInfo.modelsPath}</p>
+            <p className="break-all"><span className="opacity-70">Runtime:</span> {storageInfo.runtimesPath}</p>
+            <p className="mt-1 opacity-70">Portable版でもこのユーザーフォルダーを使用します。</p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1.5">
         {MODEL_FEATURES.map((feature) => {
+          const taggerUnavailable = feature.key === "tagger";
+          const effectiveEnabled = settings.enabled && settings[feature.key] && !taggerUnavailable;
           const status = feature.key === "semanticSearch" && semanticModel
             ? semanticModel.runtime.state
             : feature.key === "lightweightVision" && lightweightModel
               ? lightweightModel.runtime.state
               : getInitialAIEngineStatus(settings, feature.key);
           return (
-            <div key={feature.key} className="rounded-lg border border-border/70 bg-background/30 p-2.5">
+            <div
+              key={feature.key}
+              className={`rounded-lg border p-2.5 transition-colors ${
+                effectiveEnabled ? "border-primary/25 bg-primary/[0.03]" : "border-border/70 bg-background/30"
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <p className="text-[10px] font-medium">{feature.label}</p>
-                    {feature.key !== "advancedVision" && <StatusBadge status={status} />}
+                    {taggerUnavailable ? (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[9px] font-medium text-amber-300">
+                        準備中
+                      </span>
+                    ) : feature.key === "semanticSearch" || feature.key === "lightweightVision" ? (
+                      <StatusBadge status={status} />
+                    ) : (
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                        effectiveEnabled
+                          ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-300"
+                          : "border-border text-muted-foreground"
+                      }`}>
+                        機能 {effectiveEnabled ? "ON" : "OFF"}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
                     {feature.description}
+                    {taggerUnavailable ? " 現在はモデル選定・製品統合前のため有効化できません。" : ""}
                   </p>
                 </div>
                 <Toggle
-                  checked={settings[feature.key]}
-                  disabled={saving}
+                  checked={effectiveEnabled}
+                  disabled={saving || taggerUnavailable}
                   label={feature.label}
-                  onChange={(checked) => void update({ [feature.key]: checked } as Partial<AISettings>)}
+                  onChange={(checked) => {
+                    if (checked) {
+                      void ensureFeatureEnabled(feature.key);
+                    } else {
+                      void update({ [feature.key]: false } as Partial<AISettings>);
+                    }
+                  }}
                 />
               </div>
 
               {feature.key === "advancedVision" && (
-                <AdvancedVisionSettingsCard enabled={settings.enabled && settings.advancedVision} />
+                <AdvancedVisionSettingsCard
+                  enabled={effectiveEnabled}
+                  onEnable={() => ensureFeatureEnabled("advancedVision")}
+                />
+              )}
+              {feature.key === "promptEngine" && (
+                <PromptEngineSettingsCard
+                  enabled={effectiveEnabled}
+                  onEnable={() => ensureFeatureEnabled("promptEngine")}
+                />
               )}
               {feature.key === "semanticSearch" && semanticModel && (
                 <div className="mt-2 border-t border-border/60 pt-2 space-y-2">
