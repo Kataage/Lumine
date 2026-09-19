@@ -69,6 +69,14 @@ func ValidateManifest(manifest ModelManifest) error {
 	if manifest.SizeBytes > 0 && declaredTotal > 0 && manifest.SizeBytes != declaredTotal {
 		return fmt.Errorf("manifest size mismatch: declared %d, files total %d", manifest.SizeBytes, declaredTotal)
 	}
+	for key, value := range manifest.RuntimeParameters {
+		if !safeComponentPattern.MatchString(key) {
+			return fmt.Errorf("invalid runtime parameter key %q", key)
+		}
+		if len(value) > 4096 {
+			return fmt.Errorf("runtime parameter %q is too large", key)
+		}
+	}
 	return nil
 }
 
