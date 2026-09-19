@@ -5,6 +5,7 @@ import { ViewerGridV2 } from "./components/ViewerGridV2";
 import { AssetDetailPanel } from "./components/AssetDetailPanel";
 import { CreativeOrganizeModal } from "./components/CreativeOrganizeModal";
 import { PostRecordModal } from "./components/PostRecordModal";
+import { AdvancedVisionCompareModal } from "./components/AdvancedVisionCompareModal";
 import { useAppDialog } from "./components/AppDialogProvider";
 import type { AssetDTO, LibraryDTO } from "./api/client";
 import {
@@ -109,6 +110,7 @@ export default function App() {
   const [addingLibrary, setAddingLibrary] = useState(false);
   const [bulkPostRecordOpen, setBulkPostRecordOpen] = useState(false);
   const [creativeOrganizeOpen, setCreativeOrganizeOpen] = useState(false);
+  const [advancedCompareOpen, setAdvancedCompareOpen] = useState(false);
   const autoSyncRunning = useRef(false);
 
   const loadBootstrap = useCallback(async () => {
@@ -413,6 +415,7 @@ export default function App() {
                     onFavorite={handleBulkFavorite}
                     onColorLabel={handleBulkColorLabel}
                     onCreativeOrganize={() => setCreativeOrganizeOpen(true)}
+                    onAdvancedCompare={() => setAdvancedCompareOpen(true)}
                     onPostRecord={() => setBulkPostRecordOpen(true)}
                     onDelete={handleDeleteFiles}
                     onClear={() => setState((current) => ({ ...current, selectedAssets: new Set(), lastSelectedIndex: null }))}
@@ -423,19 +426,21 @@ export default function App() {
           </div>
         </div>
         {creativeOrganizeOpen && selectedIDs.length > 1 && <CreativeOrganizeModal assetIds={selectedIDs} onClose={() => setCreativeOrganizeOpen(false)} />}
+        {advancedCompareOpen && selectedIDs.length > 1 && <AdvancedVisionCompareModal assetIds={selectedIDs} onClose={() => setAdvancedCompareOpen(false)} />}
         {bulkPostRecordOpen && selectedIDs.length > 0 && <PostRecordModal assetIds={selectedIDs} defaultTitle="" onClose={() => setBulkPostRecordOpen(false)} />}
       </AppContext.Provider>
     </QueryClientProvider>
   );
 }
 
-export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLabel, onCreativeOrganize, onPostRecord, onDelete, onClear }: {
+export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLabel, onCreativeOrganize, onAdvancedCompare, onPostRecord, onDelete, onClear }: {
   count: number;
   onRate: (rating: number) => void;
   onStatus: (status: string) => void;
   onFavorite: (favorite: boolean) => void;
   onColorLabel: (label: string) => void;
   onCreativeOrganize?: () => void;
+  onAdvancedCompare?: () => void;
   onPostRecord: () => void;
   onDelete: () => void;
   onClear: () => void;
@@ -458,6 +463,16 @@ export function BulkActionsBar({ count, onRate, onStatus, onFavorite, onColorLab
       <div className="h-5 w-px bg-border" />
       <button onClick={() => onFavorite(true)} className="ui-secondary-button">★ お気に入り</button>
       {onCreativeOrganize && <button onClick={onCreativeOrganize} className="ui-secondary-button">制作整理</button>}
+      {onAdvancedCompare && (
+        <button
+          onClick={onAdvancedCompare}
+          disabled={count > 8}
+          className="ui-secondary-button disabled:opacity-50"
+          title={count > 8 ? "Advanced Visionの比較は8枚までです" : "選択画像をAdvanced Visionで比較"}
+        >
+          AI比較
+        </button>
+      )}
       <button onClick={onPostRecord} className="ui-primary-button">＋ 公開記録</button>
       <button onClick={onDelete} className="h-8 px-3 rounded-lg bg-destructive text-destructive-foreground text-[11px] font-medium whitespace-nowrap">画像ファイルを削除</button>
       <div className="flex-1 min-w-3" />
