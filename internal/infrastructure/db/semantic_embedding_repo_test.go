@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"testing"
 
@@ -197,5 +199,69 @@ func TestSemanticEmbeddingRejectsInvalidVectors(t *testing.T) {
 	}
 	if err := repo.Upsert(1, "engine", "model", "1", []float32{0, 0}); err == nil {
 		t.Fatal("zero vector should fail")
+	}
+}
+
+
+func TestSemanticSearchProgressivePreviewAndRanking(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic Progressive", "/tmp/semantic-progressive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	const count = 320
+	for i := 0; i < count; i++ {
+		id := createSemanticTestAsset(
+			t,
+			database,
+			lib.ID,
+			"/tmp/semantic-progressive",
+			fmt.Sprintf("%03d.png", i),
+		)
+		markSemanticReady(t, database, id, "engine", "model", "1")
+		vector := []float32{float32(count - i), float32(i + 1)}
+		if err := repo.Upsert(id, "engine", "model", "1", vector); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var previews []SemanticSearchProgress
+	result, err := repo.SearchWithProgress(
+		context.Background(),
+		[]float32{1, 0},
+		SemanticSearchQuery{
+			LibraryID:    lib.ID,
+			Engine:       "engine",
+			ModelID:      "model",
+			ModelVersion: "1",
+			Limit:        25,
+		},
+		12,
+		func(progress SemanticSearchProgress) {
+			previews = append(previews, progress)
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != count || len(result.RankedHits) != count || len(result.Hits) != 25 {
+		t.Fatalf("unexpected progressive result sizes: total=%d ranked=%d hits=%d", result.TotalCount, len(result.RankedHits), len(result.Hits))
+	}
+	if len(previews) == 0 {
+		t.Fatal("expected at least one progressive preview")
+	}
+	last := previews[len(previews)-1]
+	if last.ScannedCount != count || last.TotalCount != count {
+		t.Fatalf("final progress = %+v, want %d/%d", last, count, count)
+	}
+	if len(last.Hits) != 12 {
+		t.Fatalf("preview hits = %d, want 12", len(last.Hits))
+	}
+	for i := 1; i < len(last.Hits); i++ {
+		if semanticHitBetter(last.Hits[i], last.Hits[i-1]) {
+			t.Fatalf("preview is not sorted descending: %+v", last.Hits)
+		}
 	}
 }
