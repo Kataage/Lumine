@@ -17,8 +17,21 @@ export interface AssetListResponse {
 
 export interface SemanticSearchProgress {
   requestId: string;
+  stage: string;
   scannedCount: number;
   totalCount: number;
+  elapsedMs: number;
+}
+
+export interface SemanticIndexStatus {
+  state: string;
+  loadedCount: number;
+  totalCount: number;
+  dimensions: number;
+  elapsedMs: number;
+  updatedAgoMs: number;
+  modelId?: string;
+  error?: string;
 }
 export type CopyRequest = cmds.CopyRequest;
 export type CopyResult = cmds.CopyResult;
@@ -543,6 +556,7 @@ type DynamicCommands = {
   SemanticSearchAssetsWithID?: (request: AssetListRequest, requestId: string) => Promise<AssetListResponse | null>;
   SemanticSearchPage?: (sessionId: string, offset: number, limit: number) => Promise<AssetListResponse | null>;
   CancelSemanticSearch?: (requestId: string) => Promise<void>;
+  GetSemanticIndexStatus?: () => Promise<SemanticIndexStatus>;
   ListSimilarAssets?: (assetId: number, request: AssetListRequest) => Promise<AssetListResponse | null>;
   GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
   InstallDefaultSemanticModel?: () => Promise<unknown>;
@@ -710,6 +724,21 @@ export async function cancelSemanticSearch(requestId: string): Promise<void> {
   if (!requestId) return;
   const method = appCommands()?.CancelSemanticSearch;
   if (method) await method(requestId);
+}
+
+export async function getSemanticIndexStatus(): Promise<SemanticIndexStatus> {
+  const method = appCommands()?.GetSemanticIndexStatus;
+  if (!method) {
+    return {
+      state: "unavailable",
+      loadedCount: 0,
+      totalCount: 0,
+      dimensions: 0,
+      elapsedMs: 0,
+      updatedAgoMs: 0,
+    };
+  }
+  return method();
 }
 
 export function onSemanticSearchProgress(callback: (progress: SemanticSearchProgress) => void): () => void {

@@ -40,8 +40,10 @@ type semanticSearchState struct {
 
 type SemanticSearchProgressDTO struct {
 	RequestID    string `json:"requestId"`
+	Stage        string `json:"stage"`
 	ScannedCount int    `json:"scannedCount"`
 	TotalCount   int    `json:"totalCount"`
+	ElapsedMs    int64  `json:"elapsedMs"`
 }
 
 func newSemanticSearchState() *semanticSearchState {
@@ -350,12 +352,27 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		c.semanticSearchState.finish(requestID)
 	}()
 
+	searchStarted := time.Now()
+	emitProgress := func(stage string, scanned, total int) {
+		if requestID == "" || c.ctx == nil || searchCtx.Err() != nil {
+			return
+		}
+		runtime.EventsEmit(c.ctx, "semantic-search:progress", SemanticSearchProgressDTO{
+			RequestID:    requestID,
+			Stage:        stage,
+			ScannedCount: scanned,
+			TotalCount:   total,
+			ElapsedMs:    time.Since(searchStarted).Milliseconds(),
+		})
+	}
+
 	resumeBackground := func() {}
 	if c.aiJobQueue != nil {
 		resumeBackground = c.aiJobQueue.PauseCapabilityForForeground(domain.AICapabilitySemanticSearch)
 	}
 	defer resumeBackground()
 
+	emitProgress("embedding_query", 0, 0)
 	response, err := c.aiManager.Infer(searchCtx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_text",
 		Payload: map[string]any{
@@ -374,14 +391,17 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
 		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
+			emitProgress("warming_index", 0, 0)
 			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
 				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
 		}
+		emitProgress("filtering", 0, 0)
 		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(searchCtx, searchQuery)
 		if err != nil {
 			return nil, err
 		}
+		emitProgress("scoring", 0, len(eligibleIDs))
 		result, err = c.semanticIndex.Search(
 			searchCtx,
 			vector,
@@ -389,14 +409,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 			searchQuery.Offset,
 			searchQuery.Limit,
 			func(scanned, total int) {
-				if requestID == "" || c.ctx == nil || searchCtx.Err() != nil {
-					return
-				}
-				runtime.EventsEmit(c.ctx, "semantic-search:progress", SemanticSearchProgressDTO{
-					RequestID:    requestID,
-					ScannedCount: scanned,
-					TotalCount:   total,
-				})
+				emitProgress("scoring", scanned, total)
 			},
 		)
 		if err != nil {
@@ -409,6 +422,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		}
 	}
 
+	emitProgress("formatting", len(result.Hits), result.TotalCount)
 	sessionID := c.semanticSearchState.store(result.RankedHits, result.TotalCount)
 	return c.semanticHitsToAssets(result.Hits, result.TotalCount, sessionID)
 }

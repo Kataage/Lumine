@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { AssetDTO, AssetListRequest, AssetListResponse } from "../api/client";
+import type { AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
   cancelSemanticSearch,
+  getSemanticIndexStatus,
   listAssets,
   listSimilarAssets,
   onSemanticSearchProgress,
@@ -402,6 +403,15 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   );
 }
 
+function formatSearchElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, milliseconds) / 1000;
+  if (seconds < 10) return `${seconds.toFixed(1)}秒`;
+  if (seconds < 60) return `${Math.round(seconds)}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return `${minutes}分${rest}秒`;
+}
+
 function SemanticSearchProgressOverlay({
   requestRef,
   active,
@@ -409,7 +419,14 @@ function SemanticSearchProgressOverlay({
   requestRef: React.MutableRefObject<{ id: string; key: string } | null>;
   active: boolean;
 }) {
-  const [progress, setProgress] = useState<{ requestId: string; scanned: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    requestId: string;
+    stage: string;
+    scanned: number;
+    total: number;
+    elapsedMs: number;
+  } | null>(null);
+  const [indexStatus, setIndexStatus] = useState<SemanticIndexStatus | null>(null);
 
   useEffect(() => {
     return onSemanticSearchProgress((value) => {
@@ -417,34 +434,122 @@ function SemanticSearchProgressOverlay({
       if (!current || value.requestId !== current.id) return;
       setProgress({
         requestId: value.requestId,
+        stage: value.stage ?? "",
         scanned: Math.max(0, value.scannedCount ?? 0),
         total: Math.max(0, value.totalCount ?? 0),
+        elapsedMs: Math.max(0, value.elapsedMs ?? 0),
       });
     });
   }, [requestRef]);
 
+  useEffect(() => {
+    if (!active) return;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const status = await getSemanticIndexStatus();
+        if (!disposed) setIndexStatus(status);
+      } catch {
+        // Search itself reports hard failures. Diagnostics must never break it.
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 500);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [active]);
+
   if (!active) return null;
+
   const currentID = requestRef.current?.id;
   const current = progress?.requestId === currentID ? progress : null;
+  const stage = current?.stage ?? "";
+  const warming = stage === "warming_index" || (
+    !stage && indexStatus != null && indexStatus.state !== "ready" && indexStatus.state !== "idle"
+  );
+
+  let label = "意味検索を開始しています";
+  let detail = "";
+  let completed = 0;
+  let total = 0;
+  let elapsedMs = current?.elapsedMs ?? 0;
+
+  if (warming && indexStatus) {
+    elapsedMs = indexStatus.elapsedMs;
+    if (indexStatus.state === "counting") {
+      label = "保存済みembedding件数を確認しています";
+      detail = "SQLiteのready済みembeddingを数えています";
+    } else if (indexStatus.state === "loading") {
+      label = "検索インデックスをRAMへ読み込んでいます";
+      completed = indexStatus.loadedCount;
+      total = indexStatus.totalCount;
+      const seconds = Math.max(indexStatus.elapsedMs / 1000, 0.001);
+      const rate = completed > 0 ? completed / seconds : 0;
+      const remainingSeconds = rate > 0 && total > completed ? (total - completed) / rate : 0;
+      const parts = [
+        `${completed.toLocaleString()} / ${total.toLocaleString()}件`,
+        rate > 0 ? `${Math.round(rate).toLocaleString()}件/秒` : "",
+        remainingSeconds > 1 ? `残り目安 ${formatSearchElapsed(remainingSeconds * 1000)}` : "",
+        `最終進捗 ${formatSearchElapsed(indexStatus.updatedAgoMs)}前`,
+      ].filter(Boolean);
+      detail = parts.join(" · ");
+    } else if (indexStatus.state === "error") {
+      label = "検索インデックスの準備に失敗しました";
+      detail = indexStatus.error ?? "原因不明のエラー";
+    } else {
+      label = "検索インデックスを準備しています";
+    }
+  } else {
+    switch (stage) {
+      case "embedding_query":
+        label = "検索文をSigLIP2でベクトル化しています";
+        detail = "テキストembeddingを生成中";
+        break;
+      case "filtering":
+        label = "検索対象を絞り込んでいます";
+        detail = "フォルダ・評価・タグなどの条件をSQLiteで適用中";
+        break;
+      case "scoring":
+        label = "類似度を計算しています";
+        completed = current?.scanned ?? 0;
+        total = current?.total ?? 0;
+        detail = total > 0
+          ? `${completed.toLocaleString()} / ${total.toLocaleString()}件 · exact検索`
+          : "検索対象を準備中";
+        break;
+      case "formatting":
+        label = "検索結果を整形しています";
+        detail = current?.total ? `${current.total.toLocaleString()}件から上位結果を準備中` : "";
+        break;
+      case "warming_index":
+        label = "検索インデックスを準備しています";
+        break;
+      default:
+        label = "意味検索を開始しています";
+    }
+  }
+
+  const percentage = total > 0 ? Math.min(100, (completed / total) * 100) : 0;
 
   return (
     <div className="sticky bottom-3 z-20 mx-auto mt-3 w-fit max-w-[calc(100%-24px)] rounded-xl border border-border/80 bg-card/95 px-3.5 py-2.5 shadow-xl backdrop-blur-md">
       <div className="flex items-center gap-2.5 text-[11px]">
-        <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
-        <span className="font-medium">意味検索中</span>
-        {current && current.total > 0 ? (
-          <span className="tabular-nums text-muted-foreground">
-            {current.scanned.toLocaleString()} / {current.total.toLocaleString()}件
-          </span>
-        ) : (
-          <span className="text-muted-foreground">検索インデックスを準備しています…</span>
+        <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
+        <span className="font-medium">{label}</span>
+        {elapsedMs > 0 && (
+          <span className="tabular-nums text-muted-foreground">経過 {formatSearchElapsed(elapsedMs)}</span>
         )}
       </div>
-      {current && current.total > 0 && (
-        <div className="mt-2 h-1 w-64 max-w-full overflow-hidden rounded-full bg-muted">
+      {detail && (
+        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{detail}</p>
+      )}
+      {total > 0 && (
+        <div className="mt-2 h-1 w-72 max-w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-primary transition-[width]"
-            style={{ width: `${Math.min(100, (current.scanned / current.total) * 100)}%` }}
+            style={{ width: `${percentage}%` }}
           />
         </div>
       )}
