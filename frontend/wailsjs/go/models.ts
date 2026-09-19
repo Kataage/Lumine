@@ -189,8 +189,18 @@ export namespace commands {
 		}
 	}
 	export class AIStorageInfo {
+	    mode: string;
+	    rootPath: string;
+	    dataPath: string;
+	    databasePath: string;
+	    logsPath: string;
 	    modelsPath: string;
 	    runtimesPath: string;
+	    semanticIndexPath: string;
+	    preferredRootPath?: string;
+	    legacyPath?: string;
+	    legacyDetected: boolean;
+	    usingLegacy: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AIStorageInfo(source);
@@ -198,8 +208,18 @@ export namespace commands {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.rootPath = source["rootPath"];
+	        this.dataPath = source["dataPath"];
+	        this.databasePath = source["databasePath"];
+	        this.logsPath = source["logsPath"];
 	        this.modelsPath = source["modelsPath"];
 	        this.runtimesPath = source["runtimesPath"];
+	        this.semanticIndexPath = source["semanticIndexPath"];
+	        this.preferredRootPath = source["preferredRootPath"];
+	        this.legacyPath = source["legacyPath"];
+	        this.legacyDetected = source["legacyDetected"];
+	        this.usingLegacy = source["usingLegacy"];
 	    }
 	}
 	export class AdvancedVisionCandidateInfo {
