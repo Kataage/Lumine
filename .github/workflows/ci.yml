@@ -31,6 +31,7 @@ jobs:
       - name: Verify AI bindings
         run: |
           grep -q "GetAISettings" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "PatchAISettings" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "GetAIHealthSnapshot" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "EnsureSemanticSearchReady" frontend/wailsjs/go/commands/AppCommands.js
           grep -q "SemanticSearchAssetsWithID" frontend/wailsjs/go/commands/AppCommands.js
