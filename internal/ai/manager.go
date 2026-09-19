@@ -138,6 +138,15 @@ func (m *Manager) Load(
 	m.mu.Lock()
 	factory := m.factories[model.Manifest.Engine]
 	current := m.sessions[capability]
+	if current != nil &&
+		current.model.Manifest.ID == model.Manifest.ID &&
+		current.model.Manifest.Version == model.Manifest.Version &&
+		current.model.Manifest.Engine == model.Manifest.Engine &&
+		current.options.AllowGPU == options.AllowGPU &&
+		(current.state == RuntimeStateReady || current.state == RuntimeStateRunning) {
+		m.mu.Unlock()
+		return nil
+	}
 	m.mu.Unlock()
 	if factory == nil {
 		return fmt.Errorf("%w: %s", ErrEngineNotRegistered, model.Manifest.Engine)

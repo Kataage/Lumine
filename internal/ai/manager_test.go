@@ -320,3 +320,92 @@ func TestManagerSerializesConcurrentLoads(t *testing.T) {
 		t.Fatalf("concurrent engine loads = %d, want 1", got)
 	}
 }
+
+
+func TestManagerLoadIsIdempotentForReadySameRuntime(t *testing.T) {
+	data := []byte("idempotent runtime model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+
+	loadCount := 0
+	unloadCount := 0
+	type countedEngine struct{ dummyEngine }
+	var current *countedEngine
+
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		current = &countedEngine{}
+		return current
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wrap the factory with explicit counters by replacing it after installation.
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		engine := &countedEngine{}
+		current = engine
+		return &countingEngine{
+			inner: engine,
+			onLoad: func() { loadCount++ },
+			onUnload: func() { unloadCount++ },
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := manager.Load(
+			context.Background(),
+			domain.AICapabilitySemanticSearch,
+			manifest.ID,
+			manifest.Version,
+			LoadOptions{},
+		); err != nil {
+			t.Fatalf("Load %d: %v", i+1, err)
+		}
+	}
+
+	if loadCount != 1 {
+		t.Fatalf("engine Load calls = %d, want 1", loadCount)
+	}
+	if unloadCount != 0 {
+		t.Fatalf("engine Unload calls = %d, want 0", unloadCount)
+	}
+	if current == nil || !current.loaded {
+		t.Fatal("ready runtime should remain loaded")
+	}
+}
+
+type countingEngine struct {
+	inner    Engine
+	onLoad   func()
+	onUnload func()
+}
+
+func (e *countingEngine) ID() string { return e.inner.ID() }
+func (e *countingEngine) Load(ctx context.Context, model InstalledModel, options LoadOptions) error {
+	if e.onLoad != nil {
+		e.onLoad()
+	}
+	return e.inner.Load(ctx, model, options)
+}
+func (e *countingEngine) Infer(ctx context.Context, request InferenceRequest) (InferenceResponse, error) {
+	return e.inner.Infer(ctx, request)
+}
+func (e *countingEngine) Unload(ctx context.Context) error {
+	if e.onUnload != nil {
+		e.onUnload()
+	}
+	return e.inner.Unload(ctx)
+}

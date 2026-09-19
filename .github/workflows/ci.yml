@@ -12,6 +12,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Go for Wails bindings
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: go.sum
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+
+      - name: Prepare frontend embed directory
+        shell: bash
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
+      - name: Generate Wails bindings
+        run: wails generate module
+
+      - name: Verify AI bindings
+        run: |
+          grep -q "GetAISettings" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "GetAIHealthSnapshot" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "EnsureSemanticSearchReady" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "SemanticSearchAssetsWithID" frontend/wailsjs/go/commands/AppCommands.js
+          grep -q "GetSemanticIndexStatus" frontend/wailsjs/go/commands/AppCommands.js
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

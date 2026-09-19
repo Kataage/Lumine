@@ -4,6 +4,7 @@ import {
   EventsOn,
   enqueueLightweightVisionBackfill,
   getAdvancedVisionStatus,
+  getAIHealthSnapshot,
   getAISettings,
   getAIStorageInfo,
   getDefaultLightweightVisionModelInfo,
@@ -214,6 +215,8 @@ function SettingsRow({
 export function AISettingsPanel() {
   const dialog = useAppDialog();
   const [settings, setSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
   const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
   const [advancedStatus, setAdvancedStatus] = useState<AdvancedVisionStatusInfo | null>(null);
@@ -232,22 +235,27 @@ export function AISettingsPanel() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextSettings, semantic, vision, advanced, prompt, storage] = await Promise.all([
-        getAISettings(),
+      const health = await getAIHealthSnapshot();
+      setSettings(health.settings);
+      setSettingsLoaded(true);
+      setSettingsError(null);
+
+      const [semantic, vision, advanced, prompt, storage] = await Promise.all([
         getDefaultSemanticModelInfo().catch(() => null),
         getDefaultLightweightVisionModelInfo().catch(() => null),
         getAdvancedVisionStatus().catch(() => null),
         getPromptEngineStatus().catch(() => null),
         getAIStorageInfo().catch(() => null),
       ]);
-      setSettings(nextSettings);
       setSemanticModel(semantic);
       setLightweightModel(vision);
       setAdvancedStatus(advanced);
       setPromptStatus(prompt);
       setStorageInfo(storage);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setSettingsError(message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -258,6 +266,17 @@ export function AISettingsPanel() {
   }, [refresh]);
 
   useEffect(() => {
+    const offSettingsChanged = EventsOn("ai:settings-changed", () => {
+      void getAISettings()
+        .then((next) => {
+          setSettings(next);
+          setSettingsLoaded(true);
+          setSettingsError(null);
+        })
+        .catch((cause) => {
+          setSettingsError(cause instanceof Error ? cause.message : String(cause));
+        });
+    });
     const offModelDownload = EventsOn("ai:model-download", (raw: unknown) => {
       const progress = raw as {
         modelId?: string;
@@ -290,6 +309,7 @@ export function AISettingsPanel() {
       }
     });
     return () => {
+      offSettingsChanged();
       offModelDownload();
       offRuntimeDownload();
     };
@@ -297,12 +317,13 @@ export function AISettingsPanel() {
 
   useEffect(() => {
     if (!open) return;
+    void refresh();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, refresh]);
 
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
@@ -313,6 +334,8 @@ export function AISettingsPanel() {
     try {
       const saved = await setAISettings(next);
       setSettings(saved);
+      setSettingsLoaded(true);
+      setSettingsError(null);
       return saved;
     } catch (cause) {
       setSettings(previous);
@@ -327,6 +350,8 @@ export function AISettingsPanel() {
     const next = { ...settings, enabled: true, [feature]: true } as AISettings;
     const saved = await setAISettings(next);
     setSettings(saved);
+    setSettingsLoaded(true);
+    setSettingsError(null);
   };
 
   const setupSemantic = async () => {
@@ -493,10 +518,14 @@ export function AISettingsPanel() {
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <p className="text-xs font-medium">{settings.enabled ? "AIを使用する" : "AIは停止中"}</p>
-              <p className="text-[10px] text-muted-foreground">{settings.enabled ? `${enabledCount}機能が有効` : "モデルは実行されません"}</p>
+              <p className="text-xs font-medium">
+                {!settingsLoaded ? (settingsError ? "AI状態を取得できません" : "AI状態を確認中") : settings.enabled ? "AIを使用する" : "AIは停止中"}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                {!settingsLoaded ? (settingsError ?? "保存済み設定を読み込んでいます") : settings.enabled ? `${enabledCount}機能が有効` : "モデルは実行されません"}
+              </p>
             </div>
-            <Switch checked={settings.enabled} disabled={saving} label="AI機能全体" onChange={(enabled) => void update({ enabled }).catch(() => undefined)} />
+            <Switch checked={settingsLoaded && settings.enabled} disabled={saving || !settingsLoaded} label="AI機能全体" onChange={(enabled) => void update({ enabled }).catch(() => undefined)} />
             <button
               type="button"
               className="ml-1 flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -767,7 +796,11 @@ export function AISettingsPanel() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="text-[11px] font-semibold">ローカルAI</p>
-                {errorCount > 0 ? (
+                {!settingsLoaded ? (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                    {settingsError ? "ERR" : "確認中"}
+                  </span>
+                ) : errorCount > 0 ? (
                   <span className="rounded-full bg-destructive/15 px-1.5 py-0.5 text-[9px] font-medium text-red-200">要確認</span>
                 ) : settings.enabled ? (
                   <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300">ON</span>
@@ -776,7 +809,13 @@ export function AISettingsPanel() {
                 )}
               </div>
               <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                {loading ? "状態を確認中…" : settings.enabled ? `${enabledCount}機能が有効 · ${readyCount} runtime ready` : "端末内AIは停止中"}
+                {!settingsLoaded
+                  ? settingsError ? "AI状態を取得できません" : "状態を確認中…"
+                  : loading
+                    ? "状態を更新中…"
+                    : settings.enabled
+                      ? `${enabledCount}機能が有効 · ${readyCount} runtime ready`
+                      : "端末内AIは停止中"}
               </p>
             </div>
             <svg className="h-4 w-4 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
