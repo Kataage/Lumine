@@ -32,7 +32,7 @@ def fail(message: str) -> None:
 try:
     import psutil
     import requests
-    from huggingface_hub import hf_hub_download, model_info
+    from huggingface_hub import hf_hub_download, model_info, model_info
 except Exception as exc:
     fail(f"Advanced Vision adapter dependency error: {exc}")
 
@@ -148,10 +148,7 @@ def server_extra_args(model: dict[str, Any]) -> list[str]:
     raw = param(model, "serverArgsJson", "").strip()
     if not raw:
         return []
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid serverArgsJson: {exc}") from exc
+    value = json.loads(raw)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError("serverArgsJson must be a JSON array of strings")
 
@@ -160,9 +157,10 @@ def server_extra_args(model: dict[str, Any]) -> list[str]:
         "--threads", "--parallel", "-ngl", "--n-gpu-layers", "--media-path",
     }
     for item in value:
-        if item in protected:
-            raise ValueError(f"serverArgsJson may not override protected option {item}")
-    return list(value)
+        option = item.split("=", 1)[0]
+        if option in protected:
+            raise ValueError(f"serverArgsJson may not override protected option {option}")
+    return value
 
 
 def free_port() -> int:
@@ -320,7 +318,14 @@ def main() -> None:
         server_exe = resolve_server(profile)
         threads = max(1, int(param(profile, "threads", "8")))
         context = max(2048, int(param(profile, "context", "8192")))
-        extra_args = server_extra_args(profile)
+        extra_args_raw = param(profile, "serverArgsJson", "[]")
+        try:
+            extra_args_value = json.loads(extra_args_raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid serverArgsJson: {exc}") from exc
+        if not isinstance(extra_args_value, list) or not all(isinstance(item, str) for item in extra_args_value):
+            raise ValueError("serverArgsJson must be a JSON string array")
+        extra_args = list(extra_args_value)
 
         if category == "model_size":
             size = model_path.stat().st_size + mmproj_path.stat().st_size
