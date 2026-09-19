@@ -238,3 +238,73 @@ func TestLegacyMigrationWithoutDatabaseStillReusesModels(t *testing.T) {
 		t.Fatalf("legacy model was not copied: len=%d", len(got))
 	}
 }
+
+
+func TestFailedInstalledMigrationKeepsLegacyRootSelected(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	local := filepath.Join(base, "local")
+	legacy := filepath.Join(home, "lumine")
+	writeTestFile(t, filepath.Join(legacy, "lumine.db"), "legacy-db")
+	// Force asset-copy failure before the DB switch.
+	writeTestFile(t, filepath.Join(legacy, "models"), "not-a-directory")
+
+	layout, err := Resolve(ResolveOptions{Mode: ModeInstalled, HomeDir: home, LocalDataDir: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RequestLegacyCopy(layout); err != nil {
+		t.Fatal(err)
+	}
+	if migrated, err := ApplyPendingLegacyCopy(layout); err == nil || migrated {
+		t.Fatalf("expected migration failure, got migrated=%v err=%v", migrated, err)
+	}
+
+	preferred := filepath.Join(local, "Lumine")
+	if _, err := os.Stat(filepath.Join(preferred, "lumine.db")); !os.IsNotExist(err) {
+		t.Fatalf("failed migration unexpectedly switched target DB: %v", err)
+	}
+
+	resolved, err := Resolve(ResolveOptions{Mode: ModeInstalled, HomeDir: home, LocalDataDir: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolved.UsingLegacy || resolved.RootDir != legacy {
+		t.Fatalf("pending failed migration did not pin legacy root: %+v", resolved)
+	}
+	if !LegacyMigrationStatus(resolved).Pending {
+		t.Fatal("failed migration request should remain pending for retry/cancel")
+	}
+}
+
+func TestFailedPortableMigrationKeepsCurrentDatabase(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	portable := filepath.Join(base, "portable")
+	legacy := filepath.Join(home, "lumine")
+	writeTestFile(t, filepath.Join(legacy, "lumine.db"), "legacy-db")
+	writeTestFile(t, filepath.Join(legacy, "models"), "not-a-directory")
+	writeTestFile(t, filepath.Join(portable, "data", "lumine.db"), "portable-db")
+
+	layout, err := Resolve(ResolveOptions{
+		Mode:           ModePortable,
+		ExecutablePath: filepath.Join(portable, "Lumine-portable.exe"),
+		HomeDir:        home,
+		LocalDataDir:   filepath.Join(base, "local"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RequestLegacyCopy(layout); err != nil {
+		t.Fatal(err)
+	}
+	if migrated, err := ApplyPendingLegacyCopy(layout); err == nil || migrated {
+		t.Fatalf("expected portable migration failure, got migrated=%v err=%v", migrated, err)
+	}
+	if got := readTestFile(t, filepath.Join(portable, "data", "lumine.db")); got != "portable-db" {
+		t.Fatalf("failed portable migration changed current DB: %q", got)
+	}
+	if !LegacyMigrationStatus(layout).Pending {
+		t.Fatal("failed portable migration request should remain pending")
+	}
+}
