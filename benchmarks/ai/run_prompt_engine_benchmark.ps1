@@ -37,9 +37,6 @@ function Require-Command([string]$Name) {
     }
 }
 
-Require-Command "go"
-Require-Command "git"
-
 $PythonBootstrap = $null
 $PythonBootstrapArgs = @()
 if (Get-Command "py" -ErrorAction SilentlyContinue) {
@@ -81,21 +78,21 @@ function Invoke-AIBench([string[]]$Arguments) {
     }
 }
 
-function Get-OptionalProperty($Object, [string]$Name) {
-    if ($null -eq $Object) { return $null }
-    $property = $Object.PSObject.Properties[$Name]
-    if ($null -eq $property) { return $null }
-    return $property.Value
-}
-
 function Test-ProfilePinned([string]$ProfilePath) {
     $profile = Get-Content $ProfilePath -Raw | ConvertFrom-Json
-    $modelHash = [string]$profile.parameters.modelSha256
+    $artifactHash = ([string]$profile.artifactSha256).Trim()
+    $modelHash = ([string]$profile.parameters.modelSha256).Trim()
+    $runtimeHash = ([string]$profile.parameters.llamaWindowsCpuArchiveSha256).Trim()
+    $modelFile = ([string]$profile.parameters.modelFile).Trim()
+    $runtimeRelease = ([string]$profile.parameters.llamaRelease).Trim()
     return (
         ([string]$profile.version) -ne "main" -and
-        -not [string]::IsNullOrWhiteSpace([string]$profile.artifactSha256) -and
+        $artifactHash.Length -eq 64 -and
         [Int64]$profile.modelSizeBytes -gt 0 -and
-        -not [string]::IsNullOrWhiteSpace($modelHash)
+        $modelHash.Length -eq 64 -and
+        -not [string]::IsNullOrWhiteSpace($modelFile) -and
+        -not [string]::IsNullOrWhiteSpace($runtimeRelease) -and
+        $runtimeHash.Length -eq 64
     )
 }
 
@@ -146,6 +143,8 @@ if ($InspectOnly) {
 if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     throw "-HardwareId is required unless -InspectOnly is used."
 }
+Require-Command "go"
+Require-Command "git"
 if ([string]::IsNullOrWhiteSpace($Cpu)) {
     $Cpu = ((Get-CimInstance Win32_Processor | ForEach-Object { $_.Name.Trim() }) -join " + ")
 }
