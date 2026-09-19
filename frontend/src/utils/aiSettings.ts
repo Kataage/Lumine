@@ -19,6 +19,7 @@ export type AIModelFeatureKey =
 export type AIEngineStatus =
   | "disabled"
   | "model_not_installed"
+  | "not_loaded"
   | "ready"
   | "running"
   | "error";
@@ -55,9 +56,7 @@ export function isAIModelFeatureEffectivelyEnabled(
   return settings.enabled && settings[feature];
 }
 
-// Until #162 provides live model-manager state, an enabled model-backed
-// feature is explicitly shown as "model not installed" rather than implying
-// that a runtime/model is already available.
+// Initial state is conservative until live model/runtime diagnostics arrive.
 export function getInitialAIEngineStatus(
   settings: AISettings,
   feature: AIModelFeatureKey,
