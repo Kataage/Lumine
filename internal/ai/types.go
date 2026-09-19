@@ -82,6 +82,7 @@ type RuntimeState string
 const (
 	RuntimeStateDisabled          RuntimeState = "disabled"
 	RuntimeStateModelNotInstalled RuntimeState = "model_not_installed"
+	RuntimeStateNotLoaded         RuntimeState = "not_loaded"
 	RuntimeStateReady             RuntimeState = "ready"
 	RuntimeStateRunning           RuntimeState = "running"
 	RuntimeStateError             RuntimeState = "error"
