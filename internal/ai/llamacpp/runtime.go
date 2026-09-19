@@ -58,7 +58,26 @@ type RuntimeStore struct {
 	client *http.Client
 }
 
+const LlamaRuntimeVersion = "b11053"
+
 func DefaultRuntimeManifest() RuntimeManifest {
+	return CPURuntimeManifest()
+}
+
+func CPURuntimeManifest() RuntimeManifest {
+	return RuntimeManifest{
+		ID:             "llama.cpp-win-cpu-x64",
+		Version:        LlamaRuntimeVersion,
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-cpu-x64.zip",
+		SHA256:         "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc",
+		SizeBytes:      18453883,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+}
+
+func LegacyCPURuntimeManifest() RuntimeManifest {
 	return RuntimeManifest{
 		ID:             "llama.cpp-win-cpu-x64",
 		Version:        "b10964",
@@ -68,6 +87,58 @@ func DefaultRuntimeManifest() RuntimeManifest {
 		ExecutableName: "llama-server.exe",
 		Platform:       "windows",
 		Architecture:   "amd64",
+	}
+}
+
+func VulkanRuntimeManifest() RuntimeManifest {
+	return RuntimeManifest{
+		ID:             "llama.cpp-win-vulkan-x64",
+		Version:        LlamaRuntimeVersion,
+		URL:            "https://github.com/ggml-org/llama.cpp/releases/download/b11053/llama-b11053-bin-win-vulkan-x64.zip",
+		SHA256:         "e9b796976a476e5c706a7858bdfb39b67d10e5651d17ddaba7c3f45479d6e331",
+		SizeBytes:      31838165,
+		ExecutableName: "llama-server.exe",
+		Platform:       "windows",
+		Architecture:   "amd64",
+	}
+}
+
+func PreferredRuntimeManifest(allowGPU bool) RuntimeManifest {
+	if allowGPU {
+		return VulkanRuntimeManifest()
+	}
+	return CPURuntimeManifest()
+}
+
+func RuntimeManifestsForPolicy(allowGPU bool) []RuntimeManifest {
+	if allowGPU {
+		return []RuntimeManifest{VulkanRuntimeManifest(), CPURuntimeManifest()}
+	}
+	return []RuntimeManifest{CPURuntimeManifest()}
+}
+
+func RuntimeBackend(manifest RuntimeManifest) string {
+	if manifest.ID == VulkanRuntimeManifest().ID {
+		return "vulkan"
+	}
+	return "cpu"
+}
+
+type runtimeCandidate struct {
+	manifest RuntimeManifest
+	allowGPU bool
+	provider string
+}
+
+func runtimeCandidates(allowGPU bool) []runtimeCandidate {
+	if allowGPU {
+		return []runtimeCandidate{
+			{manifest: VulkanRuntimeManifest(), allowGPU: true, provider: "vulkan"},
+			{manifest: CPURuntimeManifest(), allowGPU: false, provider: "cpu"},
+		}
+	}
+	return []runtimeCandidate{
+		{manifest: CPURuntimeManifest(), allowGPU: false, provider: "cpu"},
 	}
 }
 

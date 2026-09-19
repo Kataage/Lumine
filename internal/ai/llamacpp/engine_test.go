@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kataage/lumine/internal/ai"
 )
 
 func TestParseVisionChatResponse(t *testing.T) {
@@ -86,5 +88,51 @@ func TestVisionJSONSchemaRequiresStableContract(t *testing.T) {
 	want := []string{"shortCaption","detailedCaption","subject","background","composition","viewpoint","visibleText"}
 	if strings.Join(required, ",") != strings.Join(want, ",") {
 		t.Fatalf("required fields = %v", required)
+	}
+}
+
+
+func TestLlamaEnginesAdvertiseGPUDiagnostics(t *testing.T) {
+	var _ ai.GPUCapableEngine = (*Engine)(nil)
+	var _ ai.RuntimeDiagnosticsProvider = (*Engine)(nil)
+	var _ ai.GPUCapableEngine = (*PromptEngine)(nil)
+	var _ ai.RuntimeDiagnosticsProvider = (*PromptEngine)(nil)
+
+	if !newEngine(nil, EngineID).SupportsGPU() {
+		t.Fatal("Lightweight Vision engine should advertise GPU capability")
+	}
+	if !newEngine(nil, AdvancedEngineID).SupportsGPU() {
+		t.Fatal("Advanced Vision engine should advertise GPU capability")
+	}
+	if !NewPromptEngine(nil).(*PromptEngine).SupportsGPU() {
+		t.Fatal("Prompt Engine should advertise GPU capability")
+	}
+}
+
+func TestLlamaServerArgsRespectGPUOffloadPolicy(t *testing.T) {
+	gpu := buildLlamaServerArgs("model.gguf", "mmproj.gguf", 1234, 4096, 8, true, nil)
+	joinedGPU := strings.Join(gpu, " ")
+	if !strings.Contains(joinedGPU, "-ngl 99") {
+		t.Fatalf("GPU args do not request layer offload: %v", gpu)
+	}
+	if strings.Contains(joinedGPU, "--no-mmproj-offload") {
+		t.Fatalf("GPU args unexpectedly disable mmproj offload: %v", gpu)
+	}
+
+	cpu := buildLlamaServerArgs("model.gguf", "mmproj.gguf", 1234, 4096, 8, false, nil)
+	joinedCPU := strings.Join(cpu, " ")
+	if !strings.Contains(joinedCPU, "-ngl 0") || !strings.Contains(joinedCPU, "--no-mmproj-offload") {
+		t.Fatalf("CPU args do not disable GPU/mmproj offload: %v", cpu)
+	}
+}
+
+func TestPromptServerArgsRespectGPUOffloadPolicy(t *testing.T) {
+	gpu := buildPromptServerArgs("model.gguf", 1234, 8192, 8, true, nil)
+	if !strings.Contains(strings.Join(gpu, " "), "-ngl 99") {
+		t.Fatalf("Prompt GPU args do not request offload: %v", gpu)
+	}
+	cpu := buildPromptServerArgs("model.gguf", 1234, 8192, 8, false, nil)
+	if !strings.Contains(strings.Join(cpu, " "), "-ngl 0") {
+		t.Fatalf("Prompt CPU args do not disable offload: %v", cpu)
 	}
 }

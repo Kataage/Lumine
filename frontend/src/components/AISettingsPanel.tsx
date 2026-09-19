@@ -744,10 +744,22 @@ export function AISettingsPanel() {
                               <p className="mt-1 text-[11px] text-muted-foreground">
                                 モデル {formatFileSize(lightweightModel.sizeBytes)}
                                 <span className="mx-1.5">·</span>
-                                runtime {formatFileSize(lightweightModel.llamaRuntime.sizeBytes)}
+                                runtime {lightweightModel.llamaRuntime.backend === "vulkan" ? "Vulkan" : "CPU"} {formatFileSize(lightweightModel.llamaRuntime.sizeBytes)}
                                 <span className="mx-1.5">·</span>
                                 {lightweightModel.license}
                               </p>
+                              {(status === "ready" || status === "running") && lightweightModel.runtime.executionProvider && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                                    実行: {lightweightModel.runtime.executionProvider === "vulkan" ? "Vulkan (GPU)" : lightweightModel.runtime.executionProvider.toUpperCase()}
+                                  </span>
+                                  {!lightweightModel.llamaRuntime.installed && lightweightModel.llamaRuntime.fallbackInstalled && (
+                                    <span className="rounded-full border border-amber-500/20 bg-amber-500/[0.07] px-2.5 py-1 text-[10px] font-medium text-amber-100">
+                                      CPU fallbackのみ
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center justify-end gap-2">
                               {status !== "ready" && status !== "running" ? (
@@ -755,9 +767,16 @@ export function AISettingsPanel() {
                                   {visionBusy ? "準備しています…" : lightweightModel.installed && lightweightModel.llamaRuntime.installed ? "再読み込み" : "セットアップ"}
                                 </button>
                               ) : (
-                                <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void enqueueLightweightVisionBackfill().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>
-                                  既存画像を解析
-                                </button>
+                                <>
+                                  {!lightweightModel.llamaRuntime.installed && (
+                                    <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void setupLightweightVision()}>
+                                      {visionBusy ? "準備しています…" : lightweightModel.llamaRuntime.backend === "vulkan" ? "GPU runtimeを追加" : "runtimeを追加"}
+                                    </button>
+                                  )}
+                                  <button type="button" className="ui-secondary-button" disabled={visionBusy || !settingsReadyForActions} onClick={() => void enqueueLightweightVisionBackfill().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}>
+                                    既存画像を解析
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -766,6 +785,11 @@ export function AISettingsPanel() {
                           )}
                           {(visionModelProgress?.total ?? 0) > 0 && (
                             <div className="mt-3"><ProgressBar downloaded={visionModelProgress!.downloaded} total={visionModelProgress!.total} label="Lightweight Visionモデルをダウンロード" /></div>
+                          )}
+                          {lightweightModel.runtime.warning && (
+                            <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2.5 text-[11px] leading-relaxed text-amber-100">
+                              GPU runtime: {lightweightModel.runtime.warning}
+                            </p>
                           )}
                           {lightweightModel.runtime.error && (
                             <p className="mt-3 rounded-xl bg-destructive/[0.08] px-3 py-2.5 text-[11px] leading-relaxed text-red-200">{lightweightModel.runtime.error}</p>

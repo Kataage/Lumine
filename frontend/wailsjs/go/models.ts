@@ -357,11 +357,14 @@ export namespace commands {
 	export class LightweightRuntimeInfo {
 	    id: string;
 	    version: string;
+	    backend: string;
 	    sizeBytes: number;
 	    installed: boolean;
 	    executablePath?: string;
 	    platform: string;
 	    architecture: string;
+	    fallbackInstalled: boolean;
+	    fallbackSizeBytes?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new LightweightRuntimeInfo(source);
@@ -371,11 +374,14 @@ export namespace commands {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.version = source["version"];
+	        this.backend = source["backend"];
 	        this.sizeBytes = source["sizeBytes"];
 	        this.installed = source["installed"];
 	        this.executablePath = source["executablePath"];
 	        this.platform = source["platform"];
 	        this.architecture = source["architecture"];
+	        this.fallbackInstalled = source["fallbackInstalled"];
+	        this.fallbackSizeBytes = source["fallbackSizeBytes"];
 	    }
 	}
 	export class AdvancedVisionStatusInfo {

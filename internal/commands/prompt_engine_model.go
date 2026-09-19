@@ -41,19 +41,13 @@ type PromptEngineStatusInfo struct {
 }
 
 func (c *AppCommands) GetPromptEngineStatus() PromptEngineStatusInfo {
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
+	settings, _ := c.GetAISettings()
 	info := PromptEngineStatusInfo{
 		Runtime: ai.RuntimeStatus{
 			Capability: domain.AICapabilityPromptEngine,
 			State:      ai.RuntimeStateModelNotInstalled,
 		},
-		LlamaRuntime: LightweightRuntimeInfo{
-			ID:           runtimeManifest.ID,
-			Version:      runtimeManifest.Version,
-			SizeBytes:    runtimeManifest.SizeBytes,
-			Platform:     runtimeManifest.Platform,
-			Architecture: runtimeManifest.Architecture,
-		},
+		LlamaRuntime: c.currentLlamaRuntimeInfo(settings.GPUAcceleration),
 		SelectionNote: "標準Prompt LLMはIssue #169の実測で決定予定です。現在のQwen3.5 4B MはAPI/統合検証用の固定reference candidateです。",
 	}
 	if c.aiManager != nil {
@@ -63,12 +57,6 @@ func (c *AppCommands) GetPromptEngineStatus() PromptEngineStatusInfo {
 			if active, err := c.getPromptEngineActiveModelID(); err == nil {
 				info.ActiveModelID = active
 			}
-		}
-	}
-	if c.llamaRuntimeStore != nil {
-		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
-			info.LlamaRuntime.Installed = true
-			info.LlamaRuntime.ExecutablePath = installed.ExecutablePath
 		}
 	}
 	for _, manifest := range llamacpp.PromptEngineCandidateManifests() {
@@ -98,28 +86,15 @@ func (c *AppCommands) InstallPromptEngineRuntime() (*LightweightRuntimeInfo, err
 	if c.llamaRuntimeStore == nil {
 		return nil, errors.New("llama.cpp runtime store is not available")
 	}
-	manifest := llamacpp.DefaultRuntimeManifest()
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return nil, err
+	}
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	installed, err := c.llamaRuntimeStore.Install(ctx, manifest, func(progress llamacpp.RuntimeDownloadProgress) {
-		if c.ctx != nil {
-			runtime.EventsEmit(c.ctx, "ai:runtime-download", progress)
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &LightweightRuntimeInfo{
-		ID:             installed.ID,
-		Version:        installed.Version,
-		SizeBytes:      manifest.SizeBytes,
-		Installed:      true,
-		ExecutablePath: installed.ExecutablePath,
-		Platform:       installed.Platform,
-		Architecture:   installed.Architecture,
-	}, nil
+	return c.installSharedLlamaRuntimeBundle(ctx, settings.GPUAcceleration)
 }
 
 func (c *AppCommands) RemovePromptEngineRuntime() error {
@@ -189,7 +164,7 @@ func (c *AppCommands) LoadPromptEngineModel(modelID string) error {
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
 	}
-	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
 	manifest, ok := promptEngineManifest(modelID)
@@ -234,10 +209,18 @@ func (c *AppCommands) RestorePromptEngineModel() error {
 	if !ok {
 		return nil
 	}
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
-	if _, err := c.llamaRuntimeStore.Verify(runtimeManifest); err != nil {
-		metadata := filepath.Join(c.llamaRuntimeStore.Root(), runtimeManifest.ID, runtimeManifest.Version, "runtime.json")
-		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
+		missing := true
+		for _, runtimeManifest := range llamacpp.RuntimeManifestsForPolicy(settings.GPUAcceleration) {
+			metadata := filepath.Join(c.llamaRuntimeStore.Root(), runtimeManifest.ID, runtimeManifest.Version, "runtime.json")
+			if _, statErr := os.Stat(metadata); statErr == nil {
+				missing = false
+				break
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+		}
+		if missing {
 			return nil
 		}
 		return err

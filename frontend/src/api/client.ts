@@ -260,11 +260,14 @@ export interface SemanticModelInfo {
 export interface LightweightRuntimeInfo {
   id: string;
   version: string;
+  backend: "cpu" | "vulkan";
   sizeBytes: number;
   installed: boolean;
   executablePath?: string;
   platform: string;
   architecture: string;
+  fallbackInstalled: boolean;
+  fallbackSizeBytes?: number;
 }
 
 export interface LightweightVisionModelInfo {
@@ -734,6 +737,24 @@ function normalizeRuntimeStatus(value: {
   };
 }
 
+function normalizeLightweightRuntimeInfo(value: cmds.LightweightRuntimeInfo): LightweightRuntimeInfo {
+  if (value.backend !== "cpu" && value.backend !== "vulkan") {
+    throw new Error(`未知のllama.cpp backendです: ${value.backend}`);
+  }
+  return {
+    id: value.id,
+    version: value.version,
+    backend: value.backend,
+    sizeBytes: value.sizeBytes,
+    installed: value.installed,
+    executablePath: value.executablePath,
+    platform: value.platform,
+    architecture: value.architecture,
+    fallbackInstalled: value.fallbackInstalled,
+    fallbackSizeBytes: value.fallbackSizeBytes,
+  };
+}
+
 function normalizeAIStorageInfo(value: cmds.AIStorageInfo): AIStorageInfo {
   if (value.mode !== "installed" && value.mode !== "portable") {
     throw new Error(`未知のLumine storage modeです: ${value.mode}`);
@@ -934,6 +955,7 @@ export async function getDefaultLightweightVisionModelInfo(): Promise<Lightweigh
   return {
     ...value,
     runtime: normalizeRuntimeStatus(value.runtime),
+    llamaRuntime: normalizeLightweightRuntimeInfo(value.llamaRuntime),
   };
 }
 
@@ -992,6 +1014,7 @@ export async function getAdvancedVisionStatus(): Promise<AdvancedVisionStatusInf
   return {
     ...value,
     runtime: normalizeRuntimeStatus(value.runtime),
+    llamaRuntime: normalizeLightweightRuntimeInfo(value.llamaRuntime),
     models: value.models ?? [],
   };
 }
@@ -1041,6 +1064,7 @@ export async function getPromptEngineStatus(): Promise<PromptEngineStatusInfo> {
   return {
     ...value,
     runtime: normalizeRuntimeStatus(value.runtime),
+    llamaRuntime: normalizeLightweightRuntimeInfo(value.llamaRuntime),
     models: value.models ?? [],
   };
 }
