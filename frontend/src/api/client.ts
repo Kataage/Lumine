@@ -181,6 +181,53 @@ export interface SemanticModelInfo {
   };
 }
 
+export interface LightweightRuntimeInfo {
+  id: string;
+  version: string;
+  sizeBytes: number;
+  installed: boolean;
+  executablePath?: string;
+  platform: string;
+  architecture: string;
+}
+
+export interface LightweightVisionModelInfo {
+  id: string;
+  version: string;
+  engine: string;
+  displayName: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+  runtime: SemanticModelInfo["runtime"];
+  llamaRuntime: LightweightRuntimeInfo;
+}
+
+export interface LightweightVisionResult {
+  schemaVersion: number;
+  shortCaption: string;
+  detailedCaption: string;
+  subject: string;
+  background: string;
+  composition: string;
+  viewpoint: string;
+  visibleText: string[];
+  notes: string[];
+  completionTokens?: number;
+}
+
+export interface LightweightVisionAnalysis {
+  assetId: number;
+  state: "queued" | "running" | "ready" | "failed" | "stale";
+  engine?: string;
+  modelId?: string;
+  modelVersion?: string;
+  result?: LightweightVisionResult;
+  errorMessage?: string;
+  analyzedAt?: string;
+  updatedAt: string;
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -203,6 +250,15 @@ type DynamicCommands = {
   GetDefaultSemanticModelInfo?: () => Promise<SemanticModelInfo | null>;
   InstallDefaultSemanticModel?: () => Promise<unknown>;
   LoadDefaultSemanticModel?: () => Promise<void>;
+  GetDefaultLightweightVisionModelInfo?: () => Promise<LightweightVisionModelInfo | null>;
+  InstallLightweightVisionRuntime?: () => Promise<LightweightRuntimeInfo | null>;
+  RemoveLightweightVisionRuntime?: () => Promise<void>;
+  InstallDefaultLightweightVisionModel?: () => Promise<unknown>;
+  RemoveDefaultLightweightVisionModel?: () => Promise<void>;
+  LoadDefaultLightweightVisionModel?: () => Promise<void>;
+  GetLightweightVisionAnalysis?: (assetId: number) => Promise<LightweightVisionAnalysis | null>;
+  EnqueueLightweightVisionBackfill?: () => Promise<number>;
+  ReanalyzeAssets?: (assetIds: number[], capability: string, priority: number) => Promise<number>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -322,6 +378,44 @@ export async function installDefaultSemanticModel(): Promise<void> {
 
 export async function loadDefaultSemanticModel(): Promise<void> {
   await requireDynamic("LoadDefaultSemanticModel")();
+}
+
+export async function getDefaultLightweightVisionModelInfo(): Promise<LightweightVisionModelInfo> {
+  const value = await requireDynamic("GetDefaultLightweightVisionModelInfo")();
+  if (!value) throw new Error("Lightweight Visionモデル情報を取得できませんでした。");
+  return value;
+}
+
+export async function installLightweightVisionRuntime(): Promise<void> {
+  await requireDynamic("InstallLightweightVisionRuntime")();
+}
+
+export async function removeLightweightVisionRuntime(): Promise<void> {
+  await requireDynamic("RemoveLightweightVisionRuntime")();
+}
+
+export async function installDefaultLightweightVisionModel(): Promise<void> {
+  await requireDynamic("InstallDefaultLightweightVisionModel")();
+}
+
+export async function removeDefaultLightweightVisionModel(): Promise<void> {
+  await requireDynamic("RemoveDefaultLightweightVisionModel")();
+}
+
+export async function loadDefaultLightweightVisionModel(): Promise<void> {
+  await requireDynamic("LoadDefaultLightweightVisionModel")();
+}
+
+export async function getLightweightVisionAnalysis(assetId: number): Promise<LightweightVisionAnalysis | null> {
+  return requireDynamic("GetLightweightVisionAnalysis")(assetId);
+}
+
+export async function enqueueLightweightVisionBackfill(): Promise<number> {
+  return requireDynamic("EnqueueLightweightVisionBackfill")();
+}
+
+export async function reanalyzeAssets(assetIds: number[], capability: string, priority = 100): Promise<number> {
+  return requireDynamic("ReanalyzeAssets")(assetIds, capability, priority);
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {
