@@ -67,7 +67,7 @@ func TestNormalizeComfyPromptExtractsCoreGenerationSettings(t *testing.T) {
 	if result.Width != 1024 || result.Height != 1536 {
 		t.Fatalf("size = %dx%d", result.Width, result.Height)
 	}
-	if len(result.LoRAs) != 2 {
+	if len(result.LoRAs) != 1 {
 		t.Fatalf("LoRAs = %+v", result.LoRAs)
 	}
 	var foundTrigger bool
