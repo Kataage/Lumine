@@ -2,6 +2,7 @@ package commands
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/kataage/lumine/internal/infrastructure/db"
@@ -206,5 +207,46 @@ func TestPatchAISettingsRejectsUnknownFieldsWithoutMutation(t *testing.T) {
 	}
 	if got != initial {
 		t.Fatalf("settings mutated after rejected patch: got %+v want %+v", got, initial)
+	}
+}
+
+
+func TestConcurrentAISettingsPatchesMergeInsteadOfClobbering(t *testing.T) {
+	cmd := setupCommands(t)
+	if _, err := cmd.SetAISettings(domain.AISettings{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, patch := range []map[string]bool{
+		{"semanticSearch": true},
+		{"promptEngine": true},
+	} {
+		patch := patch
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := cmd.PatchAISettings(patch)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("PatchAISettings: %v", err)
+		}
+	}
+
+	got, err := cmd.GetAISettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || !got.SemanticSearch || !got.PromptEngine {
+		t.Fatalf("concurrent patches clobbered settings: %+v", got)
 	}
 }
