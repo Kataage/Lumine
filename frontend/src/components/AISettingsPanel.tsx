@@ -600,10 +600,19 @@ export function AISettingsPanel() {
             </p>
           </div>
           <Toggle
-            checked={settings.autoAnalyze}
+            checked={settings.enabled && settings.autoAnalyze}
             disabled={saving}
             label="インポート・スキャン後に自動解析"
-            onChange={(autoAnalyze) => void update({ autoAnalyze })}
+            onChange={(autoAnalyze) => {
+              if (autoAnalyze) {
+                void (async () => {
+                  const next = { ...settings, enabled: true, autoAnalyze: true };
+                  setSettings(await setAISettings(next));
+                })();
+              } else {
+                void update({ autoAnalyze: false });
+              }
+            }}
           />
         </div>
 
@@ -631,7 +640,7 @@ export function AISettingsPanel() {
 
       {error && (
         <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[10px] text-destructive">
-          <p>AI設定を保存できませんでした: {error}</p>
+          <p>AI操作に失敗しました: {error}</p>
           <button type="button" className="mt-1 underline" onClick={() => void load()}>
             再読み込み
           </button>
