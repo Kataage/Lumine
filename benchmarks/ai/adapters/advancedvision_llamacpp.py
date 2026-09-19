@@ -32,7 +32,7 @@ def fail(message: str) -> None:
 try:
     import psutil
     import requests
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, model_info
 except Exception as exc:
     fail(f"Advanced Vision adapter dependency error: {exc}")
 
@@ -70,18 +70,21 @@ def verify_file(path: Path, expected_hash: str, expected_size: int = 0) -> None:
         pass
 
 
-def resolve_models(model: dict[str, Any]) -> tuple[Path, Path]:
+def resolve_models(model: dict[str, Any]) -> tuple[Path, Path, str]:
     repo_id = param(model, "repoId")
     revision = str(model.get("version") or "")
     model_file = param(model, "modelFile")
     mmproj_file = param(model, "mmprojFile")
     if not all((repo_id, revision, model_file, mmproj_file)):
         raise ValueError("profile requires repoId/version/modelFile/mmprojFile")
-    model_path = Path(hf_hub_download(repo_id=repo_id, filename=model_file, revision=revision))
-    mmproj_path = Path(hf_hub_download(repo_id=repo_id, filename=mmproj_file, revision=revision))
+    resolved_revision = str(model_info(repo_id, revision=revision).sha or "")
+    if not resolved_revision:
+        raise ValueError(f"could not resolve immutable revision for {repo_id}@{revision}")
+    model_path = Path(hf_hub_download(repo_id=repo_id, filename=model_file, revision=resolved_revision))
+    mmproj_path = Path(hf_hub_download(repo_id=repo_id, filename=mmproj_file, revision=resolved_revision))
     verify_file(model_path, param(model, "modelSha256"), int(param(model, "modelSizeBytes", "0")))
     verify_file(mmproj_path, param(model, "mmprojSha256"), int(param(model, "mmprojSizeBytes", "0")))
-    return model_path, mmproj_path
+    return model_path, mmproj_path, resolved_revision
 
 
 def safe_extract_zip(archive: Path, target: Path) -> None:
@@ -292,7 +295,7 @@ def main() -> None:
         if not fixture_dir.is_dir():
             raise ValueError("fixtureDir does not exist")
 
-        model_path, mmproj_path = resolve_models(profile)
+        model_path, mmproj_path, resolved_revision = resolve_models(profile)
         server_exe = resolve_server(profile)
         threads = max(1, int(param(profile, "threads", "8")))
         context = max(2048, int(param(profile, "context", "8192")))
@@ -316,6 +319,8 @@ def main() -> None:
                     "modelSha256": hash_file(model_path),
                     "mmprojSha256": hash_file(mmproj_path),
                     "profilePinned": bool(param(profile, "modelSha256")) and bool(param(profile, "mmprojSha256")) and str(profile.get("version") or "") not in {"", "main"},
+                    "requestedRevision": str(profile.get("version") or ""),
+                    "resolvedRevision": resolved_revision,
                 },
             })
             return
