@@ -755,8 +755,11 @@ func TestManagerReloadsGPUCapableRuntimeWhenGPUPolicyChanges(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if len(engines) != 1 || engines[0].options.AllowGPU {
-		t.Fatalf("initial runtime should be CPU: engines=%d options=%+v", len(engines), engines[0].options)
+	if len(engines) != 1 {
+		t.Fatalf("initial runtime engine count = %d, want 1", len(engines))
+	}
+	if engines[0].options.AllowGPU {
+		t.Fatalf("initial runtime should be CPU: options=%+v", engines[0].options)
 	}
 	if status := manager.Status(domain.AICapabilitySemanticSearch); status.ExecutionProvider != "cpu" {
 		t.Fatalf("initial provider = %q, want cpu", status.ExecutionProvider)
@@ -779,8 +782,11 @@ func TestManagerReloadsGPUCapableRuntimeWhenGPUPolicyChanges(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if len(engines) != 2 || !engines[1].options.AllowGPU {
-		t.Fatalf("GPU reload did not request acceleration: engines=%d options=%+v", len(engines), engines[1].options)
+	if len(engines) != 2 {
+		t.Fatalf("GPU reload engine count = %d, want 2", len(engines))
+	}
+	if !engines[1].options.AllowGPU {
+		t.Fatalf("GPU reload did not request acceleration: options=%+v", engines[1].options)
 	}
 	status := manager.Status(domain.AICapabilitySemanticSearch)
 	if status.ExecutionProvider != "directml" {
