@@ -39,19 +39,13 @@ type AdvancedVisionStatusInfo struct {
 }
 
 func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
+	settings, _ := c.GetAISettings()
 	info := AdvancedVisionStatusInfo{
 		Runtime: ai.RuntimeStatus{
 			Capability: domain.AICapabilityAdvancedVision,
 			State:      ai.RuntimeStateModelNotInstalled,
 		},
-		LlamaRuntime: LightweightRuntimeInfo{
-			ID:           runtimeManifest.ID,
-			Version:      runtimeManifest.Version,
-			SizeBytes:    runtimeManifest.SizeBytes,
-			Platform:     runtimeManifest.Platform,
-			Architecture: runtimeManifest.Architecture,
-		},
+		LlamaRuntime: c.currentLlamaRuntimeInfo(settings.GPUAcceleration),
 	}
 
 	if c.aiManager != nil {
@@ -61,12 +55,6 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 			if active, err := c.getAdvancedVisionActiveModelID(); err == nil {
 				info.ActiveModelID = active
 			}
-		}
-	}
-	if c.llamaRuntimeStore != nil {
-		if installed, err := c.llamaRuntimeStore.Verify(runtimeManifest); err == nil {
-			info.LlamaRuntime.Installed = true
-			info.LlamaRuntime.ExecutablePath = installed.ExecutablePath
 		}
 	}
 	for _, manifest := range llamacpp.AdvancedVisionCandidateManifests() {
@@ -95,28 +83,15 @@ func (c *AppCommands) InstallAdvancedVisionRuntime() (*LightweightRuntimeInfo, e
 	if c.llamaRuntimeStore == nil {
 		return nil, errors.New("llama.cpp runtime store is not available")
 	}
-	manifest := llamacpp.DefaultRuntimeManifest()
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return nil, err
+	}
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	installed, err := c.llamaRuntimeStore.Install(ctx, manifest, func(progress llamacpp.RuntimeDownloadProgress) {
-		if c.ctx != nil {
-			runtime.EventsEmit(c.ctx, "ai:runtime-download", progress)
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &LightweightRuntimeInfo{
-		ID:             installed.ID,
-		Version:        installed.Version,
-		SizeBytes:      manifest.SizeBytes,
-		Installed:      true,
-		ExecutablePath: installed.ExecutablePath,
-		Platform:       installed.Platform,
-		Architecture:   installed.Architecture,
-	}, nil
+	return c.installSharedLlamaRuntimeBundle(ctx, settings.GPUAcceleration)
 }
 
 func (c *AppCommands) RemoveAdvancedVisionRuntime() error {
@@ -186,7 +161,7 @@ func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
 	}
-	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
 	manifest, ok := advancedVisionManifest(modelID)
@@ -232,10 +207,18 @@ func (c *AppCommands) RestoreAdvancedVisionModel() error {
 	if !ok {
 		return nil
 	}
-	runtimeManifest := llamacpp.DefaultRuntimeManifest()
-	if _, err := c.llamaRuntimeStore.Verify(runtimeManifest); err != nil {
-		metadata := filepath.Join(c.llamaRuntimeStore.Root(), runtimeManifest.ID, runtimeManifest.Version, "runtime.json")
-		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
+	if err := c.verifyUsableLlamaRuntime(settings.GPUAcceleration); err != nil {
+		missing := true
+		for _, runtimeManifest := range llamacpp.RuntimeManifestsForPolicy(settings.GPUAcceleration) {
+			metadata := filepath.Join(c.llamaRuntimeStore.Root(), runtimeManifest.ID, runtimeManifest.Version, "runtime.json")
+			if _, statErr := os.Stat(metadata); statErr == nil {
+				missing = false
+				break
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+		}
+		if missing {
 			return nil
 		}
 		return err
