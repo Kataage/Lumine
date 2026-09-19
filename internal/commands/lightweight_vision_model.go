@@ -112,15 +112,7 @@ func (c *AppCommands) InstallLightweightVisionRuntime() (*LightweightRuntimeInfo
 }
 
 func (c *AppCommands) RemoveLightweightVisionRuntime() error {
-	if c.llamaRuntimeStore == nil {
-		return errors.New("llama.cpp runtime store is not available")
-	}
-	if c.aiManager != nil {
-		if err := c.aiManager.Unload(context.Background(), domain.AICapabilityLightweightVision); err != nil {
-			return err
-		}
-	}
-	return c.llamaRuntimeStore.Remove(llamacpp.DefaultRuntimeManifest())
+	return c.removeSharedLlamaRuntime()
 }
 
 func (c *AppCommands) InstallDefaultLightweightVisionModel() (*ai.InstalledModelInfo, error) {

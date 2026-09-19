@@ -14,14 +14,14 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const advancedVisionActiveModelKey = "advancedVisionActiveModelV1"
+const promptEngineActiveModelKey = "promptEngineActiveModelV1"
 
 var (
-	ErrAdvancedVisionDisabled      = errors.New("Advanced Vision is disabled")
-	ErrAdvancedVisionModelNotFound = errors.New("Advanced Vision model candidate not found")
+	ErrPromptEngineDisabled      = errors.New("Prompt Engine is disabled")
+	ErrPromptEngineModelNotFound = errors.New("Prompt Engine model candidate not found")
 )
 
-type AdvancedVisionCandidateInfo struct {
+type PromptEngineCandidateInfo struct {
 	ID          string `json:"id"`
 	Version     string `json:"version"`
 	Engine      string `json:"engine"`
@@ -29,20 +29,22 @@ type AdvancedVisionCandidateInfo struct {
 	License     string `json:"license"`
 	SizeBytes   int64  `json:"sizeBytes"`
 	Installed   bool   `json:"installed"`
+	Reference   bool   `json:"reference"`
 }
 
-type AdvancedVisionStatusInfo struct {
-	Runtime       ai.RuntimeStatus              `json:"runtime"`
-	LlamaRuntime  LightweightRuntimeInfo        `json:"llamaRuntime"`
-	Models        []AdvancedVisionCandidateInfo `json:"models"`
-	ActiveModelID string                        `json:"activeModelId,omitempty"`
+type PromptEngineStatusInfo struct {
+	Runtime       ai.RuntimeStatus             `json:"runtime"`
+	LlamaRuntime  LightweightRuntimeInfo       `json:"llamaRuntime"`
+	Models        []PromptEngineCandidateInfo  `json:"models"`
+	ActiveModelID string                       `json:"activeModelId,omitempty"`
+	SelectionNote string                       `json:"selectionNote"`
 }
 
-func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
+func (c *AppCommands) GetPromptEngineStatus() PromptEngineStatusInfo {
 	runtimeManifest := llamacpp.DefaultRuntimeManifest()
-	info := AdvancedVisionStatusInfo{
+	info := PromptEngineStatusInfo{
 		Runtime: ai.RuntimeStatus{
-			Capability: domain.AICapabilityAdvancedVision,
+			Capability: domain.AICapabilityPromptEngine,
 			State:      ai.RuntimeStateModelNotInstalled,
 		},
 		LlamaRuntime: LightweightRuntimeInfo{
@@ -52,10 +54,10 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 			Platform:     runtimeManifest.Platform,
 			Architecture: runtimeManifest.Architecture,
 		},
+		SelectionNote: "標準Prompt LLMはIssue #169の実測で決定予定です。現在のQwen3.5 4B MはAPI/統合検証用の固定reference candidateです。",
 	}
-
 	if c.aiManager != nil {
-		info.Runtime = c.aiManager.Status(domain.AICapabilityAdvancedVision)
+		info.Runtime = c.aiManager.Status(domain.AICapabilityPromptEngine)
 		info.ActiveModelID = info.Runtime.ModelID
 	}
 	if c.llamaRuntimeStore != nil {
@@ -64,14 +66,15 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 			info.LlamaRuntime.ExecutablePath = installed.ExecutablePath
 		}
 	}
-	for _, manifest := range llamacpp.AdvancedVisionCandidateManifests() {
-		candidate := AdvancedVisionCandidateInfo{
+	for _, manifest := range llamacpp.PromptEngineCandidateManifests() {
+		candidate := PromptEngineCandidateInfo{
 			ID:          manifest.ID,
 			Version:     manifest.Version,
 			Engine:      manifest.Engine,
 			DisplayName: manifest.DisplayName,
 			License:     manifest.License,
 			SizeBytes:   manifest.SizeBytes,
+			Reference:   manifest.ID == llamacpp.PromptReferenceQwen35ModelID,
 		}
 		if c.aiManager != nil {
 			if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
@@ -83,7 +86,7 @@ func (c *AppCommands) GetAdvancedVisionStatus() AdvancedVisionStatusInfo {
 	return info
 }
 
-func (c *AppCommands) InstallAdvancedVisionRuntime() (*LightweightRuntimeInfo, error) {
+func (c *AppCommands) InstallPromptEngineRuntime() (*LightweightRuntimeInfo, error) {
 	if c.llamaRuntimeStore == nil {
 		return nil, errors.New("llama.cpp runtime store is not available")
 	}
@@ -111,17 +114,17 @@ func (c *AppCommands) InstallAdvancedVisionRuntime() (*LightweightRuntimeInfo, e
 	}, nil
 }
 
-func (c *AppCommands) RemoveAdvancedVisionRuntime() error {
+func (c *AppCommands) RemovePromptEngineRuntime() error {
 	return c.removeSharedLlamaRuntime()
 }
 
-func (c *AppCommands) InstallAdvancedVisionModel(modelID string) (*ai.InstalledModelInfo, error) {
+func (c *AppCommands) InstallPromptEngineModel(modelID string) (*ai.InstalledModelInfo, error) {
 	if c.aiManager == nil {
 		return nil, errors.New("AI model manager is not available")
 	}
-	manifest, ok := advancedVisionManifest(modelID)
+	manifest, ok := promptEngineManifest(modelID)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+		return nil, fmt.Errorf("%w: %s", ErrPromptEngineModelNotFound, modelID)
 	}
 	ctx := c.ctx
 	if ctx == nil {
@@ -138,31 +141,31 @@ func (c *AppCommands) InstallAdvancedVisionModel(modelID string) (*ai.InstalledM
 	return installedModelInfo(installed), nil
 }
 
-func (c *AppCommands) RemoveAdvancedVisionModel(modelID string) error {
+func (c *AppCommands) RemovePromptEngineModel(modelID string) error {
 	if c.aiManager == nil {
 		return errors.New("AI model manager is not available")
 	}
-	manifest, ok := advancedVisionManifest(modelID)
+	manifest, ok := promptEngineManifest(modelID)
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+		return fmt.Errorf("%w: %s", ErrPromptEngineModelNotFound, modelID)
 	}
-	status := c.aiManager.Status(domain.AICapabilityAdvancedVision)
+	status := c.aiManager.Status(domain.AICapabilityPromptEngine)
 	if status.ModelID == manifest.ID {
-		if err := c.aiManager.Unload(context.Background(), domain.AICapabilityAdvancedVision); err != nil {
+		if err := c.aiManager.Unload(context.Background(), domain.AICapabilityPromptEngine); err != nil {
 			return err
 		}
 	}
 	if err := c.aiManager.RemoveModel(manifest.ID, manifest.Version); err != nil {
 		return err
 	}
-	active, _ := c.getAdvancedVisionActiveModelID()
+	active, _ := c.getPromptEngineActiveModelID()
 	if active == manifest.ID {
-		_ = c.settingRepo.Set(advancedVisionActiveModelKey, "\"\"")
+		_ = c.settingRepo.Set(promptEngineActiveModelKey, "\"\"")
 	}
 	return nil
 }
 
-func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
+func (c *AppCommands) LoadPromptEngineModel(modelID string) error {
 	if c.aiManager == nil {
 		return errors.New("AI model manager is not available")
 	}
@@ -170,8 +173,8 @@ func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
 	if err != nil {
 		return err
 	}
-	if !settings.CapabilityEnabled(domain.AICapabilityAdvancedVision) {
-		return ErrAdvancedVisionDisabled
+	if !settings.CapabilityEnabled(domain.AICapabilityPromptEngine) {
+		return ErrPromptEngineDisabled
 	}
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
@@ -179,18 +182,17 @@ func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
 	if _, err := c.llamaRuntimeStore.Verify(llamacpp.DefaultRuntimeManifest()); err != nil {
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
-	manifest, ok := advancedVisionManifest(modelID)
+	manifest, ok := promptEngineManifest(modelID)
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrAdvancedVisionModelNotFound, modelID)
+		return fmt.Errorf("%w: %s", ErrPromptEngineModelNotFound, modelID)
 	}
-
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := c.aiManager.Load(
 		ctx,
-		domain.AICapabilityAdvancedVision,
+		domain.AICapabilityPromptEngine,
 		manifest.ID,
 		manifest.Version,
 		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
@@ -198,12 +200,12 @@ func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
 		return err
 	}
 	value, _ := json.Marshal(manifest.ID)
-	return c.settingRepo.Set(advancedVisionActiveModelKey, string(value))
+	return c.settingRepo.Set(promptEngineActiveModelKey, string(value))
 }
 
-// RestoreAdvancedVisionModel never downloads. It only restores the model that
-// the user explicitly loaded before, when both runtime and model still verify.
-func (c *AppCommands) RestoreAdvancedVisionModel() error {
+// RestorePromptEngineModel never downloads. It restores only the model that the
+// user explicitly loaded before, when both the shared runtime and model verify.
+func (c *AppCommands) RestorePromptEngineModel() error {
 	if c.aiManager == nil || c.llamaRuntimeStore == nil {
 		return nil
 	}
@@ -211,14 +213,14 @@ func (c *AppCommands) RestoreAdvancedVisionModel() error {
 	if err != nil {
 		return err
 	}
-	if !settings.CapabilityEnabled(domain.AICapabilityAdvancedVision) {
+	if !settings.CapabilityEnabled(domain.AICapabilityPromptEngine) {
 		return nil
 	}
-	modelID, err := c.getAdvancedVisionActiveModelID()
+	modelID, err := c.getPromptEngineActiveModelID()
 	if err != nil || modelID == "" {
 		return err
 	}
-	manifest, ok := advancedVisionManifest(modelID)
+	manifest, ok := promptEngineManifest(modelID)
 	if !ok {
 		return nil
 	}
@@ -243,31 +245,30 @@ func (c *AppCommands) RestoreAdvancedVisionModel() error {
 	}
 	return c.aiManager.Load(
 		ctx,
-		domain.AICapabilityAdvancedVision,
+		domain.AICapabilityPromptEngine,
 		manifest.ID,
 		manifest.Version,
 		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
 	)
 }
 
-func (c *AppCommands) getAdvancedVisionActiveModelID() (string, error) {
-	setting, err := c.settingRepo.Get(advancedVisionActiveModelKey)
+func (c *AppCommands) getPromptEngineActiveModelID() (string, error) {
+	setting, err := c.settingRepo.Get(promptEngineActiveModelKey)
 	if err != nil || setting == nil || setting.ValueJSON == "" {
 		return "", err
 	}
 	var modelID string
 	if err := json.Unmarshal([]byte(setting.ValueJSON), &modelID); err != nil {
-		return "", fmt.Errorf("decode Advanced Vision active model: %w", err)
+		return "", fmt.Errorf("decode Prompt Engine active model: %w", err)
 	}
 	return modelID, nil
 }
 
-func advancedVisionManifest(modelID string) (ai.ModelManifest, bool) {
-	for _, manifest := range llamacpp.AdvancedVisionCandidateManifests() {
+func promptEngineManifest(modelID string) (ai.ModelManifest, bool) {
+	for _, manifest := range llamacpp.PromptEngineCandidateManifests() {
 		if manifest.ID == modelID {
 			return manifest, true
 		}
 	}
 	return ai.ModelManifest{}, false
 }
-
