@@ -481,6 +481,8 @@ func (e *Engine) Unload(ctx context.Context) error {
 		e.mu.Lock()
 		e.baseURL = ""
 		e.model = ai.InstalledModel{}
+		e.executionProvider = ""
+		e.runtimeWarning = ""
 		e.mu.Unlock()
 		return nil
 	}
@@ -504,6 +506,8 @@ func (e *Engine) Unload(ctx context.Context) error {
 		e.sidecar = nil
 		e.baseURL = ""
 		e.model = ai.InstalledModel{}
+		e.executionProvider = ""
+		e.runtimeWarning = ""
 	}
 	e.mu.Unlock()
 	return nil
