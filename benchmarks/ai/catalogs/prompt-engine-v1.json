@@ -1,0 +1,283 @@
+{
+  "schemaVersion": 1,
+  "fixturePack": "lumine-prompt-engine-v1",
+  "requiredCategories": [
+    "ja_to_prompt",
+    "il_prompt",
+    "model_profile_conversion",
+    "structured_json",
+    "partial_edit_constraints",
+    "lora_trigger_preservation",
+    "adult_content_robustness",
+    "cpu_latency_tokens_sec",
+    "ram",
+    "cold_start",
+    "model_size",
+    "windows_runtime_stability"
+  ],
+  "fixtures": [
+    {
+      "id": "prompt-ja-idea-001",
+      "category": "ja_to_prompt",
+      "description": "Japanese creative intent must become an English/image-generation prompt without losing subject, prop, lighting or camera intent.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "idea": "雨上がりの夜の東京の路地で、赤い傘を持つ一人の成人女性。青いネオン、ローアングル。",
+        "instruction": "英語の画像生成promptへ変換し、positive/negativeを分離してください。"
+      },
+      "expected": {
+        "requiredAnyGroups": [
+          [
+            "1girl",
+            "adult woman",
+            "woman"
+          ],
+          [
+            "red umbrella"
+          ],
+          [
+            "blue neon",
+            "neon"
+          ],
+          [
+            "low angle",
+            "low-angle"
+          ]
+        ],
+        "requiredOutputFields": [
+          "positive",
+          "negative"
+        ]
+      }
+    },
+    {
+      "id": "prompt-ilxl-001",
+      "category": "il_prompt",
+      "description": "Illustrious/ILXL output should use concise image-generation tags while preserving the requested adult subject and composition.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "idea": "成人女性が一人、白髪と青い瞳、黒いドレス。図書館で上半身のポートレート。",
+        "instruction": "Illustrious/ILXL向けのDanbooru寄りpromptにしてください。"
+      },
+      "expected": {
+        "requiredPhrases": [
+          "white hair",
+          "blue eyes",
+          "black dress"
+        ],
+        "requiredAnyGroups": [
+          [
+            "1girl",
+            "woman"
+          ],
+          [
+            "upper body",
+            "portrait"
+          ],
+          [
+            "library"
+          ]
+        ],
+        "requiredOutputFields": [
+          "positive",
+          "negative"
+        ]
+      }
+    },
+    {
+      "id": "prompt-profile-conversion-001",
+      "category": "model_profile_conversion",
+      "description": "Converting an existing IL-style prompt to another profile must preserve visual identity and scene content.",
+      "input": {
+        "sourceProfile": "Illustrious / ILXL",
+        "targetProfile": "FLUX",
+        "sourcePositive": "1girl, solo, white hair, blue eyes, black dress, standing, library, warm light",
+        "sourceNegative": "lowres, bad anatomy",
+        "instruction": "FLUX向けの自然文寄りpromptへ変換してください。人物・衣装・背景は変えないでください。"
+      },
+      "expected": {
+        "requiredPhrases": [
+          "white hair",
+          "blue eyes",
+          "black dress",
+          "library"
+        ],
+        "requiredAnyGroups": [
+          [
+            "warm light",
+            "warm lighting"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "prompt-structured-json-001",
+      "category": "structured_json",
+      "description": "Prompt Engine must obey the stable benchmark JSON shape exactly.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "idea": "青空の下でベンチに座る一人の成人女性。",
+        "instruction": "指定JSONスキーマだけで返してください。"
+      },
+      "expected": {}
+    },
+    {
+      "id": "prompt-partial-edit-001",
+      "category": "partial_edit_constraints",
+      "description": "A background-only edit must preserve supplied appearance and outfit constraints.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "sourcePositive": "1girl, solo, white hair, blue eyes, black dress, standing, plain background",
+        "sourceNegative": "lowres, bad anatomy",
+        "instruction": "背景だけを図書館に変更してください。髪、瞳、服装、人物数は変更しないでください。"
+      },
+      "expected": {
+        "preserveExact": [
+          "white hair",
+          "blue eyes",
+          "black dress"
+        ],
+        "requiredPhrases": [
+          "library"
+        ],
+        "forbiddenPhrases": [
+          "blonde hair",
+          "red dress"
+        ]
+      }
+    },
+    {
+      "id": "prompt-lora-preserve-001",
+      "category": "lora_trigger_preservation",
+      "description": "LoRA syntax and trigger tokens must survive unrelated prompt improvements exactly.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "sourcePositive": "<lora:character_style:0.8>, char_style_trigger, 1girl, solo, city at night",
+        "sourceNegative": "lowres",
+        "loras": [
+          "<lora:character_style:0.8>",
+          "char_style_trigger"
+        ],
+        "instruction": "夜景の照明表現だけを改善してください。LoRA記法とtrigger wordは一字も変更しないでください。"
+      },
+      "expected": {
+        "preserveExact": [
+          "<lora:character_style:0.8>",
+          "char_style_trigger"
+        ],
+        "requiredAnyGroups": [
+          [
+            "night",
+            "nighttime"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "prompt-adult-robustness-001",
+      "category": "adult_content_robustness",
+      "description": "A lawful non-graphic adult pin-up request should be transformed without unrelated refusal or silent deletion of requested visual details.",
+      "input": {
+        "targetProfile": "Illustrious / ILXL",
+        "adultOnly": true,
+        "idea": "30歳の成人女性、黒いランジェリー、ホテルの窓辺、夜景、上品なピンナップ構図。",
+        "instruction": "成人のみを対象とした非グラフィックな画像生成promptへ変換してください。"
+      },
+      "expected": {
+        "mustNotRefuse": true,
+        "requiredAnyGroups": [
+          [
+            "adult woman",
+            "30 year old woman",
+            "30-year-old woman"
+          ],
+          [
+            "black lingerie",
+            "lingerie"
+          ],
+          [
+            "hotel window",
+            "window"
+          ],
+          [
+            "night view",
+            "city lights",
+            "night skyline"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "prompt-perf-cpu-001",
+      "category": "cpu_latency_tokens_sec",
+      "description": "CPU-only steady-state Prompt Engine latency and generation throughput.",
+      "input": {
+        "benchmarkIdea": "雨上がりの夜の路地で、赤い傘を持つ成人女性。青いネオン、ローアングル。",
+        "warmupRuns": 1,
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "latencyMs",
+          "tokensPerSecond"
+        ]
+      }
+    },
+    {
+      "id": "prompt-perf-ram-001",
+      "category": "ram",
+      "description": "Peak resident memory with the prompt model loaded and repeated inference.",
+      "input": {
+        "measureRuns": 3
+      },
+      "expected": {
+        "requiredMetrics": [
+          "ramMb"
+        ]
+      }
+    },
+    {
+      "id": "prompt-perf-cold-start-001",
+      "category": "cold_start",
+      "description": "Fresh server/model startup through the first successful structured prompt result.",
+      "input": {
+        "measureRuns": 2
+      },
+      "expected": {
+        "requiredMetrics": [
+          "coldStartMs"
+        ]
+      }
+    },
+    {
+      "id": "prompt-perf-model-size-001",
+      "category": "model_size",
+      "description": "Exact GGUF artifact footprint used by the controlled run.",
+      "input": {
+        "scenario": "installed-model-size"
+      },
+      "expected": {
+        "requiredMetrics": [
+          "modelSizeMb"
+        ]
+      }
+    },
+    {
+      "id": "prompt-windows-stability-001",
+      "category": "windows_runtime_stability",
+      "description": "Repeated Windows server start/infer/stop cycles must remain usable.",
+      "input": {
+        "cycles": 10,
+        "deviceModes": [
+          "cpu"
+        ]
+      },
+      "expected": {
+        "requiredMetrics": [
+          "runtimeSuccessRate"
+        ],
+        "minimumSuccessRate": 1
+      }
+    }
+  ]
+}

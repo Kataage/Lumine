@@ -20,15 +20,45 @@
     {
       "capability": "prompt_engine",
       "status": "candidate",
-      "modelId": "NeoHorse-1-4B Abliterated",
-      "rationale": "Candidate for the local prompt engine; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "modelId": "huihui-ai/Huihui-NeoHorse-1-4B-abliterated-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Current NeoHorse 4B abliterated GGUF candidate. The repository is very new, so the checked-in profile is exploratory until an immutable revision, exact GGUF filename/size and SHA-256 are pinned from a controlled run.",
       "updatedAt": "2026-09-19"
     },
     {
       "capability": "prompt_engine",
       "status": "candidate",
-      "modelId": "Spark-X2.5-4B-Heretic-jp",
-      "rationale": "Japanese-focused prompt-engine candidate; exact runtime, quantization and adoption decision must be recorded only after reproducible benchmark results exist.",
+      "modelId": "soyaakinohara/Spark-X2.5-4B-Heretic-jp-gguf",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Japanese-focused Heretic candidate. Upstream llama.cpp v0.4.1 added native Spark2.5 support (#27868), so the controlled run uses the same pinned b10964 CPU runtime family as the other prompt candidates. Adoption still requires immutable model revision and artifact SHA-256 evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "kaineone/Qwen3.5-4B-abliterated-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "Q4_K_M",
+      "issue": "#169",
+      "rationale": "Qwen3.5-4B abliterated upstream-llama.cpp control used to separate prompt quality/refusal effects from NeoHorse/Spark fine-tuning. Adoption requires immutable revision and artifact SHA-256 evidence.",
+      "updatedAt": "2026-09-19"
+    },
+    {
+      "capability": "prompt_engine",
+      "status": "candidate",
+      "modelId": "TheStageAI/Qwen3.5-4B-GGUF",
+      "version": "main",
+      "engine": "llama.cpp-text-cpu",
+      "quantization": "M-TS-Q4_K_M",
+      "issue": "#169",
+      "rationale": "Reproducible Qwen3.5-4B base-lineage control. TheStageAI publishes an exact upstream base revision, release manifest and quantization quality measurements; the M tier is used as the compact instruction-following reference. Adoption evidence still requires pinning this GGUF repository revision and artifact SHA-256.",
       "updatedAt": "2026-09-19"
     },
     {

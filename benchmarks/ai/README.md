@@ -10,6 +10,7 @@ This directory is the source of truth for comparing local AI models used by Lumi
 - `profiles/` contains model-profile templates or immutable profiles used by recorded runs.
 - `results/evidence/` is for selected benchmark results that justify an adoption or rejection.
 - `TAGGER_BENCHMARK.md` defines the controlled wd-vit-tagger-v3 vs PixAI Tagger v0.9 procedure for Issue #165.
+- `PROMPT_ENGINE_BENCHMARK.md` defines the controlled local Prompt Engine comparison procedure for Issue #169.
 
 Large, copyrighted, private, or adult-only image fixtures are **not committed**. They live in a local fixture pack. The pack identity is `lumine-ai-core-v2`; its `manifest.json` records SHA-256 and byte size for every file referenced by the catalog. A run refuses to start if the fixture pack does not match.
 
