@@ -17,6 +17,7 @@ import (
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/kataage/lumine/internal/infrastructure/scanner"
+	"github.com/kataage/lumine/internal/infrastructure/storage"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -41,6 +42,7 @@ type AppCommands struct {
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
 	storageInfo AIStorageInfo
+	storageLayout storage.Layout
 
 	aiSettingsMu    sync.Mutex
 	lifecycleMu     sync.Mutex
