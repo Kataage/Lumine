@@ -74,6 +74,12 @@ export interface TaggerReview {
   updatedAt?: string;
 }
 
+export interface TaggerThresholdOverrides {
+  general: number | null;
+  character: number | null;
+  rating: number | null;
+}
+
 export interface AIRuntimeStatus {
   capability: string;
   state: AIRuntimeState;
@@ -655,6 +661,8 @@ type DynamicCommands = {
   GetPostRecordsByAsset?: (assetId: number) => Promise<PostRecordDTO[]>;
   GetTaggerReviewJSON?: (assetId: number) => Promise<string>;
   ReviewTaggerSuggestions?: (assetId: number, suggestionId: number, action: string) => Promise<void>;
+  GetTaggerThresholdOverridesJSON?: () => Promise<string>;
+  SetTaggerThresholdOverridesJSON?: (encoded: string) => Promise<void>;
   ListWorks?: (limit: number) => Promise<WorkDTO[]>;
   CreateWork?: (title: string, description: string, assetIds: number[]) => Promise<WorkDTO | null>;
   AddAssetsToWork?: (workId: number, assetIds: number[]) => Promise<void>;
@@ -705,6 +713,32 @@ export async function reviewTaggerSuggestions(
   const method = appCommands()?.ReviewTaggerSuggestions;
   if (!method) throw new Error("TaggerレビューAPIが利用できません。最新版のLumineを起動してください。");
   await method(assetId, suggestionId, action);
+}
+
+export async function getTaggerThresholdOverrides(): Promise<TaggerThresholdOverrides> {
+  const method = appCommands()?.GetTaggerThresholdOverridesJSON;
+  if (!method) return { general: null, character: null, rating: null };
+  const encoded = await method();
+  if (!encoded) return { general: null, character: null, rating: null };
+  const parsed = JSON.parse(encoded) as Partial<TaggerThresholdOverrides>;
+  const normalize = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error("Tagger threshold設定の形式が不正です。");
+    }
+    return value;
+  };
+  return {
+    general: normalize(parsed.general),
+    character: normalize(parsed.character),
+    rating: normalize(parsed.rating),
+  };
+}
+
+export async function setTaggerThresholdOverrides(value: TaggerThresholdOverrides): Promise<void> {
+  const method = appCommands()?.SetTaggerThresholdOverridesJSON;
+  if (!method) throw new Error("Tagger threshold設定APIが利用できません。最新版のLumineを起動してください。");
+  await method(JSON.stringify(value));
 }
 
 export async function getAIRuntimeStatuses(): Promise<AIRuntimeStatus[]> {

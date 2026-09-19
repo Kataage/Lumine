@@ -29,9 +29,11 @@ import {
   getAIStorageInfo,
   getDefaultSemanticModelInfo,
   getTaggerReview,
+  getTaggerThresholdOverrides,
   requestLegacyStorageMigration,
   reviewTaggerSuggestions,
   semanticSearchAssets,
+  setTaggerThresholdOverrides,
 } from "../api/client";
 
 const SETTINGS = {
@@ -80,6 +82,10 @@ describe("typed AI Wails bridge", () => {
       ],
     }));
     const dynamicReviewTaggerSuggestions = vi.fn(async () => undefined);
+    const dynamicGetTaggerThresholdOverridesJSON = vi.fn(async () =>
+      JSON.stringify({ general: null, character: 0.77, rating: 0.4 }),
+    );
+    const dynamicSetTaggerThresholdOverridesJSON = vi.fn(async () => undefined);
 
     (window as unknown as {
       go?: {
@@ -89,6 +95,8 @@ describe("typed AI Wails bridge", () => {
             SemanticSearchAssetsWithID?: typeof dynamicSemanticSearch;
             GetTaggerReviewJSON?: typeof dynamicGetTaggerReviewJSON;
             ReviewTaggerSuggestions?: typeof dynamicReviewTaggerSuggestions;
+            GetTaggerThresholdOverridesJSON?: typeof dynamicGetTaggerThresholdOverridesJSON;
+            SetTaggerThresholdOverridesJSON?: typeof dynamicSetTaggerThresholdOverridesJSON;
           };
         };
       };
@@ -99,6 +107,8 @@ describe("typed AI Wails bridge", () => {
           SemanticSearchAssetsWithID: dynamicSemanticSearch,
           GetTaggerReviewJSON: dynamicGetTaggerReviewJSON,
           ReviewTaggerSuggestions: dynamicReviewTaggerSuggestions,
+          GetTaggerThresholdOverridesJSON: dynamicGetTaggerThresholdOverridesJSON,
+          SetTaggerThresholdOverridesJSON: dynamicSetTaggerThresholdOverridesJSON,
         },
       },
     };
@@ -269,6 +279,35 @@ describe("typed AI Wails bridge", () => {
 
     expect(dynamic.GetTaggerReviewJSON).toHaveBeenCalledWith(7);
     expect(dynamic.ReviewTaggerSuggestions).toHaveBeenCalledWith(7, 10, "accept");
+  });
+
+  it("Tagger threshold overrideはnull=モデル既定として保持する", async () => {
+    const value = await getTaggerThresholdOverrides();
+    expect(value).toEqual({
+      general: null,
+      character: 0.77,
+      rating: 0.4,
+    });
+
+    await setTaggerThresholdOverrides({
+      general: 0.2,
+      character: null,
+      rating: 0.5,
+    });
+
+    const dynamic = (window as unknown as {
+      go: {
+        commands: {
+          AppCommands: {
+            SetTaggerThresholdOverridesJSON: ReturnType<typeof vi.fn>;
+          };
+        };
+      };
+    }).go.commands.AppCommands;
+
+    expect(dynamic.SetTaggerThresholdOverridesJSON).toHaveBeenCalledWith(
+      JSON.stringify({ general: 0.2, character: null, rating: 0.5 }),
+    );
   });
 
   it("未知のruntime stateは誤表示せず拒否する", async () => {

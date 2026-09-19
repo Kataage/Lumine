@@ -149,6 +149,8 @@ export function GetSupportedExtensions():Promise<Array<string>>;
 
 export function GetTaggerReviewJSON(arg1:number):Promise<string>;
 
+export function GetTaggerThresholdOverridesJSON():Promise<string>;
+
 export function GetViewerAssetDetail(arg1:number):Promise<commands.AssetDTO>;
 
 export function HandleScannedAssetChanges(arg1:Array<number>):Promise<number>;
@@ -290,6 +292,8 @@ export function SetLlamaRuntimeStore(arg1:llamacpp.RuntimeStore):Promise<void>;
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function SetSupportedExtensions(arg1:Array<string>):Promise<void>;
+
+export function SetTaggerThresholdOverridesJSON(arg1:string):Promise<void>;
 
 export function ShutdownBackground(arg1:context.Context):Promise<void>;
 
