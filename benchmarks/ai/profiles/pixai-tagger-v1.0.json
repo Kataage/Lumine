@@ -30,6 +30,8 @@
     "provider": "CPUExecutionProvider",
     "imageSize": "1008",
     "ratingSupported": "true",
-    "licenseStatus": "upstream-model-card-unspecified"
+    "licenseStatus": "upstream-model-card-unspecified",
+    "threads": "8",
+    "interOpThreads": "1"
   }
 }
