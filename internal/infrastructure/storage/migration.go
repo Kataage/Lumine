@@ -101,6 +101,7 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 		target.ModelsDir,
 		target.RuntimesDir,
 		target.SemanticIndexDir,
+		target.WebviewDataDir,
 	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return false, fmt.Errorf("prepare migration target %s: %w", dir, err)
@@ -113,6 +114,7 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 		{filepath.Join(status.SourceRoot, "models"), target.ModelsDir},
 		{filepath.Join(status.SourceRoot, "runtimes"), target.RuntimesDir},
 		{filepath.Join(status.SourceRoot, "semantic-index"), target.SemanticIndexDir},
+		{filepath.Join(status.SourceRoot, "webview2"), target.WebviewDataDir},
 		{filepath.Join(status.SourceRoot, "logs"), target.LogsDir},
 	}
 	for _, mapping := range mappings {
@@ -159,6 +161,7 @@ func migrationTargetLayout(layout Layout) Layout {
 			ModelsDir:        filepath.Join(root, "models"),
 			RuntimesDir:      filepath.Join(root, "runtimes"),
 			SemanticIndexDir: filepath.Join(dataDir, "semantic-index"),
+			WebviewDataDir:   filepath.Join(dataDir, "webview2"),
 		}
 	}
 	return installedLayout(root)
