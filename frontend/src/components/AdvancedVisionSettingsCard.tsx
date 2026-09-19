@@ -10,6 +10,7 @@ import {
   type AdvancedVisionStatusInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
+import { useAppDialog } from "./AppDialogProvider";
 
 function Progress({ downloaded, total, label }: { downloaded: number; total: number; label: string }) {
   const percent = total > 0 ? Math.min(100, (downloaded / total) * 100) : 0;
@@ -35,6 +36,7 @@ export function AdvancedVisionSettingsCard({
   onEnable: () => Promise<void>;
   onStatusChange?: (status: AdvancedVisionStatusInfo) => void;
 }) {
+  const dialog = useAppDialog();
   const [status, setStatus] = useState<AdvancedVisionStatusInfo | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +112,14 @@ export function AdvancedVisionSettingsCard({
   };
 
   const removeModel = async (modelId: string, displayName: string) => {
-    if (busy || !window.confirm(`${displayName} をローカルから削除しますか？`)) return;
+    if (busy) return;
+    const approved = await dialog.confirm({
+      title: "Advanced Visionモデルを削除しますか？",
+      description: `${displayName} をローカルから削除します。`,
+      confirmLabel: "モデルを削除",
+      tone: "danger",
+    });
+    if (!approved) return;
     setBusy(`remove:${modelId}`);
     setError(null);
     try {
@@ -145,12 +154,24 @@ export function AdvancedVisionSettingsCard({
             className="ml-auto text-[11px] text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
             disabled={!!busy}
             onClick={() => {
-              if (!window.confirm("共有llama.cpp runtimeを削除しますか？ Lightweight Vision / Prompt Engineも停止します。")) return;
-              setBusy("runtime-remove");
-              void removeAdvancedVisionRuntime()
-                .then(refresh)
-                .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
-                .finally(() => setBusy(""));
+              void (async () => {
+                const approved = await dialog.confirm({
+                  title: "共有runtimeを削除しますか？",
+                  description: "llama.cpp runtimeを削除します。Lightweight Vision / Advanced Vision / Prompt Engineの実行中runtimeは停止します。",
+                  confirmLabel: "runtimeを削除",
+                  tone: "danger",
+                });
+                if (!approved) return;
+                setBusy("runtime-remove");
+                try {
+                  await removeAdvancedVisionRuntime();
+                  await refresh();
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setBusy("");
+                }
+              })();
             }}
           >
             runtimeを管理
