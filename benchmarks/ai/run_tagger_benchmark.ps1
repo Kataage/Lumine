@@ -38,7 +38,17 @@ function Require-Command([string]$Name) {
 
 Require-Command "go"
 Require-Command "git"
-Require-Command "py"
+
+$PythonBootstrap = $null
+$PythonBootstrapArgs = @()
+if (Get-Command "py" -ErrorAction SilentlyContinue) {
+    $PythonBootstrap = "py"
+    $PythonBootstrapArgs = @("-3")
+} elseif (Get-Command "python" -ErrorAction SilentlyContinue) {
+    $PythonBootstrap = "python"
+} else {
+    throw "Python 3 is required. Install Python so either 'py' or 'python' is available."
+}
 
 if ([string]::IsNullOrWhiteSpace($Cpu)) {
     $Cpu = ((Get-CimInstance Win32_Processor | ForEach-Object { $_.Name.Trim() }) -join " + ")
@@ -68,7 +78,7 @@ function Ensure-Venv(
     $created = $false
     if (-not (Test-Path $PythonPath -PathType Leaf)) {
         Write-Host "[$Label] creating virtual environment..."
-        & py -3 -m venv $VenvPath
+        & $PythonBootstrap @PythonBootstrapArgs -m venv $VenvPath
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to create $Label virtual environment."
         }
