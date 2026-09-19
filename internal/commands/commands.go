@@ -36,6 +36,7 @@ type AppCommands struct {
 	llamaRuntimeStore *llamacpp.RuntimeStore
 	semanticRepo *db.SemanticEmbeddingRepo
 	advancedVisionRepo *db.AdvancedVisionRunRepo
+	semanticSearchState *semanticSearchState
 	ctx         context.Context
 }
 
@@ -58,6 +59,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		folderRepo:   folderRepo,
 		semanticRepo: db.NewSemanticEmbeddingRepo(database),
 		advancedVisionRepo: db.NewAdvancedVisionRunRepo(database),
+		semanticSearchState: newSemanticSearchState(),
 		scanSvc:      scanSvc,
 	}
 }
@@ -301,8 +303,9 @@ type AssetListRequest struct {
 }
 
 type AssetListResponse struct {
-	Assets     []AssetDTO `json:"assets"`
-	TotalCount int        `json:"totalCount"`
+	Assets                  []AssetDTO `json:"assets"`
+	TotalCount              int        `json:"totalCount"`
+	SemanticSearchSessionID string     `json:"semanticSearchSessionId,omitempty"`
 }
 
 func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {
