@@ -781,7 +781,12 @@ func mergeLoRAs(groups ...[]domain.GenerationLoRA) []domain.GenerationLoRA {
 			if name == "" {
 				continue
 			}
-			key := strings.ToLower(filepath.Base(name))
+			baseName := filepath.Base(name)
+			ext := filepath.Ext(baseName)
+			if ext != "" {
+				baseName = strings.TrimSuffix(baseName, ext)
+			}
+			key := strings.ToLower(baseName)
 			if existingIndex, exists := index[key]; exists {
 				existing := &result[existingIndex]
 				if existing.Weight == 0 && item.Weight != 0 {
