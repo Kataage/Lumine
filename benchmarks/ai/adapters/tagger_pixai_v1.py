@@ -29,6 +29,7 @@ def _fail(message: str) -> None:
 
 try:
     import psutil
+    import torch
     from huggingface_hub import hf_hub_download
     from PIL import Image
     from transformers import pipeline
@@ -84,6 +85,13 @@ def _verify_weight(model: dict[str, Any]) -> Path:
         raise ValueError(f"model size mismatch: got {path.stat().st_size}, want {expected_size}")
     expected_hash = str(model.get("artifactSha256") or "").strip().lower()
     if expected_hash:
+        stamp = path.with_name(path.name + f".lumine-{expected_hash[:16]}.sha256")
+        try:
+            if stamp.read_text(encoding="utf-8").strip().lower() == expected_hash:
+                return path
+        except OSError:
+            pass
+
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
@@ -91,6 +99,10 @@ def _verify_weight(model: dict[str, Any]) -> Path:
         actual = digest.hexdigest()
         if actual != expected_hash:
             raise ValueError(f"model sha256 mismatch: got {actual}, want {expected_hash}")
+        try:
+            stamp.write_text(expected_hash + "\n", encoding="utf-8")
+        except OSError:
+            pass
     return path
 
 
@@ -105,14 +117,26 @@ def _thresholds(model: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def _configure_torch_threads(model: dict[str, Any]) -> None:
+    threads = max(1, int(_parameter(model, "threads", "8")))
+    interop = max(1, int(_parameter(model, "interOpThreads", "1")))
+    torch.set_num_threads(threads)
+    try:
+        torch.set_num_interop_threads(interop)
+    except RuntimeError:
+        # PyTorch only permits changing inter-op threads before parallel work.
+        # A benchmark adapter process configures this once in main; this guard
+        # only protects unusual embedding/re-entry scenarios.
+        pass
+
+
 def _new_tagger(model: dict[str, Any]):
     _verify_weight(model)
     repo_id = _parameter(model, "repoId")
     revision = str(model.get("version") or "")
-    # Force CPU. The benchmark is specifically the user-visible CPU fallback
-    # requirement from #165, not a server/GPU leaderboard reproduction.
+    # Match the upstream Quickstart: let trust_remote_code select the custom
+    # pipeline registered by the pinned repository revision. Force CPU.
     return pipeline(
-        "image-classification",
         model=repo_id,
         image_processor=repo_id,
         revision=revision,
@@ -368,6 +392,7 @@ def main() -> None:
             raise ValueError("fixtureDir does not exist")
         if _parameter(model, "family") != "pixai-v1.0":
             raise ValueError("this adapter only supports family=pixai-v1.0")
+        _configure_torch_threads(model)
 
         category = str(fixture.get("category") or "")
         if category in PERFORMANCE_CATEGORIES:
