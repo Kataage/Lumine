@@ -69,7 +69,17 @@ def main() -> None:
         if (result.get("environment") or {}).get("hardwareId") != (first.get("environment") or {}).get("hardwareId"):
             raise SystemExit("hardwareId mismatch")
 
-    names = [str((result.get("model") or {}).get("id", f"candidate {index+1}")) for index, result in enumerate(results)]
+    names: list[str] = []
+    unpinned: list[str] = []
+    for index, result in enumerate(results):
+        model = result.get("model") or {}
+        name = str(model.get("id", f"candidate {index+1}"))
+        version = str(model.get("version") or "")
+        artifact_hash = str(model.get("artifactSha256") or "")
+        if version in {"", "main"} or len(artifact_hash) != 64:
+            name += " [UNPINNED]"
+            unpinned.append(name)
+        names.append(name)
     mapped = [cases(result) for result in results]
 
     print("# Advanced Vision benchmark comparison")
@@ -90,6 +100,9 @@ def main() -> None:
         print("| " + label + " | " + " | ".join(values) + " |")
 
     print()
+    if unpinned:
+        print("WARNING: unpinned candidate results are exploratory only and MUST NOT be used as adoption evidence: " + ", ".join(unpinned))
+        print()
     print("This table is descriptive evidence only. Adoption must also record license, redistribution, integration complexity, quantization, and any quality change caused by Heretic/Abliterated modification.")
 
 
