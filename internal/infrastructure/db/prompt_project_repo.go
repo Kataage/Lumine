@@ -30,7 +30,7 @@ func decodePromptProject(row interface{ Scan(...any) error }) (*domain.PromptPro
 	var charactersJSON, lorasJSON string
 	var deleted sql.NullTime
 	if err := row.Scan(
-		&project.ID, &project.Title, &project.Idea, &project.Notes, &project.TargetProfileID,
+		&project.SchemaVersion, &project.ID, &project.Title, &project.Idea, &project.Notes, &project.TargetProfileID,
 		&charactersJSON, &lorasJSON, &deleted, &project.CreatedAt, &project.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func decodePromptProject(row interface{ Scan(...any) error }) (*domain.PromptPro
 }
 
 const promptProjectColumns = `
-	id, title, idea, notes, target_profile_id,
+	schema_version, id, title, idea, notes, target_profile_id,
 	characters_json, loras_json, deleted_at, created_at, updated_at
 `
 
@@ -65,8 +65,8 @@ func (r *PromptProjectRepo) Create(project *domain.PromptProject) (*domain.Promp
 	}
 	result, err := r.db.Exec(`
 		INSERT INTO prompt_projects
-			(title, idea, notes, target_profile_id, characters_json, loras_json)
-		VALUES (?, ?, ?, ?, ?, ?)
+			(schema_version, title, idea, notes, target_profile_id, characters_json, loras_json)
+		VALUES (1, ?, ?, ?, ?, ?, ?)
 	`,
 		strings.TrimSpace(project.Title), strings.TrimSpace(project.Idea),
 		strings.TrimSpace(project.Notes), strings.TrimSpace(project.TargetProfileID),
@@ -324,10 +324,10 @@ func (r *PromptProjectRepo) CreateVersion(version *domain.PromptVersion) (*domai
 	}
 	result, err := r.db.Exec(`
 		INSERT INTO prompt_versions (
-			variant_id, parent_version_id, positive, negative, source,
+			variant_id, schema_version, parent_version_id, positive, negative, source,
 			change_instruction, profile_id, profile_snapshot_json,
 			ai_engine, ai_model_id, ai_model_version, metadata_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		version.VariantID, version.ParentVersionID, version.Positive, version.Negative,
 		strings.TrimSpace(version.Source), strings.TrimSpace(version.ChangeInstruction),
@@ -353,12 +353,12 @@ func (r *PromptProjectRepo) GetVersion(id int64) (*domain.PromptVersion, error) 
 	var version domain.PromptVersion
 	var parent sql.NullInt64
 	err := r.db.QueryRow(`
-		SELECT id, variant_id, parent_version_id, positive, negative, source,
+		SELECT schema_version, id, variant_id, parent_version_id, positive, negative, source,
 			change_instruction, profile_id, profile_snapshot_json,
 			ai_engine, ai_model_id, ai_model_version, metadata_json, created_at
 		FROM prompt_versions WHERE id = ?
 	`, id).Scan(
-		&version.ID, &version.VariantID, &parent, &version.Positive, &version.Negative,
+		&version.SchemaVersion, &version.ID, &version.VariantID, &parent, &version.Positive, &version.Negative,
 		&version.Source, &version.ChangeInstruction, &version.ProfileID,
 		&version.ProfileSnapshotJSON, &version.AIEngine, &version.AIModelID,
 		&version.AIModelVersion, &version.MetadataJSON, &version.CreatedAt,
