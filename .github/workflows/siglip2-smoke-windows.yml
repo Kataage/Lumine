@@ -29,3 +29,4 @@ jobs:
         run: go test ./internal/ai/siglip2 -run TestRealSigLIP2Smoke -count=1 -v
         env:
           LUMINE_SIGLIP2_REAL_SMOKE: "1"
+          LUMINE_SIGLIP2_REAL_GPU_SMOKE: "1"
