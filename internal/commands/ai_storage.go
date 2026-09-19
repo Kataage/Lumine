@@ -21,7 +21,11 @@ type AIStorageInfo struct {
 	UsingLegacy       bool   `json:"usingLegacy"`
 }
 
-func (c *AppCommands) SetStorageLayout(layout storage.Layout) {
+func ConfigureStorageLayout(c *AppCommands, layout storage.Layout) {
+	if c == nil {
+		return
+	}
+	c.storageLayout = layout
 	c.storageInfo = AIStorageInfo{
 		Mode:              string(layout.Mode),
 		RootPath:          layout.RootDir,
