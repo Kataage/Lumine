@@ -163,6 +163,11 @@ export interface DeleteAssetFilesResult {
 
 export type AIRuntimeState = "disabled" | "model_not_installed" | "ready" | "running" | "error";
 
+export interface AIStorageInfo {
+  modelsPath: string;
+  runtimesPath: string;
+}
+
 export interface SemanticModelInfo {
   id: string;
   version: string;
@@ -524,6 +529,7 @@ export const listAssets = Go.ListAssets;
 
 type DynamicCommands = {
   GetAISettings?: () => Promise<AISettings | null>;
+  GetAIStorageInfo?: () => Promise<AIStorageInfo | null>;
   SetAISettings?: (settings: AISettings) => Promise<AISettings | null>;
   IsAICapabilityEnabled?: (capability: string) => Promise<boolean>;
   SemanticSearchAssets?: (request: AssetListRequest) => Promise<AssetListResponse | null>;
@@ -661,6 +667,12 @@ function requireDynamic<K extends keyof DynamicCommands>(name: K): NonNullable<D
 export async function getAISettings(): Promise<AISettings> {
   const value = await requireDynamic("GetAISettings")();
   return normalizeAISettings(value);
+}
+
+export async function getAIStorageInfo(): Promise<AIStorageInfo> {
+  const value = await requireDynamic("GetAIStorageInfo")();
+  if (!value) throw new Error("AI保存先を取得できませんでした。");
+  return value;
 }
 
 export async function setAISettings(settings: AISettings): Promise<AISettings> {
