@@ -3,10 +3,12 @@ import { createPortal } from "react-dom";
 import {
   EventsOn,
   enqueueLightweightVisionBackfill,
+  getAdvancedVisionStatus,
   getAISettings,
   getAIStorageInfo,
   getDefaultLightweightVisionModelInfo,
   getDefaultSemanticModelInfo,
+  getPromptEngineStatus,
   installDefaultLightweightVisionModel,
   installDefaultSemanticModel,
   installLightweightVisionRuntime,
@@ -15,8 +17,10 @@ import {
   removeDefaultLightweightVisionModel,
   removeLightweightVisionRuntime,
   setAISettings,
+  type AdvancedVisionStatusInfo,
   type AIStorageInfo,
   type LightweightVisionModelInfo,
+  type PromptEngineStatusInfo,
   type SemanticModelInfo,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
@@ -210,6 +214,8 @@ export function AISettingsPanel() {
   const [settings, setSettings] = useState<AISettings>(DEFAULT_AI_SETTINGS);
   const [semanticModel, setSemanticModel] = useState<SemanticModelInfo | null>(null);
   const [lightweightModel, setLightweightModel] = useState<LightweightVisionModelInfo | null>(null);
+  const [advancedStatus, setAdvancedStatus] = useState<AdvancedVisionStatusInfo | null>(null);
+  const [promptStatus, setPromptStatus] = useState<PromptEngineStatusInfo | null>(null);
   const [storageInfo, setStorageInfo] = useState<AIStorageInfo | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -224,15 +230,19 @@ export function AISettingsPanel() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextSettings, semantic, vision, storage] = await Promise.all([
+      const [nextSettings, semantic, vision, advanced, prompt, storage] = await Promise.all([
         getAISettings(),
         getDefaultSemanticModelInfo().catch(() => null),
         getDefaultLightweightVisionModelInfo().catch(() => null),
+        getAdvancedVisionStatus().catch(() => null),
+        getPromptEngineStatus().catch(() => null),
         getAIStorageInfo().catch(() => null),
       ]);
       setSettings(nextSettings);
       setSemanticModel(semantic);
       setLightweightModel(vision);
+      setAdvancedStatus(advanced);
+      setPromptStatus(prompt);
       setStorageInfo(storage);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -415,19 +425,35 @@ export function AISettingsPanel() {
           ? "ready"
           : "setup";
 
+  const runtimeStatus = (
+    key: "advancedVision" | "promptEngine",
+    runtimeState: AdvancedVisionStatusInfo["runtime"]["state"] | undefined,
+  ): FeatureStatus => {
+    if (!settings.enabled || !settings[key]) return "off";
+    if (runtimeState === "error") return "error";
+    if (runtimeState === "running") return "running";
+    if (runtimeState === "ready") return "ready";
+    return "setup";
+  };
+
+  const advancedFeatureStatus = runtimeStatus("advancedVision", advancedStatus?.runtime.state);
+  const promptFeatureStatus = runtimeStatus("promptEngine", promptStatus?.runtime.state);
+
   const featureStatus = (key: AIModelFeatureKey): FeatureStatus => {
     if (key === "tagger") return "preview";
     if (key === "semanticSearch") return semanticStatus;
     if (key === "lightweightVision") return lightweightStatus;
-    return settings.enabled && settings[key] ? "setup" : "off";
+    if (key === "advancedVision") return advancedFeatureStatus;
+    return promptFeatureStatus;
   };
 
   const enabledCount = useMemo(
     () => FEATURE_KEYS.filter((key) => key !== "tagger" && settings.enabled && settings[key]).length,
     [settings],
   );
-  const errorCount = [semanticStatus, lightweightStatus].filter((status) => status === "error").length;
-  const readyCount = [semanticStatus, lightweightStatus].filter((status) => status === "ready" || status === "running").length;
+  const allRuntimeStatuses = [semanticStatus, lightweightStatus, advancedFeatureStatus, promptFeatureStatus];
+  const errorCount = allRuntimeStatuses.filter((status) => status === "error").length;
+  const readyCount = allRuntimeStatuses.filter((status) => status === "ready" || status === "running").length;
 
   const modal = open ? (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => {
@@ -632,12 +658,20 @@ export function AISettingsPanel() {
 
                       {key === "advancedVision" && (
                         <div className="border-t border-border/70 px-4 pb-4">
-                          <AdvancedVisionSettingsCard enabled={enabled} onEnable={() => ensureFeatureEnabled("advancedVision")} />
+                          <AdvancedVisionSettingsCard
+                            enabled={enabled}
+                            onEnable={() => ensureFeatureEnabled("advancedVision")}
+                            onStatusChange={setAdvancedStatus}
+                          />
                         </div>
                       )}
                       {key === "promptEngine" && (
                         <div className="border-t border-border/70 px-4 pb-4">
-                          <PromptEngineSettingsCard enabled={enabled} onEnable={() => ensureFeatureEnabled("promptEngine")} />
+                          <PromptEngineSettingsCard
+                            enabled={enabled}
+                            onEnable={() => ensureFeatureEnabled("promptEngine")}
+                            onStatusChange={setPromptStatus}
+                          />
                         </div>
                       )}
                     </article>
