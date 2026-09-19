@@ -51,8 +51,20 @@ go build ./...
 
 ### Windows アプリ
 
+Installed build:
+
 ```bash
 wails build -platform windows/amd64
 ```
+
+Portable build:
+
+```bash
+wails build -platform windows/amd64 -tags portable -ldflags "-H windowsgui" -o Lumine-portable.exe
+```
+
+Installed版の新規データはWindowsのLocalAppData配下の `Lumine` に保存します。旧 `%USERPROFILE%\\lumine` に既存DBがある場合は、データ消失を避けるため明示的に移行するまで旧保存先を継続利用します。
+
+Portable版はexe配置フォルダー配下に `data/lumine.db`、`data/logs`、`data/semantic-index`、`data/webview2`、`models`、`runtimes` を保存します。旧データを検出した場合はAI設定のストレージ欄から「次回起動時にコピー」を予約できます。コピー元は自動削除しません。
 
 GitHub Actions ではフロントエンドの lint / typecheck / unit test / build、Go の vet / build / race test、および Windows の Wails 通常版・portable 版ビルドを検証します。
