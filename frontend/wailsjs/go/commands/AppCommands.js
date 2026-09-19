@@ -278,6 +278,10 @@ export function GetSupportedExtensions() {
   return window['go']['commands']['AppCommands']['GetSupportedExtensions']();
 }
 
+export function GetTaggerReviewJSON(arg1) {
+  return window['go']['commands']['AppCommands']['GetTaggerReviewJSON'](arg1);
+}
+
 export function GetViewerAssetDetail(arg1) {
   return window['go']['commands']['AppCommands']['GetViewerAssetDetail'](arg1);
 }
@@ -482,6 +486,10 @@ export function RetryAIJob(arg1) {
   return window['go']['commands']['AppCommands']['RetryAIJob'](arg1);
 }
 
+export function ReviewTaggerSuggestions(arg1, arg2, arg3) {
+  return window['go']['commands']['AppCommands']['ReviewTaggerSuggestions'](arg1, arg2, arg3);
+}
+
 export function RunAdvancedVision(arg1, arg2, arg3) {
   return window['go']['commands']['AppCommands']['RunAdvancedVision'](arg1, arg2, arg3);
 }
@@ -568,6 +576,10 @@ export function StartAIRestore() {
 
 export function SyncLibraryViewer(arg1) {
   return window['go']['commands']['AppCommands']['SyncLibraryViewer'](arg1);
+}
+
+export function TaggerAnalysisHandler(arg1, arg2) {
+  return window['go']['commands']['AppCommands']['TaggerAnalysisHandler'](arg1, arg2);
 }
 
 export function ToggleAssetFavorite(arg1, arg2) {
