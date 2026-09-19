@@ -772,18 +772,8 @@ func TestManagerReloadsGPUCapableRuntimeWhenGPUPolicyChanges(t *testing.T) {
 	if !engines[0].unloaded {
 		t.Fatal("GPU policy change did not unload GPU-capable CPU runtime")
 	}
-
-	if err := manager.Load(
-		context.Background(),
-		domain.AICapabilitySemanticSearch,
-		manifest.ID,
-		manifest.Version,
-		LoadOptions{AllowGPU: true},
-	); err != nil {
-		t.Fatal(err)
-	}
 	if len(engines) != 2 {
-		t.Fatalf("GPU reload engine count = %d, want 2", len(engines))
+		t.Fatalf("GPU policy change should reload immediately: engines=%d, want 2", len(engines))
 	}
 	if !engines[1].options.AllowGPU {
 		t.Fatalf("GPU reload did not request acceleration: options=%+v", engines[1].options)
@@ -791,6 +781,20 @@ func TestManagerReloadsGPUCapableRuntimeWhenGPUPolicyChanges(t *testing.T) {
 	status := manager.Status(domain.AICapabilitySemanticSearch)
 	if status.ExecutionProvider != "directml" {
 		t.Fatalf("GPU provider = %q, want directml", status.ExecutionProvider)
+	}
+
+	settings.GPUAcceleration = false
+	if err := manager.ApplySettings(context.Background(), settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(engines) != 3 {
+		t.Fatalf("CPU policy restore should reload immediately: engines=%d, want 3", len(engines))
+	}
+	if engines[2].options.AllowGPU {
+		t.Fatalf("CPU reload unexpectedly requested GPU: options=%+v", engines[2].options)
+	}
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.ExecutionProvider != "cpu" {
+		t.Fatalf("provider after GPU disable = %q, want cpu", status.ExecutionProvider)
 	}
 }
 
