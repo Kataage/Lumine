@@ -353,24 +353,27 @@ func (i *semanticMemoryIndex) Warm(
 		i.ready = false
 		i.warming = true
 		i.lastErr = nil
+		i.releaseMappingLocked()
 		i.positions = make(map[int64]int)
 		i.data = nil
 		i.dimensions = 0
+		i.overlay = make(map[int64][]float32)
+		i.overlayExtra = 0
 		i.wait = make(chan struct{})
 		i.startedAt = time.Now()
 		i.finishedAt = time.Time{}
 		i.setProgressLocked("counting", 0, 0)
 		wait := i.wait
-		generation := i.generation
+		indexGeneration := i.generation
 		i.mu.Unlock()
 
 		slog.Info("semantic index warm started", "model", modelID)
 
-		if generation, generationErr := repo.SemanticIndexGeneration(ctx); generationErr == nil {
-			snapshot, snapshotErr := openSemanticPersistentSnapshot(i.storageRoot, key, generation)
+		if dbGeneration, generationErr := repo.SemanticIndexGeneration(ctx); generationErr == nil {
+			snapshot, snapshotErr := openSemanticPersistentSnapshot(i.storageRoot, key, dbGeneration)
 			if snapshotErr == nil {
 				i.mu.Lock()
-				if i.generation != generation || i.key != key || i.wait != wait {
+				if i.generation != indexGeneration || i.key != key || i.wait != wait {
 					i.mu.Unlock()
 					if snapshot.unmap != nil {
 						_ = snapshot.unmap()
@@ -419,7 +422,7 @@ func (i *semanticMemoryIndex) Warm(
 		}
 
 		i.mu.Lock()
-		if i.generation != generation || i.key != key || i.wait != wait {
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
 			i.mu.Unlock()
 			return errSemanticIndexSuperseded
 		}
@@ -433,14 +436,14 @@ func (i *semanticMemoryIndex) Warm(
 
 		total, err := repo.CountReadyEmbeddings(ctx, engine, modelID, version)
 		if err != nil {
-			if !i.finishWarm(wait, key, generation, err) {
+			if !i.finishWarm(wait, key, indexGeneration, err) {
 				return errSemanticIndexSuperseded
 			}
 			return err
 		}
 
 		i.mu.Lock()
-		if i.generation != generation || i.key != key || i.wait != wait {
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
 			i.mu.Unlock()
 			return errSemanticIndexSuperseded
 		}
@@ -454,7 +457,7 @@ func (i *semanticMemoryIndex) Warm(
 		err = repo.WalkReadyEmbeddingBlobs(ctx, engine, modelID, version, func(assetID int64, dimensions int, blob []byte) error {
 			i.mu.Lock()
 			defer i.mu.Unlock()
-			if i.generation != generation || i.key != key || i.wait != wait {
+			if i.generation != indexGeneration || i.key != key || i.wait != wait {
 				return errSemanticIndexSuperseded
 			}
 
@@ -503,7 +506,7 @@ func (i *semanticMemoryIndex) Warm(
 		})
 
 		i.mu.Lock()
-		if i.generation != generation || i.key != key || i.wait != wait {
+		if i.generation != indexGeneration || i.key != key || i.wait != wait {
 			i.mu.Unlock()
 			return errSemanticIndexSuperseded
 		}
