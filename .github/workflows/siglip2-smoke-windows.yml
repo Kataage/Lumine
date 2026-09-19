@@ -1,0 +1,31 @@
+name: siglip2-smoke-windows
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "internal/ai/siglip2/**"
+      - "internal/ai/model_store.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/siglip2-smoke-windows.yml"
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: go.sum
+
+      - name: Run real pinned SigLIP2 smoke
+        run: go test ./internal/ai/siglip2 -run TestRealSigLIP2Smoke -count=1 -v
+        env:
+          LUMINE_SIGLIP2_REAL_SMOKE: "1"
