@@ -194,6 +194,16 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const assets = showingSemanticPreview ? semanticPreview : settledAssets;
   const totalCount = data?.pages[0]?.totalCount ?? semanticProgress?.total ?? 0;
 
+  useEffect(() => {
+    if (semanticSearchActive) return;
+    const active = semanticRequestRef.current;
+    if (!active) return;
+    semanticRequestRef.current = null;
+    setSemanticPreview([]);
+    setSemanticProgress(null);
+    void cancelSemanticSearch(active.id).catch(() => undefined);
+  }, [semanticSearchActive]);
+
   useEffect(() => onAssetsLoaded(assets.map((asset) => asset.id)), [assets, onAssetsLoaded]);
 
   useEffect(() => {
