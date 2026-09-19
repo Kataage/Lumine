@@ -364,6 +364,80 @@ export interface ModelProfileInput {
   notes: string;
 }
 
+export interface PromptProjectLoRA {
+  name: string;
+  weight: number;
+  triggerWords: string[];
+}
+
+export interface PromptVersion {
+  schemaVersion: number;
+  id: number;
+  variantId: number;
+  parentVersionId?: number;
+  positive: string;
+  negative: string;
+  source: "manual" | "llm" | "vlm" | "tagger" | "derived" | "metadata";
+  changeInstruction: string;
+  profileId: string;
+  profileSnapshotJson: string;
+  aiEngine: string;
+  aiModelId: string;
+  aiModelVersion: string;
+  metadataJson: string;
+  createdAt: string;
+}
+
+export interface PromptVariant {
+  id: number;
+  projectId: number;
+  name: string;
+  versions: PromptVersion[];
+  createdAt: string;
+}
+
+export interface PromptProject {
+  schemaVersion: number;
+  id: number;
+  title: string;
+  idea: string;
+  notes: string;
+  targetProfileId: string;
+  characters: string[];
+  loras: PromptProjectLoRA[];
+  referenceAssetIds: number[];
+  relatedAssetIds: number[];
+  variants?: PromptVariant[];
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromptProjectInput {
+  title: string;
+  idea: string;
+  notes: string;
+  targetProfileId: string;
+  characters: string[];
+  loras: PromptProjectLoRA[];
+  referenceAssetIds: number[];
+  relatedAssetIds: number[];
+}
+
+export interface PromptVersionInput {
+  variantId: number;
+  parentVersionId?: number;
+  positive: string;
+  negative: string;
+  source: PromptVersion["source"];
+  changeInstruction: string;
+  profileId: string;
+  aiEngine: string;
+  aiModelId: string;
+  aiModelVersion: string;
+  metadataJson: string;
+}
+
 export const selectFolder = Go.SelectFolder;
 export const listLibraries = Go.ListLibraries;
 export const addLibrary = Go.AddLibrary;
@@ -417,6 +491,14 @@ type DynamicCommands = {
   UpdateModelProfile?: (id: string, input: ModelProfileInput) => Promise<ModelProfile | null>;
   DuplicateModelProfile?: (id: string, newName: string) => Promise<ModelProfile | null>;
   DeleteModelProfile?: (id: string) => Promise<void>;
+  ListPromptProjects?: (includeDeleted: boolean, limit: number) => Promise<PromptProject[]>;
+  GetPromptProject?: (id: number, includeDeleted: boolean) => Promise<PromptProject | null>;
+  CreatePromptProject?: (input: PromptProjectInput) => Promise<PromptProject | null>;
+  UpdatePromptProject?: (id: number, input: PromptProjectInput) => Promise<PromptProject | null>;
+  DeletePromptProject?: (id: number) => Promise<void>;
+  RestorePromptProject?: (id: number) => Promise<void>;
+  CreatePromptVariant?: (projectId: number, name: string, fromVersionId: number) => Promise<PromptVariant | null>;
+  CreatePromptVersion?: (input: PromptVersionInput) => Promise<PromptVersion | null>;
   GetViewerAssetDetail?: (id: number) => Promise<AssetDTO | null>;
   ScanLibraryViewer?: (libraryId: number) => Promise<void>;
   SyncLibraryViewer?: (libraryId: number) => Promise<LibrarySyncResult | null>;
@@ -700,6 +782,72 @@ export async function duplicateModelProfile(id: string, newName = ""): Promise<M
 
 export async function deleteModelProfile(id: string): Promise<void> {
   await requireDynamic("DeleteModelProfile")(id);
+}
+
+function normalizePromptProject(project: PromptProject): PromptProject {
+  return {
+    ...project,
+    characters: project.characters ?? [],
+    loras: (project.loras ?? []).map((lora) => ({ ...lora, triggerWords: lora.triggerWords ?? [] })),
+    referenceAssetIds: project.referenceAssetIds ?? [],
+    relatedAssetIds: project.relatedAssetIds ?? [],
+    variants: project.variants?.map((variant) => ({
+      ...variant,
+      versions: variant.versions ?? [],
+    })),
+  };
+}
+
+export async function listPromptProjects(includeDeleted = false, limit = 200): Promise<PromptProject[]> {
+  const values = (await requireDynamic("ListPromptProjects")(includeDeleted, limit)) ?? [];
+  return values.map(normalizePromptProject);
+}
+
+export async function getPromptProject(id: number, includeDeleted = false): Promise<PromptProject> {
+  const value = await requireDynamic("GetPromptProject")(id, includeDeleted);
+  if (!value) throw new Error("Prompt Projectが見つかりません。");
+  return normalizePromptProject(value);
+}
+
+export async function createPromptProject(input: PromptProjectInput): Promise<PromptProject> {
+  const value = await requireDynamic("CreatePromptProject")(input);
+  if (!value) throw new Error("Prompt Projectを作成できませんでした。");
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  return normalizePromptProject(value);
+}
+
+export async function updatePromptProject(id: number, input: PromptProjectInput): Promise<PromptProject> {
+  const value = await requireDynamic("UpdatePromptProject")(id, input);
+  if (!value) throw new Error("Prompt Projectを更新できませんでした。");
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  await queryClient.invalidateQueries({ queryKey: ["promptProject", id] });
+  return normalizePromptProject(value);
+}
+
+export async function deletePromptProject(id: number): Promise<void> {
+  await requireDynamic("DeletePromptProject")(id);
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  await queryClient.invalidateQueries({ queryKey: ["promptProject", id] });
+}
+
+export async function restorePromptProject(id: number): Promise<void> {
+  await requireDynamic("RestorePromptProject")(id);
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  await queryClient.invalidateQueries({ queryKey: ["promptProject", id] });
+}
+
+export async function createPromptVariant(projectId: number, name: string, fromVersionId = 0): Promise<PromptVariant> {
+  const value = await requireDynamic("CreatePromptVariant")(projectId, name, fromVersionId);
+  if (!value) throw new Error("Prompt Variantを作成できませんでした。");
+  await queryClient.invalidateQueries({ queryKey: ["promptProject", projectId] });
+  return { ...value, versions: value.versions ?? [] };
+}
+
+export async function createPromptVersion(input: PromptVersionInput): Promise<PromptVersion> {
+  const value = await requireDynamic("CreatePromptVersion")(input);
+  if (!value) throw new Error("Prompt Versionを保存できませんでした。");
+  await queryClient.invalidateQueries({ queryKey: ["promptProjects"] });
+  return value;
 }
 
 export async function listWorks(limit = 200): Promise<WorkDTO[]> {
