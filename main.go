@@ -260,6 +260,7 @@ func main() {
 		// and multi-monitor movement retain their normal shell behaviour. The
 		// native frame is themed to visually continue Lumine's app header.
 		Windows: &windows.Options{
+			WebviewUserDataPath:  storageLayout.WebviewDataDir,
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			Theme:                windows.Dark,
