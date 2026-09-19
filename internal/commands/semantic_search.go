@@ -441,9 +441,32 @@ func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*A
 		ModelID: source.ModelID,
 		Version: source.ModelVersion,
 	}
-	result, err := c.semanticRepo.Search(source.Vector, semanticQueryFromAssetRequest(req, status, assetID))
-	if err != nil {
-		return nil, err
+	searchQuery := semanticQueryFromAssetRequest(req, status, assetID)
+	var result *db.SemanticSearchResult
+	if c.semanticIndex != nil {
+		ctx := c.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
+			if err := c.semanticIndex.Warm(ctx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
+				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
+			}
+		}
+		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(ctx, searchQuery)
+		if err != nil {
+			return nil, err
+		}
+		result, err = c.semanticIndex.Search(ctx, source.Vector, eligibleIDs, searchQuery.Offset, searchQuery.Limit, nil)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		result, err = c.semanticRepo.Search(source.Vector, searchQuery)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return c.semanticResultToAssets(result)
 }
