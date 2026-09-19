@@ -95,13 +95,8 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 		}
 	}
 
-	if err := backupCurrentDatabase(target.DataDir); err != nil {
-		return false, err
-	}
-	if err := copyLegacyDatabase(status.SourceRoot, target.DataDir); err != nil {
-		return false, err
-	}
-
+	// Copy large reusable assets first. The database is switched last so a
+	// partial model/runtime copy never makes an incomplete target look active.
 	mappings := [][2]string{
 		{filepath.Join(status.SourceRoot, "models"), target.ModelsDir},
 		{filepath.Join(status.SourceRoot, "runtimes"), target.RuntimesDir},
@@ -112,6 +107,13 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 		if err := copyTreeIfPresent(mapping[0], mapping[1]); err != nil {
 			return false, err
 		}
+	}
+
+	if err := backupCurrentDatabase(target.DataDir); err != nil {
+		return false, err
+	}
+	if err := copyLegacyDatabase(status.SourceRoot, target.DataDir); err != nil {
+		return false, err
 	}
 
 	if err := os.Remove(legacyImportMarkerPath(layout)); err != nil && !errors.Is(err, os.ErrNotExist) {
