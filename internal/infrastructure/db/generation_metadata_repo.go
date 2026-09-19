@@ -69,6 +69,10 @@ func (r *GenerationMetadataRepo) Delete(assetID int64) error {
 
 func normalizeLoRAKnowledgeName(name string) string {
 	name = strings.TrimSpace(filepath.Base(name))
+	ext := filepath.Ext(name)
+	if ext != "" {
+		name = strings.TrimSuffix(name, ext)
+	}
 	return name
 }
 
