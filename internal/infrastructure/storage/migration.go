@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-const legacyImportMarkerName = ".lumine-import-legacy"
+const (
+	legacyImportMarkerName   = ".lumine-import-legacy"
+	legacyImportCompleteName = ".lumine-legacy-import-complete"
+)
 
 type MigrationStatus struct {
 	Available       bool
@@ -23,7 +26,8 @@ type MigrationStatus struct {
 func LegacyMigrationStatus(layout Layout) MigrationStatus {
 	source := layout.LegacyRootDir
 	target := migrationTargetRoot(layout)
-	available := layout.LegacyDetected && source != "" && target != "" && !samePath(source, target)
+	completed := fileExists(legacyImportCompletePath(layout))
+	available := layout.LegacyDetected && !completed && source != "" && target != "" && !samePath(source, target)
 	_, markerErr := os.Stat(legacyImportMarkerPath(layout))
 	return MigrationStatus{
 		Available:       available,
@@ -66,6 +70,12 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 	status := LegacyMigrationStatus(layout)
 	if !status.Pending {
 		return false, nil
+	}
+	if fileExists(legacyImportCompletePath(layout)) {
+		if err := os.Remove(legacyImportMarkerPath(layout)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("remove stale completed migration request: %w", err)
+		}
+		return true, nil
 	}
 	if !status.Available {
 		return false, errors.New("scheduled legacy migration no longer has a valid source and target")
@@ -116,6 +126,9 @@ func ApplyPendingLegacyCopy(layout Layout) (bool, error) {
 		return false, err
 	}
 
+	if err := os.WriteFile(legacyImportCompletePath(layout), []byte(status.SourceRoot+"\n"), 0644); err != nil {
+		return false, fmt.Errorf("record completed legacy migration: %w", err)
+	}
 	if err := os.Remove(legacyImportMarkerPath(layout)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("remove completed migration request: %w", err)
 	}
@@ -151,6 +164,10 @@ func migrationTargetLayout(layout Layout) Layout {
 
 func legacyImportMarkerPath(layout Layout) string {
 	return filepath.Join(migrationTargetRoot(layout), legacyImportMarkerName)
+}
+
+func legacyImportCompletePath(layout Layout) string {
+	return filepath.Join(migrationTargetRoot(layout), legacyImportCompleteName)
 }
 
 func backupCurrentDatabase(targetDataDir string) error {
