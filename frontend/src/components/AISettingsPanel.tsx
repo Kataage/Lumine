@@ -35,6 +35,7 @@ import {
 import { AdvancedVisionSettingsCard } from "./AdvancedVisionSettingsCard";
 import { useAppDialog } from "./AppDialogProvider";
 import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
+import { TaggerThresholdSettingsCard } from "./TaggerThresholdSettingsCard";
 
 type FeatureStatus = "off" | "setup" | "unloaded" | "ready" | "running" | "error" | "preview";
 
@@ -685,9 +686,12 @@ export function AISettingsPanel() {
                       </div>
 
                       {isTagger && (
-                        <div className="border-t border-border/70 bg-muted/[0.12] px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-                          モデル比較と製品統合が完了するまで無効です。未完成機能をONにはしません。
-                        </div>
+                        <>
+                          <div className="border-t border-border/70 bg-muted/[0.12] px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+                            モデル比較と製品統合が完了するまでON切替は無効です。threshold overrideは先に設定できます。
+                          </div>
+                          <TaggerThresholdSettingsCard />
+                        </>
                       )}
 
                       {key === "semanticSearch" && semanticModel && (
