@@ -3,7 +3,8 @@ param(
     [string]$HardwareId = "",
     [string]$CacheDir = "",
     [string]$SigLIPBenchTime = "10x",
-    [string]$LlamaBenchTime = "5x"
+    [string]$LlamaBenchTime = "5x",
+    [switch]$PlanOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,6 +116,28 @@ function Invoke-GoEvidence(
     $gpuPath = Join-Path $ResultsDir "$Name-gpu.csv"
     $oldEnvironment = @{}
 
+    if ($PlanOnly) {
+        $planned = "PLAN ONLY: go $($Arguments -join ' ')"
+        Write-Host $planned
+        Set-Content -Path $logPath -Value $planned -Encoding utf8
+        return [PSCustomObject]@{
+            name = $Name
+            passed = $true
+            exitCode = 0
+            startedAt = [DateTime]::UtcNow.ToString("o")
+            finishedAt = [DateTime]::UtcNow.ToString("o")
+            durationSeconds = 0
+            log = (Split-Path $logPath -Leaf)
+            gpuSamples = $null
+            minVramMiB = $null
+            peakVramMiB = $null
+            deltaVramMiB = $null
+            peakGpuUtilizationPercent = $null
+            benchmarkLines = @()
+            providerEvidence = @($planned)
+        }
+    }
+
     foreach ($key in $Environment.Keys) {
         $oldEnvironment[$key] = [Environment]::GetEnvironmentVariable($key, "Process")
         [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], "Process")
@@ -179,7 +202,10 @@ function Invoke-GoEvidence(
 
 $Go = Require-Command "go"
 $Git = Require-Command "git"
-$NvidiaSmi = Resolve-NvidiaSmi
+$NvidiaSmi = $null
+if (-not $PlanOnly) {
+    $NvidiaSmi = Resolve-NvidiaSmi
+}
 
 if ([string]::IsNullOrWhiteSpace($ResultsDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -210,9 +236,11 @@ $videoControllers = @(
         }
 )
 
-& $NvidiaSmi | Set-Content -Path (Join-Path $ResultsDir "nvidia-smi.txt") -Encoding utf8
-& $NvidiaSmi --query-gpu=index,name,uuid,driver_version,memory.total,pci.bus_id --format=csv,noheader |
-    Set-Content -Path (Join-Path $ResultsDir "nvidia-gpus.csv") -Encoding utf8
+if (-not $PlanOnly) {
+    & $NvidiaSmi | Set-Content -Path (Join-Path $ResultsDir "nvidia-smi.txt") -Encoding utf8
+    & $NvidiaSmi --query-gpu=index,name,uuid,driver_version,memory.total,pci.bus_id --format=csv,noheader |
+        Set-Content -Path (Join-Path $ResultsDir "nvidia-gpus.csv") -Encoding utf8
+}
 
 $hardware = [ordered]@{
     schemaVersion = 1
@@ -253,6 +281,7 @@ $summary = [ordered]@{
     gitCommit = $gitCommit
     siglipBenchTime = $SigLIPBenchTime
     llamaBenchTime = $LlamaBenchTime
+    planOnly = [bool]$PlanOnly
     hardware = $hardware
     results = $results
     allPassed = -not ($results | Where-Object { -not $_.passed })
@@ -269,6 +298,7 @@ $report += "- Git commit: $gitCommit"
 $report += "- CPU: $cpu"
 $report += "- RAM: $([Math]::Round($ramBytes / 1GB, 2)) GiB"
 $report += "- Generated: $($summary.generatedAt)"
+$report += "- Plan only: $([bool]$PlanOnly)"
 $report += ""
 $report += "| Check | Result | Peak VRAM MiB | VRAM delta MiB | Peak GPU util % |"
 $report += "| --- | --- | ---: | ---: | ---: |"
