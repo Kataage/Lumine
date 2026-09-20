@@ -6,8 +6,11 @@ import "./detailPanel.css";
 import { AppDialogProvider } from "./components/AppDialogProvider";
 import { initializeMemoryImageCacheBudget } from "./utils/imageCacheSettings";
 
-async function start() {
-  await initializeMemoryImageCacheBudget();
+function start() {
+  // The default memory-cache budget is already safe. Do not delay the first
+  // React frame on a settings/SQLite round-trip; apply the persisted override
+  // asynchronously after the viewer has mounted.
+  void initializeMemoryImageCacheBudget();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <AppDialogProvider>
@@ -17,4 +20,4 @@ async function start() {
   );
 }
 
-void start();
+start();
