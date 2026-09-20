@@ -5,7 +5,7 @@
   "quantization": "Q8_0",
   "artifactSha256": "9d4612de6a42214499e301494a3ecc2be0abdd9de44e663bda63f1152fad1bf4",
   "modelSizeBytes": 545590272,
-  "runtime": "llama.cpp-b10964-cpu-x64",
+  "runtime": "llama.cpp-b11053-cpu-x64",
   "benchmarkCategories": [
     "lightweight_vision",
     "cpu_latency_tokens_sec",
@@ -22,9 +22,8 @@
     "mmprojFile": "mmproj-SmolVLM-500M-Instruct-Q8_0.gguf",
     "mmprojSha256": "d1eb8b6b23979205fdf63703ed10f788131a3f812c7b1f72e0119d5d81295150",
     "mmprojSizeBytes": "108783360",
-    "llamaRelease": "b10964",
-    "llamaVersion": "0.4.1",
-    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "llamaRelease": "b11053",
+    "llamaWindowsCpuArchiveSha256": "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc",
     "threads": "8",
     "context": "4096",
     "device": "cpu"
