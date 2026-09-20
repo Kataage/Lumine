@@ -156,6 +156,8 @@ func main() {
 	cmd := commands.New(database, scanSvc)
 	commands.ConfigureStorageLayout(cmd, storageLayout)
 	commands.ConfigureSemanticIndexRoot(cmd, storageLayout.SemanticIndexDir)
+	semanticDiagnostics := ai.NewSemanticDiagnostics()
+	commands.ConfigureSemanticDiagnostics(cmd, semanticDiagnostics)
 	aiManager := ai.NewManager(storageLayout.ModelsDir, cmd.GetAISettings)
 	cmd.SetAIManager(aiManager)
 	if err := aiManager.RegisterEngine(siglip2.EngineID, siglip2.NewEngine); err != nil {
@@ -188,6 +190,7 @@ func main() {
 	// progress concurrently. Per-runtime inference remains serialized by Manager,
 	// so this does not run unsafe parallel ORT calls against one loaded model.
 	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 4)
+	aiJobQueue.SetSemanticDiagnostics(semanticDiagnostics)
 	cmd.SetAIJobQueue(aiJobQueue)
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
 		log.Fatal("failed to register Semantic Search job handler:", err)
