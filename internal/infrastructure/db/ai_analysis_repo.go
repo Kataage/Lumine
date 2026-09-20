@@ -178,10 +178,11 @@ func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.
 	defer tx.Rollback()
 
 	// Choose one best candidate per capability first, then preserve the queue's
-	// existing cross-capability priority/id fairness. Semantic Search is the
-	// exception inside its own capability: for equal priority, process the
-	// newest filesystem-modified asset first so an old persisted backlog cannot
-	// keep the searchable subset biased toward old images after an upgrade.
+	// existing cross-capability priority/id fairness. Negative-priority
+	// Semantic Search work is background backfill and is newest-first so an old
+	// persisted backlog cannot bias the searchable subset toward old images.
+	// Foreground/manual semantic work has non-negative priority and therefore
+	// retains enqueue (job-id) order, which preserves the current viewer order.
 	query := fmt.Sprintf(`
 		WITH ranked AS (
 			SELECT
@@ -193,12 +194,12 @@ func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.
 					ORDER BY
 						j.priority DESC,
 						CASE
-							WHEN j.capability = 'semantic_search'
+							WHEN j.capability = 'semantic_search' AND j.priority < 0
 							THEN COALESCE(a.modified_at_fs, '')
 							ELSE ''
 						END DESC,
 						CASE
-							WHEN j.capability = 'semantic_search'
+							WHEN j.capability = 'semantic_search' AND j.priority < 0
 							THEN j.asset_id
 							ELSE 0
 						END DESC,
