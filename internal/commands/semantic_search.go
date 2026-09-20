@@ -27,9 +27,11 @@ const (
 )
 
 type semanticSearchSession struct {
-	hits      []domain.SemanticSearchHit
-	total     int
-	createdAt time.Time
+	hits          []domain.SemanticSearchHit
+	total         int
+	coverageReady int
+	coverageTotal int
+	createdAt     time.Time
 }
 
 type semanticSearchState struct {
@@ -133,7 +135,12 @@ func (s *semanticSearchState) cancelAll() {
 }
 
 
-func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) string {
+func (s *semanticSearchState) store(
+	hits []domain.SemanticSearchHit,
+	total int,
+	coverageReady int,
+	coverageTotal int,
+) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -158,9 +165,11 @@ func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) 
 	s.seq++
 	id := fmt.Sprintf("semantic-%x", s.seq)
 	s.sessions[id] = semanticSearchSession{
-		hits:      append([]domain.SemanticSearchHit(nil), hits...),
-		total:     total,
-		createdAt: now,
+		hits:          append([]domain.SemanticSearchHit(nil), hits...),
+		total:         total,
+		coverageReady: coverageReady,
+		coverageTotal: coverageTotal,
+		createdAt:     now,
 	}
 	return id
 }
@@ -453,6 +462,8 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 	}
 
 	searchQuery := semanticQueryFromAssetRequest(req, status, 0)
+	coverageTotal, _ := c.semanticScopeTotal(req)
+	coverageReady := 0
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
 		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
@@ -467,6 +478,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		if err != nil {
 			return nil, err
 		}
+		coverageReady = len(eligibleIDs)
 		emitProgress("scoring", 0, len(eligibleIDs))
 		result, err = c.semanticIndex.Search(
 			searchCtx,
@@ -486,11 +498,23 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		if err != nil {
 			return nil, err
 		}
+		coverageReady = result.TotalCount
 	}
 
 	emitProgress("formatting", len(result.Hits), result.TotalCount)
-	sessionID := c.semanticSearchState.store(result.RankedHits, result.TotalCount)
-	return c.semanticHitsToAssets(result.Hits, result.TotalCount, sessionID)
+	sessionID := c.semanticSearchState.store(
+		result.RankedHits,
+		result.TotalCount,
+		coverageReady,
+		coverageTotal,
+	)
+	return c.semanticHitsToAssets(
+		result.Hits,
+		result.TotalCount,
+		sessionID,
+		coverageReady,
+		coverageTotal,
+	)
 }
 
 func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*AssetListResponse, error) {
@@ -514,7 +538,13 @@ func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*
 	if end > len(session.hits) {
 		end = len(session.hits)
 	}
-	return c.semanticHitsToAssets(session.hits[offset:end], session.total, sessionID)
+	return c.semanticHitsToAssets(
+		session.hits[offset:end],
+		session.total,
+		sessionID,
+		session.coverageReady,
+		session.coverageTotal,
+	)
 }
 
 func (c *AppCommands) CancelSemanticSearch(requestID string) {
@@ -573,19 +603,23 @@ func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*
 	if result == nil {
 		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: 0}, nil
 	}
-	return c.semanticHitsToAssets(result.Hits, result.TotalCount, "")
+	return c.semanticHitsToAssets(result.Hits, result.TotalCount, "", result.TotalCount, result.TotalCount)
 }
 
 func (c *AppCommands) semanticHitsToAssets(
 	hits []domain.SemanticSearchHit,
 	total int,
 	sessionID string,
+	coverageReady int,
+	coverageTotal int,
 ) (*AssetListResponse, error) {
 	if len(hits) == 0 {
 		return &AssetListResponse{
-			Assets:                  []AssetDTO{},
-			TotalCount:              total,
-			SemanticSearchSessionID: sessionID,
+			Assets:                     []AssetDTO{},
+			TotalCount:                 total,
+			SemanticSearchSessionID:    sessionID,
+			SemanticCoverageReadyCount: coverageReady,
+			SemanticCoverageTotalCount: coverageTotal,
 		}, nil
 	}
 
@@ -606,10 +640,35 @@ func (c *AppCommands) semanticHitsToAssets(
 		dtos = append(dtos, dto)
 	}
 	return &AssetListResponse{
-		Assets:                  dtos,
-		TotalCount:              total,
-		SemanticSearchSessionID: sessionID,
+		Assets:                     dtos,
+		TotalCount:                 total,
+		SemanticSearchSessionID:    sessionID,
+		SemanticCoverageReadyCount: coverageReady,
+		SemanticCoverageTotalCount: coverageTotal,
 	}, nil
+}
+
+func (c *AppCommands) semanticScopeTotal(req AssetListRequest) (int, error) {
+	result, err := c.assetRepo.List(db.AssetQuery{
+		LibraryID:   req.LibraryID,
+		FolderPath:  req.FolderPath,
+		Recurse:     req.Recurse,
+		Rating:      req.Rating,
+		StatusLabel: req.StatusLabel,
+		IsFavorite:  req.IsFavorite,
+		TagIDs:      req.TagIDs,
+		HasNote:     req.HasNote,
+		Extension:   req.Extension,
+		ColorLabel:  req.ColorLabel,
+		SortBy:      req.SortBy,
+		SortDesc:    req.SortDesc,
+		Offset:      0,
+		Limit:       1,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.TotalCount, nil
 }
 
 func semanticQueryFromAssetRequest(
