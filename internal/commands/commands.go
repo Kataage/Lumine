@@ -397,8 +397,12 @@ type AssetListResponse struct {
 	Assets                     []AssetDTO `json:"assets"`
 	TotalCount                 int        `json:"totalCount"`
 	SemanticSearchSessionID    string     `json:"semanticSearchSessionId,omitempty"`
-	SemanticCoverageReadyCount int        `json:"semanticCoverageReadyCount,omitempty"`
-	SemanticCoverageTotalCount int        `json:"semanticCoverageTotalCount,omitempty"`
+	SemanticCoverageReadyCount   int `json:"semanticCoverageReadyCount,omitempty"`
+	SemanticCoverageTotalCount   int `json:"semanticCoverageTotalCount,omitempty"`
+	SemanticCoverageQueuedCount  int `json:"semanticCoverageQueuedCount,omitempty"`
+	SemanticCoverageRunningCount int `json:"semanticCoverageRunningCount,omitempty"`
+	SemanticCoverageFailedCount  int `json:"semanticCoverageFailedCount,omitempty"`
+	SemanticCoverageStaleCount   int `json:"semanticCoverageStaleCount,omitempty"`
 }
 
 func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {
