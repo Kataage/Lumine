@@ -373,7 +373,7 @@ func (s *RuntimeStore) downloadArchive(
 	return nil
 }
 
-func (s *RuntimeStore) Verify(manifest RuntimeManifest) (InstalledRuntime, error) {
+func (s *RuntimeStore) Probe(manifest RuntimeManifest) (InstalledRuntime, error) {
 	if err := ValidateRuntimeManifest(manifest); err != nil {
 		return InstalledRuntime{}, err
 	}
@@ -402,15 +402,30 @@ func (s *RuntimeStore) Verify(manifest RuntimeManifest) (InstalledRuntime, error
 		return InstalledRuntime{}, errors.New("installed runtime contains unsafe executable path")
 	}
 	executable := filepath.Join(root, cleanRelative)
-	actualExecutableHash, err := sha256File(executable)
+	info, err := os.Stat(executable)
+	if err != nil {
+		return InstalledRuntime{}, fmt.Errorf("stat runtime executable: %w", err)
+	}
+	if info.IsDir() {
+		return InstalledRuntime{}, errors.New("runtime executable path is a directory")
+	}
+	installed.RootDir = root
+	installed.ExecutablePath = executable
+	return installed, nil
+}
+
+func (s *RuntimeStore) Verify(manifest RuntimeManifest) (InstalledRuntime, error) {
+	installed, err := s.Probe(manifest)
+	if err != nil {
+		return InstalledRuntime{}, err
+	}
+	actualExecutableHash, err := sha256File(installed.ExecutablePath)
 	if err != nil {
 		return InstalledRuntime{}, fmt.Errorf("verify runtime executable: %w", err)
 	}
 	if !strings.EqualFold(actualExecutableHash, installed.ExecutableSHA256) {
 		return InstalledRuntime{}, errors.New("runtime executable sha256 mismatch")
 	}
-	installed.RootDir = root
-	installed.ExecutablePath = executable
 	return installed, nil
 }
 
