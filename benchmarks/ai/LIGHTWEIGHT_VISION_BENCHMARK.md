@@ -28,10 +28,10 @@ Profile: `profiles/smolvlm-500m-q8.json`
 - model bytes: `436806912`
 - mmproj SHA-256: `d1eb8b6b23979205fdf63703ed10f788131a3f812c7b1f72e0119d5d81295150`
 - mmproj bytes: `108783360`
-- llama.cpp runtime: `b10964` / stable `v0.4.1` CPU x64
-- runtime archive SHA-256: `917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7`
+- llama.cpp runtime: `b11053` CPU x64 (aligned with the current Lumine product CPU runtime)
+- runtime archive SHA-256: `a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc`
 
-The benchmark adapter downloads the pinned CPU runtime only because running the benchmark is itself an explicit action. Product behavior in #184 must still require an explicit install action and must not silently fetch a runtime/model when a setting is toggled.
+The benchmark adapter downloads the pinned b11053 CPU runtime only because running the benchmark is itself an explicit action. Product behavior in #184 must still require an explicit install action and must not silently fetch a runtime/model when a setting is toggled.
 
 ## Private fixture pack
 
@@ -136,7 +136,7 @@ go run ./cmd/ai-bench run `
   -out benchmarks\ai\results\local\smolvlm-500m-q8.json
 ```
 
-The SmolVLM adapter may instead use an already verified server binary by setting `LUMINE_LLAMA_SERVER`.
+For debugging, the SmolVLM adapter may use an already verified server binary by setting `LUMINE_LLAMA_SERVER`; the controlled runner rejects this override so adoption evidence always uses the checked-in b11053 runtime.
 
 ## Comparison
 
