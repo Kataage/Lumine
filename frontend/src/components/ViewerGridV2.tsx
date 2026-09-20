@@ -198,6 +198,10 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const totalCount = firstPage?.totalCount ?? 0;
   const semanticCoverageReady = firstPage?.semanticCoverageReadyCount ?? 0;
   const semanticCoverageTotal = firstPage?.semanticCoverageTotalCount ?? 0;
+  const semanticCoverageQueued = firstPage?.semanticCoverageQueuedCount ?? 0;
+  const semanticCoverageRunning = firstPage?.semanticCoverageRunningCount ?? 0;
+  const semanticCoverageFailed = firstPage?.semanticCoverageFailedCount ?? 0;
+  const semanticCoverageStale = firstPage?.semanticCoverageStaleCount ?? 0;
   const semanticCoveragePercent = semanticCoverageTotal > 0
     ? Math.min(100, (semanticCoverageReady / semanticCoverageTotal) * 100)
     : 0;
@@ -328,10 +332,29 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
               </span>
               <span className="text-muted-foreground">結果順: 類似度</span>
               <span className="text-muted-foreground">解析優先: 現在の表示順 → 新しい画像</span>
+              {(semanticCoverageQueued > 0 || semanticCoverageRunning > 0) && (
+                <span className="text-muted-foreground">
+                  待機 {semanticCoverageQueued.toLocaleString()} / 処理中 {semanticCoverageRunning.toLocaleString()}
+                </span>
+              )}
+              {semanticCoverageStale > 0 && (
+                <span className="text-muted-foreground">再解析待ち {semanticCoverageStale.toLocaleString()}</span>
+              )}
+              {semanticCoverageFailed > 0 && (
+                <span className="font-medium text-destructive">失敗 {semanticCoverageFailed.toLocaleString()}</span>
+              )}
             </div>
-            {semanticCoverageReady < semanticCoverageTotal && (
+            {semanticCoverageFailed > 0 ? (
+              <p className="mt-1 text-[10px] leading-relaxed text-destructive">
+                解析失敗画像があります。これらは現在の意味検索には含まれません。AIジョブのエラー内容を確認してください。
+              </p>
+            ) : semanticCoverageReady < semanticCoverageTotal ? (
               <p className="mt-1 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
                 未解析画像はこの検索にはまだ含まれません。解析が進むと検索結果の母集団が増えます。
+              </p>
+            ) : (
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                現在の検索範囲はすべてSemantic Search解析済みです。
               </p>
             )}
           </div>
