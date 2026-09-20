@@ -47,7 +47,8 @@ type AppCommands struct {
 
 	aiSettingsMu              sync.Mutex
 	semanticPriorityMu        sync.Mutex
-	semanticPriorityPending   map[int64]struct{}
+	semanticPriorityPending   []int64
+	semanticPrioritySeen      map[int64]struct{}
 	lifecycleMu               sync.Mutex
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
@@ -79,7 +80,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		semanticIndex: newSemanticMemoryIndex(),
 		advancedVisionRepo: db.NewAdvancedVisionRunRepo(database),
 		semanticSearchState: newSemanticSearchState(),
-		semanticPriorityPending: make(map[int64]struct{}),
+		semanticPrioritySeen: make(map[int64]struct{}),
 		scanSvc:      scanSvc,
 	}
 }
