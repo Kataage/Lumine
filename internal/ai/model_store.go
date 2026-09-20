@@ -355,6 +355,32 @@ func (s *ModelStore) Verify(modelID, version string) (InstalledModel, error) {
 	return installed, nil
 }
 
+func verifyFile(path string, expected ModelFile) error {
+	input, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open installed file %s: %w", expected.Path, err)
+	}
+	defer input.Close()
+
+	info, err := input.Stat()
+	if err != nil {
+		return fmt.Errorf("stat installed file %s: %w", expected.Path, err)
+	}
+	if expected.SizeBytes > 0 && info.Size() != expected.SizeBytes {
+		return fmt.Errorf("size mismatch for installed file %s: got %d, want %d", expected.Path, info.Size(), expected.SizeBytes)
+	}
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, input); err != nil {
+		return fmt.Errorf("hash installed file %s: %w", expected.Path, err)
+	}
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if !strings.EqualFold(actualHash, expected.SHA256) {
+		return fmt.Errorf("sha256 mismatch for installed file %s", expected.Path)
+	}
+	return nil
+}
+
 func (s *ModelStore) List() ([]InstalledModelInfo, error) {
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
