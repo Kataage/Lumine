@@ -14,7 +14,7 @@ The candidate list is intentionally broader than vendor-default models. Official
 | --- | --- | --- |
 | `advanced-qwen3-vl-2b-q4.json` | official Qwen3-VL 2B baseline | immutable |
 | `advanced-qwen3-vl-2b-abliterated-q4.json` | Qwen abliterated derivative | immutable |
-| `advanced-qwen3-vl-2b-heretic-q4.json` | Qwen Heretic derivative | **exploratory until immutable revision + file hashes are written back** |
+| `advanced-qwen3-vl-2b-heretic-q4.json` | Qwen Heretic derivative | immutable |
 | `advanced-internvl3.5-2b-q4.json` | independent 2B-class baseline | immutable |
 | `advanced-smolvlm2-2.2b-q4.json` | official ggml multi-image-oriented candidate | immutable |
 | `advanced-minicpm-v4.6-q4.json` | current small MiniCPM official GGUF candidate | immutable |
@@ -29,7 +29,9 @@ All immutable profiles pin:
 - llama.cpp CPU runtime build/hash;
 - quantization, context and thread count.
 
-The Heretic profile intentionally contains `version: "main"` and empty model/mmproj hashes. It can be used only for an **exploratory discovery run**. The adapter records `resolvedRevision`, `modelSha256` and `mmprojSha256` in the model-size case. Update the profile with those immutable values and rerun the complete benchmark before treating Heretic results as evidence.
+All controlled llama.cpp profiles use the current Lumine product CPU runtime line: **b11053**, with archive SHA-256 `a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc`.
+
+The Heretic profile is now immutably pinned to the exact public revision, model GGUF and mmproj metadata. The metadata-only inspector remains available to revalidate those pins or deliberately refresh them later without downloading model weights.
 
 ## Private fixture pack
 
@@ -117,16 +119,13 @@ Use the checked-in runner for the controlled #189 comparison:
 
 The runner validates the fixture pack, records CPU/RAM/current Lumine commit, runs every immutably pinned Advanced Vision candidate, validates each result, and writes `advanced-vision-comparison.md` plus `advanced-vision-run-info.json`.
 
-The Heretic profile is automatically included only after its revision/model/mmproj hashes and sizes are immutably pinned. While it is still exploratory, run:
+The Heretic profile is now included automatically in the controlled comparison because its revision/model/mmproj hashes and sizes are immutable. To revalidate the checked-in public artifact metadata without private fixtures or multi-GB model downloads:
 
 ```powershell
-.\benchmarks\ai\run_advanced_vision_benchmark.ps1 \
-  -FixtureDir "D:\LumineBench\lumine-advanced-vision-v1" \
-  -HardwareId "main-pc-cpu8" \
-  -RunHereticDiscovery
+.\benchmarks\ai\run_advanced_vision_benchmark.ps1 -InspectHereticOnly
 ```
 
-That discovery result is excluded from the evidence comparison and its model-size output is written to `advanced-heretic-pin-info.json`.
+This writes `advanced-heretic-pin-info.json` with the resolved repository revision plus exact model/mmproj SHA-256 values and byte sizes and does not mutate the profile. If intentionally refreshing to a newer upstream artifact, review the metadata first and then use `-InspectHereticOnly -ApplyHereticPin`, commit the new pin, and rerun the full controlled benchmark.
 
 For controlled evidence, clear `LUMINE_LLAMA_SERVER`. `-AllowLlamaServerOverride` exists for debugging only.
 
@@ -168,20 +167,14 @@ go run ./cmd/ai-bench run `
 
 Repeat with every immutable profile.
 
-## Heretic pin workflow
+## Heretic pin verification / refresh workflow
 
-1. Run only the Heretic profile as an exploratory pass.
-2. Inspect `advanced-perf-model-size-001.output`:
-   - `resolvedRevision`
-   - `modelSha256`
-   - `mmprojSha256`
-   - model/mmproj byte sizes
-3. Replace `version: "main"` and all empty size/hash fields in `advanced-qwen3-vl-2b-heretic-q4.json` with those exact values.
-4. Commit the pinned profile.
-5. Delete the exploratory result.
-6. Rerun the **entire** Heretic benchmark on the same fixture/hardware setup.
+1. Run `-InspectHereticOnly` to query the official Hugging Face repository/file metadata without downloading weights.
+2. Confirm `advanced-heretic-pin-info.json` matches the checked-in revision/model/mmproj hashes and byte sizes.
+3. Only when deliberately refreshing upstream artifacts, run `-InspectHereticOnly -ApplyHereticPin` after reviewing the new values.
+4. Commit any refreshed pin before producing evidence, then rerun the **entire** Heretic benchmark on the same fixture/hardware setup as every other candidate.
 
-An exploratory result is never referenced from `adoptions.json` as adoption evidence.
+The metadata inspector refuses to invent missing LFS hashes or accept missing exact files.
 
 ## What is measured
 
@@ -215,6 +208,6 @@ py -3 benchmarks\ai\adapters\advancedvision_report.py `
   > benchmarks\ai\results\local\advanced-vision-comparison.md
 ```
 
-Add Heretic only after its profile has been immutably pinned and rerun.
+Heretic is included in the report automatically with the other immutably pinned candidates.
 
 The report is descriptive evidence; it does not calculate a hidden winner. The adoption decision must explicitly consider quality, R18 false-refusal behavior, structured output, CPU latency, RAM, disk footprint, Windows stability, license/redistribution, and integration complexity.

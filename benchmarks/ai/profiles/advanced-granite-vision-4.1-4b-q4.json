@@ -5,7 +5,7 @@
   "quantization": "Q4_K_M + mmproj F16",
   "artifactSha256": "973a58c4cfc2b3f58dedc515a89f73c372fe0910da515ecefcebe966131f769f",
   "modelSizeBytes": 3261858176,
-  "runtime": "llama.cpp-b10964-cpu-x64",
+  "runtime": "llama.cpp-b11053-cpu-x64",
   "benchmarkCategories": [
     "advanced_vision",
     "structured_json",
@@ -25,9 +25,8 @@
     "mmprojSizeBytes": "1162347936",
     "family": "granite-vision-4.1",
     "variant": "official-gguf",
-    "llamaRelease": "b10964",
-    "llamaVersion": "0.4.1",
-    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "llamaRelease": "b11053",
+    "llamaWindowsCpuArchiveSha256": "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc",
     "threads": "8",
     "context": "8192",
     "device": "cpu"

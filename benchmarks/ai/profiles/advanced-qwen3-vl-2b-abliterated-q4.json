@@ -5,7 +5,7 @@
   "quantization": "Q4_K_M + mmproj Q8_0",
   "artifactSha256": "2cd12743be873492bc66d14faba56e7d59eec2a7e0f82970e1596a484a60bc5a",
   "modelSizeBytes": 1552464448,
-  "runtime": "llama.cpp-b10964-cpu-x64",
+  "runtime": "llama.cpp-b11053-cpu-x64",
   "benchmarkCategories": [
     "advanced_vision",
     "structured_json",
@@ -25,9 +25,8 @@
     "mmprojSizeBytes": "445053600",
     "family": "qwen3-vl",
     "variant": "abliterated-v1",
-    "llamaRelease": "b10964",
-    "llamaVersion": "0.4.1",
-    "llamaWindowsCpuArchiveSha256": "917f39c076402c421224824607397af20f53625a60defc20e8dd22446bf4c5d7",
+    "llamaRelease": "b11053",
+    "llamaWindowsCpuArchiveSha256": "a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc",
     "threads": "8",
     "context": "8192",
     "device": "cpu"
