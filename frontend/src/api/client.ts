@@ -13,6 +13,8 @@ export interface AssetListResponse {
   assets: AssetDTO[];
   totalCount: number;
   semanticSearchSessionId?: string;
+  semanticCoverageReadyCount?: number;
+  semanticCoverageTotalCount?: number;
 }
 
 export interface SemanticSearchProgress {
