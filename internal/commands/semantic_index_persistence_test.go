@@ -80,7 +80,7 @@ func buildPersistentSemanticFixture(t *testing.T) (*AppCommands, string, semanti
 	if err := index.Warm(context.Background(), cmd.semanticRepo, key.engine, key.modelID, key.version); err != nil {
 		t.Fatalf("initial SQLite warm: %v", err)
 	}
-	snapshot, err := writeSemanticPersistentSnapshot(context.Background(), root, cmd.semanticRepo, key)
+	snapshot, err := writeSemanticPersistentSnapshot(context.Background(), root, cmd.semanticRepo, key, nil)
 	if err != nil {
 		t.Fatalf("write semantic persistent snapshot: %v", err)
 	}
