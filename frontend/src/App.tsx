@@ -16,6 +16,7 @@ import {
   bulkUpdateRating,
   bulkUpdateStatus,
   deleteAssetFiles,
+  enqueueAutomaticSemanticAssets,
   getAppBootstrap,
   getSetting,
   listLibraries,
@@ -257,6 +258,12 @@ export default function App() {
 
   const handleCloseDetail = useCallback(() => setState((current) => ({ ...current, detailOpen: false })), []);
   const handleAssetsLoaded = useCallback((ids: number[]) => {
+    // Assets are supplied in the current viewer order. Promote any that still
+    // need a semantic embedding so the searchable subset follows what the user
+    // is actually looking at instead of waiting behind the global backfill.
+    if (ids.length > 0) {
+      void enqueueAutomaticSemanticAssets(ids.slice(0, 1000)).catch(() => undefined);
+    }
     setState((current) => {
       const sameIds = current.allAssetIds.length === ids.length && current.allAssetIds.every((id, index) => id === ids[index]);
       const available = new Set(ids);
