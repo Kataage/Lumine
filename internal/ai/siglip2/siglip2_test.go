@@ -21,12 +21,12 @@ type fakeORT struct {
 	imageInput []float32
 }
 
-func (f *fakeORT) EmbedText(input [siglipTextLength]int64) ([]float32, error) {
+func (f *fakeORT) EmbedText(_ context.Context, input [siglipTextLength]int64) ([]float32, error) {
 	f.textInput = input
 	return []float32{3, 4}, nil
 }
 
-func (f *fakeORT) EmbedImage(input []float32) ([]float32, error) {
+func (f *fakeORT) EmbedImage(_ context.Context, input []float32) ([]float32, error) {
 	f.imageInput = append([]float32(nil), input...)
 	return []float32{0, 5}, nil
 }
