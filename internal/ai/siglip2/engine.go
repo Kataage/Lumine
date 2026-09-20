@@ -102,9 +102,18 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 		if strings.TrimSpace(filePath) == "" {
 			return ai.InferenceResponse{}, errors.New("semantic image path is required")
 		}
-		pixels, preprocessErr := preprocessImage(filePath)
+		pixels, preprocessErr := PreprocessImageContext(ctx, filePath)
 		if preprocessErr != nil {
 			return ai.InferenceResponse{}, preprocessErr
+		}
+		if err := ctx.Err(); err != nil {
+			return ai.InferenceResponse{}, err
+		}
+		vector, err = e.runtime.EmbedImage(pixels)
+	case "embed_image_tensor":
+		pixels, ok := request.Payload["pixels"].([]float32)
+		if !ok || len(pixels) == 0 {
+			return ai.InferenceResponse{}, errors.New("preprocessed semantic image tensor is required")
 		}
 		if err := ctx.Err(); err != nil {
 			return ai.InferenceResponse{}, err
