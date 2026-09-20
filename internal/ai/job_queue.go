@@ -63,9 +63,10 @@ type JobQueue struct {
 	handlers map[domain.AICapability]AnalysisHandler
 	active   map[int64]activeAIJob
 	paused   map[domain.AICapability]int
-	started  bool
-	uiPaused bool
-	cancel   context.CancelFunc
+	started     bool
+	startupHeld bool
+	uiPaused    bool
+	cancel      context.CancelFunc
 	wake     chan struct{}
 	wg       sync.WaitGroup
 
@@ -299,6 +300,25 @@ func (q *JobQueue) Retry(jobID int64) error {
 	return nil
 }
 
+func (q *JobQueue) SetStartupHold(held bool) {
+	q.mu.Lock()
+	if q.startupHeld == held {
+		q.mu.Unlock()
+		return
+	}
+	q.startupHeld = held
+	q.mu.Unlock()
+	if !held {
+		q.signal()
+	}
+}
+
+func (q *JobQueue) InteractiveUIActive() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.uiPaused
+}
+
 func (q *JobQueue) SetInteractiveUIActive(active bool) {
 	q.mu.Lock()
 	if q.uiPaused == active {
@@ -490,7 +510,7 @@ func (q *JobQueue) runnableCapabilities() ([]domain.AICapability, error) {
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.uiPaused {
+	if q.startupHeld || q.uiPaused {
 		return nil, nil
 	}
 	capabilities := make([]domain.AICapability, 0, len(q.handlers))
@@ -514,7 +534,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	jobCtx, cancel := context.WithCancel(parent)
 	q.mu.Lock()
 	q.active[job.ID] = activeAIJob{capability: job.Capability, cancel: cancel}
-	paused := q.uiPaused || q.paused[job.Capability] > 0
+	paused := q.startupHeld || q.uiPaused || q.paused[job.Capability] > 0
 	q.mu.Unlock()
 
 	cleanup := func() {
