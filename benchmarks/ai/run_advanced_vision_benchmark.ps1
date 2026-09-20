@@ -9,7 +9,6 @@ param(
     [switch]$Setup,
     [switch]$InspectHereticOnly,
     [switch]$ApplyHereticPin,
-    [switch]$RunHereticDiscovery,
     [switch]$AllowLlamaServerOverride
 )
 
@@ -232,18 +231,8 @@ foreach ($candidate in $candidates) {
     $resultPaths += Run-Candidate $candidate.Name $candidate.Profile $candidate.Result
 }
 
-if (-not $hereticPinned -and $RunHereticDiscovery) {
-    Write-Warning "Heretic profile is exploratory. This legacy full-inference discovery result will NOT be included in the evidence comparison report."
-    Write-Warning "Prefer -InspectHereticOnly for metadata-only pin resolution before downloading model weights."
-    $discoveryPath = Run-Candidate "qwen3-vl-2b-heretic-discovery" $HereticProfileRelative "advanced-qwen3-vl-2b-heretic-discovery.json"
-    $discovery = Get-Content $discoveryPath -Raw | ConvertFrom-Json
-    $modelSizeCase = $discovery.cases | Where-Object { $_.fixtureId -eq "advanced-perf-model-size-001" } | Select-Object -First 1
-    if ($null -ne $modelSizeCase -and $null -ne $modelSizeCase.output) {
-        $modelSizeCase.output | ConvertTo-Json -Depth 10 | Set-Content -Path $HereticPinInfoPath -Encoding UTF8
-        Write-Host "Heretic pin info: $HereticPinInfoPath"
-    }
-} elseif (-not $hereticPinned) {
-    Write-Warning "Heretic profile is not immutably pinned and was excluded. Use -InspectHereticOnly first."
+if (-not $hereticPinned) {
+    throw "Heretic profile is not fully pinned. Run -InspectHereticOnly, review the metadata, and apply/commit the immutable pin before controlled evidence."
 }
 
 $reportPath = Join-Path $ResultsDir "advanced-vision-comparison.md"
