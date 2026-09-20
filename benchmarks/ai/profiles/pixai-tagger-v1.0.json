@@ -30,7 +30,7 @@
     "provider": "CPUExecutionProvider",
     "imageSize": "1008",
     "ratingSupported": "true",
-    "licenseStatus": "upstream-model-card-unspecified",
+    "licenseStatus": "upstream-repo-no-explicit-license-redistribution-unresolved",
     "threads": "8",
     "interOpThreads": "1"
   }
