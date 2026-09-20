@@ -4,6 +4,7 @@ package siglip2
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/kataage/lumine/internal/ai"
@@ -273,15 +275,21 @@ func (r *windowsORT) RuntimeDiagnostics() ai.RuntimeDiagnostics {
 	if r == nil {
 		return ai.RuntimeDiagnostics{}
 	}
-	return ai.RuntimeDiagnostics{
+	diagnostics := ai.RuntimeDiagnostics{
 		ExecutionProvider: r.provider,
 		Warning:           r.warning,
 	}
+	if r.provider == "directml" {
+		adapterID := 0
+		diagnostics.AdapterID = &adapterID
+	}
+	return diagnostics
 }
 
-func (r *windowsORT) EmbedText(input [siglipTextLength]int64) ([]float32, error) {
+func (r *windowsORT) EmbedText(ctx context.Context, input [siglipTextLength]int64) ([]float32, error) {
 	output := make([]float32, siglipEmbeddingSize)
 	if err := r.runSingle(
+		ctx,
 		r.textSession,
 		"input_ids",
 		uintptr(unsafe.Pointer(&input[0])),
@@ -301,13 +309,14 @@ func (r *windowsORT) EmbedText(input [siglipTextLength]int64) ([]float32, error)
 	return output, nil
 }
 
-func (r *windowsORT) EmbedImage(input []float32) ([]float32, error) {
+func (r *windowsORT) EmbedImage(ctx context.Context, input []float32) ([]float32, error) {
 	expected := siglipChannels * siglipImageSize * siglipImageSize
 	if len(input) != expected {
 		return nil, fmt.Errorf("SigLIP2 image tensor has %d values, want %d", len(input), expected)
 	}
 	output := make([]float32, siglipEmbeddingSize)
 	if err := r.runSingle(
+		ctx,
 		r.visionSession,
 		"pixel_values",
 		uintptr(unsafe.Pointer(&input[0])),
@@ -328,6 +337,7 @@ func (r *windowsORT) EmbedImage(input []float32) ([]float32, error) {
 }
 
 func (r *windowsORT) runSingle(
+	ctx context.Context,
 	session uintptr,
 	inputName string,
 	inputData uintptr,
@@ -340,7 +350,11 @@ func (r *windowsORT) runSingle(
 	outputShape []int64,
 	outputType uintptr,
 ) error {
+	lockStarted := time.Now()
 	r.runMu.Lock()
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		trace.AddStage(ai.SemanticStageORTRunLockWait, time.Since(lockStarted))
+	}
 	defer r.runMu.Unlock()
 
 	if session == 0 || r.memoryInfo == 0 {
@@ -348,6 +362,7 @@ func (r *windowsORT) runSingle(
 	}
 
 	var inputValue, outputValue uintptr
+	setupStarted := time.Now()
 	if err := r.callStatus(
 		ortFnCreateTensorWithDataAsOrtValue,
 		r.memoryInfo,
@@ -358,6 +373,10 @@ func (r *windowsORT) runSingle(
 		inputType,
 		uintptr(unsafe.Pointer(&inputValue)),
 	); err != nil {
+		if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+			trace.AddStage(ai.SemanticStageTensorSetup, time.Since(setupStarted))
+			trace.RecordError(ai.SemanticStageTensorSetup, err)
+		}
 		return fmt.Errorf("create input tensor: %w", err)
 	}
 	defer r.release(ortFnReleaseValue, inputValue)
@@ -372,6 +391,10 @@ func (r *windowsORT) runSingle(
 		outputType,
 		uintptr(unsafe.Pointer(&outputValue)),
 	); err != nil {
+		if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+			trace.AddStage(ai.SemanticStageTensorSetup, time.Since(setupStarted))
+			trace.RecordError(ai.SemanticStageTensorSetup, err)
+		}
 		return fmt.Errorf("create output tensor: %w", err)
 	}
 	defer r.release(ortFnReleaseValue, outputValue)
@@ -382,12 +405,19 @@ func (r *windowsORT) runSingle(
 	outputNames := []uintptr{uintptr(unsafe.Pointer(&outputNameBytes[0]))}
 	inputValues := []uintptr{inputValue}
 	outputValues := []uintptr{outputValue}
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		trace.AddStage(ai.SemanticStageTensorSetup, time.Since(setupStarted))
+	}
 
 	// OrtApi::Run ABI is:
 	// session, run_options, input_names, inputs, input_len,
 	// output_names, output_names_len, outputs.
 	// Keep the count before the output pointer: swapping these two values makes
 	// ORT interpret a pointer as a huge output count and surfaces as "bad allocation".
+	runStarted := time.Now()
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		trace.MarkOrtRun()
+	}
 	err := r.callStatus(
 		ortFnRun,
 		session,
@@ -399,6 +429,12 @@ func (r *windowsORT) runSingle(
 		1,
 		uintptr(unsafe.Pointer(&outputValues[0])),
 	)
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		trace.AddStage(ai.SemanticStageORTRun, time.Since(runStarted))
+		if err != nil {
+			trace.RecordError(ai.SemanticStageORTRun, err)
+		}
+	}
 	runtime.KeepAlive(inputShape)
 	runtime.KeepAlive(outputShape)
 	runtime.KeepAlive(inputNameBytes)
