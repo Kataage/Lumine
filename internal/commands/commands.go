@@ -390,9 +390,11 @@ type AssetListRequest struct {
 }
 
 type AssetListResponse struct {
-	Assets                  []AssetDTO `json:"assets"`
-	TotalCount              int        `json:"totalCount"`
-	SemanticSearchSessionID string     `json:"semanticSearchSessionId,omitempty"`
+	Assets                     []AssetDTO `json:"assets"`
+	TotalCount                 int        `json:"totalCount"`
+	SemanticSearchSessionID    string     `json:"semanticSearchSessionId,omitempty"`
+	SemanticCoverageReadyCount int        `json:"semanticCoverageReadyCount,omitempty"`
+	SemanticCoverageTotalCount int        `json:"semanticCoverageTotalCount,omitempty"`
 }
 
 func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {
