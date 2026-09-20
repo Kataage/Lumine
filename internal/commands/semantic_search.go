@@ -419,20 +419,6 @@ func (c *AppCommands) startSemanticBackfill(automatic bool, libraryID int64) boo
 	return started
 }
 
-func (c *AppCommands) waitForSemanticBackgroundWindow(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	for c.aiJobQueue != nil && c.aiJobQueue.InteractiveUIActive() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(250 * time.Millisecond):
-		}
-	}
-	return ctx.Err()
-}
-
 func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context, automatic bool, libraryID int64) (int, error) {
 	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
@@ -485,9 +471,6 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context, automa
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
-			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
-				return total, err
-			}
 			candidates, err := c.semanticRepo.ListNeedingEmbeddingNewestContext(
 				ctx,
 				library.ID,
@@ -507,9 +490,6 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context, automa
 			ids := make([]int64, len(candidates))
 			for i, candidate := range candidates {
 				ids[i] = candidate.AssetID
-			}
-			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
-				return total, err
 			}
 			created, err := c.aiJobQueue.EnqueueMany(
 				ids,
@@ -553,10 +533,17 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	}
 	analysisVersion := siglip2.AnalysisVersion(status.Version)
 
+	// File I/O + decode + resize are CPU-heavy and safe to parallelize. Perform
+	// them before Manager.Infer so multiple queue workers can prepare upcoming
+	// images while the single SigLIP2 runtime is busy embedding the previous one.
+	pixels, err := siglip2.PreprocessImageContext(ctx, asset.FilePath)
+	if err != nil {
+		return ai.AnalysisOutput{}, fmt.Errorf("preprocess image %d: %w", asset.ID, err)
+	}
 	response, err := c.aiManager.Infer(ctx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
-		Operation: "embed_image",
+		Operation: "embed_image_tensor",
 		Payload: map[string]any{
-			"filePath": asset.FilePath,
+			"pixels": pixels,
 		},
 	})
 	if err != nil {
