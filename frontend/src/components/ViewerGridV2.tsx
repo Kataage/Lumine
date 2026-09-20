@@ -194,7 +194,13 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   });
 
   const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
-  const totalCount = data?.pages[0]?.totalCount ?? 0;
+  const firstPage = data?.pages[0] as AssetListResponse | undefined;
+  const totalCount = firstPage?.totalCount ?? 0;
+  const semanticCoverageReady = firstPage?.semanticCoverageReadyCount ?? 0;
+  const semanticCoverageTotal = firstPage?.semanticCoverageTotalCount ?? 0;
+  const semanticCoveragePercent = semanticCoverageTotal > 0
+    ? Math.min(100, (semanticCoverageReady / semanticCoverageTotal) * 100)
+    : 0;
 
   useEffect(() => {
     if (semanticSearchActive) return;
@@ -311,6 +317,25 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   return (
     <>
       <div ref={containerRef} onScroll={markViewerInteraction} className="flex-1 min-w-0 overflow-auto bg-background p-3">
+        {semanticSearchActive && semanticCoverageTotal > 0 && (
+          <div className="sticky top-0 z-20 mb-3 rounded-xl border border-border/80 bg-card/95 px-3 py-2 text-[11px] shadow-sm backdrop-blur-md">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-medium">
+                検索可能 {semanticCoverageReady.toLocaleString()} / {semanticCoverageTotal.toLocaleString()}画像
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                coverage {semanticCoveragePercent.toFixed(1)}%
+              </span>
+              <span className="text-muted-foreground">結果順: 類似度</span>
+              <span className="text-muted-foreground">解析優先: 現在の表示順 → 新しい画像</span>
+            </div>
+            {semanticCoverageReady < semanticCoverageTotal && (
+              <p className="mt-1 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
+                未解析画像はこの検索にはまだ含まれません。解析が進むと検索結果の母集団が増えます。
+              </p>
+            )}
+          </div>
+        )}
         {state.viewMode === "grid" ? (
           <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualItems.map((virtualRow) => {
