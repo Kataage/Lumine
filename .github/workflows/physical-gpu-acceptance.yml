@@ -1,0 +1,74 @@
+name: physical-gpu-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      hardware_id:
+        description: "Stable label for this physical benchmark host (optional)"
+        required: false
+        default: ""
+      siglip_benchtime:
+        description: "Go benchmark benchtime for SigLIP2 CPU/DirectML"
+        required: true
+        default: "10x"
+      llama_benchtime:
+        description: "Go benchmark benchtime for SmolVLM CPU/Vulkan"
+        required: true
+        default: "5x"
+
+concurrency:
+  group: physical-gpu-acceptance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: [self-hosted, Windows, X64, lumine-gpu]
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: go.sum
+
+      - name: Show runner identity
+        shell: pwsh
+        run: |
+          Write-Host "Runner: $env:RUNNER_NAME"
+          Write-Host "Machine: $env:COMPUTERNAME"
+          Write-Host "User: $env:USERNAME"
+          go version
+          nvidia-smi
+
+      - name: Run physical GPU acceptance
+        shell: pwsh
+        run: |
+          $hardwareId = "${{ inputs.hardware_id }}"
+          if ([string]::IsNullOrWhiteSpace($hardwareId)) {
+            $hardwareId = $env:RUNNER_NAME
+          }
+          if ([string]::IsNullOrWhiteSpace($hardwareId)) {
+            $hardwareId = $env:COMPUTERNAME
+          }
+
+          $resultsDir = Join-Path $env:RUNNER_TEMP "lumine-gpu-acceptance"
+          $cacheDir = Join-Path $env:USERPROFILE ".lumine-ai-bench-cache"
+
+          .\benchmarks\ai\run_physical_gpu_acceptance_benchmark.ps1 -ResultsDir $resultsDir -HardwareId $hardwareId -CacheDir $cacheDir -SigLIPBenchTime "${{ inputs.siglip_benchtime }}" -LlamaBenchTime "${{ inputs.llama_benchtime }}"
+
+      - name: Upload GPU acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: physical-gpu-acceptance-${{ github.run_id }}
+          path: ${{ runner.temp }}\lumine-gpu-acceptance
+          if-no-files-found: warn
+          retention-days: 30
