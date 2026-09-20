@@ -70,7 +70,7 @@ func (c *AppCommands) GetPromptEngineStatus() PromptEngineStatusInfo {
 			Reference:   manifest.ID == llamacpp.PromptReferenceQwen35ModelID,
 		}
 		if c.aiManager != nil {
-			if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
+			if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err == nil {
 				candidate.Installed = true
 			}
 			if manifest.ID == info.ActiveModelID {
@@ -225,7 +225,7 @@ func (c *AppCommands) RestorePromptEngineModel() error {
 		}
 		return err
 	}
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		metadata := filepath.Join(c.aiManager.Store().Root(), manifest.ID, manifest.Version, "manifest.json")
 		if _, statErr := os.Stat(metadata); errors.Is(statErr, os.ErrNotExist) {
 			return nil
