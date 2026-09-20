@@ -196,6 +196,9 @@ func main() {
 		log.Fatal("failed to register Lightweight Vision job handler:", err)
 	}
 	aiManager.SetModelActivatedHook(aiJobQueue.HandleModelActivated)
+	// Recover durable queue state immediately, but never claim model-backed
+	// work until startup restore has had a chance to establish runtimes.
+	aiJobQueue.SetStartupHold(true)
 	if err := aiJobQueue.Start(appCtx); err != nil {
 		log.Fatal("failed to start AI job queue:", err)
 	}
@@ -241,6 +244,36 @@ func main() {
 	// failures so child runtimes and workers are still cleaned up exactly once.
 	defer shutdown("main-return")
 
+	// Model verification/session construction can stream gigabytes of data.
+	// Start automatic restore only after the viewer has been continuously idle;
+	// visible image decode must own the cold-start disk bandwidth.
+	var restoreOnce sync.Once
+	var restoreTimerMu sync.Mutex
+	var restoreTimer *time.Timer
+	startRestore := func() {
+		restoreOnce.Do(func() {
+			if !cmd.StartAIRestore() {
+				slog.Warn("AI restore was not started because Lumine is shutting down")
+			}
+		})
+	}
+	scheduleRestore := func(delay time.Duration) {
+		restoreTimerMu.Lock()
+		defer restoreTimerMu.Unlock()
+		if restoreTimer != nil {
+			restoreTimer.Stop()
+		}
+		restoreTimer = time.AfterFunc(delay, startRestore)
+	}
+	cancelRestoreSchedule := func() {
+		restoreTimerMu.Lock()
+		defer restoreTimerMu.Unlock()
+		if restoreTimer != nil {
+			restoreTimer.Stop()
+			restoreTimer = nil
+		}
+	}
+
 	err = wails.Run(&options.App{
 		Title:     "Lumine",
 		Width:     1280,
@@ -255,15 +288,14 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			cmd.SetContext(ctx)
 			slog.Info("Lumine started")
-			if !cmd.StartAIRestore() {
-				slog.Warn("AI restore was not started because Lumine is shutting down")
-			}
 		},
 		OnDomReady: func(ctx context.Context) {
-			// Viewer rendering always wins over automatic AI work. The frontend
-			// emits this while visible bitmaps are decoding or the user is
-			// actively scrolling. AI jobs are requeued without consuming their
-			// retry budget and resume once the viewer becomes idle.
+			// Give the initial grid a real cold-load window before any model
+			// verification/session construction begins. If the viewer reports
+			// activity, restart the idle countdown from zero.
+			const restoreIdleDelay = 3 * time.Second
+			scheduleRestore(restoreIdleDelay)
+
 			runtime.EventsOff(ctx, "viewer:activity")
 			runtime.EventsOn(ctx, "viewer:activity", func(data ...interface{}) {
 				if len(data) == 0 {
@@ -274,6 +306,11 @@ func main() {
 					return
 				}
 				aiJobQueue.SetInteractiveUIActive(active)
+				if active {
+					cancelRestoreSchedule()
+					return
+				}
+				scheduleRestore(restoreIdleDelay)
 			})
 		},
 		OnShutdown: func(_ context.Context) {
