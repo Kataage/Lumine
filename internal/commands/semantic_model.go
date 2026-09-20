@@ -195,16 +195,12 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 
 	// Enumerating a large library and enqueueing missing embeddings can take a
 	// long time. Do not make runtime load/search readiness wait for that work.
-	c.startBackgroundTask(func(backfillCtx context.Context) {
-		if backfillCtx.Err() != nil {
-			return
-		}
-		if _, err := c.enqueueSemanticBackfillContext(backfillCtx); err != nil && backfillCtx.Err() == nil {
-			// Backfill is recoverable and can be retried from Settings.
-			slog.Warn("semantic backfill enqueue failed", "error", err)
-			return
-		}
-	})
+	// This restore-time path remains automatic policy: users who disabled
+	// import/scan auto-analysis must not get a full-library backfill merely by
+	// launching Lumine. An explicit Semantic Search seeds its own coverage.
+	if settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+		c.startSemanticBackfill(true, 0)
+	}
 	return nil
 }
 
