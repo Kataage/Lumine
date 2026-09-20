@@ -40,6 +40,7 @@ type AppCommands struct {
 	llamaRuntimeStore *llamacpp.RuntimeStore
 	semanticRepo *db.SemanticEmbeddingRepo
 	semanticIndex *semanticMemoryIndex
+	semanticDiagnostics *ai.SemanticDiagnostics
 	advancedVisionRepo *db.AdvancedVisionRunRepo
 	semanticSearchState *semanticSearchState
 	storageInfo AIStorageInfo
