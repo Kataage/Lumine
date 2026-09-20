@@ -29,7 +29,9 @@ All immutable profiles pin:
 - llama.cpp CPU runtime build/hash;
 - quantization, context and thread count.
 
-The Heretic profile intentionally contains `version: "main"` and empty model/mmproj hashes. It can be used only for an **exploratory discovery run**. The adapter records `resolvedRevision`, `modelSha256` and `mmprojSha256` in the model-size case. Update the profile with those immutable values and rerun the complete benchmark before treating Heretic results as evidence.
+All controlled llama.cpp profiles use the current Lumine product CPU runtime line: **b11053**, with archive SHA-256 `a73abd4fd618b8145bbe7a9e9ca2dad880f05eb589a5942f921b1f39bd2d87dc`.
+
+The Heretic profile remains exploratory until its exact revision/model/mmproj metadata is written back. Resolve that metadata without downloading model weights using the workflow below; do not treat an unpinned Heretic run as adoption evidence.
 
 ## Private fixture pack
 
@@ -117,16 +119,21 @@ Use the checked-in runner for the controlled #189 comparison:
 
 The runner validates the fixture pack, records CPU/RAM/current Lumine commit, runs every immutably pinned Advanced Vision candidate, validates each result, and writes `advanced-vision-comparison.md` plus `advanced-vision-run-info.json`.
 
-The Heretic profile is automatically included only after its revision/model/mmproj hashes and sizes are immutably pinned. While it is still exploratory, run:
+The Heretic profile is automatically included only after its revision/model/mmproj hashes and sizes are immutably pinned. Resolve the public artifact metadata first, without private fixtures or multi-GB model downloads:
 
 ```powershell
-.\benchmarks\ai\run_advanced_vision_benchmark.ps1 \
-  -FixtureDir "D:\LumineBench\lumine-advanced-vision-v1" \
-  -HardwareId "main-pc-cpu8" \
-  -RunHereticDiscovery
+.\benchmarks\ai\run_advanced_vision_benchmark.ps1 -InspectHereticOnly
 ```
 
-That discovery result is excluded from the evidence comparison and its model-size output is written to `advanced-heretic-pin-info.json`.
+This writes `advanced-heretic-pin-info.json` with the resolved repository revision plus exact model/mmproj SHA-256 values and byte sizes. It does not mutate the checked-in profile.
+
+After reviewing the metadata, explicitly apply it:
+
+```powershell
+.\benchmarks\ai\run_advanced_vision_benchmark.ps1 -InspectHereticOnly -ApplyHereticPin
+```
+
+The legacy `-RunHereticDiscovery` full-inference path remains available for debugging, but metadata-only inspection is the preferred pin workflow.
 
 For controlled evidence, clear `LUMINE_LLAMA_SERVER`. `-AllowLlamaServerOverride` exists for debugging only.
 
@@ -170,18 +177,16 @@ Repeat with every immutable profile.
 
 ## Heretic pin workflow
 
-1. Run only the Heretic profile as an exploratory pass.
-2. Inspect `advanced-perf-model-size-001.output`:
+1. Run `-InspectHereticOnly` to query the official Hugging Face repository/file metadata without downloading weights.
+2. Review `advanced-heretic-pin-info.json`:
    - `resolvedRevision`
-   - `modelSha256`
-   - `mmprojSha256`
-   - model/mmproj byte sizes
-3. Replace `version: "main"` and all empty size/hash fields in `advanced-qwen3-vl-2b-heretic-q4.json` with those exact values.
+   - `modelSha256` and exact model byte size
+   - `mmprojSha256` and exact mmproj byte size
+3. Run `-InspectHereticOnly -ApplyHereticPin` only after reviewing those values.
 4. Commit the pinned profile.
-5. Delete the exploratory result.
-6. Rerun the **entire** Heretic benchmark on the same fixture/hardware setup.
+5. Run the **entire** Heretic benchmark on the same fixture/hardware setup as every other candidate.
 
-An exploratory result is never referenced from `adoptions.json` as adoption evidence.
+The metadata inspector refuses to invent missing LFS hashes or accept missing exact files. An exploratory/full-discovery result is never referenced from `adoptions.json` as adoption evidence.
 
 ## What is measured
 
