@@ -98,3 +98,7 @@ For Issue #224's representative-hardware evidence, record:
 The last two measurements are intentionally not inferred from hosted CI. Record
 them from Task Manager, vendor tooling, or another trusted host-side monitor on
 the same physical benchmark machine.
+
+## One-command self-hosted acceptance
+
+For one-command physical-host evidence collection, use the self-hosted `physical-gpu-acceptance` workflow documented in `physical-gpu-acceptance.md`. It runs the strict Vulkan device/model smokes and both CPU/Vulkan benchmarks on the same host, samples NVIDIA VRAM/utilization, and uploads the complete evidence as a GitHub Actions artifact.
