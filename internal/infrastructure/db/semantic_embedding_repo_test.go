@@ -380,3 +380,53 @@ func TestFilterNeedingEmbeddingIDsPreservesViewerOrder(t *testing.T) {
 		t.Fatalf("needed viewer assets = %v, want [%d %d]", needed, third, first)
 	}
 }
+
+
+func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic coverage", "/tmp/semantic-coverage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherLib, err := NewLibraryRepo(database).Create("Other coverage", "/tmp/semantic-coverage-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	queued := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "queued.png")
+	running := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "running.png")
+	failed := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "failed.png")
+	stale := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "stale.png")
+	other := createSemanticTestAsset(t, database, otherLib.ID, "/tmp/semantic-coverage-other", "other.png")
+
+	for id, state := range map[int64]string{
+		queued: "queued",
+		running: "running",
+		failed: "failed",
+		stale: "stale",
+		other: "failed",
+	} {
+		if _, err := database.Exec(`
+			INSERT INTO ai_asset_analysis (asset_id, capability, state, updated_at)
+			VALUES (?, 'semantic_search', ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(asset_id, capability) DO UPDATE SET
+				state = excluded.state,
+				updated_at = CURRENT_TIMESTAMP
+		`, id, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	counts, err := repo.CountSemanticAnalysisStates(context.Background(), SemanticSearchQuery{
+		LibraryID:  lib.ID,
+		FolderPath: "/tmp/semantic-coverage/a",
+		Recurse:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Queued != 1 || counts.Running != 1 || counts.Failed != 1 || counts.Stale != 1 {
+		t.Fatalf("unexpected semantic coverage states: %+v", counts)
+	}
+}
