@@ -85,7 +85,7 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		handlers: make(map[domain.AICapability]AnalysisHandler),
 		active:   make(map[int64]activeAIJob),
 		paused:   make(map[domain.AICapability]int),
-		wake:     make(chan struct{}, 1),
+		wake:     make(chan struct{}, workers),
 	}
 }
 
@@ -164,7 +164,7 @@ func (q *JobQueue) Start(parent context.Context) error {
 
 	for i := 0; i < q.workers; i++ {
 		q.wg.Add(1)
-		go q.worker(ctx)
+		go q.worker(ctx, i)
 	}
 	q.signal()
 	return nil
@@ -327,29 +327,12 @@ func (q *JobQueue) SetInteractiveUIActive(active bool) {
 		return
 	}
 	q.uiPaused = active
-	activeJobs := make(map[int64]activeAIJob)
-	if active {
-		for id, job := range q.active {
-			activeJobs[id] = job
-		}
-	}
 	q.mu.Unlock()
 
-	if active {
-		// Rendering the image viewer is the highest-priority foreground work.
-		// Preserve queued AI work, but immediately yield any active inference so
-		// disk, CPU, and GPU resources are available to image fetch/decode and
-		// WebView composition.
-		for id, job := range activeJobs {
-			if err := q.repo.RequeueInterrupted(id, "yielded to interactive viewer rendering"); err != nil {
-				slog.Debug("failed to requeue AI job for viewer rendering", "job", id, "error", err)
-				continue
-			}
-			job.cancel()
-		}
-		return
-	}
-
+	// Viewer activity is a throttle, not a stop-the-world barrier. Existing
+	// inference is allowed to finish so expensive preprocessing/GPU work is not
+	// repeatedly thrown away while the user scrolls. While active, only worker 0
+	// is permitted to claim new jobs; the remaining workers park until idle.
 	q.signal()
 }
 
@@ -462,7 +445,7 @@ func (q *JobQueue) ListJobs(limit int) ([]domain.AIJob, error) {
 	return q.repo.ListJobs(limit)
 }
 
-func (q *JobQueue) worker(ctx context.Context) {
+func (q *JobQueue) worker(ctx context.Context, workerID int) {
 	defer q.wg.Done()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -472,7 +455,7 @@ func (q *JobQueue) worker(ctx context.Context) {
 			return
 		}
 
-		job, err := q.claimNext()
+		job, err := q.claimNext(workerID)
 		if err != nil {
 			slog.Error("failed to claim AI job", "error", err)
 			if !q.wait(ctx, ticker.C) {
@@ -491,8 +474,8 @@ func (q *JobQueue) worker(ctx context.Context) {
 	}
 }
 
-func (q *JobQueue) claimNext() (*domain.AIJob, error) {
-	capabilities, err := q.runnableCapabilities()
+func (q *JobQueue) claimNext(workerID int) (*domain.AIJob, error) {
+	capabilities, err := q.runnableCapabilities(workerID)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +490,7 @@ func (q *JobQueue) claimNext() (*domain.AIJob, error) {
 	return q.repo.ClaimNext(capabilities)
 }
 
-func (q *JobQueue) runnableCapabilities() ([]domain.AICapability, error) {
+func (q *JobQueue) runnableCapabilities(workerID int) ([]domain.AICapability, error) {
 	settings, err := q.currentSettings()
 	if err != nil {
 		return nil, err
@@ -515,7 +498,13 @@ func (q *JobQueue) runnableCapabilities() ([]domain.AICapability, error) {
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.startupHeld || q.uiPaused {
+	if q.startupHeld {
+		return nil, nil
+	}
+	// Keep one worker alive during interactive viewer activity. This preserves
+	// forward progress for long-running library analysis without letting the
+	// full worker pool contend with thumbnail decode/composition.
+	if q.uiPaused && workerID > 0 {
 		return nil, nil
 	}
 	capabilities := make([]domain.AICapability, 0, len(q.handlers))
@@ -539,7 +528,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	jobCtx, cancel := context.WithCancel(parent)
 	q.mu.Lock()
 	q.active[job.ID] = activeAIJob{capability: job.Capability, cancel: cancel}
-	paused := q.startupHeld || q.uiPaused || q.paused[job.Capability] > 0
+	paused := q.startupHeld || q.paused[job.Capability] > 0
 	q.mu.Unlock()
 
 	cleanup := func() {
@@ -616,9 +605,15 @@ func (q *JobQueue) wait(ctx context.Context, tick <-chan time.Time) bool {
 }
 
 func (q *JobQueue) signal() {
-	select {
-	case q.wake <- struct{}{}:
-	default:
+	// Wake the whole pool. A single-token wake channel was appropriate for the
+	// original one-worker queue but makes additional workers sleep until their
+	// one-second polling tick, defeating burst concurrency.
+	for i := 0; i < q.workers; i++ {
+		select {
+		case q.wake <- struct{}{}:
+		default:
+			return
+		}
 	}
 }
 

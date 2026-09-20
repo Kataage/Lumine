@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -349,7 +350,103 @@ func TestJobQueueForegroundPauseYieldsAndResumesCapability(t *testing.T) {
 }
 
 
-func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
+func TestJobQueueWorkersProcessJobsConcurrently(t *testing.T) {
+	database, repo, firstAssetID := setupAIQueueTest(t)
+	firstAsset, err := db.NewAssetRepo(database).GetByID(firstAssetID)
+	if err != nil || firstAsset == nil {
+		t.Fatalf("get first asset: asset=%+v err=%v", firstAsset, err)
+	}
+	secondAsset := *firstAsset
+	secondAsset.ID = 0
+	secondAsset.FileName = "queue-2.png"
+	secondAsset.FilePath = "/tmp/ai-queue/queue-2.png"
+	secondAssetID, err := db.NewAssetRepo(database).Create(&secondAsset)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 2)
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	active := 0
+	maxActive := 0
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		mu.Lock()
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		started <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return AnalysisOutput{}, ctx.Err()
+		case <-release:
+		}
+		mu.Lock()
+		active--
+		mu.Unlock()
+		return AnalysisOutput{
+			Engine:       "engine",
+			ModelID:      "model",
+			ModelVersion: "1",
+			ResultJSON:   "{}",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
+
+	firstJob, _, err := queue.Enqueue(firstAssetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJob, _, err := queue.Enqueue(secondAssetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("two workers did not process jobs concurrently")
+		}
+	}
+	mu.Lock()
+	observedMax := maxActive
+	mu.Unlock()
+	if observedMax < 2 {
+		t.Fatalf("max concurrent handlers = %d, want at least 2", observedMax)
+	}
+
+	close(release)
+	waitForAIJobStatus(t, repo, firstJob.ID, domain.AIJobCompleted)
+	waitForAIJobStatus(t, repo, secondJob.ID, domain.AIJobCompleted)
+}
+
+func TestJobQueueInteractiveUIThrottlesWithoutCancellingActiveWork(t *testing.T) {
 	_, repo, assetID := setupAIQueueTest(t)
 
 	settings := domain.AISettings{
@@ -359,19 +456,19 @@ func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
 	}
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
-	}, 1)
+	}, 2)
 
-	started := make(chan int, 2)
-	attempt := 0
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
 	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
 		ctx context.Context,
 		job domain.AIJob,
 	) (AnalysisOutput, error) {
-		attempt++
-		started <- attempt
-		if attempt == 1 {
-			<-ctx.Done()
+		started <- struct{}{}
+		select {
+		case <-ctx.Done():
 			return AnalysisOutput{}, ctx.Err()
+		case <-release:
 		}
 		return AnalysisOutput{
 			Engine:       "engine",
@@ -398,39 +495,41 @@ func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	select {
-	case got := <-started:
-		if got != 1 {
-			t.Fatalf("first handler attempt = %d", got)
-		}
+	case <-started:
 	case <-time.After(5 * time.Second):
 		t.Fatal("AI job did not start")
 	}
 	waitForAIJobStatus(t, repo, job.ID, domain.AIJobRunning)
 
 	queue.SetInteractiveUIActive(true)
-	requeued := waitForAIJobStatus(t, repo, job.ID, domain.AIJobQueued)
-	if requeued.AttemptCount != 0 {
-		t.Fatalf("viewer yield consumed retry budget: %+v", requeued)
+	time.Sleep(150 * time.Millisecond)
+	stillRunning, err := repo.GetJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillRunning.Status != domain.AIJobRunning || stillRunning.AttemptCount != 1 {
+		t.Fatalf("viewer throttle should not cancel/requeue active work: %+v", stillRunning)
 	}
 
-	select {
-	case got := <-started:
-		t.Fatalf("AI job restarted while viewer was active: attempt %d", got)
-	case <-time.After(150 * time.Millisecond):
+	worker0, err := queue.runnableCapabilities(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker1, err := queue.runnableCapabilities(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(worker0) == 0 {
+		t.Fatal("primary worker should remain runnable during viewer activity")
+	}
+	if len(worker1) != 0 {
+		t.Fatalf("extra worker should be throttled during viewer activity: %v", worker1)
 	}
 
-	queue.SetInteractiveUIActive(false)
-	select {
-	case got := <-started:
-		if got != 2 {
-			t.Fatalf("resumed handler attempt = %d, want 2", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("AI job did not resume after viewer became idle")
-	}
+	close(release)
 	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
+	queue.SetInteractiveUIActive(false)
 }
 
 

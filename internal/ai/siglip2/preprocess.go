@@ -1,6 +1,7 @@
 package siglip2
 
 import (
+	"context"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -16,6 +17,20 @@ const (
 )
 
 func preprocessImage(path string) ([]float32, error) {
+	return PreprocessImageContext(context.Background(), path)
+}
+
+// PreprocessImageContext performs file I/O, decode, resize, and normalization
+// without holding the serialized model-runtime operation lock. Semantic workers
+// can therefore prepare upcoming images concurrently while ORT is embedding the
+// previous image.
+func PreprocessImageContext(ctx context.Context, path string) ([]float32, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open image for SigLIP: %w", err)
@@ -26,6 +41,9 @@ func preprocessImage(path string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode image for SigLIP: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	bounds := source.Bounds()
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return nil, fmt.Errorf("image has invalid dimensions")
@@ -34,6 +52,11 @@ func preprocessImage(path string) ([]float32, error) {
 	output := make([]float32, siglipChannels*siglipImageSize*siglipImageSize)
 	plane := siglipImageSize * siglipImageSize
 	for y := 0; y < siglipImageSize; y++ {
+		if y%8 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		srcY := (float64(y)+0.5)*float64(bounds.Dy())/siglipImageSize - 0.5
 		for x := 0; x < siglipImageSize; x++ {
 			srcX := (float64(x)+0.5)*float64(bounds.Dx())/siglipImageSize - 0.5

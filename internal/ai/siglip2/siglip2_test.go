@@ -3,6 +3,7 @@ package siglip2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -243,6 +244,14 @@ func TestPreprocessImageProducesCHWMinusOneToOne(t *testing.T) {
 	}
 }
 
+func TestPreprocessImageContextHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := PreprocessImageContext(ctx, "unused.png"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PreprocessImageContext error = %v, want context.Canceled", err)
+	}
+}
+
 func TestEngineInferenceNormalizesEmbeddings(t *testing.T) {
 	tokenizer := syntheticTokenizer(t)
 	runtime := &fakeORT{}
@@ -293,6 +302,26 @@ func TestEngineInferenceNormalizesEmbeddings(t *testing.T) {
 	}
 	if len(runtime.imageInput) != 3*siglipImageSize*siglipImageSize {
 		t.Fatalf("image preprocessing was not used: %d", len(runtime.imageInput))
+	}
+
+	preprocessed := make([]float32, 3*siglipImageSize*siglipImageSize)
+	preprocessed[0] = 0.25
+	preprocessed[len(preprocessed)-1] = -0.5
+	tensorResponse, err := engine.Infer(context.Background(), ai.InferenceRequest{
+		Operation: "embed_image_tensor",
+		Payload:   map[string]any{"pixels": preprocessed},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tensorVector := tensorResponse.Payload["embedding"].([]float32)
+	if len(tensorVector) != 2 || tensorVector[1] != 1 {
+		t.Fatalf("unexpected normalized tensor embedding: %+v", tensorVector)
+	}
+	if len(runtime.imageInput) != len(preprocessed) ||
+		runtime.imageInput[0] != 0.25 ||
+		runtime.imageInput[len(runtime.imageInput)-1] != -0.5 {
+		t.Fatal("preprocessed image tensor was not forwarded to ORT unchanged")
 	}
 }
 

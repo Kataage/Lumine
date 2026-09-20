@@ -184,7 +184,10 @@ func main() {
 		log.Fatal("failed to register llama.cpp Prompt Engine:", err)
 	}
 
-	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 1)
+	// Multiple workers let CPU/image I/O and independent AI capabilities make
+	// progress concurrently. Per-runtime inference remains serialized by Manager,
+	// so this does not run unsafe parallel ORT calls against one loaded model.
+	aiJobQueue := ai.NewJobQueue(db.NewAIAnalysisRepo(database), cmd.GetAISettings, 4)
 	cmd.SetAIJobQueue(aiJobQueue)
 	if err := aiJobQueue.RegisterHandler(domain.AICapabilitySemanticSearch, cmd.SemanticAnalysisHandler); err != nil {
 		log.Fatal("failed to register Semantic Search job handler:", err)
