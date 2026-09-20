@@ -499,3 +499,83 @@ func TestJobQueueStartupHoldPreventsClaimUntilRestoreCompletes(t *testing.T) {
 	}
 	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
 }
+
+
+func TestJobQueueModelActivationHonorsAnalysisRevision(t *testing.T) {
+	_, repo, assetID := setupAIQueueTest(t)
+
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return domain.DefaultAISettings(), nil
+	}, 1)
+
+	job, _, err := repo.Enqueue(
+		assetID,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceManual,
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim old semantic job: job=%+v err=%v", claimed, err)
+	}
+	if err := repo.CompleteJob(job.ID, "siglip2-onnx", "siglip2", "base-version", "{}"); err != nil {
+		t.Fatal(err)
+	}
+
+	model := InstalledModel{Manifest: ModelManifest{
+		Engine:  "siglip2-onnx",
+		ID:      "siglip2",
+		Version: "base-version",
+		Parameters: map[string]string{
+			"analysis_revision": "preprocess-v2",
+		},
+	}}
+	if err := queue.HandleModelActivated(domain.AICapabilitySemanticSearch, model); err != nil {
+		t.Fatal(err)
+	}
+	analyses, err := repo.GetByAsset(assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisStale {
+		t.Fatalf("old semantic analysis was not invalidated: %+v", analyses)
+	}
+
+	job, _, err = repo.Enqueue(
+		assetID,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceManual,
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = repo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim revised semantic job: job=%+v err=%v", claimed, err)
+	}
+	if err := repo.CompleteJob(
+		job.ID,
+		"siglip2-onnx",
+		"siglip2",
+		"base-version+preprocess-v2",
+		"{}",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.HandleModelActivated(domain.AICapabilitySemanticSearch, model); err != nil {
+		t.Fatal(err)
+	}
+	analyses, err = repo.GetByAsset(assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisReady {
+		t.Fatalf("matching analysis revision was incorrectly invalidated: %+v", analyses)
+	}
+}
