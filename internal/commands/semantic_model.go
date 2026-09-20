@@ -42,7 +42,7 @@ func (c *AppCommands) GetDefaultSemanticModelInfo() SemanticModelInfo {
 	if c.aiManager == nil {
 		return info
 	}
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err == nil {
 		info.Installed = true
 	}
 	info.Runtime = runtimeStatusForInstalledModel(
@@ -113,7 +113,7 @@ func (c *AppCommands) RestoreDefaultSemanticModel() error {
 		return nil
 	}
 	manifest := siglip2.DefaultManifest()
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		manifestPath := filepath.Join(
 			c.aiManager.Store().Root(),
 			manifest.ID,
@@ -229,7 +229,7 @@ func (c *AppCommands) ensureSemanticSearchReadyContext(ctx context.Context) erro
 	}
 
 	manifest := siglip2.DefaultManifest()
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		return fmt.Errorf("Semantic Search model is not installed or invalid: %w", err)
 	}
 	if err := c.loadDefaultSemanticModel(ctx, settings); err != nil {
