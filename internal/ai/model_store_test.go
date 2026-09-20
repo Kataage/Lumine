@@ -183,3 +183,31 @@ func TestValidateManifestRejectsDuplicateRolesAndUnsafeParameterKeys(t *testing.
 		t.Fatalf("valid roles and parameters should pass: %v", err)
 	}
 }
+
+
+func TestModelStoreProbeAvoidsContentHashButVerifyRemainsStrict(t *testing.T) {
+	data := []byte("same-size-model-data")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	store := NewModelStore(t.TempDir())
+	manifest := testManifest(server.URL, data)
+	installed, err := store.Install(context.Background(), manifest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	corrupted := append([]byte(nil), data...)
+	corrupted[0] ^= 0xff
+	if err := os.WriteFile(filepath.Join(installed.RootDir, "model.bin"), corrupted, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Probe(manifest.ID, manifest.Version); err != nil {
+		t.Fatalf("Probe should inspect metadata/size without hashing contents: %v", err)
+	}
+	if _, err := store.Verify(manifest.ID, manifest.Version); err == nil {
+		t.Fatal("Verify must still reject same-size corrupted model contents")
+	}
+}
