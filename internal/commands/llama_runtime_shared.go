@@ -30,12 +30,12 @@ func (c *AppCommands) currentLlamaRuntimeInfo(allowGPU bool) LightweightRuntimeI
 	if c.llamaRuntimeStore == nil {
 		return info
 	}
-	if installed, err := c.llamaRuntimeStore.Verify(selected); err == nil {
+	if installed, err := c.llamaRuntimeStore.Probe(selected); err == nil {
 		info.Installed = true
 		info.ExecutablePath = installed.ExecutablePath
 	}
 	if allowGPU {
-		if _, err := c.llamaRuntimeStore.Verify(llamacpp.CPURuntimeManifest()); err == nil {
+		if _, err := c.llamaRuntimeStore.Probe(llamacpp.CPURuntimeManifest()); err == nil {
 			info.FallbackInstalled = true
 		}
 	}
@@ -145,7 +145,7 @@ func (c *AppCommands) verifyUsableLlamaRuntime(allowGPU bool) error {
 	}
 	var combined error
 	for _, manifest := range llamacpp.RuntimeManifestsForPolicy(allowGPU) {
-		if _, err := c.llamaRuntimeStore.Verify(manifest); err == nil {
+		if _, err := c.llamaRuntimeStore.Probe(manifest); err == nil {
 			return nil
 		} else {
 			combined = errors.Join(combined, err)
