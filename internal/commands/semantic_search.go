@@ -460,6 +460,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
 				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
+			c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
 		}
 		emitProgress("filtering", 0, 0)
 		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(searchCtx, searchQuery)
@@ -548,6 +549,7 @@ func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*A
 			if err := c.semanticIndex.Warm(ctx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
 				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
+			c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
 		}
 		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(ctx, searchQuery)
 		if err != nil {
