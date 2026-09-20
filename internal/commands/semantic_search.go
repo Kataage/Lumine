@@ -30,9 +30,10 @@ const (
 type semanticSearchSession struct {
 	hits          []domain.SemanticSearchHit
 	total         int
-	coverageReady int
-	coverageTotal int
-	createdAt     time.Time
+	coverageReady  int
+	coverageTotal  int
+	coverageStates db.SemanticCoverageStateCounts
+	createdAt      time.Time
 }
 
 type semanticSearchState struct {
@@ -141,6 +142,7 @@ func (s *semanticSearchState) store(
 	total int,
 	coverageReady int,
 	coverageTotal int,
+	coverageStates db.SemanticCoverageStateCounts,
 ) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -168,9 +170,10 @@ func (s *semanticSearchState) store(
 	s.sessions[id] = semanticSearchSession{
 		hits:          append([]domain.SemanticSearchHit(nil), hits...),
 		total:         total,
-		coverageReady: coverageReady,
-		coverageTotal: coverageTotal,
-		createdAt:     now,
+		coverageReady:  coverageReady,
+		coverageTotal:  coverageTotal,
+		coverageStates: coverageStates,
+		createdAt:      now,
 	}
 	return id
 }
@@ -584,6 +587,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 	searchQuery := semanticQueryFromAssetRequest(req, searchStatus, 0)
 	coverageTotal, _ := c.semanticScopeTotal(req)
 	coverageReady := 0
+	coverageStates, _ := c.semanticRepo.CountSemanticAnalysisStates(searchCtx, searchQuery)
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
 		if !c.semanticIndex.IsReady(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version) {
@@ -627,6 +631,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		result.TotalCount,
 		coverageReady,
 		coverageTotal,
+		coverageStates,
 	)
 	return c.semanticHitsToAssets(
 		result.Hits,
@@ -634,6 +639,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		sessionID,
 		coverageReady,
 		coverageTotal,
+		coverageStates,
 	)
 }
 
@@ -664,6 +670,7 @@ func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*
 		sessionID,
 		session.coverageReady,
 		session.coverageTotal,
+		session.coverageStates,
 	)
 }
 
@@ -723,7 +730,14 @@ func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*
 	if result == nil {
 		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: 0}, nil
 	}
-	return c.semanticHitsToAssets(result.Hits, result.TotalCount, "", result.TotalCount, result.TotalCount)
+	return c.semanticHitsToAssets(
+		result.Hits,
+		result.TotalCount,
+		"",
+		result.TotalCount,
+		result.TotalCount,
+		db.SemanticCoverageStateCounts{},
+	)
 }
 
 func (c *AppCommands) semanticHitsToAssets(
@@ -732,14 +746,19 @@ func (c *AppCommands) semanticHitsToAssets(
 	sessionID string,
 	coverageReady int,
 	coverageTotal int,
+	coverageStates db.SemanticCoverageStateCounts,
 ) (*AssetListResponse, error) {
 	if len(hits) == 0 {
 		return &AssetListResponse{
 			Assets:                     []AssetDTO{},
 			TotalCount:                 total,
 			SemanticSearchSessionID:    sessionID,
-			SemanticCoverageReadyCount: coverageReady,
-			SemanticCoverageTotalCount: coverageTotal,
+			SemanticCoverageReadyCount:   coverageReady,
+			SemanticCoverageTotalCount:   coverageTotal,
+			SemanticCoverageQueuedCount:  coverageStates.Queued,
+			SemanticCoverageRunningCount: coverageStates.Running,
+			SemanticCoverageFailedCount:  coverageStates.Failed,
+			SemanticCoverageStaleCount:   coverageStates.Stale,
 		}, nil
 	}
 
@@ -763,8 +782,12 @@ func (c *AppCommands) semanticHitsToAssets(
 		Assets:                     dtos,
 		TotalCount:                 total,
 		SemanticSearchSessionID:    sessionID,
-		SemanticCoverageReadyCount: coverageReady,
-		SemanticCoverageTotalCount: coverageTotal,
+		SemanticCoverageReadyCount:   coverageReady,
+		SemanticCoverageTotalCount:   coverageTotal,
+		SemanticCoverageQueuedCount:  coverageStates.Queued,
+		SemanticCoverageRunningCount: coverageStates.Running,
+		SemanticCoverageFailedCount:  coverageStates.Failed,
+		SemanticCoverageStaleCount:   coverageStates.Stale,
 	}, nil
 }
 
