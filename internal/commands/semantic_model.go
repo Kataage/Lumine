@@ -169,21 +169,13 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 		return err
 	}
 
-	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
-	if c.semanticIndex != nil && status.Engine != "" && status.ModelID != "" && status.Version != "" {
-		c.semanticIndex.Prepare(status.Engine, status.ModelID, status.Version)
-		c.startBackgroundTask(func(warmCtx context.Context) {
-			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
-				// Search can retry the warm synchronously. Runtime readiness must
-				// not depend on a cache warm succeeding.
-				slog.Warn("semantic index warm failed", "error", err)
-				return
-			}
-			if warmCtx.Err() == nil {
-				c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
-			}
-		})
-	}
+	// Do not warm/open the semantic index as part of runtime restore. Large
+	// libraries can have hundreds of MB of persisted vector data, and users who
+	// are only browsing images should not pay that I/O cost. Semantic and
+	// similar-image search warm the exact index lazily on first use.
+	//
+	// Backfill remains independent: embeddings are durable in SQLite, so any
+	// vectors produced before first search are picked up by the lazy warm.
 
 	// Enumerating a large library and enqueueing missing embeddings can take a
 	// long time. Do not make runtime load/search readiness wait for that work.
