@@ -206,7 +206,7 @@
       "quantization": "FP32",
       "artifactSha256": "f29e475205cbcbc25b52a075840c7809d6215be15f45375113ba09c49bf90292",
       "issue": "#165",
-      "rationale": "Current quality-focused PixAI candidate with May 2026 cutoff, 30,877 tags and direct rating output. Benchmark through the pinned upstream Transformers custom pipeline; adoption is blocked until controlled Lumine evidence and explicit redistribution/license status are both available.",
+      "rationale": "Current quality-focused PixAI candidate with May 2026 cutoff, 30,877 tags and direct rating output. The pinned upstream Hugging Face repo currently declares no explicit license and ships no LICENSE file; the SAM3 upstream license does not by itself resolve PixAI's rights for these finetuned weights/custom pipeline. Keep for controlled benchmark comparison, but do not adopt, bundle, mirror, or redistribute until PixAI provides explicit repository-specific licensing/redistribution clarification.",
       "updatedAt": "2026-09-20"
     },
     {
