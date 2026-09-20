@@ -52,3 +52,5 @@ lumine/tmp
 # Local AI benchmark data
 benchmarks/ai/fixtures/private/
 benchmarks/ai/results/local/
+benchmarks/ai/results/gpu-acceptance/
+.lumine-ai-bench-cache/
