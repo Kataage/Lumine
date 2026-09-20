@@ -241,6 +241,48 @@ func TestCleanupSemanticSnapshotsPreservesOtherModels(t *testing.T) {
 	}
 }
 
+func TestCleanupSemanticSnapshotsRemovesObsoleteAnalysisRevision(t *testing.T) {
+	root := t.TempDir()
+	currentKey := semanticKey("siglip2-onnx", "siglip2", "base+revision-v2")
+	oldKey := semanticKey("siglip2-onnx", "siglip2", "base+revision-v1")
+	otherModelKey := semanticKey("siglip2-onnx", "other-model", "base+revision-v1")
+
+	writeHeader := func(key semanticIndexKey, generation uint64) string {
+		t.Helper()
+		header, err := encodeSemanticSnapshotHeader(semanticSnapshotHeader{
+			key:           key,
+			generation:    generation,
+			count:         0,
+			dimensions:    0,
+			vectorsOffset: semanticSnapshotHeaderSize,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := semanticSnapshotPath(root, key, generation)
+		if err := os.WriteFile(path, header, 0644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	keepPath := writeHeader(currentKey, 12)
+	oldRevisionPath := writeHeader(oldKey, 11)
+	otherModelPath := writeHeader(otherModelKey, 10)
+
+	cleanupSemanticSnapshots(root, currentKey, keepPath)
+
+	if _, err := os.Stat(keepPath); err != nil {
+		t.Fatalf("current revision snapshot was removed: %v", err)
+	}
+	if _, err := os.Stat(oldRevisionPath); !os.IsNotExist(err) {
+		t.Fatalf("old analysis revision snapshot was not removed: %v", err)
+	}
+	if _, err := os.Stat(otherModelPath); err != nil {
+		t.Fatalf("other model snapshot was removed: %v", err)
+	}
+}
+
 func TestSemanticPersistentSnapshotPathIsGenerationAddressed(t *testing.T) {
 	root := t.TempDir()
 	key := semanticKey("engine", "model", "1")
