@@ -175,6 +175,7 @@ func TestRealSigLIP2DirectMLSmoke(t *testing.T) {
 			diagnostics.Warning,
 		)
 	}
+	t.Logf("strict DirectML provider=%s", diagnostics.ExecutionProvider)
 
 	runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
 }
@@ -198,6 +199,7 @@ func benchmarkRealSigLIP2Image(b *testing.B, allowGPU bool, expectedProvider str
 			diagnostics.Warning,
 		)
 	}
+	b.Logf("execution provider=%s", diagnostics.ExecutionProvider)
 
 	// Warm session/model initialization outside the timed section.
 	runRealSigLIP2Inference(b, ctx, engine, imagePath, 1)
