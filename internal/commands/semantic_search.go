@@ -330,6 +330,20 @@ func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
 	return c.enqueueSemanticBackfillContext(ctx)
 }
 
+func (c *AppCommands) waitForSemanticBackgroundWindow(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for c.aiJobQueue != nil && c.aiJobQueue.InteractiveUIActive() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return ctx.Err()
+}
+
 func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, error) {
 	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
@@ -380,6 +394,9 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
+			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
+				return total, err
+			}
 			candidates, err := c.semanticRepo.ListNeedingEmbeddingNewestContext(
 				ctx,
 				library.ID,
@@ -399,6 +416,9 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 			ids := make([]int64, len(candidates))
 			for i, candidate := range candidates {
 				ids[i] = candidate.AssetID
+			}
+			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
+				return total, err
 			}
 			created, err := c.aiJobQueue.EnqueueMany(
 				ids,
