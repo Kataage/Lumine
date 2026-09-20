@@ -232,7 +232,7 @@ func (t *siglipTokenizer) encodeBPE64(text string) ([siglipTextLength]int64, err
 
 	tokens := t.bpeInitialSymbols(normalized)
 	if len(tokens) == 0 {
-		return output, errors.New("SigLIP BPE tokenizer produced no symbols")
+		return [siglipTextLength]int64{}, errors.New("SigLIP BPE tokenizer produced no symbols")
 	}
 
 	for {
