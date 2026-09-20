@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -290,10 +291,18 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	if err != nil {
 		return 0, err
 	}
-	if !settings.CapabilityEnabled(domain.AICapabilitySemanticSearch) ||
-		!settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+	if !settings.CapabilityEnabled(domain.AICapabilitySemanticSearch) {
 		return 0, nil
 	}
+
+	// Keep the current viewer order even when automatic analysis is disabled.
+	// A later explicit Semantic Search is user-initiated work and may consume
+	// these IDs first without silently turning import/scan auto-analysis on.
+	if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+		c.rememberSemanticPriorityAssets(assetIDs)
+		return 0, nil
+	}
+
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
 		c.rememberSemanticPriorityAssets(assetIDs)
@@ -325,12 +334,89 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	)
 }
 
+func (c *AppCommands) enqueueRememberedSemanticPriorityAssets(
+	ctx context.Context,
+	status ai.RuntimeStatus,
+) (int, error) {
+	if c.aiJobQueue == nil || c.semanticRepo == nil {
+		return 0, nil
+	}
+	assetIDs := c.takeSemanticPriorityAssets()
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
+		c.rememberSemanticPriorityAssets(assetIDs)
+		return 0, errors.New("Semantic Search runtime provenance is incomplete")
+	}
+
+	needed, err := c.semanticRepo.FilterNeedingEmbeddingIDs(
+		ctx,
+		assetIDs,
+		status.Engine,
+		status.ModelID,
+		siglip2.AnalysisVersion(status.Version),
+	)
+	if err != nil {
+		c.rememberSemanticPriorityAssets(assetIDs)
+		return 0, err
+	}
+	if len(needed) == 0 {
+		return 0, nil
+	}
+
+	// This path is reached because the user explicitly executed Semantic Search,
+	// so it must not depend on the separate import/scan auto-analysis switch.
+	created, err := c.aiJobQueue.EnqueueMany(
+		needed,
+		domain.AICapabilitySemanticSearch,
+		250,
+		false,
+	)
+	if err != nil {
+		c.rememberSemanticPriorityAssets(assetIDs)
+	}
+	return created, err
+}
+
 func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return c.enqueueSemanticBackfillContext(ctx)
+	// An explicit command is user-initiated and therefore does not require the
+	// import/scan auto-analysis opt-in.
+	return c.enqueueSemanticBackfillContext(ctx, false, 0)
+}
+
+func (c *AppCommands) startSemanticBackfill(automatic bool, libraryID int64) bool {
+	c.semanticBackfillMu.Lock()
+	if c.semanticBackfillRunning {
+		c.semanticBackfillMu.Unlock()
+		return false
+	}
+	c.semanticBackfillRunning = true
+	c.semanticBackfillMu.Unlock()
+
+	started := c.startBackgroundTask(func(ctx context.Context) {
+		defer func() {
+			c.semanticBackfillMu.Lock()
+			c.semanticBackfillRunning = false
+			c.semanticBackfillMu.Unlock()
+		}()
+		if _, err := c.enqueueSemanticBackfillContext(ctx, automatic, libraryID); err != nil && ctx.Err() == nil {
+			slog.Warn("semantic backfill enqueue failed", "automatic", automatic, "library_id", libraryID, "error", err)
+		}
+	})
+	if !started {
+		c.semanticBackfillMu.Lock()
+		c.semanticBackfillRunning = false
+		c.semanticBackfillMu.Unlock()
+	}
+	return started
 }
 
 func (c *AppCommands) waitForSemanticBackgroundWindow(ctx context.Context) error {
@@ -347,7 +433,7 @@ func (c *AppCommands) waitForSemanticBackgroundWindow(ctx context.Context) error
 	return ctx.Err()
 }
 
-func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, error) {
+func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context, automatic bool, libraryID int64) (int, error) {
 	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
 	}
@@ -375,12 +461,14 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 		return 0, fmt.Errorf("list libraries for semantic backfill: %w", err)
 	}
 
-	settings, err := c.GetAISettings()
-	if err != nil {
-		return 0, err
-	}
-	if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
-		return 0, nil
+	if automatic {
+		settings, err := c.GetAISettings()
+		if err != nil {
+			return 0, err
+		}
+		if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+			return 0, nil
+		}
 	}
 
 	total := 0
@@ -388,7 +476,7 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 		if err := ctx.Err(); err != nil {
 			return total, err
 		}
-		if !library.IsEnabled {
+		if !library.IsEnabled || (libraryID > 0 && library.ID != libraryID) {
 			continue
 		}
 		var beforeModifiedAt string
@@ -427,7 +515,7 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 				ids,
 				domain.AICapabilitySemanticSearch,
 				-100,
-				true,
+				automatic,
 			)
 			if err != nil {
 				return total, err
@@ -594,7 +682,6 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 	searchQuery := semanticQueryFromAssetRequest(req, searchStatus, 0)
 	coverageTotal, _ := c.semanticScopeTotal(req)
 	coverageReady := 0
-	coverageStates, _ := c.semanticRepo.CountSemanticAnalysisStates(searchCtx, searchQuery)
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
 		if !c.semanticIndex.IsReady(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version) {
@@ -630,6 +717,34 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 			return nil, err
 		}
 		coverageReady = result.TotalCount
+	}
+
+	coverageStates, _ := c.semanticRepo.CountSemanticAnalysisStates(searchCtx, searchQuery)
+	if coverageReady < coverageTotal && c.aiJobQueue != nil {
+		if _, err := c.enqueueRememberedSemanticPriorityAssets(searchCtx, status); err != nil {
+			slog.Warn("failed to promote viewer semantic assets", "error", err)
+		}
+
+		// If work is already queued/running, do not rescan the whole library on
+		// every query. Otherwise, an explicit search seeds the missing/stale
+		// coverage even when import/scan auto-analysis is disabled.
+		untracked := coverageTotal -
+			coverageReady -
+			coverageStates.Queued -
+			coverageStates.Running -
+			coverageStates.Failed -
+			coverageStates.Stale
+		if untracked < 0 {
+			untracked = 0
+		}
+		if coverageStates.Queued == 0 &&
+			coverageStates.Running == 0 &&
+			(coverageStates.Stale > 0 || untracked > 0) {
+			c.startSemanticBackfill(false, req.LibraryID)
+		}
+
+		// Priority enqueue is synchronous, so refresh the visible diagnostics.
+		coverageStates, _ = c.semanticRepo.CountSemanticAnalysisStates(searchCtx, searchQuery)
 	}
 
 	emitProgress("formatting", len(result.Hits), result.TotalCount)
