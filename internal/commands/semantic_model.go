@@ -146,6 +146,9 @@ func (c *AppCommands) scheduleSemanticIndexPersist(engine, modelID, version stri
 			engine,
 			modelID,
 			version,
+			func() bool {
+				return c.aiJobQueue == nil || !c.aiJobQueue.InteractiveUIActive()
+			},
 		); err != nil && persistCtx.Err() == nil {
 			slog.Warn("semantic persistent index save failed", "error", err)
 		}
