@@ -492,6 +492,13 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
 	}
 
+	if c.ctx != nil {
+		runtime.EventsEmit(c.ctx, "semantic:embedding-updated", map[string]any{
+			"assetId":      asset.ID,
+			"modelVersion": analysisVersion,
+		})
+	}
+
 	summary, _ := json.Marshal(map[string]any{
 		"dimensions": len(vector),
 		"kind":       "image_embedding",
