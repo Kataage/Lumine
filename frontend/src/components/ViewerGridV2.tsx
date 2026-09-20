@@ -22,6 +22,7 @@ import {
   type ViewerImagePriority,
 } from "../utils/viewerPreload";
 import { registerViewerOpenHandler } from "../utils/viewerSession";
+import { markViewerInteraction } from "../utils/viewerPerformance";
 import { MemoryImage } from "./MemoryImage";
 import { ImageViewerModal } from "./ImageViewerModal";
 
@@ -309,7 +310,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
 
   return (
     <>
-      <div ref={containerRef} className="flex-1 min-w-0 overflow-auto bg-background p-3">
+      <div ref={containerRef} onScroll={markViewerInteraction} className="flex-1 min-w-0 overflow-auto bg-background p-3">
         {state.viewMode === "grid" ? (
           <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualItems.map((virtualRow) => {

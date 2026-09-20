@@ -16,7 +16,7 @@ describe("viewer preload policy", () => {
     const range = getViewerVisibleRange(400, 600, 200, 100);
     expect(range).toEqual({ first: 2, last: 4 });
     expect(viewerImagePriority(1, range.first, range.last)).toBe("prefetch");
-    expect(viewerImagePriority(3, range.first, range.last)).toBe("normal");
+    expect(viewerImagePriority(3, range.first, range.last)).toBe("high");
     expect(viewerImagePriority(5, range.first, range.last)).toBe("prefetch");
   });
 

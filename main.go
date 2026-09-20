@@ -24,6 +24,7 @@ import (
 	"github.com/kataage/lumine/internal/infrastructure/storage"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
@@ -257,6 +258,23 @@ func main() {
 			if !cmd.StartAIRestore() {
 				slog.Warn("AI restore was not started because Lumine is shutting down")
 			}
+		},
+		OnDomReady: func(ctx context.Context) {
+			// Viewer rendering always wins over automatic AI work. The frontend
+			// emits this while visible bitmaps are decoding or the user is
+			// actively scrolling. AI jobs are requeued without consuming their
+			// retry budget and resume once the viewer becomes idle.
+			runtime.EventsOff(ctx, "viewer:activity")
+			runtime.EventsOn(ctx, "viewer:activity", func(data ...interface{}) {
+				if len(data) == 0 {
+					return
+				}
+				active, ok := data[0].(bool)
+				if !ok {
+					return
+				}
+				aiJobQueue.SetInteractiveUIActive(active)
+			})
 		},
 		OnShutdown: func(_ context.Context) {
 			shutdown("wails")

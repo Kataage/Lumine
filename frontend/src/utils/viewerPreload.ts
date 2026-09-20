@@ -1,4 +1,4 @@
-export type ViewerImagePriority = "prefetch" | "normal";
+export type ViewerImagePriority = "prefetch" | "high";
 
 const MIN_OVERSCAN_ITEMS = 6;
 const MAX_OVERSCAN_ITEMS = 32;
@@ -31,7 +31,7 @@ export function getViewerVisibleRange(
 }
 
 export function viewerImagePriority(index: number, firstVisible: number, lastVisible: number): ViewerImagePriority {
-  return index >= firstVisible && index <= lastVisible ? "normal" : "prefetch";
+  return index >= firstVisible && index <= lastVisible ? "high" : "prefetch";
 }
 
 // Asset metadata is cheap compared with image decoding. Fetch it farther ahead
