@@ -84,3 +84,7 @@ go test ./internal/ai/siglip2 -run=^$ -bench=^BenchmarkRealSigLIP2ImageDirectML$
 Hosted CI runners must not be presented as representative GPU benchmark
 hardware. A DirectML-capable physical GPU host is required for the GPU smoke
 and CPU-vs-GPU throughput acceptance measurement.
+
+## One-command self-hosted acceptance
+
+For one-command physical-host evidence collection, use the self-hosted `physical-gpu-acceptance` workflow documented in `physical-gpu-acceptance.md`. It runs the strict DirectML smoke and both CPU/DirectML benchmarks on the same host, captures GPU telemetry, and uploads the complete evidence as a GitHub Actions artifact.
