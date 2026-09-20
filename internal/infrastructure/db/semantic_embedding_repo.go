@@ -684,6 +684,61 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 	return r.SearchWithProgress(context.Background(), vector, query, 0, nil)
 }
 
+type SemanticCoverageStateCounts struct {
+	Queued  int
+	Running int
+	Failed  int
+	Stale   int
+}
+
+func (r *SemanticEmbeddingRepo) CountSemanticAnalysisStates(
+	ctx context.Context,
+	query SemanticSearchQuery,
+) (SemanticCoverageStateCounts, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	where, args := appendSemanticAssetFilters(
+		"WHERE aa.capability = 'semantic_search'",
+		nil,
+		query,
+	)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT aa.state, COUNT(*)
+		FROM ai_asset_analysis aa
+		JOIN assets a ON a.id = aa.asset_id
+		`+where+`
+		GROUP BY aa.state
+	`, args...)
+	if err != nil {
+		return SemanticCoverageStateCounts{}, fmt.Errorf("count semantic analysis states: %w", err)
+	}
+	defer rows.Close()
+
+	var counts SemanticCoverageStateCounts
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return SemanticCoverageStateCounts{}, fmt.Errorf("scan semantic analysis state count: %w", err)
+		}
+		switch state {
+		case "queued":
+			counts.Queued = count
+		case "running":
+			counts.Running = count
+		case "failed":
+			counts.Failed = count
+		case "stale":
+			counts.Stale = count
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return SemanticCoverageStateCounts{}, err
+	}
+	return counts, nil
+}
+
 func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 	where := `WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
 		AND aa.capability = 'semantic_search'
@@ -692,7 +747,14 @@ func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 		AND aa.model_id = e.model_id
 		AND aa.model_version = e.model_version`
 	args := []any{query.Engine, query.ModelID, query.ModelVersion}
+	return appendSemanticAssetFilters(where, args, query)
+}
 
+func appendSemanticAssetFilters(
+	where string,
+	args []any,
+	query SemanticSearchQuery,
+) (string, []any) {
 	if query.LibraryID > 0 {
 		where += " AND a.library_id = ?"
 		args = append(args, query.LibraryID)
