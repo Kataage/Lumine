@@ -123,30 +123,47 @@ func assertRealSigLIP2RetrievalSanity(t testing.TB, ctx context.Context, engine 
 	blueImage := realSigLIP2Vector(t, ctx, engine, "embed_image", map[string]any{"filePath": bluePath})
 	redText := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "this is a photo of a red square."})
 	blueText := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "this is a photo of a blue square."})
+	redTextJP := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "赤い四角の画像"})
+	blueTextJP := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "青い四角の画像"})
 
 	redCorrect := sigLIP2Dot(redText, redImage)
 	redWrong := sigLIP2Dot(redText, blueImage)
 	blueCorrect := sigLIP2Dot(blueText, blueImage)
 	blueWrong := sigLIP2Dot(blueText, redImage)
+	redCorrectJP := sigLIP2Dot(redTextJP, redImage)
+	redWrongJP := sigLIP2Dot(redTextJP, blueImage)
+	blueCorrectJP := sigLIP2Dot(blueTextJP, blueImage)
+	blueWrongJP := sigLIP2Dot(blueTextJP, redImage)
 	for label, score := range map[string]float64{
 		"red_correct": redCorrect,
 		"red_wrong": redWrong,
 		"blue_correct": blueCorrect,
 		"blue_wrong": blueWrong,
+		"red_correct_ja": redCorrectJP,
+		"red_wrong_ja": redWrongJP,
+		"blue_correct_ja": blueCorrectJP,
+		"blue_wrong_ja": blueWrongJP,
 	} {
 		if math.IsNaN(score) || math.IsInf(score, 0) {
 			t.Fatalf("%s similarity is non-finite: %v", label, score)
 		}
 	}
 	t.Logf(
-		"retrieval sanity red(correct=%.4f wrong=%.4f) blue(correct=%.4f wrong=%.4f)",
+		"retrieval sanity en red(correct=%.4f wrong=%.4f) blue(correct=%.4f wrong=%.4f) ja red(correct=%.4f wrong=%.4f) blue(correct=%.4f wrong=%.4f)",
 		redCorrect, redWrong, blueCorrect, blueWrong,
+		redCorrectJP, redWrongJP, blueCorrectJP, blueWrongJP,
 	)
 	if redCorrect <= redWrong {
 		t.Fatalf("red text ranked blue image above red image: correct=%.4f wrong=%.4f", redCorrect, redWrong)
 	}
 	if blueCorrect <= blueWrong {
 		t.Fatalf("blue text ranked red image above blue image: correct=%.4f wrong=%.4f", blueCorrect, blueWrong)
+	}
+	if redCorrectJP <= redWrongJP {
+		t.Fatalf("Japanese red text ranked blue image above red image: correct=%.4f wrong=%.4f", redCorrectJP, redWrongJP)
+	}
+	if blueCorrectJP <= blueWrongJP {
+		t.Fatalf("Japanese blue text ranked red image above blue image: correct=%.4f wrong=%.4f", blueCorrectJP, blueWrongJP)
 	}
 }
 
