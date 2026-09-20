@@ -67,15 +67,48 @@ func cleanupSemanticSnapshots(root string, key semanticIndexKey, keepPath string
 	if root == "" {
 		return
 	}
-	matches, err := filepath.Glob(filepath.Join(root, semanticSnapshotKeyPrefix(key)+"*.bin"))
+
+	// Always remove older generations of the active key by filename prefix.
+	currentMatches, err := filepath.Glob(filepath.Join(root, semanticSnapshotKeyPrefix(key)+"*.bin"))
+	if err == nil {
+		for _, path := range currentMatches {
+			if path != keepPath {
+				_ = os.Remove(path)
+			}
+		}
+	}
+
+	// Compatibility revisions intentionally change key.version while keeping
+	// the same model files. Once a new snapshot is safely published, remove
+	// snapshots belonging to older revisions of the same engine/model so a
+	// quality migration cannot leak hundreds of MB per revision indefinitely.
+	allMatches, err := filepath.Glob(filepath.Join(root, semanticSnapshotPrefix+"*.bin"))
 	if err != nil {
 		return
 	}
-	for _, path := range matches {
-		if path == keepPath {
+	headerBytes := make([]byte, semanticSnapshotHeaderSize)
+	for _, path := range allMatches {
+		if path == keepPath || strings.HasPrefix(filepath.Base(path), semanticSnapshotKeyPrefix(key)) {
 			continue
 		}
-		_ = os.Remove(path)
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			continue
+		}
+		_, readErr := io.ReadFull(file, headerBytes)
+		_ = file.Close()
+		if readErr != nil {
+			continue
+		}
+		header, decodeErr := decodeSemanticSnapshotHeader(headerBytes)
+		if decodeErr != nil {
+			continue
+		}
+		if header.key.engine == key.engine &&
+			header.key.modelID == key.modelID &&
+			header.key.version != key.version {
+			_ = os.Remove(path)
+		}
 	}
 }
 
