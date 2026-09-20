@@ -45,8 +45,10 @@ type AppCommands struct {
 	storageInfo AIStorageInfo
 	storageLayout storage.Layout
 
-	aiSettingsMu    sync.Mutex
-	lifecycleMu     sync.Mutex
+	aiSettingsMu              sync.Mutex
+	semanticPriorityMu        sync.Mutex
+	semanticPriorityPending   map[int64]struct{}
+	lifecycleMu               sync.Mutex
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
 	backgroundWG   sync.WaitGroup
@@ -77,6 +79,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		semanticIndex: newSemanticMemoryIndex(),
 		advancedVisionRepo: db.NewAdvancedVisionRunRepo(database),
 		semanticSearchState: newSemanticSearchState(),
+		semanticPriorityPending: make(map[int64]struct{}),
 		scanSvc:      scanSvc,
 	}
 }
