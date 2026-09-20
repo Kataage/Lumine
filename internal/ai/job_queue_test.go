@@ -103,7 +103,6 @@ func TestJobQueueProcessesAndPersistsModelProvenance(t *testing.T) {
 	settings := domain.AISettings{
 		Enabled:        true,
 		SemanticSearch: true,
-		AutoAnalyze:    true,
 	}
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
@@ -356,6 +355,7 @@ func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
 	settings := domain.AISettings{
 		Enabled:        true,
 		SemanticSearch: true,
+		AutoAnalyze:    true,
 	}
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
