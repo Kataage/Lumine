@@ -791,7 +791,7 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 			}
 		}
 
-		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key)
+		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key, backgroundAllowed)
 		if errors.Is(err, errSemanticSnapshotGenerationChanged) {
 			continue
 		}
