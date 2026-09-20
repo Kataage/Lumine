@@ -224,12 +224,20 @@ func (c *AppCommands) rememberSemanticPriorityAssets(assetIDs []int64) {
 	}
 	c.semanticPriorityMu.Lock()
 	defer c.semanticPriorityMu.Unlock()
-	if c.semanticPriorityPending == nil {
-		c.semanticPriorityPending = make(map[int64]struct{})
+	if c.semanticPrioritySeen == nil {
+		c.semanticPrioritySeen = make(map[int64]struct{})
 	}
 	for _, id := range assetIDs {
-		if id > 0 {
-			c.semanticPriorityPending[id] = struct{}{}
+		if id <= 0 {
+			continue
+		}
+		if _, exists := c.semanticPrioritySeen[id]; exists {
+			continue
+		}
+		c.semanticPrioritySeen[id] = struct{}{}
+		c.semanticPriorityPending = append(c.semanticPriorityPending, id)
+		if len(c.semanticPriorityPending) >= 1000 {
+			break
 		}
 	}
 }
@@ -240,11 +248,9 @@ func (c *AppCommands) takeSemanticPriorityAssets() []int64 {
 	if len(c.semanticPriorityPending) == 0 {
 		return nil
 	}
-	ids := make([]int64, 0, len(c.semanticPriorityPending))
-	for id := range c.semanticPriorityPending {
-		ids = append(ids, id)
-	}
-	clear(c.semanticPriorityPending)
+	ids := append([]int64(nil), c.semanticPriorityPending...)
+	c.semanticPriorityPending = c.semanticPriorityPending[:0]
+	clear(c.semanticPrioritySeen)
 	return ids
 }
 
