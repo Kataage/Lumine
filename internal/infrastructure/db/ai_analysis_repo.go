@@ -177,10 +177,44 @@ func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.
 	}
 	defer tx.Rollback()
 
-	query := fmt.Sprintf(
-		"SELECT id FROM ai_jobs WHERE status = 'queued' AND capability IN (%s) ORDER BY priority DESC, id ASC LIMIT 1",
-		placeholders,
-	)
+	// Choose one best candidate per capability first, then preserve the queue's
+	// existing cross-capability priority/id fairness. Semantic Search is the
+	// exception inside its own capability: for equal priority, process the
+	// newest filesystem-modified asset first so an old persisted backlog cannot
+	// keep the searchable subset biased toward old images after an upgrade.
+	query := fmt.Sprintf(`
+		WITH ranked AS (
+			SELECT
+				j.id,
+				j.priority,
+				j.capability,
+				ROW_NUMBER() OVER (
+					PARTITION BY j.capability
+					ORDER BY
+						j.priority DESC,
+						CASE
+							WHEN j.capability = 'semantic_search'
+							THEN COALESCE(a.modified_at_fs, '')
+							ELSE ''
+						END DESC,
+						CASE
+							WHEN j.capability = 'semantic_search'
+							THEN j.asset_id
+							ELSE 0
+						END DESC,
+						j.id ASC
+				) AS capability_rank
+			FROM ai_jobs j
+			LEFT JOIN assets a ON a.id = j.asset_id
+			WHERE j.status = 'queued'
+			  AND j.capability IN (%s)
+		)
+		SELECT id
+		FROM ranked
+		WHERE capability_rank = 1
+		ORDER BY priority DESC, id ASC
+		LIMIT 1
+	`, placeholders)
 	var id int64
 	if err := tx.QueryRow(query, args...).Scan(&id); err != nil {
 		if err == sql.ErrNoRows {
