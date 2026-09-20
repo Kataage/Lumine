@@ -85,7 +85,7 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		handlers: make(map[domain.AICapability]AnalysisHandler),
 		active:   make(map[int64]activeAIJob),
 		paused:   make(map[domain.AICapability]int),
-		wake:     make(chan struct{}, 1),
+		wake:     make(chan struct{}, workers),
 	}
 }
 
@@ -605,9 +605,15 @@ func (q *JobQueue) wait(ctx context.Context, tick <-chan time.Time) bool {
 }
 
 func (q *JobQueue) signal() {
-	select {
-	case q.wake <- struct{}{}:
-	default:
+	// Wake the whole pool. A single-token wake channel was appropriate for the
+	// original one-worker queue but makes additional workers sleep until their
+	// one-second polling tick, defeating burst concurrency.
+	for i := 0; i < q.workers; i++ {
+		select {
+		case q.wake <- struct{}{}:
+		default:
+			return
+		}
 	}
 }
 
