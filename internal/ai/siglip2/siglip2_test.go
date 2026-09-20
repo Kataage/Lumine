@@ -310,3 +310,19 @@ func TestDefaultManifestIsPinnedAndComplete(t *testing.T) {
 		}
 	}
 }
+
+
+func TestSampleBilinearAveragesFourPixelsAtCenter(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	img.Set(1, 0, color.RGBA{G: 255, A: 255})
+	img.Set(0, 1, color.RGBA{B: 255, A: 255})
+	img.Set(1, 1, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+
+	r, g, b := sampleBilinear(img, img.Bounds(), 0.5, 0.5)
+	for name, got := range map[string]float64{"r": r, "g": g, "b": b} {
+		if math.Abs(got-127.5) > 0.01 {
+			t.Fatalf("%s = %.4f, want 127.5", name, got)
+		}
+	}
+}
