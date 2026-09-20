@@ -314,7 +314,7 @@ func TestSemanticPersistWorkerWaitsUntilIncrementalEmbeddingIsReady(t *testing.T
 	index.mu.RUnlock()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version)
+		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version, nil)
 	}()
 
 	// Wait until a persistence pass has actually adopted/validated a snapshot
