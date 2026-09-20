@@ -37,7 +37,7 @@ func preprocessImage(path string) ([]float32, error) {
 		srcY := (float64(y)+0.5)*float64(bounds.Dy())/siglipImageSize - 0.5
 		for x := 0; x < siglipImageSize; x++ {
 			srcX := (float64(x)+0.5)*float64(bounds.Dx())/siglipImageSize - 0.5
-			r, g, b := sampleBicubic(source, bounds, srcX, srcY)
+			r, g, b := sampleBilinear(source, bounds, srcX, srcY)
 			index := y*siglipImageSize + x
 			output[index] = normalizePixel(r)
 			output[plane+index] = normalizePixel(g)
@@ -57,43 +57,30 @@ func normalizePixel(value float64) float32 {
 	return float32(value/127.5 - 1.0)
 }
 
-func sampleBicubic(source image.Image, bounds image.Rectangle, x, y float64) (float64, float64, float64) {
+func sampleBilinear(source image.Image, bounds image.Rectangle, x, y float64) (float64, float64, float64) {
 	x0 := int(math.Floor(x))
 	y0 := int(math.Floor(y))
-	var red, green, blue, weightSum float64
-	for j := -1; j <= 2; j++ {
-		sy := clampInt(y0+j, 0, bounds.Dy()-1) + bounds.Min.Y
-		wy := cubicWeight(y - float64(y0+j))
-		for i := -1; i <= 2; i++ {
-			sx := clampInt(x0+i, 0, bounds.Dx()-1) + bounds.Min.X
-			wx := cubicWeight(x - float64(x0+i))
-			weight := wx * wy
-			r, g, b, _ := source.At(sx, sy).RGBA()
-			red += (float64(r) / 257.0) * weight
-			green += (float64(g) / 257.0) * weight
-			blue += (float64(b) / 257.0) * weight
-			weightSum += weight
-		}
-	}
-	if weightSum != 0 {
-		red /= weightSum
-		green /= weightSum
-		blue /= weightSum
-	}
-	return red, green, blue
-}
+	x1 := x0 + 1
+	y1 := y0 + 1
+	fx := x - float64(x0)
+	fy := y - float64(y0)
 
-func cubicWeight(x float64) float64 {
-	x = math.Abs(x)
-	const a = -0.5
-	switch {
-	case x <= 1:
-		return (a+2)*x*x*x - (a+3)*x*x + 1
-	case x < 2:
-		return a*x*x*x - 5*a*x*x + 8*a*x - 4*a
-	default:
-		return 0
+	x0 = clampInt(x0, 0, bounds.Dx()-1) + bounds.Min.X
+	x1 = clampInt(x1, 0, bounds.Dx()-1) + bounds.Min.X
+	y0 = clampInt(y0, 0, bounds.Dy()-1) + bounds.Min.Y
+	y1 = clampInt(y1, 0, bounds.Dy()-1) + bounds.Min.Y
+
+	r00, g00, b00, _ := source.At(x0, y0).RGBA()
+	r10, g10, b10, _ := source.At(x1, y0).RGBA()
+	r01, g01, b01, _ := source.At(x0, y1).RGBA()
+	r11, g11, b11, _ := source.At(x1, y1).RGBA()
+
+	mix := func(v00, v10, v01, v11 uint32) float64 {
+		top := float64(v00)*(1-fx) + float64(v10)*fx
+		bottom := float64(v01)*(1-fx) + float64(v11)*fx
+		return (top*(1-fy) + bottom*fy) / 257.0
 	}
+	return mix(r00, r10, r01, r11), mix(g00, g10, g01, g11), mix(b00, b10, b01, b11)
 }
 
 func clampInt(value, minValue, maxValue int) int {
