@@ -178,8 +178,12 @@
       "status": "candidate",
       "modelId": "mradermacher/Qwen-3-VL-2B-Instruct-heretic-GGUF",
       "issue": "#189",
-      "rationale": "Exploratory Heretic candidate for direct refusal/quality comparison. Immutable revision and model/mmproj SHA-256 must be recorded before its result may be used as adoption evidence.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Immutable Qwen3-VL 2B Heretic candidate for direct lawful adult-only refusal/quality comparison. Exact model and mmproj artifacts are pinned; controlled evidence uses the current Lumine llama.cpp b11053 CPU runtime and still requires the same private fixture pack/hardware comparison.",
+      "updatedAt": "2026-09-20",
+      "version": "ef376dc99d248134d412ad5b84039c81a3d9a01e",
+      "engine": "llama.cpp-multimodal-cpu",
+      "quantization": "Q4_K_M + mmproj Q8_0",
+      "artifactSha256": "1863c78ae621064e92c5fe6e16a038a850e4809ecc4914c21eb0900befd7b2b5"
     },
     {
       "capability": "advanced_vision",
