@@ -51,3 +51,7 @@ export function markViewerInteraction(): void {
   emitActive(true);
   scheduleIdle();
 }
+
+export function isViewerForegroundActive(): boolean {
+  return active || foregroundWork > 0;
+}
