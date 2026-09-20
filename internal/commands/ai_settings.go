@@ -74,6 +74,8 @@ func (c *AppCommands) PatchAISettings(patch map[string]bool) (domain.AISettings,
 			settings.AutoAnalyze = value
 		case "gpuAcceleration":
 			settings.GPUAcceleration = value
+		case "diagnostics":
+			settings.Diagnostics = value
 		default:
 			return domain.AISettings{}, fmt.Errorf("unknown AI settings field %q", key)
 		}
@@ -116,6 +118,9 @@ func (c *AppCommands) persistAISettings(settings domain.AISettings) (domain.AISe
 		}
 	}
 
+	if c.semanticDiagnostics != nil {
+		c.semanticDiagnostics.SetEnabled(settings.Diagnostics)
+	}
 	if c.ctx != nil {
 		runtime.EventsEmit(c.ctx, "ai:settings-changed", settings)
 	}
