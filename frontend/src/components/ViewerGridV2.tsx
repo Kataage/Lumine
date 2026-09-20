@@ -687,7 +687,7 @@ function GridCard({
         <p className="truncate text-[11px] font-medium text-white drop-shadow">{asset.fileName}</p>
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-white/60">
           <span>{formatFileSize(asset.fileSize)}</span>
-          {typeof asset.semanticScore === "number" && <span>{Math.round(asset.semanticScore * 100)}%</span>}
+          {typeof asset.semanticScore === "number" && <span title="cosine similarity">類似度 {asset.semanticScore.toFixed(3)}</span>}
         </div>
       </div>
 
@@ -769,7 +769,7 @@ function ListRow({
         <p className="truncate text-xs font-medium">{asset.fileName}</p>
         <p className="truncate text-[11px] text-muted-foreground">{asset.folderPath}</p>
       </div>
-      {typeof asset.semanticScore === "number" && <span className="text-[10px] text-primary tabular-nums flex-shrink-0">{Math.round(asset.semanticScore * 100)}%</span>}
+      {typeof asset.semanticScore === "number" && <span className="text-[10px] text-primary tabular-nums flex-shrink-0" title="cosine similarity">類似度 {asset.semanticScore.toFixed(3)}</span>}
       <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">{formatFileSize(asset.fileSize)}</span>
       <button
         onClick={(event) => { event.stopPropagation(); onDetail(); }}
