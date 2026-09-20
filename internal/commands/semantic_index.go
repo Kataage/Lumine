@@ -735,6 +735,7 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 	engine string,
 	modelID string,
 	version string,
+	backgroundAllowed func() bool,
 ) error {
 	key := semanticKey(engine, modelID, version)
 	defer func() {
@@ -776,6 +777,18 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 		i.mu.RUnlock()
 		if changed {
 			continue
+		}
+
+		// Viewer activity can itself create a quiet embedding window. Never
+		// mistake that pause for permission to start a full snapshot rewrite.
+		// Wait until foreground image work has actually become idle.
+		if backgroundAllowed != nil && !backgroundAllowed() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(250 * time.Millisecond):
+				continue
+			}
 		}
 
 		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key)
