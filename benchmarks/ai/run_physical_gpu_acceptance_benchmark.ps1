@@ -1,6 +1,7 @@
 param(
     [string]$ResultsDir = "",
     [string]$HardwareId = "",
+    [string]$CacheDir = "",
     [string]$SigLIPBenchTime = "10x",
     [string]$LlamaBenchTime = "5x"
 )
@@ -229,8 +230,11 @@ $hardware = [ordered]@{
 $hardware | ConvertTo-Json -Depth 8 |
     Set-Content -Path (Join-Path $ResultsDir "hardware.json") -Encoding utf8
 
-$llamaCache = Join-Path $RepoRoot ".lumine-ai-bench-cache"
-New-Item -ItemType Directory -Force -Path $llamaCache | Out-Null
+if ([string]::IsNullOrWhiteSpace($CacheDir)) {
+    $CacheDir = Join-Path $RepoRoot ".lumine-ai-bench-cache"
+}
+New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+$llamaCache = (Resolve-Path $CacheDir).Path
 
 $results = @()
 
