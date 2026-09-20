@@ -638,6 +638,7 @@ export const setExcludedDirs = Go.SetExcludedDirs;
 export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
+export const enqueueAutomaticSemanticAssets = Go.EnqueueAutomaticSemanticAssets;
 
 type DynamicCommands = {
   ListModelProfiles?: () => Promise<ModelProfile[]>;
