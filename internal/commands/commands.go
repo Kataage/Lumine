@@ -49,6 +49,8 @@ type AppCommands struct {
 	semanticPriorityMu        sync.Mutex
 	semanticPriorityPending   []int64
 	semanticPrioritySeen      map[int64]struct{}
+	semanticBackfillMu        sync.Mutex
+	semanticBackfillRunning   bool
 	lifecycleMu               sync.Mutex
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc

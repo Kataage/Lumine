@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -101,6 +102,62 @@ func TestReanalyzeAssetFolderAndLibraryScopes(t *testing.T) {
 	for _, id := range []int64{rootAsset, subAsset, otherAsset} {
 		if !found[id] {
 			t.Fatalf("asset %d missing from queued jobs", id)
+		}
+	}
+}
+
+func TestExplicitSemanticPriorityEnqueueDoesNotRequireAutoAnalyze(t *testing.T) {
+	cmd := setupCommands(t)
+	queue := attachTestAIJobQueue(t, cmd)
+	_ = queue
+	enableSemanticSearchForTest(t, cmd)
+
+	lib := createTestLibrary(t, cmd, "Semantic Explicit", "/tmp/semantic-explicit")
+	assetRepo := db.NewAssetRepo(cmd.db)
+	first, err := assetRepo.Create(makeAsset(lib.ID, "/tmp/semantic-explicit", "first.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := assetRepo.Create(makeAsset(lib.ID, "/tmp/semantic-explicit", "second.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AutoAnalyze is deliberately false. Viewer-order assets should still be
+	// promoted when the user explicitly executes Semantic Search.
+	cmd.rememberSemanticPriorityAssets([]int64{second, first})
+	created, err := cmd.enqueueRememberedSemanticPriorityAssets(
+		context.Background(),
+		ai.RuntimeStatus{
+			State:   ai.RuntimeStateReady,
+			Engine:  "siglip2-onnx",
+			ModelID: "siglip2-test",
+			Version: "1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("explicit semantic priority enqueue: %v", err)
+	}
+	if created != 2 {
+		t.Fatalf("created %d semantic jobs, want 2", created)
+	}
+
+	jobs, err := cmd.ListAIJobs(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("job count = %d, want 2", len(jobs))
+	}
+	for _, job := range jobs {
+		if job.Capability != domain.AICapabilitySemanticSearch {
+			t.Fatalf("unexpected capability: %+v", job)
+		}
+		if job.Source != domain.AIJobSourceManual {
+			t.Fatalf("explicit search job source = %s, want manual", job.Source)
+		}
+		if job.Priority != 250 {
+			t.Fatalf("explicit search job priority = %d, want 250", job.Priority)
 		}
 	}
 }
