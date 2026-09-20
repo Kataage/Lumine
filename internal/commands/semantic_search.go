@@ -218,8 +218,62 @@ func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 	return semanticCreated + taggerCreated + visionCreated, nil
 }
 
+func (c *AppCommands) rememberSemanticPriorityAssets(assetIDs []int64) {
+	if len(assetIDs) == 0 {
+		return
+	}
+	c.semanticPriorityMu.Lock()
+	defer c.semanticPriorityMu.Unlock()
+	if c.semanticPriorityPending == nil {
+		c.semanticPriorityPending = make(map[int64]struct{})
+	}
+	for _, id := range assetIDs {
+		if id > 0 {
+			c.semanticPriorityPending[id] = struct{}{}
+		}
+	}
+}
+
+func (c *AppCommands) takeSemanticPriorityAssets() []int64 {
+	c.semanticPriorityMu.Lock()
+	defer c.semanticPriorityMu.Unlock()
+	if len(c.semanticPriorityPending) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(c.semanticPriorityPending))
+	for id := range c.semanticPriorityPending {
+		ids = append(ids, id)
+	}
+	clear(c.semanticPriorityPending)
+	return ids
+}
+
+func mergeSemanticPriorityIDs(primary, pending []int64) []int64 {
+	if len(primary) == 0 && len(pending) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(primary)+len(pending))
+	result := make([]int64, 0, len(primary)+len(pending))
+	for _, group := range [][]int64{primary, pending} {
+		for _, id := range group {
+			if id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			result = append(result, id)
+			if len(result) >= 1000 {
+				return result
+			}
+		}
+	}
+	return result
+}
+
 func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, error) {
-	if len(assetIDs) == 0 || c.aiJobQueue == nil || c.aiManager == nil {
+	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
 	}
 	settings, err := c.GetAISettings()
@@ -232,10 +286,12 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	}
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		c.rememberSemanticPriorityAssets(assetIDs)
 		return 0, nil
 	}
-	if len(assetIDs) > 1000 {
-		assetIDs = assetIDs[:1000]
+	assetIDs = mergeSemanticPriorityIDs(assetIDs, c.takeSemanticPriorityAssets())
+	if len(assetIDs) == 0 {
+		return 0, nil
 	}
 	needed, err := c.semanticRepo.FilterNeedingEmbeddingIDs(
 		context.Background(),
