@@ -64,6 +64,7 @@ type JobQueue struct {
 	active   map[int64]activeAIJob
 	paused   map[domain.AICapability]int
 	started  bool
+	uiPaused bool
 	cancel   context.CancelFunc
 	wake     chan struct{}
 	wg       sync.WaitGroup
@@ -298,6 +299,39 @@ func (q *JobQueue) Retry(jobID int64) error {
 	return nil
 }
 
+func (q *JobQueue) SetInteractiveUIActive(active bool) {
+	q.mu.Lock()
+	if q.uiPaused == active {
+		q.mu.Unlock()
+		return
+	}
+	q.uiPaused = active
+	activeJobs := make(map[int64]activeAIJob)
+	if active {
+		for id, job := range q.active {
+			activeJobs[id] = job
+		}
+	}
+	q.mu.Unlock()
+
+	if active {
+		// Rendering the image viewer is the highest-priority foreground work.
+		// Preserve queued AI work, but immediately yield any active inference so
+		// disk, CPU, and GPU resources are available to image fetch/decode and
+		// WebView composition.
+		for id, job := range activeJobs {
+			if err := q.repo.RequeueInterrupted(id, "yielded to interactive viewer rendering"); err != nil {
+				slog.Debug("failed to requeue AI job for viewer rendering", "job", id, "error", err)
+				continue
+			}
+			job.cancel()
+		}
+		return
+	}
+
+	q.signal()
+}
+
 func (q *JobQueue) PauseCapabilityForForeground(capability domain.AICapability) func() {
 	q.mu.Lock()
 	q.paused[capability]++
@@ -456,6 +490,9 @@ func (q *JobQueue) runnableCapabilities() ([]domain.AICapability, error) {
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.uiPaused {
+		return nil, nil
+	}
 	capabilities := make([]domain.AICapability, 0, len(q.handlers))
 	for capability := range q.handlers {
 		if settings.CapabilityEnabled(capability) && q.paused[capability] == 0 {
@@ -477,7 +514,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	jobCtx, cancel := context.WithCancel(parent)
 	q.mu.Lock()
 	q.active[job.ID] = activeAIJob{capability: job.Capability, cancel: cancel}
-	paused := q.paused[job.Capability] > 0
+	paused := q.uiPaused || q.paused[job.Capability] > 0
 	q.mu.Unlock()
 
 	cleanup := func() {
@@ -488,7 +525,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 	}
 
 	if paused {
-		if err := q.repo.RequeueInterrupted(job.ID, "yielded to a foreground AI request"); err != nil {
+		if err := q.repo.RequeueInterrupted(job.ID, "yielded to foreground viewer or AI work"); err != nil {
 			slog.Error("failed to yield claimed AI job to foreground request", "job", job.ID, "error", err)
 		}
 		cleanup()
