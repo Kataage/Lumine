@@ -234,10 +234,26 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
 		return 0, nil
 	}
-	return c.aiJobQueue.EnqueueMany(
+	if len(assetIDs) > 1000 {
+		assetIDs = assetIDs[:1000]
+	}
+	needed, err := c.semanticRepo.FilterNeedingEmbeddingIDs(
+		context.Background(),
 		assetIDs,
+		status.Engine,
+		status.ModelID,
+		status.Version,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(needed) == 0 {
+		return 0, nil
+	}
+	return c.aiJobQueue.EnqueueMany(
+		needed,
 		domain.AICapabilitySemanticSearch,
-		-50,
+		250,
 		true,
 	)
 }
@@ -277,6 +293,14 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 		return 0, fmt.Errorf("list libraries for semantic backfill: %w", err)
 	}
 
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return 0, err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+		return 0, nil
+	}
+
 	total := 0
 	for _, library := range libraries {
 		if err := ctx.Err(); err != nil {
@@ -285,38 +309,46 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 		if !library.IsEnabled {
 			continue
 		}
-		var afterID int64
+		var beforeModifiedAt string
+		var beforeID int64
 		for {
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
-			ids, err := c.semanticRepo.ListNeedingEmbeddingContext(
+			candidates, err := c.semanticRepo.ListNeedingEmbeddingNewestContext(
 				ctx,
 				library.ID,
 				status.Engine,
 				status.ModelID,
 				status.Version,
-				afterID,
+				beforeModifiedAt,
+				beforeID,
 				1000,
 			)
 			if err != nil {
 				return total, err
 			}
-			if len(ids) == 0 {
+			if len(candidates) == 0 {
 				break
+			}
+			ids := make([]int64, len(candidates))
+			for i, candidate := range candidates {
+				ids[i] = candidate.AssetID
 			}
 			created, err := c.aiJobQueue.EnqueueMany(
 				ids,
 				domain.AICapabilitySemanticSearch,
 				-100,
-				false,
+				true,
 			)
 			if err != nil {
 				return total, err
 			}
 			total += created
-			afterID = ids[len(ids)-1]
-			if len(ids) < 1000 {
+			last := candidates[len(candidates)-1]
+			beforeModifiedAt = last.ModifiedAtFS
+			beforeID = last.AssetID
+			if len(candidates) < 1000 {
 				break
 			}
 		}
