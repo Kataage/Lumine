@@ -93,6 +93,10 @@ func (m *Manager) UpdateModel(ctx context.Context, manifest ModelManifest, progr
 	return m.store.Update(ctx, manifest, progress)
 }
 
+func (m *Manager) ProbeModel(modelID, version string) (InstalledModel, error) {
+	return m.store.Probe(modelID, version)
+}
+
 func (m *Manager) VerifyModel(modelID, version string) (InstalledModel, error) {
 	return m.store.Verify(modelID, version)
 }
@@ -147,6 +151,23 @@ func (m *Manager) Load(
 	}
 	options.AllowGPU = options.AllowGPU && settings.GPUAcceleration
 
+	// A healthy already-loaded session is authoritative. Do not stream the same
+	// multi-hundred-MB/GB model through SHA-256 merely because startup restore,
+	// Settings, or a foreground request asks to load it again.
+	m.mu.Lock()
+	current := m.sessions[capability]
+	if current != nil &&
+		current.model.Manifest.ID == modelID &&
+		current.model.Manifest.Version == version &&
+		current.options.AllowGPU == options.AllowGPU &&
+		(current.state == RuntimeStateReady || current.state == RuntimeStateRunning) {
+		m.mu.Unlock()
+		return nil
+	}
+	m.mu.Unlock()
+
+	// Full content verification is intentionally retained at the actual load
+	// boundary. Cheap status/UI paths use ProbeModel instead.
 	model, err := m.store.Verify(modelID, version)
 	if err != nil {
 		return err
@@ -154,16 +175,7 @@ func (m *Manager) Load(
 
 	m.mu.Lock()
 	factory := m.factories[model.Manifest.Engine]
-	current := m.sessions[capability]
-	if current != nil &&
-		current.model.Manifest.ID == model.Manifest.ID &&
-		current.model.Manifest.Version == model.Manifest.Version &&
-		current.model.Manifest.Engine == model.Manifest.Engine &&
-		current.options.AllowGPU == options.AllowGPU &&
-		(current.state == RuntimeStateReady || current.state == RuntimeStateRunning) {
-		m.mu.Unlock()
-		return nil
-	}
+	current = m.sessions[capability]
 	m.mu.Unlock()
 	if factory == nil {
 		return fmt.Errorf("%w: %s", ErrEngineNotRegistered, model.Manifest.Engine)
