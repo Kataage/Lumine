@@ -6,6 +6,7 @@ const (
 	EngineID            = "siglip2-onnx"
 	DefaultModelID      = "siglip2-base-patch16-224-int8"
 	DefaultModelVersion = "onnx-ba1f3b0-ort1.24.4-dml1.15.4"
+	AnalysisRevision    = "siglip2-text-leftpad-image-bilinear-v1"
 
 	visionModelPath = "onnx/vision_model_int8.onnx"
 	textModelPath   = "onnx/text_model_int8.onnx"
@@ -61,6 +62,14 @@ func DefaultManifest() ai.ModelManifest {
 		Parameters: map[string]string{
 			"ort_version":      "1.24.4",
 			"directml_version": "1.15.4",
+			"analysis_revision": AnalysisRevision,
 		},
 	}
+}
+
+func AnalysisVersion(modelVersion string) string {
+	if AnalysisRevision == "" {
+		return modelVersion
+	}
+	return modelVersion + "+" + AnalysisRevision
 }

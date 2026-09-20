@@ -284,6 +284,162 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingContext(
 
 
 
+
+type SemanticBackfillCandidate struct {
+	AssetID      int64
+	ModifiedAtFS string
+}
+
+// ListNeedingEmbeddingNewestContext walks missing embeddings in the same broad
+// direction as the default viewer (newest filesystem modification first).
+// beforeID=0 means the first page. The keyset cursor remains stable while
+// workers complete earlier pages and remove them from the missing set.
+func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingNewestContext(
+	ctx context.Context,
+	libraryID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	beforeModifiedAt string,
+	beforeID int64,
+	limit int,
+) ([]SemanticBackfillCandidate, error) {
+	if libraryID <= 0 {
+		return nil, errors.New("library id must be positive")
+	}
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return nil, errors.New("semantic embedding provenance is required")
+	}
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cursorClause := ""
+	args := []any{libraryID, engine, modelID, modelVersion}
+	if beforeID > 0 {
+		cursorClause = `
+		  AND (
+		    COALESCE(a.modified_at_fs, '') < ?
+		    OR (COALESCE(a.modified_at_fs, '') = ? AND a.id < ?)
+		  )`
+		args = append(args, beforeModifiedAt, beforeModifiedAt, beforeID)
+	}
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, COALESCE(a.modified_at_fs, '')
+		FROM assets a
+		WHERE a.library_id = ?
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = a.id
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'ready'
+			  AND aa.engine = ?
+			  AND aa.model_id = ?
+			  AND aa.model_version = ?
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		  )`+cursorClause+`
+		ORDER BY COALESCE(a.modified_at_fs, '') DESC, a.id DESC
+		LIMIT ?
+	`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list newest assets needing semantic embedding: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]SemanticBackfillCandidate, 0, limit)
+	for rows.Next() {
+		var candidate SemanticBackfillCandidate
+		if err := rows.Scan(&candidate.AssetID, &candidate.ModifiedAtFS); err != nil {
+			return nil, fmt.Errorf("scan newest semantic backfill candidate: %w", err)
+		}
+		result = append(result, candidate)
+	}
+	return result, rows.Err()
+}
+
+// FilterNeedingEmbeddingIDs returns only IDs that do not already have a ready
+// embedding for the current model, preserving the caller's display order.
+func (r *SemanticEmbeddingRepo) FilterNeedingEmbeddingIDs(
+	ctx context.Context,
+	assetIDs []int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+) ([]int64, error) {
+	if len(assetIDs) == 0 {
+		return []int64{}, nil
+	}
+	if len(assetIDs) > 1000 {
+		return nil, fmt.Errorf("too many semantic priority ids: %d", len(assetIDs))
+	}
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return nil, errors.New("semantic embedding provenance is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	placeholders := make([]string, len(assetIDs))
+	args := make([]any, 0, len(assetIDs)+3)
+	for i, id := range assetIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, engine, modelID, modelVersion)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT a.id
+		FROM assets a
+		WHERE a.id IN (%s)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = a.id
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'ready'
+			  AND aa.engine = ?
+			  AND aa.model_id = ?
+			  AND aa.model_version = ?
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		  )
+	`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("filter assets needing semantic embedding: %w", err)
+	}
+	defer rows.Close()
+
+	neededSet := make(map[int64]struct{}, len(assetIDs))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan semantic priority asset: %w", err)
+		}
+		neededSet[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ordered := make([]int64, 0, len(neededSet))
+	for _, id := range assetIDs {
+		if _, ok := neededSet[id]; ok {
+			ordered = append(ordered, id)
+		}
+	}
+	return ordered, nil
+}
+
 type SemanticIndexSnapshotInfo struct {
 	Generation uint64
 	Count      int
@@ -528,6 +684,61 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 	return r.SearchWithProgress(context.Background(), vector, query, 0, nil)
 }
 
+type SemanticCoverageStateCounts struct {
+	Queued  int
+	Running int
+	Failed  int
+	Stale   int
+}
+
+func (r *SemanticEmbeddingRepo) CountSemanticAnalysisStates(
+	ctx context.Context,
+	query SemanticSearchQuery,
+) (SemanticCoverageStateCounts, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	where, args := appendSemanticAssetFilters(
+		"WHERE aa.capability = 'semantic_search'",
+		nil,
+		query,
+	)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT aa.state, COUNT(*)
+		FROM ai_asset_analysis aa
+		JOIN assets a ON a.id = aa.asset_id
+		`+where+`
+		GROUP BY aa.state
+	`, args...)
+	if err != nil {
+		return SemanticCoverageStateCounts{}, fmt.Errorf("count semantic analysis states: %w", err)
+	}
+	defer rows.Close()
+
+	var counts SemanticCoverageStateCounts
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return SemanticCoverageStateCounts{}, fmt.Errorf("scan semantic analysis state count: %w", err)
+		}
+		switch state {
+		case "queued":
+			counts.Queued = count
+		case "running":
+			counts.Running = count
+		case "failed":
+			counts.Failed = count
+		case "stale":
+			counts.Stale = count
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return SemanticCoverageStateCounts{}, err
+	}
+	return counts, nil
+}
+
 func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 	where := `WHERE e.engine = ? AND e.model_id = ? AND e.model_version = ?
 		AND aa.capability = 'semantic_search'
@@ -536,7 +747,14 @@ func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 		AND aa.model_id = e.model_id
 		AND aa.model_version = e.model_version`
 	args := []any{query.Engine, query.ModelID, query.ModelVersion}
+	return appendSemanticAssetFilters(where, args, query)
+}
 
+func appendSemanticAssetFilters(
+	where string,
+	args []any,
+	query SemanticSearchQuery,
+) (string, []any) {
 	if query.LibraryID > 0 {
 		where += " AND a.library_id = ?"
 		args = append(args, query.LibraryID)

@@ -169,6 +169,22 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 		return err
 	}
 
+	if c.aiJobQueue != nil {
+		if _, err := c.aiJobQueue.MarkStaleForModel(
+			domain.AICapabilitySemanticSearch,
+			manifest.Engine,
+			manifest.ID,
+			siglip2.AnalysisVersion(manifest.Version),
+		); err != nil {
+			return fmt.Errorf("activate Semantic Search analysis revision: %w", err)
+		}
+	}
+
+	if _, err := c.EnqueueAutomaticSemanticAssets(nil); err != nil &&
+		!errors.Is(err, ai.ErrAutoAnalyzeDisabled) {
+		slog.Warn("failed to flush viewer-priority semantic assets", "error", err)
+	}
+
 	// Do not warm/open the semantic index as part of runtime restore. Large
 	// libraries can have hundreds of MB of persisted vector data, and users who
 	// are only browsing images should not pay that I/O cost. Semantic and

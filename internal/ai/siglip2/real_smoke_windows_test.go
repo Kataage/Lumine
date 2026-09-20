@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,6 +60,113 @@ func installRealSigLIP2Fixture(t testing.TB) (context.Context, context.CancelFun
 	return ctx, cancel, installed, imagePath
 }
 
+func writeSigLIP2ColorSquare(t testing.TB, dir, name string, square color.RGBA) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	img := image.NewRGBA(image.Rect(0, 0, 224, 224))
+	for y := 0; y < 224; y++ {
+		for x := 0; x < 224; x++ {
+			pixel := color.RGBA{R: 245, G: 245, B: 245, A: 255}
+			if x >= 32 && x < 192 && y >= 32 && y < 192 {
+				pixel = square
+			}
+			img.Set(x, y, pixel)
+		}
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(file, img); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func realSigLIP2Vector(
+	t testing.TB,
+	ctx context.Context,
+	engine ai.Engine,
+	operation string,
+	payload map[string]any,
+) []float32 {
+	t.Helper()
+	result, err := engine.Infer(ctx, ai.InferenceRequest{Operation: operation, Payload: payload})
+	if err != nil {
+		t.Fatalf("%s inference: %v", operation, err)
+	}
+	vector, ok := result.Payload["embedding"].([]float32)
+	if !ok || len(vector) != siglipEmbeddingSize {
+		t.Fatalf("unexpected %s embedding: type=%T len=%d", operation, result.Payload["embedding"], len(vector))
+	}
+	return vector
+}
+
+func sigLIP2Dot(a, b []float32) float64 {
+	var score float64
+	for i := range a {
+		score += float64(a[i]) * float64(b[i])
+	}
+	return score
+}
+
+func assertRealSigLIP2RetrievalSanity(t testing.TB, ctx context.Context, engine ai.Engine, dir string) {
+	t.Helper()
+	redPath := writeSigLIP2ColorSquare(t, dir, "red-square.png", color.RGBA{R: 230, G: 25, B: 25, A: 255})
+	bluePath := writeSigLIP2ColorSquare(t, dir, "blue-square.png", color.RGBA{R: 25, G: 70, B: 230, A: 255})
+
+	redImage := realSigLIP2Vector(t, ctx, engine, "embed_image", map[string]any{"filePath": redPath})
+	blueImage := realSigLIP2Vector(t, ctx, engine, "embed_image", map[string]any{"filePath": bluePath})
+	redText := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "this is a photo of a red square."})
+	blueText := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "this is a photo of a blue square."})
+	redTextJP := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "赤い四角の画像"})
+	blueTextJP := realSigLIP2Vector(t, ctx, engine, "embed_text", map[string]any{"text": "青い四角の画像"})
+
+	redCorrect := sigLIP2Dot(redText, redImage)
+	redWrong := sigLIP2Dot(redText, blueImage)
+	blueCorrect := sigLIP2Dot(blueText, blueImage)
+	blueWrong := sigLIP2Dot(blueText, redImage)
+	redCorrectJP := sigLIP2Dot(redTextJP, redImage)
+	redWrongJP := sigLIP2Dot(redTextJP, blueImage)
+	blueCorrectJP := sigLIP2Dot(blueTextJP, blueImage)
+	blueWrongJP := sigLIP2Dot(blueTextJP, redImage)
+	for label, score := range map[string]float64{
+		"red_correct": redCorrect,
+		"red_wrong": redWrong,
+		"blue_correct": blueCorrect,
+		"blue_wrong": blueWrong,
+		"red_correct_ja": redCorrectJP,
+		"red_wrong_ja": redWrongJP,
+		"blue_correct_ja": blueCorrectJP,
+		"blue_wrong_ja": blueWrongJP,
+	} {
+		if math.IsNaN(score) || math.IsInf(score, 0) {
+			t.Fatalf("%s similarity is non-finite: %v", label, score)
+		}
+	}
+	t.Logf(
+		"retrieval sanity en red(correct=%.4f wrong=%.4f) blue(correct=%.4f wrong=%.4f) ja red(correct=%.4f wrong=%.4f) blue(correct=%.4f wrong=%.4f)",
+		redCorrect, redWrong, blueCorrect, blueWrong,
+		redCorrectJP, redWrongJP, blueCorrectJP, blueWrongJP,
+	)
+	if redCorrect <= redWrong {
+		t.Fatalf("red text ranked blue image above red image: correct=%.4f wrong=%.4f", redCorrect, redWrong)
+	}
+	if blueCorrect <= blueWrong {
+		t.Fatalf("blue text ranked red image above blue image: correct=%.4f wrong=%.4f", blueCorrect, blueWrong)
+	}
+	if redCorrectJP <= redWrongJP {
+		t.Fatalf("Japanese red text ranked blue image above red image: correct=%.4f wrong=%.4f", redCorrectJP, redWrongJP)
+	}
+	if blueCorrectJP <= blueWrongJP {
+		t.Fatalf("Japanese blue text ranked red image above blue image: correct=%.4f wrong=%.4f", blueCorrectJP, blueWrongJP)
+	}
+}
+
 func runRealSigLIP2Inference(t testing.TB, ctx context.Context, engine ai.Engine, imagePath string, imageIterations int) {
 	t.Helper()
 	for iteration := 0; iteration < imageIterations; iteration++ {
@@ -91,6 +199,8 @@ func runRealSigLIP2Inference(t testing.TB, ctx context.Context, engine ai.Engine
 	if !ok || len(textVector) != siglipEmbeddingSize {
 		t.Fatalf("unexpected text embedding: type=%T len=%d", textResult.Payload["embedding"], len(textVector))
 	}
+
+	assertRealSigLIP2RetrievalSanity(t, ctx, engine, filepath.Dir(imagePath))
 }
 
 func TestRealSigLIP2Smoke(t *testing.T) {

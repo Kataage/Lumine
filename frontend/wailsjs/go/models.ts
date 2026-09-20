@@ -840,6 +840,12 @@ export namespace commands {
 	    assets: AssetDTO[];
 	    totalCount: number;
 	    semanticSearchSessionId?: string;
+	    semanticCoverageReadyCount?: number;
+	    semanticCoverageTotalCount?: number;
+	    semanticCoverageQueuedCount?: number;
+	    semanticCoverageRunningCount?: number;
+	    semanticCoverageFailedCount?: number;
+	    semanticCoverageStaleCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AssetListResponse(source);
@@ -850,6 +856,12 @@ export namespace commands {
 	        this.assets = this.convertValues(source["assets"], AssetDTO);
 	        this.totalCount = source["totalCount"];
 	        this.semanticSearchSessionId = source["semanticSearchSessionId"];
+	        this.semanticCoverageReadyCount = source["semanticCoverageReadyCount"];
+	        this.semanticCoverageTotalCount = source["semanticCoverageTotalCount"];
+	        this.semanticCoverageQueuedCount = source["semanticCoverageQueuedCount"];
+	        this.semanticCoverageRunningCount = source["semanticCoverageRunningCount"];
+	        this.semanticCoverageFailedCount = source["semanticCoverageFailedCount"];
+	        this.semanticCoverageStaleCount = source["semanticCoverageStaleCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

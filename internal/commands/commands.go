@@ -45,8 +45,11 @@ type AppCommands struct {
 	storageInfo AIStorageInfo
 	storageLayout storage.Layout
 
-	aiSettingsMu    sync.Mutex
-	lifecycleMu     sync.Mutex
+	aiSettingsMu              sync.Mutex
+	semanticPriorityMu        sync.Mutex
+	semanticPriorityPending   []int64
+	semanticPrioritySeen      map[int64]struct{}
+	lifecycleMu               sync.Mutex
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
 	backgroundWG   sync.WaitGroup
@@ -77,6 +80,7 @@ func New(database *db.DB, scanSvc *scanner.Scanner) *AppCommands {
 		semanticIndex: newSemanticMemoryIndex(),
 		advancedVisionRepo: db.NewAdvancedVisionRunRepo(database),
 		semanticSearchState: newSemanticSearchState(),
+		semanticPrioritySeen: make(map[int64]struct{}),
 		scanSvc:      scanSvc,
 	}
 }
@@ -390,9 +394,15 @@ type AssetListRequest struct {
 }
 
 type AssetListResponse struct {
-	Assets                  []AssetDTO `json:"assets"`
-	TotalCount              int        `json:"totalCount"`
-	SemanticSearchSessionID string     `json:"semanticSearchSessionId,omitempty"`
+	Assets                     []AssetDTO `json:"assets"`
+	TotalCount                 int        `json:"totalCount"`
+	SemanticSearchSessionID    string     `json:"semanticSearchSessionId,omitempty"`
+	SemanticCoverageReadyCount   int `json:"semanticCoverageReadyCount,omitempty"`
+	SemanticCoverageTotalCount   int `json:"semanticCoverageTotalCount,omitempty"`
+	SemanticCoverageQueuedCount  int `json:"semanticCoverageQueuedCount,omitempty"`
+	SemanticCoverageRunningCount int `json:"semanticCoverageRunningCount,omitempty"`
+	SemanticCoverageFailedCount  int `json:"semanticCoverageFailedCount,omitempty"`
+	SemanticCoverageStaleCount   int `json:"semanticCoverageStaleCount,omitempty"`
 }
 
 func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {

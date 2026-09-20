@@ -16,6 +16,7 @@ import {
   bulkUpdateRating,
   bulkUpdateStatus,
   deleteAssetFiles,
+  enqueueAutomaticSemanticAssets,
   getAppBootstrap,
   getSetting,
   listLibraries,
@@ -116,6 +117,8 @@ export default function App() {
   const [creativeOrganizeOpen, setCreativeOrganizeOpen] = useState(false);
   const [advancedCompareOpen, setAdvancedCompareOpen] = useState(false);
   const autoSyncRunning = useRef(false);
+  const semanticPriorityPending = useRef<Set<number>>(new Set());
+  const semanticPriorityTimer = useRef<number | null>(null);
 
   const loadBootstrap = useCallback(async () => {
     setBooting(true);
@@ -257,6 +260,36 @@ export default function App() {
 
   const handleCloseDetail = useCallback(() => setState((current) => ({ ...current, detailOpen: false })), []);
   const handleAssetsLoaded = useCallback((ids: number[]) => {
+    // Assets are supplied in the current viewer order. Remember them
+    // immediately, but do not perform SQLite queue work while visible images
+    // are still decoding. Viewer rendering remains the hard foreground
+    // priority; semantic promotion flushes only after an idle window.
+    for (const id of ids.slice(0, 1000)) {
+      if (id > 0) semanticPriorityPending.current.add(id);
+    }
+    if (semanticPriorityTimer.current == null && semanticPriorityPending.current.size > 0) {
+      const flushWhenIdle = () => {
+        semanticPriorityTimer.current = null;
+        if (isViewerForegroundActive()) {
+          semanticPriorityTimer.current = window.setTimeout(flushWhenIdle, 400);
+          return;
+        }
+
+        const batch = Array.from(semanticPriorityPending.current).slice(0, 1000);
+        for (const id of batch) semanticPriorityPending.current.delete(id);
+        if (batch.length > 0) {
+          void enqueueAutomaticSemanticAssets(batch)
+            .catch(() => undefined)
+            .finally(() => {
+              if (semanticPriorityPending.current.size > 0 && semanticPriorityTimer.current == null) {
+                semanticPriorityTimer.current = window.setTimeout(flushWhenIdle, 400);
+              }
+            });
+        }
+      };
+      semanticPriorityTimer.current = window.setTimeout(flushWhenIdle, 400);
+    }
+
     setState((current) => {
       const sameIds = current.allAssetIds.length === ids.length && current.allAssetIds.every((id, index) => id === ids[index]);
       const available = new Set(ids);
@@ -271,6 +304,14 @@ export default function App() {
         detailAsset: detailStillExists ? current.detailAsset : null,
       };
     });
+  }, []);
+
+  useEffect(() => () => {
+    if (semanticPriorityTimer.current != null) {
+      window.clearTimeout(semanticPriorityTimer.current);
+      semanticPriorityTimer.current = null;
+    }
+    semanticPriorityPending.current.clear();
   }, []);
 
   const selectedIDs = Array.from(state.selectedAssets);

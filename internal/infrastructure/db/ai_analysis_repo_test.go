@@ -3,6 +3,7 @@ package db
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -383,3 +384,57 @@ func TestAIAnalysisRepoListsOnlyAssetsNeedingCurrentModel(t *testing.T) {
 		t.Fatalf("needing = %v, want [%d %d]", needing, ids[1], ids[2])
 	}
 }
+
+
+func TestAIAnalysisRepoForegroundSemanticClaimPreservesEnqueueOrder(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	repo := NewAIAnalysisRepo(database)
+
+	lib, err := NewLibraryRepo(database).Create("Semantic foreground", "/tmp/semantic-foreground")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRepo := NewAssetRepo(database)
+	create := func(name string, modified time.Time) int64 {
+		t.Helper()
+		id, err := assetRepo.Create(&domain.Asset{
+			LibraryID:    lib.ID,
+			FolderPath:   "/tmp/semantic-foreground",
+			FileName:     name,
+			FilePath:     "/tmp/semantic-foreground/" + name,
+			Extension:    ".png",
+			FileSize:     1,
+			ThumbStatus:  domain.ThumbStatusNone,
+			StatusLabel:  domain.StatusUnsorted,
+			ModifiedAtFS: modified,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	firstVisible := create("first-visible.png", time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	secondVisible := create("second-visible.png", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	for _, id := range []int64{firstVisible, secondVisible} {
+		if _, _, err := repo.Enqueue(
+			id,
+			domain.AICapabilitySemanticSearch,
+			domain.AIJobSourceAutomatic,
+			250,
+			3,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil || first.AssetID != firstVisible {
+		t.Fatalf("foreground semantic order changed: got %+v want first visible asset %d", first, firstVisible)
+	}
+}
+

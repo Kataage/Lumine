@@ -1,7 +1,11 @@
 package db
 
 import (
+	"database/sql"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/kataage/lumine/internal/domain"
@@ -319,5 +323,159 @@ func TestTagCRUD(t *testing.T) {
 	tags, _ = tagRepo.GetByAssetID(assetID)
 	if len(tags) != 1 {
 		t.Errorf("expected 1 tag after update, got %d", len(tags))
+	}
+}
+
+
+func TestSemanticBackfillReorderMigrationRetiresOnlyBackgroundSemanticWork(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "lumine.db")
+	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+
+	if _, err := raw.Exec(`
+		CREATE TABLE IF NOT EXISTS _migrations (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".sql") && entry.Name() < "017_" {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		content, err := migrationsFS.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.Exec(string(content)); err != nil {
+			t.Fatalf("apply pre-017 migration %s: %v", name, err)
+		}
+		if _, err := raw.Exec("INSERT INTO _migrations (name) VALUES (?)", name); err != nil {
+			t.Fatalf("record pre-017 migration %s: %v", name, err)
+		}
+	}
+
+	database := &DB{raw}
+	lib, err := NewLibraryRepo(database).Create("Migration", "/tmp/migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRepo := NewAssetRepo(database)
+	makeAsset := func(name string) int64 {
+		t.Helper()
+		id, err := assetRepo.Create(&domain.Asset{
+			LibraryID:   lib.ID,
+			FolderPath:  "/tmp/migration",
+			FileName:    name,
+			FilePath:    "/tmp/migration/" + name,
+			Extension:   ".png",
+			FileSize:    1,
+			ThumbStatus: domain.ThumbStatusNone,
+			StatusLabel: domain.StatusUnsorted,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	backgroundQueuedAsset := makeAsset("background-queued.png")
+	backgroundRunningAsset := makeAsset("background-running.png")
+	foregroundAsset := makeAsset("foreground.png")
+
+	repo := NewAIAnalysisRepo(database)
+	backgroundQueued, _, err := repo.Enqueue(
+		backgroundQueuedAsset,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		-100,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backgroundRunning, _, err := repo.Enqueue(
+		backgroundRunningAsset,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		-100,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreground, _, err := repo.Enqueue(
+		foregroundAsset,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		250,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		"UPDATE ai_jobs SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ?",
+		backgroundRunning.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(
+		"UPDATE ai_asset_analysis SET state = 'running' WHERE asset_id = ? AND capability = 'semantic_search'",
+		backgroundRunningAsset,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(raw); err != nil {
+		t.Fatalf("apply migration 017: %v", err)
+	}
+
+	for _, jobID := range []int64{backgroundQueued.ID, backgroundRunning.ID} {
+		job, err := repo.GetJob(jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job == nil || job.Status != domain.AIJobCancelled {
+			t.Fatalf("legacy background semantic job %d = %+v, want cancelled", jobID, job)
+		}
+	}
+	foregroundJob, err := repo.GetJob(foreground.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foregroundJob == nil || foregroundJob.Status != domain.AIJobQueued {
+		t.Fatalf("foreground semantic job changed by migration: %+v", foregroundJob)
+	}
+
+	for _, assetID := range []int64{backgroundQueuedAsset, backgroundRunningAsset} {
+		analyses, err := repo.GetByAsset(assetID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisStale {
+			t.Fatalf("legacy background analysis asset %d = %+v, want stale", assetID, analyses)
+		}
+	}
+	foregroundAnalyses, err := repo.GetByAsset(foregroundAsset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(foregroundAnalyses) != 1 || foregroundAnalyses[0].State != domain.AIAnalysisQueued {
+		t.Fatalf("foreground analysis changed by migration: %+v", foregroundAnalyses)
 	}
 }

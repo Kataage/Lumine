@@ -13,6 +13,12 @@ export interface AssetListResponse {
   assets: AssetDTO[];
   totalCount: number;
   semanticSearchSessionId?: string;
+  semanticCoverageReadyCount?: number;
+  semanticCoverageTotalCount?: number;
+  semanticCoverageQueuedCount?: number;
+  semanticCoverageRunningCount?: number;
+  semanticCoverageFailedCount?: number;
+  semanticCoverageStaleCount?: number;
 }
 
 export interface SemanticSearchProgress {
@@ -636,6 +642,7 @@ export const setExcludedDirs = Go.SetExcludedDirs;
 export const getSupportedExtensions = Go.GetSupportedExtensions;
 export const setSupportedExtensions = Go.SetSupportedExtensions;
 export const listAssets = Go.ListAssets;
+export const enqueueAutomaticSemanticAssets = Go.EnqueueAutomaticSemanticAssets;
 
 type DynamicCommands = {
   ListModelProfiles?: () => Promise<ModelProfile[]>;

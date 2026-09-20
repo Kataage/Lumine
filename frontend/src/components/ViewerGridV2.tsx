@@ -194,7 +194,17 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   });
 
   const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
-  const totalCount = data?.pages[0]?.totalCount ?? 0;
+  const firstPage = data?.pages[0] as AssetListResponse | undefined;
+  const totalCount = firstPage?.totalCount ?? 0;
+  const semanticCoverageReady = firstPage?.semanticCoverageReadyCount ?? 0;
+  const semanticCoverageTotal = firstPage?.semanticCoverageTotalCount ?? 0;
+  const semanticCoverageQueued = firstPage?.semanticCoverageQueuedCount ?? 0;
+  const semanticCoverageRunning = firstPage?.semanticCoverageRunningCount ?? 0;
+  const semanticCoverageFailed = firstPage?.semanticCoverageFailedCount ?? 0;
+  const semanticCoverageStale = firstPage?.semanticCoverageStaleCount ?? 0;
+  const semanticCoveragePercent = semanticCoverageTotal > 0
+    ? Math.min(100, (semanticCoverageReady / semanticCoverageTotal) * 100)
+    : 0;
 
   useEffect(() => {
     if (semanticSearchActive) return;
@@ -311,6 +321,44 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   return (
     <>
       <div ref={containerRef} onScroll={markViewerInteraction} className="flex-1 min-w-0 overflow-auto bg-background p-3">
+        {semanticSearchActive && semanticCoverageTotal > 0 && (
+          <div className="sticky top-0 z-20 mb-3 rounded-xl border border-border/80 bg-card/95 px-3 py-2 text-[11px] shadow-sm backdrop-blur-md">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-medium">
+                検索可能 {semanticCoverageReady.toLocaleString()} / {semanticCoverageTotal.toLocaleString()}画像
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                coverage {semanticCoveragePercent.toFixed(1)}%
+              </span>
+              <span className="text-muted-foreground">結果順: 類似度</span>
+              <span className="text-muted-foreground">解析優先: 現在の表示順 → 新しい画像</span>
+              {(semanticCoverageQueued > 0 || semanticCoverageRunning > 0) && (
+                <span className="text-muted-foreground">
+                  待機 {semanticCoverageQueued.toLocaleString()} / 処理中 {semanticCoverageRunning.toLocaleString()}
+                </span>
+              )}
+              {semanticCoverageStale > 0 && (
+                <span className="text-muted-foreground">再解析待ち {semanticCoverageStale.toLocaleString()}</span>
+              )}
+              {semanticCoverageFailed > 0 && (
+                <span className="font-medium text-destructive">失敗 {semanticCoverageFailed.toLocaleString()}</span>
+              )}
+            </div>
+            {semanticCoverageFailed > 0 ? (
+              <p className="mt-1 text-[10px] leading-relaxed text-destructive">
+                解析失敗画像があります。これらは現在の意味検索には含まれません。AIジョブのエラー内容を確認してください。
+              </p>
+            ) : semanticCoverageReady < semanticCoverageTotal ? (
+              <p className="mt-1 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
+                未解析画像はこの検索にはまだ含まれません。解析が進むと検索結果の母集団が増えます。
+              </p>
+            ) : (
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                現在の検索範囲はすべてSemantic Search解析済みです。
+              </p>
+            )}
+          </div>
+        )}
         {state.viewMode === "grid" ? (
           <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualItems.map((virtualRow) => {
@@ -687,7 +735,7 @@ function GridCard({
         <p className="truncate text-[11px] font-medium text-white drop-shadow">{asset.fileName}</p>
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-white/60">
           <span>{formatFileSize(asset.fileSize)}</span>
-          {typeof asset.semanticScore === "number" && <span>{Math.round(asset.semanticScore * 100)}%</span>}
+          {typeof asset.semanticScore === "number" && <span title="cosine similarity">類似度 {asset.semanticScore.toFixed(3)}</span>}
         </div>
       </div>
 
@@ -769,7 +817,7 @@ function ListRow({
         <p className="truncate text-xs font-medium">{asset.fileName}</p>
         <p className="truncate text-[11px] text-muted-foreground">{asset.folderPath}</p>
       </div>
-      {typeof asset.semanticScore === "number" && <span className="text-[10px] text-primary tabular-nums flex-shrink-0">{Math.round(asset.semanticScore * 100)}%</span>}
+      {typeof asset.semanticScore === "number" && <span className="text-[10px] text-primary tabular-nums flex-shrink-0" title="cosine similarity">類似度 {asset.semanticScore.toFixed(3)}</span>}
       <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">{formatFileSize(asset.fileSize)}</span>
       <button
         onClick={(event) => { event.stopPropagation(); onDetail(); }}

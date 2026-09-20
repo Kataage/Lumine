@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/siglip2"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -27,9 +28,12 @@ const (
 )
 
 type semanticSearchSession struct {
-	hits      []domain.SemanticSearchHit
-	total     int
-	createdAt time.Time
+	hits          []domain.SemanticSearchHit
+	total         int
+	coverageReady  int
+	coverageTotal  int
+	coverageStates db.SemanticCoverageStateCounts
+	createdAt      time.Time
 }
 
 type semanticSearchState struct {
@@ -133,7 +137,13 @@ func (s *semanticSearchState) cancelAll() {
 }
 
 
-func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) string {
+func (s *semanticSearchState) store(
+	hits []domain.SemanticSearchHit,
+	total int,
+	coverageReady int,
+	coverageTotal int,
+	coverageStates db.SemanticCoverageStateCounts,
+) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -158,9 +168,12 @@ func (s *semanticSearchState) store(hits []domain.SemanticSearchHit, total int) 
 	s.seq++
 	id := fmt.Sprintf("semantic-%x", s.seq)
 	s.sessions[id] = semanticSearchSession{
-		hits:      append([]domain.SemanticSearchHit(nil), hits...),
-		total:     total,
-		createdAt: now,
+		hits:          append([]domain.SemanticSearchHit(nil), hits...),
+		total:         total,
+		coverageReady:  coverageReady,
+		coverageTotal:  coverageTotal,
+		coverageStates: coverageStates,
+		createdAt:      now,
 	}
 	return id
 }
@@ -209,8 +222,68 @@ func (c *AppCommands) HandleScannedAssetChanges(assetIDs []int64) (int, error) {
 	return semanticCreated + taggerCreated + visionCreated, nil
 }
 
+func (c *AppCommands) rememberSemanticPriorityAssets(assetIDs []int64) {
+	if len(assetIDs) == 0 {
+		return
+	}
+	c.semanticPriorityMu.Lock()
+	defer c.semanticPriorityMu.Unlock()
+	if c.semanticPrioritySeen == nil {
+		c.semanticPrioritySeen = make(map[int64]struct{})
+	}
+	for _, id := range assetIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := c.semanticPrioritySeen[id]; exists {
+			continue
+		}
+		c.semanticPrioritySeen[id] = struct{}{}
+		c.semanticPriorityPending = append(c.semanticPriorityPending, id)
+		if len(c.semanticPriorityPending) >= 1000 {
+			break
+		}
+	}
+}
+
+func (c *AppCommands) takeSemanticPriorityAssets() []int64 {
+	c.semanticPriorityMu.Lock()
+	defer c.semanticPriorityMu.Unlock()
+	if len(c.semanticPriorityPending) == 0 {
+		return nil
+	}
+	ids := append([]int64(nil), c.semanticPriorityPending...)
+	c.semanticPriorityPending = c.semanticPriorityPending[:0]
+	clear(c.semanticPrioritySeen)
+	return ids
+}
+
+func mergeSemanticPriorityIDs(primary, pending []int64) []int64 {
+	if len(primary) == 0 && len(pending) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(primary)+len(pending))
+	result := make([]int64, 0, len(primary)+len(pending))
+	for _, group := range [][]int64{primary, pending} {
+		for _, id := range group {
+			if id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			result = append(result, id)
+			if len(result) >= 1000 {
+				return result
+			}
+		}
+	}
+	return result
+}
+
 func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, error) {
-	if len(assetIDs) == 0 || c.aiJobQueue == nil || c.aiManager == nil {
+	if c.aiJobQueue == nil || c.aiManager == nil {
 		return 0, nil
 	}
 	settings, err := c.GetAISettings()
@@ -223,12 +296,31 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 	}
 	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	if status.State != ai.RuntimeStateReady && status.State != ai.RuntimeStateRunning {
+		c.rememberSemanticPriorityAssets(assetIDs)
+		return 0, nil
+	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
+	assetIDs = mergeSemanticPriorityIDs(assetIDs, c.takeSemanticPriorityAssets())
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	needed, err := c.semanticRepo.FilterNeedingEmbeddingIDs(
+		context.Background(),
+		assetIDs,
+		status.Engine,
+		status.ModelID,
+		analysisVersion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(needed) == 0 {
 		return 0, nil
 	}
 	return c.aiJobQueue.EnqueueMany(
-		assetIDs,
+		needed,
 		domain.AICapabilitySemanticSearch,
-		-50,
+		250,
 		true,
 	)
 }
@@ -239,6 +331,20 @@ func (c *AppCommands) EnqueueSemanticBackfill() (int, error) {
 		ctx = context.Background()
 	}
 	return c.enqueueSemanticBackfillContext(ctx)
+}
+
+func (c *AppCommands) waitForSemanticBackgroundWindow(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for c.aiJobQueue != nil && c.aiJobQueue.InteractiveUIActive() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return ctx.Err()
 }
 
 func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, error) {
@@ -262,10 +368,19 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
 		return 0, errors.New("Semantic Search runtime provenance is incomplete")
 	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
 
 	libraries, err := c.libraryRepo.List()
 	if err != nil {
 		return 0, fmt.Errorf("list libraries for semantic backfill: %w", err)
+	}
+
+	settings, err := c.GetAISettings()
+	if err != nil {
+		return 0, err
+	}
+	if !settings.CapabilityEnabled(domain.AICapabilityAutoAnalyze) {
+		return 0, nil
 	}
 
 	total := 0
@@ -276,38 +391,52 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 		if !library.IsEnabled {
 			continue
 		}
-		var afterID int64
+		var beforeModifiedAt string
+		var beforeID int64
 		for {
 			if err := ctx.Err(); err != nil {
 				return total, err
 			}
-			ids, err := c.semanticRepo.ListNeedingEmbeddingContext(
+			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
+				return total, err
+			}
+			candidates, err := c.semanticRepo.ListNeedingEmbeddingNewestContext(
 				ctx,
 				library.ID,
 				status.Engine,
 				status.ModelID,
-				status.Version,
-				afterID,
+				analysisVersion,
+				beforeModifiedAt,
+				beforeID,
 				1000,
 			)
 			if err != nil {
 				return total, err
 			}
-			if len(ids) == 0 {
+			if len(candidates) == 0 {
 				break
+			}
+			ids := make([]int64, len(candidates))
+			for i, candidate := range candidates {
+				ids[i] = candidate.AssetID
+			}
+			if err := c.waitForSemanticBackgroundWindow(ctx); err != nil {
+				return total, err
 			}
 			created, err := c.aiJobQueue.EnqueueMany(
 				ids,
 				domain.AICapabilitySemanticSearch,
 				-100,
-				false,
+				true,
 			)
 			if err != nil {
 				return total, err
 			}
 			total += created
-			afterID = ids[len(ids)-1]
-			if len(ids) < 1000 {
+			last := candidates[len(candidates)-1]
+			beforeModifiedAt = last.ModifiedAtFS
+			beforeID = last.AssetID
+			if len(candidates) < 1000 {
 				break
 			}
 		}
@@ -334,6 +463,7 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
 		return ai.AnalysisOutput{}, errors.New("Semantic Search runtime provenance is incomplete")
 	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
 
 	response, err := c.aiManager.Infer(ctx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_image",
@@ -352,14 +482,21 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 		asset.ID,
 		status.Engine,
 		status.ModelID,
-		status.Version,
+		analysisVersion,
 		vector,
 	); err != nil {
 		return ai.AnalysisOutput{}, err
 	}
 	if c.semanticIndex != nil {
-		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, status.Version, vector)
-		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
+		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
+		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
+	}
+
+	if c.ctx != nil {
+		runtime.EventsEmit(c.ctx, "semantic:embedding-updated", map[string]any{
+			"assetId":      asset.ID,
+			"modelVersion": analysisVersion,
+		})
 	}
 
 	summary, _ := json.Marshal(map[string]any{
@@ -369,7 +506,7 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	return ai.AnalysisOutput{
 		Engine:       status.Engine,
 		ModelID:      status.ModelID,
-		ModelVersion: status.Version,
+		ModelVersion: analysisVersion,
 		ResultJSON:   string(summary),
 	}, nil
 }
@@ -452,21 +589,27 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		return nil, err
 	}
 
-	searchQuery := semanticQueryFromAssetRequest(req, status, 0)
+	searchStatus := status
+	searchStatus.Version = siglip2.AnalysisVersion(status.Version)
+	searchQuery := semanticQueryFromAssetRequest(req, searchStatus, 0)
+	coverageTotal, _ := c.semanticScopeTotal(req)
+	coverageReady := 0
+	coverageStates, _ := c.semanticRepo.CountSemanticAnalysisStates(searchCtx, searchQuery)
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
-		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
+		if !c.semanticIndex.IsReady(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version) {
 			emitProgress("warming_index", 0, 0)
-			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
+			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, searchStatus.Engine, searchStatus.ModelID, searchStatus.Version); err != nil {
 				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
-			c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
+			c.scheduleSemanticIndexPersist(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version)
 		}
 		emitProgress("filtering", 0, 0)
 		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(searchCtx, searchQuery)
 		if err != nil {
 			return nil, err
 		}
+		coverageReady = len(eligibleIDs)
 		emitProgress("scoring", 0, len(eligibleIDs))
 		result, err = c.semanticIndex.Search(
 			searchCtx,
@@ -486,11 +629,25 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		if err != nil {
 			return nil, err
 		}
+		coverageReady = result.TotalCount
 	}
 
 	emitProgress("formatting", len(result.Hits), result.TotalCount)
-	sessionID := c.semanticSearchState.store(result.RankedHits, result.TotalCount)
-	return c.semanticHitsToAssets(result.Hits, result.TotalCount, sessionID)
+	sessionID := c.semanticSearchState.store(
+		result.RankedHits,
+		result.TotalCount,
+		coverageReady,
+		coverageTotal,
+		coverageStates,
+	)
+	return c.semanticHitsToAssets(
+		result.Hits,
+		result.TotalCount,
+		sessionID,
+		coverageReady,
+		coverageTotal,
+		coverageStates,
+	)
 }
 
 func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*AssetListResponse, error) {
@@ -514,7 +671,14 @@ func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*
 	if end > len(session.hits) {
 		end = len(session.hits)
 	}
-	return c.semanticHitsToAssets(session.hits[offset:end], session.total, sessionID)
+	return c.semanticHitsToAssets(
+		session.hits[offset:end],
+		session.total,
+		sessionID,
+		session.coverageReady,
+		session.coverageTotal,
+		session.coverageStates,
+	)
 }
 
 func (c *AppCommands) CancelSemanticSearch(requestID string) {
@@ -573,19 +737,35 @@ func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*
 	if result == nil {
 		return &AssetListResponse{Assets: []AssetDTO{}, TotalCount: 0}, nil
 	}
-	return c.semanticHitsToAssets(result.Hits, result.TotalCount, "")
+	return c.semanticHitsToAssets(
+		result.Hits,
+		result.TotalCount,
+		"",
+		result.TotalCount,
+		result.TotalCount,
+		db.SemanticCoverageStateCounts{},
+	)
 }
 
 func (c *AppCommands) semanticHitsToAssets(
 	hits []domain.SemanticSearchHit,
 	total int,
 	sessionID string,
+	coverageReady int,
+	coverageTotal int,
+	coverageStates db.SemanticCoverageStateCounts,
 ) (*AssetListResponse, error) {
 	if len(hits) == 0 {
 		return &AssetListResponse{
-			Assets:                  []AssetDTO{},
-			TotalCount:              total,
-			SemanticSearchSessionID: sessionID,
+			Assets:                     []AssetDTO{},
+			TotalCount:                 total,
+			SemanticSearchSessionID:    sessionID,
+			SemanticCoverageReadyCount:   coverageReady,
+			SemanticCoverageTotalCount:   coverageTotal,
+			SemanticCoverageQueuedCount:  coverageStates.Queued,
+			SemanticCoverageRunningCount: coverageStates.Running,
+			SemanticCoverageFailedCount:  coverageStates.Failed,
+			SemanticCoverageStaleCount:   coverageStates.Stale,
 		}, nil
 	}
 
@@ -606,10 +786,39 @@ func (c *AppCommands) semanticHitsToAssets(
 		dtos = append(dtos, dto)
 	}
 	return &AssetListResponse{
-		Assets:                  dtos,
-		TotalCount:              total,
-		SemanticSearchSessionID: sessionID,
+		Assets:                     dtos,
+		TotalCount:                 total,
+		SemanticSearchSessionID:    sessionID,
+		SemanticCoverageReadyCount:   coverageReady,
+		SemanticCoverageTotalCount:   coverageTotal,
+		SemanticCoverageQueuedCount:  coverageStates.Queued,
+		SemanticCoverageRunningCount: coverageStates.Running,
+		SemanticCoverageFailedCount:  coverageStates.Failed,
+		SemanticCoverageStaleCount:   coverageStates.Stale,
 	}, nil
+}
+
+func (c *AppCommands) semanticScopeTotal(req AssetListRequest) (int, error) {
+	result, err := c.assetRepo.List(db.AssetQuery{
+		LibraryID:   req.LibraryID,
+		FolderPath:  req.FolderPath,
+		Recurse:     req.Recurse,
+		Rating:      req.Rating,
+		StatusLabel: req.StatusLabel,
+		IsFavorite:  req.IsFavorite,
+		TagIDs:      req.TagIDs,
+		HasNote:     req.HasNote,
+		Extension:   req.Extension,
+		ColorLabel:  req.ColorLabel,
+		SortBy:      req.SortBy,
+		SortDesc:    req.SortDesc,
+		Offset:      0,
+		Limit:       1,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.TotalCount, nil
 }
 
 func semanticQueryFromAssetRequest(

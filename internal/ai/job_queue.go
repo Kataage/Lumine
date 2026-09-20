@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -428,11 +429,15 @@ func (q *JobQueue) MarkStaleForAssets(
 }
 
 func (q *JobQueue) HandleModelActivated(capability domain.AICapability, model InstalledModel) error {
+	version := model.Manifest.Version
+	if revision := strings.TrimSpace(model.Manifest.Parameters["analysis_revision"]); revision != "" {
+		version += "+" + revision
+	}
 	_, err := q.MarkStaleForModel(
 		capability,
 		model.Manifest.Engine,
 		model.Manifest.ID,
-		model.Manifest.Version,
+		version,
 	)
 	return err
 }

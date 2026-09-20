@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -289,5 +290,143 @@ func TestListNeedingEmbeddingContextHonorsCancellation(t *testing.T) {
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("ListNeedingEmbeddingContext error = %v, want context.Canceled", err)
+	}
+}
+
+
+func TestSemanticBackfillPrefersNewestModifiedAssets(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic newest", "/tmp/semantic-newest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+	assetRepo := NewAssetRepo(database)
+
+	oldID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "old.png")
+	midID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "mid.png")
+	newID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "new.png")
+
+	for id, stamp := range map[int64]time.Time{
+		oldID: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		midID: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		newID: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	} {
+		asset, err := assetRepo.GetByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		asset.ModifiedAtFS = stamp
+		if err := assetRepo.Update(asset); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The middle image is already searchable and must not be re-enqueued.
+	markSemanticReady(t, database, midID, "engine", "model", "1")
+	if err := repo.Upsert(midID, "engine", "model", "1", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := repo.ListNeedingEmbeddingNewestContext(
+		context.Background(), lib.ID, "engine", "model", "1", "", 0, 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].AssetID != newID {
+		t.Fatalf("first backfill candidate = %+v, want newest asset %d", first, newID)
+	}
+
+	second, err := repo.ListNeedingEmbeddingNewestContext(
+		context.Background(), lib.ID, "engine", "model", "1",
+		first[0].ModifiedAtFS, first[0].AssetID, 10,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].AssetID != oldID {
+		t.Fatalf("remaining backfill candidates = %+v, want old asset %d only", second, oldID)
+	}
+}
+
+func TestFilterNeedingEmbeddingIDsPreservesViewerOrder(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic viewer order", "/tmp/semantic-viewer-order")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	first := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "first.png")
+	ready := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "ready.png")
+	third := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "third.png")
+	markSemanticReady(t, database, ready, "engine", "model", "1")
+	if err := repo.Upsert(ready, "engine", "model", "1", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	needed, err := repo.FilterNeedingEmbeddingIDs(
+		context.Background(),
+		[]int64{third, ready, first},
+		"engine",
+		"model",
+		"1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(needed) != 2 || needed[0] != third || needed[1] != first {
+		t.Fatalf("needed viewer assets = %v, want [%d %d]", needed, third, first)
+	}
+}
+
+
+func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic coverage", "/tmp/semantic-coverage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherLib, err := NewLibraryRepo(database).Create("Other coverage", "/tmp/semantic-coverage-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	queued := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "queued.png")
+	running := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "running.png")
+	failed := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "failed.png")
+	stale := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "stale.png")
+	other := createSemanticTestAsset(t, database, otherLib.ID, "/tmp/semantic-coverage-other", "other.png")
+
+	for id, state := range map[int64]string{
+		queued: "queued",
+		running: "running",
+		failed: "failed",
+		stale: "stale",
+		other: "failed",
+	} {
+		if _, err := database.Exec(`
+			INSERT INTO ai_asset_analysis (asset_id, capability, state, updated_at)
+			VALUES (?, 'semantic_search', ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(asset_id, capability) DO UPDATE SET
+				state = excluded.state,
+				updated_at = CURRENT_TIMESTAMP
+		`, id, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	counts, err := repo.CountSemanticAnalysisStates(context.Background(), SemanticSearchQuery{
+		LibraryID:  lib.ID,
+		FolderPath: "/tmp/semantic-coverage/a",
+		Recurse:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Queued != 1 || counts.Running != 1 || counts.Failed != 1 || counts.Stale != 1 {
+		t.Fatalf("unexpected semantic coverage states: %+v", counts)
 	}
 }

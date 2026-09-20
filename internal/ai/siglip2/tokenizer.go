@@ -225,16 +225,14 @@ func (t *siglipTokenizer) Encode64(text string) ([siglipTextLength]int64, error)
 }
 
 func (t *siglipTokenizer) encodeBPE64(text string) ([siglipTextLength]int64, error) {
-	var output [siglipTextLength]int64
 	normalized := normalizeSigLIP2Text(text)
 	if normalized == "" {
-		output[0] = siglipEOSID
-		return output, nil
+		return packSigLIPTextTokens(nil), nil
 	}
 
 	tokens := t.bpeInitialSymbols(normalized)
 	if len(tokens) == 0 {
-		return output, errors.New("SigLIP BPE tokenizer produced no symbols")
+		return [siglipTextLength]int64{}, errors.New("SigLIP BPE tokenizer produced no symbols")
 	}
 
 	for {
@@ -282,9 +280,7 @@ func (t *siglipTokenizer) encodeBPE64(text string) ([siglipTextLength]int64, err
 			break
 		}
 	}
-	ids = append(ids, siglipEOSID)
-	copy(output[:], ids)
-	return output, nil
+	return packSigLIPTextTokens(ids), nil
 }
 
 func (t *siglipTokenizer) bpeInitialSymbols(text string) []string {
@@ -323,8 +319,7 @@ func (t *siglipTokenizer) encodeUnigram64(text string) ([siglipTextLength]int64,
 	var output [siglipTextLength]int64
 	normalized := normalizeLegacyUnigramText(text)
 	if normalized == "" {
-		output[0] = siglipEOSID
-		return output, nil
+		return packSigLIPTextTokens(nil), nil
 	}
 
 	input := []byte(normalized)
@@ -390,9 +385,19 @@ func (t *siglipTokenizer) encodeUnigram64(text string) ([siglipTextLength]int64,
 	if len(ids) >= siglipTextLength {
 		ids = ids[:siglipTextLength-1]
 	}
-	ids = append(ids, siglipEOSID)
-	copy(output[:], ids)
-	return output, nil
+	return packSigLIPTextTokens(ids), nil
+}
+
+func packSigLIPTextTokens(content []int64) [siglipTextLength]int64 {
+	var output [siglipTextLength]int64
+	if len(content) > siglipTextLength-1 {
+		content = content[:siglipTextLength-1]
+	}
+	sequenceLength := len(content) + 1 // sticky EOS
+	start := siglipTextLength - sequenceLength
+	copy(output[start:start+len(content)], content)
+	output[siglipTextLength-1] = siglipEOSID
+	return output
 }
 
 // SigLIP2 training uses the multilingual Gemma tokenizer with lowercase text.
@@ -404,8 +409,9 @@ func normalizeSigLIP2Text(text string) string {
 		return ""
 	}
 	// Match SigLIP2's tokenizer backend: lowercase first, then replace literal
-	// spaces with the Gemma metaspace marker. The pinned ONNX tokenizer config
-	// adds EOS and right-pads/truncates to 64 tokens.
+	// spaces with the Gemma metaspace marker. Fixed-length packing is handled
+	// separately and left-pads so the sticky EOS token remains at position 63,
+	// matching the reference SigLIP2 text pooling contract.
 	return strings.ReplaceAll(text, " ", "▁")
 }
 

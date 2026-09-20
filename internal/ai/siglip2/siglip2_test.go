@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kataage/lumine/internal/ai"
@@ -95,19 +96,50 @@ func syntheticTokenizer(t *testing.T) *siglipTokenizer {
 	return tokenizer
 }
 
-func TestTokenizerLowercasesRightPadsAndAddsEOS(t *testing.T) {
+
+func TestTokenizerEmptyTextKeepsEOSAtFinalPosition(t *testing.T) {
+	tokenizer := syntheticTokenizer(t)
+	ids, err := tokenizer.Encode64("   ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < siglipTextLength-1; i++ {
+		if ids[i] != siglipPadID {
+			t.Fatalf("token %d = %d, want pad", i, ids[i])
+		}
+	}
+	if ids[siglipTextLength-1] != siglipEOSID {
+		t.Fatalf("final token = %d, want EOS", ids[siglipTextLength-1])
+	}
+}
+
+func TestTokenizerTruncationStillKeepsEOSAtFinalPosition(t *testing.T) {
+	tokenizer := syntheticTokenizer(t)
+	long := strings.Repeat("hello ", 100)
+	ids, err := tokenizer.Encode64(long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids[siglipTextLength-1] != siglipEOSID {
+		t.Fatalf("final token = %d, want EOS", ids[siglipTextLength-1])
+	}
+}
+
+func TestTokenizerLowercasesLeftPadsAndKeepsEOSAtFinalPosition(t *testing.T) {
 	tokenizer := syntheticTokenizer(t)
 	ids, err := tokenizer.Encode64("  HELLO WORLD  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids[0] != 12 || ids[1] != 21 || ids[2] != siglipEOSID {
-		t.Fatalf("unexpected tokenization prefix: %v", ids[:5])
-	}
-	for i := 3; i < len(ids); i++ {
+	for i := 0; i < siglipTextLength-3; i++ {
 		if ids[i] != siglipPadID {
-			t.Fatalf("token %d = %d, want pad", i, ids[i])
+			t.Fatalf("token %d = %d, want left pad", i, ids[i])
 		}
+	}
+	if ids[siglipTextLength-3] != 12 ||
+		ids[siglipTextLength-2] != 21 ||
+		ids[siglipTextLength-1] != siglipEOSID {
+		t.Fatalf("unexpected tokenization suffix: %v", ids[siglipTextLength-6:])
 	}
 }
 
@@ -118,9 +150,10 @@ func TestTokenizerPreservesRepeatedSpacesAsMetaspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []int64{12, 13, 13, 21, siglipEOSID}
+	start := siglipTextLength - len(want)
 	for index, expected := range want {
-		if ids[index] != expected {
-			t.Fatalf("token %d = %d, want %d; prefix=%v", index, ids[index], expected, ids[:8])
+		if ids[start+index] != expected {
+			t.Fatalf("token %d = %d, want %d; suffix=%v", start+index, ids[start+index], expected, ids[siglipTextLength-8:])
 		}
 	}
 }
@@ -132,9 +165,10 @@ func TestTokenizerSupportsBPEByteFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []int64{22, 23, 24, 25, siglipEOSID}
+	start := siglipTextLength - len(want)
 	for index, expected := range want {
-		if ids[index] != expected {
-			t.Fatalf("token %d = %d, want %d; prefix=%v", index, ids[index], expected, ids[:8])
+		if ids[start+index] != expected {
+			t.Fatalf("token %d = %d, want %d; suffix=%v", start+index, ids[start+index], expected, ids[siglipTextLength-8:])
 		}
 	}
 }
@@ -165,8 +199,8 @@ func TestTokenizerKeepsLegacyUnigramCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids[0] != 4 || ids[1] != siglipEOSID {
-		t.Fatalf("unexpected legacy tokenization: %v", ids[:4])
+	if ids[siglipTextLength-2] != 4 || ids[siglipTextLength-1] != siglipEOSID {
+		t.Fatalf("unexpected legacy tokenization suffix: %v", ids[siglipTextLength-4:])
 	}
 }
 
@@ -228,8 +262,9 @@ func TestEngineInferenceNormalizesEmbeddings(t *testing.T) {
 	if math.Abs(float64(vector[0]-0.6)) > 1e-5 || math.Abs(float64(vector[1]-0.8)) > 1e-5 {
 		t.Fatalf("text embedding not unit-normalized: %+v", vector)
 	}
-	if runtime.textInput[0] != 12 || runtime.textInput[1] != siglipEOSID {
-		t.Fatalf("text tokenizer was not used: %v", runtime.textInput[:4])
+	if runtime.textInput[siglipTextLength-2] != 12 ||
+		runtime.textInput[siglipTextLength-1] != siglipEOSID {
+		t.Fatalf("text tokenizer was not left-padded with sticky EOS: %v", runtime.textInput[siglipTextLength-4:])
 	}
 
 	dir := t.TempDir()
@@ -272,6 +307,22 @@ func TestDefaultManifestIsPinnedAndComplete(t *testing.T) {
 	for _, file := range manifest.Files {
 		if len(file.SHA256) != 64 || file.SizeBytes <= 0 {
 			t.Fatalf("unversioned model file: %+v", file)
+		}
+	}
+}
+
+
+func TestSampleBilinearAveragesFourPixelsAtCenter(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	img.Set(1, 0, color.RGBA{G: 255, A: 255})
+	img.Set(0, 1, color.RGBA{B: 255, A: 255})
+	img.Set(1, 1, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+
+	r, g, b := sampleBilinear(img, img.Bounds(), 0.5, 0.5)
+	for name, got := range map[string]float64{"r": r, "g": g, "b": b} {
+		if math.Abs(got-127.5) > 0.01 {
+			t.Fatalf("%s = %.4f, want 127.5", name, got)
 		}
 	}
 }
