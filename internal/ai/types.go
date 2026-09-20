@@ -90,6 +90,7 @@ const (
 
 type RuntimeDiagnostics struct {
 	ExecutionProvider string `json:"executionProvider,omitempty"`
+	AdapterID         *int   `json:"adapterId,omitempty"`
 	Warning           string `json:"warning,omitempty"`
 }
 
@@ -108,6 +109,7 @@ type RuntimeStatus struct {
 	Version           string              `json:"version,omitempty"`
 	Engine            string              `json:"engine,omitempty"`
 	ExecutionProvider string              `json:"executionProvider,omitempty"`
+	AdapterID         *int                `json:"adapterId,omitempty"`
 	Warning           string              `json:"warning,omitempty"`
 	Error             string              `json:"error,omitempty"`
 }
