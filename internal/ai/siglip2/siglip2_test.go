@@ -3,6 +3,7 @@ package siglip2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
