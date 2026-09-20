@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -289,5 +290,93 @@ func TestListNeedingEmbeddingContextHonorsCancellation(t *testing.T) {
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("ListNeedingEmbeddingContext error = %v, want context.Canceled", err)
+	}
+}
+
+
+func TestSemanticBackfillPrefersNewestModifiedAssets(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic newest", "/tmp/semantic-newest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+	assetRepo := NewAssetRepo(database)
+
+	oldID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "old.png")
+	midID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "mid.png")
+	newID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-newest", "new.png")
+
+	for id, stamp := range map[int64]time.Time{
+		oldID: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		midID: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		newID: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	} {
+		asset, err := assetRepo.GetByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		asset.ModifiedAtFS = stamp
+		if err := assetRepo.Update(asset); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The middle image is already searchable and must not be re-enqueued.
+	markSemanticReady(t, database, midID, "engine", "model", "1")
+	if err := repo.Upsert(midID, "engine", "model", "1", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := repo.ListNeedingEmbeddingNewestContext(
+		context.Background(), lib.ID, "engine", "model", "1", "", 0, 1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].AssetID != newID {
+		t.Fatalf("first backfill candidate = %+v, want newest asset %d", first, newID)
+	}
+
+	second, err := repo.ListNeedingEmbeddingNewestContext(
+		context.Background(), lib.ID, "engine", "model", "1",
+		first[0].ModifiedAtFS, first[0].AssetID, 10,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].AssetID != oldID {
+		t.Fatalf("remaining backfill candidates = %+v, want old asset %d only", second, oldID)
+	}
+}
+
+func TestFilterNeedingEmbeddingIDsPreservesViewerOrder(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic viewer order", "/tmp/semantic-viewer-order")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	first := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "first.png")
+	ready := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "ready.png")
+	third := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-viewer-order", "third.png")
+	markSemanticReady(t, database, ready, "engine", "model", "1")
+	if err := repo.Upsert(ready, "engine", "model", "1", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+
+	needed, err := repo.FilterNeedingEmbeddingIDs(
+		context.Background(),
+		[]int64{third, ready, first},
+		"engine",
+		"model",
+		"1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(needed) != 2 || needed[0] != third || needed[1] != first {
+		t.Fatalf("needed viewer assets = %v, want [%d %d]", needed, third, first)
 	}
 }
