@@ -347,3 +347,93 @@ func TestJobQueueForegroundPauseYieldsAndResumesCapability(t *testing.T) {
 	}
 	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
 }
+
+
+func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
+	_, repo, assetID := setupAIQueueTest(t)
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 1)
+
+	started := make(chan int, 2)
+	attempt := 0
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		attempt++
+		started <- attempt
+		if attempt == 1 {
+			<-ctx.Done()
+			return AnalysisOutput{}, ctx.Err()
+		}
+		return AnalysisOutput{
+			Engine:       "engine",
+			ModelID:      "model",
+			ModelVersion: "1",
+			ResultJSON:   "{}",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
+
+	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, -100, true)
+	if err != nil {
+		// Automatic work is what normally competes with viewer rendering.
+		// Enable it explicitly for this test if the fixture default changes.
+		settings.AutoAnalyze = true
+		job, _, err = queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, -100, true)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-started:
+		if got != 1 {
+			t.Fatalf("first handler attempt = %d", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("AI job did not start")
+	}
+	waitForAIJobStatus(t, repo, job.ID, domain.AIJobRunning)
+
+	queue.SetInteractiveUIActive(true)
+	requeued := waitForAIJobStatus(t, repo, job.ID, domain.AIJobQueued)
+	if requeued.AttemptCount != 0 {
+		t.Fatalf("viewer yield consumed retry budget: %+v", requeued)
+	}
+
+	select {
+	case got := <-started:
+		t.Fatalf("AI job restarted while viewer was active: attempt %d", got)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	queue.SetInteractiveUIActive(false)
+	select {
+	case got := <-started:
+		if got != 2 {
+			t.Fatalf("resumed handler attempt = %d, want 2", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("AI job did not resume after viewer became idle")
+	}
+	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
+}
