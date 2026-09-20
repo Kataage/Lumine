@@ -432,3 +432,70 @@ func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
 	}
 	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
 }
+
+
+func TestJobQueueStartupHoldPreventsClaimUntilRestoreCompletes(t *testing.T) {
+	_, repo, assetID := setupAIQueueTest(t)
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 1)
+
+	started := make(chan struct{}, 1)
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		started <- struct{}{}
+		return AnalysisOutput{
+			Engine:       "engine",
+			ModelID:      "model",
+			ModelVersion: "1",
+			ResultJSON:   "{}",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	queue.SetStartupHold(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
+
+	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-started:
+		t.Fatal("job started while startup hold was active")
+	case <-time.After(200 * time.Millisecond):
+	}
+	held, err := repo.GetJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.Status != domain.AIJobQueued || held.AttemptCount != 0 {
+		t.Fatalf("startup hold must preserve queued job without consuming attempts: %+v", held)
+	}
+
+	queue.SetStartupHold(false)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job did not start after startup hold was released")
+	}
+	waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
+}

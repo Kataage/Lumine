@@ -42,7 +42,7 @@ func (c *AppCommands) GetDefaultSemanticModelInfo() SemanticModelInfo {
 	if c.aiManager == nil {
 		return info
 	}
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err == nil {
 		info.Installed = true
 	}
 	info.Runtime = runtimeStatusForInstalledModel(
@@ -113,7 +113,7 @@ func (c *AppCommands) RestoreDefaultSemanticModel() error {
 		return nil
 	}
 	manifest := siglip2.DefaultManifest()
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		manifestPath := filepath.Join(
 			c.aiManager.Store().Root(),
 			manifest.ID,
@@ -146,6 +146,9 @@ func (c *AppCommands) scheduleSemanticIndexPersist(engine, modelID, version stri
 			engine,
 			modelID,
 			version,
+			func() bool {
+				return c.aiJobQueue == nil || !c.aiJobQueue.InteractiveUIActive()
+			},
 		); err != nil && persistCtx.Err() == nil {
 			slog.Warn("semantic persistent index save failed", "error", err)
 		}
@@ -166,21 +169,13 @@ func (c *AppCommands) loadDefaultSemanticModel(ctx context.Context, settings dom
 		return err
 	}
 
-	status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
-	if c.semanticIndex != nil && status.Engine != "" && status.ModelID != "" && status.Version != "" {
-		c.semanticIndex.Prepare(status.Engine, status.ModelID, status.Version)
-		c.startBackgroundTask(func(warmCtx context.Context) {
-			if err := c.semanticIndex.Warm(warmCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil && warmCtx.Err() == nil {
-				// Search can retry the warm synchronously. Runtime readiness must
-				// not depend on a cache warm succeeding.
-				slog.Warn("semantic index warm failed", "error", err)
-				return
-			}
-			if warmCtx.Err() == nil {
-				c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
-			}
-		})
-	}
+	// Do not warm/open the semantic index as part of runtime restore. Large
+	// libraries can have hundreds of MB of persisted vector data, and users who
+	// are only browsing images should not pay that I/O cost. Semantic and
+	// similar-image search warm the exact index lazily on first use.
+	//
+	// Backfill remains independent: embeddings are durable in SQLite, so any
+	// vectors produced before first search are picked up by the lazy warm.
 
 	// Enumerating a large library and enqueueing missing embeddings can take a
 	// long time. Do not make runtime load/search readiness wait for that work.
@@ -229,7 +224,7 @@ func (c *AppCommands) ensureSemanticSearchReadyContext(ctx context.Context) erro
 	}
 
 	manifest := siglip2.DefaultManifest()
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		return fmt.Errorf("Semantic Search model is not installed or invalid: %w", err)
 	}
 	if err := c.loadDefaultSemanticModel(ctx, settings); err != nil {

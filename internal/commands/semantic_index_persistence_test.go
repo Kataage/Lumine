@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -80,7 +81,7 @@ func buildPersistentSemanticFixture(t *testing.T) (*AppCommands, string, semanti
 	if err := index.Warm(context.Background(), cmd.semanticRepo, key.engine, key.modelID, key.version); err != nil {
 		t.Fatalf("initial SQLite warm: %v", err)
 	}
-	snapshot, err := writeSemanticPersistentSnapshot(context.Background(), root, cmd.semanticRepo, key)
+	snapshot, err := writeSemanticPersistentSnapshot(context.Background(), root, cmd.semanticRepo, key, nil)
 	if err != nil {
 		t.Fatalf("write semantic persistent snapshot: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestSemanticPersistWorkerWaitsUntilIncrementalEmbeddingIsReady(t *testing.T
 	index.mu.RUnlock()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version)
+		errCh <- index.PersistWhenStable(ctx, cmd.semanticRepo, key.engine, key.modelID, key.version, nil)
 	}()
 
 	// Wait until a persistence pass has actually adopted/validated a snapshot
@@ -608,4 +609,39 @@ func TestSemanticPersistentSnapshotFileSizeFormula(t *testing.T) {
 func Example_semanticSnapshotPath() {
 	fmt.Println("generation-addressed snapshots avoid replacing a live mmap")
 	// Output: generation-addressed snapshots avoid replacing a live mmap
+}
+
+
+func TestSemanticPersistentSnapshotYieldsToViewerActivity(t *testing.T) {
+	cmd := setupCommands(t)
+	library := createTestLibrary(t, cmd, "Semantic yield", t.TempDir())
+	for i := 0; i < 32; i++ {
+		seedReadySemanticEmbedding(
+			t,
+			cmd,
+			library.ID,
+			fmt.Sprintf("yield-%02d.png", i),
+			[]float32{1, float32(i) / 32},
+		)
+	}
+	root := t.TempDir()
+	key := semanticKey(testSemanticEngine, testSemanticModel, testSemanticVersion)
+
+	allowed := false
+	snapshot, err := writeSemanticPersistentSnapshot(
+		context.Background(),
+		root,
+		cmd.semanticRepo,
+		key,
+		func() bool { return allowed },
+	)
+	if snapshot != nil {
+		if snapshot.unmap != nil {
+			_ = snapshot.unmap()
+		}
+		t.Fatal("yielded snapshot must not be published")
+	}
+	if !errors.Is(err, errSemanticSnapshotYielded) {
+		t.Fatalf("snapshot error = %v, want %v", err, errSemanticSnapshotYielded)
+	}
 }

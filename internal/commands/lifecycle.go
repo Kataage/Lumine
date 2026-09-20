@@ -7,6 +7,9 @@ import (
 
 func (c *AppCommands) StartAIRestore() bool {
 	return c.startBackgroundTask(func(ctx context.Context) {
+		if c.aiJobQueue != nil {
+			defer c.aiJobQueue.SetStartupHold(false)
+		}
 		restore := []struct {
 			name string
 			run  func() error

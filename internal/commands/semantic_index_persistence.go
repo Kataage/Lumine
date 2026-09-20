@@ -29,6 +29,7 @@ var (
 	errSemanticSnapshotStale             = errors.New("semantic persistent index is stale")
 	errSemanticSnapshotCorrupt           = errors.New("semantic persistent index is corrupt")
 	errSemanticSnapshotGenerationChanged = errors.New("semantic index generation changed during snapshot")
+	errSemanticSnapshotYielded           = errors.New("semantic snapshot yielded to foreground viewer")
 )
 
 type semanticPersistentSnapshot struct {
@@ -296,6 +297,7 @@ func writeSemanticPersistentSnapshot(
 	root string,
 	repo *db.SemanticEmbeddingRepo,
 	key semanticIndexKey,
+	backgroundAllowed func() bool,
 ) (*semanticPersistentSnapshot, error) {
 	if root == "" || repo == nil {
 		return nil, errSemanticSnapshotUnavailable
@@ -364,6 +366,9 @@ func writeSemanticPersistentSnapshot(
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				if backgroundAllowed != nil && !backgroundAllowed() {
+					return errSemanticSnapshotYielded
+				}
 				if position >= count || rowDimensions != dimensions || assetID <= previousID {
 					return errSemanticSnapshotGenerationChanged
 				}
@@ -405,8 +410,26 @@ func writeSemanticPersistentSnapshot(
 		return nil, err
 	}
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, temp); err != nil {
-		return nil, fmt.Errorf("hash semantic snapshot: %w", err)
+	hashBuffer := make([]byte, 1024*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if backgroundAllowed != nil && !backgroundAllowed() {
+			return nil, errSemanticSnapshotYielded
+		}
+		n, readErr := temp.Read(hashBuffer)
+		if n > 0 {
+			if _, err := hasher.Write(hashBuffer[:n]); err != nil {
+				return nil, fmt.Errorf("hash semantic snapshot: %w", err)
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("hash semantic snapshot: %w", readErr)
+		}
 	}
 	copy(header.checksum[:], hasher.Sum(nil))
 	headerBytes, err := encodeSemanticSnapshotHeader(header)

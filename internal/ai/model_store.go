@@ -294,7 +294,13 @@ func (s *ModelStore) downloadFile(
 	return nil
 }
 
-func (s *ModelStore) Verify(modelID, version string) (InstalledModel, error) {
+// Probe checks that an installed model has a valid manifest and that every
+// declared file exists at the expected size. It intentionally does not hash
+// model contents. Use this for read-only status/UI paths where streaming
+// multi-gigabyte model weights would turn a cheap health check into heavy I/O.
+//
+// Verify remains the integrity boundary for install/load operations.
+func (s *ModelStore) Probe(modelID, version string) (InstalledModel, error) {
 	if !safeComponentPattern.MatchString(modelID) || !safeComponentPattern.MatchString(version) {
 		return InstalledModel{}, errors.New("invalid model id or version")
 	}
@@ -321,11 +327,32 @@ func (s *ModelStore) Verify(modelID, version string) (InstalledModel, error) {
 
 	for _, file := range manifest.Files {
 		path := filepath.Join(root, filepath.FromSlash(file.Path))
+		info, err := os.Stat(path)
+		if err != nil {
+			return InstalledModel{}, fmt.Errorf("stat installed file %s: %w", file.Path, err)
+		}
+		if info.IsDir() {
+			return InstalledModel{}, fmt.Errorf("installed file %s is a directory", file.Path)
+		}
+		if file.SizeBytes > 0 && info.Size() != file.SizeBytes {
+			return InstalledModel{}, fmt.Errorf("size mismatch for installed file %s: got %d, want %d", file.Path, info.Size(), file.SizeBytes)
+		}
+	}
+	return InstalledModel{Manifest: manifest, RootDir: root}, nil
+}
+
+func (s *ModelStore) Verify(modelID, version string) (InstalledModel, error) {
+	installed, err := s.Probe(modelID, version)
+	if err != nil {
+		return InstalledModel{}, err
+	}
+	for _, file := range installed.Manifest.Files {
+		path := filepath.Join(installed.RootDir, filepath.FromSlash(file.Path))
 		if err := verifyFile(path, file); err != nil {
 			return InstalledModel{}, err
 		}
 	}
-	return InstalledModel{Manifest: manifest, RootDir: root}, nil
+	return installed, nil
 }
 
 func verifyFile(path string, expected ModelFile) error {
@@ -376,7 +403,7 @@ func (s *ModelStore) List() ([]InstalledModelInfo, error) {
 			if !versionEntry.IsDir() || strings.HasPrefix(versionEntry.Name(), ".") {
 				continue
 			}
-			installed, err := s.Verify(modelEntry.Name(), versionEntry.Name())
+			installed, err := s.Probe(modelEntry.Name(), versionEntry.Name())
 			if err != nil {
 				continue
 			}

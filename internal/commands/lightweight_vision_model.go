@@ -61,7 +61,7 @@ func (c *AppCommands) GetDefaultLightweightVisionModelInfo() LightweightVisionMo
 		LlamaRuntime: c.currentLlamaRuntimeInfo(settings.GPUAcceleration),
 	}
 	if c.aiManager != nil {
-		if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err == nil {
+		if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err == nil {
 			info.Installed = true
 		}
 		info.Runtime = runtimeStatusForInstalledModel(
@@ -191,7 +191,7 @@ func (c *AppCommands) RestoreDefaultLightweightVisionModel() error {
 	}
 
 	modelManifest := llamacpp.DefaultVisionModelManifest()
-	if _, err := c.aiManager.VerifyModel(modelManifest.ID, modelManifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(modelManifest.ID, modelManifest.Version); err != nil {
 		metadata := filepath.Join(
 			c.aiManager.Store().Root(),
 			modelManifest.ID,
@@ -225,7 +225,7 @@ func (c *AppCommands) tryLoadLightweightVisionAfterInstall(ctx context.Context) 
 		return nil
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
-	if _, err := c.aiManager.VerifyModel(manifest.ID, manifest.Version); err != nil {
+	if _, err := c.aiManager.ProbeModel(manifest.ID, manifest.Version); err != nil {
 		return nil
 	}
 	return c.loadDefaultLightweightVisionModel(ctx)

@@ -213,3 +213,36 @@ func TestRuntimeMetadataExecutablePathIsRelativeOnDisk(t *testing.T) {
 		t.Fatal("runtime metadata must not persist machine-specific absolute paths")
 	}
 }
+
+
+func TestRuntimeStoreProbeAvoidsExecutableHashButVerifyRemainsStrict(t *testing.T) {
+	executable := []byte("fake llama executable")
+	archive := makeRuntimeZip(t, "bin/llama-server.exe", executable)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	defer server.Close()
+
+	manifest := RuntimeManifest{
+		ID: "llama-probe-test", Version: "v1", URL: server.URL,
+		SHA256: shaHex(archive), SizeBytes: int64(len(archive)),
+		ExecutableName: "llama-server.exe", Platform: "windows", Architecture: "amd64",
+	}
+	store := NewRuntimeStore(t.TempDir())
+	installed, err := store.Install(context.Background(), manifest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	corrupted := append([]byte(nil), executable...)
+	corrupted[0] ^= 0xff
+	if err := os.WriteFile(installed.ExecutablePath, corrupted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Probe(manifest); err != nil {
+		t.Fatalf("Probe should inspect runtime metadata/path without hashing executable: %v", err)
+	}
+	if _, err := store.Verify(manifest); err == nil {
+		t.Fatal("Verify must still reject same-size corrupted runtime executable")
+	}
+}

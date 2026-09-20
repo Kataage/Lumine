@@ -25,6 +25,7 @@ import {
 } from "./api/client";
 import { queryClient } from "./queryClient";
 import { computeViewerSelection, isEditableShortcutTarget } from "./utils/viewerInteraction";
+import { isViewerForegroundActive } from "./utils/viewerPerformance";
 
 type ViewMode = "grid" | "list";
 type SearchMode = "normal" | "semantic";
@@ -172,7 +173,7 @@ export default function App() {
     let disposed = false;
 
     const run = async () => {
-      if (disposed || document.hidden || autoSyncRunning.current) return;
+      if (disposed || document.hidden || autoSyncRunning.current || isViewerForegroundActive()) return;
       autoSyncRunning.current = true;
       try {
         const result = await syncLibrary(libraryId);

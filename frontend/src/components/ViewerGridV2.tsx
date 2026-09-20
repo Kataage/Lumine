@@ -471,7 +471,10 @@ function SemanticSearchProgressOverlay({
     if (!active) return;
     setWaitStartedAt(Date.now());
     let disposed = false;
+    let refreshing = false;
     const refresh = async () => {
+      if (refreshing || disposed) return;
+      refreshing = true;
       try {
         const [status, snapshot] = await Promise.all([
           getSemanticIndexStatus(),
@@ -486,10 +489,14 @@ function SemanticSearchProgressOverlay({
         if (!disposed) {
           setDiagnosticError(cause instanceof Error ? cause.message : String(cause));
         }
+      } finally {
+        refreshing = false;
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 500);
+    // Search progress itself is event-driven. Diagnostics only need a slow
+    // heartbeat, and must never stack overlapping control-plane requests.
+    const timer = window.setInterval(() => void refresh(), 1000);
     return () => {
       disposed = true;
       window.clearInterval(timer);
