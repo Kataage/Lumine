@@ -15,6 +15,10 @@ export interface AssetListResponse {
   semanticSearchSessionId?: string;
   semanticCoverageReadyCount?: number;
   semanticCoverageTotalCount?: number;
+  semanticCoverageQueuedCount?: number;
+  semanticCoverageRunningCount?: number;
+  semanticCoverageFailedCount?: number;
+  semanticCoverageStaleCount?: number;
 }
 
 export interface SemanticSearchProgress {
