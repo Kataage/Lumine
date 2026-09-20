@@ -112,23 +112,3 @@ jobs:
 
       - name: Validate AI benchmark Python tooling
         run: python3 -m py_compile benchmarks/ai/adapters/tagger_onnx.py benchmarks/ai/adapters/tagger_pixai_v1.py benchmarks/ai/adapters/tagger_report.py benchmarks/ai/adapters/tagger_runtime_inspect.py benchmarks/ai/adapters/vision_common.py benchmarks/ai/adapters/lightvision_florence.py benchmarks/ai/adapters/lightvision_smolvlm.py benchmarks/ai/adapters/lightvision_report.py benchmarks/ai/adapters/advancedvision_common.py benchmarks/ai/adapters/advancedvision_llamacpp.py benchmarks/ai/adapters/advancedvision_report.py benchmarks/ai/adapters/advancedvision_pin_inspect.py benchmarks/ai/adapters/prompt_common.py benchmarks/ai/adapters/prompt_llamacpp.py benchmarks/ai/adapters/prompt_report.py benchmarks/ai/adapters/prompt_pin_inspect.py
-
-
-  # Temporary on PR for #189. Remove before merge after Heretic metadata is
-  # immutably written into the checked-in profile.
-  advanced-heretic-pin-probe:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Resolve Advanced Vision Heretic pins
-        run: |
-          python -m pip install --disable-pip-version-check -r benchmarks/ai/adapters/requirements-advancedvision.txt
-          python benchmarks/ai/adapters/advancedvision_pin_inspect.py \
-            --out /tmp/advanced-heretic-pin-info.json \
-            benchmarks/ai/profiles/advanced-qwen3-vl-2b-heretic-q4.json
-          cat /tmp/advanced-heretic-pin-info.json
