@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/ai/siglip2"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -295,6 +296,7 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 		c.rememberSemanticPriorityAssets(assetIDs)
 		return 0, nil
 	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
 	assetIDs = mergeSemanticPriorityIDs(assetIDs, c.takeSemanticPriorityAssets())
 	if len(assetIDs) == 0 {
 		return 0, nil
@@ -304,7 +306,7 @@ func (c *AppCommands) EnqueueAutomaticSemanticAssets(assetIDs []int64) (int, err
 		assetIDs,
 		status.Engine,
 		status.ModelID,
-		status.Version,
+		analysisVersion,
 	)
 	if err != nil {
 		return 0, err
@@ -349,6 +351,7 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
 		return 0, errors.New("Semantic Search runtime provenance is incomplete")
 	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
 
 	libraries, err := c.libraryRepo.List()
 	if err != nil {
@@ -382,7 +385,7 @@ func (c *AppCommands) enqueueSemanticBackfillContext(ctx context.Context) (int, 
 				library.ID,
 				status.Engine,
 				status.ModelID,
-				status.Version,
+				analysisVersion,
 				beforeModifiedAt,
 				beforeID,
 				1000,
@@ -437,6 +440,7 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	if status.Engine == "" || status.ModelID == "" || status.Version == "" {
 		return ai.AnalysisOutput{}, errors.New("Semantic Search runtime provenance is incomplete")
 	}
+	analysisVersion := siglip2.AnalysisVersion(status.Version)
 
 	response, err := c.aiManager.Infer(ctx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_image",
@@ -455,14 +459,14 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 		asset.ID,
 		status.Engine,
 		status.ModelID,
-		status.Version,
+		analysisVersion,
 		vector,
 	); err != nil {
 		return ai.AnalysisOutput{}, err
 	}
 	if c.semanticIndex != nil {
-		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, status.Version, vector)
-		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
+		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
+		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
 	}
 
 	summary, _ := json.Marshal(map[string]any{
@@ -472,7 +476,7 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	return ai.AnalysisOutput{
 		Engine:       status.Engine,
 		ModelID:      status.ModelID,
-		ModelVersion: status.Version,
+		ModelVersion: analysisVersion,
 		ResultJSON:   string(summary),
 	}, nil
 }
@@ -555,17 +559,19 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		return nil, err
 	}
 
-	searchQuery := semanticQueryFromAssetRequest(req, status, 0)
+	searchStatus := status
+	searchStatus.Version = siglip2.AnalysisVersion(status.Version)
+	searchQuery := semanticQueryFromAssetRequest(req, searchStatus, 0)
 	coverageTotal, _ := c.semanticScopeTotal(req)
 	coverageReady := 0
 	var result *db.SemanticSearchResult
 	if c.semanticIndex != nil {
-		if !c.semanticIndex.IsReady(status.Engine, status.ModelID, status.Version) {
+		if !c.semanticIndex.IsReady(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version) {
 			emitProgress("warming_index", 0, 0)
-			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, status.Engine, status.ModelID, status.Version); err != nil {
+			if err := c.semanticIndex.Warm(searchCtx, c.semanticRepo, searchStatus.Engine, searchStatus.ModelID, searchStatus.Version); err != nil {
 				return nil, fmt.Errorf("prepare semantic memory index: %w", err)
 			}
-			c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, status.Version)
+			c.scheduleSemanticIndexPersist(searchStatus.Engine, searchStatus.ModelID, searchStatus.Version)
 		}
 		emitProgress("filtering", 0, 0)
 		eligibleIDs, err := c.semanticRepo.ListEligibleSemanticAssetIDs(searchCtx, searchQuery)
