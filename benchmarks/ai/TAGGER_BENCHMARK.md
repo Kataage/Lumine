@@ -55,7 +55,16 @@ Profile: `profiles/pixai-tagger-v1.0.json`
 
 PixAI v1.0 is deliberately benchmarked through its official Transformers/custom-code path. Lumine must not assume an unofficial ONNX conversion is equivalent. This also makes the CPU/RAM/cold-start cost of adopting the current quality model visible.
 
-The upstream model card does not currently expose a clear license field in the repository metadata. Treat redistribution/adoption as blocked until the weight/code license is explicitly verified, regardless of benchmark quality.
+As of 2026-09-20, the pinned Hugging Face repository does not declare a license in its model-card front matter, does not include a LICENSE file in the published tree, and the README does not state commercial or redistribution terms. The model card identifies a finetuned SAM3 backbone.
+
+Upstream SAM3 is distributed under Meta's SAM License. That license defines conditions for SAM Materials and their derivatives, but it does not by itself establish what rights PixAI grants in PixAI's separately published finetuned weights/custom pipeline. Separately, PixAI's platform copyright documentation says PixAI official model files are not to be resold/redistributed, but it does not explicitly state whether that platform policy governs this Hugging Face tagger.
+
+Lumine therefore keeps PixAI v1.0 in the controlled benchmark, but treats **product adoption, bundling, mirroring, or redistribution of the model/code as blocked until PixAI provides an explicit license or written redistribution clarification for this repository**. Benchmark quality alone cannot clear that blocker.
+
+Reference points checked 2026-09-20:
+- https://huggingface.co/pixai-labs/pixai-tagger-v1.0
+- https://github.com/facebookresearch/sam3/blob/main/LICENSE
+- https://platform.pixai.art/en/docs/about/copyright
 
 ### Camie Tagger v2 — ONNX / wide-vocabulary comparison candidate
 
