@@ -1,4 +1,5 @@
 import { getLocalImageUrl } from "../api/client";
+import { beginViewerForegroundWork } from "./viewerPerformance";
 
 export type ImageFit = "cover" | "contain";
 export type ImageDecodePriority = "prefetch" | "normal" | "high";
@@ -395,34 +396,42 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
   }
 
   const requestedPriority = request.priority ?? "normal";
-  const pending = inflight.get(key);
-  if (pending) {
-    // An item that was only being prefetched may become visible during a fast
-    // scroll. Promote its queued decode instead of leaving the visible card
-    // waiting behind unrelated prefetch work.
-    promoteQueuedDecode(key, requestedPriority);
-    return pending;
-  }
+  const releaseViewerPriority = requestedPriority === "prefetch"
+    ? null
+    : beginViewerForegroundWork();
 
-  const promise = withDecodeSlot(key, async () => {
-    const response = await fetch(getLocalImageUrl(request.filePath), {
-      cache: "no-store",
-      credentials: "same-origin",
-    });
-    if (!response.ok) {
-      throw new Error(`image fetch failed: ${response.status}`);
-    }
-    const blob = await response.blob();
-    const bitmap = await createSizedBitmap(blob, request);
-    cacheBitmap(key, bitmap, request);
-    return bitmap;
-  }, requestedPriority);
-
-  inflight.set(key, promise);
   try {
-    return await promise;
+    const pending = inflight.get(key);
+    if (pending) {
+      // An item that was only being prefetched may become visible during a fast
+      // scroll. Promote its queued decode instead of leaving the visible card
+      // waiting behind unrelated prefetch work.
+      promoteQueuedDecode(key, requestedPriority);
+      return await pending;
+    }
+
+    const promise = withDecodeSlot(key, async () => {
+      const response = await fetch(getLocalImageUrl(request.filePath), {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new Error(`image fetch failed: ${response.status}`);
+      }
+      const blob = await response.blob();
+      const bitmap = await createSizedBitmap(blob, request);
+      cacheBitmap(key, bitmap, request);
+      return bitmap;
+    }, requestedPriority);
+
+    inflight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inflight.delete(key);
+    }
   } finally {
-    inflight.delete(key);
+    releaseViewerPriority?.();
   }
 }
 
