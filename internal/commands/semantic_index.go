@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/domain"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
@@ -57,6 +58,7 @@ type semanticMemoryIndex struct {
 	persistEpoch    uint64
 	persistWorker   bool
 	persistDebounce time.Duration
+	diagnostics     *ai.SemanticDiagnostics
 
 	ready      bool
 	warming    bool
@@ -81,6 +83,12 @@ func newSemanticMemoryIndex() *semanticMemoryIndex {
 		persistDebounce: 2 * time.Second,
 		stage:           "idle",
 	}
+}
+
+func (i *semanticMemoryIndex) SetDiagnostics(diagnostics *ai.SemanticDiagnostics) {
+	i.mu.Lock()
+	i.diagnostics = diagnostics
+	i.mu.Unlock()
 }
 
 func (i *semanticMemoryIndex) SetStorageRoot(root string) {
@@ -262,14 +270,35 @@ func (i *semanticMemoryIndex) Upsert(
 	version string,
 	vector []float32,
 ) {
+	i.UpsertContext(context.Background(), assetID, engine, modelID, version, vector)
+}
+
+func (i *semanticMemoryIndex) UpsertContext(
+	ctx context.Context,
+	assetID int64,
+	engine string,
+	modelID string,
+	version string,
+	vector []float32,
+) {
 	normalized, err := normalizeIndexVector(vector)
 	if err != nil {
 		return
 	}
 	key := semanticKey(engine, modelID, version)
 
+	lockStarted := time.Now()
 	i.mu.Lock()
-	defer i.mu.Unlock()
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		trace.AddStage(ai.SemanticStageIndexLockWait, time.Since(lockStarted))
+	}
+	updateStarted := time.Now()
+	defer func() {
+		if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+			trace.AddStage(ai.SemanticStageIndexUpdate, time.Since(updateStarted))
+		}
+		i.mu.Unlock()
+	}()
 	if i.key != key {
 		return
 	}
@@ -791,13 +820,30 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 			}
 		}
 
+		var finishSnapshot func(string, int64)
+		i.mu.RLock()
+		diagnostics := i.diagnostics
+		i.mu.RUnlock()
+		if diagnostics != nil {
+			finishSnapshot = diagnostics.BeginSnapshot()
+		} else {
+			finishSnapshot = func(string, int64) {}
+		}
 		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key, backgroundAllowed)
 		if errors.Is(err, errSemanticSnapshotGenerationChanged) {
+			finishSnapshot("generation_changed", 0)
 			continue
 		}
-		if err != nil {
+		if errors.Is(err, errSemanticSnapshotYielded) {
+			finishSnapshot("yielded", 0)
 			return err
 		}
+		if err != nil {
+			finishSnapshot("failed", 0)
+			return err
+		}
+		snapshotBytes := int64(len(snapshot.mapped))
+		finishSnapshot("success", snapshotBytes)
 
 		i.mu.Lock()
 		if i.key != key {
