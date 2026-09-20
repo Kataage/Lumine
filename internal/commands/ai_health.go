@@ -45,7 +45,7 @@ func (c *AppCommands) GetAIHealthSnapshot() (AIHealthSnapshot, error) {
 	}
 
 	if c.aiManager != nil {
-		snapshot.SemanticRuntime = c.GetDefaultSemanticModelInfo().Runtime
+		snapshot.SemanticRuntime = c.aiManager.Status(domain.AICapabilitySemanticSearch)
 	}
 	if c.semanticIndex != nil {
 		snapshot.SemanticIndex = c.semanticIndex.Status()
