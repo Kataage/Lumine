@@ -110,8 +110,8 @@
       "quantization": "Q8_0",
       "artifactSha256": "9d4612de6a42214499e301494a3ecc2be0abdd9de44e663bda63f1152fad1bf4",
       "issue": "#183",
-      "rationale": "Small Apache-2.0 llama.cpp multimodal candidate with pinned Q8 model and mmproj; attractive for product integration if quality/CPU results are adequate.",
-      "updatedAt": "2026-09-19"
+      "rationale": "Small Apache-2.0 llama.cpp multimodal candidate with pinned Q8 model and mmproj. Controlled #183 evidence uses the current Lumine llama.cpp b11053 CPU runtime; adoption remains pending the same private fixture pack and hardware ID comparison against Florence-2-base.",
+      "updatedAt": "2026-09-20"
     },
     {
       "capability": "advanced_vision",
