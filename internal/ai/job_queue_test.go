@@ -103,6 +103,7 @@ func TestJobQueueProcessesAndPersistsModelProvenance(t *testing.T) {
 	settings := domain.AISettings{
 		Enabled:        true,
 		SemanticSearch: true,
+		AutoAnalyze:    true,
 	}
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
@@ -394,12 +395,6 @@ func TestJobQueueInteractiveUIYieldsAndResumesWork(t *testing.T) {
 	})
 
 	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, -100, true)
-	if err != nil {
-		// Automatic work is what normally competes with viewer rendering.
-		// Enable it explicitly for this test if the fixture default changes.
-		settings.AutoAnalyze = true
-		job, _, err = queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, -100, true)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
