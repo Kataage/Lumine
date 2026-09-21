@@ -226,13 +226,13 @@ func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.
 		VALUES (?, ?, 'running', '', '', '', '', 1, '', NULL, CURRENT_TIMESTAMP)
 		ON CONFLICT(asset_id, capability) DO UPDATE SET
 			state = 'running',
-			engine = '',
-			model_id = '',
-			model_version = '',
-			result_json = '',
+			engine = CASE WHEN excluded.capability = 'semantic_search' THEN '' ELSE ai_asset_analysis.engine END,
+			model_id = CASE WHEN excluded.capability = 'semantic_search' THEN '' ELSE ai_asset_analysis.model_id END,
+			model_version = CASE WHEN excluded.capability = 'semantic_search' THEN '' ELSE ai_asset_analysis.model_version END,
+			result_json = CASE WHEN excluded.capability = 'semantic_search' THEN '' ELSE ai_asset_analysis.result_json END,
 			attempt_count = ai_asset_analysis.attempt_count + 1,
 			error_message = '',
-			analyzed_at = NULL,
+			analyzed_at = CASE WHEN excluded.capability = 'semantic_search' THEN NULL ELSE ai_asset_analysis.analyzed_at END,
 			updated_at = CURRENT_TIMESTAMP
 	`, assetID, capability); err != nil {
 		return nil, fmt.Errorf("mark AI analysis running: %w", err)
@@ -631,11 +631,11 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	if _, err := tx.Exec(`
 		UPDATE ai_asset_analysis
 		SET state = 'queued',
-			engine = '',
-			model_id = '',
-			model_version = '',
-			result_json = '',
-			analyzed_at = NULL,
+			engine = CASE WHEN capability = 'semantic_search' THEN '' ELSE engine END,
+			model_id = CASE WHEN capability = 'semantic_search' THEN '' ELSE model_id END,
+			model_version = CASE WHEN capability = 'semantic_search' THEN '' ELSE model_version END,
+			result_json = CASE WHEN capability = 'semantic_search' THEN '' ELSE result_json END,
+			analyzed_at = CASE WHEN capability = 'semantic_search' THEN NULL ELSE analyzed_at END,
 			error_message = CASE WHEN error_message = '' THEN 'recovered after app restart' ELSE error_message END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE state = 'running'
