@@ -277,14 +277,14 @@ func (t *SemanticJobTrace) RecordError(stage string, err error) {
 		t.sqliteCode = code
 	}
 	t.mu.Unlock()
-	if t.collector != nil && code != 0 {
-		t.collector.recordSQLiteCode(code)
-	}
 }
 
 func RecordSemanticTraceError(ctx context.Context, stage string, err error) {
 	if trace := SemanticJobTraceFromContext(ctx); trace != nil {
 		trace.RecordError(stage, err)
+		if trace.collector != nil {
+			trace.collector.RecordSQLiteError(err)
+		}
 	}
 }
 
@@ -304,6 +304,15 @@ func (d *SemanticDiagnostics) RecordCompletionFailure(err error) {
 	d.mu.Lock()
 	d.failedCompletionCount++
 	d.mu.Unlock()
+	if code := sqliteErrorCode(err); code != 0 {
+		d.recordSQLiteCode(code)
+	}
+}
+
+func (d *SemanticDiagnostics) RecordSQLiteError(err error) {
+	if !d.Enabled() {
+		return
+	}
 	if code := sqliteErrorCode(err); code != 0 {
 		d.recordSQLiteCode(code)
 	}
