@@ -762,18 +762,16 @@ func TestJobQueueRetriesSemanticFinalizationWithoutRerunningHandler(t *testing.T
 		); err != nil {
 			return AnalysisOutput{}, err
 		}
-		return AnalysisOutput{
-			Engine:               "siglip2-onnx",
-			ModelID:              "siglip2",
-			ModelVersion:         "revision-1",
-			ResultJSON:           resultJSON,
-			SemanticResultStaged: true,
-			AfterCommit: func() {
-				handlerMu.Lock()
-				afterCommitCalls++
-				handlerMu.Unlock()
-			},
-		}, nil
+		return WithDurableSemanticResult(AnalysisOutput{
+			Engine:       "siglip2-onnx",
+			ModelID:      "siglip2",
+			ModelVersion: "revision-1",
+			ResultJSON:   resultJSON,
+		}, func() {
+			handlerMu.Lock()
+			afterCommitCalls++
+			handlerMu.Unlock()
+		}), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
