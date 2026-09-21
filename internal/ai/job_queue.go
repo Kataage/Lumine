@@ -20,6 +20,21 @@ type AnalysisOutput struct {
 	ModelID      string `json:"modelId"`
 	ModelVersion string `json:"modelVersion"`
 	ResultJSON   string `json:"resultJson"`
+
+	semanticResultStaged bool
+	afterCommit          func()
+}
+
+func WithDurableSemanticResult(output AnalysisOutput, afterCommit func()) AnalysisOutput {
+	output.semanticResultStaged = true
+	output.afterCommit = afterCommit
+	return output
+}
+
+func (o AnalysisOutput) runAfterCommit() {
+	if o.afterCommit != nil {
+		o.afterCommit()
+	}
 }
 
 type AnalysisHandler func(context.Context, domain.AIJob) (AnalysisOutput, error)
@@ -29,6 +44,7 @@ type AnalysisJobRepository interface {
 	EnqueueBatch(assetIDs []int64, capability domain.AICapability, source domain.AIJobSource, priority int, maxAttempts int) (int, error)
 	ClaimNext(capabilities []domain.AICapability) (*domain.AIJob, error)
 	CompleteJob(jobID int64, engine, modelID, modelVersion, resultJSON string) error
+	CompleteSemanticJob(jobID int64, engine, modelID, modelVersion, resultJSON string) error
 	FailOrRequeue(jobID int64, message string) (bool, error)
 	CancelJob(jobID int64) error
 	RetryJob(jobID int64) error
@@ -613,7 +629,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 
 	if handlerErr == nil {
 		stopCompletion := MeasureSemanticStage(jobCtx, SemanticStageCompletionPersistence)
-		completeErr := q.repo.CompleteJob(job.ID, output.Engine, output.ModelID, output.ModelVersion, output.ResultJSON)
+		completeErr := q.completeOutputWithRetry(parent, job, output, diagnostics)
 		stopCompletion()
 		if completeErr != nil {
 			if trace != nil {
@@ -626,6 +642,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 			slog.Error("failed to complete AI job", "job", job.ID, "error", completeErr)
 			return
 		}
+		output.runAfterCommit()
 		if diagnostics != nil {
 			diagnostics.FinishJob(trace, "success", nil)
 		}
@@ -694,6 +711,66 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 	}
 	if diagnostics != nil {
 		diagnostics.FinishJob(trace, "failed", handlerErr)
+	}
+}
+
+func (q *JobQueue) completeOutputWithRetry(
+	ctx context.Context,
+	job domain.AIJob,
+	output AnalysisOutput,
+	diagnostics *SemanticDiagnostics,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	delay := 5 * time.Millisecond
+	const maxDelay = 250 * time.Millisecond
+
+	for {
+		var err error
+		if output.semanticResultStaged && job.Capability == domain.AICapabilitySemanticSearch {
+			err = q.repo.CompleteSemanticJob(
+				job.ID,
+				output.Engine,
+				output.ModelID,
+				output.ModelVersion,
+				output.ResultJSON,
+			)
+		} else {
+			err = q.repo.CompleteJob(
+				job.ID,
+				output.Engine,
+				output.ModelID,
+				output.ModelVersion,
+				output.ResultJSON,
+			)
+		}
+		if err == nil {
+			return nil
+		}
+		code := sqliteErrorCode(err)
+		if code&0xff != 5 {
+			return err
+		}
+		if diagnostics != nil {
+			diagnostics.RecordCompletionFailure(err)
+		}
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return fmt.Errorf("AI result finalization interrupted: %w", ctx.Err())
+		case <-timer.C:
+		}
+		if delay < maxDelay {
+			delay *= 2
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+		}
 	}
 }
 

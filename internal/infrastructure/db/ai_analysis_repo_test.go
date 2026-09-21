@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -438,3 +440,183 @@ func TestAIAnalysisRepoForegroundSemanticClaimPreservesEnqueueOrder(t *testing.T
 	}
 }
 
+
+
+func TestAIAnalysisRepoCompletionAvoidsBusySnapshotUpgrade(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	repo := NewAIAnalysisRepo(database)
+	assetID := createAIRepoTestAsset(t, database, "/tmp/ai-complete-snapshot", "snapshot.png")
+
+	job, _, err := repo.Enqueue(
+		assetID,
+		domain.AICapabilityTagger,
+		domain.AIJobSourceManual,
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilityTagger})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim job: job=%+v err=%v", claimed, err)
+	}
+
+	// Reproduce the old read-first transaction shape. Once another connection
+	// commits a writer change, upgrading this stale WAL snapshot should fail.
+	staleTx, err := database.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer staleTx.Rollback()
+	var status string
+	if err := staleTx.QueryRow("SELECT status FROM ai_jobs WHERE id = ?", job.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec("UPDATE ai_jobs SET priority = priority + 1 WHERE id = ?", job.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, staleErr := staleTx.Exec("UPDATE ai_jobs SET last_error = 'stale writer' WHERE id = ?", job.ID)
+	if staleErr == nil {
+		t.Fatal("expected stale read transaction write-upgrade to fail")
+	}
+	var coder interface{ Code() int }
+	if !errors.As(staleErr, &coder) || coder.Code()&0xff != 5 {
+		t.Fatalf("expected SQLite busy-family error, got %T %v", staleErr, staleErr)
+	}
+	_ = staleTx.Rollback()
+
+	// CompleteJob writes before reading, so it does not repeat the stale
+	// snapshot upgrade and should complete the already-running job normally.
+	if err := repo.CompleteJob(job.ID, "engine", "model", "1", "{}"); err != nil {
+		t.Fatalf("write-first CompleteJob: %v", err)
+	}
+	completed, err := repo.GetJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != domain.AIJobCompleted {
+		t.Fatalf("job status = %s, want completed", completed.Status)
+	}
+}
+
+func TestRecoverInterruptedFinalizesDurablyStagedSemanticResult(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	analysisRepo := NewAIAnalysisRepo(database)
+	semanticRepo := NewSemanticEmbeddingRepo(database)
+	assetID := createAIRepoTestAsset(t, database, "/tmp/ai-semantic-recovery", "semantic.png")
+
+	job, _, err := analysisRepo.Enqueue(
+		assetID,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := analysisRepo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim semantic job: job=%+v err=%v", claimed, err)
+	}
+
+	const resultJSON = `{"dimensions":2,"kind":"image_embedding"}`
+	if err := semanticRepo.StageAnalysisResult(
+		context.Background(),
+		job.ID,
+		assetID,
+		"siglip2-onnx",
+		"siglip2",
+		"revision-1",
+		resultJSON,
+		[]float32{1, 0},
+	); err != nil {
+		t.Fatalf("stage semantic result: %v", err)
+	}
+	if ready, err := semanticRepo.GetReady(assetID); err != nil || ready != nil {
+		t.Fatalf("staged result must not be visible as ready before finalization: ready=%+v err=%v", ready, err)
+	}
+
+	recovered, err := analysisRepo.RecoverInterrupted()
+	if err != nil {
+		t.Fatalf("RecoverInterrupted: %v", err)
+	}
+	if recovered != 1 {
+		t.Fatalf("recovered jobs = %d, want 1", recovered)
+	}
+	gotJob, err := analysisRepo.GetJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotJob.Status != domain.AIJobCompleted {
+		t.Fatalf("staged semantic job status = %s, want completed", gotJob.Status)
+	}
+	analyses, err := analysisRepo.GetByAsset(assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisReady ||
+		analyses[0].ModelVersion != "revision-1" ||
+		analyses[0].ResultJSON != resultJSON {
+		t.Fatalf("unexpected recovered semantic analysis: %+v", analyses)
+	}
+	ready, err := semanticRepo.GetReady(assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready == nil || ready.ModelVersion != "revision-1" {
+		t.Fatalf("recovered embedding is not ready: %+v", ready)
+	}
+}
+
+func TestRecoverInterruptedDoesNotPromoteOldSemanticEmbedding(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	analysisRepo := NewAIAnalysisRepo(database)
+	semanticRepo := NewSemanticEmbeddingRepo(database)
+	assetID := createAIRepoTestAsset(t, database, "/tmp/ai-semantic-old", "old.png")
+
+	// Existing old-model data must not be mistaken for a newly staged result.
+	markSemanticReady(t, database, assetID, "engine", "model", "old")
+	if err := semanticRepo.Upsert(assetID, "engine", "model", "old", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(
+		"UPDATE ai_asset_analysis SET state = 'stale' WHERE asset_id = ? AND capability = 'semantic_search'",
+		assetID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	job, _, err := analysisRepo.Enqueue(
+		assetID,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		0,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := analysisRepo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim reanalysis: job=%+v err=%v", claimed, err)
+	}
+
+	recovered, err := analysisRepo.RecoverInterrupted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered != 1 {
+		t.Fatalf("recovered jobs = %d, want 1", recovered)
+	}
+	gotJob, _ := analysisRepo.GetJob(job.ID)
+	if gotJob.Status != domain.AIJobQueued || gotJob.AttemptCount != 0 {
+		t.Fatalf("unstaged semantic job should be requeued, got %+v", gotJob)
+	}
+	analyses, _ := analysisRepo.GetByAsset(assetID)
+	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisQueued ||
+		analyses[0].Engine != "" || analyses[0].ModelVersion != "" {
+		t.Fatalf("old provenance leaked into recovered analysis: %+v", analyses)
+	}
+}

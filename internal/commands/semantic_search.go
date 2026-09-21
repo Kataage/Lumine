@@ -553,12 +553,21 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	if err != nil {
 		return ai.AnalysisOutput{}, err
 	}
+	summary, _ := json.Marshal(map[string]any{
+		"dimensions": len(vector),
+		"kind":       "image_embedding",
+	})
+	resultJSON := string(summary)
+
 	stopEmbeddingPersist := ai.MeasureSemanticStage(ctx, ai.SemanticStageEmbeddingPersistence)
-	err = c.semanticRepo.Upsert(
+	err = c.semanticRepo.StageAnalysisResult(
+		ctx,
+		job.ID,
 		asset.ID,
 		status.Engine,
 		status.ModelID,
 		analysisVersion,
+		resultJSON,
 		vector,
 	)
 	stopEmbeddingPersist()
@@ -566,28 +575,29 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 		ai.RecordSemanticTraceError(ctx, ai.SemanticStageEmbeddingPersistence, err)
 		return ai.AnalysisOutput{}, err
 	}
-	if c.semanticIndex != nil {
-		c.semanticIndex.UpsertContext(ctx, asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
-		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
+
+	// Publish in-memory/index/UI progress only after the queue has durably
+	// promoted the staged result to ready. A failed finalization must never make
+	// speculative progress visible as committed coverage.
+	afterCommit := func() {
+		if c.semanticIndex != nil {
+			c.semanticIndex.UpsertContext(ctx, asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
+			c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
+		}
+		if c.ctx != nil {
+			runtime.EventsEmit(c.ctx, "semantic:embedding-updated", map[string]any{
+				"assetId":      asset.ID,
+				"modelVersion": analysisVersion,
+			})
+		}
 	}
 
-	if c.ctx != nil {
-		runtime.EventsEmit(c.ctx, "semantic:embedding-updated", map[string]any{
-			"assetId":      asset.ID,
-			"modelVersion": analysisVersion,
-		})
-	}
-
-	summary, _ := json.Marshal(map[string]any{
-		"dimensions": len(vector),
-		"kind":       "image_embedding",
-	})
-	return ai.AnalysisOutput{
+	return ai.WithDurableSemanticResult(ai.AnalysisOutput{
 		Engine:       status.Engine,
 		ModelID:      status.ModelID,
 		ModelVersion: analysisVersion,
-		ResultJSON:   string(summary),
-	}, nil
+		ResultJSON:   resultJSON,
+	}, afterCommit), nil
 }
 
 func (c *AppCommands) SemanticSearchAssets(req AssetListRequest) (*AssetListResponse, error) {
