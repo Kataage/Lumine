@@ -274,6 +274,10 @@ export function GetSemanticIndexStatus() {
   return window['go']['commands']['AppCommands']['GetSemanticIndexStatus']();
 }
 
+export function GetSemanticPipelineDiagnostics() {
+  return window['go']['commands']['AppCommands']['GetSemanticPipelineDiagnostics']();
+}
+
 export function GetSetting(arg1) {
   return window['go']['commands']['AppCommands']['GetSetting'](arg1);
 }
@@ -488,6 +492,10 @@ export function RestorePromptEngineModel() {
 
 export function RestorePromptProject(arg1) {
   return window['go']['commands']['AppCommands']['RestorePromptProject'](arg1);
+}
+
+export function ResetSemanticPipelineDiagnostics() {
+  return window['go']['commands']['AppCommands']['ResetSemanticPipelineDiagnostics']();
 }
 
 export function RetryAIJob(arg1) {
