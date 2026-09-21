@@ -42,14 +42,8 @@ type AnalysisJobRepository interface {
 	ListJobs(limit int) ([]domain.AIJob, error)
 }
 
-type AIJobDiagnosticsCounts struct {
-	Queued      int64
-	Running     int64
-	LongRunning int64
-}
-
 type analysisJobDiagnosticsRepository interface {
-	AIJobDiagnosticsCounts(capability domain.AICapability, longRunningBefore time.Time) (AIJobDiagnosticsCounts, error)
+	AIJobDiagnosticsCounts(capability domain.AICapability, longRunningBefore time.Time) (domain.AIJobDiagnosticsCounts, error)
 }
 
 type activeAIJob struct {
