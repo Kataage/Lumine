@@ -592,14 +592,12 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 		}
 	}
 
-	return ai.AnalysisOutput{
-		Engine:               status.Engine,
-		ModelID:              status.ModelID,
-		ModelVersion:         analysisVersion,
-		ResultJSON:           resultJSON,
-		SemanticResultStaged: true,
-		AfterCommit:          afterCommit,
-	}, nil
+	return ai.WithDurableSemanticResult(ai.AnalysisOutput{
+		Engine:       status.Engine,
+		ModelID:      status.ModelID,
+		ModelVersion: analysisVersion,
+		ResultJSON:   resultJSON,
+	}, afterCommit), nil
 }
 
 func (c *AppCommands) SemanticSearchAssets(req AssetListRequest) (*AssetListResponse, error) {
