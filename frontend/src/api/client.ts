@@ -50,6 +50,70 @@ export interface AIJobQueueStatus {
   pausedCapabilities: string[];
 }
 
+export interface SemanticStageTimings {
+  fileOpenMs: number;
+  fileReadMs: number;
+  decodeMs: number;
+  preprocessMs: number;
+  runtimeLockWaitMs: number;
+  ortRunLockWaitMs: number;
+  tensorSetupMs: number;
+  ortRunMs: number;
+  embeddingPersistenceMs: number;
+  completionPersistenceMs: number;
+  indexLockWaitMs: number;
+  indexUpdateMs: number;
+}
+
+export interface SemanticJobTraceSnapshot {
+  jobId: number;
+  assetId: number;
+  attempt: number;
+  workerId: number;
+  startedAt: string;
+  finishedAt: string;
+  queueWaitMs: number;
+  claimToReadyMs: number;
+  enqueueToReadyMs: number;
+  stages: SemanticStageTimings;
+  outcome: string;
+  errorStage?: string;
+  error?: string;
+  sqliteCode?: number;
+}
+
+export interface SemanticPipelineDiagnosticsSnapshot {
+  enabled: boolean;
+  collectedAt: string;
+  resetAt: string;
+  readyLastMinute: number;
+  ortRunsLastMinute: number;
+  retryCount: number;
+  reInferenceCount: number;
+  discardedAfterCancel: number;
+  failedCompletionCount: number;
+  sqliteBusyCount: number;
+  sqliteBusySnapshotCount: number;
+  sqliteErrorCodes: Record<string, number>;
+  snapshotAttempts: number;
+  snapshotSuccesses: number;
+  snapshotDiscarded: number;
+  snapshotFailures: number;
+  snapshotBytes: number;
+  snapshotDurationMs: number;
+  viewerActive: boolean;
+  viewerActiveForMs: number;
+  viewerActiveTotalMs: number;
+  queueDepth: number;
+  runningJobs: number;
+  longRunningJobs: number;
+  activeWorkers: number;
+  workerCount: number;
+  executionProvider?: string;
+  adapterId?: number;
+  recentJobs: SemanticJobTraceSnapshot[];
+}
+
 export type TaggerSuggestionKind = "general" | "character" | "rating";
 export type TaggerSuggestionState = "pending" | "accepted" | "rejected";
 
@@ -93,6 +157,7 @@ export interface AIRuntimeStatus {
   version?: string;
   engine?: string;
   executionProvider?: string;
+  adapterId?: number;
   warning?: string;
   error?: string;
 }
@@ -837,6 +902,7 @@ function normalizeRuntimeStatus(value: {
   version?: string;
   engine?: string;
   executionProvider?: string;
+  adapterId?: number;
   warning?: string;
   error?: string;
 }): AIRuntimeStatus {
@@ -847,6 +913,7 @@ function normalizeRuntimeStatus(value: {
     version: value.version,
     engine: value.engine,
     executionProvider: value.executionProvider,
+    adapterId: value.adapterId,
     warning: value.warning,
     error: value.error,
   };
@@ -1032,6 +1099,14 @@ export async function cancelSemanticSearch(requestId: string): Promise<void> {
 
 export async function getSemanticIndexStatus(): Promise<SemanticIndexStatus> {
   return Go.GetSemanticIndexStatus();
+}
+
+export async function getSemanticPipelineDiagnostics(): Promise<SemanticPipelineDiagnosticsSnapshot> {
+  return Go.GetSemanticPipelineDiagnostics() as unknown as SemanticPipelineDiagnosticsSnapshot;
+}
+
+export async function resetSemanticPipelineDiagnostics(): Promise<SemanticPipelineDiagnosticsSnapshot> {
+  return Go.ResetSemanticPipelineDiagnostics() as unknown as SemanticPipelineDiagnosticsSnapshot;
 }
 
 export function onSemanticSearchProgress(callback: (progress: SemanticSearchProgress) => void): () => void {
