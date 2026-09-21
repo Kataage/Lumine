@@ -10,7 +10,10 @@ import (
 	"github.com/kataage/lumine/internal/domain"
 )
 
-var ErrAIJobNotRetryable = errors.New("AI job is not retryable")
+var (
+	ErrAIJobNotRetryable       = errors.New("AI job is not retryable")
+	ErrSemanticResultNotStaged = errors.New("semantic result is not durably staged")
+)
 
 type AIAnalysisRepo struct {
 	db *DB
@@ -216,12 +219,20 @@ func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.
 		return nil, fmt.Errorf("read claimed AI job: %w", err)
 	}
 	if _, err := tx.Exec(`
-		INSERT INTO ai_asset_analysis (asset_id, capability, state, attempt_count, error_message, updated_at)
-		VALUES (?, ?, 'running', 1, '', CURRENT_TIMESTAMP)
+		INSERT INTO ai_asset_analysis (
+			asset_id, capability, state, engine, model_id, model_version,
+			result_json, attempt_count, error_message, analyzed_at, updated_at
+		)
+		VALUES (?, ?, 'running', '', '', '', '', 1, '', NULL, CURRENT_TIMESTAMP)
 		ON CONFLICT(asset_id, capability) DO UPDATE SET
 			state = 'running',
+			engine = '',
+			model_id = '',
+			model_version = '',
+			result_json = '',
 			attempt_count = ai_asset_analysis.attempt_count + 1,
 			error_message = '',
+			analyzed_at = NULL,
 			updated_at = CURRENT_TIMESTAMP
 	`, assetID, capability); err != nil {
 		return nil, fmt.Errorf("mark AI analysis running: %w", err)
@@ -240,30 +251,100 @@ func (r *AIAnalysisRepo) CompleteJob(
 	modelVersion string,
 	resultJSON string,
 ) error {
+	return r.completeJob(jobID, engine, modelID, modelVersion, resultJSON, false)
+}
+
+// CompleteSemanticJob promotes a previously staged Semantic result to ready.
+// The staged embedding/provenance is verified inside the same transaction so a
+// successful return means job, analysis metadata, and embedding agree durably.
+func (r *AIAnalysisRepo) CompleteSemanticJob(
+	jobID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	resultJSON string,
+) error {
+	return r.completeJob(jobID, engine, modelID, modelVersion, resultJSON, true)
+}
+
+func (r *AIAnalysisRepo) completeJob(
+	jobID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	resultJSON string,
+	requireSemanticStage bool,
+) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin AI completion: %w", err)
 	}
 	defer tx.Rollback()
 
+	// Write first. In WAL mode a read-first deferred transaction can become a
+	// stale snapshot and fail its later write upgrade with SQLITE_BUSY_SNAPSHOT.
+	// Acquiring the writer on the first statement avoids that failure mode.
+	result, err := tx.Exec(`
+		UPDATE ai_jobs
+		SET status = 'completed', last_error = '', cancel_requested = 0, finished_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND status = 'running'
+	`, jobID)
+	if err != nil {
+		return fmt.Errorf("complete AI job: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("complete AI job rows affected: %w", err)
+	}
+	if changed == 0 {
+		job, readErr := getAIJobTx(tx, jobID)
+		if readErr != nil {
+			return readErr
+		}
+		if job == nil {
+			return fmt.Errorf("AI job not found: %d", jobID)
+		}
+		if job.Status == domain.AIJobCompleted {
+			return tx.Commit()
+		}
+		return fmt.Errorf("AI job %d is not running: %s", jobID, job.Status)
+	}
+
 	job, err := getAIJobTx(tx, jobID)
 	if err != nil {
 		return err
 	}
 	if job == nil {
-		return fmt.Errorf("AI job not found: %d", jobID)
-	}
-	if job.Status != domain.AIJobRunning {
-		return nil
+		return fmt.Errorf("AI job not found after completion update: %d", jobID)
 	}
 
-	if _, err := tx.Exec(`
-		UPDATE ai_jobs
-		SET status = 'completed', last_error = '', cancel_requested = 0, finished_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND status = 'running'
-	`, jobID); err != nil {
-		return fmt.Errorf("complete AI job: %w", err)
+	if requireSemanticStage {
+		if job.Capability != domain.AICapabilitySemanticSearch {
+			return fmt.Errorf("%w: job %d capability is %s", ErrSemanticResultNotStaged, jobID, job.Capability)
+		}
+		var staged int
+		if err := tx.QueryRow(`
+			SELECT COUNT(*)
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = ?
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'running'
+			  AND aa.engine = ?
+			  AND aa.model_id = ?
+			  AND aa.model_version = ?
+			  AND aa.result_json = ?
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		`, job.AssetID, engine, modelID, modelVersion, resultJSON).Scan(&staged); err != nil {
+			return fmt.Errorf("verify staged semantic result: %w", err)
+		}
+		if staged != 1 {
+			return fmt.Errorf("%w for job %d", ErrSemanticResultNotStaged, jobID)
+		}
 	}
+
 	if _, err := tx.Exec(`
 		INSERT INTO ai_asset_analysis
 			(asset_id, capability, state, engine, model_id, model_version, result_json, error_message, attempt_count, analyzed_at, updated_at)
@@ -282,7 +363,10 @@ func (r *AIAnalysisRepo) CompleteJob(
 		return fmt.Errorf("store AI analysis result: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit AI completion: %w", err)
+	}
+	return nil
 }
 
 func (r *AIAnalysisRepo) FailOrRequeue(jobID int64, message string) (bool, error) {
@@ -472,7 +556,64 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	}
 	defer tx.Rollback()
 
-	result, err := tx.Exec(`
+	// A Semantic handler stages its vector + provenance before the final job
+	// transition. If the process stopped after staging, promote that durable
+	// result instead of throwing it away and repeating expensive inference.
+	finalizedResult, err := tx.Exec(`
+		UPDATE ai_jobs
+		SET status = 'completed',
+			cancel_requested = 0,
+			finished_at = CURRENT_TIMESTAMP,
+			last_error = ''
+		WHERE status = 'running'
+		  AND capability = 'semantic_search'
+		  AND EXISTS (
+			SELECT 1
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = ai_jobs.asset_id
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'running'
+			  AND aa.engine <> ''
+			  AND aa.model_id <> ''
+			  AND aa.model_version <> ''
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		  )
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("finalize staged semantic jobs during recovery: %w", err)
+	}
+	finalized, _ := finalizedResult.RowsAffected()
+
+	if _, err := tx.Exec(`
+		UPDATE ai_asset_analysis
+		SET state = 'ready',
+			error_message = '',
+			analyzed_at = CURRENT_TIMESTAMP,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE state = 'running'
+		  AND capability = 'semantic_search'
+		  AND engine <> ''
+		  AND model_id <> ''
+		  AND model_version <> ''
+		  AND EXISTS (
+			SELECT 1
+			FROM ai_jobs j
+			JOIN ai_semantic_embeddings e ON e.asset_id = ai_asset_analysis.asset_id
+			WHERE j.asset_id = ai_asset_analysis.asset_id
+			  AND j.capability = 'semantic_search'
+			  AND j.status = 'completed'
+			  AND e.engine = ai_asset_analysis.engine
+			  AND e.model_id = ai_asset_analysis.model_id
+			  AND e.model_version = ai_asset_analysis.model_version
+		  )
+	`); err != nil {
+		return 0, fmt.Errorf("promote staged semantic analysis during recovery: %w", err)
+	}
+
+	requeuedResult, err := tx.Exec(`
 		UPDATE ai_jobs
 		SET status = 'queued',
 			attempt_count = MAX(attempt_count - 1, 0),
@@ -485,11 +626,16 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("recover interrupted AI jobs: %w", err)
 	}
-	count, _ := result.RowsAffected()
+	requeued, _ := requeuedResult.RowsAffected()
 
 	if _, err := tx.Exec(`
 		UPDATE ai_asset_analysis
 		SET state = 'queued',
+			engine = '',
+			model_id = '',
+			model_version = '',
+			result_json = '',
+			analyzed_at = NULL,
 			error_message = CASE WHEN error_message = '' THEN 'recovered after app restart' ELSE error_message END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE state = 'running'
@@ -506,7 +652,7 @@ func (r *AIAnalysisRepo) RecoverInterrupted() (int64, error) {
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit AI recovery: %w", err)
 	}
-	return count, nil
+	return finalized + requeued, nil
 }
 
 func (r *AIAnalysisRepo) MarkStaleForAssets(
