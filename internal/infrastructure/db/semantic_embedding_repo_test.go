@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -470,5 +471,164 @@ func TestCountEligibleSemanticAssetsUsesReadyProvenanceAndScope(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("eligible coverage count = %d, want 1", count)
+	}
+}
+
+
+func TestSemanticBackfillNewestPlanUsesOrderIndexWithoutTempSort(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic plan", "/tmp/semantic-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := database.Query(`
+		EXPLAIN QUERY PLAN
+		SELECT a.id, COALESCE(a.modified_at_fs, '')
+		FROM assets a
+		WHERE a.library_id = ?
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM ai_asset_analysis aa
+			JOIN ai_semantic_embeddings e ON e.asset_id = aa.asset_id
+			WHERE aa.asset_id = a.id
+			  AND aa.capability = 'semantic_search'
+			  AND aa.state = 'ready'
+			  AND aa.engine = ?
+			  AND aa.model_id = ?
+			  AND aa.model_version = ?
+			  AND e.engine = aa.engine
+			  AND e.model_id = aa.model_id
+			  AND e.model_version = aa.model_version
+		  )
+		  AND (COALESCE(a.modified_at_fs, ''), a.id) < (?, ?)
+		ORDER BY COALESCE(a.modified_at_fs, '') DESC, a.id DESC
+		LIMIT ?
+	`, lib.ID, "engine", "model", "1", "9999-12-31 23:59:59", int64(^uint64(0)>>1), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	var details []string
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatal(err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := strings.Join(details, "
+")
+	if !strings.Contains(plan, "idx_assets_semantic_backfill_newest") {
+		t.Fatalf("backfill plan did not use newest-order index:
+%s", plan)
+	}
+	if strings.Contains(strings.ToUpper(plan), "USE TEMP B-TREE FOR ORDER BY") {
+		t.Fatalf("backfill plan still requires temporary ORDER BY sort:
+%s", plan)
+	}
+}
+
+func TestSemanticBackfillNewestKeysetEnumeratesThousandsInStableOrder(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic large", "/tmp/semantic-large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	const count = 3000
+	tx, err := database.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.Prepare(`
+		INSERT INTO assets (
+			library_id, folder_path, file_name, file_path, extension,
+			file_size, modified_at_fs, thumb_status, status_label
+		) VALUES (?, ?, ?, ?, '.png', 100, ?, 'none', 'unsorted')
+	`)
+	if err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ids := make([]int64, 0, count)
+	for i := 0; i < count; i++ {
+		stamp := base.Add(time.Duration(i/3) * time.Minute).Format("2006-01-02 15:04:05")
+		result, err := stmt.Exec(
+			lib.ID,
+			"/tmp/semantic-large",
+			fmt.Sprintf("%04d.png", i),
+			fmt.Sprintf("/tmp/semantic-large/%04d.png", i),
+			stamp,
+		)
+		if err != nil {
+			stmt.Close()
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			stmt.Close()
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := stmt.Close(); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []int64
+	var beforeModifiedAt string
+	var beforeID int64
+	const pageSize = 257
+	for {
+		page, err := repo.ListNeedingEmbeddingNewestContext(
+			context.Background(),
+			lib.ID,
+			"engine",
+			"model",
+			"1",
+			beforeModifiedAt,
+			beforeID,
+			pageSize,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, candidate := range page {
+			got = append(got, candidate.AssetID)
+		}
+		last := page[len(page)-1]
+		beforeModifiedAt = last.ModifiedAtFS
+		beforeID = last.AssetID
+		if len(page) < pageSize {
+			break
+		}
+	}
+
+	if len(got) != count {
+		t.Fatalf("enumerated %d assets, want %d", len(got), count)
+	}
+	for i := 0; i < count; i++ {
+		want := ids[count-1-i]
+		if got[i] != want {
+			t.Fatalf("backfill order[%d] = %d, want %d", i, got[i], want)
+		}
 	}
 }
