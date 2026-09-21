@@ -23,6 +23,8 @@ func NewAIAnalysisRepo(db *DB) *AIAnalysisRepo {
 	return &AIAnalysisRepo{db: db}
 }
 
+const aiEnqueueBatchChunkSize = 128
+
 func (r *AIAnalysisRepo) Enqueue(
 	assetID int64,
 	capability domain.AICapability,
@@ -112,57 +114,120 @@ func (r *AIAnalysisRepo) EnqueueBatch(
 		maxAttempts = 3
 	}
 
+	// Keep producer write transactions deliberately short. 128 rows stay well
+	// below SQLite's conservative variable limit while replacing the old
+	// per-asset SELECT + INSERT/UPDATE + UPSERT loop with three set-based SQL
+	// statements per chunk.
+	created := 0
+	for start := 0; start < len(assetIDs); start += aiEnqueueBatchChunkSize {
+		end := start + aiEnqueueBatchChunkSize
+		if end > len(assetIDs) {
+			end = len(assetIDs)
+		}
+		chunkCreated, err := r.enqueueBatchChunk(
+			assetIDs[start:end],
+			capability,
+			source,
+			priority,
+			maxAttempts,
+		)
+		if err != nil {
+			// Earlier chunks are already durable by design. The operation is
+			// idempotent, so a caller may retry the whole input safely.
+			return created, err
+		}
+		created += chunkCreated
+	}
+	return created, nil
+}
+
+func (r *AIAnalysisRepo) enqueueBatchChunk(
+	assetIDs []int64,
+	capability domain.AICapability,
+	source domain.AIJobSource,
+	priority int,
+	maxAttempts int,
+) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("begin AI batch enqueue: %w", err)
+		return 0, fmt.Errorf("begin AI batch enqueue chunk: %w", err)
 	}
 	defer tx.Rollback()
 
-	created := 0
+	values := make([]string, len(assetIDs))
+	insertArgs := make([]any, 0, len(assetIDs)*5)
+	for i, assetID := range assetIDs {
+		values[i] = "(?, ?, ?, ?, 'queued', ?)"
+		insertArgs = append(insertArgs, assetID, capability, source, priority, maxAttempts)
+	}
+	result, err := tx.Exec(
+		fmt.Sprintf(`
+			INSERT INTO ai_jobs
+				(asset_id, capability, source, priority, status, max_attempts)
+			VALUES %s
+			ON CONFLICT DO NOTHING
+		`, strings.Join(values, ",")),
+		insertArgs...,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert AI batch jobs: %w", err)
+	}
+	created64, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count inserted AI batch jobs: %w", err)
+	}
+
+	idPlaceholders := strings.TrimRight(strings.Repeat("?,", len(assetIDs)), ",")
+	priorityArgs := make([]any, 0, len(assetIDs)+2)
+	priorityArgs = append(priorityArgs, priority, capability)
 	for _, assetID := range assetIDs {
-		var existingID int64
-		var existingStatus domain.AIJobStatus
-		findErr := tx.QueryRow(
-			"SELECT id, status FROM ai_jobs WHERE asset_id = ? AND capability = ? AND status IN ('queued','running') ORDER BY id LIMIT 1",
-			assetID, capability,
-		).Scan(&existingID, &existingStatus)
-		if findErr != nil && findErr != sql.ErrNoRows {
-			return 0, fmt.Errorf("find active AI job for asset %d: %w", assetID, findErr)
-		}
+		priorityArgs = append(priorityArgs, assetID)
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`
+			UPDATE ai_jobs
+			SET priority = MAX(priority, ?)
+			WHERE capability = ?
+			  AND status = 'queued'
+			  AND asset_id IN (%s)
+		`, idPlaceholders),
+		priorityArgs...,
+	); err != nil {
+		return 0, fmt.Errorf("raise AI batch job priorities: %w", err)
+	}
 
-		if findErr == sql.ErrNoRows {
-			if _, err := tx.Exec(
-				"INSERT INTO ai_jobs (asset_id, capability, source, priority, status, max_attempts) VALUES (?, ?, ?, ?, 'queued', ?)",
-				assetID, capability, source, priority, maxAttempts,
-			); err != nil {
-				return 0, fmt.Errorf("insert AI job for asset %d: %w", assetID, err)
-			}
-			created++
-			existingStatus = domain.AIJobQueued
-		} else if existingStatus == domain.AIJobQueued {
-			if _, err := tx.Exec("UPDATE ai_jobs SET priority = MAX(priority, ?) WHERE id = ?", priority, existingID); err != nil {
-				return 0, fmt.Errorf("raise AI job priority for asset %d: %w", assetID, err)
-			}
-		}
-
-		if existingStatus == domain.AIJobQueued {
-			if _, err := tx.Exec(`
-				INSERT INTO ai_asset_analysis (asset_id, capability, state, error_message, updated_at)
-				VALUES (?, ?, 'queued', '', CURRENT_TIMESTAMP)
-				ON CONFLICT(asset_id, capability) DO UPDATE SET
-					state = 'queued',
-					error_message = '',
-					updated_at = CURRENT_TIMESTAMP
-			`, assetID, capability); err != nil {
-				return 0, fmt.Errorf("mark AI analysis queued for asset %d: %w", assetID, err)
-			}
-		}
+	analysisArgs := make([]any, 0, len(assetIDs)+1)
+	analysisArgs = append(analysisArgs, capability)
+	for _, assetID := range assetIDs {
+		analysisArgs = append(analysisArgs, assetID)
+	}
+	if _, err := tx.Exec(
+		fmt.Sprintf(`
+			INSERT INTO ai_asset_analysis
+				(asset_id, capability, state, error_message, updated_at)
+			SELECT DISTINCT asset_id, capability, 'queued', '', CURRENT_TIMESTAMP
+			FROM ai_jobs
+			WHERE capability = ?
+			  AND status = 'queued'
+			  AND asset_id IN (%s)
+			ON CONFLICT(asset_id, capability) DO UPDATE SET
+				state = 'queued',
+				error_message = '',
+				updated_at = CURRENT_TIMESTAMP
+		`, idPlaceholders),
+		analysisArgs...,
+	); err != nil {
+		return 0, fmt.Errorf("mark AI batch analysis queued: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit AI batch enqueue: %w", err)
+		return 0, fmt.Errorf("commit AI batch enqueue chunk: %w", err)
 	}
-	return created, nil
+	return int(created64), nil
 }
 
 func (r *AIAnalysisRepo) ClaimNext(capabilities []domain.AICapability) (*domain.AIJob, error) {
