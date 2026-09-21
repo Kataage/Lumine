@@ -243,6 +243,8 @@ export function RemovePromptEngineRuntime():Promise<void>;
 
 export function RequestLegacyStorageMigration():Promise<commands.AIStorageInfo>;
 
+export function ResetSemanticPipelineDiagnostics():Promise<ai.SemanticPipelineDiagnosticsSnapshot>;
+
 export function RestoreAdvancedVisionModel():Promise<void>;
 
 export function RestoreDefaultLightweightVisionModel():Promise<void>;
@@ -252,8 +254,6 @@ export function RestoreDefaultSemanticModel():Promise<void>;
 export function RestorePromptEngineModel():Promise<void>;
 
 export function RestorePromptProject(arg1:number):Promise<void>;
-
-export function ResetSemanticPipelineDiagnostics():Promise<ai.SemanticPipelineDiagnosticsSnapshot>;
 
 export function RetryAIJob(arg1:number):Promise<void>;
 
