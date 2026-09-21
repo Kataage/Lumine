@@ -94,6 +94,9 @@ export namespace ai {
 	    engine?: string;
 	    executionProvider?: string;
 	    adapterId?: number;
+	    adapterName?: string;
+	    dedicatedVideoMemoryBytes?: number;
+	    visionBatchExperiment?: string;
 	    warning?: string;
 	    error?: string;
 	
@@ -110,6 +113,9 @@ export namespace ai {
 	        this.engine = source["engine"];
 	        this.executionProvider = source["executionProvider"];
 	        this.adapterId = source["adapterId"];
+	        this.adapterName = source["adapterName"];
+	        this.dedicatedVideoMemoryBytes = source["dedicatedVideoMemoryBytes"];
+	        this.visionBatchExperiment = source["visionBatchExperiment"];
 	        this.warning = source["warning"];
 	        this.error = source["error"];
 	    }
@@ -237,6 +243,9 @@ export namespace ai {
 	    workerCount: number;
 	    executionProvider?: string;
 	    adapterId?: number;
+	    adapterName?: string;
+	    dedicatedVideoMemoryBytes?: number;
+	    visionBatchExperiment?: string;
 	    recentJobs: SemanticJobTraceSnapshot[];
 	
 	    static createFrom(source: any = {}) {
@@ -273,6 +282,9 @@ export namespace ai {
 	        this.workerCount = source["workerCount"];
 	        this.executionProvider = source["executionProvider"];
 	        this.adapterId = source["adapterId"];
+	        this.adapterName = source["adapterName"];
+	        this.dedicatedVideoMemoryBytes = source["dedicatedVideoMemoryBytes"];
+	        this.visionBatchExperiment = source["visionBatchExperiment"];
 	        this.recentJobs = this.convertValues(source["recentJobs"], SemanticJobTraceSnapshot);
 	    }
 	
