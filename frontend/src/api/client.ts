@@ -117,7 +117,7 @@ export interface SemanticPipelineDiagnosticsSnapshot {
   executionProvider?: string;
   adapterId?: number;
   adapterName?: string;
-  dedicatedVideoMemoryBytes: number;
+  dedicatedVideoMemoryBytes?: number;
   visionBatchExperiment?: string;
   recentJobs: SemanticJobTraceSnapshot[];
 }
