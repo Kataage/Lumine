@@ -14,6 +14,7 @@ import {
   semanticSearchPage,
 } from "../api/client";
 import { useApp } from "../App";
+import { QUERY_CACHE_GC_MS } from "../queryClient";
 import { formatFileSize } from "../utils/format";
 import {
   computeViewerOverscan,
@@ -195,7 +196,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     },
     enabled: !!state.selectedLibraryId,
     staleTime: Infinity,
-    gcTime: Infinity,
+    gcTime: QUERY_CACHE_GC_MS,
     placeholderData: semanticSearchActive ? keepPreviousData : undefined,
     retry: semanticSearchActive ? false : 3,
     refetchOnWindowFocus: false,
