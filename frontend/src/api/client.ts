@@ -116,6 +116,9 @@ export interface SemanticPipelineDiagnosticsSnapshot {
   workerCount: number;
   executionProvider?: string;
   adapterId?: number;
+  adapterName?: string;
+  dedicatedVideoMemoryBytes: number;
+  visionBatchExperiment?: string;
   recentJobs: SemanticJobTraceSnapshot[];
 }
 
@@ -163,6 +166,9 @@ export interface AIRuntimeStatus {
   engine?: string;
   executionProvider?: string;
   adapterId?: number;
+  adapterName?: string;
+  dedicatedVideoMemoryBytes?: number;
+  visionBatchExperiment?: string;
   warning?: string;
   error?: string;
 }
@@ -364,6 +370,10 @@ export interface SemanticModelInfo {
     version?: string;
     engine?: string;
     executionProvider?: string;
+    adapterId?: number;
+    adapterName?: string;
+    dedicatedVideoMemoryBytes?: number;
+    visionBatchExperiment?: string;
     warning?: string;
     error?: string;
   };
