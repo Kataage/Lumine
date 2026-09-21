@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -99,7 +100,7 @@ func TestSemanticSearchCoverageUpdatePreservesFrozenRanking(t *testing.T) {
 		updated.hits[1].Score != 0.8 {
 		t.Fatalf("coverage refresh changed frozen ranking: %+v", updated.hits)
 	}
-	if updated.coverageQuery != query {
+	if !reflect.DeepEqual(updated.coverageQuery, query) {
 		t.Fatalf("coverage query changed: got %+v want %+v", updated.coverageQuery, query)
 	}
 }
