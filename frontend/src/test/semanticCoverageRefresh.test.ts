@@ -12,6 +12,7 @@ const COVERAGE: SemanticCoverageSnapshot = {
   running: 5,
   failed: 2,
   stale: 3,
+  unsupported: 0,
 };
 
 describe("semantic coverage refresh controller", () => {

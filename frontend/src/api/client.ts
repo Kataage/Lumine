@@ -19,6 +19,7 @@ export interface AssetListResponse {
   semanticCoverageRunningCount?: number;
   semanticCoverageFailedCount?: number;
   semanticCoverageStaleCount?: number;
+  semanticCoverageUnsupportedCount?: number;
 }
 
 export interface SemanticSearchProgress {

@@ -218,6 +218,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       running: firstPage.semanticCoverageRunningCount ?? 0,
       failed: firstPage.semanticCoverageFailedCount ?? 0,
       stale: firstPage.semanticCoverageStaleCount ?? 0,
+      unsupported: firstPage.semanticCoverageUnsupportedCount ?? 0,
     };
   }, [
     firstPage,
@@ -242,6 +243,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           running: page.semanticCoverageRunningCount ?? 0,
           failed: page.semanticCoverageFailedCount ?? 0,
           stale: page.semanticCoverageStaleCount ?? 0,
+          unsupported: page.semanticCoverageUnsupportedCount ?? 0,
         };
       },
       apply: setLiveSemanticCoverage,
@@ -265,9 +267,11 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const semanticCoverageRunning = semanticCoverage?.running ?? 0;
   const semanticCoverageFailed = semanticCoverage?.failed ?? 0;
   const semanticCoverageStale = semanticCoverage?.stale ?? 0;
-  const semanticCoveragePercent = semanticCoverageTotal > 0
-    ? Math.min(100, (semanticCoverageReady / semanticCoverageTotal) * 100)
-    : 0;
+  const semanticCoverageUnsupported = semanticCoverage?.unsupported ?? 0;
+  const semanticCoverageAnalyzable = Math.max(0, semanticCoverageTotal - semanticCoverageUnsupported);
+  const semanticCoveragePercent = semanticCoverageAnalyzable > 0
+    ? Math.min(100, (semanticCoverageReady / semanticCoverageAnalyzable) * 100)
+    : semanticCoverageTotal > 0 ? 100 : 0;
 
   useEffect(() => {
     if (semanticSearchActive) return;
@@ -388,7 +392,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
           <div className="sticky top-0 z-20 mb-3 rounded-xl border border-border/80 bg-card/95 px-3 py-2 text-[11px] shadow-sm backdrop-blur-md">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="font-medium">
-                検索可能 {semanticCoverageReady.toLocaleString()} / {semanticCoverageTotal.toLocaleString()}画像
+                検索可能 {semanticCoverageReady.toLocaleString()} / {semanticCoverageAnalyzable.toLocaleString()}画像
               </span>
               <span className="tabular-nums text-muted-foreground">
                 coverage {semanticCoveragePercent.toFixed(1)}%
@@ -403,6 +407,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
               {semanticCoverageStale > 0 && (
                 <span className="text-muted-foreground">再解析待ち {semanticCoverageStale.toLocaleString()}</span>
               )}
+              {semanticCoverageUnsupported > 0 && (
+                <span className="text-muted-foreground">Semantic対象外 {semanticCoverageUnsupported.toLocaleString()}</span>
+              )}
               {semanticCoverageFailed > 0 && (
                 <span className="font-medium text-destructive">失敗 {semanticCoverageFailed.toLocaleString()}</span>
               )}
@@ -411,9 +418,13 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
               <p className="mt-1 text-[10px] leading-relaxed text-destructive">
                 解析失敗画像があります。これらは現在の意味検索には含まれません。AIジョブのエラー内容を確認してください。
               </p>
-            ) : semanticCoverageReady < semanticCoverageTotal ? (
+            ) : semanticCoverageReady < semanticCoverageAnalyzable ? (
               <p className="mt-1 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
                 未解析画像はこの検索にはまだ含まれません。解析が進むと検索結果の母集団が増えます。
+              </p>
+            ) : semanticCoverageUnsupported > 0 ? (
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                解析可能な画像はすべてSemantic Search解析済みです。対象外は現在のSemantic前処理decoderが対応していない形式です。
               </p>
             ) : (
               <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">

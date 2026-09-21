@@ -15,6 +15,25 @@ import (
 
 var ErrAutoAnalyzeDisabled = errors.New("automatic AI analysis is disabled")
 
+type permanentAnalysisError struct {
+	err error
+}
+
+func (e permanentAnalysisError) Error() string { return e.err.Error() }
+func (e permanentAnalysisError) Unwrap() error { return e.err }
+
+func PermanentAnalysisFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentAnalysisError{err: err}
+}
+
+func isPermanentAnalysisFailure(err error) bool {
+	var permanent permanentAnalysisError
+	return errors.As(err, &permanent)
+}
+
 type AnalysisOutput struct {
 	Engine       string `json:"engine"`
 	ModelID      string `json:"modelId"`
@@ -45,6 +64,7 @@ type AnalysisJobRepository interface {
 	ClaimNext(capabilities []domain.AICapability) (*domain.AIJob, error)
 	CompleteJob(jobID int64, engine, modelID, modelVersion, resultJSON string) error
 	CompleteSemanticJob(jobID int64, engine, modelID, modelVersion, resultJSON string) error
+	FailPermanently(jobID int64, message string) error
 	FailOrRequeue(jobID int64, message string) (bool, error)
 	CancelJob(jobID int64) error
 	RetryJob(jobID int64) error
@@ -780,6 +800,23 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 		}
 		if diagnostics != nil {
 			diagnostics.FinishJob(trace, "interrupted", errors.Join(handlerErr, requeueErr))
+		}
+		return
+	}
+
+	if isPermanentAnalysisFailure(handlerErr) {
+		if err := q.repo.FailPermanently(job.ID, handlerErr.Error()); err != nil {
+			if trace != nil {
+				trace.RecordError("failure_persistence", err)
+			}
+			if diagnostics != nil {
+				diagnostics.FinishJob(trace, "failure_persistence", errors.Join(handlerErr, err))
+			}
+			slog.Error("failed to record permanent AI job failure", "job", job.ID, "error", err)
+			return
+		}
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "failed", handlerErr)
 		}
 		return
 	}

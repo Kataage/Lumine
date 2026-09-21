@@ -5,6 +5,7 @@ export interface SemanticCoverageSnapshot {
   running: number;
   failed: number;
   stale: number;
+  unsupported: number;
 }
 
 interface SemanticCoverageRefreshControllerOptions {

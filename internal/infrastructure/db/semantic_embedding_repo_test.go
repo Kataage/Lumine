@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func createSemanticTestAsset(t *testing.T, database *DB, libraryID int64, folder
 		FolderPath:  folder,
 		FileName:    name,
 		FilePath:    folder + "/" + name,
-		Extension:   ".png",
+		Extension:   strings.ToLower(filepath.Ext(name)),
 		FileSize:    100,
 		ThumbStatus: domain.ThumbStatusNone,
 		StatusLabel: domain.StatusUnsorted,
@@ -383,6 +384,47 @@ func TestFilterNeedingEmbeddingIDsPreservesViewerOrder(t *testing.T) {
 }
 
 
+func TestSemanticCandidateEnumerationSkipsUnsupportedFormats(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Semantic formats", "/tmp/semantic-formats")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	pngID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-formats", "supported.png")
+	apngID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-formats", "supported.apng")
+	svgID := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-formats", "unsupported.svg")
+
+	candidates, err := repo.ListNeedingEmbeddingNewestContext(
+		context.Background(), lib.ID, "engine", "model", "1", "", 0, 10,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateSet := make(map[int64]bool, len(candidates))
+	for _, candidate := range candidates {
+		candidateSet[candidate.AssetID] = true
+	}
+	if !candidateSet[pngID] || !candidateSet[apngID] || candidateSet[svgID] {
+		t.Fatalf("unexpected format candidates: %+v", candidates)
+	}
+
+	needed, err := repo.FilterNeedingEmbeddingIDs(
+		context.Background(),
+		[]int64{svgID, pngID, apngID},
+		"engine",
+		"model",
+		"1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(needed) != 2 || needed[0] != pngID || needed[1] != apngID {
+		t.Fatalf("needed format-filtered assets = %v, want [%d %d]", needed, pngID, apngID)
+	}
+}
+
 func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
 	database := openAIAnalysisTestDB(t)
 	lib, err := NewLibraryRepo(database).Create("Semantic coverage", "/tmp/semantic-coverage")
@@ -399,14 +441,16 @@ func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
 	running := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "running.png")
 	failed := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "failed.png")
 	stale := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "stale.png")
+	unsupported := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "unsupported.svg")
 	other := createSemanticTestAsset(t, database, otherLib.ID, "/tmp/semantic-coverage-other", "other.png")
 
 	for id, state := range map[int64]string{
-		queued: "queued",
-		running: "running",
-		failed: "failed",
-		stale: "stale",
-		other: "failed",
+		queued:      "queued",
+		running:     "running",
+		failed:      "failed",
+		stale:       "stale",
+		unsupported: "failed",
+		other:       "failed",
 	} {
 		if _, err := database.Exec(`
 			INSERT INTO ai_asset_analysis (asset_id, capability, state, updated_at)
@@ -427,7 +471,7 @@ func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts.Queued != 1 || counts.Running != 1 || counts.Failed != 1 || counts.Stale != 1 {
+	if counts.Queued != 1 || counts.Running != 1 || counts.Failed != 1 || counts.Stale != 1 || counts.Unsupported != 1 {
 		t.Fatalf("unexpected semantic coverage states: %+v", counts)
 	}
 }

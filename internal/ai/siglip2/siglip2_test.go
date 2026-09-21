@@ -256,6 +256,16 @@ func TestPreprocessImageProducesCHWMinusOneToOne(t *testing.T) {
 	}
 }
 
+func TestPreprocessImageRejectsUnsupportedFormatBeforeDecode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vector.svg")
+	if err := os.WriteFile(path, []byte("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PreprocessImageContext(context.Background(), path); !errors.Is(err, ErrUnsupportedSemanticImageFormat) {
+		t.Fatalf("PreprocessImageContext error = %v, want ErrUnsupportedSemanticImageFormat", err)
+	}
+}
+
 func TestPreprocessImageContextHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

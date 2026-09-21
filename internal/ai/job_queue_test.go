@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -355,6 +356,46 @@ func TestJobQueueDisablingCapabilityRequeuesActiveWork(t *testing.T) {
 	requeued := waitForAIJobStatus(t, repo, job.ID, domain.AIJobQueued)
 	if requeued.AttemptCount != 0 {
 		t.Fatalf("settings pause should not consume retry budget: %+v", requeued)
+	}
+}
+
+func TestJobQueuePermanentAnalysisFailureDoesNotRetry(t *testing.T) {
+	_, repo, assetID := setupAIQueueTest(t)
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 1)
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		context.Context,
+		domain.AIJob,
+	) (AnalysisOutput, error) {
+		return AnalysisOutput{}, PermanentAnalysisFailure(errors.New("unsupported Semantic image format: .svg"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	failed := waitForAIJobStatus(t, repo, job.ID, domain.AIJobFailed)
+	cancel()
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	defer stopCancel()
+	if err := queue.Stop(stopCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	if failed.AttemptCount != 1 {
+		t.Fatalf("permanent failure consumed %d attempts, want exactly 1", failed.AttemptCount)
+	}
+	if !strings.Contains(failed.LastError, "unsupported Semantic image format") {
+		t.Fatalf("permanent failure reason not preserved: %+v", failed)
 	}
 }
 

@@ -2,6 +2,7 @@ package siglip2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -13,7 +14,10 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/ai"
+	"github.com/kataage/lumine/internal/imageformat"
 )
+
+var ErrUnsupportedSemanticImageFormat = errors.New("unsupported Semantic image format")
 
 const (
 	siglipImageSize = 224
@@ -33,6 +37,11 @@ func PreprocessImageContext(ctx context.Context, path string) ([]float32, error)
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !imageformat.IsSemanticSupportedPath(path) {
+		err := fmt.Errorf("%w: %s", ErrUnsupportedSemanticImageFormat, imageformat.Extension(path))
+		ai.RecordSemanticTraceError(ctx, ai.SemanticStageDecode, err)
 		return nil, err
 	}
 	stopOpen := ai.MeasureSemanticStage(ctx, ai.SemanticStageFileOpen)

@@ -434,6 +434,47 @@ func (r *AIAnalysisRepo) completeJob(
 	return nil
 }
 
+func (r *AIAnalysisRepo) FailPermanently(jobID int64, message string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin permanent AI failure: %w", err)
+	}
+	defer tx.Rollback()
+
+	job, err := getAIJobTx(tx, jobID)
+	if err != nil {
+		return err
+	}
+	if job == nil {
+		return fmt.Errorf("AI job not found: %d", jobID)
+	}
+	if job.Status == domain.AIJobCancelled || job.Status == domain.AIJobFailed {
+		return tx.Commit()
+	}
+	if job.Status != domain.AIJobRunning {
+		return nil
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE ai_jobs
+		SET status = 'failed', last_error = ?, finished_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, message, jobID); err != nil {
+		return fmt.Errorf("fail permanent AI job: %w", err)
+	}
+	if _, err := tx.Exec(`
+		UPDATE ai_asset_analysis
+		SET state = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE asset_id = ? AND capability = ?
+	`, message, job.AssetID, job.Capability); err != nil {
+		return fmt.Errorf("mark permanent AI analysis failed: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit permanent AI failure: %w", err)
+	}
+	return nil
+}
+
 func (r *AIAnalysisRepo) FailOrRequeue(jobID int64, message string) (bool, error) {
 	tx, err := r.db.Begin()
 	if err != nil {

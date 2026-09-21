@@ -562,7 +562,11 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	// images while the single SigLIP2 runtime is busy embedding the previous one.
 	pixels, err := siglip2.PreprocessImageContext(ctx, asset.FilePath)
 	if err != nil {
-		return ai.AnalysisOutput{}, fmt.Errorf("preprocess image %d: %w", asset.ID, err)
+		wrapped := fmt.Errorf("preprocess image %d: %w", asset.ID, err)
+		if errors.Is(err, siglip2.ErrUnsupportedSemanticImageFormat) {
+			return ai.AnalysisOutput{}, ai.PermanentAnalysisFailure(wrapped)
+		}
+		return ai.AnalysisOutput{}, wrapped
 	}
 	response, err := c.aiManager.Infer(ctx, domain.AICapabilitySemanticSearch, ai.InferenceRequest{
 		Operation: "embed_image_tensor",
@@ -758,7 +762,8 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 			coverageStates.Queued -
 			coverageStates.Running -
 			coverageStates.Failed -
-			coverageStates.Stale
+			coverageStates.Stale -
+			coverageStates.Unsupported
 		if untracked < 0 {
 			untracked = 0
 		}
@@ -946,8 +951,9 @@ func (c *AppCommands) semanticHitsToAssets(
 			SemanticCoverageTotalCount:   coverageTotal,
 			SemanticCoverageQueuedCount:  coverageStates.Queued,
 			SemanticCoverageRunningCount: coverageStates.Running,
-			SemanticCoverageFailedCount:  coverageStates.Failed,
-			SemanticCoverageStaleCount:   coverageStates.Stale,
+			SemanticCoverageFailedCount:      coverageStates.Failed,
+			SemanticCoverageStaleCount:       coverageStates.Stale,
+			SemanticCoverageUnsupportedCount: coverageStates.Unsupported,
 		}, nil
 	}
 
@@ -975,8 +981,9 @@ func (c *AppCommands) semanticHitsToAssets(
 		SemanticCoverageTotalCount:   coverageTotal,
 		SemanticCoverageQueuedCount:  coverageStates.Queued,
 		SemanticCoverageRunningCount: coverageStates.Running,
-		SemanticCoverageFailedCount:  coverageStates.Failed,
-		SemanticCoverageStaleCount:   coverageStates.Stale,
+		SemanticCoverageFailedCount:      coverageStates.Failed,
+		SemanticCoverageStaleCount:       coverageStates.Stale,
+		SemanticCoverageUnsupportedCount: coverageStates.Unsupported,
 	}, nil
 }
 
