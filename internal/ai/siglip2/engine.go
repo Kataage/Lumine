@@ -118,7 +118,7 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 		if err := ctx.Err(); err != nil {
 			return ai.InferenceResponse{}, err
 		}
-		vector, err = e.runtime.EmbedImage(pixels)
+		vector, err = e.runtime.EmbedImage(ctx, pixels)
 	default:
 		return ai.InferenceResponse{}, fmt.Errorf("unsupported SigLIP2 operation %q", request.Operation)
 	}
