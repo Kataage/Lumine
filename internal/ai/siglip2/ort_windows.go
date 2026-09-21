@@ -107,7 +107,10 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 		}
 		directMLPath := filepath.Join(filepath.Dir(dllPath), "DirectML.dll")
 		if directMLDLL, loadErr := syscall.LoadDLL(directMLPath); loadErr != nil {
-			backend.warning = fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
+			if backend.warning != "" {
+				backend.warning += "; "
+			}
+			backend.warning += fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
 		} else {
 			backend.directMLDLL = directMLDLL
 		}
@@ -354,6 +357,44 @@ func (r *windowsORT) EmbedImage(ctx context.Context, input []float32) ([]float32
 	runtime.KeepAlive(input)
 	runtime.KeepAlive(output)
 	return output, nil
+}
+
+func (r *windowsORT) EmbedImageBatch(ctx context.Context, input []float32, batchSize int) ([][]float32, error) {
+	if batchSize <= 0 {
+		return nil, errors.New("SigLIP2 image batch size must be positive")
+	}
+	perImage := siglipChannels * siglipImageSize * siglipImageSize
+	expected := perImage * batchSize
+	if len(input) != expected {
+		return nil, fmt.Errorf("SigLIP2 image batch tensor has %d values, want %d for batch %d", len(input), expected, batchSize)
+	}
+
+	output := make([]float32, siglipEmbeddingSize*batchSize)
+	if err := r.runSingle(
+		ctx,
+		r.visionSession,
+		"pixel_values",
+		uintptr(unsafe.Pointer(&input[0])),
+		uintptr(len(input))*unsafe.Sizeof(input[0]),
+		[]int64{int64(batchSize), siglipChannels, siglipImageSize, siglipImageSize},
+		ortTensorFloat,
+		siglipPoolerOutput,
+		uintptr(unsafe.Pointer(&output[0])),
+		uintptr(len(output))*unsafe.Sizeof(output[0]),
+		[]int64{int64(batchSize), siglipEmbeddingSize},
+		ortTensorFloat,
+	); err != nil {
+		return nil, fmt.Errorf("run SigLIP2 vision batch encoder (batch=%d): %w", batchSize, err)
+	}
+
+	result := make([][]float32, batchSize)
+	for index := 0; index < batchSize; index++ {
+		start := index * siglipEmbeddingSize
+		result[index] = append([]float32(nil), output[start:start+siglipEmbeddingSize]...)
+	}
+	runtime.KeepAlive(input)
+	runtime.KeepAlive(output)
+	return result, nil
 }
 
 func (r *windowsORT) runSingle(
