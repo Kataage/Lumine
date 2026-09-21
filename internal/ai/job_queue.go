@@ -655,6 +655,15 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 		}
 		return
 	}
+	if current.Status == domain.AIJobQueued && errors.Is(handlerErr, context.Canceled) {
+		// Foreground preemption requeues the durable job before cancelling the
+		// active handler. Classify that as cancellation/yield rather than a
+		// failure so diagnostics can quantify discarded decode/ORT work.
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "cancelled", handlerErr)
+		}
+		return
+	}
 
 	if parent.Err() != nil {
 		requeueErr := q.repo.RequeueInterrupted(job.ID, "interrupted by app shutdown")
