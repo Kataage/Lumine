@@ -479,11 +479,8 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingNewestContext(
 	args := []any{libraryID, engine, modelID, modelVersion}
 	if beforeID > 0 {
 		cursorClause = `
-		  AND (
-		    COALESCE(a.modified_at_fs, '') < ?
-		    OR (COALESCE(a.modified_at_fs, '') = ? AND a.id < ?)
-		  )`
-		args = append(args, beforeModifiedAt, beforeModifiedAt, beforeID)
+		  AND (COALESCE(a.modified_at_fs, ''), a.id) < (?, ?)`
+		args = append(args, beforeModifiedAt, beforeID)
 	}
 	args = append(args, limit)
 
