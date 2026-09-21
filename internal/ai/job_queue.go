@@ -20,6 +20,21 @@ type AnalysisOutput struct {
 	ModelID      string `json:"modelId"`
 	ModelVersion string `json:"modelVersion"`
 	ResultJSON   string `json:"resultJson"`
+
+	semanticResultStaged bool
+	afterCommit          func()
+}
+
+func WithDurableSemanticResult(output AnalysisOutput, afterCommit func()) AnalysisOutput {
+	output.semanticResultStaged = true
+	output.afterCommit = afterCommit
+	return output
+}
+
+func (o AnalysisOutput) runAfterCommit() {
+	if o.afterCommit != nil {
+		o.afterCommit()
+	}
 }
 
 type AnalysisHandler func(context.Context, domain.AIJob) (AnalysisOutput, error)
@@ -627,9 +642,7 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 			slog.Error("failed to complete AI job", "job", job.ID, "error", completeErr)
 			return
 		}
-		if output.AfterCommit != nil {
-			output.AfterCommit()
-		}
+		output.runAfterCommit()
 		if diagnostics != nil {
 			diagnostics.FinishJob(trace, "success", nil)
 		}
@@ -715,7 +728,7 @@ func (q *JobQueue) completeOutputWithRetry(
 
 	for {
 		var err error
-		if output.SemanticResultStaged && job.Capability == domain.AICapabilitySemanticSearch {
+		if output.semanticResultStaged && job.Capability == domain.AICapabilitySemanticSearch {
 			err = q.repo.CompleteSemanticJob(
 				job.ID,
 				output.Engine,
