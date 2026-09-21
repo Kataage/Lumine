@@ -84,6 +84,7 @@ type JobQueue struct {
 	handlers map[domain.AICapability]AnalysisHandler
 	active   map[int64]activeAIJob
 	paused   map[domain.AICapability]int
+	admitted map[domain.AICapability]int
 	started     bool
 	startupHeld bool
 	uiPaused    bool
@@ -107,6 +108,7 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		handlers: make(map[domain.AICapability]AnalysisHandler),
 		active:   make(map[int64]activeAIJob),
 		paused:   make(map[domain.AICapability]int),
+		admitted: make(map[domain.AICapability]int),
 		wake:     make(chan struct{}, workers),
 	}
 }
@@ -559,6 +561,13 @@ func (q *JobQueue) worker(ctx context.Context, workerID int) {
 }
 
 func (q *JobQueue) claimNext(workerID int) (*domain.AIJob, error) {
+	// SQLite has one writer. Serialising claims inside this process also makes
+	// capability-slot reservation atomic with the durable claim: another worker
+	// cannot observe a free slot and claim the same serialized capability in the
+	// gap before processJob records the active handler.
+	q.claimMu.Lock()
+	defer q.claimMu.Unlock()
+
 	capabilities, err := q.runnableCapabilities(workerID)
 	if err != nil {
 		return nil, err
@@ -567,11 +576,14 @@ func (q *JobQueue) claimNext(workerID int) (*domain.AIJob, error) {
 		return nil, nil
 	}
 
-	// SQLite has one writer. Serialising claims inside this process avoids
-	// multiple workers selecting the same queued row before its state update.
-	q.claimMu.Lock()
-	defer q.claimMu.Unlock()
-	return q.repo.ClaimNext(capabilities)
+	job, err := q.repo.ClaimNext(capabilities)
+	if err != nil || job == nil {
+		return job, err
+	}
+	q.mu.Lock()
+	q.admitted[job.Capability]++
+	q.mu.Unlock()
+	return job, nil
 }
 
 func (q *JobQueue) runnableCapabilities(workerID int) ([]domain.AICapability, error) {
@@ -593,14 +605,57 @@ func (q *JobQueue) runnableCapabilities(workerID int) ([]domain.AICapability, er
 	}
 	capabilities := make([]domain.AICapability, 0, len(q.handlers))
 	for capability := range q.handlers {
-		if settings.CapabilityEnabled(capability) && q.paused[capability] == 0 {
-			capabilities = append(capabilities, capability)
+		if !settings.CapabilityEnabled(capability) || q.paused[capability] > 0 {
+			continue
 		}
+		if q.admitted[capability] >= q.capabilityAdmissionLimitLocked() {
+			continue
+		}
+		capabilities = append(capabilities, capability)
 	}
 	return capabilities, nil
 }
 
+func (q *JobQueue) capabilityAdmissionLimitLocked() int {
+	if q.workers <= 1 {
+		return 1
+	}
+	// Every Manager runtime is serialized by its own opMu. Keep at most one
+	// handler ahead of that runtime so CPU decode/preprocess can pipeline with
+	// inference, but never allow one capability to consume the entire generic
+	// worker pool. This preserves at least one slot for an independent runtime.
+	limit := q.workers - 1
+	if limit > 2 {
+		limit = 2
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	return limit
+}
+
+func (q *JobQueue) releaseCapabilityAdmission(capability domain.AICapability) {
+	q.mu.Lock()
+	if count := q.admitted[capability]; count <= 1 {
+		delete(q.admitted, capability)
+	} else {
+		q.admitted[capability] = count - 1
+	}
+	q.mu.Unlock()
+	q.signal()
+}
+
 func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID int) {
+	admissionReleased := false
+	releaseAdmission := func() {
+		if admissionReleased {
+			return
+		}
+		admissionReleased = true
+		q.releaseCapabilityAdmission(job.Capability)
+	}
+	defer releaseAdmission()
+
 	q.mu.Lock()
 	handler := q.handlers[job.Capability]
 	diagnostics := q.semanticDiagnostics
@@ -650,6 +705,9 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID
 
 	output, handlerErr := handler(jobCtx, job)
 	cleanup()
+	// The serialized runtime/preprocess portion is finished. Let another job of
+	// this capability enter while this worker performs durable finalization.
+	releaseAdmission()
 
 	if handlerErr == nil {
 		stopCompletion := MeasureSemanticStage(jobCtx, SemanticStageCompletionPersistence)
