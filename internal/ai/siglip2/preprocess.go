@@ -45,12 +45,20 @@ func PreprocessImageContext(ctx context.Context, path string) ([]float32, error)
 	defer file.Close()
 
 	reader := io.Reader(file)
+	var diagnosticReader *semanticDiagnosticReader
 	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
-		reader = &semanticDiagnosticReader{reader: file, trace: trace}
+		diagnosticReader = &semanticDiagnosticReader{reader: file, trace: trace}
+		reader = diagnosticReader
 	}
-	stopDecode := ai.MeasureSemanticStage(ctx, ai.SemanticStageDecode)
+	decodeStarted := time.Now()
 	source, _, err := image.Decode(reader)
-	stopDecode()
+	if diagnosticReader != nil {
+		decodeOnly := time.Since(decodeStarted) - diagnosticReader.readDuration
+		if decodeOnly < 0 {
+			decodeOnly = 0
+		}
+		diagnosticReader.trace.AddStage(ai.SemanticStageDecode, decodeOnly)
+	}
 	if err != nil {
 		ai.RecordSemanticTraceError(ctx, ai.SemanticStageDecode, err)
 		return nil, fmt.Errorf("decode image for SigLIP: %w", err)
@@ -134,13 +142,16 @@ func clampInt(value, minValue, maxValue int) int {
 
 
 type semanticDiagnosticReader struct {
-	reader io.Reader
-	trace  *ai.SemanticJobTrace
+	reader       io.Reader
+	trace        *ai.SemanticJobTrace
+	readDuration time.Duration
 }
 
 func (r *semanticDiagnosticReader) Read(buffer []byte) (int, error) {
 	started := time.Now()
 	n, err := r.reader.Read(buffer)
-	r.trace.AddStage(ai.SemanticStageFileRead, time.Since(started))
+	elapsed := time.Since(started)
+	r.readDuration += elapsed
+	r.trace.AddStage(ai.SemanticStageFileRead, elapsed)
 	return n, err
 }
