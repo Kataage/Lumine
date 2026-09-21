@@ -198,9 +198,6 @@ func (d *SemanticDiagnostics) StartJob(job domain.AIJob, workerID int) *Semantic
 		return nil
 	}
 	startedAt := time.Now()
-	if job.StartedAt != nil && !job.StartedAt.IsZero() {
-		startedAt = *job.StartedAt
-	}
 	queueWait := startedAt.Sub(job.CreatedAt)
 	if queueWait < 0 {
 		queueWait = 0
