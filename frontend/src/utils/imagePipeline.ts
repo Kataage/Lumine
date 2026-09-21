@@ -371,7 +371,6 @@ async function acquireDecodeSlot(
     return;
   }
   await queueDecode(key, priority, signal);
-  throwIfAborted(signal);
 }
 
 async function withDecodeSlot<T>(
@@ -402,14 +401,16 @@ async function createSizedBitmap(
   let sourceBitmap: ImageBitmap | null = null;
 
   throwIfAborted(signal);
-  if (sourceWidth <= 0 || sourceHeight <= 0) {
-    sourceBitmap = await createImageBitmap(blob);
-    throwIfAborted(signal);
-    sourceWidth = sourceBitmap.width;
-    sourceHeight = sourceBitmap.height;
-  }
-
   try {
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+      sourceBitmap = await createImageBitmap(blob);
+      if (signal?.aborted) {
+        throw abortError();
+      }
+      sourceWidth = sourceBitmap.width;
+      sourceHeight = sourceBitmap.height;
+    }
+
     throwIfAborted(signal);
     const source: ImageBitmapSource = sourceBitmap ?? blob;
     if (request.fit === "cover") {
