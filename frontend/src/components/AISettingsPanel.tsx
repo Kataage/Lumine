@@ -727,9 +727,12 @@ export function AISettingsPanel() {
                                   検索に使用できます
                                 </div>
                                 {semanticModel.runtime.executionProvider && (
-                                  <span className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
+                                  <span
+                                    className="rounded-full border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium text-muted-foreground"
+                                    title={semanticModel.runtime.adapterName || undefined}
+                                  >
                                     {semanticModel.runtime.executionProvider === "directml"
-                                      ? "DirectML (GPU)"
+                                      ? `DirectML · ${semanticModel.runtime.adapterName || `adapter ${semanticModel.runtime.adapterId ?? "?"}`}`
                                       : semanticModel.runtime.warning
                                         ? "CPU fallback"
                                         : semanticModel.runtime.executionProvider.toUpperCase()}
@@ -986,6 +989,11 @@ export function AISettingsPanel() {
                       <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
                         Runtime: {semanticDiagnostics.executionProvider || "unknown"}
                         {semanticDiagnostics.adapterId != null ? ` / adapter ${semanticDiagnostics.adapterId}` : ""}
+                        {semanticDiagnostics.adapterName ? ` / ${semanticDiagnostics.adapterName}` : ""}
+                        {semanticDiagnostics.dedicatedVideoMemoryBytes > 0
+                          ? ` / VRAM ${formatFileSize(semanticDiagnostics.dedicatedVideoMemoryBytes)}`
+                          : ""}
+                        {" · "}batch {semanticDiagnostics.visionBatchExperiment || "batch=1"}
                         {" · "}retry {semanticDiagnostics.retryCount}
                         {" · "}re-inference {semanticDiagnostics.reInferenceCount}
                         {" · "}discarded {semanticDiagnostics.discardedAfterCancel}
