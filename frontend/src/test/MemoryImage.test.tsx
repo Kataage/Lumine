@@ -102,6 +102,34 @@ describe("MemoryImage", () => {
     await waitFor(() => expect(drawImage.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
+  it("画像が置き換わったら古いdecode requestをabortする", async () => {
+    const first = deferred<ImageBitmap>();
+    const second = deferred<ImageBitmap>();
+    vi.mocked(loadMemoryBitmap)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const { rerender } = render(
+      <MemoryImage filePath="C:\\images\\old.png" width={180} height={180} alt="old.png" />
+    );
+
+    await waitFor(() => expect(loadMemoryBitmap).toHaveBeenCalledTimes(1));
+    const firstSignal = vi.mocked(loadMemoryBitmap).mock.calls[0]?.[0].signal;
+    expect(firstSignal?.aborted).toBe(false);
+
+    rerender(
+      <MemoryImage filePath="C:\\images\\new.png" width={180} height={180} alt="new.png" />
+    );
+
+    await waitFor(() => expect(loadMemoryBitmap).toHaveBeenCalledTimes(2));
+    expect(firstSignal?.aborted).toBe(true);
+    const secondSignal = vi.mocked(loadMemoryBitmap).mock.calls[1]?.[0].signal;
+    expect(secondSignal?.aborted).toBe(false);
+
+    second.resolve(bitmap(180, 180));
+    await waitFor(() => expect(secondSignal?.aborted).toBe(false));
+  });
+
   it("高DPIの大きな表示でも指定した最大画素数を超えるBitmapを要求しない", async () => {
     Object.defineProperty(window, "devicePixelRatio", {
       configurable: true,
