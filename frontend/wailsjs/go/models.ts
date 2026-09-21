@@ -2389,6 +2389,8 @@ export namespace scanner {
 	    skippedCount: number;
 	    failedCount: number;
 	    changed: boolean;
+	    yielded: boolean;
+	    elapsedMs: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new SyncResult(source);
@@ -2404,6 +2406,8 @@ export namespace scanner {
 	        this.skippedCount = source["skippedCount"];
 	        this.failedCount = source["failedCount"];
 	        this.changed = source["changed"];
+	        this.yielded = source["yielded"];
+	        this.elapsedMs = source["elapsedMs"];
 	    }
 	}
 
