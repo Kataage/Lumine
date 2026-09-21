@@ -36,8 +36,9 @@ type Scanner struct {
 	settingRepo *db.AppSettingRepo
 	folderRepo *db.FolderRepo
 	assetChangeHandler func([]int64)
-	cancelled atomic.Bool
-	scanning atomic.Bool
+	cancelled        atomic.Bool
+	scanning         atomic.Bool
+	interactiveUI    atomic.Bool
 	customExts map[string]bool
 	extsOnce sync.Once
 	extsMu sync.RWMutex
@@ -61,6 +62,14 @@ func (s *Scanner) SetFolderRepo(repo *db.FolderRepo) {
 
 func (s *Scanner) SetAssetChangeHandler(handler func([]int64)) {
 	s.assetChangeHandler = handler
+}
+
+func (s *Scanner) SetInteractiveUIActive(active bool) {
+	s.interactiveUI.Store(active)
+}
+
+func (s *Scanner) InteractiveUIActive() bool {
+	return s.interactiveUI.Load()
 }
 
 func (s *Scanner) notifyAssetChanges(assets []*domain.Asset) {
