@@ -88,11 +88,13 @@ func enumerateDirectMLAdapters() ([]directMLAdapterCandidate, error) {
 		if name == "" {
 			name = fmt.Sprintf("DXGI adapter %d", index)
 		}
+		software := desc.Flags&dxgiAdapterFlagSoftware != 0 ||
+			strings.EqualFold(name, "Microsoft Basic Render Driver")
 		candidates = append(candidates, directMLAdapterCandidate{
 			ID:                   int(index),
 			Name:                 name,
 			DedicatedVideoMemory: uint64(desc.DedicatedVideoMemory),
-			Software:             desc.Flags&dxgiAdapterFlagSoftware != 0,
+			Software:             software,
 		})
 	}
 	if len(candidates) == 0 {
