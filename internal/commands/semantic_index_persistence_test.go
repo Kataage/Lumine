@@ -9,9 +9,11 @@ import (
 	"io"
 	"math"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/kataage/lumine/internal/ai"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
 
@@ -423,6 +425,87 @@ func TestSemanticPersistWorkerWaitsUntilIncrementalEmbeddingIsReady(t *testing.T
 	}
 	if len(result.RankedHits) == 0 || result.RankedHits[0].AssetID != newID {
 		t.Fatalf("incremental embedding is not searchable after compaction: %+v", result.RankedHits)
+	}
+}
+
+func TestSemanticPersistWorkerDefersFullSnapshotUntilIngestionIsAdmitted(t *testing.T) {
+	cmd, root, key, ids := buildPersistentSemanticFixture(t)
+
+	index := newSemanticMemoryIndex()
+	index.persistDebounce = 10 * time.Millisecond
+	index.SetStorageRoot(root)
+	diagnostics := ai.NewSemanticDiagnostics()
+	diagnostics.SetEnabled(true)
+	index.SetDiagnostics(diagnostics)
+	index.Prepare(key.engine, key.modelID, key.version)
+	if err := index.Warm(context.Background(), cmd.semanticRepo, key.engine, key.modelID, key.version); err != nil {
+		t.Fatalf("open initial persistent snapshot: %v", err)
+	}
+	defer releaseSemanticTestIndex(index)
+
+	libraries, err := cmd.ListLibraries()
+	if err != nil || len(libraries) != 1 {
+		t.Fatalf("list test library: %v count=%d", err, len(libraries))
+	}
+	newID := seedReadySemanticEmbedding(t, cmd, libraries[0].ID, "deferred.png", []float32{0, 1})
+	index.Upsert(newID, key.engine, key.modelID, key.version, []float32{0, 1})
+	if !index.MarkPersistDirty(key.engine, key.modelID, key.version) {
+		t.Fatal("incremental overlay did not start persistence worker")
+	}
+
+	var admitted atomic.Bool
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- index.PersistWhenStableWithAdmission(
+			ctx,
+			cmd.semanticRepo,
+			key.engine,
+			key.modelID,
+			key.version,
+			admitted.Load,
+			nil,
+		)
+	}()
+
+	// Wait through several debounce windows. Admission is closed, so a quiet
+	// epoch alone must not cause even one full snapshot attempt.
+	time.Sleep(60 * time.Millisecond)
+	before := diagnostics.Snapshot()
+	if before.SnapshotAttempts != 0 {
+		t.Fatalf("snapshot attempted during active ingestion gate: %+v", before)
+	}
+
+	// The overlay remains searchable while persistence is intentionally
+	// deferred; compaction is not part of search correctness.
+	eligible := append(append([]int64(nil), ids...), newID)
+	result, err := index.Search(context.Background(), []float32{0, 1}, eligible, 0, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.RankedHits) == 0 || result.RankedHits[0].AssetID != newID {
+		t.Fatalf("deferred overlay is not searchable: %+v", result.RankedHits)
+	}
+
+	admitted.Store(true)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("final snapshot after ingestion drained: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("persistence did not converge after admission opened: %v", ctx.Err())
+	}
+
+	after := diagnostics.Snapshot()
+	if after.SnapshotAttempts != 1 || after.SnapshotSuccesses != 1 ||
+		after.SnapshotDiscarded != 0 || after.SnapshotFailures != 0 {
+		t.Fatalf("unexpected final snapshot diagnostics: %+v", after)
+	}
+	status := index.Status()
+	if !status.Persistent || status.OverlayCount != 0 || status.LoadedCount != len(ids)+1 {
+		t.Fatalf("final persistent index did not compact overlay: %+v", status)
 	}
 }
 
