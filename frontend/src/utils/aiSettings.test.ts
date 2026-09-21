@@ -17,6 +17,7 @@ describe("AI settings policy", () => {
       promptEngine: false,
       autoAnalyze: false,
       gpuAcceleration: false,
+      diagnostics: false,
     });
   });
 
