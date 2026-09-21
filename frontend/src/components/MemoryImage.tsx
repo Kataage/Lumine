@@ -86,7 +86,7 @@ export function MemoryImage({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     if (!hasRenderedRef.current) setLoading(true);
 
     const canvas = canvasRef.current;
@@ -94,7 +94,7 @@ export function MemoryImage({
       setFallbackError(true);
       setLoading(false);
       return () => {
-        cancelled = true;
+        controller.abort();
       };
     }
 
@@ -102,7 +102,7 @@ export function MemoryImage({
       setFallback(true);
       setFallbackError(false);
       return () => {
-        cancelled = true;
+        controller.abort();
       };
     }
 
@@ -123,6 +123,7 @@ export function MemoryImage({
       targetHeight,
       fit,
       priority,
+      signal: controller.signal,
     } as const;
 
     // A thumbnail-size change can regroup virtualized rows and remount cards.
@@ -142,7 +143,7 @@ export function MemoryImage({
     // ever presenting an empty black frame.
     loadMemoryBitmap(request)
       .then((bitmap) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         const ctx = canvas.getContext("2d", { alpha: false });
         if (!ctx) throw new Error("2D canvas unavailable");
         canvas.width = targetWidth;
@@ -157,7 +158,7 @@ export function MemoryImage({
         setLoading(false);
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
         console.debug("Memory image decode fallback", filePath, error);
         // Keep the existing canvas under the fallback image until the browser
         // has decoded that image too. This avoids replacing a valid preview
@@ -167,7 +168,7 @@ export function MemoryImage({
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [filePath, modifiedAtFs, sourceWidth, sourceHeight, width, height, fit, priority, maxDecodePixels, pixelRatio]);
 
