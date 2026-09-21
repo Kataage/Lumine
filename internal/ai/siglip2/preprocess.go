@@ -7,8 +7,12 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"os"
+	"time"
+
+	"github.com/kataage/lumine/internal/ai"
 )
 
 const (
