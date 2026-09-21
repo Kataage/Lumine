@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kataage/lumine/internal/ai"
-
 	"github.com/kataage/lumine/internal/domain"
 )
 
@@ -653,8 +651,8 @@ func (r *AIAnalysisRepo) GetJob(id int64) (*domain.AIJob, error) {
 func (r *AIAnalysisRepo) AIJobDiagnosticsCounts(
 	capability domain.AICapability,
 	longRunningBefore time.Time,
-) (ai.AIJobDiagnosticsCounts, error) {
-	var counts ai.AIJobDiagnosticsCounts
+) (domain.AIJobDiagnosticsCounts, error) {
+	var counts domain.AIJobDiagnosticsCounts
 	err := r.db.QueryRow(`
 		SELECT
 			COALESCE(SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END), 0),
@@ -671,7 +669,7 @@ func (r *AIAnalysisRepo) AIJobDiagnosticsCounts(
 		&counts.LongRunning,
 	)
 	if err != nil {
-		return ai.AIJobDiagnosticsCounts{}, fmt.Errorf("count AI job diagnostics: %w", err)
+		return domain.AIJobDiagnosticsCounts{}, fmt.Errorf("count AI job diagnostics: %w", err)
 	}
 	return counts, nil
 }
