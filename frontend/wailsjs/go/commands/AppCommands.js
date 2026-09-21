@@ -474,6 +474,10 @@ export function RequestLegacyStorageMigration() {
   return window['go']['commands']['AppCommands']['RequestLegacyStorageMigration']();
 }
 
+export function ResetSemanticPipelineDiagnostics() {
+  return window['go']['commands']['AppCommands']['ResetSemanticPipelineDiagnostics']();
+}
+
 export function RestoreAdvancedVisionModel() {
   return window['go']['commands']['AppCommands']['RestoreAdvancedVisionModel']();
 }
@@ -492,10 +496,6 @@ export function RestorePromptEngineModel() {
 
 export function RestorePromptProject(arg1) {
   return window['go']['commands']['AppCommands']['RestorePromptProject'](arg1);
-}
-
-export function ResetSemanticPipelineDiagnostics() {
-  return window['go']['commands']['AppCommands']['ResetSemanticPipelineDiagnostics']();
 }
 
 export function RetryAIJob(arg1) {
