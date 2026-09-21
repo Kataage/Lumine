@@ -990,8 +990,8 @@ export function AISettingsPanel() {
                         Runtime: {semanticDiagnostics.executionProvider || "unknown"}
                         {semanticDiagnostics.adapterId != null ? ` / adapter ${semanticDiagnostics.adapterId}` : ""}
                         {semanticDiagnostics.adapterName ? ` / ${semanticDiagnostics.adapterName}` : ""}
-                        {semanticDiagnostics.dedicatedVideoMemoryBytes > 0
-                          ? ` / VRAM ${formatFileSize(semanticDiagnostics.dedicatedVideoMemoryBytes)}`
+                        {(semanticDiagnostics.dedicatedVideoMemoryBytes ?? 0) > 0
+                          ? ` / VRAM ${formatFileSize(semanticDiagnostics.dedicatedVideoMemoryBytes ?? 0)}`
                           : ""}
                         {" · "}batch {semanticDiagnostics.visionBatchExperiment || "batch=1"}
                         {" · "}retry {semanticDiagnostics.retryCount}
