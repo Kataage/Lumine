@@ -212,8 +212,9 @@ func TestJobQueueCachesSettingsAcrossIdleWorkerPollsAndAcceptsPushUpdates(t *tes
 		t.Fatalf("settings provider calls after idle polling = %d, want 1", gotCalls)
 	}
 
-	settings.SemanticSearch = false
-	if err := queue.ApplySettings(settings); err != nil {
+	updated := settings
+	updated.SemanticSearch = false
+	if err := queue.ApplySettings(updated); err != nil {
 		t.Fatal(err)
 	}
 	got, err := queue.currentSettings()
