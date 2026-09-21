@@ -13,6 +13,45 @@ import (
 	"github.com/kataage/lumine/internal/infrastructure/db"
 )
 
+
+type busyThenCompleteRepo struct {
+	*db.AIAnalysisRepo
+	mu              sync.Mutex
+	remainingBusy   int
+	semanticCalls   int
+}
+
+type queueSQLiteBusyError struct {
+	code int
+}
+
+func (e queueSQLiteBusyError) Error() string { return "simulated sqlite busy" }
+func (e queueSQLiteBusyError) Code() int     { return e.code }
+
+func (r *busyThenCompleteRepo) CompleteSemanticJob(
+	jobID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	resultJSON string,
+) error {
+	r.mu.Lock()
+	r.semanticCalls++
+	if r.remainingBusy > 0 {
+		r.remainingBusy--
+		r.mu.Unlock()
+		return queueSQLiteBusyError{code: 517}
+	}
+	r.mu.Unlock()
+	return r.AIAnalysisRepo.CompleteSemanticJob(jobID, engine, modelID, modelVersion, resultJSON)
+}
+
+func (r *busyThenCompleteRepo) semanticCallCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.semanticCalls
+}
+
 func setupAIQueueTest(t *testing.T) (*db.DB, *db.AIAnalysisRepo, int64) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "lumine-ai-queue-*")
@@ -676,5 +715,109 @@ func TestJobQueueModelActivationHonorsAnalysisRevision(t *testing.T) {
 	}
 	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisReady {
 		t.Fatalf("matching analysis revision was incorrectly invalidated: %+v", analyses)
+	}
+}
+
+
+func TestJobQueueRetriesSemanticFinalizationWithoutRerunningHandler(t *testing.T) {
+	database, baseRepo, assetID := setupAIQueueTest(t)
+	semanticRepo := db.NewSemanticEmbeddingRepo(database)
+	repo := &busyThenCompleteRepo{
+		AIAnalysisRepo: baseRepo,
+		remainingBusy:  2,
+	}
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 1)
+	diagnostics := NewSemanticDiagnostics()
+	diagnostics.SetEnabled(true)
+	queue.SetSemanticDiagnostics(diagnostics)
+
+	var handlerMu sync.Mutex
+	handlerCalls := 0
+	afterCommitCalls := 0
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		handlerMu.Lock()
+		handlerCalls++
+		handlerMu.Unlock()
+
+		const resultJSON = `{"dimensions":2,"kind":"image_embedding"}`
+		if err := semanticRepo.StageAnalysisResult(
+			ctx,
+			job.ID,
+			job.AssetID,
+			"siglip2-onnx",
+			"siglip2",
+			"revision-1",
+			resultJSON,
+			[]float32{1, 0},
+		); err != nil {
+			return AnalysisOutput{}, err
+		}
+		return AnalysisOutput{
+			Engine:               "siglip2-onnx",
+			ModelID:              "siglip2",
+			ModelVersion:         "revision-1",
+			ResultJSON:           resultJSON,
+			SemanticResultStaged: true,
+			AfterCommit: func() {
+				handlerMu.Lock()
+				afterCommitCalls++
+				handlerMu.Unlock()
+			},
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
+
+	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForAIJobStatus(t, baseRepo, job.ID, domain.AIJobCompleted)
+
+	handlerMu.Lock()
+	gotHandlerCalls := handlerCalls
+	gotAfterCommitCalls := afterCommitCalls
+	handlerMu.Unlock()
+	if gotHandlerCalls != 1 {
+		t.Fatalf("handler/inference calls = %d, want 1", gotHandlerCalls)
+	}
+	if gotAfterCommitCalls != 1 {
+		t.Fatalf("after-commit calls = %d, want 1", gotAfterCommitCalls)
+	}
+	if got := repo.semanticCallCount(); got != 3 {
+		t.Fatalf("semantic finalization calls = %d, want 3 (2 busy + success)", got)
+	}
+	snapshot := diagnostics.Snapshot()
+	if snapshot.FailedCompletionCount < 2 || snapshot.SQLiteBusySnapshotCount < 2 {
+		t.Fatalf("transient finalization failures were not observable: %+v", snapshot)
+	}
+
+	ready, err := semanticRepo.GetReady(assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready == nil || ready.ModelVersion != "revision-1" {
+		t.Fatalf("semantic embedding not durably ready after retry: %+v", ready)
 	}
 }
