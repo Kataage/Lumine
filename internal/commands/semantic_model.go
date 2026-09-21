@@ -140,12 +140,22 @@ func (c *AppCommands) scheduleSemanticIndexPersist(engine, modelID, version stri
 		return
 	}
 	if !c.startBackgroundTask(func(persistCtx context.Context) {
-		if err := c.semanticIndex.PersistWhenStable(
+		if err := c.semanticIndex.PersistWhenStableWithAdmission(
 			persistCtx,
 			c.semanticRepo,
 			engine,
 			modelID,
 			version,
+			func() bool {
+				c.semanticBackfillMu.Lock()
+				backfillEnumerating := c.semanticBackfillRunning
+				c.semanticBackfillMu.Unlock()
+				if backfillEnumerating {
+					return false
+				}
+				return c.aiJobQueue == nil ||
+					!c.aiJobQueue.CapabilityWorkPending(domain.AICapabilitySemanticSearch)
+			},
 			func() bool {
 				return c.aiJobQueue == nil || !c.aiJobQueue.InteractiveUIActive()
 			},
