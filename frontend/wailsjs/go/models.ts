@@ -86,6 +86,34 @@ export namespace ai {
 	
 	    }
 	}
+	export class RuntimeStatus {
+	    capability: string;
+	    state: string;
+	    modelId?: string;
+	    version?: string;
+	    engine?: string;
+	    executionProvider?: string;
+	    adapterId?: number;
+	    warning?: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RuntimeStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.capability = source["capability"];
+	        this.state = source["state"];
+	        this.modelId = source["modelId"];
+	        this.version = source["version"];
+	        this.engine = source["engine"];
+	        this.executionProvider = source["executionProvider"];
+	        this.adapterId = source["adapterId"];
+	        this.warning = source["warning"];
+	        this.error = source["error"];
+	    }
+	}
 	export class SemanticStageTimings {
 	    fileOpenMs: number;
 	    fileReadMs: number;
@@ -99,11 +127,11 @@ export namespace ai {
 	    completionPersistenceMs: number;
 	    indexLockWaitMs: number;
 	    indexUpdateMs: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SemanticStageTimings(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.fileOpenMs = source["fileOpenMs"];
@@ -137,11 +165,11 @@ export namespace ai {
 	    errorStage?: string;
 	    error?: string;
 	    sqliteCode?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SemanticJobTraceSnapshot(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.jobId = source["jobId"];
@@ -159,7 +187,7 @@ export namespace ai {
 	        this.error = source["error"];
 	        this.sqliteCode = source["sqliteCode"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -173,7 +201,7 @@ export namespace ai {
 		            }
 		            return a;
 		        }
-		        return classs ? new classs(a) : a;
+		        return new classs(a);
 		    }
 		    return a;
 		}
@@ -210,11 +238,11 @@ export namespace ai {
 	    executionProvider?: string;
 	    adapterId?: number;
 	    recentJobs: SemanticJobTraceSnapshot[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SemanticPipelineDiagnosticsSnapshot(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -247,7 +275,7 @@ export namespace ai {
 	        this.adapterId = source["adapterId"];
 	        this.recentJobs = this.convertValues(source["recentJobs"], SemanticJobTraceSnapshot);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -261,38 +289,10 @@ export namespace ai {
 		            }
 		            return a;
 		        }
-		        return classs ? new classs(a) : a;
+		        return new classs(a);
 		    }
 		    return a;
 		}
-	}
-	export class RuntimeStatus {
-	    capability: string;
-	    state: string;
-	    modelId?: string;
-	    version?: string;
-	    engine?: string;
-	    executionProvider?: string;
-	    adapterId?: number;
-	    warning?: string;
-	    error?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RuntimeStatus(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.capability = source["capability"];
-	        this.state = source["state"];
-	        this.modelId = source["modelId"];
-	        this.version = source["version"];
-	        this.engine = source["engine"];
-	        this.executionProvider = source["executionProvider"];
-	        this.adapterId = source["adapterId"];
-	        this.warning = source["warning"];
-	        this.error = source["error"];
-	    }
 	}
 
 }
