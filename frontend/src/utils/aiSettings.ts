@@ -7,6 +7,7 @@ export interface AISettings {
   promptEngine: boolean;
   autoAnalyze: boolean;
   gpuAcceleration: boolean;
+  diagnostics: boolean;
 }
 
 export type AIModelFeatureKey =
@@ -33,6 +34,7 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   promptEngine: false,
   autoAnalyze: false,
   gpuAcceleration: false,
+  diagnostics: false,
 };
 
 export function normalizeAISettings(value: Partial<AISettings> | null | undefined): AISettings {
@@ -46,6 +48,7 @@ export function normalizeAISettings(value: Partial<AISettings> | null | undefine
     promptEngine: value.promptEngine === true,
     autoAnalyze: value.autoAnalyze === true,
     gpuAcceleration: value.gpuAcceleration === true,
+    diagnostics: value.diagnostics === true,
   };
 }
 
