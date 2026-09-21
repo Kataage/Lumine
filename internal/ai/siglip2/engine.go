@@ -13,6 +13,7 @@ import (
 type ortBackend interface {
 	EmbedText(ctx context.Context, input [siglipTextLength]int64) ([]float32, error)
 	EmbedImage(ctx context.Context, input []float32) ([]float32, error)
+	EmbedImageBatch(ctx context.Context, input []float32, batchSize int) ([][]float32, error)
 	RuntimeDiagnostics() ai.RuntimeDiagnostics
 	Close() error
 }
@@ -119,6 +120,30 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 			return ai.InferenceResponse{}, err
 		}
 		vector, err = e.runtime.EmbedImage(ctx, pixels)
+	case "embed_image_batch_tensor":
+		pixels, ok := request.Payload["pixels"].([]float32)
+		if !ok || len(pixels) == 0 {
+			return ai.InferenceResponse{}, errors.New("preprocessed semantic image batch tensor is required")
+		}
+		batchSize, ok := request.Payload["batchSize"].(int)
+		if !ok || batchSize <= 0 {
+			return ai.InferenceResponse{}, errors.New("semantic image batchSize must be a positive integer")
+		}
+		if err := ctx.Err(); err != nil {
+			return ai.InferenceResponse{}, err
+		}
+		batch, batchErr := e.runtime.EmbedImageBatch(ctx, pixels, batchSize)
+		if batchErr != nil {
+			return ai.InferenceResponse{}, batchErr
+		}
+		normalized := make([][]float32, len(batch))
+		for index, item := range batch {
+			normalized[index], batchErr = cosineUnit(item)
+			if batchErr != nil {
+				return ai.InferenceResponse{}, fmt.Errorf("normalize batch embedding %d: %w", index, batchErr)
+			}
+		}
+		return ai.InferenceResponse{Payload: map[string]any{"embeddings": normalized}}, nil
 	default:
 		return ai.InferenceResponse{}, fmt.Errorf("unsupported SigLIP2 operation %q", request.Operation)
 	}
