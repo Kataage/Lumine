@@ -89,9 +89,12 @@ const (
 )
 
 type RuntimeDiagnostics struct {
-	ExecutionProvider string `json:"executionProvider,omitempty"`
-	AdapterID         *int   `json:"adapterId,omitempty"`
-	Warning           string `json:"warning,omitempty"`
+	ExecutionProvider          string `json:"executionProvider,omitempty"`
+	AdapterID                  *int   `json:"adapterId,omitempty"`
+	AdapterName                string `json:"adapterName,omitempty"`
+	DedicatedVideoMemoryBytes  uint64 `json:"dedicatedVideoMemoryBytes,omitempty"`
+	VisionBatchExperiment      string `json:"visionBatchExperiment,omitempty"`
+	Warning                    string `json:"warning,omitempty"`
 }
 
 type RuntimeDiagnosticsProvider interface {
@@ -103,13 +106,16 @@ type GPUCapableEngine interface {
 }
 
 type RuntimeStatus struct {
-	Capability        domain.AICapability `json:"capability"`
-	State             RuntimeState        `json:"state"`
-	ModelID           string              `json:"modelId,omitempty"`
-	Version           string              `json:"version,omitempty"`
-	Engine            string              `json:"engine,omitempty"`
-	ExecutionProvider string              `json:"executionProvider,omitempty"`
-	AdapterID         *int                `json:"adapterId,omitempty"`
-	Warning           string              `json:"warning,omitempty"`
-	Error             string              `json:"error,omitempty"`
+	Capability                 domain.AICapability `json:"capability"`
+	State                      RuntimeState        `json:"state"`
+	ModelID                    string              `json:"modelId,omitempty"`
+	Version                    string              `json:"version,omitempty"`
+	Engine                     string              `json:"engine,omitempty"`
+	ExecutionProvider          string              `json:"executionProvider,omitempty"`
+	AdapterID                  *int                `json:"adapterId,omitempty"`
+	AdapterName                string              `json:"adapterName,omitempty"`
+	DedicatedVideoMemoryBytes  uint64              `json:"dedicatedVideoMemoryBytes,omitempty"`
+	VisionBatchExperiment      string              `json:"visionBatchExperiment,omitempty"`
+	Warning                    string              `json:"warning,omitempty"`
+	Error                      string              `json:"error,omitempty"`
 }
