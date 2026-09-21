@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -618,5 +619,193 @@ func TestRecoverInterruptedDoesNotPromoteOldSemanticEmbedding(t *testing.T) {
 	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisQueued ||
 		analyses[0].Engine != "" || analyses[0].ModelVersion != "" {
 		t.Fatalf("old provenance leaked into recovered analysis: %+v", analyses)
+	}
+}
+
+
+func seedAIAnalysisBatchAssets(t testing.TB, database *DB, count int) []int64 {
+	t.Helper()
+	lib, err := NewLibraryRepo(database).Create(
+		fmt.Sprintf("AI Batch %d", time.Now().UnixNano()),
+		fmt.Sprintf("/tmp/ai-batch-%d", time.Now().UnixNano()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := database.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt, err := tx.Prepare(`
+		INSERT INTO assets (
+			library_id, folder_path, file_name, file_path, extension,
+			file_size, thumb_status, status_label
+		) VALUES (?, ?, ?, ?, '.png', 100, 'none', 'unsorted')
+	`)
+	if err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	ids := make([]int64, 0, count)
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("%05d.png", i)
+		path := fmt.Sprintf("%s/%s", lib.RootPath, name)
+		result, err := stmt.Exec(lib.ID, lib.RootPath, name, path)
+		if err != nil {
+			stmt.Close()
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			stmt.Close()
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := stmt.Close(); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+func TestAIAnalysisRepoEnqueueBatchThousandsIsIdempotentAndPrioritySafe(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	repo := NewAIAnalysisRepo(database)
+	ids := seedAIAnalysisBatchAssets(t, database, 3000)
+
+	created, err := repo.EnqueueBatch(
+		ids,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		-100,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != len(ids) {
+		t.Fatalf("created jobs = %d, want %d", created, len(ids))
+	}
+
+	var queuedJobs, queuedAnalysis int
+	if err := database.QueryRow(`
+		SELECT COUNT(*) FROM ai_jobs
+		WHERE capability = 'semantic_search' AND status = 'queued'
+	`).Scan(&queuedJobs); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`
+		SELECT COUNT(*) FROM ai_asset_analysis
+		WHERE capability = 'semantic_search' AND state = 'queued'
+	`).Scan(&queuedAnalysis); err != nil {
+		t.Fatal(err)
+	}
+	if queuedJobs != len(ids) || queuedAnalysis != len(ids) {
+		t.Fatalf("queued jobs=%d analysis=%d want=%d", queuedJobs, queuedAnalysis, len(ids))
+	}
+
+	created, err = repo.EnqueueBatch(
+		ids,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceManual,
+		250,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != 0 {
+		t.Fatalf("idempotent enqueue created %d duplicate jobs", created)
+	}
+
+	var raised int
+	if err := database.QueryRow(`
+		SELECT COUNT(*) FROM ai_jobs
+		WHERE capability = 'semantic_search'
+		  AND status = 'queued'
+		  AND priority = 250
+	`).Scan(&raised); err != nil {
+		t.Fatal(err)
+	}
+	if raised != len(ids) {
+		t.Fatalf("priority raised on %d jobs, want %d", raised, len(ids))
+	}
+
+	claimed, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil {
+		t.Fatalf("claim after batch enqueue: job=%+v err=%v", claimed, err)
+	}
+	created, err = repo.EnqueueBatch(
+		ids,
+		domain.AICapabilitySemanticSearch,
+		domain.AIJobSourceAutomatic,
+		300,
+		3,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != 0 {
+		t.Fatalf("enqueue with active running job created %d duplicates", created)
+	}
+
+	running, err := repo.GetJob(claimed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running == nil || running.Status != domain.AIJobRunning || running.Priority != 250 {
+		t.Fatalf("running job should remain unchanged by batch priority raise: %+v", running)
+	}
+	analyses, err := repo.GetByAsset(running.AssetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(analyses) != 1 || analyses[0].State != domain.AIAnalysisRunning {
+		t.Fatalf("running analysis was incorrectly reset by batch enqueue: %+v", analyses)
+	}
+}
+
+func BenchmarkAIAnalysisRepoEnqueueBatch3000(b *testing.B) {
+	dir := b.TempDir()
+	database, err := Open(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer database.Close()
+
+	repo := NewAIAnalysisRepo(database)
+	ids := seedAIAnalysisBatchAssets(b, database, 3000)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		if _, err := database.Exec("DELETE FROM ai_jobs"); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := database.Exec("DELETE FROM ai_asset_analysis"); err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+
+		created, err := repo.EnqueueBatch(
+			ids,
+			domain.AICapabilitySemanticSearch,
+			domain.AIJobSourceAutomatic,
+			-100,
+			3,
+		)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if created != len(ids) {
+			b.Fatalf("created jobs = %d, want %d", created, len(ids))
+		}
 	}
 }
