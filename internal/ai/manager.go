@@ -480,6 +480,9 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 		diagnostics := reporter.RuntimeDiagnostics()
 		status.ExecutionProvider = diagnostics.ExecutionProvider
 		status.AdapterID = diagnostics.AdapterID
+		status.AdapterName = diagnostics.AdapterName
+		status.DedicatedVideoMemoryBytes = diagnostics.DedicatedVideoMemoryBytes
+		status.VisionBatchExperiment = diagnostics.VisionBatchExperiment
 		status.Warning = diagnostics.Warning
 	}
 	return status
