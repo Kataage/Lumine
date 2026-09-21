@@ -37,6 +37,9 @@ func (c *AppCommands) GetSemanticPipelineDiagnostics() ai.SemanticPipelineDiagno
 		status := c.aiManager.Status(domain.AICapabilitySemanticSearch)
 		snapshot.ExecutionProvider = status.ExecutionProvider
 		snapshot.AdapterID = status.AdapterID
+		snapshot.AdapterName = status.AdapterName
+		snapshot.DedicatedVideoMemoryBytes = status.DedicatedVideoMemoryBytes
+		snapshot.VisionBatchExperiment = status.VisionBatchExperiment
 	}
 	return snapshot
 }
