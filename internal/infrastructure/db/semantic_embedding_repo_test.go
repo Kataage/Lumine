@@ -523,15 +523,12 @@ func TestSemanticBackfillNewestPlanUsesOrderIndexWithoutTempSort(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plan := strings.Join(details, "
-")
+	plan := strings.Join(details, "\n")
 	if !strings.Contains(plan, "idx_assets_semantic_backfill_newest") {
-		t.Fatalf("backfill plan did not use newest-order index:
-%s", plan)
+		t.Fatalf("backfill plan did not use newest-order index:\n%s", plan)
 	}
 	if strings.Contains(strings.ToUpper(plan), "USE TEMP B-TREE FOR ORDER BY") {
-		t.Fatalf("backfill plan still requires temporary ORDER BY sort:
-%s", plan)
+		t.Fatalf("backfill plan still requires temporary ORDER BY sort:\n%s", plan)
 	}
 }
 
