@@ -13,6 +13,7 @@ export interface ImageBitmapRequest {
   targetHeight: number;
   fit: ImageFit;
   priority?: ImageDecodePriority;
+  signal?: AbortSignal;
 }
 
 export interface Rect {
@@ -48,13 +49,23 @@ interface CacheEntry {
 
 interface DecodeWaiter {
   resolve: () => void;
+  reject: (error: unknown) => void;
   priority: ImageDecodePriority;
   key: string;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+}
+
+interface InflightDecode {
+  promise: Promise<ImageBitmap>;
+  controller: AbortController;
+  consumers: number;
+  settled: boolean;
 }
 
 const cache = new Map<string, CacheEntry>();
 const cacheKeysBySource = new Map<string, Set<string>>();
-const inflight = new Map<string, Promise<ImageBitmap>>();
+const inflight = new Map<string, InflightDecode>();
 let cacheBytes = 0;
 let activeDecodes = 0;
 const decodeWaiters: DecodeWaiter[] = [];
@@ -292,9 +303,39 @@ function insertWaiter(waiter: DecodeWaiter): void {
   else decodeWaiters.push(waiter);
 }
 
-function queueDecode(key: string, priority: ImageDecodePriority): Promise<void> {
-  return new Promise<void>((resolve) => {
-    insertWaiter({ resolve, priority, key });
+function abortError(): Error {
+  if (typeof DOMException !== "undefined") {
+    return new DOMException("Image request aborted", "AbortError");
+  }
+  const error = new Error("Image request aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
+
+function queueDecode(
+  key: string,
+  priority: ImageDecodePriority,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const waiter: DecodeWaiter = { resolve, reject, priority, key, signal };
+    if (signal) {
+      waiter.onAbort = () => {
+        const index = decodeWaiters.indexOf(waiter);
+        if (index >= 0) decodeWaiters.splice(index, 1);
+        reject(abortError());
+      };
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+    }
+    insertWaiter(waiter);
   });
 }
 
@@ -312,25 +353,36 @@ function wakeNextDecode(): void {
   const index = decodeWaiters.findIndex((item) => canStartDecode(item.priority));
   if (index < 0) return;
   const [next] = decodeWaiters.splice(index, 1);
+  if (next.signal && next.onAbort) {
+    next.signal.removeEventListener("abort", next.onAbort);
+  }
   activeDecodes += 1;
   next.resolve();
 }
 
-async function acquireDecodeSlot(key: string, priority: ImageDecodePriority): Promise<void> {
+async function acquireDecodeSlot(
+  key: string,
+  priority: ImageDecodePriority,
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfAborted(signal);
   if (canStartDecode(priority)) {
     activeDecodes += 1;
     return;
   }
-  await queueDecode(key, priority);
+  await queueDecode(key, priority, signal);
+  throwIfAborted(signal);
 }
 
 async function withDecodeSlot<T>(
   key: string,
   work: () => Promise<T>,
-  priority: ImageDecodePriority = "normal"
+  priority: ImageDecodePriority = "normal",
+  signal?: AbortSignal,
 ): Promise<T> {
-  await acquireDecodeSlot(key, priority);
+  await acquireDecodeSlot(key, priority, signal);
   try {
+    throwIfAborted(signal);
     return await work();
   } finally {
     activeDecodes -= 1;
@@ -340,7 +392,8 @@ async function withDecodeSlot<T>(
 
 async function createSizedBitmap(
   blob: Blob,
-  request: ImageBitmapRequest
+  request: ImageBitmapRequest,
+  signal?: AbortSignal,
 ): Promise<ImageBitmap> {
   const targetWidth = Math.max(1, Math.round(request.targetWidth));
   const targetHeight = Math.max(1, Math.round(request.targetHeight));
@@ -348,17 +401,20 @@ async function createSizedBitmap(
   let sourceHeight = request.sourceHeight ?? 0;
   let sourceBitmap: ImageBitmap | null = null;
 
+  throwIfAborted(signal);
   if (sourceWidth <= 0 || sourceHeight <= 0) {
     sourceBitmap = await createImageBitmap(blob);
+    throwIfAborted(signal);
     sourceWidth = sourceBitmap.width;
     sourceHeight = sourceBitmap.height;
   }
 
   try {
+    throwIfAborted(signal);
     const source: ImageBitmapSource = sourceBitmap ?? blob;
     if (request.fit === "cover") {
       const crop = computeCoverCrop(sourceWidth, sourceHeight, targetWidth, targetHeight);
-      return await createImageBitmap(
+      const bitmap = await createImageBitmap(
         source,
         Math.round(crop.x),
         Math.round(crop.y),
@@ -370,23 +426,85 @@ async function createSizedBitmap(
           resizeQuality: "high",
         }
       );
+      if (signal?.aborted) {
+        bitmap.close();
+        throw abortError();
+      }
+      return bitmap;
     }
 
     const contained = computeContainSize(sourceWidth, sourceHeight, targetWidth, targetHeight);
-    return await createImageBitmap(source, {
+    const bitmap = await createImageBitmap(source, {
       resizeWidth: contained.width,
       resizeHeight: contained.height,
       resizeQuality: "high",
     });
+    if (signal?.aborted) {
+      bitmap.close();
+      throw abortError();
+    }
+    return bitmap;
   } finally {
     sourceBitmap?.close();
   }
+}
+
+function releaseInflightConsumer(entry: InflightDecode): void {
+  entry.consumers = Math.max(0, entry.consumers - 1);
+  if (entry.consumers === 0 && !entry.settled && !entry.controller.signal.aborted) {
+    entry.controller.abort();
+  }
+}
+
+function consumeInflight(
+  entry: InflightDecode,
+  signal?: AbortSignal,
+): Promise<ImageBitmap> {
+  if (signal?.aborted) {
+    return Promise.reject(abortError());
+  }
+  entry.consumers += 1;
+
+  return new Promise<ImageBitmap>((resolve, reject) => {
+    let done = false;
+    const finish = () => {
+      if (done) return false;
+      done = true;
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+      releaseInflightConsumer(entry);
+      return true;
+    };
+    const onAbort = signal
+      ? () => {
+          if (!finish()) return;
+          reject(abortError());
+        }
+      : undefined;
+
+    if (signal && onAbort) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    entry.promise.then(
+      (bitmap) => {
+        if (!finish()) return;
+        resolve(bitmap);
+      },
+      (error) => {
+        if (!finish()) return;
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<ImageBitmap> {
   if (typeof createImageBitmap !== "function") {
     throw new Error("createImageBitmap is unavailable");
   }
+
+  const signal = request.signal;
+  throwIfAborted(signal);
 
   const key = requestKey(request);
   const cached = cache.get(key);
@@ -401,35 +519,59 @@ export async function loadMemoryBitmap(request: ImageBitmapRequest): Promise<Ima
     : beginViewerForegroundWork();
 
   try {
-    const pending = inflight.get(key);
+    let pending = inflight.get(key);
+    if (pending?.controller.signal.aborted && !pending.settled) {
+      inflight.delete(key);
+      pending = undefined;
+    }
     if (pending) {
       // An item that was only being prefetched may become visible during a fast
       // scroll. Promote its queued decode instead of leaving the visible card
       // waiting behind unrelated prefetch work.
       promoteQueuedDecode(key, requestedPriority);
-      return await pending;
+      return await consumeInflight(pending, signal);
     }
 
+    const controller = new AbortController();
+    const entry = {} as InflightDecode;
     const promise = withDecodeSlot(key, async () => {
+      throwIfAborted(controller.signal);
       const response = await fetch(getLocalImageUrl(request.filePath), {
         cache: "no-store",
         credentials: "same-origin",
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`image fetch failed: ${response.status}`);
       }
       const blob = await response.blob();
-      const bitmap = await createSizedBitmap(blob, request);
+      throwIfAborted(controller.signal);
+      const bitmap = await createSizedBitmap(blob, request, controller.signal);
+      if (controller.signal.aborted) {
+        bitmap.close();
+        throw abortError();
+      }
       cacheBitmap(key, bitmap, request);
       return bitmap;
-    }, requestedPriority);
+    }, requestedPriority, controller.signal);
 
-    inflight.set(key, promise);
-    try {
-      return await promise;
-    } finally {
-      inflight.delete(key);
-    }
+    entry.promise = promise;
+    entry.controller = controller;
+    entry.consumers = 0;
+    entry.settled = false;
+    inflight.set(key, entry);
+    promise.then(
+      () => {
+        entry.settled = true;
+        if (inflight.get(key) === entry) inflight.delete(key);
+      },
+      () => {
+        entry.settled = true;
+        if (inflight.get(key) === entry) inflight.delete(key);
+      },
+    );
+
+    return await consumeInflight(entry, signal);
   } finally {
     releaseViewerPriority?.();
   }
