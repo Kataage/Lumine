@@ -430,3 +430,45 @@ func TestSemanticCoverageStateCountsRespectScope(t *testing.T) {
 		t.Fatalf("unexpected semantic coverage states: %+v", counts)
 	}
 }
+
+
+func TestCountEligibleSemanticAssetsUsesReadyProvenanceAndScope(t *testing.T) {
+	database := openAIAnalysisTestDB(t)
+	lib, err := NewLibraryRepo(database).Create("Coverage", "/tmp/semantic-coverage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSemanticEmbeddingRepo(database)
+
+	ready := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "ready.png")
+	stale := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/a", "stale.png")
+	otherFolder := createSemanticTestAsset(t, database, lib.ID, "/tmp/semantic-coverage/b", "other.png")
+
+	for _, id := range []int64{ready, stale, otherFolder} {
+		markSemanticReady(t, database, id, "engine", "model", "1")
+		if err := repo.Upsert(id, "engine", "model", "1", []float32{1, 0}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.Exec(
+		"UPDATE ai_asset_analysis SET state = 'stale' WHERE asset_id = ? AND capability = 'semantic_search'",
+		stale,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := repo.CountEligibleSemanticAssets(context.Background(), SemanticSearchQuery{
+		LibraryID:    lib.ID,
+		FolderPath:   "/tmp/semantic-coverage/a",
+		Recurse:      true,
+		Engine:       "engine",
+		ModelID:      "model",
+		ModelVersion: "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("eligible coverage count = %d, want 1", count)
+	}
+}
