@@ -422,60 +422,110 @@ func TestJobQueueForegroundPauseYieldsAndResumesCapability(t *testing.T) {
 }
 
 
-func TestJobQueueWorkersProcessJobsConcurrently(t *testing.T) {
+func TestJobQueueBoundsSerializedCapabilityAndKeepsIndependentRuntimeMoving(t *testing.T) {
 	database, repo, firstAssetID := setupAIQueueTest(t)
-	firstAsset, err := db.NewAssetRepo(database).GetByID(firstAssetID)
+	assetRepo := db.NewAssetRepo(database)
+	firstAsset, err := assetRepo.GetByID(firstAssetID)
 	if err != nil || firstAsset == nil {
 		t.Fatalf("get first asset: asset=%+v err=%v", firstAsset, err)
 	}
-	secondAsset := *firstAsset
-	secondAsset.ID = 0
-	secondAsset.FileName = "queue-2.png"
-	secondAsset.FilePath = "/tmp/ai-queue/queue-2.png"
-	secondAssetID, err := db.NewAssetRepo(database).Create(&secondAsset)
-	if err != nil {
-		t.Fatal(err)
+	createAsset := func(name string) int64 {
+		t.Helper()
+		next := *firstAsset
+		next.ID = 0
+		next.FileName = name
+		next.FilePath = "/tmp/ai-queue/" + name
+		id, err := assetRepo.Create(&next)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
 	}
+	secondSemanticAssetID := createAsset("semantic-2.png")
+	thirdSemanticAssetID := createAsset("semantic-3.png")
 
 	settings := domain.AISettings{
 		Enabled:        true,
 		SemanticSearch: true,
+		Tagger:         true,
+		AdvancedVision: true,
 	}
+	// Three generic workers: the admission limit for one serialized capability
+	// is two, leaving one worker for an independent runtime.
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
-	}, 2)
+	}, 3)
 
-	started := make(chan struct{}, 2)
-	release := make(chan struct{})
-	var mu sync.Mutex
-	active := 0
-	maxActive := 0
+	semanticStarted := make(chan int64, 3)
+	semanticRelease := make(chan struct{})
 	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
 		ctx context.Context,
 		job domain.AIJob,
 	) (AnalysisOutput, error) {
-		mu.Lock()
-		active++
-		if active > maxActive {
-			maxActive = active
-		}
-		mu.Unlock()
-		started <- struct{}{}
+		semanticStarted <- job.ID
 		select {
 		case <-ctx.Done():
 			return AnalysisOutput{}, ctx.Err()
-		case <-release:
+		case <-semanticRelease:
 		}
-		mu.Lock()
-		active--
-		mu.Unlock()
 		return AnalysisOutput{
-			Engine:       "engine",
-			ModelID:      "model",
+			Engine:       "semantic-engine",
+			ModelID:      "semantic-model",
 			ModelVersion: "1",
 			ResultJSON:   "{}",
 		}, nil
 	}); err != nil {
+		t.Fatal(err)
+	}
+
+	independentStarted := make(chan domain.AICapability, 2)
+	independentRelease := make(chan struct{}, 2)
+	registerIndependent := func(capability domain.AICapability) {
+		t.Helper()
+		if err := queue.RegisterHandler(capability, func(
+			ctx context.Context,
+			job domain.AIJob,
+		) (AnalysisOutput, error) {
+			independentStarted <- capability
+			select {
+			case <-ctx.Done():
+				return AnalysisOutput{}, ctx.Err()
+			case <-independentRelease:
+			}
+			return AnalysisOutput{
+				Engine:       string(capability) + "-engine",
+				ModelID:      string(capability) + "-model",
+				ModelVersion: "1",
+				ResultJSON:   "{}",
+			}, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registerIndependent(domain.AICapabilityTagger)
+	registerIndependent(domain.AICapabilityAdvancedVision)
+
+	// Queue before Start so claim ordering is deterministic across the serialized
+	// claimMu: two highest-priority Semantic jobs consume the bounded admission,
+	// then the highest-priority *available* independent capability is chosen.
+	semantic1, _, err := queue.Enqueue(firstAssetID, domain.AICapabilitySemanticSearch, 100, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	semantic2, _, err := queue.Enqueue(secondSemanticAssetID, domain.AICapabilitySemanticSearch, 90, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	semantic3, _, err := queue.Enqueue(thirdSemanticAssetID, domain.AICapabilitySemanticSearch, 85, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taggerJob, _, err := queue.Enqueue(firstAssetID, domain.AICapabilityTagger, 80, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visionJob, _, err := queue.Enqueue(firstAssetID, domain.AICapabilityAdvancedVision, 70, false)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -490,32 +540,141 @@ func TestJobQueueWorkersProcessJobsConcurrently(t *testing.T) {
 		_ = queue.Stop(stopCtx)
 	})
 
-	firstJob, _, err := queue.Enqueue(firstAssetID, domain.AICapabilitySemanticSearch, 0, false)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-semanticStarted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("two-stage Semantic pipeline did not fill its bounded admission")
+		}
+	}
+	select {
+	case extra := <-semanticStarted:
+		t.Fatalf("third Semantic job consumed all generic capacity: job=%d", extra)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	select {
+	case capability := <-independentStarted:
+		if capability != domain.AICapabilityTagger {
+			t.Fatalf("available priority order chose %s, want tagger", capability)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("independent Tagger runtime made no progress while Semantic was saturated")
+	}
+
+	thirdState, err := repo.GetJob(semantic3.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondJob, _, err := queue.Enqueue(secondAssetID, domain.AICapabilitySemanticSearch, 0, false)
-	if err != nil {
+	if thirdState.Status != domain.AIJobQueued || thirdState.AttemptCount != 0 {
+		t.Fatalf("third Semantic job should remain durably queued outside admission: %+v", thirdState)
+	}
+
+	// Free the independent worker. Semantic remains admission-saturated, so the
+	// next available capability must be Advanced Vision rather than semantic3.
+	independentRelease <- struct{}{}
+	waitForAIJobStatus(t, repo, taggerJob.ID, domain.AIJobCompleted)
+	select {
+	case capability := <-independentStarted:
+		if capability != domain.AICapabilityAdvancedVision {
+			t.Fatalf("next available capability = %s, want advanced_vision", capability)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Advanced Vision did not progress while Semantic remained saturated")
+	}
+
+	close(semanticRelease)
+	independentRelease <- struct{}{}
+	waitForAIJobStatus(t, repo, semantic1.ID, domain.AIJobCompleted)
+	waitForAIJobStatus(t, repo, semantic2.ID, domain.AIJobCompleted)
+	waitForAIJobStatus(t, repo, semantic3.ID, domain.AIJobCompleted)
+	waitForAIJobStatus(t, repo, visionJob.ID, domain.AIJobCompleted)
+}
+
+func TestJobQueueSameCapabilityPipelineIsBoundedButStillOverlaps(t *testing.T) {
+	database, repo, firstAssetID := setupAIQueueTest(t)
+	assetRepo := db.NewAssetRepo(database)
+	firstAsset, err := assetRepo.GetByID(firstAssetID)
+	if err != nil || firstAsset == nil {
+		t.Fatalf("get first asset: asset=%+v err=%v", firstAsset, err)
+	}
+	ids := []int64{firstAssetID}
+	for n := 2; n <= 3; n++ {
+		next := *firstAsset
+		next.ID = 0
+		next.FileName = fmt.Sprintf("queue-%d.png", n)
+		next.FilePath = fmt.Sprintf("/tmp/ai-queue/queue-%d.png", n)
+		id, err := assetRepo.Create(&next)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 4)
+
+	started := make(chan int64, 3)
+	release := make(chan struct{})
+	if err := queue.RegisterHandler(domain.AICapabilitySemanticSearch, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		started <- job.ID
+		select {
+		case <-ctx.Done():
+			return AnalysisOutput{}, ctx.Err()
+		case <-release:
+		}
+		return AnalysisOutput{
+			Engine:       "engine",
+			ModelID:      "model",
+			ModelVersion: "1",
+			ResultJSON:   "{}",
+		}, nil
+	}); err != nil {
 		t.Fatal(err)
 	}
+
+	jobs := make([]domain.AIJob, 0, len(ids))
+	for _, assetID := range ids {
+		job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
 
 	for i := 0; i < 2; i++ {
 		select {
 		case <-started:
 		case <-time.After(5 * time.Second):
-			t.Fatal("two workers did not process jobs concurrently")
+			t.Fatal("Semantic pipeline did not allow one look-ahead handler")
 		}
 	}
-	mu.Lock()
-	observedMax := maxActive
-	mu.Unlock()
-	if observedMax < 2 {
-		t.Fatalf("max concurrent handlers = %d, want at least 2", observedMax)
+	select {
+	case extra := <-started:
+		t.Fatalf("Semantic admission exceeded two handlers: job=%d", extra)
+	case <-time.After(150 * time.Millisecond):
 	}
 
 	close(release)
-	waitForAIJobStatus(t, repo, firstJob.ID, domain.AIJobCompleted)
-	waitForAIJobStatus(t, repo, secondJob.ID, domain.AIJobCompleted)
+	for _, job := range jobs {
+		waitForAIJobStatus(t, repo, job.ID, domain.AIJobCompleted)
+	}
 }
 
 func TestJobQueueInteractiveUIThrottlesWithoutCancellingActiveWork(t *testing.T) {
@@ -525,6 +684,7 @@ func TestJobQueueInteractiveUIThrottlesWithoutCancellingActiveWork(t *testing.T)
 		Enabled:        true,
 		SemanticSearch: true,
 		AutoAnalyze:    true,
+		Tagger:         true,
 	}
 	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
 		return settings, nil
@@ -545,6 +705,20 @@ func TestJobQueueInteractiveUIThrottlesWithoutCancellingActiveWork(t *testing.T)
 		return AnalysisOutput{
 			Engine:       "engine",
 			ModelID:      "model",
+			ModelVersion: "1",
+			ResultJSON:   "{}",
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := queue.RegisterHandler(domain.AICapabilityTagger, func(
+		ctx context.Context,
+		job domain.AIJob,
+	) (AnalysisOutput, error) {
+		return AnalysisOutput{
+			Engine:       "tagger-engine",
+			ModelID:      "tagger-model",
 			ModelVersion: "1",
 			ResultJSON:   "{}",
 		}, nil
