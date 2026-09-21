@@ -766,6 +766,31 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 	version string,
 	backgroundAllowed func() bool,
 ) error {
+	return i.PersistWhenStableWithAdmission(
+		ctx,
+		repo,
+		engine,
+		modelID,
+		version,
+		nil,
+		backgroundAllowed,
+	)
+}
+
+// PersistWhenStableWithAdmission separates "may start a full snapshot" from
+// "may keep doing background I/O". The former is intentionally stricter:
+// active Semantic queue/backfill pressure should prevent an expensive rewrite
+// from starting at all, while Viewer activity may still yield an already
+// running writer at its existing cooperative checkpoints.
+func (i *semanticMemoryIndex) PersistWhenStableWithAdmission(
+	ctx context.Context,
+	repo *db.SemanticEmbeddingRepo,
+	engine string,
+	modelID string,
+	version string,
+	snapshotAllowed func() bool,
+	backgroundAllowed func() bool,
+) error {
 	key := semanticKey(engine, modelID, version)
 	defer func() {
 		i.mu.Lock()
@@ -808,6 +833,18 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 			continue
 		}
 
+		// A short completion gap is not the same thing as a finished backfill.
+		// Do not start a full DB walk + snapshot write while durable Semantic
+		// queue work (or its producer) still says more updates are expected.
+		if snapshotAllowed != nil && !snapshotAllowed() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(250 * time.Millisecond):
+				continue
+			}
+		}
+
 		// Viewer activity can itself create a quiet embedding window. Never
 		// mistake that pause for permission to start a full snapshot rewrite.
 		// Wait until foreground image work has actually become idle.
@@ -832,6 +869,9 @@ func (i *semanticMemoryIndex) PersistWhenStable(
 		snapshot, err := writeSemanticPersistentSnapshot(ctx, i.storageRoot, repo, key, backgroundAllowed)
 		if errors.Is(err, errSemanticSnapshotGenerationChanged) {
 			finishSnapshot("generation_changed", 0)
+			// A raced update is a real attempt, but the next attempt must pass
+			// the full debounce/admission gate again. This bounds repeated full
+			// rewrites under intermittent ingestion.
 			continue
 		}
 		if errors.Is(err, errSemanticSnapshotYielded) {

@@ -105,6 +105,39 @@ func waitForAIJobStatus(t *testing.T, repo *db.AIAnalysisRepo, jobID int64, want
 	return nil
 }
 
+func TestJobQueueCapabilityWorkPendingTracksDurableBacklog(t *testing.T) {
+	_, repo, assetID := setupAIQueueTest(t)
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		return settings, nil
+	}, 1)
+
+	if queue.CapabilityWorkPending(domain.AICapabilitySemanticSearch) {
+		t.Fatal("empty Semantic queue reported pending work")
+	}
+	job, _, err := queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !queue.CapabilityWorkPending(domain.AICapabilitySemanticSearch) {
+		t.Fatal("queued Semantic job was not observed")
+	}
+
+	claimed, err := repo.ClaimNext([]domain.AICapability{domain.AICapabilitySemanticSearch})
+	if err != nil || claimed == nil || claimed.ID != job.ID {
+		t.Fatalf("claim Semantic job: job=%+v err=%v", claimed, err)
+	}
+	if !queue.CapabilityWorkPending(domain.AICapabilitySemanticSearch) {
+		t.Fatal("running Semantic job was not observed")
+	}
+	if err := repo.CompleteJob(job.ID, "engine", "model", "1", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	if queue.CapabilityWorkPending(domain.AICapabilitySemanticSearch) {
+		t.Fatal("completed Semantic job still reported pending work")
+	}
+}
+
 func TestJobQueueAutomaticAnalysisRequiresOptIn(t *testing.T) {
 	_, repo, assetID := setupAIQueueTest(t)
 

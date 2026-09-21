@@ -145,6 +145,30 @@ func (q *JobQueue) SemanticDiagnosticsSnapshot() SemanticPipelineDiagnosticsSnap
 	return snapshot
 }
 
+func (q *JobQueue) CapabilityWorkPending(capability domain.AICapability) bool {
+	q.mu.Lock()
+	for _, job := range q.active {
+		if job.capability == capability {
+			q.mu.Unlock()
+			return true
+		}
+	}
+	q.mu.Unlock()
+
+	repo, ok := q.repo.(analysisJobDiagnosticsRepository)
+	if !ok {
+		// The production repository supports durable queue counts. Unknown
+		// repositories are treated conservatively so background compaction does
+		// not race work whose state cannot be observed.
+		return true
+	}
+	counts, err := repo.AIJobDiagnosticsCounts(capability, time.Time{})
+	if err != nil {
+		return true
+	}
+	return counts.Queued > 0 || counts.Running > 0
+}
+
 func (q *JobQueue) Status() JobQueueStatus {
 	q.mu.Lock()
 	defer q.mu.Unlock()
