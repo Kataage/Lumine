@@ -80,6 +80,10 @@ type JobQueue struct {
 	settings SettingsProvider
 	workers  int
 
+	settingsMu     sync.Mutex
+	settingsCached domain.AISettings
+	settingsReady  bool
+
 	mu       sync.Mutex
 	handlers map[domain.AICapability]AnalysisHandler
 	active   map[int64]activeAIJob
@@ -458,6 +462,14 @@ func (q *JobQueue) PauseCapabilityForForeground(capability domain.AICapability) 
 }
 
 func (q *JobQueue) ApplySettings(settings domain.AISettings) error {
+	// Settings changes already arrive through the command layer. Cache that
+	// pushed snapshot so idle workers do not re-read SQLite once per polling
+	// tick simply to discover that nothing changed.
+	q.settingsMu.Lock()
+	q.settingsCached = settings
+	q.settingsReady = true
+	q.settingsMu.Unlock()
+
 	q.mu.Lock()
 	active := make(map[int64]activeAIJob)
 	for id, job := range q.active {
@@ -881,8 +893,22 @@ func (q *JobQueue) signal() {
 }
 
 func (q *JobQueue) currentSettings() (domain.AISettings, error) {
-	if q.settings == nil {
-		return domain.DefaultAISettings(), nil
+	q.settingsMu.Lock()
+	defer q.settingsMu.Unlock()
+
+	if q.settingsReady {
+		return q.settingsCached, nil
 	}
-	return q.settings()
+	if q.settings == nil {
+		q.settingsCached = domain.DefaultAISettings()
+		q.settingsReady = true
+		return q.settingsCached, nil
+	}
+	settings, err := q.settings()
+	if err != nil {
+		return domain.AISettings{}, err
+	}
+	q.settingsCached = settings
+	q.settingsReady = true
+	return q.settingsCached, nil
 }

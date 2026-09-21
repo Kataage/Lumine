@@ -312,6 +312,7 @@ func main() {
 					return
 				}
 				aiJobQueue.SetInteractiveUIActive(active)
+				scanSvc.SetInteractiveUIActive(active)
 				if active {
 					cancelRestoreSchedule()
 					return

@@ -164,9 +164,71 @@ func TestJobQueueAutomaticAnalysisRequiresOptIn(t *testing.T) {
 	}
 
 	settings.Enabled = false
+	if err := queue.ApplySettings(settings); err != nil {
+		t.Fatalf("apply disabled settings: %v", err)
+	}
 	_, _, err = queue.Enqueue(assetID, domain.AICapabilitySemanticSearch, 0, false)
 	if !errors.Is(err, ErrCapabilityDisabled) {
 		t.Fatalf("disabled feature enqueue error = %v, want %v", err, ErrCapabilityDisabled)
+	}
+}
+
+func TestJobQueueCachesSettingsAcrossIdleWorkerPollsAndAcceptsPushUpdates(t *testing.T) {
+	_, repo, _ := setupAIQueueTest(t)
+
+	settings := domain.AISettings{
+		Enabled:        true,
+		SemanticSearch: true,
+	}
+	var callsMu sync.Mutex
+	providerCalls := 0
+	queue := NewJobQueue(repo, func() (domain.AISettings, error) {
+		callsMu.Lock()
+		providerCalls++
+		callsMu.Unlock()
+		return settings, nil
+	}, 4)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := queue.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+		defer stopCancel()
+		_ = queue.Stop(stopCtx)
+	})
+
+	// Workers wake once per second when idle. Before settings caching, a
+	// four-worker queue could therefore read persisted settings roughly four
+	// times per second. Wait across more than one tick and require one provider
+	// read for the whole queue lifetime.
+	time.Sleep(1200 * time.Millisecond)
+	callsMu.Lock()
+	gotCalls := providerCalls
+	callsMu.Unlock()
+	if gotCalls != 1 {
+		t.Fatalf("settings provider calls after idle polling = %d, want 1", gotCalls)
+	}
+
+	updated := settings
+	updated.SemanticSearch = false
+	if err := queue.ApplySettings(updated); err != nil {
+		t.Fatal(err)
+	}
+	got, err := queue.currentSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SemanticSearch {
+		t.Fatal("pushed settings update did not replace cached snapshot")
+	}
+	callsMu.Lock()
+	gotCalls = providerCalls
+	callsMu.Unlock()
+	if gotCalls != 1 {
+		t.Fatalf("push update unexpectedly re-read settings provider: calls=%d", gotCalls)
 	}
 }
 

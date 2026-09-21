@@ -277,10 +277,6 @@ export function AISettingsPanel() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
     const offSettingsChanged = EventsOn("ai:settings-changed", () => {
       void Promise.all([
         getAISettings(),

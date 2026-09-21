@@ -1,11 +1,13 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -20,7 +22,11 @@ type SyncResult struct {
 	SkippedCount int   `json:"skippedCount"`
 	FailedCount  int   `json:"failedCount"`
 	Changed      bool  `json:"changed"`
+	Yielded      bool  `json:"yielded"`
+	ElapsedMs    int64 `json:"elapsedMs"`
 }
+
+var errBackgroundSyncYielded = errors.New("background library sync yielded to Viewer activity")
 
 // SyncLibrary performs a lightweight reconciliation without creating job-log
 // rows, emitting scan progress events, or touching unchanged DB records. It is
@@ -32,10 +38,27 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 	defer s.scanning.Store(false)
 	s.cancelled.Store(false)
 
+	startedAt := time.Now()
 	result := &SyncResult{LibraryID: library.ID}
+	defer func() {
+		result.ElapsedMs = time.Since(startedAt).Milliseconds()
+	}()
+
+	// This is opportunistic background work. If the Viewer is already active,
+	// do not start a full library preload/walk at all; the periodic sync can
+	// retry after foreground activity settles.
+	if s.interactiveUI.Load() {
+		result.Yielded = true
+		return result, nil
+	}
+
 	existingMap, err := s.assetRepo.GetSyncFilePathsMap(library.ID)
 	if err != nil {
 		return nil, fmt.Errorf("preload existing assets: %w", err)
+	}
+	if s.interactiveUI.Load() {
+		result.Yielded = true
+		return result, nil
 	}
 
 	excludedSet := make(map[string]bool, len(excludedDirs))
@@ -80,6 +103,11 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 	walkErr := filepath.Walk(library.RootPath, func(path string, info os.FileInfo, err error) error {
 		if s.cancelled.Load() {
 			return filepath.SkipDir
+		}
+		// Viewer activity may begin long after this sync started. Stop at the
+		// next filesystem boundary rather than continuing to consume disk/CPU.
+		if s.interactiveUI.Load() {
+			return errBackgroundSyncYielded
 		}
 		if err != nil {
 			result.FailedCount++
@@ -161,6 +189,15 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 		return nil
 	})
 
+	if errors.Is(walkErr, errBackgroundSyncYielded) {
+		// Do not flush the partial in-memory batch after foreground activity has
+		// arrived. Those files were not committed yet and will be rediscovered
+		// by the idle retry; already-flushed batches remain durable.
+		result.Yielded = true
+		result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0
+		return result, nil
+	}
+
 	flushNew()
 	flushUpdated()
 
@@ -168,6 +205,13 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 		return nil, walkErr
 	}
 	if s.cancelled.Load() {
+		return result, nil
+	}
+	if s.interactiveUI.Load() {
+		// The walk was complete, but destructive missing-path/folder cleanup is
+		// not urgent. Yield before those DB writes and retry on a later pass.
+		result.Yielded = true
+		result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0
 		return result, nil
 	}
 
@@ -181,6 +225,11 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 	}
 
 	for _, missing := range existingMap {
+		if s.interactiveUI.Load() {
+			result.Yielded = true
+			result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0 || result.RemovedCount > 0
+			return result, nil
+		}
 		if err := s.assetRepo.Delete(missing.ID); err != nil {
 			result.FailedCount++
 			continue
@@ -191,6 +240,11 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 	if s.folderRepo != nil {
 		if folders, err := s.folderRepo.GetTreeByLibrary(library.ID); err == nil {
 			for _, folder := range folders {
+				if s.interactiveUI.Load() {
+					result.Yielded = true
+					result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0 || result.RemovedCount > 0
+					return result, nil
+				}
 				if _, seen := seenFolders[folder.Path]; seen {
 					continue
 				}

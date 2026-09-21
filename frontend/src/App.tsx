@@ -174,13 +174,36 @@ export default function App() {
     if (!libraryId || !library?.isEnabled) return;
 
     let disposed = false;
+    let yieldRetryTimer: number | null = null;
+
+    const scheduleYieldRetry = () => {
+      if (disposed || yieldRetryTimer != null) return;
+      yieldRetryTimer = window.setTimeout(() => {
+        yieldRetryTimer = null;
+        if (disposed) return;
+        if (document.hidden || isViewerForegroundActive()) {
+          scheduleYieldRetry();
+          return;
+        }
+        void run();
+      }, 1_000);
+    };
 
     const run = async () => {
       if (disposed || document.hidden || autoSyncRunning.current || isViewerForegroundActive()) return;
       autoSyncRunning.current = true;
       try {
         const result = await syncLibrary(libraryId);
-        if (disposed || !result?.changed) return;
+        if (disposed || !result) return;
+        if (result.yielded) {
+          console.debug("background library sync yielded to Viewer", {
+            libraryId,
+            scannedCount: result.scannedCount,
+            elapsedMs: result.elapsedMs,
+          });
+          scheduleYieldRetry();
+        }
+        if (!result.changed) return;
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["assets", libraryId], refetchType: "active" }),
           queryClient.invalidateQueries({ queryKey: ["folderTree", libraryId], refetchType: "active" }),
@@ -203,6 +226,7 @@ export default function App() {
       disposed = true;
       window.clearTimeout(initialTimer);
       window.clearInterval(interval);
+      if (yieldRetryTimer != null) window.clearTimeout(yieldRetryTimer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
