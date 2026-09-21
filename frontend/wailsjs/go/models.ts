@@ -86,6 +86,186 @@ export namespace ai {
 	
 	    }
 	}
+	export class SemanticStageTimings {
+	    fileOpenMs: number;
+	    fileReadMs: number;
+	    decodeMs: number;
+	    preprocessMs: number;
+	    runtimeLockWaitMs: number;
+	    ortRunLockWaitMs: number;
+	    tensorSetupMs: number;
+	    ortRunMs: number;
+	    embeddingPersistenceMs: number;
+	    completionPersistenceMs: number;
+	    indexLockWaitMs: number;
+	    indexUpdateMs: number;
+
+	    static createFrom(source: any = {}) {
+	        return new SemanticStageTimings(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.fileOpenMs = source["fileOpenMs"];
+	        this.fileReadMs = source["fileReadMs"];
+	        this.decodeMs = source["decodeMs"];
+	        this.preprocessMs = source["preprocessMs"];
+	        this.runtimeLockWaitMs = source["runtimeLockWaitMs"];
+	        this.ortRunLockWaitMs = source["ortRunLockWaitMs"];
+	        this.tensorSetupMs = source["tensorSetupMs"];
+	        this.ortRunMs = source["ortRunMs"];
+	        this.embeddingPersistenceMs = source["embeddingPersistenceMs"];
+	        this.completionPersistenceMs = source["completionPersistenceMs"];
+	        this.indexLockWaitMs = source["indexLockWaitMs"];
+	        this.indexUpdateMs = source["indexUpdateMs"];
+	    }
+	}
+	export class SemanticJobTraceSnapshot {
+	    jobId: number;
+	    assetId: number;
+	    attempt: number;
+	    workerId: number;
+	    // Go type: time
+	    startedAt: any;
+	    // Go type: time
+	    finishedAt: any;
+	    queueWaitMs: number;
+	    claimToReadyMs: number;
+	    enqueueToReadyMs: number;
+	    stages: SemanticStageTimings;
+	    outcome: string;
+	    errorStage?: string;
+	    error?: string;
+	    sqliteCode?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new SemanticJobTraceSnapshot(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.jobId = source["jobId"];
+	        this.assetId = source["assetId"];
+	        this.attempt = source["attempt"];
+	        this.workerId = source["workerId"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.finishedAt = this.convertValues(source["finishedAt"], null);
+	        this.queueWaitMs = source["queueWaitMs"];
+	        this.claimToReadyMs = source["claimToReadyMs"];
+	        this.enqueueToReadyMs = source["enqueueToReadyMs"];
+	        this.stages = this.convertValues(source["stages"], SemanticStageTimings);
+	        this.outcome = source["outcome"];
+	        this.errorStage = source["errorStage"];
+	        this.error = source["error"];
+	        this.sqliteCode = source["sqliteCode"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return classs ? new classs(a) : a;
+		    }
+		    return a;
+		}
+	}
+	export class SemanticPipelineDiagnosticsSnapshot {
+	    enabled: boolean;
+	    // Go type: time
+	    collectedAt: any;
+	    // Go type: time
+	    resetAt: any;
+	    readyLastMinute: number;
+	    ortRunsLastMinute: number;
+	    retryCount: number;
+	    reInferenceCount: number;
+	    discardedAfterCancel: number;
+	    failedCompletionCount: number;
+	    sqliteBusyCount: number;
+	    sqliteBusySnapshotCount: number;
+	    sqliteErrorCodes: {[key: string]: number};
+	    snapshotAttempts: number;
+	    snapshotSuccesses: number;
+	    snapshotDiscarded: number;
+	    snapshotFailures: number;
+	    snapshotBytes: number;
+	    snapshotDurationMs: number;
+	    viewerActive: boolean;
+	    viewerActiveForMs: number;
+	    viewerActiveTotalMs: number;
+	    queueDepth: number;
+	    runningJobs: number;
+	    longRunningJobs: number;
+	    activeWorkers: number;
+	    workerCount: number;
+	    executionProvider?: string;
+	    adapterId?: number;
+	    recentJobs: SemanticJobTraceSnapshot[];
+
+	    static createFrom(source: any = {}) {
+	        return new SemanticPipelineDiagnosticsSnapshot(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.collectedAt = this.convertValues(source["collectedAt"], null);
+	        this.resetAt = this.convertValues(source["resetAt"], null);
+	        this.readyLastMinute = source["readyLastMinute"];
+	        this.ortRunsLastMinute = source["ortRunsLastMinute"];
+	        this.retryCount = source["retryCount"];
+	        this.reInferenceCount = source["reInferenceCount"];
+	        this.discardedAfterCancel = source["discardedAfterCancel"];
+	        this.failedCompletionCount = source["failedCompletionCount"];
+	        this.sqliteBusyCount = source["sqliteBusyCount"];
+	        this.sqliteBusySnapshotCount = source["sqliteBusySnapshotCount"];
+	        this.sqliteErrorCodes = source["sqliteErrorCodes"];
+	        this.snapshotAttempts = source["snapshotAttempts"];
+	        this.snapshotSuccesses = source["snapshotSuccesses"];
+	        this.snapshotDiscarded = source["snapshotDiscarded"];
+	        this.snapshotFailures = source["snapshotFailures"];
+	        this.snapshotBytes = source["snapshotBytes"];
+	        this.snapshotDurationMs = source["snapshotDurationMs"];
+	        this.viewerActive = source["viewerActive"];
+	        this.viewerActiveForMs = source["viewerActiveForMs"];
+	        this.viewerActiveTotalMs = source["viewerActiveTotalMs"];
+	        this.queueDepth = source["queueDepth"];
+	        this.runningJobs = source["runningJobs"];
+	        this.longRunningJobs = source["longRunningJobs"];
+	        this.activeWorkers = source["activeWorkers"];
+	        this.workerCount = source["workerCount"];
+	        this.executionProvider = source["executionProvider"];
+	        this.adapterId = source["adapterId"];
+	        this.recentJobs = this.convertValues(source["recentJobs"], SemanticJobTraceSnapshot);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return classs ? new classs(a) : a;
+		    }
+		    return a;
+		}
+	}
 	export class RuntimeStatus {
 	    capability: string;
 	    state: string;
@@ -93,6 +273,7 @@ export namespace ai {
 	    version?: string;
 	    engine?: string;
 	    executionProvider?: string;
+	    adapterId?: number;
 	    warning?: string;
 	    error?: string;
 	
@@ -108,6 +289,7 @@ export namespace ai {
 	        this.version = source["version"];
 	        this.engine = source["engine"];
 	        this.executionProvider = source["executionProvider"];
+	        this.adapterId = source["adapterId"];
 	        this.warning = source["warning"];
 	        this.error = source["error"];
 	    }
@@ -2090,6 +2272,7 @@ export namespace domain {
 	    promptEngine: boolean;
 	    autoAnalyze: boolean;
 	    gpuAcceleration: boolean;
+	    diagnostics: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AISettings(source);
@@ -2105,6 +2288,7 @@ export namespace domain {
 	        this.promptEngine = source["promptEngine"];
 	        this.autoAnalyze = source["autoAnalyze"];
 	        this.gpuAcceleration = source["gpuAcceleration"];
+	        this.diagnostics = source["diagnostics"];
 	    }
 	}
 
