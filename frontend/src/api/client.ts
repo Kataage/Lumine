@@ -322,6 +322,8 @@ export interface LibrarySyncResult {
   skippedCount: number;
   failedCount: number;
   changed: boolean;
+  yielded: boolean;
+  elapsedMs: number;
 }
 
 export interface DeleteAssetFilesResult {
