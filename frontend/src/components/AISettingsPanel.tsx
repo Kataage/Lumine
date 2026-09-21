@@ -349,6 +349,13 @@ export function AISettingsPanel() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, refresh]);
 
+  useEffect(() => {
+    if (!open || !settings.diagnostics) return;
+    void getSemanticPipelineDiagnostics()
+      .then(setSemanticDiagnostics)
+      .catch(() => undefined);
+  }, [open, settings.diagnostics]);
+
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
     setSettings((current) => ({ ...current, ...patch }));
@@ -924,6 +931,18 @@ export function AISettingsPanel() {
                           }}
                         >
                           リセット
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-secondary-button"
+                          disabled={diagnosticsBusy || !semanticDiagnostics}
+                          onClick={() => {
+                            if (!semanticDiagnostics) return;
+                            void navigator.clipboard.writeText(JSON.stringify(semanticDiagnostics, null, 2))
+                              .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+                          }}
+                        >
+                          JSONをコピー
                         </button>
                       </div>
                     </div>
