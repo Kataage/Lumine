@@ -274,6 +274,10 @@ export function GetSemanticIndexStatus() {
   return window['go']['commands']['AppCommands']['GetSemanticIndexStatus']();
 }
 
+export function GetSemanticPipelineDiagnostics() {
+  return window['go']['commands']['AppCommands']['GetSemanticPipelineDiagnostics']();
+}
+
 export function GetSetting(arg1) {
   return window['go']['commands']['AppCommands']['GetSetting'](arg1);
 }
@@ -468,6 +472,10 @@ export function RemovePromptEngineRuntime() {
 
 export function RequestLegacyStorageMigration() {
   return window['go']['commands']['AppCommands']['RequestLegacyStorageMigration']();
+}
+
+export function ResetSemanticPipelineDiagnostics() {
+  return window['go']['commands']['AppCommands']['ResetSemanticPipelineDiagnostics']();
 }
 
 export function RestoreAdvancedVisionModel() {

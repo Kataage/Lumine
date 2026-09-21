@@ -301,8 +301,12 @@ func (m *Manager) Infer(
 	}
 	m.mu.Unlock()
 
-	if err := lockRuntimeSession(ctx, session); err != nil {
-		return InferenceResponse{}, fmt.Errorf("wait for %s runtime: %w", capability, err)
+	stopRuntimeWait := MeasureSemanticStage(ctx, SemanticStageRuntimeLockWait)
+	lockErr := lockRuntimeSession(ctx, session)
+	stopRuntimeWait()
+	if lockErr != nil {
+		RecordSemanticTraceError(ctx, SemanticStageRuntimeLockWait, lockErr)
+		return InferenceResponse{}, fmt.Errorf("wait for %s runtime: %w", capability, lockErr)
 	}
 	defer session.opMu.Unlock()
 
@@ -475,6 +479,7 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 	if reporter, ok := session.engine.(RuntimeDiagnosticsProvider); ok {
 		diagnostics := reporter.RuntimeDiagnostics()
 		status.ExecutionProvider = diagnostics.ExecutionProvider
+		status.AdapterID = diagnostics.AdapterID
 		status.Warning = diagnostics.Warning
 	}
 	return status

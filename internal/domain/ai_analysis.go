@@ -45,6 +45,12 @@ const (
 	AIJobSourceAutomatic AIJobSource = "automatic"
 )
 
+type AIJobDiagnosticsCounts struct {
+	Queued      int64
+	Running     int64
+	LongRunning int64
+}
+
 type AIJob struct {
 	ID             int64        `json:"id"`
 	AssetID        int64        `json:"assetId"`

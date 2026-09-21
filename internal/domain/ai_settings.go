@@ -28,6 +28,7 @@ type AISettings struct {
 	PromptEngine        bool `json:"promptEngine"`
 	AutoAnalyze         bool `json:"autoAnalyze"`
 	GPUAcceleration     bool `json:"gpuAcceleration"`
+	Diagnostics         bool `json:"diagnostics"`
 }
 
 // DefaultAISettings returns the opt-in defaults used when no settings have

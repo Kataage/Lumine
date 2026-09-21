@@ -553,17 +553,21 @@ func (c *AppCommands) SemanticAnalysisHandler(ctx context.Context, job domain.AI
 	if err != nil {
 		return ai.AnalysisOutput{}, err
 	}
-	if err := c.semanticRepo.Upsert(
+	stopEmbeddingPersist := ai.MeasureSemanticStage(ctx, ai.SemanticStageEmbeddingPersistence)
+	err = c.semanticRepo.Upsert(
 		asset.ID,
 		status.Engine,
 		status.ModelID,
 		analysisVersion,
 		vector,
-	); err != nil {
+	)
+	stopEmbeddingPersist()
+	if err != nil {
+		ai.RecordSemanticTraceError(ctx, ai.SemanticStageEmbeddingPersistence, err)
 		return ai.AnalysisOutput{}, err
 	}
 	if c.semanticIndex != nil {
-		c.semanticIndex.Upsert(asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
+		c.semanticIndex.UpsertContext(ctx, asset.ID, status.Engine, status.ModelID, analysisVersion, vector)
 		c.scheduleSemanticIndexPersist(status.Engine, status.ModelID, analysisVersion)
 	}
 

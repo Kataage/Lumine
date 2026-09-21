@@ -7,6 +7,7 @@ import {
   getAdvancedVisionStatus,
   getAIHealthSnapshot,
   getAISettings,
+  getSemanticPipelineDiagnostics,
   getAIStorageInfo,
   getDefaultLightweightVisionModelInfo,
   getDefaultSemanticModelInfo,
@@ -20,11 +21,13 @@ import {
   removeLightweightVisionRuntime,
   patchAISettings,
   requestLegacyStorageMigration,
+  resetSemanticPipelineDiagnostics,
   type AdvancedVisionStatusInfo,
   type AIStorageInfo,
   type LightweightVisionModelInfo,
   type PromptEngineStatusInfo,
   type SemanticModelInfo,
+  type SemanticPipelineDiagnosticsSnapshot,
 } from "../api/client";
 import { formatFileSize } from "../utils/format";
 import {
@@ -240,6 +243,8 @@ export function AISettingsPanel() {
   const [semanticProgress, setSemanticProgress] = useState<{ downloaded: number; total: number } | null>(null);
   const [visionModelProgress, setVisionModelProgress] = useState<{ downloaded: number; total: number } | null>(null);
   const [runtimeProgress, setRuntimeProgress] = useState<{ downloaded: number; total: number } | null>(null);
+  const [semanticDiagnostics, setSemanticDiagnostics] = useState<SemanticPipelineDiagnosticsSnapshot | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -343,6 +348,13 @@ export function AISettingsPanel() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, refresh]);
+
+  useEffect(() => {
+    if (!open || !settings.diagnostics) return;
+    void getSemanticPipelineDiagnostics()
+      .then(setSemanticDiagnostics)
+      .catch(() => undefined);
+  }, [open, settings.diagnostics]);
 
   const update = async (patch: Partial<AISettings>) => {
     const previous = settings;
@@ -865,6 +877,140 @@ export function AISettingsPanel() {
                   disabled={saving || !settingsReadyForActions}
                   onChange={(checked) => void update({ gpuAcceleration: checked }).catch(() => undefined)}
                 />
+                <SettingsRow
+                  title="Semantic診断を記録"
+                  description="解析の待ち時間・decode・ORT・DB・indexなどをメモリ上で計測します。通常利用ではOFFを推奨します。"
+                  checked={settings.diagnostics}
+                  disabled={saving || !settingsReadyForActions}
+                  onChange={(checked) => {
+                    void update({ diagnostics: checked })
+                      .then(async () => {
+                        if (checked) {
+                          setSemanticDiagnostics(await getSemanticPipelineDiagnostics());
+                        } else {
+                          setSemanticDiagnostics(null);
+                        }
+                      })
+                      .catch(() => undefined);
+                  }}
+                />
+                {settings.diagnostics && (
+                  <div className="rounded-xl border border-border/70 bg-background/35 px-4 py-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-semibold">Semantic pipeline diagnostics</p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                          自動pollingは行いません。必要な時だけ更新して計測負荷を抑えます。
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="ui-secondary-button"
+                          disabled={diagnosticsBusy}
+                          onClick={() => {
+                            setDiagnosticsBusy(true);
+                            void getSemanticPipelineDiagnostics()
+                              .then(setSemanticDiagnostics)
+                              .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                              .finally(() => setDiagnosticsBusy(false));
+                          }}
+                        >
+                          {diagnosticsBusy ? "更新中…" : "診断を更新"}
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-secondary-button"
+                          disabled={diagnosticsBusy}
+                          onClick={() => {
+                            setDiagnosticsBusy(true);
+                            void resetSemanticPipelineDiagnostics()
+                              .then(setSemanticDiagnostics)
+                              .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                              .finally(() => setDiagnosticsBusy(false));
+                          }}
+                        >
+                          リセット
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-secondary-button"
+                          disabled={diagnosticsBusy || !semanticDiagnostics}
+                          onClick={() => {
+                            if (!semanticDiagnostics) return;
+                            void navigator.clipboard.writeText(JSON.stringify(semanticDiagnostics, null, 2))
+                              .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+                          }}
+                        >
+                          JSONをコピー
+                        </button>
+                      </div>
+                    </div>
+                    {semanticDiagnostics && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] sm:grid-cols-4">
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">Ready / min</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.readyLastMinute}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">ORT / min</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.ortRunsLastMinute}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">Queue / Running</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.queueDepth} / {semanticDiagnostics.runningJobs}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">Workers</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.activeWorkers} / {semanticDiagnostics.workerCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">SQLite busy</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.sqliteBusyCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">BUSY_SNAPSHOT</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.sqliteBusySnapshotCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">Completion failures</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.failedCompletionCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+                          <p className="text-muted-foreground">Long running</p>
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">{semanticDiagnostics.longRunningJobs}</p>
+                        </div>
+                      </div>
+                    )}
+                    {semanticDiagnostics && (
+                      <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                        Runtime: {semanticDiagnostics.executionProvider || "unknown"}
+                        {semanticDiagnostics.adapterId != null ? ` / adapter ${semanticDiagnostics.adapterId}` : ""}
+                        {" · "}retry {semanticDiagnostics.retryCount}
+                        {" · "}re-inference {semanticDiagnostics.reInferenceCount}
+                        {" · "}discarded {semanticDiagnostics.discardedAfterCancel}
+                        {" · "}snapshot {semanticDiagnostics.snapshotSuccesses}/{semanticDiagnostics.snapshotAttempts}
+                        {" · "}viewer {semanticDiagnostics.viewerActive ? "active" : "idle"}
+                      </p>
+                    )}
+                    {semanticDiagnostics?.recentJobs?.length ? (() => {
+                      const latest = semanticDiagnostics.recentJobs[semanticDiagnostics.recentJobs.length - 1];
+                      return (
+                        <p className="mt-2 break-all text-[10px] leading-relaxed text-muted-foreground">
+                          Last job #{latest.jobId} / worker {latest.workerId} / {latest.outcome}
+                          {" · "}queue {latest.queueWaitMs.toFixed(1)}ms
+                          {" · "}decode {latest.stages.decodeMs.toFixed(1)}ms
+                          {" · "}preprocess {latest.stages.preprocessMs.toFixed(1)}ms
+                          {" · "}opMu {latest.stages.runtimeLockWaitMs.toFixed(1)}ms
+                          {" · "}runMu {latest.stages.ortRunLockWaitMs.toFixed(1)}ms
+                          {" · "}ORT {latest.stages.ortRunMs.toFixed(1)}ms
+                          {" · "}DB {latest.stages.embeddingPersistenceMs.toFixed(1)}+{latest.stages.completionPersistenceMs.toFixed(1)}ms
+                          {" · "}index {latest.stages.indexLockWaitMs.toFixed(1)}+{latest.stages.indexUpdateMs.toFixed(1)}ms
+                        </p>
+                      );
+                    })() : null}
+                  </div>
+                )}
               </div>
             </section>
 

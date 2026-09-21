@@ -11,8 +11,8 @@ import (
 )
 
 type ortBackend interface {
-	EmbedText(input [siglipTextLength]int64) ([]float32, error)
-	EmbedImage(input []float32) ([]float32, error)
+	EmbedText(ctx context.Context, input [siglipTextLength]int64) ([]float32, error)
+	EmbedImage(ctx context.Context, input []float32) ([]float32, error)
 	RuntimeDiagnostics() ai.RuntimeDiagnostics
 	Close() error
 }
@@ -96,7 +96,7 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 		if tokenErr != nil {
 			return ai.InferenceResponse{}, tokenErr
 		}
-		vector, err = e.runtime.EmbedText(tokens)
+		vector, err = e.runtime.EmbedText(ctx, tokens)
 	case "embed_image":
 		filePath, _ := request.Payload["filePath"].(string)
 		if strings.TrimSpace(filePath) == "" {
@@ -109,7 +109,7 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 		if err := ctx.Err(); err != nil {
 			return ai.InferenceResponse{}, err
 		}
-		vector, err = e.runtime.EmbedImage(pixels)
+		vector, err = e.runtime.EmbedImage(ctx, pixels)
 	case "embed_image_tensor":
 		pixels, ok := request.Payload["pixels"].([]float32)
 		if !ok || len(pixels) == 0 {
@@ -118,7 +118,7 @@ func (e *Engine) Infer(ctx context.Context, request ai.InferenceRequest) (ai.Inf
 		if err := ctx.Err(); err != nil {
 			return ai.InferenceResponse{}, err
 		}
-		vector, err = e.runtime.EmbedImage(pixels)
+		vector, err = e.runtime.EmbedImage(ctx, pixels)
 	default:
 		return ai.InferenceResponse{}, fmt.Errorf("unsupported SigLIP2 operation %q", request.Operation)
 	}

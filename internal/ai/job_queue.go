@@ -42,6 +42,10 @@ type AnalysisJobRepository interface {
 	ListJobs(limit int) ([]domain.AIJob, error)
 }
 
+type analysisJobDiagnosticsRepository interface {
+	AIJobDiagnosticsCounts(capability domain.AICapability, longRunningBefore time.Time) (domain.AIJobDiagnosticsCounts, error)
+}
+
 type activeAIJob struct {
 	capability domain.AICapability
 	cancel     context.CancelFunc
@@ -72,6 +76,8 @@ type JobQueue struct {
 	wg       sync.WaitGroup
 
 	claimMu sync.Mutex
+
+	semanticDiagnostics *SemanticDiagnostics
 }
 
 func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers int) *JobQueue {
@@ -87,6 +93,40 @@ func NewJobQueue(repo AnalysisJobRepository, settings SettingsProvider, workers 
 		paused:   make(map[domain.AICapability]int),
 		wake:     make(chan struct{}, workers),
 	}
+}
+
+func (q *JobQueue) SetSemanticDiagnostics(diagnostics *SemanticDiagnostics) {
+	q.mu.Lock()
+	q.semanticDiagnostics = diagnostics
+	q.mu.Unlock()
+}
+
+func (q *JobQueue) SemanticDiagnosticsSnapshot() SemanticPipelineDiagnosticsSnapshot {
+	q.mu.Lock()
+	diagnostics := q.semanticDiagnostics
+	activeWorkers := len(q.active)
+	workers := q.workers
+	q.mu.Unlock()
+
+	snapshot := SemanticPipelineDiagnosticsSnapshot{CollectedAt: time.Now()}
+	if diagnostics != nil {
+		snapshot = diagnostics.Snapshot()
+	}
+	snapshot.ActiveWorkers = activeWorkers
+	snapshot.WorkerCount = workers
+
+	if repo, ok := q.repo.(analysisJobDiagnosticsRepository); ok {
+		counts, err := repo.AIJobDiagnosticsCounts(
+			domain.AICapabilitySemanticSearch,
+			time.Now().Add(-5*time.Minute),
+		)
+		if err == nil {
+			snapshot.QueueDepth = counts.Queued
+			snapshot.RunningJobs = counts.Running
+			snapshot.LongRunningJobs = counts.LongRunning
+		}
+	}
+	return snapshot
 }
 
 func (q *JobQueue) Status() JobQueueStatus {
@@ -327,7 +367,11 @@ func (q *JobQueue) SetInteractiveUIActive(active bool) {
 		return
 	}
 	q.uiPaused = active
+	diagnostics := q.semanticDiagnostics
 	q.mu.Unlock()
+	if diagnostics != nil {
+		diagnostics.SetViewerActive(active)
+	}
 
 	// Viewer activity is a throttle, not a stop-the-world barrier. Existing
 	// inference is allowed to finish so expensive preprocessing/GPU work is not
@@ -470,7 +514,7 @@ func (q *JobQueue) worker(ctx context.Context, workerID int) {
 			continue
 		}
 
-		q.processJob(ctx, *job)
+		q.processJob(ctx, *job, workerID)
 	}
 }
 
@@ -516,9 +560,10 @@ func (q *JobQueue) runnableCapabilities(workerID int) ([]domain.AICapability, er
 	return capabilities, nil
 }
 
-func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
+func (q *JobQueue) processJob(parent context.Context, job domain.AIJob, workerID int) {
 	q.mu.Lock()
 	handler := q.handlers[job.Capability]
+	diagnostics := q.semanticDiagnostics
 	q.mu.Unlock()
 	if handler == nil {
 		_, _ = q.repo.FailOrRequeue(job.ID, "no handler registered for AI capability")
@@ -557,39 +602,98 @@ func (q *JobQueue) processJob(parent context.Context, job domain.AIJob) {
 		return
 	}
 
+	trace := (*SemanticJobTrace)(nil)
+	if diagnostics != nil {
+		trace = diagnostics.StartJob(*latest, workerID)
+		jobCtx = WithSemanticJobTrace(jobCtx, trace)
+	}
+
 	output, handlerErr := handler(jobCtx, job)
 	cleanup()
 
 	if handlerErr == nil {
-		if err := q.repo.CompleteJob(job.ID, output.Engine, output.ModelID, output.ModelVersion, output.ResultJSON); err != nil {
-			slog.Error("failed to complete AI job", "job", job.ID, "error", err)
+		stopCompletion := MeasureSemanticStage(jobCtx, SemanticStageCompletionPersistence)
+		completeErr := q.repo.CompleteJob(job.ID, output.Engine, output.ModelID, output.ModelVersion, output.ResultJSON)
+		stopCompletion()
+		if completeErr != nil {
+			if trace != nil {
+				trace.RecordError(SemanticStageCompletionPersistence, completeErr)
+			}
+			if diagnostics != nil {
+				diagnostics.RecordCompletionFailure(completeErr)
+				diagnostics.FinishJob(trace, "completion_failed", completeErr)
+			}
+			slog.Error("failed to complete AI job", "job", job.ID, "error", completeErr)
+			return
+		}
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "success", nil)
 		}
 		return
 	}
 
 	current, readErr := q.repo.GetJob(job.ID)
 	if readErr != nil {
+		if trace != nil {
+			trace.RecordError("failure_state_read", readErr)
+		}
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "failure_state_read", readErr)
+		}
 		slog.Error("failed to read failed AI job", "job", job.ID, "error", readErr)
 		return
 	}
 	if current == nil || current.Status == domain.AIJobCancelled {
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "cancelled", handlerErr)
+		}
+		return
+	}
+	if current.Status == domain.AIJobQueued && errors.Is(handlerErr, context.Canceled) {
+		// Foreground preemption requeues the durable job before cancelling the
+		// active handler. Classify that as cancellation/yield rather than a
+		// failure so diagnostics can quantify discarded decode/ORT work.
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "cancelled", handlerErr)
+		}
 		return
 	}
 
 	if parent.Err() != nil {
-		if err := q.repo.RequeueInterrupted(job.ID, "interrupted by app shutdown"); err != nil {
-			slog.Error("failed to preserve interrupted AI job", "job", job.ID, "error", err)
+		requeueErr := q.repo.RequeueInterrupted(job.ID, "interrupted by app shutdown")
+		if requeueErr != nil {
+			if trace != nil {
+				trace.RecordError("shutdown_requeue", requeueErr)
+			}
+			slog.Error("failed to preserve interrupted AI job", "job", job.ID, "error", requeueErr)
+		}
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "interrupted", errors.Join(handlerErr, requeueErr))
 		}
 		return
 	}
 
 	requeued, err := q.repo.FailOrRequeue(job.ID, handlerErr.Error())
 	if err != nil {
+		if trace != nil {
+			trace.RecordError("failure_persistence", err)
+		}
+		if diagnostics != nil {
+			diagnostics.FinishJob(trace, "failure_persistence", errors.Join(handlerErr, err))
+		}
 		slog.Error("failed to record AI job failure", "job", job.ID, "error", err)
 		return
 	}
 	if requeued {
+		if diagnostics != nil {
+			diagnostics.RecordRetry()
+			diagnostics.FinishJob(trace, "retry", handlerErr)
+		}
 		q.signal()
+		return
+	}
+	if diagnostics != nil {
+		diagnostics.FinishJob(trace, "failed", handlerErr)
 	}
 }
 

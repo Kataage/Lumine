@@ -7,8 +7,12 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"os"
+	"time"
+
+	"github.com/kataage/lumine/internal/ai"
 )
 
 const (
@@ -31,14 +35,32 @@ func PreprocessImageContext(ctx context.Context, path string) ([]float32, error)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	stopOpen := ai.MeasureSemanticStage(ctx, ai.SemanticStageFileOpen)
 	file, err := os.Open(path)
+	stopOpen()
 	if err != nil {
+		ai.RecordSemanticTraceError(ctx, ai.SemanticStageFileOpen, err)
 		return nil, fmt.Errorf("open image for SigLIP: %w", err)
 	}
 	defer file.Close()
 
-	source, _, err := image.Decode(file)
+	reader := io.Reader(file)
+	var diagnosticReader *semanticDiagnosticReader
+	if trace := ai.SemanticJobTraceFromContext(ctx); trace != nil {
+		diagnosticReader = &semanticDiagnosticReader{reader: file, trace: trace}
+		reader = diagnosticReader
+	}
+	decodeStarted := time.Now()
+	source, _, err := image.Decode(reader)
+	if diagnosticReader != nil {
+		decodeOnly := time.Since(decodeStarted) - diagnosticReader.readDuration
+		if decodeOnly < 0 {
+			decodeOnly = 0
+		}
+		diagnosticReader.trace.AddStage(ai.SemanticStageDecode, decodeOnly)
+	}
 	if err != nil {
+		ai.RecordSemanticTraceError(ctx, ai.SemanticStageDecode, err)
 		return nil, fmt.Errorf("decode image for SigLIP: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -49,6 +71,8 @@ func PreprocessImageContext(ctx context.Context, path string) ([]float32, error)
 		return nil, fmt.Errorf("image has invalid dimensions")
 	}
 
+	stopPreprocess := ai.MeasureSemanticStage(ctx, ai.SemanticStagePreprocess)
+	defer stopPreprocess()
 	output := make([]float32, siglipChannels*siglipImageSize*siglipImageSize)
 	plane := siglipImageSize * siglipImageSize
 	for y := 0; y < siglipImageSize; y++ {
@@ -114,4 +138,20 @@ func clampInt(value, minValue, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+
+type semanticDiagnosticReader struct {
+	reader       io.Reader
+	trace        *ai.SemanticJobTrace
+	readDuration time.Duration
+}
+
+func (r *semanticDiagnosticReader) Read(buffer []byte) (int, error) {
+	started := time.Now()
+	n, err := r.reader.Read(buffer)
+	elapsed := time.Since(started)
+	r.readDuration += elapsed
+	r.trace.AddStage(ai.SemanticStageFileRead, elapsed)
+	return n, err
 }

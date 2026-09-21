@@ -12,7 +12,8 @@ func TestDefaultAISettingsOptOutOfAllAI(t *testing.T) {
 		settings.AdvancedVision ||
 		settings.PromptEngine ||
 		settings.AutoAnalyze ||
-		settings.GPUAcceleration {
+		settings.GPUAcceleration ||
+		settings.Diagnostics {
 		t.Fatalf("fresh installs must not enable AI by default: %+v", settings)
 	}
 }

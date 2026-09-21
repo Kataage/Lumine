@@ -43,6 +43,7 @@ func TestAISettingsPersistAndGateCapabilities(t *testing.T) {
 		PromptEngine:        true,
 		AutoAnalyze:         true,
 		GPUAcceleration:     false,
+		Diagnostics:         true,
 	}
 	if _, err := cmd.SetAISettings(wanted); err != nil {
 		t.Fatalf("SetAISettings: %v", err)
@@ -119,6 +120,7 @@ func TestAISettingsPersistAcrossDatabaseReopen(t *testing.T) {
 		LightweightVision: true,
 		AutoAnalyze:       true,
 		GPUAcceleration:   true,
+		Diagnostics:       true,
 	}
 	if _, err := first.SetAISettings(wanted); err != nil {
 		t.Fatalf("persist settings: %v", err)

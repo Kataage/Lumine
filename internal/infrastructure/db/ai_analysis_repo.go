@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kataage/lumine/internal/domain"
 )
@@ -644,6 +645,33 @@ func (r *AIAnalysisRepo) GetJob(id int64) (*domain.AIJob, error) {
 		FROM ai_jobs WHERE id = ?
 	`, id)
 	return scanAIJobRow(row)
+}
+
+
+func (r *AIAnalysisRepo) AIJobDiagnosticsCounts(
+	capability domain.AICapability,
+	longRunningBefore time.Time,
+) (domain.AIJobDiagnosticsCounts, error) {
+	var counts domain.AIJobDiagnosticsCounts
+	err := r.db.QueryRow(`
+		SELECT
+			COALESCE(SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE
+				WHEN status = 'running' AND started_at IS NOT NULL AND started_at < ?
+				THEN 1 ELSE 0
+			END), 0)
+		FROM ai_jobs
+		WHERE capability = ?
+	`, longRunningBefore, capability).Scan(
+		&counts.Queued,
+		&counts.Running,
+		&counts.LongRunning,
+	)
+	if err != nil {
+		return domain.AIJobDiagnosticsCounts{}, fmt.Errorf("count AI job diagnostics: %w", err)
+	}
+	return counts, nil
 }
 
 func (r *AIAnalysisRepo) ListJobs(limit int) ([]domain.AIJob, error) {

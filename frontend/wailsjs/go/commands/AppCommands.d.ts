@@ -143,6 +143,8 @@ export function GetPromptProject(arg1:number,arg2:boolean):Promise<commands.Prom
 
 export function GetSemanticIndexStatus():Promise<commands.SemanticIndexStatus>;
 
+export function GetSemanticPipelineDiagnostics():Promise<ai.SemanticPipelineDiagnosticsSnapshot>;
+
 export function GetSetting(arg1:string):Promise<string>;
 
 export function GetSupportedExtensions():Promise<Array<string>>;
@@ -240,6 +242,8 @@ export function RemovePromptEngineModel(arg1:string):Promise<void>;
 export function RemovePromptEngineRuntime():Promise<void>;
 
 export function RequestLegacyStorageMigration():Promise<commands.AIStorageInfo>;
+
+export function ResetSemanticPipelineDiagnostics():Promise<ai.SemanticPipelineDiagnosticsSnapshot>;
 
 export function RestoreAdvancedVisionModel():Promise<void>;
 
