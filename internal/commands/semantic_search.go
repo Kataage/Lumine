@@ -892,7 +892,27 @@ func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*A
 			return nil, err
 		}
 	}
-	return c.semanticResultToAssets(result)
+	// Similar-image ranking is a snapshot of the first request. Store the full
+	// ranked hit list so page 2+ can reuse it instead of rescoring/sorting the
+	// entire candidate set. These sessions use the same bounded 15-minute / 8
+	// entry lifecycle as text Semantic sessions. A new similar-image search
+	// creates a fresh ranking snapshot and sees newer embeddings.
+	sessionID := c.semanticSearchState.store(
+		result.RankedHits,
+		result.TotalCount,
+		result.TotalCount,
+		result.TotalCount,
+		db.SemanticCoverageStateCounts{},
+		db.SemanticSearchQuery{},
+	)
+	return c.semanticHitsToAssets(
+		result.Hits,
+		result.TotalCount,
+		sessionID,
+		result.TotalCount,
+		result.TotalCount,
+		db.SemanticCoverageStateCounts{},
+	)
 }
 
 func (c *AppCommands) semanticResultToAssets(result *db.SemanticSearchResult) (*AssetListResponse, error) {
