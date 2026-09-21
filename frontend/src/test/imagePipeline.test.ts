@@ -159,4 +159,128 @@ describe("decode priority", () => {
 
     await Promise.all([first, second, third, becomesVisible, visiblePromise]);
   });
+
+  it("待機中のstale decodeはabortされfetch slotを消費しない", async () => {
+    type PendingFetch = {
+      url: string;
+      resolve: (value: Response) => void;
+    };
+    const pending: PendingFetch[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      pending.push({ url: String(input), resolve });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({
+      width: 32,
+      height: 32,
+      close: vi.fn(),
+    } as unknown as ImageBitmap)));
+
+    const request = (name: string, signal?: AbortSignal) => loadMemoryBitmap({
+      filePath: `C:\\images\\${name}.png`,
+      modifiedAtFs: "2026-09-04T00:00:00Z",
+      sourceWidth: 100,
+      sourceHeight: 100,
+      targetWidth: 32,
+      targetHeight: 32,
+      fit: "cover",
+      priority: "normal",
+      signal,
+    });
+
+    const first = request("active-1");
+    const second = request("active-2");
+    const third = request("active-3");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    const staleController = new AbortController();
+    const stale = request("stale", staleController.signal);
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    staleController.abort();
+    await expect(stale).rejects.toMatchObject({ name: "AbortError" });
+
+    pending.forEach((item) => item.resolve(response()));
+    await Promise.all([first, second, third]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(pending.some((item) => item.url.includes("stale.png"))).toBe(false);
+  });
+
+  it("実行中fetchは最後のconsumerが消えたらAbortSignalまで伝播する", async () => {
+    let fetchSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        fetchSignal = init?.signal as AbortSignal | undefined;
+        fetchSignal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("createImageBitmap", vi.fn());
+
+    const controller = new AbortController();
+    const promise = loadMemoryBitmap({
+      filePath: "C:\\images\\abort-active.png",
+      modifiedAtFs: "2026-09-04T00:00:00Z",
+      sourceWidth: 100,
+      sourceHeight: 100,
+      targetWidth: 32,
+      targetHeight: 32,
+      fit: "cover",
+      priority: "high",
+      signal: controller.signal,
+    });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchSignal?.aborted).toBe(false);
+
+    controller.abort();
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSignal?.aborted).toBe(true);
+  });
+
+  it("共有decodeは一方のconsumerだけが消えても必要なrequestを継続する", async () => {
+    let resolveFetch!: (value: Response) => void;
+    let fetchSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+        fetchSignal = init?.signal as AbortSignal | undefined;
+      }),
+    );
+    const bitmapValue = {
+      width: 32,
+      height: 32,
+      close: vi.fn(),
+    } as unknown as ImageBitmap;
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => bitmapValue));
+
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const base = {
+      filePath: "C:\\images\\shared.png",
+      modifiedAtFs: "2026-09-04T00:00:00Z",
+      sourceWidth: 100,
+      sourceHeight: 100,
+      targetWidth: 32,
+      targetHeight: 32,
+      fit: "cover" as const,
+      priority: "normal" as const,
+    };
+
+    const first = loadMemoryBitmap({ ...base, signal: firstController.signal });
+    const second = loadMemoryBitmap({ ...base, signal: secondController.signal });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    firstController.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSignal?.aborted).toBe(false);
+
+    resolveFetch(response());
+    await expect(second).resolves.toBe(bitmapValue);
+    expect(fetchSignal?.aborted).toBe(false);
+  });
 });
