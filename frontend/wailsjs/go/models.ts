@@ -1040,6 +1040,7 @@ export namespace commands {
 	    semanticCoverageRunningCount?: number;
 	    semanticCoverageFailedCount?: number;
 	    semanticCoverageStaleCount?: number;
+	    semanticCoverageUnsupportedCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AssetListResponse(source);
@@ -1056,6 +1057,7 @@ export namespace commands {
 	        this.semanticCoverageRunningCount = source["semanticCoverageRunningCount"];
 	        this.semanticCoverageFailedCount = source["semanticCoverageFailedCount"];
 	        this.semanticCoverageStaleCount = source["semanticCoverageStaleCount"];
+	        this.semanticCoverageUnsupportedCount = source["semanticCoverageUnsupportedCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

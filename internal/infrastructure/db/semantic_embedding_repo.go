@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kataage/lumine/internal/domain"
+	"github.com/kataage/lumine/internal/imageformat"
 )
 
 var (
@@ -215,6 +216,21 @@ type SemanticSearchProgress struct {
 	Hits         []domain.SemanticSearchHit
 	ScannedCount int
 	TotalCount   int
+}
+
+func semanticSupportedExtensionFilter(alias string) (string, []any) {
+	extensions := imageformat.SemanticExtensions()
+	placeholders := make([]string, len(extensions))
+	args := make([]any, len(extensions))
+	for i, extension := range extensions {
+		placeholders[i] = "?"
+		args[i] = extension
+	}
+	return fmt.Sprintf(
+		"LOWER(COALESCE(%s.extension, '')) IN (%s)",
+		alias,
+		strings.Join(placeholders, ","),
+	), args
 }
 
 type semanticTopHeap []domain.SemanticSearchHit
@@ -475,8 +491,11 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingNewestContext(
 		ctx = context.Background()
 	}
 
+	supportedClause, supportedArgs := semanticSupportedExtensionFilter("a")
 	cursorClause := ""
-	args := []any{libraryID, engine, modelID, modelVersion}
+	args := []any{libraryID}
+	args = append(args, supportedArgs...)
+	args = append(args, engine, modelID, modelVersion)
 	if beforeID > 0 {
 		cursorClause = `
 		  AND (COALESCE(a.modified_at_fs, ''), a.id) < (?, ?)`
@@ -488,6 +507,7 @@ func (r *SemanticEmbeddingRepo) ListNeedingEmbeddingNewestContext(
 		SELECT a.id, COALESCE(a.modified_at_fs, '')
 		FROM assets a
 		WHERE a.library_id = ?
+		  AND `+supportedClause+`
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM ai_asset_analysis aa
@@ -543,17 +563,20 @@ func (r *SemanticEmbeddingRepo) FilterNeedingEmbeddingIDs(
 		ctx = context.Background()
 	}
 
+	supportedClause, supportedArgs := semanticSupportedExtensionFilter("a")
 	placeholders := make([]string, len(assetIDs))
-	args := make([]any, 0, len(assetIDs)+3)
+	args := make([]any, 0, len(assetIDs)+len(supportedArgs)+3)
 	for i, id := range assetIDs {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
+	args = append(args, supportedArgs...)
 	args = append(args, engine, modelID, modelVersion)
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT a.id
 		FROM assets a
 		WHERE a.id IN (%s)
+		  AND `+supportedClause+`
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM ai_asset_analysis aa
@@ -864,10 +887,11 @@ func (r *SemanticEmbeddingRepo) Search(vector []float32, query SemanticSearchQue
 }
 
 type SemanticCoverageStateCounts struct {
-	Queued  int
-	Running int
-	Failed  int
-	Stale   int
+	Queued      int
+	Running     int
+	Failed      int
+	Stale       int
+	Unsupported int
 }
 
 func (r *SemanticEmbeddingRepo) CountSemanticAnalysisStates(
@@ -877,9 +901,10 @@ func (r *SemanticEmbeddingRepo) CountSemanticAnalysisStates(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	supportedClause, supportedArgs := semanticSupportedExtensionFilter("a")
 	where, args := appendSemanticAssetFilters(
-		"WHERE aa.capability = 'semantic_search'",
-		nil,
+		"WHERE aa.capability = 'semantic_search' AND "+supportedClause,
+		append([]any(nil), supportedArgs...),
 		query,
 	)
 	rows, err := r.db.QueryContext(ctx, `
@@ -915,6 +940,20 @@ func (r *SemanticEmbeddingRepo) CountSemanticAnalysisStates(
 	if err := rows.Err(); err != nil {
 		return SemanticCoverageStateCounts{}, err
 	}
+
+	unsupportedWhere, unsupportedArgs := appendSemanticAssetFilters(
+		"WHERE NOT ("+supportedClause+")",
+		append([]any(nil), supportedArgs...),
+		query,
+	)
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM assets a
+		`+unsupportedWhere,
+		unsupportedArgs...,
+	).Scan(&counts.Unsupported); err != nil {
+		return SemanticCoverageStateCounts{}, fmt.Errorf("count unsupported semantic assets: %w", err)
+	}
 	return counts, nil
 }
 
@@ -926,6 +965,9 @@ func semanticSearchWhere(query SemanticSearchQuery) (string, []any) {
 		AND aa.model_id = e.model_id
 		AND aa.model_version = e.model_version`
 	args := []any{query.Engine, query.ModelID, query.ModelVersion}
+	supportedClause, supportedArgs := semanticSupportedExtensionFilter("a")
+	where += " AND " + supportedClause
+	args = append(args, supportedArgs...)
 	return appendSemanticAssetFilters(where, args, query)
 }
 

@@ -18,16 +18,13 @@ import (
 	"sync/atomic"
 
 	"github.com/kataage/lumine/internal/domain"
+	"github.com/kataage/lumine/internal/imageformat"
 	"github.com/kataage/lumine/internal/infrastructure/db"
 	exif "github.com/rwcarlsen/goexif/exif"
 	"lukechampine.com/blake3"
 )
 
-var DefaultImageExtensions = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
-	".bmp": true, ".webp": true, ".tiff": true, ".tif": true,
-	".ico": true, ".svg": true, ".avif": true, ".apng": true,
-}
+var DefaultImageExtensions = imageformat.CatalogExtensionMap()
 
 type Scanner struct {
 	assetRepo  *db.AssetRepo

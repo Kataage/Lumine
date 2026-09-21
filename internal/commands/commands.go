@@ -404,8 +404,9 @@ type AssetListResponse struct {
 	SemanticCoverageTotalCount   int `json:"semanticCoverageTotalCount,omitempty"`
 	SemanticCoverageQueuedCount  int `json:"semanticCoverageQueuedCount,omitempty"`
 	SemanticCoverageRunningCount int `json:"semanticCoverageRunningCount,omitempty"`
-	SemanticCoverageFailedCount  int `json:"semanticCoverageFailedCount,omitempty"`
-	SemanticCoverageStaleCount   int `json:"semanticCoverageStaleCount,omitempty"`
+	SemanticCoverageFailedCount      int `json:"semanticCoverageFailedCount,omitempty"`
+	SemanticCoverageStaleCount       int `json:"semanticCoverageStaleCount,omitempty"`
+	SemanticCoverageUnsupportedCount int `json:"semanticCoverageUnsupportedCount,omitempty"`
 }
 
 func (c *AppCommands) ListAssets(req AssetListRequest) (*AssetListResponse, error) {
