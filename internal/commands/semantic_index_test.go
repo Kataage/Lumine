@@ -246,3 +246,82 @@ func TestSemanticMemoryIndexStaleWarmCannotPublishErrorState(t *testing.T) {
 		t.Fatalf("stale warm mutated new model status: %+v", status)
 	}
 }
+
+
+func BenchmarkSimilarImagePaging20K(b *testing.B) {
+	const (
+		count    = 20_000
+		dims     = 768
+		pageSize = 200
+		pages    = 5
+	)
+	index := newSemanticMemoryIndex()
+	index.key = semanticKey("engine", "model", "1")
+	index.ready = true
+	index.stage = "ready"
+	index.dimensions = dims
+	index.positions = make(map[int64]int, count)
+	index.data = make([]float32, count*dims)
+	index.loaded = count
+	index.total = count
+
+	eligible := make([]int64, count)
+	for asset := 0; asset < count; asset++ {
+		id := int64(asset + 1)
+		index.positions[id] = asset
+		index.data[asset*dims+(asset%dims)] = 1
+		eligible[asset] = id
+	}
+	query := make([]float32, dims)
+	query[0] = 1
+
+	b.Run("rescore_each_page", func(b *testing.B) {
+		b.ReportAllocs()
+		for iteration := 0; iteration < b.N; iteration++ {
+			for page := 0; page < pages; page++ {
+				result, err := index.Search(
+					context.Background(),
+					query,
+					eligible,
+					page*pageSize,
+					pageSize,
+					nil,
+				)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(result.Hits) != pageSize {
+					b.Fatalf("page %d hits = %d", page, len(result.Hits))
+				}
+			}
+		}
+	})
+
+	b.Run("rank_once_then_session_page", func(b *testing.B) {
+		b.ReportAllocs()
+		for iteration := 0; iteration < b.N; iteration++ {
+			result, err := index.Search(
+				context.Background(),
+				query,
+				eligible,
+				0,
+				pageSize,
+				nil,
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+			ranked := result.RankedHits
+			for page := 0; page < pages; page++ {
+				start := page * pageSize
+				end := start + pageSize
+				if end > len(ranked) {
+					end = len(ranked)
+				}
+				if len(ranked[start:end]) != pageSize {
+					b.Fatalf("page %d hits = %d", page, len(ranked[start:end]))
+				}
+			}
+		}
+	})
+}
