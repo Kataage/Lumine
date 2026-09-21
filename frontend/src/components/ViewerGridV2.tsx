@@ -243,6 +243,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       apply: setLiveSemanticCoverage,
     });
     controller.setSession(semanticSessionId);
+    // Refresh once even when the React Query page came from an infinite cache;
+    // this invalidates stale coverage metadata without rerunning the ranking.
+    controller.notify();
 
     const off = onSemanticEmbeddingUpdated(() => controller.notify());
     return () => {
