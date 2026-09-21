@@ -79,8 +79,12 @@ type windowsORT struct {
 	textSession   uintptr
 	visionSession uintptr
 	runMu         sync.Mutex
-	provider      string
-	warning       string
+	provider                 string
+	warning                  string
+	adapterID                int
+	adapterName              string
+	dedicatedVideoMemoryBytes uint64
+	visionBatchExperiment    string
 }
 
 func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error) {
@@ -89,11 +93,24 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 		return nil, err
 	}
 
-	backend := &windowsORT{}
+	backend := &windowsORT{visionBatchExperiment: "experimental-only; production batch=1"}
 	if options.AllowGPU {
+		if adapter, adapterErr := selectDirectMLAdapter(); adapterErr == nil {
+			backend.adapterID = adapter.ID
+			backend.adapterName = adapter.Name
+			backend.dedicatedVideoMemoryBytes = adapter.DedicatedVideoMemory
+		} else {
+			// Keep adapter 0 as a compatibility fallback, but make the
+			// uncertainty explicit instead of silently assuming it is optimal.
+			backend.adapterID = 0
+			backend.warning = fmt.Sprintf("DirectML adapter enumeration failed; trying adapter 0: %v", adapterErr)
+		}
 		directMLPath := filepath.Join(filepath.Dir(dllPath), "DirectML.dll")
 		if directMLDLL, loadErr := syscall.LoadDLL(directMLPath); loadErr != nil {
-			backend.warning = fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
+			if backend.warning != "" {
+				backend.warning += "; "
+			}
+			backend.warning += fmt.Sprintf("DirectML runtime could not be loaded; using CPU fallback: %v", loadErr)
 		} else {
 			backend.directMLDLL = directMLDLL
 		}
@@ -164,7 +181,10 @@ func newORTBackend(modelRoot string, options ai.LoadOptions) (ortBackend, error)
 			ok = true
 			return backend, nil
 		} else {
-			backend.warning = fmt.Sprintf("DirectML unavailable; using CPU fallback: %v", gpuErr)
+			if backend.warning != "" {
+				backend.warning += "; "
+			}
+			backend.warning += fmt.Sprintf("DirectML unavailable; using CPU fallback: %v", gpuErr)
 		}
 	}
 
@@ -251,7 +271,7 @@ func (r *windowsORT) createSessionOptions(useDirectML bool) (uintptr, error) {
 		if err := r.callStatus(ortFnSetSessionExecutionMode, options, ortSequential); err != nil {
 			return releaseOnError(fmt.Errorf("set sequential execution for DirectML: %w", err))
 		}
-		if err := r.appendDirectML(options); err != nil {
+		if err := r.appendDirectML(options, r.adapterID); err != nil {
 			return releaseOnError(fmt.Errorf("enable DirectML execution provider: %w", err))
 		}
 	}
@@ -259,7 +279,7 @@ func (r *windowsORT) createSessionOptions(useDirectML bool) (uintptr, error) {
 	return options, nil
 }
 
-func (r *windowsORT) appendDirectML(options uintptr) error {
+func (r *windowsORT) appendDirectML(options uintptr, adapterID int) error {
 	if r.dll == nil {
 		return errors.New("ONNX Runtime DLL is not loaded")
 	}
@@ -267,7 +287,7 @@ func (r *windowsORT) appendDirectML(options uintptr) error {
 	if err != nil {
 		return fmt.Errorf("find DirectML provider factory: %w", err)
 	}
-	status, _, _ := proc.Call(options, 0)
+	status, _, _ := proc.Call(options, uintptr(adapterID))
 	return r.consumeStatus(status)
 }
 
@@ -276,11 +296,14 @@ func (r *windowsORT) RuntimeDiagnostics() ai.RuntimeDiagnostics {
 		return ai.RuntimeDiagnostics{}
 	}
 	diagnostics := ai.RuntimeDiagnostics{
-		ExecutionProvider: r.provider,
-		Warning:           r.warning,
+		ExecutionProvider:         r.provider,
+		AdapterName:               r.adapterName,
+		DedicatedVideoMemoryBytes: r.dedicatedVideoMemoryBytes,
+		VisionBatchExperiment:     r.visionBatchExperiment,
+		Warning:                   r.warning,
 	}
 	if r.provider == "directml" {
-		adapterID := 0
+		adapterID := r.adapterID
 		diagnostics.AdapterID = &adapterID
 	}
 	return diagnostics
@@ -334,6 +357,44 @@ func (r *windowsORT) EmbedImage(ctx context.Context, input []float32) ([]float32
 	runtime.KeepAlive(input)
 	runtime.KeepAlive(output)
 	return output, nil
+}
+
+func (r *windowsORT) EmbedImageBatch(ctx context.Context, input []float32, batchSize int) ([][]float32, error) {
+	if batchSize <= 0 {
+		return nil, errors.New("SigLIP2 image batch size must be positive")
+	}
+	perImage := siglipChannels * siglipImageSize * siglipImageSize
+	expected := perImage * batchSize
+	if len(input) != expected {
+		return nil, fmt.Errorf("SigLIP2 image batch tensor has %d values, want %d for batch %d", len(input), expected, batchSize)
+	}
+
+	output := make([]float32, siglipEmbeddingSize*batchSize)
+	if err := r.runSingle(
+		ctx,
+		r.visionSession,
+		"pixel_values",
+		uintptr(unsafe.Pointer(&input[0])),
+		uintptr(len(input))*unsafe.Sizeof(input[0]),
+		[]int64{int64(batchSize), siglipChannels, siglipImageSize, siglipImageSize},
+		ortTensorFloat,
+		siglipPoolerOutput,
+		uintptr(unsafe.Pointer(&output[0])),
+		uintptr(len(output))*unsafe.Sizeof(output[0]),
+		[]int64{int64(batchSize), siglipEmbeddingSize},
+		ortTensorFloat,
+	); err != nil {
+		return nil, fmt.Errorf("run SigLIP2 vision batch encoder (batch=%d): %w", batchSize, err)
+	}
+
+	result := make([][]float32, batchSize)
+	for index := 0; index < batchSize; index++ {
+		start := index * siglipEmbeddingSize
+		result[index] = append([]float32(nil), output[start:start+siglipEmbeddingSize]...)
+	}
+	runtime.KeepAlive(input)
+	runtime.KeepAlive(output)
+	return result, nil
 }
 
 func (r *windowsORT) runSingle(

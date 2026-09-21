@@ -91,9 +91,12 @@ type SemanticPipelineDiagnosticsSnapshot struct {
 	LongRunningJobs         int64                      `json:"longRunningJobs"`
 	ActiveWorkers           int                        `json:"activeWorkers"`
 	WorkerCount             int                        `json:"workerCount"`
-	ExecutionProvider       string                     `json:"executionProvider,omitempty"`
-	AdapterID               *int                       `json:"adapterId,omitempty"`
-	RecentJobs              []SemanticJobTraceSnapshot `json:"recentJobs"`
+	ExecutionProvider         string                     `json:"executionProvider,omitempty"`
+	AdapterID                 *int                       `json:"adapterId,omitempty"`
+	AdapterName               string                     `json:"adapterName,omitempty"`
+	DedicatedVideoMemoryBytes uint64                     `json:"dedicatedVideoMemoryBytes,omitempty"`
+	VisionBatchExperiment     string                     `json:"visionBatchExperiment,omitempty"`
+	RecentJobs                []SemanticJobTraceSnapshot `json:"recentJobs"`
 }
 
 type semanticTraceContextKey struct{}

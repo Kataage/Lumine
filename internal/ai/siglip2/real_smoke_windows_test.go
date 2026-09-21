@@ -167,6 +167,101 @@ func assertRealSigLIP2RetrievalSanity(t testing.TB, ctx context.Context, engine 
 	}
 }
 
+func profileRealSigLIP2Vision(t testing.TB, ctx context.Context, engine ai.Engine, imagePath string) {
+	t.Helper()
+
+	pixels, err := PreprocessImageContext(ctx, imagePath)
+	if err != nil {
+		t.Fatalf("profile preprocess: %v", err)
+	}
+	singleRequest := ai.InferenceRequest{
+		Operation: "embed_image_tensor",
+		Payload:   map[string]any{"pixels": pixels},
+	}
+	if _, err := engine.Infer(ctx, singleRequest); err != nil {
+		t.Fatalf("profile single warmup: %v", err)
+	}
+
+	const singleIterations = 6
+	singleStarted := time.Now()
+	for i := 0; i < singleIterations; i++ {
+		if _, err := engine.Infer(ctx, singleRequest); err != nil {
+			t.Fatalf("profile single iteration %d: %v", i+1, err)
+		}
+	}
+	singleElapsed := time.Since(singleStarted)
+	singleIPS := float64(singleIterations) / singleElapsed.Seconds()
+
+	textStarted := time.Now()
+	const textIterations = 4
+	for i := 0; i < textIterations; i++ {
+		if _, err := engine.Infer(ctx, ai.InferenceRequest{
+			Operation: "embed_text",
+			Payload:   map[string]any{"text": "anime character standing outdoors"},
+		}); err != nil {
+			t.Fatalf("profile text iteration %d: %v", i+1, err)
+		}
+	}
+	textAverage := time.Since(textStarted) / textIterations
+
+	batchPixels := make([]float32, 0, len(pixels)*2)
+	batchPixels = append(batchPixels, pixels...)
+	batchPixels = append(batchPixels, pixels...)
+	batchRequest := ai.InferenceRequest{
+		Operation: "embed_image_batch_tensor",
+		Payload: map[string]any{
+			"pixels":    batchPixels,
+			"batchSize": 2,
+		},
+	}
+	warmBatch, batchErr := engine.Infer(ctx, batchRequest)
+	if batchErr != nil {
+		t.Logf(
+			"siglip2 profile provider=%s single_images_per_sec=%.2f single_ms=%.2f text_avg_ms=%.2f batch2_supported=false batch_error=%q",
+			engine.(ai.RuntimeDiagnosticsProvider).RuntimeDiagnostics().ExecutionProvider,
+			singleIPS,
+			float64(singleElapsed/time.Millisecond)/singleIterations,
+			float64(textAverage)/float64(time.Millisecond),
+			batchErr.Error(),
+		)
+		return
+	}
+	warmVectors, ok := warmBatch.Payload["embeddings"].([][]float32)
+	if !ok || len(warmVectors) != 2 {
+		t.Fatalf("batch2 warmup returned type=%T len=%d", warmBatch.Payload["embeddings"], len(warmVectors))
+	}
+
+	const batchIterations = 3
+	batchStarted := time.Now()
+	for i := 0; i < batchIterations; i++ {
+		result, err := engine.Infer(ctx, batchRequest)
+		if err != nil {
+			t.Fatalf("profile batch2 iteration %d: %v", i+1, err)
+		}
+		vectors, ok := result.Payload["embeddings"].([][]float32)
+		if !ok || len(vectors) != 2 {
+			t.Fatalf("profile batch2 iteration %d returned type=%T len=%d", i+1, result.Payload["embeddings"], len(vectors))
+		}
+	}
+	batchElapsed := time.Since(batchStarted)
+	batchIPS := float64(batchIterations*2) / batchElapsed.Seconds()
+	speedup := batchIPS / singleIPS
+	diagnostics := engine.(ai.RuntimeDiagnosticsProvider).RuntimeDiagnostics()
+	t.Logf(
+		"siglip2 profile provider=%s adapter_id=%v adapter=%q vram_bytes=%d single_images_per_sec=%.2f single_ms=%.2f batch2_supported=true batch2_images_per_sec=%.2f batch2_ms_per_image=%.2f throughput_ratio=%.3f text_avg_ms=%.2f",
+		diagnostics.ExecutionProvider,
+		diagnostics.AdapterID,
+		diagnostics.AdapterName,
+		diagnostics.DedicatedVideoMemoryBytes,
+		singleIPS,
+		float64(singleElapsed/time.Millisecond)/singleIterations,
+		batchIPS,
+		float64(batchElapsed/time.Millisecond)/float64(batchIterations*2),
+		speedup,
+		float64(textAverage)/float64(time.Millisecond),
+	)
+}
+
 func runRealSigLIP2Inference(t testing.TB, ctx context.Context, engine ai.Engine, imagePath string, imageIterations int) {
 	t.Helper()
 	for iteration := 0; iteration < imageIterations; iteration++ {
@@ -229,6 +324,7 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 	}
 
 	runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
+	profileRealSigLIP2Vision(t, ctx, engine, imagePath)
 
 	requestGPU := os.Getenv("LUMINE_SIGLIP2_GPU_REQUEST_SMOKE") == "1" ||
 		os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1"
@@ -247,8 +343,11 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 			t.Fatal("GPU request fell back to CPU without a diagnostic warning")
 		}
 		t.Logf(
-			"GPU-request provider=%s warning=%q",
+			"GPU-request provider=%s adapter_id=%v adapter=%q vram_bytes=%d warning=%q",
 			diagnostics.ExecutionProvider,
+			diagnostics.AdapterID,
+			diagnostics.AdapterName,
+			diagnostics.DedicatedVideoMemoryBytes,
 			diagnostics.Warning,
 		)
 		if os.Getenv("LUMINE_SIGLIP2_REAL_GPU_SMOKE") == "1" &&
@@ -260,6 +359,7 @@ func TestRealSigLIP2Smoke(t *testing.T) {
 			)
 		}
 		runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
+		profileRealSigLIP2Vision(t, ctx, engine, imagePath)
 	}
 }
 
@@ -285,9 +385,16 @@ func TestRealSigLIP2DirectMLSmoke(t *testing.T) {
 			diagnostics.Warning,
 		)
 	}
-	t.Logf("strict DirectML provider=%s", diagnostics.ExecutionProvider)
+	t.Logf(
+		"strict DirectML provider=%s adapter_id=%v adapter=%q vram_bytes=%d",
+		diagnostics.ExecutionProvider,
+		diagnostics.AdapterID,
+		diagnostics.AdapterName,
+		diagnostics.DedicatedVideoMemoryBytes,
+	)
 
 	runRealSigLIP2Inference(t, ctx, engine, imagePath, 5)
+	profileRealSigLIP2Vision(t, ctx, engine, imagePath)
 }
 
 func benchmarkRealSigLIP2Image(b *testing.B, allowGPU bool, expectedProvider string) {

@@ -17,8 +17,10 @@ import (
 )
 
 type fakeORT struct {
-	textInput  [siglipTextLength]int64
-	imageInput []float32
+	textInput       [siglipTextLength]int64
+	imageInput      []float32
+	imageBatchInput []float32
+	imageBatchSize  int
 }
 
 func (f *fakeORT) EmbedText(_ context.Context, input [siglipTextLength]int64) ([]float32, error) {
@@ -29,6 +31,16 @@ func (f *fakeORT) EmbedText(_ context.Context, input [siglipTextLength]int64) ([
 func (f *fakeORT) EmbedImage(_ context.Context, input []float32) ([]float32, error) {
 	f.imageInput = append([]float32(nil), input...)
 	return []float32{0, 5}, nil
+}
+
+func (f *fakeORT) EmbedImageBatch(_ context.Context, input []float32, batchSize int) ([][]float32, error) {
+	f.imageBatchInput = append([]float32(nil), input...)
+	f.imageBatchSize = batchSize
+	result := make([][]float32, batchSize)
+	for i := 0; i < batchSize; i++ {
+		result[i] = []float32{3, 4}
+	}
+	return result, nil
 }
 
 func (f *fakeORT) RuntimeDiagnostics() ai.RuntimeDiagnostics {
@@ -323,6 +335,32 @@ func TestEngineInferenceNormalizesEmbeddings(t *testing.T) {
 		runtime.imageInput[len(runtime.imageInput)-1] != -0.5 {
 		t.Fatal("preprocessed image tensor was not forwarded to ORT unchanged")
 	}
+
+	batchPixels := append(append([]float32(nil), preprocessed...), preprocessed...)
+	batchResponse, err := engine.Infer(context.Background(), ai.InferenceRequest{
+		Operation: "embed_image_batch_tensor",
+		Payload: map[string]any{
+			"pixels":    batchPixels,
+			"batchSize": 2,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchVectors := batchResponse.Payload["embeddings"].([][]float32)
+	if len(batchVectors) != 2 {
+		t.Fatalf("batch embedding count = %d, want 2", len(batchVectors))
+	}
+	for index, item := range batchVectors {
+		if len(item) != 2 ||
+			math.Abs(float64(item[0]-0.6)) > 1e-5 ||
+			math.Abs(float64(item[1]-0.8)) > 1e-5 {
+			t.Fatalf("batch embedding %d not normalized: %+v", index, item)
+		}
+	}
+	if runtime.imageBatchSize != 2 || len(runtime.imageBatchInput) != len(batchPixels) {
+		t.Fatalf("batch tensor was not forwarded unchanged: size=%d len=%d", runtime.imageBatchSize, len(runtime.imageBatchInput))
+	}
 }
 
 func TestDefaultManifestIsPinnedAndComplete(t *testing.T) {
@@ -353,5 +391,31 @@ func TestSampleBilinearAveragesFourPixelsAtCenter(t *testing.T) {
 		if math.Abs(got-127.5) > 0.01 {
 			t.Fatalf("%s = %.4f, want 127.5", name, got)
 		}
+	}
+}
+
+
+func TestChooseDirectMLAdapterPrefersHardwareWithMostDedicatedMemory(t *testing.T) {
+	selected, ok := chooseDirectMLAdapter([]directMLAdapterCandidate{
+		{ID: 0, Name: "integrated", DedicatedVideoMemory: 512 << 20},
+		{ID: 1, Name: "software", DedicatedVideoMemory: 16 << 30, Software: true},
+		{ID: 2, Name: "discrete", DedicatedVideoMemory: 12 << 30},
+		{ID: 3, Name: "smaller-discrete", DedicatedVideoMemory: 8 << 30},
+	})
+	if !ok {
+		t.Fatal("no hardware adapter selected")
+	}
+	if selected.ID != 2 || selected.Name != "discrete" {
+		t.Fatalf("selected adapter = %+v, want discrete adapter 2", selected)
+	}
+}
+
+func TestChooseDirectMLAdapterTieBreaksByDXGIIndex(t *testing.T) {
+	selected, ok := chooseDirectMLAdapter([]directMLAdapterCandidate{
+		{ID: 3, Name: "later", DedicatedVideoMemory: 4 << 30},
+		{ID: 1, Name: "earlier", DedicatedVideoMemory: 4 << 30},
+	})
+	if !ok || selected.ID != 1 {
+		t.Fatalf("tie-break selected %+v, want adapter 1", selected)
 	}
 }
