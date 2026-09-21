@@ -800,6 +800,30 @@ func (r *SemanticEmbeddingRepo) WalkReadyEmbeddings(
 	return rows.Err()
 }
 
+func (r *SemanticEmbeddingRepo) CountEligibleSemanticAssets(
+	ctx context.Context,
+	query SemanticSearchQuery,
+) (int, error) {
+	if query.Engine == "" || query.ModelID == "" || query.ModelVersion == "" {
+		return 0, errors.New("semantic search provenance is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	where, args := semanticSearchWhere(query)
+	var count int
+	if err := r.db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM ai_semantic_embeddings e
+		JOIN ai_asset_analysis aa ON aa.asset_id = e.asset_id
+		JOIN assets a ON a.id = e.asset_id
+		%s
+	`, where), args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count eligible semantic assets: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SemanticEmbeddingRepo) ListEligibleSemanticAssetIDs(
 	ctx context.Context,
 	query SemanticSearchQuery,

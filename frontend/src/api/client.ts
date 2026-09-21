@@ -29,6 +29,11 @@ export interface SemanticSearchProgress {
   elapsedMs: number;
 }
 
+export interface SemanticEmbeddingUpdated {
+  assetId: number;
+  modelVersion: string;
+}
+
 export interface SemanticIndexStatus {
   state: string;
   loadedCount: number;
@@ -1111,6 +1116,10 @@ export async function resetSemanticPipelineDiagnostics(): Promise<SemanticPipeli
 
 export function onSemanticSearchProgress(callback: (progress: SemanticSearchProgress) => void): () => void {
   return EventsOn("semantic-search:progress", (value: unknown) => callback(value as SemanticSearchProgress));
+}
+
+export function onSemanticEmbeddingUpdated(callback: (event: SemanticEmbeddingUpdated) => void): () => void {
+  return EventsOn("semantic:embedding-updated", (value: unknown) => callback(value as SemanticEmbeddingUpdated));
 }
 
 export async function listSimilarAssets(

@@ -22,6 +22,7 @@ vi.mock("../../wailsjs/go/commands/AppCommands", async (importOriginal) => {
 });
 
 import * as Go from "../../wailsjs/go/commands/AppCommands";
+import * as WailsRuntime from "../../wailsjs/runtime/runtime";
 import { commands, domain } from "../../wailsjs/go/models";
 import {
   cancelLegacyStorageMigration,
@@ -30,6 +31,7 @@ import {
   getDefaultSemanticModelInfo,
   getTaggerReview,
   getTaggerThresholdOverrides,
+  onSemanticEmbeddingUpdated,
   requestLegacyStorageMigration,
   reviewTaggerSuggestions,
   semanticSearchAssets,
@@ -167,6 +169,26 @@ describe("typed AI Wails bridge", () => {
     const cancelled = await cancelLegacyStorageMigration();
     expect(Go.CancelLegacyStorageMigration).toHaveBeenCalledTimes(1);
     expect(cancelled.migrationPending).toBe(false);
+  });
+
+  it("durable Semantic progress eventを購読して型付きpayloadを渡す", () => {
+    let eventCallback: ((value: unknown) => void) | undefined;
+    const unsubscribe = vi.fn();
+    vi.mocked(WailsRuntime.EventsOn).mockImplementation((name, callback) => {
+      expect(name).toBe("semantic:embedding-updated");
+      eventCallback = callback as (value: unknown) => void;
+      return unsubscribe;
+    });
+
+    const callback = vi.fn();
+    const off = onSemanticEmbeddingUpdated(callback);
+    eventCallback?.({ assetId: 42, modelVersion: "revision-1" });
+
+    expect(callback).toHaveBeenCalledWith({
+      assetId: 42,
+      modelVersion: "revision-1",
+    });
+    expect(off).toBe(unsubscribe);
   });
 
   it("request ID付き意味検索はgenerated bindingへ直接渡す", async () => {

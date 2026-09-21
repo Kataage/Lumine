@@ -8,6 +8,7 @@ import {
   getSemanticIndexStatus,
   listAssets,
   listSimilarAssets,
+  onSemanticEmbeddingUpdated,
   onSemanticSearchProgress,
   semanticSearchAssets,
   semanticSearchPage,
@@ -23,6 +24,10 @@ import {
 } from "../utils/viewerPreload";
 import { registerViewerOpenHandler } from "../utils/viewerSession";
 import { markViewerInteraction } from "../utils/viewerPerformance";
+import {
+  createSemanticCoverageRefreshController,
+  type SemanticCoverageSnapshot,
+} from "../utils/semanticCoverageRefresh";
 import { MemoryImage } from "./MemoryImage";
 import { ImageViewerModal } from "./ImageViewerModal";
 
@@ -52,6 +57,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const [previewAsset, setPreviewAsset] = useState<AssetDTO | null>(null);
+  const [liveSemanticCoverage, setLiveSemanticCoverage] = useState<SemanticCoverageSnapshot | null>(null);
   const semanticRequestRef = useRef<{ id: string; key: string } | null>(null);
   const openPreview = useCallback((asset: AssetDTO) => setPreviewAsset(asset), []);
 
@@ -196,12 +202,65 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   const assets = useMemo(() => data?.pages.flatMap((page) => page.assets) ?? [], [data]);
   const firstPage = data?.pages[0] as AssetListResponse | undefined;
   const totalCount = firstPage?.totalCount ?? 0;
-  const semanticCoverageReady = firstPage?.semanticCoverageReadyCount ?? 0;
-  const semanticCoverageTotal = firstPage?.semanticCoverageTotalCount ?? 0;
-  const semanticCoverageQueued = firstPage?.semanticCoverageQueuedCount ?? 0;
-  const semanticCoverageRunning = firstPage?.semanticCoverageRunningCount ?? 0;
-  const semanticCoverageFailed = firstPage?.semanticCoverageFailedCount ?? 0;
-  const semanticCoverageStale = firstPage?.semanticCoverageStaleCount ?? 0;
+  const semanticSessionId = !isPlaceholderData && semanticSearchActive
+    ? firstPage?.semanticSearchSessionId ?? ""
+    : "";
+  const firstPageCoverage = useMemo<SemanticCoverageSnapshot | null>(() => {
+    if (!semanticSessionId || !firstPage) return null;
+    return {
+      ready: firstPage.semanticCoverageReadyCount ?? 0,
+      total: firstPage.semanticCoverageTotalCount ?? 0,
+      queued: firstPage.semanticCoverageQueuedCount ?? 0,
+      running: firstPage.semanticCoverageRunningCount ?? 0,
+      failed: firstPage.semanticCoverageFailedCount ?? 0,
+      stale: firstPage.semanticCoverageStaleCount ?? 0,
+    };
+  }, [
+    firstPage,
+    semanticSessionId,
+  ]);
+
+  useEffect(() => {
+    setLiveSemanticCoverage(firstPageCoverage);
+  }, [firstPageCoverage]);
+
+  useEffect(() => {
+    if (!semanticSessionId) return;
+
+    const controller = createSemanticCoverageRefreshController({
+      delayMs: 500,
+      refresh: async (sessionId) => {
+        const page = await semanticSearchPage(sessionId, 0, 1);
+        return {
+          ready: page.semanticCoverageReadyCount ?? 0,
+          total: page.semanticCoverageTotalCount ?? 0,
+          queued: page.semanticCoverageQueuedCount ?? 0,
+          running: page.semanticCoverageRunningCount ?? 0,
+          failed: page.semanticCoverageFailedCount ?? 0,
+          stale: page.semanticCoverageStaleCount ?? 0,
+        };
+      },
+      apply: setLiveSemanticCoverage,
+    });
+    controller.setSession(semanticSessionId);
+    // Refresh once even when the React Query page came from an infinite cache;
+    // this invalidates stale coverage metadata without rerunning the ranking.
+    controller.notify();
+
+    const off = onSemanticEmbeddingUpdated(() => controller.notify());
+    return () => {
+      off();
+      controller.dispose();
+    };
+  }, [semanticSessionId]);
+
+  const semanticCoverage = liveSemanticCoverage ?? firstPageCoverage;
+  const semanticCoverageReady = semanticCoverage?.ready ?? 0;
+  const semanticCoverageTotal = semanticCoverage?.total ?? 0;
+  const semanticCoverageQueued = semanticCoverage?.queued ?? 0;
+  const semanticCoverageRunning = semanticCoverage?.running ?? 0;
+  const semanticCoverageFailed = semanticCoverage?.failed ?? 0;
+  const semanticCoverageStale = semanticCoverage?.stale ?? 0;
   const semanticCoveragePercent = semanticCoverageTotal > 0
     ? Math.min(100, (semanticCoverageReady / semanticCoverageTotal) * 100)
     : 0;
