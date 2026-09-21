@@ -28,6 +28,164 @@ func NewSemanticEmbeddingRepo(db *DB) *SemanticEmbeddingRepo {
 	return &SemanticEmbeddingRepo{db: db}
 }
 
+const (
+	semanticStageRetryInitialDelay = 5 * time.Millisecond
+	semanticStageRetryMaxDelay     = 250 * time.Millisecond
+)
+
+// StageAnalysisResult durably stores the expensive Semantic inference result
+// while leaving the job/analysis in running state. Final promotion to ready is
+// performed separately by AIAnalysisRepo.CompleteSemanticJob. Keeping the
+// vector and provenance staged in SQLite means a transient finalization
+// conflict, or even an app restart after staging, does not require ORT to run
+// again.
+func (r *SemanticEmbeddingRepo) StageAnalysisResult(
+	ctx context.Context,
+	jobID int64,
+	assetID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	resultJSON string,
+	vector []float32,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if jobID <= 0 {
+		return errors.New("job id must be positive")
+	}
+	if assetID <= 0 {
+		return errors.New("asset id must be positive")
+	}
+	if engine == "" || modelID == "" || modelVersion == "" {
+		return errors.New("semantic embedding provenance is required")
+	}
+	normalized, err := normalizeSemanticVector(vector)
+	if err != nil {
+		return err
+	}
+	blob := encodeSemanticVector(normalized)
+
+	delay := semanticStageRetryInitialDelay
+	for {
+		err = r.stageAnalysisResultOnce(
+			jobID,
+			assetID,
+			engine,
+			modelID,
+			modelVersion,
+			resultJSON,
+			len(normalized),
+			blob,
+		)
+		if err == nil {
+			return nil
+		}
+		if !isSQLiteBusyError(err) {
+			return err
+		}
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return fmt.Errorf("stage semantic result interrupted: %w", ctx.Err())
+		case <-timer.C:
+		}
+		if delay < semanticStageRetryMaxDelay {
+			delay *= 2
+			if delay > semanticStageRetryMaxDelay {
+				delay = semanticStageRetryMaxDelay
+			}
+		}
+	}
+}
+
+func (r *SemanticEmbeddingRepo) stageAnalysisResultOnce(
+	jobID int64,
+	assetID int64,
+	engine string,
+	modelID string,
+	modelVersion string,
+	resultJSON string,
+	dimensions int,
+	blob []byte,
+) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin semantic result staging: %w", err)
+	}
+	defer tx.Rollback()
+
+	// The first statement is a write. Under WAL this avoids the deferred
+	// read-transaction -> writer upgrade that can produce SQLITE_BUSY_SNAPSHOT.
+	if _, err := tx.Exec(`
+		INSERT INTO ai_semantic_embeddings (
+			asset_id, engine, model_id, model_version, dimensions, vector, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(asset_id) DO UPDATE SET
+			engine = excluded.engine,
+			model_id = excluded.model_id,
+			model_version = excluded.model_version,
+			dimensions = excluded.dimensions,
+			vector = excluded.vector,
+			updated_at = CURRENT_TIMESTAMP
+	`, assetID, engine, modelID, modelVersion, dimensions, blob); err != nil {
+		return fmt.Errorf("stage semantic embedding: %w", err)
+	}
+
+	result, err := tx.Exec(`
+		UPDATE ai_asset_analysis
+		SET engine = ?,
+			model_id = ?,
+			model_version = ?,
+			result_json = ?,
+			error_message = '',
+			analyzed_at = NULL,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE asset_id = ?
+		  AND capability = 'semantic_search'
+		  AND state = 'running'
+		  AND EXISTS (
+			SELECT 1
+			FROM ai_jobs j
+			WHERE j.id = ?
+			  AND j.asset_id = ?
+			  AND j.capability = 'semantic_search'
+			  AND j.status = 'running'
+		  )
+	`, engine, modelID, modelVersion, resultJSON, assetID, jobID, assetID)
+	if err != nil {
+		return fmt.Errorf("stage semantic analysis metadata: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("stage semantic analysis rows affected: %w", err)
+	}
+	if changed != 1 {
+		return fmt.Errorf("semantic job %d is no longer running for asset %d", jobID, assetID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit semantic result staging: %w", err)
+	}
+	return nil
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var coder interface{ Code() int }
+	if !errors.As(err, &coder) {
+		return false
+	}
+	return coder.Code()&0xff == 5
+}
+
 type SemanticSearchQuery struct {
 	LibraryID    int64
 	FolderPath   string
