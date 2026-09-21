@@ -189,14 +189,18 @@ func (s *Scanner) SyncLibrary(library *domain.Library, excludedDirs []string) (*
 		return nil
 	})
 
-	flushNew()
-	flushUpdated()
-
 	if errors.Is(walkErr, errBackgroundSyncYielded) {
+		// Do not flush the partial in-memory batch after foreground activity has
+		// arrived. Those files were not committed yet and will be rediscovered
+		// by the idle retry; already-flushed batches remain durable.
 		result.Yielded = true
 		result.Changed = result.AddedCount > 0 || result.UpdatedCount > 0
 		return result, nil
 	}
+
+	flushNew()
+	flushUpdated()
+
 	if walkErr != nil {
 		return nil, walkErr
 	}
