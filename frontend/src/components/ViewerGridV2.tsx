@@ -134,6 +134,9 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       const offset = typeof pageParam === "number" ? pageParam : pageParam.offset;
       const request = buildQuery(offset);
       if (state.similarAssetId) {
+        if (typeof pageParam !== "number" && pageParam.semanticSessionId) {
+          return semanticSearchPage(pageParam.semanticSessionId, offset, PAGE_SIZE);
+        }
         return listSimilarAssets(state.similarAssetId, request);
       }
       if (state.searchMode === "semantic" && state.searchQuery.trim()) {
