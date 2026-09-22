@@ -91,6 +91,7 @@ func (s *RuntimeStore) AcquireRouterModel(
 		s.routerModels = make(map[string]routerModelConfig)
 	}
 	s.routerModels[config.Alias] = config
+	s.routerPolicyAllowGPU = allowGPU
 	s.routerMu.Unlock()
 
 	if err := s.ensureRouterLocked(ctx, allowGPU); err != nil {
@@ -173,6 +174,19 @@ func (s *RuntimeStore) RouterRunning() bool {
 	return s.router != nil && s.router.sidecar != nil && s.router.sidecar.Running()
 }
 
+func (s *RuntimeStore) RouterLogs() (stdout string, stderr string) {
+	if s == nil {
+		return "", ""
+	}
+	s.routerMu.Lock()
+	current := s.router
+	s.routerMu.Unlock()
+	if current == nil || current.sidecar == nil {
+		return "", ""
+	}
+	return current.sidecar.Logs()
+}
+
 // PrepareRouterModelForRequest serializes all llama.cpp model activity across
 // capabilities, makes the requested model resident, and returns the shared
 // router endpoint. The returned release function must be held until the HTTP
@@ -189,6 +203,18 @@ func (s *RuntimeStore) PrepareRouterModelForRequest(
 	if err != nil {
 		return "", nil, err
 	}
+
+	s.routerMu.Lock()
+	policyAllowGPU := s.routerPolicyAllowGPU
+	current := s.router
+	s.routerMu.Unlock()
+	if current == nil || current.sidecar == nil || !current.sidecar.Running() {
+		if err := s.ensureRouterLocked(ctx, policyAllowGPU); err != nil {
+			unlock()
+			return "", nil, fmt.Errorf("recover llama.cpp router: %w", err)
+		}
+	}
+
 	baseURL, err = s.ensureRouterModelReadyLocked(ctx, alias)
 	if err != nil {
 		unlock()
