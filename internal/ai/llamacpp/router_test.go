@@ -63,6 +63,7 @@ func TestRouterPresetRegistersMultipleLogicalModels(t *testing.T) {
 	text := string(raw)
 	for _, want := range []string{
 		"[vision]",
+		"load-on-startup = false",
 		"mmproj = ",
 		"c = 4096",
 		"[prompt]",
