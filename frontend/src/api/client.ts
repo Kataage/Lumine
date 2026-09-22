@@ -335,7 +335,7 @@ export interface DeleteAssetFilesResult {
   errors?: string[];
 }
 
-export type AIRuntimeState = "disabled" | "model_not_installed" | "not_loaded" | "ready" | "running" | "error";
+export type AIRuntimeState = "disabled" | "model_not_installed" | "not_loaded" | "loading" | "ready" | "running" | "error";
 
 export interface AIStorageInfo {
   mode: "installed" | "portable";
@@ -904,6 +904,7 @@ function normalizeRuntimeState(state: string): AIRuntimeState {
     case "disabled":
     case "model_not_installed":
     case "not_loaded":
+    case "loading":
     case "ready":
     case "running":
     case "error":

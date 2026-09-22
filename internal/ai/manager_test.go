@@ -228,8 +228,8 @@ func TestManagerCallsModelActivationHookBeforePublishingRuntime(t *testing.T) {
 		if model.Manifest.ID != manifest.ID || model.Manifest.Version != manifest.Version {
 			t.Fatalf("hook model mismatch: %+v", model.Manifest)
 		}
-		if status := manager.Status(capability); status.State != RuntimeStateModelNotInstalled {
-			t.Fatalf("runtime must not be published before activation hook succeeds: %+v", status)
+		if status := manager.Status(capability); status.State != RuntimeStateLoading {
+			t.Fatalf("runtime load must remain visible without publishing a ready session: %+v", status)
 		}
 		return nil
 	})
@@ -254,6 +254,86 @@ func TestManagerCallsModelActivationHookBeforePublishingRuntime(t *testing.T) {
 	}
 }
 
+
+type blockingLoadEngine struct {
+	dummyEngine
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (e *blockingLoadEngine) Load(ctx context.Context, model InstalledModel, options LoadOptions) error {
+	e.once.Do(func() { close(e.started) })
+	select {
+	case <-e.release:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return e.dummyEngine.Load(ctx, model, options)
+}
+
+func TestManagerReportsLoadingWhileEngineInitializes(t *testing.T) {
+	data := []byte("blocking load model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) {
+		return settings, nil
+	})
+	engine := &blockingLoadEngine{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	if err := manager.RegisterEngine("dummy", func() Engine { return engine }); err != nil {
+		t.Fatal(err)
+	}
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- manager.Load(
+			context.Background(),
+			domain.AICapabilitySemanticSearch,
+			manifest.ID,
+			manifest.Version,
+			LoadOptions{},
+		)
+	}()
+
+	select {
+	case <-engine.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("engine load did not start")
+	}
+
+	status := manager.Status(domain.AICapabilitySemanticSearch)
+	if status.State != RuntimeStateLoading {
+		t.Fatalf("status during load = %+v, want loading", status)
+	}
+	if status.ModelID != manifest.ID || status.Version != manifest.Version || status.Engine != manifest.Engine {
+		t.Fatalf("loading provenance = %+v, want %s@%s engine=%s", status, manifest.ID, manifest.Version, manifest.Engine)
+	}
+
+	close(engine.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("load did not finish")
+	}
+
+	if status := manager.Status(domain.AICapabilitySemanticSearch); status.State != RuntimeStateReady {
+		t.Fatalf("status after load = %+v, want ready", status)
+	}
+}
 
 type slowLifecycleEngine struct {
 	active *int

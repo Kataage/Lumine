@@ -40,7 +40,7 @@ import { useAppDialog } from "./AppDialogProvider";
 import { PromptEngineSettingsCard } from "./PromptEngineSettingsCard";
 import { TaggerThresholdSettingsCard } from "./TaggerThresholdSettingsCard";
 
-type FeatureStatus = "off" | "setup" | "unloaded" | "ready" | "running" | "error" | "preview";
+type FeatureStatus = "off" | "setup" | "unloaded" | "loading" | "ready" | "running" | "error" | "preview";
 
 const FEATURE_META: Record<AIModelFeatureKey, {
   title: string;
@@ -153,6 +153,11 @@ function StatusChip({ status }: { status: FeatureStatus }) {
       label: "インストール済み・未ロード",
       className: "border-sky-500/25 bg-sky-500/[0.07] text-sky-200",
       dot: "bg-sky-400",
+    },
+    loading: {
+      label: "ロード中",
+      className: "border-sky-500/25 bg-sky-500/[0.07] text-sky-200",
+      dot: "bg-sky-400 animate-pulse",
     },
     ready: {
       label: "利用可能",
@@ -520,6 +525,8 @@ export function AISettingsPanel() {
       ? "error"
       : semanticModel?.runtime.state === "not_loaded"
         ? "unloaded"
+      : semanticModel?.runtime.state === "loading"
+        ? "loading"
       : semanticModel?.runtime.state === "running"
         ? "running"
         : semanticModel?.runtime.state === "ready"
@@ -532,6 +539,8 @@ export function AISettingsPanel() {
       ? "error"
       : lightweightModel?.runtime.state === "not_loaded"
         ? "unloaded"
+      : lightweightModel?.runtime.state === "loading"
+        ? "loading"
       : lightweightModel?.runtime.state === "running"
         ? "running"
         : lightweightModel?.runtime.state === "ready"
@@ -545,6 +554,7 @@ export function AISettingsPanel() {
     if (!settings.enabled || !settings[key]) return "off";
     if (runtimeState === "error") return "error";
     if (runtimeState === "not_loaded") return "unloaded";
+    if (runtimeState === "loading") return "loading";
     if (runtimeState === "running") return "running";
     if (runtimeState === "ready") return "ready";
     return "setup";
@@ -711,10 +721,16 @@ export function AISettingsPanel() {
                                 {formatFileSize(semanticModel.sizeBytes)} · {semanticModel.license} · {semanticModel.installed ? "インストール済み" : "未インストール"}
                               </p>
                             </div>
-                            {status !== "ready" && status !== "running" && (
+                            {status !== "ready" && status !== "running" && status !== "loading" && (
                               <button type="button" className="ui-primary-button min-w-[150px]" disabled={semanticBusy || !settingsReadyForActions} onClick={() => void setupSemantic()}>
                                 {semanticBusy ? "準備しています…" : semanticModel.installed ? "再読み込み" : "セットアップ"}
                               </button>
+                            )}
+                            {status === "loading" && (
+                              <div className="inline-flex items-center gap-2 text-[11px] font-medium text-sky-300">
+                                <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+                                自動ロード中
+                              </div>
                             )}
                             {(status === "ready" || status === "running") && (
                               <div className="flex flex-wrap items-center justify-end gap-2">
