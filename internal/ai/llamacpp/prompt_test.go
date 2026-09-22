@@ -56,7 +56,10 @@ func TestBuildPromptServerArgsDoesNotUseMMProj(t *testing.T) {
 	}
 
 	gpu := buildPromptServerArgs("model.gguf", 1234, 8192, 8, true, nil)
-	if !strings.Contains(strings.Join(gpu, " "), "-ngl 99") {
+	joinedGPU := strings.Join(gpu, " ")
+	if !strings.Contains(joinedGPU, "-ngl auto") ||
+		!strings.Contains(joinedGPU, "--fit on") ||
+		!strings.Contains(joinedGPU, "--fit-target 1024") {
 		t.Fatalf("GPU args = %v", gpu)
 	}
 }
