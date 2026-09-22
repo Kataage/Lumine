@@ -1,9 +1,7 @@
 package llamacpp
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -462,6 +460,7 @@ func (s *RuntimeStore) writeRouterPresetForProvider(path string, provider string
 		builder.WriteString("[")
 		builder.WriteString(model.Alias)
 		builder.WriteString("]\n")
+		builder.WriteString("load-on-startup = false\n")
 		builder.WriteString("model = ")
 		builder.WriteString(model.ModelPath)
 		builder.WriteString("\n")
@@ -615,12 +614,4 @@ func (s *RuntimeStore) routerHTTPClient() *http.Client {
 		s.routerClient = &http.Client{Timeout: 3 * time.Minute}
 	}
 	return s.routerClient
-}
-
-func encodeRouterJSON(payload any) (*bytes.Reader, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	return bytes.NewReader(body), nil
 }
