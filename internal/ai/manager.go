@@ -160,7 +160,6 @@ func (m *Manager) Load(
 		current.model.Manifest.ID == modelID &&
 		current.model.Manifest.Version == version &&
 		current.options.AllowGPU == options.AllowGPU &&
-		current.options.Lazy == options.Lazy &&
 		(current.state == RuntimeStateReady || current.state == RuntimeStateRunning) {
 		m.mu.Unlock()
 		return nil
