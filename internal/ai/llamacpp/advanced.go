@@ -163,14 +163,20 @@ func advancedVisionPrompt(operation, instruction string) string {
 
 func (e *Engine) advancedChat(ctx context.Context, content []any) (AdvancedVisionResult, int, error) {
 	e.mu.Lock()
-	sidecar := e.sidecar
-	baseURL := e.baseURL
+	alias := e.routerAlias
 	e.mu.Unlock()
-	if sidecar == nil || baseURL == "" || !sidecar.Running() {
+	if alias == "" || e.runtimeStore == nil {
 		return AdvancedVisionResult{}, 0, ai.ErrRuntimeNotLoaded
 	}
 
+	baseURL, releaseRouter, err := e.runtimeStore.PrepareRouterModelForRequest(ctx, alias)
+	if err != nil {
+		return AdvancedVisionResult{}, 0, err
+	}
+	defer releaseRouter()
+
 	payload := map[string]any{
+		"model":       alias,
 		"temperature": 0,
 		"max_tokens":  1024,
 		"messages": []any{
