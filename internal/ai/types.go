@@ -84,6 +84,7 @@ const (
 	RuntimeStateDisabled          RuntimeState = "disabled"
 	RuntimeStateModelNotInstalled RuntimeState = "model_not_installed"
 	RuntimeStateNotLoaded         RuntimeState = "not_loaded"
+	RuntimeStateLoading           RuntimeState = "loading"
 	RuntimeStateReady             RuntimeState = "ready"
 	RuntimeStateRunning           RuntimeState = "running"
 	RuntimeStateError             RuntimeState = "error"
