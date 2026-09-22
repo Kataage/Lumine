@@ -143,60 +143,6 @@ func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGP
 	return combined
 }
 
-func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGPU bool) error {
-	if c.aiManager == nil {
-		return nil
-	}
-	type loadedRuntime struct {
-		capability domain.AICapability
-		modelID    string
-		version    string
-	}
-	var loaded []loadedRuntime
-	for _, capability := range sharedLlamaCapabilities() {
-		status := c.aiManager.Status(capability)
-		if status.ModelID == "" || status.Version == "" {
-			continue
-		}
-		switch status.State {
-		case ai.RuntimeStateReady, ai.RuntimeStateRunning:
-			loaded = append(loaded, loadedRuntime{
-				capability: capability,
-				modelID:    status.ModelID,
-				version:    status.Version,
-			})
-		}
-	}
-	if len(loaded) == 0 {
-		return nil
-	}
-
-	// Legacy builds could leave several llama.cpp sidecars resident. Collapse
-	// that state before activating a newly installed Vulkan runtime. Prefer the
-	// first background-capable runtime in the stable capability order and keep
-	// the others unloaded until explicitly requested.
-	var combined error
-	for _, extra := range loaded[1:] {
-		if err := c.aiManager.Unload(ctx, extra.capability); err != nil {
-			combined = errors.Join(combined, fmt.Errorf("unload extra %s before Vulkan activation: %w", extra.capability, err))
-		}
-	}
-	current := loaded[0]
-	if err := c.aiManager.Unload(ctx, current.capability); err != nil {
-		return errors.Join(combined, fmt.Errorf("unload %s for Vulkan activation: %w", current.capability, err))
-	}
-	if err := c.aiManager.Load(
-		ctx,
-		current.capability,
-		current.modelID,
-		current.version,
-		ai.LoadOptions{AllowGPU: allowGPU},
-	); err != nil {
-		combined = errors.Join(combined, fmt.Errorf("reload %s for Vulkan activation: %w", current.capability, err))
-	}
-	return combined
-}
-
 func (c *AppCommands) verifyUsableLlamaRuntime(allowGPU bool) error {
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
