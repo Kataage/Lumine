@@ -836,3 +836,54 @@ func TestManagerDoesNotReloadCPUOnlyRuntimeWhenGPUEnabled(t *testing.T) {
 		t.Fatal("CPU-only runtime should not be unloaded when global GPU setting turns on")
 	}
 }
+
+
+func TestManagerReusesLazyRegisteredRuntimeOnFirstUse(t *testing.T) {
+	data := []byte("lazy runtime model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+
+	settings := domain.AISettings{Enabled: true, SemanticSearch: true}
+	manager := NewManager(t.TempDir(), func() (domain.AISettings, error) { return settings, nil })
+
+	loadCount := 0
+	unloadCount := 0
+	if err := manager.RegisterEngine("dummy", func() Engine {
+		return &countingEngine{
+			inner: &dummyEngine{},
+			onLoad: func() { loadCount++ },
+			onUnload: func() { unloadCount++ },
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := testManifest(server.URL, data)
+	if _, err := manager.InstallModel(context.Background(), manifest, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{Lazy: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(
+		context.Background(),
+		domain.AICapabilitySemanticSearch,
+		manifest.ID,
+		manifest.Version,
+		LoadOptions{Lazy: false},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if loadCount != 1 || unloadCount != 0 {
+		t.Fatalf("lazy registration churned the runtime: load:%d unload:%d, want load:1 unload:0", loadCount, unloadCount)
+	}
+}

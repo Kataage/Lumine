@@ -173,9 +173,6 @@ func (c *AppCommands) LoadAdvancedVisionModel(modelID string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityAdvancedVision); err != nil {
-		return err
-	}
 	if err := c.aiManager.Load(
 		ctx,
 		domain.AICapabilityAdvancedVision,
@@ -236,9 +233,6 @@ func (c *AppCommands) RestoreAdvancedVisionModel() error {
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
-	}
-	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityAdvancedVision); err != nil {
-		return err
 	}
 	return c.aiManager.Load(
 		ctx,

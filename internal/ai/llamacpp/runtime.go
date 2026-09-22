@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 const runtimeInstallManifestName = "runtime.json"
@@ -56,6 +58,14 @@ type RuntimeProgressFunc func(RuntimeDownloadProgress)
 type RuntimeStore struct {
 	root   string
 	client *http.Client
+
+	routerOpMu  sync.Mutex
+	routerMu    sync.Mutex
+	router                *sharedRouterRuntime
+	routerModels          map[string]routerModelConfig
+	routerPort            int
+	routerClient          *http.Client
+	routerPolicyAllowGPU  bool
 }
 
 const LlamaRuntimeVersion = "b11053"
@@ -144,8 +154,10 @@ func runtimeCandidates(allowGPU bool) []runtimeCandidate {
 
 func NewRuntimeStore(root string) *RuntimeStore {
 	return &RuntimeStore{
-		root:   root,
-		client: &http.Client{},
+		root:         root,
+		client:       &http.Client{},
+		routerModels: make(map[string]routerModelConfig),
+		routerClient: &http.Client{Timeout: 3 * time.Minute},
 	}
 }
 

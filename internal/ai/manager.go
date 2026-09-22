@@ -404,6 +404,7 @@ func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings)
 		capability domain.AICapability
 		modelID    string
 		version    string
+		lazy       bool
 	}
 
 	m.mu.Lock()
@@ -424,6 +425,7 @@ func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings)
 				capability: capability,
 				modelID:    session.model.Manifest.ID,
 				version:    session.model.Manifest.Version,
+				lazy:       session.options.Lazy,
 			})
 		}
 	}
@@ -445,7 +447,7 @@ func (m *Manager) ApplySettings(ctx context.Context, settings domain.AISettings)
 			request.capability,
 			request.modelID,
 			request.version,
-			LoadOptions{AllowGPU: settings.GPUAcceleration},
+			LoadOptions{AllowGPU: settings.GPUAcceleration, Lazy: request.lazy},
 		); err != nil {
 			combined = errors.Join(combined, fmt.Errorf("reload %s after GPU policy change: %w", request.capability, err))
 		}
