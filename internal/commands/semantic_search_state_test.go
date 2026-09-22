@@ -59,7 +59,7 @@ func TestSemanticSearchFinishDoesNotLeaveActiveCancel(t *testing.T) {
 }
 
 
-func TestSemanticSearchCoverageUpdatePreservesFrozenRanking(t *testing.T) {
+func TestSemanticSearchCoverageUpdateDoesNotMutateRanking(t *testing.T) {
 	state := newSemanticSearchState()
 	hits := []domain.SemanticSearchHit{
 		{AssetID: 3, Score: 0.9},
@@ -78,6 +78,7 @@ func TestSemanticSearchCoverageUpdatePreservesFrozenRanking(t *testing.T) {
 		10,
 		db.SemanticCoverageStateCounts{Queued: 8, Running: 1},
 		query,
+		[]float32{1, 0},
 	)
 
 	updated, ok := state.updateCoverage(
@@ -122,6 +123,7 @@ func TestSimilarRankingSessionIsStableAcrossPages(t *testing.T) {
 		len(hits),
 		db.SemanticCoverageStateCounts{},
 		db.SemanticSearchQuery{},
+		nil,
 	)
 
 	session, ok := state.get(sessionID)
@@ -159,6 +161,7 @@ func TestSemanticSearchSessionsStayBoundedAndExpire(t *testing.T) {
 			1,
 			db.SemanticCoverageStateCounts{},
 			db.SemanticSearchQuery{},
+			nil,
 		)
 	}
 	state.mu.Lock()
@@ -180,11 +183,115 @@ func TestSemanticSearchSessionsStayBoundedAndExpire(t *testing.T) {
 		1,
 		db.SemanticCoverageStateCounts{},
 		db.SemanticSearchQuery{},
+		nil,
 	)
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if len(state.sessions) != 1 {
 		t.Fatalf("expired sessions were not pruned: count=%d", len(state.sessions))
+	}
+}
+
+
+func TestSemanticSearchLiveMergeAddsAndReranksNewHits(t *testing.T) {
+	state := newSemanticSearchState()
+	sessionID := state.store(
+		[]domain.SemanticSearchHit{
+			{AssetID: 10, Score: 0.8},
+			{AssetID: 20, Score: 0.4},
+		},
+		2,
+		2,
+		100,
+		db.SemanticCoverageStateCounts{},
+		db.SemanticSearchQuery{Engine: "engine", ModelID: "model", ModelVersion: "1"},
+		[]float32{1, 0},
+	)
+
+	updated, ok := state.mergeLiveHits(
+		sessionID,
+		[]domain.SemanticSearchHit{
+			{AssetID: 30, Score: 0.9},
+			{AssetID: 40, Score: 0.4},
+		},
+		4,
+		db.SemanticCoverageStateCounts{Queued: 96},
+	)
+	if !ok {
+		t.Fatal("live session disappeared")
+	}
+	if updated.total != 4 || updated.coverageReady != 4 {
+		t.Fatalf("updated counts = total:%d ready:%d", updated.total, updated.coverageReady)
+	}
+	if updated.coverageStates.Queued != 96 {
+		t.Fatalf("queued = %d, want 96", updated.coverageStates.Queued)
+	}
+	want := []int64{30, 10, 20, 40}
+	if len(updated.hits) != len(want) {
+		t.Fatalf("hits = %+v", updated.hits)
+	}
+	for index, assetID := range want {
+		if updated.hits[index].AssetID != assetID {
+			t.Fatalf("rank %d = %d, want %d; hits=%+v", index, updated.hits[index].AssetID, assetID, updated.hits)
+		}
+	}
+}
+
+func TestSemanticSearchLiveMergeDeduplicatesConcurrentRefresh(t *testing.T) {
+	state := newSemanticSearchState()
+	sessionID := state.store(
+		[]domain.SemanticSearchHit{{AssetID: 1, Score: 0.7}},
+		1,
+		1,
+		10,
+		db.SemanticCoverageStateCounts{},
+		db.SemanticSearchQuery{},
+		[]float32{1},
+	)
+
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, ok := state.mergeLiveHits(
+			sessionID,
+			[]domain.SemanticSearchHit{{AssetID: 2, Score: 0.8}},
+			2,
+			db.SemanticCoverageStateCounts{},
+		); !ok {
+			t.Fatal("live session disappeared")
+		}
+	}
+
+	session, ok := state.get(sessionID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if session.total != 2 || len(session.hits) != 2 {
+		t.Fatalf("duplicate live result was retained: total=%d hits=%+v", session.total, session.hits)
+	}
+	if session.hits[0].AssetID != 2 || session.hits[1].AssetID != 1 {
+		t.Fatalf("unexpected live ranking: %+v", session.hits)
+	}
+}
+
+func TestSemanticSearchStoreCopiesQueryVector(t *testing.T) {
+	state := newSemanticSearchState()
+	queryVector := []float32{1, 2, 3}
+	sessionID := state.store(
+		nil,
+		0,
+		0,
+		10,
+		db.SemanticCoverageStateCounts{},
+		db.SemanticSearchQuery{},
+		queryVector,
+	)
+	queryVector[0] = 99
+
+	session, ok := state.get(sessionID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if len(session.queryVector) != 3 || session.queryVector[0] != 1 {
+		t.Fatalf("query vector alias leaked into session: %v", session.queryVector)
 	}
 }
