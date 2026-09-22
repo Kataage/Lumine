@@ -36,6 +36,7 @@ type Manager struct {
 	lifecycleMu sync.Mutex
 	factories   map[string]EngineFactory
 	sessions    map[domain.AICapability]*runtimeSession
+	loading     map[domain.AICapability]RuntimeStatus
 }
 
 func NewManager(root string, settings SettingsProvider) *Manager {
@@ -44,6 +45,7 @@ func NewManager(root string, settings SettingsProvider) *Manager {
 		settings:  settings,
 		factories: make(map[string]EngineFactory),
 		sessions:  make(map[domain.AICapability]*runtimeSession),
+		loading:   make(map[domain.AICapability]RuntimeStatus),
 	}
 }
 
@@ -166,12 +168,36 @@ func (m *Manager) Load(
 	}
 	m.mu.Unlock()
 
+	// Publish an explicit loading state before full verification/runtime
+	// construction. Verification and DirectML/llama initialization can take
+	// tens of seconds on a cold start; reporting model_not_installed during that
+	// time is both inaccurate and makes automatic loading look stalled.
+	m.mu.Lock()
+	m.loading[capability] = RuntimeStatus{
+		Capability: capability,
+		State:      RuntimeStateLoading,
+		ModelID:    modelID,
+		Version:    version,
+	}
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		delete(m.loading, capability)
+		m.mu.Unlock()
+	}()
+
 	// Full content verification is intentionally retained at the actual load
 	// boundary. Cheap status/UI paths use ProbeModel instead.
 	model, err := m.store.Verify(modelID, version)
 	if err != nil {
 		return err
 	}
+
+	m.mu.Lock()
+	loadingStatus := m.loading[capability]
+	loadingStatus.Engine = model.Manifest.Engine
+	m.loading[capability] = loadingStatus
+	m.mu.Unlock()
 
 	m.mu.Lock()
 	factory := m.factories[model.Manifest.Engine]
@@ -466,6 +492,9 @@ func (m *Manager) Status(capability domain.AICapability) RuntimeStatus {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if loading, ok := m.loading[capability]; ok {
+		return loading
+	}
 	session := m.sessions[capability]
 	if session == nil {
 		return RuntimeStatus{Capability: capability, State: RuntimeStateModelNotInstalled}
