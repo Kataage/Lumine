@@ -838,7 +838,7 @@ func TestManagerDoesNotReloadCPUOnlyRuntimeWhenGPUEnabled(t *testing.T) {
 }
 
 
-func TestManagerReloadsSameRuntimeWhenLazyModeChanges(t *testing.T) {
+func TestManagerReusesLazyRegisteredRuntimeOnFirstUse(t *testing.T) {
 	data := []byte("lazy runtime model")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(data)
@@ -883,7 +883,7 @@ func TestManagerReloadsSameRuntimeWhenLazyModeChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if loadCount != 2 || unloadCount != 1 {
-		t.Fatalf("lazy-to-active reload counts = load:%d unload:%d, want load:2 unload:1", loadCount, unloadCount)
+	if loadCount != 1 || unloadCount != 0 {
+		t.Fatalf("lazy registration churned the runtime: load:%d unload:%d, want load:1 unload:0", loadCount, unloadCount)
 	}
 }
