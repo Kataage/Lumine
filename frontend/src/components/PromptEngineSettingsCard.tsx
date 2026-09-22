@@ -59,7 +59,7 @@ export function PromptEngineSettingsCard({
     const offModelDownload = EventsOn("ai:model-download", (raw: unknown) => {
       const value = raw as { modelId?: string; bytesDownloaded?: number; bytesTotal?: number; done?: boolean };
       const modelID = String(value.modelId ?? "");
-      if (!modelID.includes("qwen3.5")) return;
+      if (!status?.models.some((model) => model.id === modelID)) return;
       setProgress({
         label: "Promptモデルをダウンロード",
         downloaded: Math.max(0, Number(value.bytesDownloaded ?? 0)),
@@ -86,7 +86,7 @@ export function PromptEngineSettingsCard({
       offModelDownload();
       offRuntimeDownload();
     };
-  }, [refresh]);
+  }, [refresh, status]);
 
   const setup = async (modelId: string) => {
     if (busy) return;
