@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type semanticSearchSession struct {
 	coverageTotal  int
 	coverageStates db.SemanticCoverageStateCounts
 	coverageQuery  db.SemanticSearchQuery
+	queryVector    []float32
 	createdAt      time.Time
 }
 
@@ -146,6 +148,7 @@ func (s *semanticSearchState) store(
 	coverageTotal int,
 	coverageStates db.SemanticCoverageStateCounts,
 	coverageQuery db.SemanticSearchQuery,
+	queryVector []float32,
 ) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -177,6 +180,7 @@ func (s *semanticSearchState) store(
 		coverageTotal:  coverageTotal,
 		coverageStates: coverageStates,
 		coverageQuery:  coverageQuery,
+		queryVector:    append([]float32(nil), queryVector...),
 		createdAt:      now,
 	}
 	return id
@@ -210,6 +214,50 @@ func (s *semanticSearchState) updateCoverage(
 	if time.Since(session.createdAt) > semanticSearchSessionTTL {
 		delete(s.sessions, id)
 		return semanticSearchSession{}, false
+	}
+	session.coverageReady = ready
+	session.coverageStates = states
+	s.sessions[id] = session
+	return session, true
+}
+
+func (s *semanticSearchState) mergeLiveHits(
+	id string,
+	additional []domain.SemanticSearchHit,
+	ready int,
+	states db.SemanticCoverageStateCounts,
+) (semanticSearchSession, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.sessions[id]
+	if !ok {
+		return semanticSearchSession{}, false
+	}
+	if time.Since(session.createdAt) > semanticSearchSessionTTL {
+		delete(s.sessions, id)
+		return semanticSearchSession{}, false
+	}
+
+	if len(additional) > 0 {
+		seen := make(map[int64]struct{}, len(session.hits)+len(additional))
+		for _, hit := range session.hits {
+			seen[hit.AssetID] = struct{}{}
+		}
+		for _, hit := range additional {
+			if _, exists := seen[hit.AssetID]; exists {
+				continue
+			}
+			seen[hit.AssetID] = struct{}{}
+			session.hits = append(session.hits, hit)
+		}
+		sort.Slice(session.hits, func(a, b int) bool {
+			if session.hits[a].Score == session.hits[b].Score {
+				return session.hits[a].AssetID < session.hits[b].AssetID
+			}
+			return session.hits[a].Score > session.hits[b].Score
+		})
+		session.total = len(session.hits)
 	}
 	session.coverageReady = ready
 	session.coverageStates = states
@@ -785,6 +833,7 @@ func (c *AppCommands) SemanticSearchAssetsWithID(req AssetListRequest, requestID
 		coverageTotal,
 		coverageStates,
 		searchQuery,
+		vector,
 	)
 	return c.semanticHitsToAssets(
 		result.Hits,
@@ -803,9 +852,10 @@ func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*
 		return nil, errors.New("semantic search session expired")
 	}
 
-	// Refresh only coverage metadata from durable database state. Ranked hits
-	// remain frozen for the lifetime of this session, so background indexing can
-	// visibly advance without silently reshuffling the user's current results.
+	// Refresh durable coverage and, for text Semantic Search sessions, fold in
+	// newly-ready embeddings without recomputing the text embedding or rescoring
+	// the whole existing result set. Similar-image sessions do not retain a query
+	// vector and therefore keep their original snapshot semantics.
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -814,8 +864,48 @@ func (c *AppCommands) SemanticSearchPage(sessionID string, offset, limit int) (*
 		session.coverageQuery.ModelID != "" &&
 		session.coverageQuery.ModelVersion != "" {
 		if ready, err := c.semanticRepo.CountEligibleSemanticAssets(ctx, session.coverageQuery); err == nil {
-			if states, stateErr := c.semanticRepo.CountSemanticAnalysisStates(ctx, session.coverageQuery); stateErr == nil {
-				if updated, updatedOK := c.semanticSearchState.updateCoverage(sessionID, ready, states); updatedOK {
+			states, stateErr := c.semanticRepo.CountSemanticAnalysisStates(ctx, session.coverageQuery)
+			if stateErr == nil {
+				additional := []domain.SemanticSearchHit(nil)
+				if len(session.queryVector) > 0 &&
+					c.semanticIndex != nil &&
+					c.semanticIndex.IsReady(
+						session.coverageQuery.Engine,
+						session.coverageQuery.ModelID,
+						session.coverageQuery.ModelVersion,
+					) &&
+					ready > len(session.hits) {
+					if eligibleIDs, listErr := c.semanticRepo.ListEligibleSemanticAssetIDs(ctx, session.coverageQuery); listErr == nil {
+						seen := make(map[int64]struct{}, len(session.hits))
+						for _, hit := range session.hits {
+							seen[hit.AssetID] = struct{}{}
+						}
+						newIDs := make([]int64, 0, len(eligibleIDs)-len(session.hits))
+						for _, assetID := range eligibleIDs {
+							if _, exists := seen[assetID]; !exists {
+								newIDs = append(newIDs, assetID)
+							}
+						}
+						if len(newIDs) > 0 {
+							if result, searchErr := c.semanticIndex.Search(
+								ctx,
+								session.queryVector,
+								newIDs,
+								0,
+								1,
+								nil,
+							); searchErr == nil {
+								additional = result.RankedHits
+							}
+						}
+					}
+				}
+				if updated, updatedOK := c.semanticSearchState.mergeLiveHits(
+					sessionID,
+					additional,
+					ready,
+					states,
+				); updatedOK {
 					session = updated
 				}
 			}
@@ -909,6 +999,7 @@ func (c *AppCommands) ListSimilarAssets(assetID int64, req AssetListRequest) (*A
 		result.TotalCount,
 		db.SemanticCoverageStateCounts{},
 		db.SemanticSearchQuery{},
+		nil,
 	)
 	return c.semanticHitsToAssets(
 		result.Hits,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AIHealthSnapshot, AssetDTO, AssetListRequest, AssetListResponse, SemanticIndexStatus } from "../api/client";
 import {
@@ -54,6 +54,7 @@ interface ViewerGridV2Props {
 
 export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: ViewerGridV2Props) {
   const { state } = useApp();
+  const queryClient = useQueryClient();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
@@ -83,6 +84,31 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
   }, []);
 
   const semanticSearchActive = state.searchMode === "semantic" && !!state.searchQuery.trim() && !state.similarAssetId;
+
+  const viewerQueryKey = useMemo(() => [
+    "assets",
+    state.selectedLibraryId,
+    state.selectedFolderPath,
+    state.searchQuery,
+    state.searchMode,
+    state.similarAssetId,
+    state.sortBy,
+    state.sortDesc,
+    state.filterStatusLabel,
+    state.filterRating,
+    state.filterTagIds.join(","),
+  ], [
+    state.filterRating,
+    state.filterStatusLabel,
+    state.filterTagIds,
+    state.searchMode,
+    state.searchQuery,
+    state.selectedFolderPath,
+    state.selectedLibraryId,
+    state.similarAssetId,
+    state.sortBy,
+    state.sortDesc,
+  ]);
 
   const buildQuery = useCallback((offset: number): AssetListRequest => ({
     libraryId: state.selectedLibraryId ?? 0,
@@ -118,19 +144,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: [
-      "assets",
-      state.selectedLibraryId,
-      state.selectedFolderPath,
-      state.searchQuery,
-      state.searchMode,
-      state.similarAssetId,
-      state.sortBy,
-      state.sortDesc,
-      state.filterStatusLabel,
-      state.filterRating,
-      state.filterTagIds.join(","),
-    ],
+    queryKey: viewerQueryKey,
     queryFn: async ({ pageParam = 0 as ViewerPageParam }) => {
       const offset = typeof pageParam === "number" ? pageParam : pageParam.offset;
       const request = buildQuery(offset);
@@ -233,9 +247,30 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
     if (!semanticSessionId) return;
 
     const controller = createSemanticCoverageRefreshController({
-      delayMs: 500,
+      // Durable embedding completions can arrive many times per second.
+      // Coalesce them so live result growth does not compete with backfill.
+      delayMs: 1500,
       refresh: async (sessionId) => {
-        const page = await semanticSearchPage(sessionId, 0, 1);
+        const page = await semanticSearchPage(sessionId, 0, PAGE_SIZE);
+
+        // SemanticSearchPage incrementally merges newly-ready embeddings into
+        // the existing text-search session. When the ranked population grows,
+        // replace the cached infinite result with the refreshed first page.
+        // Dropping stale later pages avoids duplicates after ranking changes;
+        // they are fetched again on demand from the same live session.
+        if ((page.totalCount ?? 0) > totalCount) {
+          queryClient.setQueryData<InfiniteData<AssetListResponse, ViewerPageParam>>(
+            viewerQueryKey,
+            (current) => {
+              if (!current) return current;
+              return {
+                pages: [page],
+                pageParams: [0],
+              };
+            },
+          );
+        }
+
         return {
           ready: page.semanticCoverageReadyCount ?? 0,
           total: page.semanticCoverageTotalCount ?? 0,
@@ -258,7 +293,7 @@ export function ViewerGridV2({ onSelectAsset, onOpenDetail, onAssetsLoaded }: Vi
       off();
       controller.dispose();
     };
-  }, [semanticSessionId]);
+  }, [queryClient, semanticSessionId, totalCount, viewerQueryKey]);
 
   const semanticCoverage = liveSemanticCoverage ?? firstPageCoverage;
   const semanticCoverageReady = semanticCoverage?.ready ?? 0;
