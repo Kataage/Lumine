@@ -687,6 +687,15 @@ function SemanticSearchProgressOverlay({
   } else if (health && !health.semanticSearchEnabled) {
     label = "Semantic SearchがOFFです";
     detail = "AI設定でSemantic Searchを有効にしてください";
+  } else if (health?.semanticRuntime.state === "loading") {
+    label = "Semantic Search runtimeを読み込んでいます";
+    detail = [
+      "インストール済みモデルを検証・初期化中",
+      health.semanticRuntime.engine ? `engine: ${health.semanticRuntime.engine}` : "",
+    ].filter(Boolean).join(" · ");
+  } else if (health?.semanticRuntime.state === "not_loaded") {
+    label = "Semantic Searchを自動ロードしています";
+    detail = "検索要求からruntimeの読み込みを開始しています";
   } else if (health && health.semanticRuntime.state !== "ready" && health.semanticRuntime.state !== "running") {
     label = "Semantic Search runtimeを待っています";
     detail = `runtime state: ${health.semanticRuntime.state}${health.semanticRuntime.error ? ` · ${health.semanticRuntime.error}` : ""}`;
