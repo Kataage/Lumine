@@ -49,6 +49,27 @@ func TestRealPinnedLlamaRuntimeSmoke(t *testing.T) {
 			t.Logf("%s runtime version output: %s", RuntimeBackend(manifest), strings.TrimSpace(string(output)))
 		})
 	}
+
+	// Prove that the exact pinned executable can enter router mode on the
+	// ordinary GitHub Windows runner without requiring a model or physical GPU.
+	routerCtx, routerCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := store.ensureRouterLocked(routerCtx, false); err != nil {
+		routerCancel()
+		t.Fatalf("start pinned CPU llama router: %v", err)
+	}
+	routerCancel()
+	if !store.RouterRunning() {
+		t.Fatal("pinned llama router did not remain running after /health became ready")
+	}
+	stdout, stderr := store.RouterLogs()
+	if !strings.Contains(strings.ToLower(stdout+"\n"+stderr), "router") {
+		t.Fatalf("router startup produced no router evidence; stdout=%q stderr=%q", tailLog(stdout), tailLog(stderr))
+	}
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer stopCancel()
+	if err := store.ResetRouter(stopCtx); err != nil {
+		t.Fatalf("stop pinned llama router: %v", err)
+	}
 }
 
 func TestRealVulkanDeviceSmoke(t *testing.T) {
@@ -126,7 +147,7 @@ func TestRealSmolVLMVulkanOffload(t *testing.T) {
 		t.Fatalf("strict real GPU smoke provider=%q warning=%q, want vulkan", diagnostics.ExecutionProvider, diagnostics.Warning)
 	}
 
-	stdout, stderr := engine.sidecar.Logs()
+	stdout, stderr := runtimeStore.RouterLogs()
 	offloaded, total, ok := parseOffloadedLayers(stdout + "\n" + stderr)
 	if !ok || offloaded <= 0 || total <= 0 {
 		t.Fatalf("llama.cpp did not confirm GPU layer offload; provider=%s\nstdout:\n%s\nstderr:\n%s", diagnostics.ExecutionProvider, tailLog(stdout), tailLog(stderr))
@@ -214,7 +235,7 @@ func benchmarkRealSmolVLMImage(b *testing.B, allowGPU bool) {
 		b.Fatalf("benchmark provider=%q warning=%q, want %q", diagnostics.ExecutionProvider, diagnostics.Warning, wantProvider)
 	}
 	if allowGPU {
-		stdout, stderr := engine.sidecar.Logs()
+		stdout, stderr := runtimeStore.RouterLogs()
 		offloaded, total, ok := parseOffloadedLayers(stdout + "\n" + stderr)
 		if !ok || offloaded <= 0 {
 			b.Fatalf("Vulkan benchmark did not confirm layer offload: %d/%d", offloaded, total)
