@@ -60,10 +60,11 @@ type RuntimeStore struct {
 
 	routerOpMu  sync.Mutex
 	routerMu    sync.Mutex
-	router      *sharedRouterRuntime
-	routerModels map[string]routerModelConfig
-	routerPort   int
-	routerClient *http.Client
+	router                *sharedRouterRuntime
+	routerModels          map[string]routerModelConfig
+	routerPort            int
+	routerClient          *http.Client
+	routerPolicyAllowGPU  bool
 }
 
 const LlamaRuntimeVersion = "b11053"
