@@ -39,12 +39,9 @@ type PromptEngine struct {
 	runtimeStore *RuntimeStore
 	client       *http.Client
 
-	mu                sync.Mutex
-	sidecar           *ai.SidecarProcess
-	baseURL           string
-	model             ai.InstalledModel
-	executionProvider string
-	runtimeWarning    string
+	mu          sync.Mutex
+	routerAlias string
+	model       ai.InstalledModel
 }
 
 func NewPromptEngine(runtimeStore *RuntimeStore) ai.Engine {
@@ -63,12 +60,10 @@ func (e *PromptEngine) SupportsGPU() bool {
 }
 
 func (e *PromptEngine) RuntimeDiagnostics() ai.RuntimeDiagnostics {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return ai.RuntimeDiagnostics{
-		ExecutionProvider: e.executionProvider,
-		Warning:           e.runtimeWarning,
+	if e.runtimeStore == nil {
+		return ai.RuntimeDiagnostics{}
 	}
+	return e.runtimeStore.RouterDiagnostics()
 }
 
 func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {
@@ -99,31 +94,30 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 		return err
 	}
 
-	sidecar, baseURL, provider, warning, err := e.startPromptRuntime(
+	alias, _, _, err := e.runtimeStore.AcquireRouterModel(
 		ctx,
-		modelPath,
-		contextSize,
-		threads,
+		routerModelConfig{
+			Alias:       model.Manifest.ID,
+			ModelPath:   modelPath,
+			ContextSize: contextSize,
+			Threads:     threads,
+			ExtraArgs:   extraArgs,
+		},
 		options.AllowGPU,
-		extraArgs,
+		options.Lazy,
 	)
 	if err != nil {
 		return err
 	}
 
 	e.mu.Lock()
-	if e.sidecar != nil {
+	if e.routerAlias != "" {
 		e.mu.Unlock()
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = sidecar.Stop(stopCtx)
-		stopCancel()
+		_ = e.runtimeStore.ReleaseRouterModel(context.Background(), alias)
 		return errors.New("llama.cpp Prompt Engine is already loaded")
 	}
-	e.sidecar = sidecar
-	e.baseURL = baseURL
+	e.routerAlias = alias
 	e.model = model
-	e.executionProvider = provider
-	e.runtimeWarning = warning
 	e.mu.Unlock()
 	return nil
 }
@@ -238,7 +232,7 @@ func buildPromptServerArgs(
 		"--no-webui",
 	}
 	if allowGPU {
-		args = append(args, "-ngl", "99")
+		args = append(args, "-ngl", "auto", "--fit", "on", "--fit-target", strconv.Itoa(routerFitTargetMiB))
 	} else {
 		args = append(args, "--device", "none", "-ngl", "0")
 	}
@@ -432,19 +426,25 @@ func promptOperationInstruction(operation string) string {
 
 func (e *PromptEngine) promptChat(ctx context.Context, messages []any) (string, int, error) {
 	e.mu.Lock()
-	sidecar := e.sidecar
-	baseURL := e.baseURL
+	alias := e.routerAlias
 	model := e.model
 	e.mu.Unlock()
-	if sidecar == nil || baseURL == "" || !sidecar.Running() {
+	if alias == "" || e.runtimeStore == nil {
 		return "", 0, ai.ErrRuntimeNotLoaded
 	}
+
+	baseURL, releaseRouter, err := e.runtimeStore.PrepareRouterModelForRequest(ctx, alias)
+	if err != nil {
+		return "", 0, err
+	}
+	defer releaseRouter()
 
 	maxTokens, err := manifestPositiveInt(model.Manifest, "maxTokens", 1024)
 	if err != nil {
 		return "", 0, err
 	}
 	payload := map[string]any{
+		"model":       alias,
 		"temperature": 0,
 		"max_tokens":  maxTokens,
 		"messages":    messages,
@@ -575,20 +575,22 @@ func promptJSONSchema() map[string]any {
 
 func (e *PromptEngine) Unload(ctx context.Context) error {
 	e.mu.Lock()
-	sidecar := e.sidecar
-	e.sidecar = nil
-	e.baseURL = ""
-	e.model = ai.InstalledModel{}
-	e.executionProvider = ""
-	e.runtimeWarning = ""
+	alias := e.routerAlias
 	e.mu.Unlock()
-	if sidecar == nil {
+	if alias == "" {
 		return nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if e.runtimeStore == nil {
+		return errors.New("llama.cpp runtime store is not configured")
 	}
-	stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	return sidecar.Stop(stopCtx)
+	if err := e.runtimeStore.ReleaseRouterModel(ctx, alias); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	if e.routerAlias == alias {
+		e.routerAlias = ""
+		e.model = ai.InstalledModel{}
+	}
+	e.mu.Unlock()
+	return nil
 }
