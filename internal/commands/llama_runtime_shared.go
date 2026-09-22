@@ -91,6 +91,33 @@ func (c *AppCommands) installSharedLlamaRuntimeBundle(
 	return &info, nil
 }
 
+func sharedLlamaCapabilities() []domain.AICapability {
+	return []domain.AICapability{
+		domain.AICapabilityLightweightVision,
+		domain.AICapabilityAdvancedVision,
+		domain.AICapabilityPromptEngine,
+	}
+}
+
+func (c *AppCommands) prepareSharedLlamaCapability(ctx context.Context, target domain.AICapability) error {
+	if c.aiManager == nil {
+		return nil
+	}
+	for _, capability := range sharedLlamaCapabilities() {
+		if capability == target {
+			continue
+		}
+		status := c.aiManager.Status(capability)
+		if status.ModelID == "" {
+			continue
+		}
+		if err := c.aiManager.Unload(ctx, capability); err != nil {
+			return fmt.Errorf("release %s before loading %s: %w", capability, target, err)
+		}
+	}
+	return nil
+}
+
 func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGPU bool) error {
 	if c.aiManager == nil {
 		return nil
@@ -101,11 +128,7 @@ func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGP
 		version    string
 	}
 	var loaded []loadedRuntime
-	for _, capability := range []domain.AICapability{
-		domain.AICapabilityLightweightVision,
-		domain.AICapabilityAdvancedVision,
-		domain.AICapabilityPromptEngine,
-	} {
+	for _, capability := range sharedLlamaCapabilities() {
 		status := c.aiManager.Status(capability)
 		if status.ModelID == "" || status.Version == "" {
 			continue
@@ -119,22 +142,32 @@ func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGP
 			})
 		}
 	}
+	if len(loaded) == 0 {
+		return nil
+	}
 
+	// Legacy builds could leave several llama.cpp sidecars resident. Collapse
+	// that state before activating a newly installed Vulkan runtime. Prefer the
+	// first background-capable runtime in the stable capability order and keep
+	// the others unloaded until explicitly requested.
 	var combined error
-	for _, current := range loaded {
-		if err := c.aiManager.Unload(ctx, current.capability); err != nil {
-			combined = errors.Join(combined, fmt.Errorf("unload %s for Vulkan activation: %w", current.capability, err))
-			continue
+	for _, extra := range loaded[1:] {
+		if err := c.aiManager.Unload(ctx, extra.capability); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("unload extra %s before Vulkan activation: %w", extra.capability, err))
 		}
-		if err := c.aiManager.Load(
-			ctx,
-			current.capability,
-			current.modelID,
-			current.version,
-			ai.LoadOptions{AllowGPU: allowGPU},
-		); err != nil {
-			combined = errors.Join(combined, fmt.Errorf("reload %s for Vulkan activation: %w", current.capability, err))
-		}
+	}
+	current := loaded[0]
+	if err := c.aiManager.Unload(ctx, current.capability); err != nil {
+		return errors.Join(combined, fmt.Errorf("unload %s for Vulkan activation: %w", current.capability, err))
+	}
+	if err := c.aiManager.Load(
+		ctx,
+		current.capability,
+		current.modelID,
+		current.version,
+		ai.LoadOptions{AllowGPU: allowGPU},
+	); err != nil {
+		combined = errors.Join(combined, fmt.Errorf("reload %s for Vulkan activation: %w", current.capability, err))
 	}
 	return combined
 }
@@ -168,11 +201,7 @@ func (c *AppCommands) unloadSharedLlamaCapabilities() error {
 	}
 	ctx, cancel := c.aiLifecycleOperationContext()
 	defer cancel()
-	for _, capability := range []domain.AICapability{
-		domain.AICapabilityLightweightVision,
-		domain.AICapabilityAdvancedVision,
-		domain.AICapabilityPromptEngine,
-	} {
+	for _, capability := range sharedLlamaCapabilities() {
 		if err := c.aiManager.Unload(ctx, capability); err != nil {
 			return err
 		}
