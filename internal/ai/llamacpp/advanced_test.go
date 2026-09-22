@@ -151,7 +151,10 @@ func TestBuildLlamaServerArgsCPUAndGPU(t *testing.T) {
 
 	gpu := buildLlamaServerArgs("model.gguf", "mmproj.gguf", 1234, 8192, 8, true, nil)
 	joinedGPU := strings.Join(gpu, " ")
-	if strings.Contains(joinedGPU, "--no-mmproj-offload") || !strings.Contains(joinedGPU, "-ngl 99") {
+	if strings.Contains(joinedGPU, "--no-mmproj-offload") ||
+		!strings.Contains(joinedGPU, "-ngl auto") ||
+		!strings.Contains(joinedGPU, "--fit on") ||
+		!strings.Contains(joinedGPU, "--fit-target 1024") {
 		t.Fatalf("GPU args = %s", joinedGPU)
 	}
 }
