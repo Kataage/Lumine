@@ -243,6 +243,9 @@ func (c *AppCommands) loadDefaultLightweightVisionModel(ctx context.Context) err
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
+	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityLightweightVision); err != nil {
+		return err
+	}
 	return c.aiManager.Load(
 		ctx,
 		domain.AICapabilityLightweightVision,
