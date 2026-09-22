@@ -112,8 +112,8 @@ func TestLlamaEnginesAdvertiseGPUDiagnostics(t *testing.T) {
 func TestLlamaServerArgsRespectGPUOffloadPolicy(t *testing.T) {
 	gpu := buildLlamaServerArgs("model.gguf", "mmproj.gguf", 1234, 4096, 8, true, nil)
 	joinedGPU := strings.Join(gpu, " ")
-	if !strings.Contains(joinedGPU, "-ngl 99") {
-		t.Fatalf("GPU args do not request layer offload: %v", gpu)
+	if !strings.Contains(joinedGPU, "-ngl auto") || !strings.Contains(joinedGPU, "--fit on") || !strings.Contains(joinedGPU, "--fit-target 1024") {
+		t.Fatalf("GPU args do not use bounded automatic offload: %v", gpu)
 	}
 	if strings.Contains(joinedGPU, "--no-mmproj-offload") {
 		t.Fatalf("GPU args unexpectedly disable mmproj offload: %v", gpu)
@@ -128,8 +128,8 @@ func TestLlamaServerArgsRespectGPUOffloadPolicy(t *testing.T) {
 
 func TestPromptServerArgsRespectGPUOffloadPolicy(t *testing.T) {
 	gpu := buildPromptServerArgs("model.gguf", 1234, 8192, 8, true, nil)
-	if !strings.Contains(strings.Join(gpu, " "), "-ngl 99") {
-		t.Fatalf("Prompt GPU args do not request offload: %v", gpu)
+	if joined := strings.Join(gpu, " "); !strings.Contains(joined, "-ngl auto") || !strings.Contains(joined, "--fit on") || !strings.Contains(joined, "--fit-target 1024") {
+		t.Fatalf("Prompt GPU args do not use bounded automatic offload: %v", gpu)
 	}
 	cpu := buildPromptServerArgs("model.gguf", 1234, 8192, 8, false, nil)
 	if !strings.Contains(strings.Join(cpu, " "), "-ngl 0") {
