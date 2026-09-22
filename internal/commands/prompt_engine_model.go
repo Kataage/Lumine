@@ -175,6 +175,9 @@ func (c *AppCommands) LoadPromptEngineModel(modelID string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityPromptEngine); err != nil {
+		return err
+	}
 	if err := c.aiManager.Load(
 		ctx,
 		domain.AICapabilityPromptEngine,
@@ -235,6 +238,9 @@ func (c *AppCommands) RestorePromptEngineModel() error {
 	ctx := c.ctx
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityPromptEngine); err != nil {
+		return err
 	}
 	return c.aiManager.Load(
 		ctx,
