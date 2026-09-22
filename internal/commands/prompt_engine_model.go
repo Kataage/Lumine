@@ -48,7 +48,7 @@ func (c *AppCommands) GetPromptEngineStatus() PromptEngineStatusInfo {
 			State:      ai.RuntimeStateModelNotInstalled,
 		},
 		LlamaRuntime: c.currentLlamaRuntimeInfo(settings.GPUAcceleration),
-		SelectionNote: "標準Prompt LLMはIssue #169の実測で決定予定です。現在のQwen3.5 4B MはAPI/統合検証用の固定reference candidateです。",
+		SelectionNote: "NeoHorse 1 4B Abliterated と Spark-X2.5 4B Heretic JP がIssue #169の主要候補です。Qwen3.5 4B Mは比較用reference/controlで、標準Prompt LLMは同一hardware benchmark後に決定します。",
 	}
 	if c.aiManager != nil {
 		info.Runtime = c.aiManager.Status(domain.AICapabilityPromptEngine)
