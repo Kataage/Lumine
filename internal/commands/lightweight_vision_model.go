@@ -207,7 +207,7 @@ func (c *AppCommands) RestoreDefaultLightweightVisionModel() error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return c.loadDefaultLightweightVisionModel(ctx)
+	return c.loadDefaultLightweightVisionModelWithOptions(ctx, true)
 }
 
 func (c *AppCommands) tryLoadLightweightVisionAfterInstall(ctx context.Context) error {
@@ -232,6 +232,10 @@ func (c *AppCommands) tryLoadLightweightVisionAfterInstall(ctx context.Context) 
 }
 
 func (c *AppCommands) loadDefaultLightweightVisionModel(ctx context.Context) error {
+	return c.loadDefaultLightweightVisionModelWithOptions(ctx, false)
+}
+
+func (c *AppCommands) loadDefaultLightweightVisionModelWithOptions(ctx context.Context, lazy bool) error {
 	if c.llamaRuntimeStore == nil {
 		return errors.New("llama.cpp runtime store is not available")
 	}
@@ -243,14 +247,11 @@ func (c *AppCommands) loadDefaultLightweightVisionModel(ctx context.Context) err
 		return fmt.Errorf("llama.cpp runtime is not installed or valid: %w", err)
 	}
 	manifest := llamacpp.DefaultVisionModelManifest()
-	if err := c.prepareSharedLlamaCapability(ctx, domain.AICapabilityLightweightVision); err != nil {
-		return err
-	}
 	return c.aiManager.Load(
 		ctx,
 		domain.AICapabilityLightweightVision,
 		manifest.ID,
 		manifest.Version,
-		ai.LoadOptions{AllowGPU: settings.GPUAcceleration},
+		ai.LoadOptions{AllowGPU: settings.GPUAcceleration, Lazy: lazy},
 	)
 }
