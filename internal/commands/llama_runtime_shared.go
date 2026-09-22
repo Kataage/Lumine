@@ -99,23 +99,48 @@ func sharedLlamaCapabilities() []domain.AICapability {
 	}
 }
 
-func (c *AppCommands) prepareSharedLlamaCapability(ctx context.Context, target domain.AICapability) error {
+func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGPU bool) error {
 	if c.aiManager == nil {
 		return nil
 	}
+	type loadedRuntime struct {
+		capability domain.AICapability
+		modelID    string
+		version    string
+	}
+	var loaded []loadedRuntime
 	for _, capability := range sharedLlamaCapabilities() {
-		if capability == target {
-			continue
-		}
 		status := c.aiManager.Status(capability)
-		if status.ModelID == "" {
+		if status.ModelID == "" || status.Version == "" {
 			continue
 		}
-		if err := c.aiManager.Unload(ctx, capability); err != nil {
-			return fmt.Errorf("release %s before loading %s: %w", capability, target, err)
+		switch status.State {
+		case ai.RuntimeStateReady, ai.RuntimeStateRunning:
+			loaded = append(loaded, loadedRuntime{
+				capability: capability,
+				modelID:    status.ModelID,
+				version:    status.Version,
+			})
 		}
 	}
-	return nil
+
+	var combined error
+	for _, current := range loaded {
+		if err := c.aiManager.Unload(ctx, current.capability); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("unload %s for Vulkan activation: %w", current.capability, err))
+			continue
+		}
+		if err := c.aiManager.Load(
+			ctx,
+			current.capability,
+			current.modelID,
+			current.version,
+			ai.LoadOptions{AllowGPU: allowGPU},
+		); err != nil {
+			combined = errors.Join(combined, fmt.Errorf("reload %s for Vulkan activation: %w", current.capability, err))
+		}
+	}
+	return combined
 }
 
 func (c *AppCommands) reloadSharedLlamaCapabilities(ctx context.Context, allowGPU bool) error {
