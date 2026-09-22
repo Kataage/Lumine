@@ -77,6 +77,13 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 		return fmt.Errorf("pinned llama.cpp runtime supports windows/amd64, current platform is %s/%s", goruntime.GOOS, goruntime.GOARCH)
 	}
 
+	e.mu.Lock()
+	alreadyLoaded := e.routerAlias != ""
+	e.mu.Unlock()
+	if alreadyLoaded {
+		return errors.New("llama.cpp Prompt Engine is already loaded")
+	}
+
 	modelPath, err := resolveTextModelPath(model)
 	if err != nil {
 		return err
@@ -111,11 +118,6 @@ func (e *PromptEngine) Load(ctx context.Context, model ai.InstalledModel, option
 	}
 
 	e.mu.Lock()
-	if e.routerAlias != "" {
-		e.mu.Unlock()
-		_ = e.runtimeStore.ReleaseRouterModel(context.Background(), alias)
-		return errors.New("llama.cpp Prompt Engine is already loaded")
-	}
 	e.routerAlias = alias
 	e.model = model
 	e.mu.Unlock()
