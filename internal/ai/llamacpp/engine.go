@@ -37,12 +37,9 @@ type Engine struct {
 	runtimeStore *RuntimeStore
 	client       *http.Client
 
-	mu      sync.Mutex
-	sidecar *ai.SidecarProcess
-	baseURL           string
-	model             ai.InstalledModel
-	executionProvider string
-	runtimeWarning    string
+	mu          sync.Mutex
+	routerAlias string
+	model       ai.InstalledModel
 }
 
 func NewEngine(runtimeStore *RuntimeStore) ai.Engine {
@@ -70,12 +67,10 @@ func (e *Engine) SupportsGPU() bool {
 }
 
 func (e *Engine) RuntimeDiagnostics() ai.RuntimeDiagnostics {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return ai.RuntimeDiagnostics{
-		ExecutionProvider: e.executionProvider,
-		Warning:           e.runtimeWarning,
+	if e.runtimeStore == nil {
+		return ai.RuntimeDiagnostics{}
 	}
+	return e.runtimeStore.RouterDiagnostics()
 }
 
 func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.LoadOptions) error {
@@ -106,32 +101,31 @@ func (e *Engine) Load(ctx context.Context, model ai.InstalledModel, options ai.L
 		return err
 	}
 
-	sidecar, baseURL, provider, warning, err := e.startVLMRuntime(
+	alias, _, _, err := e.runtimeStore.AcquireRouterModel(
 		ctx,
-		modelPath,
-		mmprojPath,
-		contextSize,
-		threads,
+		routerModelConfig{
+			Alias:       model.Manifest.ID,
+			ModelPath:   modelPath,
+			MMProjPath:  mmprojPath,
+			ContextSize: contextSize,
+			Threads:     threads,
+			ExtraArgs:   extraArgs,
+		},
 		options.AllowGPU,
-		extraArgs,
+		options.Lazy,
 	)
 	if err != nil {
 		return err
 	}
 
 	e.mu.Lock()
-	if e.sidecar != nil {
+	if e.routerAlias != "" {
 		e.mu.Unlock()
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = sidecar.Stop(stopCtx)
-		stopCancel()
+		_ = e.runtimeStore.ReleaseRouterModel(context.Background(), alias)
 		return errors.New("llama.cpp VLM engine is already loaded")
 	}
-	e.sidecar = sidecar
-	e.baseURL = baseURL
+	e.routerAlias = alias
 	e.model = model
-	e.executionProvider = provider
-	e.runtimeWarning = warning
 	e.mu.Unlock()
 	return nil
 }
@@ -250,7 +244,7 @@ func buildLlamaServerArgs(
 		"--no-webui",
 	}
 	if allowGPU {
-		args = append(args, "-ngl", "99")
+		args = append(args, "-ngl", "auto", "--fit", "on", "--fit-target", strconv.Itoa(routerFitTargetMiB))
 	} else {
 		args = append(args, "--device", "none", "--no-mmproj-offload", "-ngl", "0")
 	}
@@ -395,14 +389,20 @@ func (e *Engine) Infer(
 	}
 
 	e.mu.Lock()
-	sidecar := e.sidecar
-	baseURL := e.baseURL
+	alias := e.routerAlias
 	e.mu.Unlock()
-	if sidecar == nil || baseURL == "" || !sidecar.Running() {
+	if alias == "" || e.runtimeStore == nil {
 		return ai.InferenceResponse{}, ai.ErrRuntimeNotLoaded
 	}
 
+	baseURL, releaseRouter, err := e.runtimeStore.PrepareRouterModelForRequest(ctx, alias)
+	if err != nil {
+		return ai.InferenceResponse{}, err
+	}
+	defer releaseRouter()
+
 	payload := map[string]any{
+		"model":       alias,
 		"temperature": 0,
 		"max_tokens":  512,
 		"messages": []any{
@@ -475,39 +475,21 @@ func (e *Engine) Infer(
 
 func (e *Engine) Unload(ctx context.Context) error {
 	e.mu.Lock()
-	sidecar := e.sidecar
+	alias := e.routerAlias
 	e.mu.Unlock()
-	if sidecar == nil {
-		e.mu.Lock()
-		e.baseURL = ""
-		e.model = ai.InstalledModel{}
-		e.executionProvider = ""
-		e.runtimeWarning = ""
-		e.mu.Unlock()
+	if alias == "" {
 		return nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if e.runtimeStore == nil {
+		return errors.New("llama.cpp runtime store is not configured")
 	}
-	stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	stopErr := sidecar.Stop(stopCtx)
-	cancel()
-
-	// Stop may return the caller's context error after it has already forced
-	// the child down. Only retain the reference when the child is still alive;
-	// otherwise cleanup is complete and future loads must not see a stale
-	// sidecar.
-	if stopErr != nil && sidecar.Running() {
-		return stopErr
+	if err := e.runtimeStore.ReleaseRouterModel(ctx, alias); err != nil {
+		return err
 	}
-
 	e.mu.Lock()
-	if e.sidecar == sidecar {
-		e.sidecar = nil
-		e.baseURL = ""
+	if e.routerAlias == alias {
+		e.routerAlias = ""
 		e.model = ai.InstalledModel{}
-		e.executionProvider = ""
-		e.runtimeWarning = ""
 	}
 	e.mu.Unlock()
 	return nil
