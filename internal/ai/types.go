@@ -55,6 +55,7 @@ type ProgressFunc func(DownloadProgress)
 
 type LoadOptions struct {
 	AllowGPU bool `json:"allowGpu"`
+	Lazy     bool `json:"lazy,omitempty"`
 }
 
 type InferenceRequest struct {
