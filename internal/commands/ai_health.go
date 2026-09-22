@@ -45,7 +45,10 @@ func (c *AppCommands) GetAIHealthSnapshot() (AIHealthSnapshot, error) {
 	}
 
 	if c.aiManager != nil {
-		snapshot.SemanticRuntime = c.aiManager.Status(domain.AICapabilitySemanticSearch)
+		// Use the model-aware status path so an installed-but-idle Semantic model
+		// is reported as not_loaded rather than model_not_installed. In-flight
+		// Manager.Load calls retain their explicit loading state.
+		snapshot.SemanticRuntime = c.GetDefaultSemanticModelInfo().Runtime
 	}
 	if c.semanticIndex != nil {
 		snapshot.SemanticIndex = c.semanticIndex.Status()
