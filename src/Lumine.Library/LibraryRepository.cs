@@ -137,10 +137,55 @@ public sealed class LibraryRepository
             return 0;
         }
 
+        var prepared = new List<PreparedAsset>(assets.Count);
+        foreach (var asset in assets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relativePath = LibraryPaths.NormalizeRelativePath(asset.RelativePath);
+            var extension = Path.GetExtension(relativePath).TrimStart('.').ToLowerInvariant();
+            if (extension.Length == 0)
+            {
+                throw new ArgumentException($"Asset has no file extension: {relativePath}", nameof(assets));
+            }
+
+            var folderPath = LibraryPaths.FolderRelativePath(relativePath);
+            prepared.Add(new PreparedAsset(
+                asset,
+                relativePath,
+                LibraryPaths.RelativePathKey(relativePath),
+                Path.GetFileName(relativePath),
+                extension,
+                folderPath,
+                folderPath.Length == 0 ? null : LibraryPaths.FolderPathKey(folderPath)));
+        }
+
         await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction();
 
-        var folderCache = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var folderIds = await LoadExistingFolderIdsAsync(
+            connection,
+            transaction,
+            libraryId,
+            prepared,
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var item in prepared)
+        {
+            if (item.FolderKey is null || folderIds.ContainsKey(item.FolderKey))
+            {
+                continue;
+            }
+
+            var folderId = await CreateOrGetFolderIdAsync(
+                connection,
+                transaction,
+                libraryId,
+                item.FolderPath,
+                item.FolderKey,
+                cancellationToken).ConfigureAwait(false);
+            folderIds[item.FolderKey] = folderId;
+        }
 
         await using var assetCommand = connection.CreateCommand();
         assetCommand.Transaction = transaction;
@@ -188,53 +233,30 @@ public sealed class LibraryRepository
         var pCreatedAt = assetCommand.Parameters.Add("$created_at", SqliteType.Integer);
         var pUpdatedAt = assetCommand.Parameters.Add("$updated_at", SqliteType.Integer);
 
-        foreach (var asset in assets)
+        foreach (var item in prepared)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var relativePath = LibraryPaths.NormalizeRelativePath(asset.RelativePath);
-            ValidateAsset(asset);
-
-            var folderPath = LibraryPaths.FolderRelativePath(relativePath);
-            long? folderId = null;
-            if (folderPath.Length > 0)
-            {
-                if (!folderCache.TryGetValue(folderPath, out var cachedFolderId))
-                {
-                    cachedFolderId = await GetOrCreateFolderIdAsync(
-                        connection,
-                        transaction,
-                        libraryId,
-                        folderPath,
-                        cancellationToken).ConfigureAwait(false);
-                    folderCache[folderPath] = cachedFolderId;
-                }
-
-                folderId = cachedFolderId;
-            }
-
-            var extension = Path.GetExtension(relativePath).TrimStart('.').ToLowerInvariant();
-            if (extension.Length == 0)
-            {
-                throw new ArgumentException($"Asset has no file extension: {relativePath}", nameof(assets));
-            }
+            ValidateAsset(item.Source);
 
             var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+            long? folderId = item.FolderKey is null
+                ? null
+                : folderIds[item.FolderKey];
 
             pAssetKey.Value = Guid.NewGuid().ToString("N");
             pLibraryId.Value = libraryId;
             pFolderId.Value = folderId.HasValue ? folderId.Value : DBNull.Value;
-            pRelativePath.Value = relativePath;
-            pRelativePathKey.Value = LibraryPaths.RelativePathKey(relativePath);
-            pFileName.Value = Path.GetFileName(relativePath);
-            pExtension.Value = extension;
-            pFileSize.Value = asset.FileSize;
-            pModifiedAt.Value = asset.ModifiedAtUtc.UtcDateTime.Ticks;
-            pWidth.Value = asset.Width.HasValue ? asset.Width.Value : DBNull.Value;
-            pHeight.Value = asset.Height.HasValue ? asset.Height.Value : DBNull.Value;
-            pFormat.Value = string.IsNullOrWhiteSpace(asset.Format)
-                ? extension
-                : asset.Format.Trim();
+            pRelativePath.Value = item.RelativePath;
+            pRelativePathKey.Value = item.RelativePathKey;
+            pFileName.Value = item.FileName;
+            pExtension.Value = item.Extension;
+            pFileSize.Value = item.Source.FileSize;
+            pModifiedAt.Value = item.Source.ModifiedAtUtc.UtcDateTime.Ticks;
+            pWidth.Value = item.Source.Width.HasValue ? item.Source.Width.Value : DBNull.Value;
+            pHeight.Value = item.Source.Height.HasValue ? item.Source.Height.Value : DBNull.Value;
+            pFormat.Value = string.IsNullOrWhiteSpace(item.Source.Format)
+                ? item.Extension
+                : item.Source.Format.Trim();
             pCreatedAt.Value = nowTicks;
             pUpdatedAt.Value = nowTicks;
 
@@ -342,49 +364,89 @@ public sealed class LibraryRepository
         }
     }
 
-    private static async Task<long> GetOrCreateFolderIdAsync(
+    private static async Task<Dictionary<string, long>> LoadExistingFolderIdsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        IReadOnlyList<PreparedAsset> prepared,
+        CancellationToken cancellationToken)
+    {
+        var keys = prepared
+            .Where(static item => item.FolderKey is not null)
+            .Select(static item => item.FolderKey!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var result = new Dictionary<string, long>(keys.Length, StringComparer.Ordinal);
+        const int chunkSize = 500;
+
+        for (var offset = 0; offset < keys.Length; offset += chunkSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(chunkSize, keys.Length - offset);
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+
+            var parameterNames = new string[count];
+            for (var index = 0; index < count; index++)
+            {
+                var parameterName = $"$key{index}";
+                parameterNames[index] = parameterName;
+                command.Parameters.AddWithValue(parameterName, keys[offset + index]);
+            }
+
+            command.Parameters.AddWithValue("$library_id", libraryId);
+            command.CommandText =
+                $"SELECT relative_path_key, id FROM folders WHERE library_id = $library_id AND relative_path_key IN ({string.Join(", ", parameterNames)});";
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                result[reader.GetString(0)] = reader.GetInt64(1);
+            }
+        }
+
+        return result;
+    }
+
+    private static async Task<long> CreateOrGetFolderIdAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         long libraryId,
         string folderPath,
+        string folderKey,
         CancellationToken cancellationToken)
     {
-        var folderKey = LibraryPaths.FolderPathKey(folderPath);
-
-        await using (var insert = connection.CreateCommand())
-        {
-            insert.Transaction = transaction;
-            insert.CommandText =
-                """
-                INSERT INTO folders(
-                    library_id, relative_path, relative_path_key, created_at_utc_ticks)
-                VALUES($library_id, $relative_path, $relative_path_key, $created)
-                ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
-                    relative_path = excluded.relative_path;
-                """;
-            insert.Parameters.AddWithValue("$library_id", libraryId);
-            insert.Parameters.AddWithValue("$relative_path", folderPath);
-            insert.Parameters.AddWithValue("$relative_path_key", folderKey);
-            insert.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
-            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        await using var select = connection.CreateCommand();
-        select.Transaction = transaction;
-        select.CommandText =
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
             """
-            SELECT id
-            FROM folders
-            WHERE library_id = $library_id
-              AND relative_path_key = $relative_path_key;
+            INSERT INTO folders(
+                library_id, relative_path, relative_path_key, created_at_utc_ticks)
+            VALUES($library_id, $relative_path, $relative_path_key, $created)
+            ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
+                relative_path = excluded.relative_path
+            RETURNING id;
             """;
-        select.Parameters.AddWithValue("$library_id", libraryId);
-        select.Parameters.AddWithValue("$relative_path_key", folderKey);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$relative_path", folderPath);
+        command.Parameters.AddWithValue("$relative_path_key", folderKey);
+        command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
 
         return Convert.ToInt64(
-            await select.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
             CultureInfo.InvariantCulture);
     }
+
+    private sealed record PreparedAsset(
+        AssetUpsert Source,
+        string RelativePath,
+        string RelativePathKey,
+        string FileName,
+        string Extension,
+        string FolderPath,
+        string? FolderKey);
 
     private static void ValidateAsset(AssetUpsert asset)
     {
