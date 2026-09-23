@@ -66,7 +66,7 @@ public sealed class ViewerSession : IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         _assets.GetAssetAsync(index, cancellationToken);
 
-    public async ValueTask<ViewerThumbnail> GetThumbnailAsync(
+    public ValueTask<ViewerThumbnail> GetThumbnailAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,
         CancellationToken cancellationToken = default)
@@ -105,7 +105,7 @@ public sealed class ViewerSession : IAsyncDisposable
             Interlocked.Increment(ref _thumbnailRequests);
         }
 
-        return await AwaitSharedAsync(asset.Id, request, cancellationToken).ConfigureAwait(false);
+        return AwaitSharedAsync(asset.Id, request, cancellationToken);
     }
 
     public async Task PrefetchAsync(
@@ -180,8 +180,10 @@ public sealed class ViewerSession : IAsyncDisposable
                 ViewerThumbnailPriority.Background,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // A background request may be intentionally cancelled when the
+            // same asset becomes visible and is re-issued at foreground priority.
         }
     }
 
