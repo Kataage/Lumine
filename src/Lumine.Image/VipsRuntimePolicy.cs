@@ -6,6 +6,13 @@ public static class VipsRuntimePolicy
     public const int ThumbnailOperationLimit = 0;
     public const int ThumbnailCachedFileLimit = 0;
 
+    public static int ThumbnailVipsConcurrency { get; } =
+        Math.Clamp(
+            (Environment.ProcessorCount + ThumbnailPipelineOptions.DefaultWorkerCount - 1)
+                / ThumbnailPipelineOptions.DefaultWorkerCount,
+            1,
+            4);
+
     private static readonly object ConfigurationGate = new();
     private static int _configured;
 
@@ -29,6 +36,7 @@ public static class VipsRuntimePolicy
             global::NetVips.Cache.Max = ThumbnailOperationLimit;
             global::NetVips.Cache.MaxMem = ThumbnailTrackedMemoryLimitBytes;
             global::NetVips.Cache.MaxFiles = ThumbnailCachedFileLimit;
+            global::NetVips.NetVips.Concurrency = ThumbnailVipsConcurrency;
 
             // Publish configured only after every process-global setting succeeds.
             Volatile.Write(ref _configured, 1);

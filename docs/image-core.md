@@ -48,7 +48,7 @@ Cancellation is accepted before enqueue and while queued. Worker count defaults 
 
 ## Diagnostics
 
-Lumine owns the persistent cache, so the libvips process-global operation cache is disabled for the thumbnail path. This follows libvips guidance for proxy-style workloads that process many different images and avoids duplicate hidden caching.
+Lumine owns the persistent cache, so the libvips process-global operation cache is disabled for the thumbnail path. This follows libvips guidance for proxy-style workloads that process many different images and avoids duplicate hidden caching. libvips internal concurrency is also capped relative to the default Lumine worker count so application-level workers do not multiply into an oversized native thread pool.
 
 The common benchmark contract records:
 

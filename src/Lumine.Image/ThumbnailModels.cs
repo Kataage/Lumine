@@ -65,7 +65,10 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
 
 public sealed class ThumbnailPipelineOptions
 {
-    public int WorkerCount { get; init; } = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+    public static int DefaultWorkerCount { get; } =
+        Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+
+    public int WorkerCount { get; init; } = DefaultWorkerCount;
 
     public int QueueCapacity { get; init; } = 256;
 

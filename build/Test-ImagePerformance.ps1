@@ -35,6 +35,7 @@ $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
 $batchPeakAdditional = [long]$result.metadata.batch_peak_additional_working_set_bytes
 $vipsOpenFiles = [int]$result.metadata.vips_open_files
 $vipsOperationCacheSize = [int]$result.metadata.vips_operation_cache_size
+$vipsConcurrency = [int]$result.metadata.vips_concurrency
 
 if ($requestCount -ne 64) {
     throw "Image benchmark request count changed unexpectedly: $requestCount"
@@ -92,6 +93,14 @@ if ($vipsOperationCacheSize -ne 0) {
     throw "libvips operation cache is not disabled: size=$vipsOperationCacheSize"
 }
 
+if ($vipsConcurrency -lt 1 -or $vipsConcurrency -gt 4) {
+    throw "libvips concurrency escaped the 1..4 Image Core bound: $vipsConcurrency"
+}
+
+if (($workerCount * $vipsConcurrency) -gt [Math]::Max(4, [Environment]::ProcessorCount)) {
+    throw "Combined thumbnail worker/libvips concurrency is oversubscribed: workers=$workerCount vips=$vipsConcurrency CPUs=$([Environment]::ProcessorCount)"
+}
+
 Write-Host "Image performance acceptance passed."
 Write-Host ("Cold generation: {0:N1} ms" -f $generate.durationMs)
 Write-Host ("1,000 cache hits: {0:N1} ms" -f $hits.durationMs)
@@ -100,3 +109,4 @@ Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))
 Write-Host ("libvips open files after batch: {0}" -f $vipsOpenFiles)
 Write-Host ("libvips operation cache size: {0}" -f $vipsOperationCacheSize)
+Write-Host ("libvips concurrency: {0} (workers={1})" -f $vipsConcurrency, $workerCount)

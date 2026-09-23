@@ -58,7 +58,7 @@ try
         cache,
         new ThumbnailPipelineOptions
         {
-            WorkerCount = Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
+            WorkerCount = ThumbnailPipelineOptions.DefaultWorkerCount,
             QueueCapacity = 64
         });
 
@@ -158,6 +158,7 @@ try
             ["vips_tracked_mem_highwater_bytes"] = NetVips.Stats.MemHighwater.ToString(CultureInfo.InvariantCulture),
             ["vips_open_files"] = NetVips.Stats.Files.ToString(CultureInfo.InvariantCulture),
             ["vips_operation_cache_size"] = NetVips.Cache.Size.ToString(CultureInfo.InvariantCulture),
+            ["vips_concurrency"] = NetVips.NetVips.Concurrency.ToString(CultureInfo.InvariantCulture),
             ["cache_format"] = "webp"
         });
 

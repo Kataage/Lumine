@@ -111,6 +111,9 @@ try
     Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
     Require(
+        NetVips.NetVips.Concurrency == VipsRuntimePolicy.ThumbnailVipsConcurrency,
+        "libvips concurrency does not match Image Core resource policy.");
+    Require(
         NetVips.Cache.MaxMem <= VipsRuntimePolicy.ThumbnailTrackedMemoryLimitBytes,
         "libvips tracked-memory cache exceeds Image Core policy.");
     await using var pipeline = new ThumbnailPipeline(
