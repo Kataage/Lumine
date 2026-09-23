@@ -38,6 +38,8 @@ Directory.CreateDirectory(root);
 var recorder = new BenchmarkRecorder();
 long peakWorkingSetBytes = 0;
 long peakAdditionalWorkingSetBytes = 0;
+long batchPeakWorkingSetBytes = 0;
+long batchPeakAdditionalWorkingSetBytes = 0;
 long cacheBytes = 0;
 long cacheFiles = 0;
 
@@ -103,6 +105,7 @@ try
 
     info.Refresh();
 
+    var batchPeak = PeakWorkingSetMonitor.Start();
     using (recorder.Measure(CoreMetricNames.ThumbnailBatchGenerate))
     {
         var tasks = new Task<ThumbnailResult>[requestCount];
@@ -125,6 +128,9 @@ try
 
         await Task.WhenAll(tasks);
     }
+    await batchPeak.DisposeAsync();
+    batchPeakWorkingSetBytes = batchPeak.PeakWorkingSetBytes;
+    batchPeakAdditionalWorkingSetBytes = batchPeak.PeakAdditionalWorkingSetBytes;
 
     var diagnostics = pipeline.Diagnostics;
     var stats = await cache.GetStatsAsync();
@@ -147,6 +153,8 @@ try
             ["cache_bytes"] = cacheBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["batch_peak_working_set_bytes"] = batchPeakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["batch_peak_additional_working_set_bytes"] = batchPeakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["cache_format"] = "webp"
         });
 

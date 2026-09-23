@@ -124,6 +124,10 @@ jobs:
       - name: Generate Image Core benchmark
         run: dotnet run --project tools/Lumine.Image.Benchmarks/Lumine.Image.Benchmarks.csproj -c Release --no-build -- --count 64 --output artifacts/benchmarks/image-thumbnail.json
 
+      - name: Enforce Image performance acceptance
+        shell: pwsh
+        run: ./build/Test-ImagePerformance.ps1
+
       - name: Upload Core benchmark results
         uses: actions/upload-artifact@v4
         with:

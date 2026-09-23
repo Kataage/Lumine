@@ -21,9 +21,11 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         options ??= new ThumbnailPipelineOptions();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.WorkerCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.QueueCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxForegroundBurst);
 
         WorkerCount = options.WorkerCount;
         QueueCapacity = options.QueueCapacity;
+        MaxForegroundBurst = options.MaxForegroundBurst;
         _queueSlots = new SemaphoreSlim(options.QueueCapacity, options.QueueCapacity);
         _generator = new ThumbnailGenerator(cache);
 
@@ -35,6 +37,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     public int WorkerCount { get; }
 
     public int QueueCapacity { get; }
+
+    public int MaxForegroundBurst { get; }
 
     public ThumbnailDiagnosticsSnapshot Diagnostics =>
         _generator.SnapshotDiagnostics();
@@ -140,6 +144,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
     private async Task WorkerLoopAsync()
     {
+        var foregroundBurst = 0;
+
         while (true)
         {
             await _queuedItems.WaitAsync(_shutdown.Token).ConfigureAwait(false);
@@ -147,13 +153,21 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             WorkItem? item;
             lock (_queueGate)
             {
-                if (_foreground.TryDequeue(out var foreground))
+                if (_foreground.Count > 0
+                    && (_background.Count == 0 || foregroundBurst < MaxForegroundBurst))
                 {
-                    item = foreground;
+                    item = _foreground.Dequeue();
+                    foregroundBurst++;
                 }
                 else if (_background.TryDequeue(out var background))
                 {
                     item = background;
+                    foregroundBurst = 0;
+                }
+                else if (_foreground.TryDequeue(out var foreground))
+                {
+                    item = foreground;
+                    foregroundBurst = 1;
                 }
                 else
                 {

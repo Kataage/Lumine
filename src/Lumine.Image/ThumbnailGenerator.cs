@@ -92,15 +92,12 @@ internal sealed class ThumbnailGenerator
                 size: Enums.Size.Down,
                 noRotate: false,
                 linear: true,
+                outputProfile: "srgb",
                 failOn: Enums.FailOn.Error);
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var normalized = thumbnail.Interpretation == Enums.Interpretation.Srgb
-                ? thumbnail.Copy()
-                : thumbnail.Colourspace(Enums.Interpretation.Srgb);
-
-            normalized.Webpsave(
+            thumbnail.Webpsave(
                 temporaryPath,
                 q: profile.Quality,
                 smartSubsample: true,

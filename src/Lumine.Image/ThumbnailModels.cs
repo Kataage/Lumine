@@ -68,4 +68,6 @@ public sealed class ThumbnailPipelineOptions
     public int WorkerCount { get; init; } = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
 
     public int QueueCapacity { get; init; } = 256;
+
+    public int MaxForegroundBurst { get; init; } = 8;
 }

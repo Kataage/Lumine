@@ -26,7 +26,7 @@ Profiles only downscale. They do not enlarge small originals.
 
 ## Decode and output
 
-libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled. Resampling is performed in linear light, output pixels are normalized to sRGB, and WebP is the persistent cache format with alpha preservation and stripped metadata.
+libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled. Resampling is performed in linear light and `output_profile=srgb` performs ICC-aware normalization before metadata is stripped from the cached WebP. Alpha is preserved.
 
 JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. HEIF/AVIF is capability-probed at runtime and exercised when both load/save operations are present.
 
@@ -38,9 +38,9 @@ A cache entry that cannot be opened as a valid image is deleted and regenerated 
 
 ## Scheduling
 
-`ThumbnailPipeline` owns a bounded queue and a bounded worker set. Foreground work is dequeued before background work. Backpressure is applied before enqueue when the total queue is full.
+`ThumbnailPipeline` owns a bounded queue and a bounded worker set. Foreground work is preferred, but a bounded foreground burst prevents permanent starvation of queued background work. Backpressure is applied before enqueue when the total queue is full.
 
-Cancellation is accepted before enqueue and while queued. Worker count defaults to half the logical processors, clamped to 1..4.
+Cancellation is accepted before enqueue and while queued. Worker count defaults to half the logical processors, clamped to 1..4. The default foreground burst is eight items per worker when background work is waiting.
 
 ## Cache accounting
 
@@ -57,4 +57,4 @@ The common benchmark contract records:
 - cache hit/miss/generation/source-open counters
 - generation peak working set
 
-Performance budgets are added only after the Windows CI baseline is observed; CI green alone is not treated as acceptance.
+The Windows CI benchmark is enforced by `build/Test-ImagePerformance.ps1`. It gates cold generation, 1,000 persistent cache hits, bounded 64-request batch throughput, source-open/cache-hit invariants, and both absolute and incremental peak working set during batch generation.

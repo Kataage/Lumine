@@ -21,6 +21,35 @@ static byte[] CreateHeifFixture(Enums.ForeignHeifCompression compression)
         keep: Enums.ForeignKeep.None);
 }
 
+static void WriteAnimatedGif(string path)
+{
+    using var blank = NetVips.Image.Black(48, 32, bands: 3);
+    using var redValues = blank.NewFromImage([255, 0, 0]);
+    using var red = redValues.Copy(interpretation: Enums.Interpretation.Srgb);
+    using var blueValues = blank.NewFromImage([0, 0, 255]);
+    using var blue = blueValues.Copy(interpretation: Enums.Interpretation.Srgb);
+    using var pages = NetVips.Image.Arrayjoin([red, blue], across: 1);
+
+    pages.Gifsave(
+        path,
+        pageHeight: 32,
+        keepDuplicateFrames: true,
+        keep: Enums.ForeignKeep.None);
+}
+
+static void WriteP3ProfileJpeg(string path)
+{
+    using var blank = NetVips.Image.Black(96, 64, bands: 3);
+    using var greenValues = blank.NewFromImage([0, 240, 0]);
+    using var green = greenValues.Copy(interpretation: Enums.Interpretation.Srgb);
+    using var p3 = green.IccTransform("p3", inputProfile: "srgb");
+
+    p3.Jpegsave(
+        path,
+        q: 95,
+        keep: Enums.ForeignKeep.Icc);
+}
+
 static ThumbnailSource SourceFor(long assetId, long revision, string path)
 {
     var info = new FileInfo(path);
@@ -69,16 +98,16 @@ try
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
+    var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
     WriteRgb(webpPath);
-    await File.WriteAllBytesAsync(
-        gifPath,
-        Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
+    WriteAnimatedGif(gifPath);
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
+    WriteP3ProfileJpeg(p3Path);
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -103,6 +132,7 @@ try
 
     Require(pipeline.WorkerCount == 2, "Worker bound was not applied.");
     Require(pipeline.QueueCapacity == 8, "Queue bound was not applied.");
+    Require(pipeline.MaxForegroundBurst == 8, "Foreground fairness bound was not applied.");
 
     long assetId = 1;
     foreach (var sourcePath in new[] { jpgPath, pngPath, webpPath, gifPath })
@@ -120,6 +150,33 @@ try
             cachedImage.Interpretation == Enums.Interpretation.Srgb,
             "Cached thumbnail is not normalized to sRGB.");
         cachedImage.Invalidate();
+    }
+
+    var gifStaticSource = SourceFor(9, 1, gifPath);
+    var gifStaticResult = await pipeline.RequestAsync(
+        gifStaticSource,
+        ThumbnailProfiles.GridSmall);
+    Require(
+        gifStaticResult.Width == 48 && gifStaticResult.Height == 32,
+        $"Animated GIF preview must use only the first frame; got {gifStaticResult.Width}x{gifStaticResult.Height}.");
+
+    var p3Source = SourceFor(11, 1, p3Path);
+    var p3Result = await pipeline.RequestAsync(
+        p3Source,
+        ThumbnailProfiles.GridSmall);
+    using (var p3Cached = NetVips.Image.NewFromFile(p3Result.CachePath))
+    using (var redBand = p3Cached.ExtractBand(0))
+    using (var greenBand = p3Cached.ExtractBand(1))
+    using (var blueBand = p3Cached.ExtractBand(2))
+    {
+        var redMean = redBand.Avg();
+        var greenMean = greenBand.Avg();
+        var blueMean = blueBand.Avg();
+
+        Require(
+            redMean < 40 && greenMean > 180 && blueMean < 40,
+            $"Embedded P3 profile was not normalized to sRGB pixels: R={redMean:F1}, G={greenMean:F1}, B={blueMean:F1}.");
+        p3Cached.Invalidate();
     }
 
     var alphaSource = SourceFor(2, 1, pngPath);
@@ -154,6 +211,23 @@ try
     Require(
         pipeline.Diagnostics.SourceOpens == diagnosticsBeforeHit.SourceOpens,
         "Cache hit touched the original source.");
+
+    await using (var restartedPipeline = new ThumbnailPipeline(
+                     new ThumbnailCache(cacheRoot),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 1,
+                         QueueCapacity = 2
+                     }))
+    {
+        var restartedHit = await restartedPipeline.RequestAsync(
+            persistentSource,
+            ThumbnailProfiles.GridMedium);
+        Require(restartedHit.CacheHit, "Fresh pipeline/cache instance did not reuse persistent thumbnail.");
+        Require(
+            restartedPipeline.Diagnostics.SourceOpens == 0,
+            "Fresh pipeline persistent hit touched the deleted original source.");
+    }
 
     var corruptSource = SourceFor(30, 1, corruptSourcePath);
     var corruptFirst = await pipeline.RequestAsync(
