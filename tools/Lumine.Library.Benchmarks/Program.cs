@@ -75,6 +75,17 @@ try
         }
     }
 
+    using (recorder.Measure(CoreMetricNames.DatabaseReopen))
+    {
+        LibraryDatabase.ClearPools();
+        var reopenedDatabase = new LibraryDatabase(databasePath);
+        await reopenedDatabase.InitializeAsync();
+        repository = new LibraryRepository(reopenedDatabase);
+
+        _ = await repository.GetLibraryAsync(library.Id)
+            ?? throw new InvalidOperationException("Library was not available after database reopen.");
+    }
+
     using (recorder.Measure(CoreMetricNames.LibraryQuery))
     {
         var firstPage = await repository.GetAssetPageAsync(library.Id, 200);
