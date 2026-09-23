@@ -10,7 +10,6 @@ public sealed record LibraryInfo(
 
 public sealed record AssetInfo(
     long Id,
-    string AssetKey,
     long LibraryId,
     long? FolderId,
     string RelativePath,
