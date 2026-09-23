@@ -1,3 +1,4 @@
+using System.Globalization;
 using Lumine.Library;
 using Microsoft.Data.Sqlite;
 
@@ -187,7 +188,7 @@ try
         await walConnection.OpenAsync();
         await using var wal = walConnection.CreateCommand();
         wal.CommandText = "PRAGMA journal_mode;";
-        var journalMode = Convert.ToString(await wal.ExecuteScalarAsync());
+        var journalMode = Convert.ToString(await wal.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
         Require(
             string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase),
             $"Expected WAL journal mode, found '{journalMode}'.");
@@ -389,7 +390,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync()) == 2, "v1 database did not migrate to v2.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 2, "v1 database did not migrate to v2.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height FROM assets WHERE relative_path = 'legacy.jpg';";
@@ -417,7 +418,7 @@ try
         await futureConnection.OpenAsync();
         await using var journal = futureConnection.CreateCommand();
         journal.CommandText = "PRAGMA journal_mode;";
-        var mode = Convert.ToString(await journal.ExecuteScalarAsync());
+        var mode = Convert.ToString(await journal.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
         Require(
             !string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase),
             "Rejected future schema was modified before fail-closed validation.");

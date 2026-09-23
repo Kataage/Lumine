@@ -41,20 +41,19 @@ public sealed class LibraryIngestSession : IAsyncDisposable
         IReadOnlyList<AssetUpsert> assets,
         CancellationToken cancellationToken = default)
     {
-        var repository = _repository
-            ?? throw new ObjectDisposedException(nameof(LibraryIngestSession));
-        var connection = _connection
-            ?? throw new ObjectDisposedException(nameof(LibraryIngestSession));
+        ObjectDisposedException.ThrowIf(_repository is null, this);
+        ObjectDisposedException.ThrowIf(_connection is null, this);
+        var repository = _repository!;
+        var connection = _connection!;
 
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_repository is null || !ReferenceEquals(_connection, connection))
-            {
-                throw new ObjectDisposedException(nameof(LibraryIngestSession));
-            }
+            ObjectDisposedException.ThrowIf(
+                _repository is null || !ReferenceEquals(_connection, connection),
+                this);
 
-            return await repository.UpsertAssetsOnConnectionAsync(
+            return await LibraryRepository.UpsertAssetsOnConnectionAsync(
                 connection,
                 LibraryId,
                 assets,

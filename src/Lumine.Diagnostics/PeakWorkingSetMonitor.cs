@@ -8,16 +8,19 @@ public sealed class PeakWorkingSetMonitor : IAsyncDisposable
 
     private PeakWorkingSetMonitor(TimeSpan interval)
     {
-        if (interval <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(interval));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
 
-        _peakWorkingSetBytes = Environment.WorkingSet;
+        StartingWorkingSetBytes = Environment.WorkingSet;
+        _peakWorkingSetBytes = StartingWorkingSetBytes;
         _samplingTask = SampleAsync(interval);
     }
 
+    public long StartingWorkingSetBytes { get; }
+
     public long PeakWorkingSetBytes => Interlocked.Read(ref _peakWorkingSetBytes);
+
+    public long PeakAdditionalWorkingSetBytes =>
+        Math.Max(0, PeakWorkingSetBytes - StartingWorkingSetBytes);
 
     public static PeakWorkingSetMonitor Start(TimeSpan? interval = null) =>
         new(interval ?? TimeSpan.FromMilliseconds(10));

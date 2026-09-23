@@ -161,7 +161,7 @@ public sealed class LibraryRepository
         }
     }
 
-    internal async Task<int> UpsertAssetsOnConnectionAsync(
+    internal static async Task<int> UpsertAssetsOnConnectionAsync(
         SqliteConnection connection,
         long libraryId,
         IReadOnlyList<AssetUpsert> assets,
@@ -401,7 +401,7 @@ public sealed class LibraryRepository
         SqliteTransaction transaction,
         long libraryId,
         IReadOnlyList<PreparedAsset> prepared,
-        IReadOnlyDictionary<string, long> existingFolderIds,
+        Dictionary<string, long> existingFolderIds,
         CancellationToken cancellationToken)
     {
         var missing = prepared
@@ -452,7 +452,7 @@ public sealed class LibraryRepository
         SqliteTransaction transaction,
         long libraryId,
         IReadOnlyList<PreparedAsset> prepared,
-        IReadOnlyDictionary<string, long> folderIds,
+        Dictionary<string, long> folderIds,
         CancellationToken cancellationToken)
     {
         const int rowsPerCommand = 64;

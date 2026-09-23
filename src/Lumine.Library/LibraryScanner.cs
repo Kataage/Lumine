@@ -175,7 +175,7 @@ public sealed class LibraryScanner
         or System.Security.SecurityException;
 
     private static void AddFailureSample(
-        ICollection<LibraryScanFailure> failures,
+        List<LibraryScanFailure> failures,
         string path,
         string operation,
         Exception exception)
