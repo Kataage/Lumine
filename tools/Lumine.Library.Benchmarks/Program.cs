@@ -1,0 +1,144 @@
+using System.Globalization;
+using Lumine.Diagnostics;
+using Lumine.Library;
+
+static string? ReadOption(string[] args, string name)
+{
+    for (var index = 0; index < args.Length - 1; index++)
+    {
+        if (string.Equals(args[index], name, StringComparison.Ordinal))
+        {
+            return args[index + 1];
+        }
+    }
+
+    return null;
+}
+
+var countText = ReadOption(args, "--count") ?? "100000";
+if (!int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count <= 0)
+{
+    throw new ArgumentException("--count must be a positive integer.");
+}
+
+var output = ReadOption(args, "--output")
+    ?? Path.Combine("artifacts", "benchmarks", $"library-{count}.json");
+
+var tempRoot = Path.Combine(Path.GetTempPath(), $"lumine-library-benchmark-{Guid.NewGuid():N}");
+var libraryRoot = Path.Combine(tempRoot, "library");
+var databasePath = Path.Combine(tempRoot, "library.db");
+Directory.CreateDirectory(libraryRoot);
+
+var recorder = new BenchmarkRecorder();
+long databaseBytes = 0;
+var pageCount = 0;
+var traversed = 0;
+
+try
+{
+    var database = new LibraryDatabase(databasePath);
+
+    using (recorder.Measure(CoreMetricNames.DatabaseOpenMigration))
+    {
+        await database.InitializeAsync();
+    }
+
+    var repository = new LibraryRepository(database);
+    var library = await repository.RegisterLibraryAsync("Benchmark", libraryRoot);
+
+    using (recorder.Measure(CoreMetricNames.LibraryBulkUpsert))
+    {
+        const int batchSize = 4096;
+        await using var ingest = await repository.OpenIngestSessionAsync(library.Id);
+        var batch = new List<AssetUpsert>(batchSize);
+
+        foreach (var fixture in FixtureGenerator.Enumerate(count))
+        {
+            batch.Add(new AssetUpsert(
+                fixture.RelativePath,
+                fixture.FileSize,
+                fixture.ModifiedAtUtc,
+                fixture.Width,
+                fixture.Height,
+                fixture.Extension));
+
+            if (batch.Count == batchSize)
+            {
+                await ingest.WriteBatchAsync(batch);
+                batch.Clear();
+            }
+        }
+
+        if (batch.Count > 0)
+        {
+            await ingest.WriteBatchAsync(batch);
+        }
+    }
+
+    using (recorder.Measure(CoreMetricNames.DatabaseReopen))
+    {
+        LibraryDatabase.ClearPools();
+        var reopenedDatabase = new LibraryDatabase(databasePath);
+        await reopenedDatabase.InitializeAsync();
+        repository = new LibraryRepository(reopenedDatabase);
+
+        _ = await repository.GetLibraryAsync(library.Id)
+            ?? throw new InvalidOperationException("Library was not available after database reopen.");
+    }
+
+    using (recorder.Measure(CoreMetricNames.LibraryQuery))
+    {
+        var firstPage = await repository.GetAssetPageAsync(library.Id, 200);
+        if (firstPage.Items.Count == 0)
+        {
+            throw new InvalidOperationException("Library benchmark returned an empty first page.");
+        }
+    }
+
+    using (recorder.Measure(CoreMetricNames.LibraryKeysetTraversal))
+    {
+        AssetCursor? cursor = null;
+
+        do
+        {
+            var page = await repository.GetAssetPageAsync(library.Id, 512, cursor);
+            traversed += page.Items.Count;
+            pageCount++;
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+    }
+
+    if (traversed != count)
+    {
+        throw new InvalidOperationException($"Traversed {traversed} assets, expected {count}.");
+    }
+
+    LibraryDatabase.ClearPools();
+    databaseBytes = new FileInfo(databasePath).Length;
+
+    await recorder.WriteJsonAsync(
+        output,
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["kind"] = "library-core",
+            ["fixture_asset_count"] = count.ToString(CultureInfo.InvariantCulture),
+            ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
+            ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
+            ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
+            ["paging"] = "keyset:modified_at_utc_ticks,id"
+        });
+
+    Console.WriteLine($"Library benchmark: {count:N0} assets");
+    Console.WriteLine($"Keyset pages: {pageCount:N0}");
+    Console.WriteLine($"Database: {databaseBytes:N0} bytes");
+    Console.WriteLine($"Result: {Path.GetFullPath(output)}");
+}
+finally
+{
+    LibraryDatabase.ClearPools();
+    if (Directory.Exists(tempRoot))
+    {
+        Directory.Delete(tempRoot, recursive: true);
+    }
+}
