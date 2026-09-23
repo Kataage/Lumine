@@ -130,6 +130,24 @@ public sealed class LibraryRepository
         IReadOnlyList<AssetUpsert> assets,
         CancellationToken cancellationToken = default)
     {
+        await using var session = await OpenIngestSessionAsync(libraryId, cancellationToken).ConfigureAwait(false);
+        return await session.WriteBatchAsync(assets, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<LibraryIngestSession> OpenIngestSessionAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return new LibraryIngestSession(this, connection, libraryId);
+    }
+
+    internal async Task<int> UpsertAssetsOnConnectionAsync(
+        SqliteConnection connection,
+        long libraryId,
+        IReadOnlyList<AssetUpsert> assets,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(assets);
 
         if (assets.Count == 0)
@@ -160,7 +178,6 @@ public sealed class LibraryRepository
                 folderPath.Length == 0 ? null : LibraryPaths.FolderPathKey(folderPath)));
         }
 
-        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction();
 
         var folderIds = await LoadExistingFolderIdsAsync(
