@@ -16,13 +16,14 @@ The legacy Go/Wails implementation remains available on historical branches. v2 
 ## Module boundaries
 
 - **Lumine.Core**: dependency-free product/domain contracts.
+- **Lumine.Diagnostics**: product-independent performance/acceptance measurement utilities.
 - **Lumine.Library**: local-library persistence and indexing; depends only on Core.
 - **Lumine.Image**: image decoding, thumbnails and cache infrastructure; depends only on Core.
 - **Lumine.Viewer**: large-collection viewer contracts/rendering; depends only on Core.
 - **Lumine.App**: composition root and Avalonia desktop shell.
 - **Lumine.Foundation.Smoke**: runtime verification for foundation dependencies.
 
-See [docs/architecture.md](docs/architecture.md).
+See [docs/architecture.md](docs/architecture.md) and [docs/diagnostics.md](docs/diagnostics.md).
 
 ## Build
 
@@ -30,6 +31,8 @@ See [docs/architecture.md](docs/architecture.md).
 dotnet restore Lumine.sln
 dotnet build Lumine.sln -c Release
 dotnet run --project tests/Lumine.Foundation.Smoke/Lumine.Foundation.Smoke.csproj -c Release
+dotnet run --project tests/Lumine.Diagnostics.Smoke/Lumine.Diagnostics.Smoke.csproj -c Release
+dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release -- --count 100000
 dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true
 ```
 
