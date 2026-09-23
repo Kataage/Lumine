@@ -41,7 +41,7 @@ finally
 static async Task VerifyCursorPagingAsync()
 {
     var source = new FixturePageSource(100_000);
-    var provider = new CursorPagedViewerAssetProvider(
+    using var provider = new CursorPagedViewerAssetProvider(
         source,
         new ViewerOptions
         {
