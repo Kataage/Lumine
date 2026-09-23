@@ -58,8 +58,7 @@ public static class FixtureGenerator
         {
             var line = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{asset.Id}|{asset.RelativePath}|{asset.FileSize}|{asset.ModifiedAtUtc:O}|{asset.Width}|{asset.Height}
-");
+                $"{asset.Id}|{asset.RelativePath}|{asset.FileSize}|{asset.ModifiedAtUtc:O}|{asset.Width}|{asset.Height}\n");
             hash.AppendData(Encoding.UTF8.GetBytes(line));
         }
 
