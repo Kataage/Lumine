@@ -45,14 +45,27 @@ jobs:
       - name: Diagnostics smoke test
         run: dotnet run --project tests/Lumine.Diagnostics.Smoke/Lumine.Diagnostics.Smoke.csproj -c Release --no-build
 
+      - name: Library Core smoke test
+        run: dotnet run --project tests/Lumine.Library.Smoke/Lumine.Library.Smoke.csproj -c Release --no-build
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
-      - name: Upload Core baseline result
+      - name: Generate Library Core benchmarks
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $count --output "artifacts/benchmarks/library-$count.json"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Upload Core benchmark results
         uses: actions/upload-artifact@v4
         with:
-          name: lumine-core-baseline-${{ github.run_id }}
-          path: artifacts/benchmarks/core-100000.json
+          name: lumine-core-baselines-${{ github.run_id }}
+          path: artifacts/benchmarks/*.json
           if-no-files-found: error
 
       - name: Publish NativeAOT
