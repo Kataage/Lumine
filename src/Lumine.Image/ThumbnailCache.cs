@@ -14,6 +14,8 @@ public sealed class ThumbnailCache
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
+        VipsRuntimePolicy.EnsureConfigured();
+
         _rootPath = Path.GetFullPath(rootPath);
         Directory.CreateDirectory(_rootPath);
         CleanupInterruptedWrites();
@@ -75,6 +77,10 @@ public sealed class ThumbnailCache
                 return null;
             }
 
+            var width = image.Width;
+            var height = image.Height;
+            image.Invalidate();
+
             var length = new FileInfo(path).Length;
             if (length <= 0)
             {
@@ -86,8 +92,8 @@ public sealed class ThumbnailCache
                 cacheKey,
                 path,
                 true,
-                image.Width,
-                image.Height,
+                width,
+                height,
                 length);
         }
         catch (Exception exception) when (

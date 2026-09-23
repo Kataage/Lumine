@@ -77,6 +77,10 @@ try
     }
 
     var cache = new ThumbnailCache(cacheRoot);
+    Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
+    Require(
+        NetVips.Cache.MaxMem <= VipsRuntimePolicy.ThumbnailTrackedMemoryLimitBytes,
+        "libvips tracked-memory cache exceeds Image Core policy.");
     await using var pipeline = new ThumbnailPipeline(
         cache,
         new ThumbnailPipelineOptions
@@ -103,6 +107,7 @@ try
         Require(
             cachedImage.Interpretation == Enums.Interpretation.Srgb,
             "Cached thumbnail is not normalized to sRGB.");
+        cachedImage.Invalidate();
     }
 
     var alphaSource = SourceFor(2, 1, pngPath);
@@ -110,6 +115,7 @@ try
     using (var alphaCached = NetVips.Image.NewFromFile(alphaResult.CachePath))
     {
         Require(alphaCached.Bands >= 4, "PNG alpha channel was not preserved in WebP cache.");
+        alphaCached.Invalidate();
     }
 
     var orientationSource = SourceFor(10, 1, orientedPath);

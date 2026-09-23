@@ -78,12 +78,16 @@ internal sealed class ThumbnailGenerator
                 access: Enums.Access.Sequential,
                 failOn: Enums.FailOn.Error);
 
+            var width = persisted.Width;
+            var height = persisted.Height;
+            persisted.Invalidate();
+
             var result = new ThumbnailResult(
                 cacheKey,
                 cachePath,
                 false,
-                persisted.Width,
-                persisted.Height,
+                width,
+                height,
                 new FileInfo(cachePath).Length);
 
             Interlocked.Increment(ref _generated);
