@@ -65,6 +65,8 @@ public sealed class ViewerOptions
 
     public int PrefetchRows { get; init; } = 1;
 
+    public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(40);
+
     public int MetadataPageSize { get; init; } = 256;
 
     public int MetadataPageCacheSize { get; init; } = 8;
