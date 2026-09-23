@@ -1,14 +1,16 @@
-using System.Threading.Channels;
-
 namespace Lumine.Image;
 
 public sealed class ThumbnailPipeline : IAsyncDisposable
 {
     private readonly ThumbnailGenerator _generator;
-    private readonly Channel<WorkItem> _foreground;
-    private readonly Channel<WorkItem> _background;
+    private readonly object _queueGate = new();
+    private readonly Queue<WorkItem> _foreground = new();
+    private readonly Queue<WorkItem> _background = new();
+    private readonly SemaphoreSlim _queuedItems = new(0);
+    private readonly SemaphoreSlim _queueSlots;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task[] _workers;
+    private bool _disposed;
 
     public ThumbnailPipeline(
         ThumbnailCache cache,
@@ -22,10 +24,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         WorkerCount = options.WorkerCount;
         QueueCapacity = options.QueueCapacity;
+        _queueSlots = new SemaphoreSlim(options.QueueCapacity, options.QueueCapacity);
         _generator = new ThumbnailGenerator(cache);
 
-        _foreground = CreateQueue(options.QueueCapacity);
-        _background = CreateQueue(options.QueueCapacity);
         _workers = Enumerable.Range(0, options.WorkerCount)
             .Select(_ => Task.Run(WorkerLoopAsync))
             .ToArray();
@@ -45,30 +46,67 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
+        ThrowIfDisposed();
+
+        await _queueSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         var completion = new TaskCompletionSource<ThumbnailResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var item = new WorkItem(source, profile, completion, cancellationToken);
 
-        var writer = priority == ThumbnailPriority.Foreground
-            ? _foreground.Writer
-            : _background.Writer;
+        lock (_queueGate)
+        {
+            if (_disposed)
+            {
+                _queueSlots.Release();
+                throw new ObjectDisposedException(nameof(ThumbnailPipeline));
+            }
 
-        await writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+            if (priority == ThumbnailPriority.Foreground)
+            {
+                _foreground.Enqueue(item);
+            }
+            else
+            {
+                _background.Enqueue(item);
+            }
+        }
+
+        _queuedItems.Release();
 
         return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_shutdown.IsCancellationRequested)
+        List<WorkItem> abandoned;
+
+        lock (_queueGate)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            abandoned = new List<WorkItem>(_foreground.Count + _background.Count);
+
+            while (_foreground.TryDequeue(out var foreground))
+            {
+                abandoned.Add(foreground);
+            }
+
+            while (_background.TryDequeue(out var background))
+            {
+                abandoned.Add(background);
+            }
         }
 
-        _foreground.Writer.TryComplete();
-        _background.Writer.TryComplete();
+        foreach (var item in abandoned)
+        {
+            item.Completion.TrySetCanceled();
+        }
+
         _shutdown.Cancel();
 
         try
@@ -81,45 +119,35 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         finally
         {
             _shutdown.Dispose();
+            _queuedItems.Dispose();
+            _queueSlots.Dispose();
         }
     }
 
-    private static Channel<WorkItem> CreateQueue(int capacity) =>
-        Channel.CreateBounded<WorkItem>(
-            new BoundedChannelOptions(capacity)
-            {
-                FullMode = BoundedChannelFullMode.Wait,
-                SingleReader = false,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false
-            });
-
     private async Task WorkerLoopAsync()
     {
-        while (!_shutdown.IsCancellationRequested)
+        while (true)
         {
-            WorkItem? item = null;
+            await _queuedItems.WaitAsync(_shutdown.Token).ConfigureAwait(false);
 
-            if (_foreground.Reader.TryRead(out var foreground))
+            WorkItem? item;
+            lock (_queueGate)
             {
-                item = foreground;
+                if (_foreground.TryDequeue(out var foreground))
+                {
+                    item = foreground;
+                }
+                else if (_background.TryDequeue(out var background))
+                {
+                    item = background;
+                }
+                else
+                {
+                    continue;
+                }
             }
-            else if (_background.Reader.TryRead(out var background))
-            {
-                item = background;
-            }
-            else
-            {
-                var foregroundWait = _foreground.Reader
-                    .WaitToReadAsync(_shutdown.Token)
-                    .AsTask();
-                var backgroundWait = _background.Reader
-                    .WaitToReadAsync(_shutdown.Token)
-                    .AsTask();
 
-                await Task.WhenAny(foregroundWait, backgroundWait).ConfigureAwait(false);
-                continue;
-            }
+            _queueSlots.Release();
 
             if (item.CancellationToken.IsCancellationRequested)
             {
@@ -145,6 +173,14 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             {
                 item.Completion.TrySetException(exception);
             }
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        lock (_queueGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 
