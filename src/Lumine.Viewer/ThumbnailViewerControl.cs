@@ -187,23 +187,52 @@ public sealed class ThumbnailViewerControl : UserControl
             _prefetchCancellation?.Dispose();
             _prefetchCancellation = new CancellationTokenSource();
 
-            var rows = _session.Options.PrefetchRows;
-            if (rows <= 0)
+            if (_session.Options.PrefetchRows > 0)
             {
-                return;
+                _ = PrefetchAfterDelayAsync(_prefetchCancellation.Token);
             }
+        }
 
-            var startRow = Math.Max(0, _rowIndex - rows);
-            var endRow = _rowIndex + rows + 1;
-            var startIndex = checked(startRow * _columns);
-            var count = checked((int)Math.Min(
-                _session.Count - startIndex,
-                (endRow - startRow) * _columns));
+        private async Task PrefetchAfterDelayAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (_session.Options.PrefetchDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(
+                        _session.Options.PrefetchDelay,
+                        cancellationToken).ConfigureAwait(false);
+                }
 
-            _ = _session.PrefetchAsync(
-                startIndex,
-                count,
-                _prefetchCancellation.Token);
+                var rows = _session.Options.PrefetchRows;
+
+                var beforeStartRow = Math.Max(0, _rowIndex - rows);
+                var beforeRowCount = _rowIndex - beforeStartRow;
+                if (beforeRowCount > 0)
+                {
+                    await _session.PrefetchAsync(
+                        checked(beforeStartRow * _columns),
+                        checked((int)(beforeRowCount * _columns)),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                var afterStartRow = _rowIndex + 1;
+                var afterStartIndex = checked(afterStartRow * _columns);
+                if (afterStartIndex < _session.Count)
+                {
+                    var afterCount = checked((int)Math.Min(
+                        _session.Count - afterStartIndex,
+                        (long)rows * _columns));
+
+                    await _session.PrefetchAsync(
+                        afterStartIndex,
+                        afterCount,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
         }
 
         private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
