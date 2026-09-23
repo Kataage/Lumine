@@ -159,6 +159,25 @@ public sealed class LibraryDatabase
         }
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var migrationTableExists = await HasMigrationTableAsync(
+            connection,
+            cancellationToken).ConfigureAwait(false);
+
+        var applied = migrationTableExists
+            ? await ReadMigrationHistoryAsync(connection, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        if (migrationTableExists)
+        {
+            ValidateMigrationHistory(applied);
+        }
+        else if (await HasProductTablesAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            throw new LibrarySchemaException(
+                "Library database contains product tables but no migration history. Refusing to guess the schema.");
+        }
+
         await EnsureWalModeAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await ExecutePragmasAsync(
@@ -171,26 +190,18 @@ public sealed class LibraryDatabase
             """,
             cancellationToken).ConfigureAwait(false);
 
-        await using (var command = connection.CreateCommand())
+        if (!migrationTableExists)
         {
+            await using var command = connection.CreateCommand();
             command.CommandText =
                 """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
+                CREATE TABLE schema_migrations (
                     version INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     applied_at_utc_ticks INTEGER NOT NULL
                 );
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        var applied = await ReadMigrationHistoryAsync(connection, cancellationToken).ConfigureAwait(false);
-        ValidateMigrationHistory(applied);
-
-        if (applied.Count == 0 && await HasProductTablesAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            throw new LibrarySchemaException(
-                "Library database contains product tables but no migration history. Refusing to guess the schema.");
         }
 
         var appliedVersion = applied.Count == 0 ? 0 : applied[^1].Version;
@@ -333,6 +344,26 @@ public sealed class LibraryDatabase
                     $"Library migration {row.Version} name mismatch. Expected '{expected.Name}', found '{row.Name}'.");
             }
         }
+    }
+
+    private static async Task<bool> HasMigrationTableAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name = 'schema_migrations'
+            );
+            """;
+
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture) != 0;
     }
 
     private static async Task<bool> HasProductTablesAsync(
