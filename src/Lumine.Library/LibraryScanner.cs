@@ -19,7 +19,7 @@ public sealed class LibraryScanner
     public async Task<LibraryScanResult> ScanAsync(
         long libraryId,
         IProgress<LibraryScanProgress>? progress = null,
-        int batchSize = 512,
+        int batchSize = 2048,
         CancellationToken cancellationToken = default)
     {
         if (batchSize is < 1 or > 4096)
@@ -29,6 +29,10 @@ public sealed class LibraryScanner
 
         var library = await _repository.GetLibraryAsync(libraryId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Library {libraryId} does not exist.");
+
+        await using var ingest = await _repository.OpenIngestSessionAsync(
+            libraryId,
+            cancellationToken).ConfigureAwait(false);
 
         var batch = new List<AssetUpsert>(batchSize);
         var discovered = 0;
@@ -69,8 +73,7 @@ public sealed class LibraryScanner
 
                 if (batch.Count >= batchSize)
                 {
-                    persisted += await _repository.UpsertAssetsAsync(
-                        libraryId,
+                    persisted += await ingest.WriteBatchAsync(
                         batch,
                         cancellationToken).ConfigureAwait(false);
                     batch.Clear();
@@ -90,8 +93,7 @@ public sealed class LibraryScanner
 
         if (batch.Count > 0)
         {
-            persisted += await _repository.UpsertAssetsAsync(
-                libraryId,
+            persisted += await ingest.WriteBatchAsync(
                 batch,
                 cancellationToken).ConfigureAwait(false);
         }
