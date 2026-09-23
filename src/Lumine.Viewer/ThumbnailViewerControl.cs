@@ -26,7 +26,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
         _rows = new ListBox
         {
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             SelectionMode = SelectionMode.Single
         };
 
@@ -135,6 +135,10 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1001:Types that own disposable fields should be disposable",
+        Justification = "The row cancellation source is cancelled and disposed on visual detach.")]
     private sealed class ViewerRowControl : StackPanel
     {
         private readonly ViewerSession _session;
@@ -210,6 +214,10 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1001:Types that own disposable fields should be disposable",
+        Justification = "The tile cancellation source is cancelled and disposed on visual detach.")]
     private sealed class ViewerTileControl : Border
     {
         private readonly ViewerSession _session;
