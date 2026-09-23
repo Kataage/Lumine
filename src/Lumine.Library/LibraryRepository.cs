@@ -188,7 +188,13 @@ public sealed class LibraryRepository
             prepared,
             cancellationToken).ConfigureAwait(false);
 
-        if (folderIds.Count < prepared.Count)
+        var requiredFolderCount = prepared
+            .Where(static item => item.FolderKey is not null)
+            .Select(static item => item.FolderKey!)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+
+        if (folderIds.Count < requiredFolderCount)
         {
             await EnsureMissingFoldersAsync(
                 connection,
@@ -277,8 +283,8 @@ public sealed class LibraryRepository
         IReadOnlyDictionary<string, long> folderIds,
         CancellationToken cancellationToken)
     {
-        // 64 rows * 15 bound values = 960 variables, which stays below
-        // SQLite's historical 999-variable floor while reducing managed/native
+        // 64 rows * 13 row-specific bound values + one shared library id
+        // stays below SQLite's historical 999-variable floor while reducing managed/native
         // command crossings by roughly two orders of magnitude.
         const int rowsPerCommand = 64;
 
