@@ -21,7 +21,7 @@ public sealed class ThumbnailCache
 
     public string RootPath => _rootPath;
 
-    public string GetCacheKey(ThumbnailSource source, ThumbnailProfile profile)
+    public static string GetCacheKey(ThumbnailSource source, ThumbnailProfile profile)
     {
         ValidateSource(source);
         ValidateProfile(profile);

@@ -30,7 +30,7 @@ static void WriteRgb(string path, int width = 320, int height = 200)
 static void WriteRgbaPng(string path)
 {
     using var blank = NetVips.Image.Black(240, 160, bands: 4);
-    using var rgbaValues = blank.NewFromImage(new[] { 20, 80, 160, 128 });
+    using var rgbaValues = blank.NewFromImage(SmokeConstants.RgbaPixel);
     using var rgba = rgbaValues.Copy(interpretation: Enums.Interpretation.Srgb);
     rgba.WriteToFile(path);
 }
@@ -70,7 +70,8 @@ try
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
-    using (var oriented = baseImage.Mutate(image => image.Set("orientation", 6)))
+    using (var oriented = baseImage.Mutate(
+               image => image.Set(GValue.GIntType, "orientation", 6)))
     {
         oriented.WriteToFile(orientedPath);
     }
@@ -236,4 +237,9 @@ finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static class SmokeConstants
+{
+    public static readonly int[] RgbaPixel = [20, 80, 160, 128];
 }

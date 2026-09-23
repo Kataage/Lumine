@@ -33,7 +33,7 @@ internal sealed class ThumbnailGenerator
         ThumbnailCache.ValidateProfile(profile);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheKey = _cache.GetCacheKey(source, profile);
+        var cacheKey = ThumbnailCache.GetCacheKey(source, profile);
         var cached = _cache.TryOpenValid(cacheKey, cancellationToken);
         if (cached is not null)
         {
