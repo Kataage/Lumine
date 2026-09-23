@@ -141,50 +141,60 @@ public sealed class DecodedBitmapCache : IDisposable
             bufferSize: 64 * 1024,
             FileOptions.SequentialScan);
         var bitmap = new Bitmap(stream);
-        cancellationToken.ThrowIfCancellationRequested();
+        var admitted = false;
 
-        var estimatedBytes = checked(
-            (long)bitmap.PixelSize.Width
-            * bitmap.PixelSize.Height
-            * 4L);
-
-        lock (_gate)
+        try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (_entries.TryGetValue(fullPath, out var raced))
+            var estimatedBytes = checked(
+                (long)bitmap.PixelSize.Width
+                * bitmap.PixelSize.Height
+                * 4L);
+
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                if (_entries.TryGetValue(fullPath, out var raced))
+                {
+                    raced.Leases++;
+                    raced.LastAccess = NextSequence();
+                    return new DecodedBitmapLease(this, fullPath, raced.Bitmap);
+                }
+
+                if (estimatedBytes > _byteLimit)
+                {
+                    throw new InvalidOperationException(
+                        $"Decoded thumbnail requires {estimatedBytes:N0} bytes, above cache limit {_byteLimit:N0}.");
+                }
+
+                EvictForLocked(estimatedBytes);
+
+                if (_entries.Count >= _entryLimit
+                    || _estimatedBytes + estimatedBytes > _byteLimit)
+                {
+                    throw new InvalidOperationException(
+                        "Decoded thumbnail cache is fully pinned and cannot admit another bitmap within its hard limits.");
+                }
+
+                var entry = new Entry(bitmap, estimatedBytes, NextSequence())
+                {
+                    Leases = 1
+                };
+                _entries[fullPath] = entry;
+                _estimatedBytes += estimatedBytes;
+                admitted = true;
+
+                return new DecodedBitmapLease(this, fullPath, bitmap);
+            }
+        }
+        finally
+        {
+            if (!admitted)
             {
                 bitmap.Dispose();
-                raced.Leases++;
-                raced.LastAccess = NextSequence();
-                return new DecodedBitmapLease(this, fullPath, raced.Bitmap);
             }
-
-            if (estimatedBytes > _byteLimit)
-            {
-                bitmap.Dispose();
-                throw new InvalidOperationException(
-                    $"Decoded thumbnail requires {estimatedBytes:N0} bytes, above cache limit {_byteLimit:N0}.");
-            }
-
-            EvictForLocked(estimatedBytes);
-
-            if (_entries.Count >= _entryLimit
-                || _estimatedBytes + estimatedBytes > _byteLimit)
-            {
-                bitmap.Dispose();
-                throw new InvalidOperationException(
-                    "Decoded thumbnail cache is fully pinned and cannot admit another bitmap within its hard limits.");
-            }
-
-            var entry = new Entry(bitmap, estimatedBytes, NextSequence())
-            {
-                Leases = 1
-            };
-            _entries[fullPath] = entry;
-            _estimatedBytes += estimatedBytes;
-
-            return new DecodedBitmapLease(this, fullPath, bitmap);
         }
     }
 
