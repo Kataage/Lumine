@@ -8,7 +8,7 @@ public sealed class DiagnosticsSession
     private DiagnosticsSession(BenchmarkRecorder recorder)
     {
         Recorder = recorder;
-        _startupStart = recorder.CaptureStart();
+        _startupStart = BenchmarkRecorder.CaptureStart();
     }
 
     public BenchmarkRecorder Recorder { get; }
