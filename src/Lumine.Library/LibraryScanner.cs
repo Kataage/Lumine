@@ -171,7 +171,8 @@ public sealed class LibraryScanner
 
     private static bool IsFilesystemFailure(Exception exception) =>
         exception is IOException
-        or UnauthorizedAccessException;
+        or UnauthorizedAccessException
+        or System.Security.SecurityException;
 
     private static void AddFailureSample(
         ICollection<LibraryScanFailure> failures,
