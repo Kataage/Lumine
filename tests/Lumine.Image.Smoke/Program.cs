@@ -327,7 +327,15 @@ try
     var fakeInterrupted = Path.Combine(cacheRoot, "dead.tmp.webp");
     await File.WriteAllBytesAsync(fakeInterrupted, [1, 2, 3]);
     _ = new ThumbnailCache(cacheRoot);
-    Require(!File.Exists(fakeInterrupted), "Interrupted thumbnail write was not cleaned up.");
+    Require(
+        File.Exists(fakeInterrupted),
+        "Fresh temporary write was deleted as if it were interrupted.");
+
+    File.SetLastWriteTimeUtc(
+        fakeInterrupted,
+        DateTime.UtcNow - ThumbnailCache.InterruptedWriteGracePeriod - TimeSpan.FromMinutes(1));
+    _ = new ThumbnailCache(cacheRoot);
+    Require(!File.Exists(fakeInterrupted), "Stale interrupted thumbnail write was not cleaned up.");
 
     var prune = await cache.PruneAsync(0);
     Require(prune.FilesDeleted > 0, "Thumbnail prune removed no files.");
