@@ -26,8 +26,15 @@ $tenK = Read-LibraryBenchmark 10000
 $fiftyK = Read-LibraryBenchmark 50000
 $hundredK = Read-LibraryBenchmark 100000
 
+$coldPath = Join-Path $BenchmarkDirectory "library-100000-cold.json"
+if (-not (Test-Path $coldPath)) {
+    throw "Missing cold 100k Library benchmark result: $coldPath"
+}
+$coldHundredK = Get-Content $coldPath -Raw | ConvertFrom-Json
+
 $bulk50 = Get-Metric $fiftyK "library.bulk_upsert"
 $bulk100 = Get-Metric $hundredK "library.bulk_upsert"
+$coldBulk100 = Get-Metric $coldHundredK "library.bulk_upsert"
 $reopen100 = Get-Metric $hundredK "library.database_reopen"
 $query100 = Get-Metric $hundredK "library.query"
 $keyset100 = Get-Metric $hundredK "library.keyset_traversal"
@@ -45,6 +52,10 @@ if ($hundredK.metadata.paging -ne "keyset:modified_at_utc_ticks,id") {
 
 # Budgets intentionally include substantial hosted-runner headroom while still
 # rejecting the previously observed 17-45 second write-path regressions.
+if ([double]$coldBulk100.durationMs -gt 12000) {
+    throw "Cold 100k bulk ingest exceeded 12 s: $($coldBulk100.durationMs) ms"
+}
+
 if ([double]$bulk100.durationMs -gt 10000) {
     throw "100k bulk ingest exceeded 10 s: $($bulk100.durationMs) ms"
 }
@@ -74,6 +85,7 @@ if ($databaseBytes100 -gt 40MB) {
 }
 
 Write-Host "Library performance acceptance passed."
+Write-Host ("Cold 100k ingest: {0:N1} ms" -f $coldBulk100.durationMs)
 Write-Host ("10k ingest: {0:N1} ms" -f (Get-Metric $tenK "library.bulk_upsert").durationMs)
 Write-Host ("50k ingest: {0:N1} ms" -f $bulk50.durationMs)
 Write-Host ("100k ingest: {0:N1} ms" -f $bulk100.durationMs)
