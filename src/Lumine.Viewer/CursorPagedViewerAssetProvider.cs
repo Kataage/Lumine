@@ -1,6 +1,6 @@
 namespace Lumine.Viewer;
 
-public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider
+public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisposable
 {
     private readonly IViewerPageSource _source;
     private readonly int _pageSize;
@@ -34,6 +34,8 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider
     }
 
     public long Count => _source.Count;
+
+    public void Dispose() => _gate.Dispose();
 
     public ViewerPagingDiagnostics Diagnostics =>
         new(
