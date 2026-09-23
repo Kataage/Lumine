@@ -9,6 +9,18 @@ static void Require(bool condition, string message)
     }
 }
 
+static byte[] CreateHeifFixture(Enums.ForeignHeifCompression compression)
+{
+    using var blank = NetVips.Image.Black(8, 6, bands: 3);
+    using var image = blank.Copy(interpretation: Enums.Interpretation.Srgb);
+
+    return image.HeifsaveBuffer(
+        q: 80,
+        compression: compression,
+        effort: 0,
+        keep: Enums.ForeignKeep.None);
+}
+
 static ThumbnailSource SourceFor(long assetId, long revision, string path)
 {
     var info = new FileInfo(path);
@@ -215,7 +227,7 @@ try
         var avifPath = Path.Combine(sourceRoot, "sample.avif");
         await File.WriteAllBytesAsync(
             avifPath,
-            VipsCapabilities.CreateHeifFixture(Enums.ForeignHeifCompression.Av1));
+            CreateHeifFixture(Enums.ForeignHeifCompression.Av1));
         var avifResult = await pipeline.RequestAsync(
             SourceFor(50, 1, avifPath),
             ThumbnailProfiles.GridSmall);
@@ -227,7 +239,7 @@ try
         var heicPath = Path.Combine(sourceRoot, "sample.heic");
         await File.WriteAllBytesAsync(
             heicPath,
-            VipsCapabilities.CreateHeifFixture(Enums.ForeignHeifCompression.Hevc));
+            CreateHeifFixture(Enums.ForeignHeifCompression.Hevc));
         var heicResult = await pipeline.RequestAsync(
             SourceFor(51, 1, heicPath),
             ThumbnailProfiles.GridSmall);
