@@ -30,8 +30,8 @@ static void WriteRgb(string path, int width = 320, int height = 200)
 static void WriteRgbaPng(string path)
 {
     using var blank = NetVips.Image.Black(240, 160, bands: 4);
-    using var rgba = blank.NewFromImage([20, 80, 160, 128])
-        .Copy(interpretation: Enums.Interpretation.Srgb);
+    using var rgbaValues = blank.NewFromImage(new[] { 20, 80, 160, 128 });
+    using var rgba = rgbaValues.Copy(interpretation: Enums.Interpretation.Srgb);
     rgba.WriteToFile(path);
 }
 
@@ -68,8 +68,8 @@ try
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
 
-    using (var baseImage = NetVips.Image.Black(120, 60, bands: 3)
-               .Copy(interpretation: Enums.Interpretation.Srgb))
+    using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
+    using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
     using (var oriented = baseImage.Mutate(image => image.Set("orientation", 6)))
     {
         oriented.WriteToFile(orientedPath);
