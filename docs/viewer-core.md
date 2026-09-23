@@ -66,3 +66,20 @@ CI runs a real Avalonia headless 100k smoke and records 10k / 50k / 100k benchma
 - absolute and incremental peak working set
 
 The realized UI object count must remain a function of the viewport, not the total asset count.
+
+
+## Performance budgets
+
+The hosted Windows benchmark uses 10k, 50k and 100k logical libraries. CI fails if any run exceeds:
+
+- first viewport realization: 1.5 s
+- 40-jump fast-scroll refresh workload: 1.5 s
+- realized rows: 16
+- attached tiles: 128
+- thumbnail requests in the scroll workload: 1,600
+- decoded cache: 64 entries / 32 MiB
+- absolute peak working set: 160 MiB
+- incremental peak working set: 128 MiB
+- fast-scroll managed allocation: 96 MiB
+
+The gate also requires stale thumbnail cancellation, zero remaining in-flight work, and explicit non-scaling checks between 10k and 100k for realized rows, attached tiles, and peak working set.
