@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -105,7 +106,9 @@ public sealed class LibraryDatabase
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_migrations;";
-            appliedVersion = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+            appliedVersion = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
         }
 
         foreach (var migration in Migrations)
