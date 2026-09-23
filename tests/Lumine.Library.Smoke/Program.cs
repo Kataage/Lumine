@@ -137,6 +137,35 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
     await command.ExecuteNonQueryAsync();
 }
 
+static async Task CreateUntrackedProductDatabaseAsync(string path)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+    await using var connection = new SqliteConnection(
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString());
+    await connection.OpenAsync();
+
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        CREATE TABLE schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at_utc_ticks INTEGER NOT NULL
+        );
+
+        CREATE TABLE libraries (
+            id INTEGER PRIMARY KEY
+        );
+        """;
+    await command.ExecuteNonQueryAsync();
+}
+
 var tempRoot = Path.Combine(Path.GetTempPath(), $"lumine-library-smoke-{Guid.NewGuid():N}");
 var libraryRoot = Path.Combine(tempRoot, "library");
 var databasePath = Path.Combine(tempRoot, "data", "library.db");
@@ -378,6 +407,29 @@ try
     {
         await futureDatabase.InitializeAsync();
         throw new InvalidOperationException("Future schema was incorrectly accepted.");
+    }
+    catch (LibrarySchemaException)
+    {
+    }
+
+    await using (var futureConnection = new SqliteConnection($"Data Source={futurePath};Pooling=False"))
+    {
+        await futureConnection.OpenAsync();
+        await using var journal = futureConnection.CreateCommand();
+        journal.CommandText = "PRAGMA journal_mode;";
+        var mode = Convert.ToString(await journal.ExecuteScalarAsync());
+        Require(
+            !string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase),
+            "Rejected future schema was modified before fail-closed validation.");
+    }
+
+    var untrackedPath = Path.Combine(tempRoot, "untracked.db");
+    await CreateUntrackedProductDatabaseAsync(untrackedPath);
+    var untrackedDatabase = new LibraryDatabase(untrackedPath);
+    try
+    {
+        await untrackedDatabase.InitializeAsync();
+        throw new InvalidOperationException("Existing product tables without migration history were accepted.");
     }
     catch (LibrarySchemaException)
     {
