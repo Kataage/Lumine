@@ -108,7 +108,7 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             SELECT
-                id, asset_key, library_id, folder_id,
+                id, library_id, folder_id,
                 relative_path, file_name, extension,
                 file_size, modified_at_utc_ticks,
                 width, height, format
@@ -295,91 +295,161 @@ public sealed class LibraryRepository
         IReadOnlyDictionary<string, long> folderIds,
         CancellationToken cancellationToken)
     {
-        // 64 rows * 13 row-specific bound values + one shared library id
-        // stays below SQLite's historical 999-variable floor while reducing managed/native
-        // command crossings by roughly two orders of magnitude.
         const int rowsPerCommand = 64;
+        var fullRows = prepared.Count / rowsPerCommand * rowsPerCommand;
 
-        for (var offset = 0; offset < prepared.Count; offset += rowsPerCommand)
+        if (fullRows > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var count = Math.Min(rowsPerCommand, prepared.Count - offset);
+            await using var command = CreateAssetUpsertCommand(
+                connection,
+                transaction,
+                libraryId,
+                rowsPerCommand,
+                out var bindings);
 
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-
-            var rows = new string[count];
-            var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
-
-            for (var index = 0; index < count; index++)
+            for (var offset = 0; offset < fullRows; offset += rowsPerCommand)
             {
-                var item = prepared[offset + index];
-                var suffix = index.ToString(CultureInfo.InvariantCulture);
-                var assetKey = "$asset_key_" + suffix;
-                var folderId = "$folder_id_" + suffix;
-                var relativePath = "$relative_path_" + suffix;
-                var relativePathKey = "$relative_path_key_" + suffix;
-                var fileName = "$file_name_" + suffix;
-                var extension = "$extension_" + suffix;
-                var fileSize = "$file_size_" + suffix;
-                var modifiedAt = "$modified_at_" + suffix;
-                var width = "$width_" + suffix;
-                var height = "$height_" + suffix;
-                var format = "$format_" + suffix;
-                var createdAt = "$created_at_" + suffix;
-                var updatedAt = "$updated_at_" + suffix;
+                cancellationToken.ThrowIfCancellationRequested();
+                BindAssetUpsertCommand(
+                    command,
+                    bindings,
+                    prepared,
+                    offset,
+                    rowsPerCommand,
+                    folderIds);
 
-                rows[index] =
-                    $"({assetKey}, $library_id, {folderId}, {relativePath}, {relativePathKey}, " +
-                    $"{fileName}, {extension}, {fileSize}, {modifiedAt}, {width}, {height}, {format}, " +
-                    $"{createdAt}, {updatedAt})";
-
-                command.Parameters.AddWithValue(assetKey, Guid.CreateVersion7().ToString("N"));
-                command.Parameters.AddWithValue(
-                    folderId,
-                    item.FolderKey is null ? DBNull.Value : folderIds[item.FolderKey]);
-                command.Parameters.AddWithValue(relativePath, item.RelativePath);
-                command.Parameters.AddWithValue(relativePathKey, item.RelativePathKey);
-                command.Parameters.AddWithValue(fileName, item.FileName);
-                command.Parameters.AddWithValue(extension, item.Extension);
-                command.Parameters.AddWithValue(fileSize, item.Source.FileSize);
-                command.Parameters.AddWithValue(modifiedAt, item.Source.ModifiedAtUtc.UtcDateTime.Ticks);
-                command.Parameters.AddWithValue(width, item.Source.Width.HasValue ? item.Source.Width.Value : DBNull.Value);
-                command.Parameters.AddWithValue(height, item.Source.Height.HasValue ? item.Source.Height.Value : DBNull.Value);
-                command.Parameters.AddWithValue(
-                    format,
-                    string.IsNullOrWhiteSpace(item.Source.Format)
-                        ? item.Extension
-                        : item.Source.Format.Trim());
-                command.Parameters.AddWithValue(createdAt, nowTicks);
-                command.Parameters.AddWithValue(updatedAt, nowTicks);
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
+        }
 
-            command.Parameters.AddWithValue("$library_id", libraryId);
-            command.CommandText =
-                $"""
-                INSERT INTO assets(
-                    asset_key, library_id, folder_id,
-                    relative_path, relative_path_key,
-                    file_name, extension,
-                    file_size, modified_at_utc_ticks,
-                    width, height, format,
-                    created_at_utc_ticks, updated_at_utc_ticks)
-                VALUES {string.Join(", ", rows)}
-                ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
-                    folder_id = excluded.folder_id,
-                    relative_path = excluded.relative_path,
-                    file_name = excluded.file_name,
-                    extension = excluded.extension,
-                    file_size = excluded.file_size,
-                    modified_at_utc_ticks = excluded.modified_at_utc_ticks,
-                    width = COALESCE(excluded.width, assets.width),
-                    height = COALESCE(excluded.height, assets.height),
-                    format = COALESCE(excluded.format, assets.format),
-                    updated_at_utc_ticks = excluded.updated_at_utc_ticks;
-                """;
+        var remaining = prepared.Count - fullRows;
+        if (remaining > 0)
+        {
+            await using var command = CreateAssetUpsertCommand(
+                connection,
+                transaction,
+                libraryId,
+                remaining,
+                out var bindings);
+
+            BindAssetUpsertCommand(
+                command,
+                bindings,
+                prepared,
+                fullRows,
+                remaining,
+                folderIds);
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static SqliteCommand CreateAssetUpsertCommand(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        int rowCount,
+        out AssetCommandBinding[] bindings)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.Add("$now", SqliteType.Integer);
+
+        bindings = new AssetCommandBinding[rowCount];
+        var rows = new string[rowCount];
+
+        for (var index = 0; index < rowCount; index++)
+        {
+            var suffix = index.ToString(CultureInfo.InvariantCulture);
+            var folderId = command.Parameters.Add("$folder_id_" + suffix, SqliteType.Integer);
+            var relativePath = command.Parameters.Add("$relative_path_" + suffix, SqliteType.Text);
+            var relativePathKey = command.Parameters.Add("$relative_path_key_" + suffix, SqliteType.Text);
+            var fileName = command.Parameters.Add("$file_name_" + suffix, SqliteType.Text);
+            var extension = command.Parameters.Add("$extension_" + suffix, SqliteType.Text);
+            var fileSize = command.Parameters.Add("$file_size_" + suffix, SqliteType.Integer);
+            var modifiedAt = command.Parameters.Add("$modified_at_" + suffix, SqliteType.Integer);
+            var width = command.Parameters.Add("$width_" + suffix, SqliteType.Integer);
+            var height = command.Parameters.Add("$height_" + suffix, SqliteType.Integer);
+            var format = command.Parameters.Add("$format_" + suffix, SqliteType.Text);
+
+            bindings[index] = new AssetCommandBinding(
+                folderId,
+                relativePath,
+                relativePathKey,
+                fileName,
+                extension,
+                fileSize,
+                modifiedAt,
+                width,
+                height,
+                format);
+
+            rows[index] =
+                $"($library_id, {folderId.ParameterName}, {relativePath.ParameterName}, " +
+                $"{relativePathKey.ParameterName}, {fileName.ParameterName}, {extension.ParameterName}, " +
+                $"{fileSize.ParameterName}, {modifiedAt.ParameterName}, {width.ParameterName}, " +
+                $"{height.ParameterName}, {format.ParameterName}, $now, $now)";
+        }
+
+        command.CommandText =
+            $"""
+            INSERT INTO assets(
+                library_id, folder_id,
+                relative_path, relative_path_key,
+                file_name, extension,
+                file_size, modified_at_utc_ticks,
+                width, height, format,
+                created_at_utc_ticks, updated_at_utc_ticks)
+            VALUES {string.Join(", ", rows)}
+            ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
+                folder_id = excluded.folder_id,
+                relative_path = excluded.relative_path,
+                file_name = excluded.file_name,
+                extension = excluded.extension,
+                file_size = excluded.file_size,
+                modified_at_utc_ticks = excluded.modified_at_utc_ticks,
+                width = COALESCE(excluded.width, assets.width),
+                height = COALESCE(excluded.height, assets.height),
+                format = COALESCE(excluded.format, assets.format),
+                updated_at_utc_ticks = excluded.updated_at_utc_ticks;
+            """;
+
+        command.Prepare();
+        return command;
+    }
+
+    private static void BindAssetUpsertCommand(
+        SqliteCommand command,
+        IReadOnlyList<AssetCommandBinding> bindings,
+        IReadOnlyList<PreparedAsset> prepared,
+        int offset,
+        int count,
+        IReadOnlyDictionary<string, long> folderIds)
+    {
+        command.Parameters["$now"].Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        for (var index = 0; index < count; index++)
+        {
+            var item = prepared[offset + index];
+            var binding = bindings[index];
+
+            binding.FolderId.Value =
+                item.FolderKey is null ? DBNull.Value : folderIds[item.FolderKey];
+            binding.RelativePath.Value = item.RelativePath;
+            binding.RelativePathKey.Value = item.RelativePathKey;
+            binding.FileName.Value = item.FileName;
+            binding.Extension.Value = item.Extension;
+            binding.FileSize.Value = item.Source.FileSize;
+            binding.ModifiedAt.Value = item.Source.ModifiedAtUtc.UtcDateTime.Ticks;
+            binding.Width.Value =
+                item.Source.Width.HasValue ? item.Source.Width.Value : DBNull.Value;
+            binding.Height.Value =
+                item.Source.Height.HasValue ? item.Source.Height.Value : DBNull.Value;
+            binding.Format.Value =
+                string.IsNullOrWhiteSpace(item.Source.Format)
+                    ? item.Extension
+                    : item.Source.Format.Trim();
         }
     }
 
@@ -400,7 +470,7 @@ public sealed class LibraryRepository
         command.CommandText = cursor is null
             ? """
               SELECT
-                  id, asset_key, library_id, folder_id,
+                  id, library_id, folder_id,
                   relative_path, file_name, extension,
                   file_size, modified_at_utc_ticks,
                   width, height, format
@@ -411,7 +481,7 @@ public sealed class LibraryRepository
               """
             : """
               SELECT
-                  id, asset_key, library_id, folder_id,
+                  id, library_id, folder_id,
                   relative_path, file_name, extension,
                   file_size, modified_at_utc_ticks,
                   width, height, format
@@ -526,6 +596,18 @@ public sealed class LibraryRepository
         return result;
     }
 
+    private sealed record AssetCommandBinding(
+        SqliteParameter FolderId,
+        SqliteParameter RelativePath,
+        SqliteParameter RelativePathKey,
+        SqliteParameter FileName,
+        SqliteParameter Extension,
+        SqliteParameter FileSize,
+        SqliteParameter ModifiedAt,
+        SqliteParameter Width,
+        SqliteParameter Height,
+        SqliteParameter Format);
+
     private sealed record PreparedAsset(
         AssetUpsert Source,
         string RelativePath,
@@ -565,17 +647,16 @@ public sealed class LibraryRepository
     private static AssetInfo ReadAsset(SqliteDataReader reader) =>
         new(
             reader.GetInt64(0),
-            reader.GetString(1),
-            reader.GetInt64(2),
-            reader.IsDBNull(3) ? null : reader.GetInt64(3),
+            reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetInt64(2),
+            reader.GetString(3),
             reader.GetString(4),
             reader.GetString(5),
-            reader.GetString(6),
-            reader.GetInt64(7),
-            FromTicks(reader.GetInt64(8)),
+            reader.GetInt64(6),
+            FromTicks(reader.GetInt64(7)),
+            reader.IsDBNull(8) ? null : reader.GetInt32(8),
             reader.IsDBNull(9) ? null : reader.GetInt32(9),
-            reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(10) ? null : reader.GetString(10));
 
     private static DateTimeOffset FromTicks(long ticks) =>
         new(new DateTime(ticks, DateTimeKind.Utc));
