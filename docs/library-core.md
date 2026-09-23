@@ -26,7 +26,7 @@ Migrations are versioned and transactional.
 
 ## Asset identity and paths
 
-A newly discovered asset receives an immutable random `asset_key`. The unique storage locator is `(library_id, relative_path_key)`. Re-ingesting the same path updates technical metadata without replacing `asset_key`.
+`assets.id` is the stable local asset identity. The unique storage locator is `(library_id, relative_path_key)`. Re-ingesting the same path updates technical metadata in place without replacing the row id. A second random identifier/index is intentionally avoided because it adds write amplification without adding a current product requirement.
 
 The original library root is stored only in Library Core. Asset DTOs expose relative paths, not an absolute source path.
 
@@ -42,7 +42,9 @@ The next page uses the previous page's final `(modified_at_utc_ticks, id)` pair.
 
 - streams filesystem enumeration rather than materializing the library
 - ignores reparse points
-- writes bounded batches through one connection-scoped ingest session, avoiding WAL reopen/checkpoint work between batches
+- writes bounded batches through one connection-scoped ingest session
+- uses prepared multi-row asset upserts to avoid one managed/native SQLite command crossing per asset
+- uses a bounded 32 MiB ingest cache, defers WAL auto-checkpoint during ingest, then checkpoints and restores normal settings on session disposal
 - supports cancellation and progress
 - never deletes rows merely because enumeration was incomplete
 - records `last_scan_completed_at` only when the scan completes without per-file failures
