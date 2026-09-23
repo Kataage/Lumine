@@ -42,7 +42,7 @@ The next page uses the previous page's final `(modified_at_utc_ticks, id)` pair.
 
 - streams filesystem enumeration rather than materializing the library
 - ignores reparse points
-- writes bounded batches
+- writes bounded batches through one connection-scoped ingest session, avoiding WAL reopen/checkpoint work between batches
 - supports cancellation and progress
 - never deletes rows merely because enumeration was incomplete
 - records `last_scan_completed_at` only when the scan completes without per-file failures
