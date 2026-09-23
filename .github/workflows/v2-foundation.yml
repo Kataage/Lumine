@@ -100,6 +100,16 @@ jobs:
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
 
+      - name: Generate Viewer Core benchmarks
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count $count --output "artifacts/benchmarks/viewer-$count.json"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
