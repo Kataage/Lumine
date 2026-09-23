@@ -10,6 +10,7 @@ public sealed class ViewerSession : IAsyncDisposable
     private long _thumbnailRequests;
     private long _thumbnailRequestsCoalesced;
     private long _thumbnailRequestsCancelled;
+    private long _thumbnailRequestsFailed;
     private int _attachedTiles;
     private bool _disposed;
 
@@ -50,6 +51,7 @@ public sealed class ViewerSession : IAsyncDisposable
                     Interlocked.Read(ref _thumbnailRequests),
                     Interlocked.Read(ref _thumbnailRequestsCoalesced),
                     Interlocked.Read(ref _thumbnailRequestsCancelled),
+                    Interlocked.Read(ref _thumbnailRequestsFailed),
                     _inFlight.Count,
                     Volatile.Read(ref _attachedTiles),
                     bitmap.EntryCount,
@@ -186,13 +188,35 @@ public sealed class ViewerSession : IAsyncDisposable
             // A background request may be intentionally cancelled when the
             // same asset becomes visible and is re-issued at foreground priority.
         }
+        catch
+        {
+            // Background prefetch is opportunistic. A visible tile will retry
+            // and surface the failure if/when the asset enters the viewport.
+        }
     }
 
     private async Task<ViewerThumbnail> RequestCoreAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,
-        CancellationToken cancellationToken) =>
-        await _thumbnails.RequestAsync(asset, priority, cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _thumbnails.RequestAsync(
+                asset,
+                priority,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            Interlocked.Increment(ref _thumbnailRequestsFailed);
+            throw;
+        }
+    }
 
     private async ValueTask<ViewerThumbnail> AwaitSharedAsync(
         long assetId,
