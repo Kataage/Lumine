@@ -8,6 +8,8 @@ public sealed class ThumbnailCache
 {
     public const int GeneratorVersion = 1;
 
+    public static TimeSpan InterruptedWriteGracePeriod { get; } = TimeSpan.FromMinutes(5);
+
     private readonly string _rootPath;
 
     public ThumbnailCache(string rootPath)
@@ -202,7 +204,11 @@ public sealed class ThumbnailCache
 
             if (path.EndsWith(".tmp.webp", StringComparison.OrdinalIgnoreCase))
             {
-                DeleteBestEffort(path);
+                if (IsStaleInterruptedWrite(path))
+                {
+                    DeleteBestEffort(path);
+                }
+
                 continue;
             }
 
@@ -263,7 +269,25 @@ public sealed class ThumbnailCache
                      "*.tmp.webp",
                      SearchOption.AllDirectories))
         {
-            DeleteBestEffort(path);
+            if (IsStaleInterruptedWrite(path))
+            {
+                DeleteBestEffort(path);
+            }
+        }
+    }
+
+    private static bool IsStaleInterruptedWrite(string path)
+    {
+        try
+        {
+            return File.GetLastWriteTimeUtc(path)
+                <= DateTime.UtcNow - InterruptedWriteGracePeriod;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
