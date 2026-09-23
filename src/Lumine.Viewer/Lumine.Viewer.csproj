@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Lumine.Core/Lumine.Core.csproj" />
   </ItemGroup>
 </Project>
