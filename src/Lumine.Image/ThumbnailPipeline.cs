@@ -48,7 +48,20 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-        await _queueSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var enqueueCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _shutdown.Token);
+
+        try
+        {
+            await _queueSlots.WaitAsync(enqueueCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            _shutdown.IsCancellationRequested
+            && !cancellationToken.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(ThumbnailPipeline));
+        }
 
         var completion = new TaskCompletionSource<ThumbnailResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -104,6 +117,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         foreach (var item in abandoned)
         {
+            _queueSlots.Release();
             item.Completion.TrySetCanceled();
         }
 
