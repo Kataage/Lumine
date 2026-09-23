@@ -62,3 +62,15 @@ The greenfield source tree follows one integration line:
 - `master` contains release-ready code only. Development work does not target `master` directly.
 - Version tags and GitHub Releases are created from `master`.
 - `legacy/develop-v1` preserves the former v1 development line. The historical `v2` branch is retained only as migration history and is not a development base.
+
+## Repository enforcement
+
+The documented branch model is also the intended GitHub enforcement model:
+
+- issue branches do not run duplicate push + PR copies of the full Core suite; the full suite runs on pull requests to `develop`, then again on the resulting `develop` push.
+- pull requests to `master` run the same full Windows Core acceptance and must use `develop` as their source branch.
+- a post-merge `master` check verifies that the released tree still matches `develop`.
+- stale runs for the same pull request/ref are cancelled through workflow concurrency.
+- branch protection/rulesets must require PRs and the appropriate checks on both `develop` and `master`; force-push and branch deletion should be disabled.
+
+The first greenfield promotion to the historical `master` branch is a bootstrap case: GitHub evaluates pull-request workflows from the base branch, so required greenfield checks on `master` can only be made mandatory after the greenfield workflow itself exists on `master`. Until that promotion, `master` remains the untouched v1 release line.
