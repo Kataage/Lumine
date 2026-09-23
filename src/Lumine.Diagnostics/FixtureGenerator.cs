@@ -30,11 +30,9 @@ public static class FixtureGenerator
         var fileName = string.Create(
             CultureInfo.InvariantCulture,
             $"asset-{index:D8}.{extension}");
-        var relativePath = Path.Combine(
-            "library",
-            folderA.ToString("D3", CultureInfo.InvariantCulture),
-            folderB.ToString("D3", CultureInfo.InvariantCulture),
-            fileName);
+        var relativePath = string.Create(
+            CultureInfo.InvariantCulture,
+            $"library/{folderA:D3}/{folderB:D3}/{fileName}");
 
         var width = 512 + (index * 37 % 7680);
         var height = 512 + (index * 53 % 4320);
@@ -115,7 +113,8 @@ public static class FixtureGenerator
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var fullPath = Path.Combine(fullRoot, asset.RelativePath);
+            var platformRelativePath = asset.RelativePath.Replace('/', Path.DirectorySeparatorChar);
+            var fullPath = Path.Combine(fullRoot, platformRelativePath);
             var directory = Path.GetDirectoryName(fullPath)!;
             if (!string.Equals(directory, lastDirectory, StringComparison.Ordinal))
             {
