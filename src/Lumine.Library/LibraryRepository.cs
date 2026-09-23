@@ -607,7 +607,7 @@ public sealed class LibraryRepository
         IReadOnlyList<PreparedAsset> prepared,
         int offset,
         int count,
-        IReadOnlyDictionary<string, long> folderIds)
+        Dictionary<string, long> folderIds)
     {
         command.Parameters["$now"].Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
 
