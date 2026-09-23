@@ -15,7 +15,7 @@ internal sealed class LibraryViewerPageSource : IViewerPageSource
         long assetCount)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
-        ArgumentOutOfRangeException.ThrowIfNegative(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ArgumentOutOfRangeException.ThrowIfNegative(assetCount);
 
         _libraryId = libraryId;
