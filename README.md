@@ -1,58 +1,36 @@
-# Lumine
+# Lumine v2
 
-Lumine は、大量のローカル画像を軽快に閲覧・整理するための Windows 向け画像ライブラリアプリです。
+Lumine v2 is a greenfield rebuild focused on a fast, low-overhead image-library core before AI features are added.
 
-## 現在の基本方針
+## Foundation stack
 
-- **画像を見ることを最優先**にした日本語 UI
-- 大量画像でも画面に必要な範囲だけを読み込む仮想スクロール
-- グリッド／リスト／全画面表示
-- 検索、フォルダー、状態、評価による絞り込み
-- 評価、お気に入り、カラーラベル、タグ、メモによる整理
-- EXIF 情報は必要になった時だけ遅延読み込み
-- SQLite + WAL によるローカル完結のインデックス
+- .NET 10 LTS
+- Avalonia 12
+- SQLite via Microsoft.Data.Sqlite
+- libvips via NetVips
+- Windows x64 as the first production target
+- NativeAOT as a release requirement
 
-### サムネイル画像をディスクへ保存しません
+The legacy Go/Wails implementation remains available on historical branches. v2 does not import or reference the legacy production source tree.
 
-Lumine は、表示専用のサムネイル画像や縮小コピーを独自ファイルとして生成・保存しません。
-一覧・詳細プレビューは、元画像から必要な表示サイズだけを**メモリ上**でデコードし、上限付きのメモリキャッシュで管理します。
+## Module boundaries
 
-そのため、画像コレクションとは別に巨大なサムネイルキャッシュが増え続ける設計にはしていません。
+- **Lumine.Core**: dependency-free product/domain contracts.
+- **Lumine.Library**: local-library persistence and indexing; depends only on Core.
+- **Lumine.Image**: image decoding, thumbnails and cache infrastructure; depends only on Core.
+- **Lumine.Viewer**: large-collection viewer contracts/rendering; depends only on Core.
+- **Lumine.App**: composition root and Avalonia desktop shell.
+- **Lumine.Foundation.Smoke**: runtime verification for foundation dependencies.
 
-## 主な操作
+See [docs/architecture.md](docs/architecture.md).
 
-- **画像フォルダーを追加**: 左の「ライブラリ」から追加します。登録後、自動で画像を一覧化します。
-- **画像を選択**: クリック。`Ctrl` で複数選択、`Shift` で範囲選択できます。
-- **全画面表示**: 画像をダブルクリックします。
-- **全画面で前後移動**: `←` / `→`
-- **全画面を閉じる**: `Esc`
-- **拡大・縮小**: 全画面表示中にマウスホイール。拡大時はドラッグで移動できます。
-- **検索・絞り込み**: 画面上部から操作します。適用中の条件はチップで表示され、個別または一括で解除できます。
+## Build
 
-## 開発
-
-バックエンドは Go + Wails v2、フロントエンドは React + TypeScript です。
-
-### フロントエンド
-
-```bash
-cd frontend
-npm ci
-npm run build
+```powershell
+dotnet restore Lumine.sln
+dotnet build Lumine.sln -c Release
+dotnet run --project tests/Lumine.Foundation.Smoke/Lumine.Foundation.Smoke.csproj -c Release
+dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true
 ```
 
-### Go
-
-```bash
-go vet ./...
-go test -race ./...
-go build ./...
-```
-
-### Windows アプリ
-
-```bash
-wails build -platform windows/amd64
-```
-
-GitHub Actions ではフロントエンドの lint / typecheck / unit test / build、Go の vet / build / race test、および Windows の Wails 通常版・portable 版ビルドを検証します。
+The repository pins SDK 10.0.401 in `global.json`.

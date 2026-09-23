@@ -1,0 +1,53 @@
+name: v2-foundation
+
+on:
+  push:
+    branches:
+      - v2
+      - 'v2-*'
+  pull_request:
+    branches:
+      - v2
+
+permissions:
+  contents: read
+
+jobs:
+  windows-foundation:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Restore
+        run: dotnet restore Lumine.sln
+
+      - name: Verify architecture boundaries
+        shell: pwsh
+        run: ./build/Verify-Architecture.ps1
+
+      - name: Build release
+        run: dotnet build Lumine.sln -c Release --no-restore
+
+      - name: Foundation runtime smoke test
+        run: dotnet run --project tests/Lumine.Foundation.Smoke/Lumine.Foundation.Smoke.csproj -c Release --no-build
+
+      - name: Publish NativeAOT
+        run: dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot
+
+      - name: Verify NativeAOT executable
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "artifacts/native-aot/Lumine.App.exe"
+          if (-not (Test-Path $exe)) {
+            throw "NativeAOT executable was not produced: $exe"
+          }
+          $item = Get-Item $exe
+          Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
