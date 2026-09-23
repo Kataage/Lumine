@@ -210,14 +210,28 @@ try
         }
     }
 
-    if (capabilities.HeifLoad && capabilities.HeifSave)
+    if (capabilities.AvifRoundTrip)
     {
-        var heifPath = Path.Combine(sourceRoot, "sample.heif");
-        WriteRgb(heifPath);
-        var heifResult = await pipeline.RequestAsync(
-            SourceFor(50, 1, heifPath),
+        var avifPath = Path.Combine(sourceRoot, "sample.avif");
+        await File.WriteAllBytesAsync(
+            avifPath,
+            VipsCapabilities.CreateHeifFixture(Enums.ForeignHeifCompression.Av1));
+        var avifResult = await pipeline.RequestAsync(
+            SourceFor(50, 1, avifPath),
             ThumbnailProfiles.GridSmall);
-        Require(File.Exists(heifResult.CachePath), "HEIF capability was reported but HEIF smoke failed.");
+        Require(File.Exists(avifResult.CachePath), "AVIF capability was reported but AVIF smoke failed.");
+    }
+
+    if (capabilities.HeicRoundTrip)
+    {
+        var heicPath = Path.Combine(sourceRoot, "sample.heic");
+        await File.WriteAllBytesAsync(
+            heicPath,
+            VipsCapabilities.CreateHeifFixture(Enums.ForeignHeifCompression.Hevc));
+        var heicResult = await pipeline.RequestAsync(
+            SourceFor(51, 1, heicPath),
+            ThumbnailProfiles.GridSmall);
+        Require(File.Exists(heicResult.CachePath), "HEIC capability was reported but HEIC smoke failed.");
     }
 
     var statsBeforePrune = await cache.GetStatsAsync();
@@ -234,7 +248,8 @@ try
     Require(prune.BytesAfter == 0, "Thumbnail prune did not enforce zero-byte target.");
 
     Console.WriteLine(
-        $"Image smoke: jpeg/png/webp/gif OK; HEIF load={capabilities.HeifLoad}, save={capabilities.HeifSave}; " +
+        $"Image smoke: jpeg/png/webp/gif OK; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
+        $"AVIF={capabilities.AvifRoundTrip}, HEIC={capabilities.HeicRoundTrip}; " +
         $"hits={pipeline.Diagnostics.CacheHits}, generated={pipeline.Diagnostics.Generated}, source-opens={pipeline.Diagnostics.SourceOpens}");
 }
 finally
