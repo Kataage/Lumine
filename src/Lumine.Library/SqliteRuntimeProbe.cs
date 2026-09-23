@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -13,12 +14,12 @@ public static class SqliteRuntimeProbe
 
         using var versionCommand = connection.CreateCommand();
         versionCommand.CommandText = "SELECT sqlite_version();";
-        var version = Convert.ToString(versionCommand.ExecuteScalar())
+        var version = Convert.ToString(versionCommand.ExecuteScalar(), CultureInfo.InvariantCulture)
             ?? throw new InvalidOperationException("SQLite did not return a version.");
 
         using var scalarCommand = connection.CreateCommand();
         scalarCommand.CommandText = "SELECT 1;";
-        var scalar = Convert.ToInt64(scalarCommand.ExecuteScalar());
+        var scalar = Convert.ToInt64(scalarCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
 
         return new SqliteProbeResult(version, scalar);
     }
