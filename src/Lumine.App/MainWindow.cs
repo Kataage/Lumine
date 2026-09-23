@@ -59,5 +59,12 @@ public sealed class MainWindow : Window
         });
 
         Content = content;
+        Opened += OnOpened;
+    }
+
+    private void OnOpened(object? sender, EventArgs e)
+    {
+        Program.Diagnostics.MarkWindowReady();
+        _ = Program.Diagnostics.FlushRequestedAsync();
     }
 }
