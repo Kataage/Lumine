@@ -40,7 +40,7 @@ A cache entry that cannot be opened as a valid image is deleted and regenerated 
 
 `ThumbnailPipeline` owns a bounded queue and a bounded worker set. Foreground work is preferred, but a bounded foreground burst prevents permanent starvation of queued background work. Backpressure is applied before enqueue when the total queue is full.
 
-Cancellation is accepted before enqueue and while queued. Worker count defaults to half the logical processors, clamped to 1..4. The default foreground burst is eight items per worker when background work is waiting.
+Cancellation is accepted before enqueue and while queued. Once libvips evaluation has started, the cancellation token drives NetVips `SetKill(true)` so obsolete foreground/background work can stop inside the native pipeline rather than occupying a worker until full decode/save completes. Worker count defaults to half the logical processors, clamped to 1..4. The default foreground burst is eight items per worker when background work is waiting.
 
 ## Cache accounting
 

@@ -89,6 +89,7 @@ try
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
+    var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
@@ -98,6 +99,7 @@ try
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
     WriteP3ProfileJpeg(p3Path);
+    WriteRgb(cancellationPath, 6000, 6000);
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -283,11 +285,47 @@ try
                 changedV2,
                 ThumbnailProfiles.GridSmall,
                 cancellationToken: cancelled.Token);
-            throw new InvalidOperationException("Cancelled thumbnail request unexpectedly succeeded.");
+            throw new InvalidOperationException("Pre-cancelled thumbnail request unexpectedly succeeded.");
         }
         catch (OperationCanceledException)
         {
         }
+    }
+
+    using (var nativeCancelled = new CancellationTokenSource())
+    {
+        var opensBeforeCancellation = pipeline.Diagnostics.SourceOpens;
+        var cancellationSource = SourceFor(46, 1, cancellationPath);
+        var cancellationTask = pipeline.RequestAsync(
+            cancellationSource,
+            ThumbnailProfiles.DetailPreview,
+            cancellationToken: nativeCancelled.Token);
+
+        for (var attempt = 0;
+             attempt < 2000 && pipeline.Diagnostics.SourceOpens == opensBeforeCancellation;
+             attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        Require(
+            pipeline.Diagnostics.SourceOpens > opensBeforeCancellation,
+            "Cancellation smoke never reached native source evaluation.");
+
+        nativeCancelled.Cancel();
+
+        try
+        {
+            _ = await cancellationTask;
+            throw new InvalidOperationException("In-flight native thumbnail cancellation unexpectedly completed.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Require(
+            !Directory.EnumerateFiles(cacheRoot, "*.tmp.webp", SearchOption.AllDirectories).Any(),
+            "Native cancellation left a temporary cache file behind.");
     }
 
     if (capabilities.AvifRoundTrip)

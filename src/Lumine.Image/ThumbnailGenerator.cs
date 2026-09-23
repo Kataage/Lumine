@@ -97,11 +97,22 @@ internal sealed class ThumbnailGenerator
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            thumbnail.Webpsave(
-                temporaryPath,
-                q: profile.Quality,
-                smartSubsample: true,
-                keep: Enums.ForeignKeep.None);
+            using var nativeCancellation = cancellationToken.Register(
+                static state => ((NetVips.Image)state!).SetKill(true),
+                thumbnail);
+
+            try
+            {
+                thumbnail.Webpsave(
+                    temporaryPath,
+                    q: profile.Quality,
+                    smartSubsample: true,
+                    keep: Enums.ForeignKeep.None);
+            }
+            catch (VipsException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             var cachePath = _cache.CommitTemporaryFile(cacheKey, temporaryPath);
