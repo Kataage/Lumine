@@ -34,7 +34,7 @@ try
 
     var first = await repository.GetAssetAsync(library.Id, "a.jpg")
         ?? throw new InvalidOperationException("a.jpg was not indexed.");
-    var stableKey = first.AssetKey;
+    var stableId = first.Id;
 
     await repository.UpsertAssetsAsync(
         library.Id,
@@ -50,7 +50,7 @@ try
 
     var updated = await repository.GetAssetAsync(library.Id, "a.jpg")
         ?? throw new InvalidOperationException("Updated a.jpg was not found.");
-    Require(updated.AssetKey == stableKey, "Asset identity changed during path-stable update.");
+    Require(updated.Id == stableId, "Asset identity changed during path-stable update.");
     Require(updated.Width == 1920 && updated.Height == 1080, "Technical metadata update failed.");
 
     const int fixtureCount = 2500;
