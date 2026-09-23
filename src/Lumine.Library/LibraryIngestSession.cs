@@ -17,6 +17,23 @@ public sealed class LibraryIngestSession : IAsyncDisposable
         LibraryId = libraryId;
     }
 
+    internal static async Task<LibraryIngestSession> CreateAsync(
+        LibraryRepository repository,
+        SqliteConnection connection,
+        long libraryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            PRAGMA wal_autocheckpoint=0;
+            PRAGMA cache_size=-32768;
+            """;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        return new LibraryIngestSession(repository, connection, libraryId);
+    }
+
     public long LibraryId { get; }
 
     public Task<int> WriteBatchAsync(
@@ -41,7 +58,24 @@ public sealed class LibraryIngestSession : IAsyncDisposable
         var connection = Interlocked.Exchange(ref _connection, null);
         if (connection is not null)
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await using var checkpoint = connection.CreateCommand();
+                checkpoint.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+                await checkpoint.ExecuteNonQueryAsync().ConfigureAwait(false);
+
+                await using var reset = connection.CreateCommand();
+                reset.CommandText =
+                    """
+                    PRAGMA wal_autocheckpoint=1000;
+                    PRAGMA cache_size=-2000;
+                    """;
+                await reset.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 }
