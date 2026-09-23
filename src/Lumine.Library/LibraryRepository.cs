@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -90,7 +91,9 @@ public sealed class LibraryRepository
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM assets WHERE library_id = $library_id;";
         command.Parameters.AddWithValue("$library_id", libraryId);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
     }
 
     public async Task<AssetInfo?> GetAssetAsync(
@@ -309,7 +312,7 @@ public sealed class LibraryRepository
             items.RemoveAt(items.Count - 1);
         }
 
-        var nextCursor = hasMore && items.Count > 0
+        AssetCursor? nextCursor = hasMore && items.Count > 0
             ? AssetCursor.From(items[^1])
             : null;
 
@@ -378,7 +381,9 @@ public sealed class LibraryRepository
         select.Parameters.AddWithValue("$library_id", libraryId);
         select.Parameters.AddWithValue("$relative_path_key", folderKey);
 
-        return Convert.ToInt64(await select.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+        return Convert.ToInt64(
+            await select.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
     }
 
     private static void ValidateAsset(AssetUpsert asset)
