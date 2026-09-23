@@ -3,7 +3,7 @@ namespace Lumine.Image;
 public static class VipsRuntimePolicy
 {
     public const ulong ThumbnailTrackedMemoryLimitBytes = 64UL * 1024 * 1024;
-    public const int ThumbnailOperationLimit = 256;
+    public const int ThumbnailOperationLimit = 0;
     public const int ThumbnailCachedFileLimit = 0;
 
     private static readonly object ConfigurationGate = new();

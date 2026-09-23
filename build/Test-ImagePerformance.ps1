@@ -33,6 +33,8 @@ $cacheFiles = [long]$result.metadata.cache_files
 $cacheBytes = [long]$result.metadata.cache_bytes
 $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
 $batchPeakAdditional = [long]$result.metadata.batch_peak_additional_working_set_bytes
+$vipsOpenFiles = [int]$result.metadata.vips_open_files
+$vipsOperationCacheSize = [int]$result.metadata.vips_operation_cache_size
 
 if ($requestCount -ne 64) {
     throw "Image benchmark request count changed unexpectedly: $requestCount"
@@ -74,12 +76,20 @@ if ($cacheBytes -le 0) {
     throw "Image cache benchmark produced zero persisted bytes."
 }
 
-if ($batchPeak -gt 256MB) {
-    throw "Thumbnail batch absolute peak working set exceeded 256 MiB: $batchPeak bytes"
+if ($batchPeak -gt 192MB) {
+    throw "Thumbnail batch absolute peak working set exceeded 192 MiB: $batchPeak bytes"
 }
 
-if ($batchPeakAdditional -gt 192MB) {
-    throw "Thumbnail batch added more than 192 MiB over process baseline: $batchPeakAdditional bytes"
+if ($batchPeakAdditional -gt 160MB) {
+    throw "Thumbnail batch added more than 160 MiB over process baseline: $batchPeakAdditional bytes"
+}
+
+if ($vipsOpenFiles -ne 0) {
+    throw "libvips retained source/cache file handles after benchmark work: $vipsOpenFiles"
+}
+
+if ($vipsOperationCacheSize -ne 0) {
+    throw "libvips operation cache is not disabled: size=$vipsOperationCacheSize"
 }
 
 Write-Host "Image performance acceptance passed."
@@ -88,3 +98,5 @@ Write-Host ("1,000 cache hits: {0:N1} ms" -f $hits.durationMs)
 Write-Host ("64-request batch: {0:N1} ms" -f $batch.durationMs)
 Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))
+Write-Host ("libvips open files after batch: {0}" -f $vipsOpenFiles)
+Write-Host ("libvips operation cache size: {0}" -f $vipsOperationCacheSize)

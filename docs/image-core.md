@@ -48,6 +48,8 @@ Cancellation is accepted before enqueue and while queued. Worker count defaults 
 
 ## Diagnostics
 
+Lumine owns the persistent cache, so the libvips process-global operation cache is disabled for the thumbnail path. This follows libvips guidance for proxy-style workloads that process many different images and avoids duplicate hidden caching.
+
 The common benchmark contract records:
 
 - single cold generation
@@ -55,6 +57,7 @@ The common benchmark contract records:
 - bounded parallel batch generation
 - cache files/bytes
 - cache hit/miss/generation/source-open counters
-- generation peak working set
+- generation and batch peak working set
+- libvips tracked-memory high-water mark, open-file count, and operation-cache size
 
 The Windows CI benchmark is enforced by `build/Test-ImagePerformance.ps1`. It gates cold generation, 1,000 persistent cache hits, bounded 64-request batch throughput, source-open/cache-hit invariants, and both absolute and incremental peak working set during batch generation.

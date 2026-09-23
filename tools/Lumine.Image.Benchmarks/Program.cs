@@ -155,6 +155,9 @@ try
             ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["batch_peak_working_set_bytes"] = batchPeakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["batch_peak_additional_working_set_bytes"] = batchPeakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["vips_tracked_mem_highwater_bytes"] = NetVips.Stats.MemHighwater.ToString(CultureInfo.InvariantCulture),
+            ["vips_open_files"] = NetVips.Stats.Files.ToString(CultureInfo.InvariantCulture),
+            ["vips_operation_cache_size"] = NetVips.Cache.Size.ToString(CultureInfo.InvariantCulture),
             ["cache_format"] = "webp"
         });
 

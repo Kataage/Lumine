@@ -21,21 +21,11 @@ static byte[] CreateHeifFixture(Enums.ForeignHeifCompression compression)
         keep: Enums.ForeignKeep.None);
 }
 
-static void WriteAnimatedGif(string path)
-{
-    using var blank = NetVips.Image.Black(48, 32, bands: 3);
-    using var redValues = blank.NewFromImage([255, 0, 0]);
-    using var red = redValues.Copy(interpretation: Enums.Interpretation.Srgb);
-    using var blueValues = blank.NewFromImage([0, 0, 255]);
-    using var blue = blueValues.Copy(interpretation: Enums.Interpretation.Srgb);
-    using var pages = NetVips.Image.Arrayjoin([red, blue], across: 1);
-
-    pages.Gifsave(
+static Task WriteAnimatedGifAsync(string path) =>
+    File.WriteAllBytesAsync(
         path,
-        pageHeight: 32,
-        keepDuplicateFrames: true,
-        keep: Enums.ForeignKeep.None);
-}
+        Convert.FromBase64String(
+            "R0lGODlhMAAgAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAMAAgAAAIQQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmQEBACH5BAEKAAEALAAAAAAwACAAgQAA/wAAAAAAAAAAAAhBAAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMmypcuXMGPKnEmzps2ZAQEAOw=="));
 
 static void WriteP3ProfileJpeg(string path)
 {
@@ -103,7 +93,7 @@ try
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
     WriteRgb(webpPath);
-    WriteAnimatedGif(gifPath);
+    await WriteAnimatedGifAsync(gifPath);
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
@@ -118,6 +108,7 @@ try
     }
 
     var cache = new ThumbnailCache(cacheRoot);
+    Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
     Require(
         NetVips.Cache.MaxMem <= VipsRuntimePolicy.ThumbnailTrackedMemoryLimitBytes,
