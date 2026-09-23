@@ -26,6 +26,7 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(Options.TileHeight, 0);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.TileSpacing);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
+        ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
 
         BitmapCache = new DecodedBitmapCache(
             Options.DecodedBitmapEntryLimit,
