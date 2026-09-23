@@ -60,3 +60,17 @@ CI runs:
 - Library smoke: scan, stable identity update, transaction rollback, keyset traversal and reopen-without-rescan
 - 10k / 50k / 100k synthetic metadata benchmarks
 - existing architecture, diagnostics and NativeAOT checks
+
+## Performance acceptance budgets
+
+The hosted Windows CI baseline is treated as a regression guard, not as a promise for every physical machine. The gate intentionally leaves runner headroom while rejecting the failure class seen during development:
+
+- 100k metadata ingest: <= 10 s
+- 100k existing-database reopen: <= 1.5 s
+- 100k first-page keyset query: <= 50 ms
+- complete 100k keyset traversal: <= 1.5 s
+- working set after 100k ingest: <= 160 MiB
+- 100k metadata database: <= 40 MiB
+- 100k ingest may not exceed 3x the 50k result plus 1 s
+
+The current optimized implementation is expected to sit well below these ceilings; the margins exist to absorb hosted-runner variance without allowing multi-tens-of-seconds regressions to become green CI.
