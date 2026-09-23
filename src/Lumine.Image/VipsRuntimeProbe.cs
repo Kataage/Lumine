@@ -11,10 +11,10 @@ public static class VipsRuntimeProbe
             throw new InvalidOperationException("libvips failed to initialize.");
         }
 
-        var version =
-            $"{global::NetVips.NetVips.Version(0)}." +
-            $"{global::NetVips.NetVips.Version(1)}." +
-            $"{global::NetVips.NetVips.Version(2)}";
+        var major = global::NetVips.NetVips.Version(0);
+        var minor = global::NetVips.NetVips.Version(1);
+        var patch = global::NetVips.NetVips.Version(2);
+        var version = $"{major}.{minor}.{patch}";
 
         return new VipsProbeResult(version, true);
     }
