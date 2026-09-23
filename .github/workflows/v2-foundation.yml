@@ -4,15 +4,61 @@ on:
   push:
     branches:
       - develop
-      - '[0-9]*-*'
+      - master
   pull_request:
     branches:
       - develop
+      - master
+
+concurrency:
+  group: greenfield-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  release-policy:
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require develop as release source
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ]; then
+            echo "Release PRs to master must come from develop; got '$HEAD_REF'." >&2
+            exit 1
+          fi
+
+  release-tree-consistency:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify master matches develop
+        shell: bash
+        run: |
+          git fetch origin develop --depth=1
+          master_tree="$(git rev-parse 'HEAD^{tree}')"
+          develop_tree="$(git rev-parse 'origin/develop^{tree}')"
+
+          if [ "$master_tree" != "$develop_tree" ]; then
+            echo "master must be a release promotion of the current develop tree." >&2
+            echo "master tree:  $master_tree" >&2
+            echo "develop tree: $develop_tree" >&2
+            exit 1
+          fi
+
   windows-core:
     runs-on: windows-latest
     timeout-minutes: 30
