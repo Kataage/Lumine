@@ -172,7 +172,9 @@ public sealed class LibraryDatabase
         {
             ValidateMigrationHistory(applied);
         }
-        else if (await HasProductTablesAsync(connection, cancellationToken).ConfigureAwait(false))
+
+        if (applied.Count == 0
+            && await HasProductTablesAsync(connection, cancellationToken).ConfigureAwait(false))
         {
             throw new LibrarySchemaException(
                 "Library database contains product tables but no migration history. Refusing to guess the schema.");
