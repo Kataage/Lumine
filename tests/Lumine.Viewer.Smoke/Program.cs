@@ -1,3 +1,5 @@
+namespace Lumine.Viewer.Smoke;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -238,7 +240,7 @@ internal sealed class FixturePageSource(long count) : IViewerPageSource
             items[offset] = Fixture(index);
         }
 
-        var next = start + take < Count
+        ViewerPageCursor? next = start + take < Count
             ? new ViewerPageCursor(Count - (start + take), start + take)
             : null;
 
