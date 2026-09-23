@@ -32,7 +32,7 @@ JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Wind
 
 ## Crash and corruption behavior
 
-Generation writes to a unique temporary WebP beside the final cache entry and moves it into place only after libvips completes the file. Interrupted `*.tmp.webp` files are removed when the cache is opened.
+Generation writes to a unique temporary WebP beside the final cache entry and moves it into place only after libvips completes the file. Temporary files are never deleted merely because another cache instance or prune pass sees them: only files older than the interrupted-write grace period are treated as stale and recovered. This prevents cleanup from racing an active atomic write.
 
 A cache entry that cannot be opened as a valid image is deleted and regenerated from the source rather than returned to the Viewer.
 
