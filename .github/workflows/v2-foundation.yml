@@ -110,6 +110,10 @@ jobs:
             }
           }
 
+      - name: Enforce Viewer performance acceptance
+        shell: pwsh
+        run: ./build/Test-ViewerPerformance.ps1
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
