@@ -56,13 +56,17 @@ try
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
+    var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
     WriteRgb(webpPath);
-    WriteRgb(gifPath);
+    await File.WriteAllBytesAsync(
+        gifPath,
+        Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
+    WriteRgb(concurrentPath, 1200, 800);
 
     using (var baseImage = NetVips.Image.Black(120, 60, bands: 3)
                .Copy(interpretation: Enums.Interpretation.Srgb))
@@ -164,6 +168,24 @@ try
     Require(
         !string.Equals(changedFirst.CachePath, changedSecond.CachePath, StringComparison.Ordinal),
         "Source revision did not move to a new cache path.");
+
+    var concurrentSource = SourceFor(45, 1, concurrentPath);
+    var concurrentResults = await Task.WhenAll(
+        Enumerable.Range(0, 8)
+            .Select(_ => pipeline.RequestAsync(
+                concurrentSource,
+                ThumbnailProfiles.GridMedium)));
+
+    Require(
+        concurrentResults.All(result =>
+            string.Equals(
+                result.CachePath,
+                concurrentResults[0].CachePath,
+                StringComparison.Ordinal)),
+        "Concurrent requests did not converge on one persistent cache path.");
+    Require(
+        !Directory.EnumerateFiles(cacheRoot, "*.tmp.webp", SearchOption.AllDirectories).Any(),
+        "Concurrent generation left interrupted temporary files.");
 
     using (var cancelled = new CancellationTokenSource())
     {
