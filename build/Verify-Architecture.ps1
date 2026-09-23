@@ -14,6 +14,7 @@ function Read-Project([string] $relativePath) {
 }
 
 $core = Read-Project "src/Lumine.Core/Lumine.Core.csproj"
+$diagnostics = Read-Project "src/Lumine.Diagnostics/Lumine.Diagnostics.csproj"
 $library = Read-Project "src/Lumine.Library/Lumine.Library.csproj"
 $image = Read-Project "src/Lumine.Image/Lumine.Image.csproj"
 $viewer = Read-Project "src/Lumine.Viewer/Lumine.Viewer.csproj"
@@ -21,6 +22,10 @@ $app = Read-Project "src/Lumine.App/Lumine.App.csproj"
 
 if ($core -match "ProjectReference") {
     throw "Lumine.Core must not reference another Lumine project."
+}
+
+if ($diagnostics -match "ProjectReference") {
+    throw "Lumine.Diagnostics must remain independent from product feature projects."
 }
 
 foreach ($entry in @(
