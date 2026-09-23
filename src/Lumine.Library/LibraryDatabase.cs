@@ -33,7 +33,6 @@ public sealed class LibraryDatabase
 
             CREATE TABLE assets (
                 id INTEGER PRIMARY KEY,
-                asset_key TEXT NOT NULL UNIQUE,
                 library_id INTEGER NOT NULL,
                 folder_id INTEGER NULL,
                 relative_path TEXT NOT NULL,
