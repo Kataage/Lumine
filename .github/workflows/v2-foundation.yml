@@ -54,6 +54,13 @@ jobs:
       - name: Generate Library Core benchmarks
         shell: pwsh
         run: |
+          # Keep a cold 100k sample so the acceptance gate cannot be satisfied
+          # only because smaller runs warmed SQLite / filesystem caches first.
+          dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count 100000 --output "artifacts/benchmarks/library-100000-cold.json"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
           foreach ($count in 10000, 50000, 100000) {
             dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $count --output "artifacts/benchmarks/library-$count.json"
             if ($LASTEXITCODE -ne 0) {
