@@ -65,7 +65,8 @@ CI runs:
 
 The hosted Windows CI baseline is treated as a regression guard, not as a promise for every physical machine. The gate intentionally leaves runner headroom while rejecting the failure class seen during development:
 
-- 100k metadata ingest: <= 10 s
+- cold 100k metadata ingest (measured before smaller warm-up runs): <= 12 s
+- warm 100k metadata ingest: <= 10 s
 - 100k existing-database reopen: <= 1.5 s
 - 100k first-page keyset query: <= 50 ms
 - complete 100k keyset traversal: <= 1.5 s
