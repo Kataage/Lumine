@@ -89,6 +89,7 @@ public readonly record struct ViewerRuntimeDiagnostics(
     long ThumbnailRequests,
     long ThumbnailRequestsCoalesced,
     long ThumbnailRequestsCancelled,
+    long ThumbnailRequestsFailed,
     int InFlightThumbnailRequests,
     int AttachedTiles,
     int DecodedBitmapEntries,
