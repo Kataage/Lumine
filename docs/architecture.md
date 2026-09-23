@@ -11,11 +11,12 @@ Lumine.App
    |----> Lumine.Library ----> Lumine.Core
    |----> Lumine.Image   ----> Lumine.Core
    |----> Lumine.Viewer  ----> Lumine.Core
+   |----> Lumine.Diagnostics
    |
    +---- Avalonia desktop composition root
 ```
 
-Sibling modules must not reference each other. Cross-cutting contracts belong in `Lumine.Core`. Composition happens only in `Lumine.App`.
+Product sibling modules must not reference each other. Cross-cutting product contracts belong in `Lumine.Core`. `Lumine.Diagnostics` is a product-independent observability utility: feature modules may use it for measurements, but Diagnostics must not reference product feature modules. Composition happens only in `Lumine.App`.
 
 ## Technology decisions
 
@@ -23,6 +24,7 @@ Sibling modules must not reference each other. Cross-cutting contracts belong in
 - **SQLite**: local transactional metadata storage, with schema/search work deferred.
 - **libvips**: initial image decoder/thumbnail engine; WIC remains a benchmark fallback.
 - **NativeAOT**: enabled from the first commit and treated as an architectural constraint.
+- **Diagnostics**: performance measurements use a shared AOT-compatible JSON contract so Library/Image/Viewer results are comparable across CI and physical hosts.
 
 ## Non-goals for the foundation issue
 

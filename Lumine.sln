@@ -14,6 +14,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.App", "src\Lumine.Ap
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Foundation.Smoke", "tests\Lumine.Foundation.Smoke\Lumine.Foundation.Smoke.csproj", "{66666666-6666-4666-8666-666666666666}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Diagnostics", "src\Lumine.Diagnostics\Lumine.Diagnostics.csproj", "{77777777-7777-4777-8777-777777777777}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Benchmarks", "tools\Lumine.Benchmarks\Lumine.Benchmarks.csproj", "{88888888-8888-4888-8888-888888888888}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Diagnostics.Smoke", "tests\Lumine.Diagnostics.Smoke\Lumine.Diagnostics.Smoke.csproj", "{99999999-9999-4999-8999-999999999999}"
+EndProject
 Global
   GlobalSection(SolutionConfigurationPlatforms) = preSolution
     Debug|Any CPU = Debug|Any CPU
@@ -44,5 +50,17 @@ Global
     {66666666-6666-4666-8666-666666666666}.Debug|Any CPU.Build.0 = Debug|Any CPU
     {66666666-6666-4666-8666-666666666666}.Release|Any CPU.ActiveCfg = Release|Any CPU
     {66666666-6666-4666-8666-666666666666}.Release|Any CPU.Build.0 = Release|Any CPU
+    {77777777-7777-4777-8777-777777777777}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {77777777-7777-4777-8777-777777777777}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {77777777-7777-4777-8777-777777777777}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {77777777-7777-4777-8777-777777777777}.Release|Any CPU.Build.0 = Release|Any CPU
+    {88888888-8888-4888-8888-888888888888}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {88888888-8888-4888-8888-888888888888}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {88888888-8888-4888-8888-888888888888}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {88888888-8888-4888-8888-888888888888}.Release|Any CPU.Build.0 = Release|Any CPU
+    {99999999-9999-4999-8999-999999999999}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {99999999-9999-4999-8999-999999999999}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {99999999-9999-4999-8999-999999999999}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {99999999-9999-4999-8999-999999999999}.Release|Any CPU.Build.0 = Release|Any CPU
   EndGlobalSection
 EndGlobal

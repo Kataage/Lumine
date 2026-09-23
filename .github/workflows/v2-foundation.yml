@@ -16,6 +16,9 @@ jobs:
   windows-foundation:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      LUMINE_REVISION: ${{ github.sha }}
+      LUMINE_HARDWARE_ID: github-windows-latest
 
     steps:
       - name: Checkout
@@ -38,6 +41,19 @@ jobs:
 
       - name: Foundation runtime smoke test
         run: dotnet run --project tests/Lumine.Foundation.Smoke/Lumine.Foundation.Smoke.csproj -c Release --no-build
+
+      - name: Diagnostics smoke test
+        run: dotnet run --project tests/Lumine.Diagnostics.Smoke/Lumine.Diagnostics.Smoke.csproj -c Release --no-build
+
+      - name: Generate 100k Core baseline result
+        run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
+
+      - name: Upload Core baseline result
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumine-v2-core-baseline-${{ github.run_id }}
+          path: artifacts/benchmarks/core-100000.json
+          if-no-files-found: error
 
       - name: Publish NativeAOT
         run: dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot
