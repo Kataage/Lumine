@@ -331,8 +331,15 @@ try
     _ = new ThumbnailCache(cacheRoot);
     Require(!File.Exists(fakeInterrupted), "Stale interrupted thumbnail write was not cleaned up.");
 
+    var partialTarget = Math.Max(1, statsBeforePrune.TotalBytes - 1);
+    var partialPrune = await cache.PruneAsync(partialTarget);
+    Require(partialPrune.FilesDeleted > 0, "Bounded partial prune removed no files.");
+    Require(
+        partialPrune.BytesAfter <= partialTarget,
+        "Bounded partial prune did not reach its disk budget.");
+
     var prune = await cache.PruneAsync(0);
-    Require(prune.FilesDeleted > 0, "Thumbnail prune removed no files.");
+    Require(prune.FilesDeleted > 0, "Thumbnail zero-budget prune removed no remaining files.");
     Require(prune.BytesAfter == 0, "Thumbnail prune did not enforce zero-byte target.");
 
     Console.WriteLine(

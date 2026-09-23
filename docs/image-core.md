@@ -44,7 +44,7 @@ Cancellation is accepted before enqueue and while queued. Worker count defaults 
 
 ## Cache accounting
 
-`ThumbnailCache.GetStatsAsync` reports persisted files and bytes. `PruneAsync(maxBytes)` deletes oldest generated entries until the requested disk budget is met. Temporary interrupted writes are not counted as usable cache.
+`ThumbnailCache.GetStatsAsync` reports persisted files and bytes. `PruneAsync(maxBytes)` deletes oldest generated entries until the requested disk budget is met. Pruning never materializes the whole cache in RAM: it keeps a bounded 4,096-entry oldest-candidate window and rescans only when a large eviction requires another window. A zero-byte prune streams deletions directly. Temporary interrupted writes are not counted as usable cache.
 
 ## Diagnostics
 
