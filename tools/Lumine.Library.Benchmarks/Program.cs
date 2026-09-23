@@ -48,7 +48,8 @@ try
 
     using (recorder.Measure(CoreMetricNames.LibraryBulkUpsert))
     {
-        const int batchSize = 1000;
+        const int batchSize = 4096;
+        await using var ingest = await repository.OpenIngestSessionAsync(library.Id);
         var batch = new List<AssetUpsert>(batchSize);
 
         foreach (var fixture in FixtureGenerator.Enumerate(count))
@@ -63,14 +64,14 @@ try
 
             if (batch.Count == batchSize)
             {
-                await repository.UpsertAssetsAsync(library.Id, batch);
+                await ingest.WriteBatchAsync(batch);
                 batch.Clear();
             }
         }
 
         if (batch.Count > 0)
         {
-            await repository.UpsertAssetsAsync(library.Id, batch);
+            await ingest.WriteBatchAsync(batch);
         }
     }
 
