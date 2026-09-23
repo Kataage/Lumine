@@ -1,19 +1,19 @@
-name: v2-foundation
+name: greenfield-core
 
 on:
   push:
     branches:
-      - v2
-      - 'v2-*'
+      - develop
+      - '[0-9]*-*'
   pull_request:
     branches:
-      - v2
+      - develop
 
 permissions:
   contents: read
 
 jobs:
-  windows-foundation:
+  windows-core:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -51,7 +51,7 @@ jobs:
       - name: Upload Core baseline result
         uses: actions/upload-artifact@v4
         with:
-          name: lumine-v2-core-baseline-${{ github.run_id }}
+          name: lumine-core-baseline-${{ github.run_id }}
           path: artifacts/benchmarks/core-100000.json
           if-no-files-found: error
 

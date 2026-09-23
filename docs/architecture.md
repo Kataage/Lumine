@@ -38,3 +38,27 @@ No thumbnail cache, high-volume viewer, filesystem watcher, USN recovery, v1 mig
 4. Background work yields to foreground viewer interaction.
 5. AI components are optional and lazy-loaded.
 6. The app core remains usable with AI completely absent.
+
+## Development and release branches
+
+The greenfield source tree follows one integration line:
+
+```text
+{issue-number}-{type}
+        |
+        v
+     develop
+        |
+        v
+     master
+        |
+        v
+ tag / GitHub Release
+```
+
+- `develop` is the only integration branch for active greenfield development.
+- Every implementation starts from the current `develop` head on a branch named `{issue-number}-{type}`, such as `287-feat` or `295-test`.
+- Pull requests from issue branches target `develop`.
+- `master` contains release-ready code only. Development work does not target `master` directly.
+- Version tags and GitHub Releases are created from `master`.
+- `legacy/develop-v1` preserves the former v1 development line. The historical `v2` branch is retained only as migration history and is not a development base.
