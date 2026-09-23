@@ -27,7 +27,7 @@ public sealed class BenchmarkRecorder
 
     public BenchmarkEnvironment Environment { get; }
 
-    public MeasurementStart CaptureStart() =>
+    public static MeasurementStart CaptureStart() =>
         new(Stopwatch.GetTimestamp(), DateTimeOffset.UtcNow, CaptureResources());
 
     public BenchmarkOperation Measure(string name) =>
@@ -101,19 +101,19 @@ public sealed class BenchmarkRecorder
     private static BenchmarkEnvironment CaptureEnvironment()
     {
         var gcInfo = GC.GetGCMemoryInfo();
-        var hardwareId = Environment.GetEnvironmentVariable("LUMINE_HARDWARE_ID");
+        var hardwareId = System.Environment.GetEnvironmentVariable("LUMINE_HARDWARE_ID");
         if (string.IsNullOrWhiteSpace(hardwareId))
         {
-            hardwareId = Environment.MachineName;
+            hardwareId = System.Environment.MachineName;
         }
 
-        var revision = Environment.GetEnvironmentVariable("LUMINE_REVISION");
+        var revision = System.Environment.GetEnvironmentVariable("LUMINE_REVISION");
         if (string.IsNullOrWhiteSpace(revision))
         {
             revision = "unknown";
         }
 
-        var version = Environment.GetEnvironmentVariable("LUMINE_APP_VERSION");
+        var version = System.Environment.GetEnvironmentVariable("LUMINE_APP_VERSION");
         if (string.IsNullOrWhiteSpace(version))
         {
             version = "dev";
@@ -121,12 +121,12 @@ public sealed class BenchmarkRecorder
 
         return new BenchmarkEnvironment(
             hardwareId,
-            Environment.MachineName,
+            System.Environment.MachineName,
             RuntimeInformation.OSDescription,
             RuntimeInformation.FrameworkDescription,
             RuntimeInformation.ProcessArchitecture.ToString(),
             RuntimeInformation.OSArchitecture.ToString(),
-            Environment.ProcessorCount,
+            System.Environment.ProcessorCount,
             gcInfo.TotalAvailableMemoryBytes,
             revision,
             version,
