@@ -94,6 +94,9 @@ jobs:
       - name: Library Core smoke test
         run: dotnet run --project tests/Lumine.Library.Smoke/Lumine.Library.Smoke.csproj -c Release --no-build
 
+      - name: Image Core smoke test
+        run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
@@ -117,6 +120,9 @@ jobs:
       - name: Enforce Library performance acceptance
         shell: pwsh
         run: ./build/Test-LibraryPerformance.ps1
+
+      - name: Generate Image Core benchmark
+        run: dotnet run --project tools/Lumine.Image.Benchmarks/Lumine.Image.Benchmarks.csproj -c Release --no-build -- --count 64 --output artifacts/benchmarks/image-thumbnail.json
 
       - name: Upload Core benchmark results
         uses: actions/upload-artifact@v4
