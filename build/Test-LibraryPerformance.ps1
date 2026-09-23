@@ -39,7 +39,9 @@ $reopen100 = Get-Metric $hundredK "library.database_reopen"
 $query100 = Get-Metric $hundredK "library.query"
 $keyset100 = Get-Metric $hundredK "library.keyset_traversal"
 
-$workingSet100 = [long]$bulk100.after.workingSetBytes
+$peakWorkingSet100 = [long]$hundredK.metadata.peak_working_set_bytes
+$coldPeakWorkingSet100 = [long]$coldHundredK.metadata.peak_working_set_bytes
+$maxPeakWorkingSet100 = [Math]::Max($peakWorkingSet100, $coldPeakWorkingSet100)
 $databaseBytes100 = [long]$hundredK.metadata.database_bytes
 
 if ([int]$hundredK.metadata.traversed_asset_count -ne 100000) {
@@ -76,8 +78,8 @@ if ([double]$keyset100.durationMs -gt 1500) {
     throw "100k keyset traversal exceeded 1.5 s: $($keyset100.durationMs) ms"
 }
 
-if ($workingSet100 -gt 160MB) {
-    throw "100k ingest working set exceeded 160 MiB: $workingSet100 bytes"
+if ($maxPeakWorkingSet100 -gt 160MB) {
+    throw "100k ingest peak working set exceeded 160 MiB: $maxPeakWorkingSet100 bytes"
 }
 
 if ($databaseBytes100 -gt 40MB) {
@@ -92,5 +94,5 @@ Write-Host ("100k ingest: {0:N1} ms" -f $bulk100.durationMs)
 Write-Host ("100k reopen: {0:N1} ms" -f $reopen100.durationMs)
 Write-Host ("100k first-page query: {0:N1} ms" -f $query100.durationMs)
 Write-Host ("100k keyset traversal: {0:N1} ms" -f $keyset100.durationMs)
-Write-Host ("100k working set after ingest: {0:N1} MiB" -f ($workingSet100 / 1MB))
+Write-Host ("100k peak working set: {0:N1} MiB" -f ($maxPeakWorkingSet100 / 1MB))
 Write-Host ("100k database size: {0:N1} MiB" -f ($databaseBytes100 / 1MB))
