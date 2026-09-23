@@ -64,14 +64,11 @@ internal sealed class ThumbnailGenerator
                 ? thumbnail.Copy()
                 : thumbnail.Colourspace(Enums.Interpretation.Srgb);
 
-            normalized.WriteToFile(
+            normalized.Webpsave(
                 temporaryPath,
-                new VOption
-                {
-                    { "Q", profile.Quality },
-                    { "strip", true },
-                    { "smart_subsample", true }
-                });
+                q: profile.Quality,
+                smartSubsample: true,
+                keep: Enums.ForeignKeep.None);
 
             cancellationToken.ThrowIfCancellationRequested();
             var cachePath = _cache.CommitTemporaryFile(cacheKey, temporaryPath);
