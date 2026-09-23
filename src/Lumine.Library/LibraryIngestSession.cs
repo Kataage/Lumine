@@ -4,6 +4,7 @@ namespace Lumine.Library;
 
 public sealed class LibraryIngestSession : IAsyncDisposable
 {
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
     private LibraryRepository? _repository;
     private SqliteConnection? _connection;
 
@@ -36,7 +37,7 @@ public sealed class LibraryIngestSession : IAsyncDisposable
 
     public long LibraryId { get; }
 
-    public Task<int> WriteBatchAsync(
+    public async Task<int> WriteBatchAsync(
         IReadOnlyList<AssetUpsert> assets,
         CancellationToken cancellationToken = default)
     {
@@ -45,19 +46,39 @@ public sealed class LibraryIngestSession : IAsyncDisposable
         var connection = _connection
             ?? throw new ObjectDisposedException(nameof(LibraryIngestSession));
 
-        return repository.UpsertAssetsOnConnectionAsync(
-            connection,
-            LibraryId,
-            assets,
-            cancellationToken);
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_repository is null || !ReferenceEquals(_connection, connection))
+            {
+                throw new ObjectDisposedException(nameof(LibraryIngestSession));
+            }
+
+            return await repository.UpsertAssetsOnConnectionAsync(
+                connection,
+                LibraryId,
+                assets,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         _repository = null;
-        var connection = Interlocked.Exchange(ref _connection, null);
-        if (connection is not null)
+
+        await _writeGate.WaitAsync().ConfigureAwait(false);
+        try
         {
+            var connection = Interlocked.Exchange(ref _connection, null);
+            if (connection is null)
+            {
+                return;
+            }
+
             try
             {
                 await using var checkpoint = connection.CreateCommand();
@@ -76,6 +97,10 @@ public sealed class LibraryIngestSession : IAsyncDisposable
             {
                 await connection.DisposeAsync().ConfigureAwait(false);
             }
+        }
+        finally
+        {
+            _writeGate.Release();
         }
     }
 }
