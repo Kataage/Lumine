@@ -25,9 +25,17 @@ internal static class Program
         try
         {
             await VerifyCursorPagingAsync();
-            await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
-            await VerifyHeadlessVirtualizationAsync(thumbnailPath);
+
+            await using var headless = HeadlessUnitTestSession.StartNew(typeof(TestApplication));
+            await headless.Dispatch(
+                async () =>
+                {
+                    await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
+                    await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
+                    return 0;
+                },
+                CancellationToken.None);
 
             Console.WriteLine(
                 "Viewer smoke: cursor paging / bitmap bounds / cancellation / 100k virtualization OK");
@@ -151,10 +159,8 @@ internal static class Program
         Require(thumbnailProvider.Cancelled > 0, "Provider did not observe cancellation.");
     }
 
-    private static async Task VerifyHeadlessVirtualizationAsync(string thumbnailPath)
+    private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
     {
-        await using var headless = HeadlessUnitTestSession.StartNew(typeof(TestApplication));
-
         await using var session = new ViewerSession(
             new DirectFixtureAssetProvider(100_000),
             new ImmediateThumbnailProvider(thumbnailPath),
@@ -168,49 +174,43 @@ internal static class Program
                 DecodedBitmapByteLimit = 32L * 1024 * 1024
             });
 
-        await headless.Dispatch(
-            async () =>
-            {
-                var viewer = new ThumbnailViewerControl(session);
-                var window = new Window
-                {
-                    Width = 1200,
-                    Height = 800,
-                    Content = viewer
-                };
+        var viewer = new ThumbnailViewerControl(session);
+        var window = new Window
+        {
+            Width = 1200,
+            Height = 800,
+            Content = viewer
+        };
 
-                window.Show();
-                await Task.Delay(75);
-                Dispatcher.UIThread.RunJobs();
+        window.Show();
+        await Task.Delay(75);
+        Dispatcher.UIThread.RunJobs();
 
-                Require(viewer.Columns >= 4, "Viewer did not adapt columns to viewport width.");
-                Require(
-                    viewer.RealizedRowCount is > 0 and < 64,
-                    "100k viewer realized an unbounded row count.");
-                Require(
-                    viewer.Diagnostics.AttachedTiles is > 0 and < 512,
-                    "100k viewer attached an unbounded tile count.");
+        Require(viewer.Columns >= 4, "Viewer did not adapt columns to viewport width.");
+        Require(
+            viewer.RealizedRowCount is > 0 and < 64,
+            "100k viewer realized an unbounded row count.");
+        Require(
+            viewer.Diagnostics.AttachedTiles is > 0 and < 512,
+            "100k viewer attached an unbounded tile count.");
 
-                viewer.ScrollToAsset(99_900);
-                await Task.Delay(75);
-                Dispatcher.UIThread.RunJobs();
+        viewer.ScrollToAsset(99_900);
+        await Task.Delay(75);
+        Dispatcher.UIThread.RunJobs();
 
-                Require(
-                    viewer.RealizedRowCount < 64,
-                    "Fast scroll caused row virtualization to expand with library size.");
-                Require(
-                    viewer.Diagnostics.AttachedTiles < 512,
-                    "Fast scroll caused tile count to expand with library size.");
+        Require(
+            viewer.RealizedRowCount < 64,
+            "Fast scroll caused row virtualization to expand with library size.");
+        Require(
+            viewer.Diagnostics.AttachedTiles < 512,
+            "Fast scroll caused tile count to expand with library size.");
 
-                viewer.SelectAsset(99_999);
-                Require(
-                    viewer.SelectedAssetIndex == 99_999,
-                    "Viewer selection did not reach final 100k asset.");
+        viewer.SelectAsset(99_999);
+        Require(
+            viewer.SelectedAssetIndex == 99_999,
+            "Viewer selection did not reach final 100k asset.");
 
-                window.Close();
-                return 0;
-            },
-            CancellationToken.None);
+        window.Close();
     }
 
     private static async Task ExpectCancellationAsync(Task task)
