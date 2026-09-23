@@ -12,6 +12,8 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
     private readonly Dictionary<long, CursorCheckpoint> _checkpoints = [];
     private long _accessSequence;
     private long _pagesFetched;
+    private int _cachedPageCount;
+    private int _checkpointCount = 1;
 
     public CursorPagedViewerAssetProvider(
         IViewerPageSource source,
@@ -40,8 +42,8 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
     public ViewerPagingDiagnostics Diagnostics =>
         new(
             Interlocked.Read(ref _pagesFetched),
-            _pages.Count,
-            _checkpoints.Count);
+            Volatile.Read(ref _cachedPageCount),
+            Volatile.Read(ref _checkpointCount));
 
     public async ValueTask<ViewerAsset> GetAssetAsync(
         long index,
@@ -125,6 +127,7 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
                 fetched.NextCursor,
                 NextSequence());
             _pages[current] = result;
+            Volatile.Write(ref _cachedPageCount, _pages.Count);
             cursor = fetched.NextCursor;
 
             var nextPage = current + 1;
@@ -133,6 +136,7 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
             {
                 _checkpoints[nextPage] = new CursorCheckpoint(cursor, NextSequence());
                 TrimCheckpointsLocked();
+                Volatile.Write(ref _checkpointCount, _checkpoints.Count);
             }
 
             TrimPagesLocked();
@@ -148,6 +152,7 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
         {
             var victim = _pages.MinBy(static pair => pair.Value.LastAccess);
             _pages.Remove(victim.Key);
+            Volatile.Write(ref _cachedPageCount, _pages.Count);
         }
     }
 
@@ -160,6 +165,7 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
                 .MinBy(static pair => pair.Value.LastAccess);
 
             _checkpoints.Remove(victim.Key);
+            Volatile.Write(ref _checkpointCount, _checkpoints.Count);
         }
     }
 
