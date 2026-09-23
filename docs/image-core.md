@@ -32,7 +32,7 @@ JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Wind
 
 ## Crash and corruption behavior
 
-Generation writes to a unique temporary WebP beside the final cache entry and moves it into place only after libvips completes the file. Temporary files are never deleted merely because another cache instance or prune pass sees them: only files older than the interrupted-write grace period are treated as stale and recovered. This prevents cleanup from racing an active atomic write.
+Generation writes to a unique temporary WebP beside the final cache entry and moves it into place only after libvips completes the file. Cache construction performs no recursive disk walk. The shard touched by a cache miss receives local stale-temp cleanup, while full interrupted-write recovery is an explicit asynchronous maintenance operation. Temporary files are never deleted merely because another cache instance or prune pass sees them: only files older than the interrupted-write grace period are treated as stale and recovered. This prevents cleanup from racing an active atomic write without turning app startup into a cache-wide scan.
 
 A cache entry that cannot be opened as a valid image is deleted and regenerated from the source rather than returned to the Viewer.
 
