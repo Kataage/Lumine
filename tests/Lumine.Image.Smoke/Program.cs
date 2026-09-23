@@ -361,12 +361,17 @@ try
     _ = new ThumbnailCache(cacheRoot);
     Require(
         File.Exists(fakeInterrupted),
-        "Fresh temporary write was deleted as if it were interrupted.");
+        "Cache construction unexpectedly scanned/deleted temporary files.");
+
+    var freshRecovered = await cache.RecoverInterruptedWritesAsync();
+    Require(freshRecovered == 0, "Fresh temporary write was treated as interrupted.");
+    Require(File.Exists(fakeInterrupted), "Fresh temporary write was deleted as interrupted.");
 
     File.SetLastWriteTimeUtc(
         fakeInterrupted,
         DateTime.UtcNow - ThumbnailCache.InterruptedWriteGracePeriod - TimeSpan.FromMinutes(1));
-    _ = new ThumbnailCache(cacheRoot);
+    var staleRecovered = await cache.RecoverInterruptedWritesAsync();
+    Require(staleRecovered == 1, "Stale interrupted thumbnail write was not reported as recovered.");
     Require(!File.Exists(fakeInterrupted), "Stale interrupted thumbnail write was not cleaned up.");
 
     var partialTarget = Math.Max(1, statsBeforePrune.TotalBytes - 1);
