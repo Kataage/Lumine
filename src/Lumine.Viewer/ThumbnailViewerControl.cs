@@ -6,7 +6,6 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Avalonia.Controls.Selection;
 
 namespace Lumine.Viewer;
 
@@ -45,6 +44,11 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public int RealizedRowCount => _rows.GetRealizedContainers().Count();
 
+    public int SelectedRealizedTileCount =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .Count(static tile => tile.IsSelected);
+
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
@@ -55,6 +59,8 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             return;
         }
+
+        Focus();
 
         if (_selectedIndex == index)
         {
@@ -101,10 +107,10 @@ public sealed class ThumbnailViewerControl : UserControl
         _rows.ItemsSource = new VirtualRowIndexList(AssetCount, _columns);
         _rows.ItemTemplate = new FuncDataTemplate<long>(
             (rowIndex, _) => new ViewerRowControl(
+                this,
                 _session,
                 rowIndex,
-                _columns,
-                SelectAsset),
+                _columns),
             supportsRecycling: false);
     }
 
@@ -144,19 +150,19 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly ViewerSession _session;
         private readonly long _rowIndex;
         private readonly int _columns;
-        private readonly Action<long, bool> _select;
+        private readonly ThumbnailViewerControl _owner;
         private CancellationTokenSource? _prefetchCancellation;
 
         public ViewerRowControl(
+            ThumbnailViewerControl owner,
             ViewerSession session,
             long rowIndex,
-            int columns,
-            Action<long, bool> select)
+            int columns)
         {
+            _owner = owner;
             _session = session;
             _rowIndex = rowIndex;
             _columns = columns;
-            _select = select;
 
             Orientation = Orientation.Horizontal;
             Spacing = session.Options.TileSpacing;
@@ -172,9 +178,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 }
 
                 Children.Add(new ViewerTileControl(
+                    _owner,
                     session,
-                    index,
-                    () => _select(index, false)));
+                    index));
             }
 
             AttachedToVisualTree += OnAttached;
@@ -249,26 +255,28 @@ public sealed class ThumbnailViewerControl : UserControl
         Justification = "The tile cancellation source is cancelled and disposed on visual detach.")]
     private sealed class ViewerTileControl : Border
     {
+        private readonly ThumbnailViewerControl _owner;
         private readonly ViewerSession _session;
         private readonly long _index;
-        private readonly Action _select;
         private readonly Image _image;
         private readonly TextBlock _label;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
 
         public ViewerTileControl(
+            ThumbnailViewerControl owner,
             ViewerSession session,
-            long index,
-            Action select)
+            long index)
         {
+            _owner = owner;
             _session = session;
             _index = index;
-            _select = select;
 
             Width = session.Options.TileWidth;
             Height = session.Options.TileHeight;
             Padding = new Thickness(4);
+            BorderThickness = new Thickness(2);
+            BorderBrush = Brushes.Transparent;
             CornerRadius = new CornerRadius(4);
 
             _image = new Image
@@ -294,21 +302,43 @@ public sealed class ThumbnailViewerControl : UserControl
             panel.Children.Add(_label);
             Child = panel;
 
-            PointerPressed += (_, _) => _select();
+            PointerPressed += OnPointerPressed;
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
         }
 
+        public bool IsSelected { get; private set; }
+
         private void OnAttached(object? sender, VisualTreeAttachmentEventArgs e)
         {
+            _owner.SelectedAssetIndexChanged += OnSelectedAssetChanged;
+            UpdateSelection(_owner.SelectedAssetIndex);
             _session.NotifyTileAttached();
             StartLoad();
         }
 
         private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
         {
+            _owner.SelectedAssetIndexChanged -= OnSelectedAssetChanged;
             _session.NotifyTileDetached();
             CancelLoad();
+        }
+
+        private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            _owner.SelectAsset(_index, scrollIntoView: false);
+            e.Handled = true;
+        }
+
+        private void OnSelectedAssetChanged(object? sender, long index) =>
+            UpdateSelection(index);
+
+        private void UpdateSelection(long selectedIndex)
+        {
+            IsSelected = selectedIndex == _index;
+            BorderBrush = IsSelected
+                ? Brushes.DodgerBlue
+                : Brushes.Transparent;
         }
 
         private void StartLoad()
