@@ -31,6 +31,9 @@ Directory.CreateDirectory(libraryRoot);
 
 var recorder = new BenchmarkRecorder();
 long databaseBytes = 0;
+long peakWorkingSetBytes = 0;
+long startingWorkingSetBytes = 0;
+long peakAdditionalWorkingSetBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 
@@ -46,9 +49,11 @@ try
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Benchmark", libraryRoot);
 
+    var peakMonitor = PeakWorkingSetMonitor.Start();
+
     using (recorder.Measure(CoreMetricNames.LibraryBulkUpsert))
     {
-        const int batchSize = 4096;
+        const int batchSize = 2048;
         await using var ingest = await repository.OpenIngestSessionAsync(library.Id);
         var batch = new List<AssetUpsert>(batchSize);
 
@@ -74,6 +79,11 @@ try
             await ingest.WriteBatchAsync(batch);
         }
     }
+
+    await peakMonitor.DisposeAsync();
+    startingWorkingSetBytes = peakMonitor.StartingWorkingSetBytes;
+    peakWorkingSetBytes = peakMonitor.PeakWorkingSetBytes;
+    peakAdditionalWorkingSetBytes = peakMonitor.PeakAdditionalWorkingSetBytes;
 
     using (recorder.Measure(CoreMetricNames.DatabaseReopen))
     {
@@ -126,6 +136,9 @@ try
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
             ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
+            ["starting_working_set_bytes"] = startingWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["paging"] = "keyset:modified_at_utc_ticks,id"
         });
 

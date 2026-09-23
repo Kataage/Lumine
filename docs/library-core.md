@@ -75,3 +75,17 @@ The hosted Windows CI baseline is treated as a regression guard, not as a promis
 - 100k ingest may not exceed 3x the 50k result plus 1 s
 
 The current optimized implementation is expected to sit well below these ceilings; the margins exist to absorb hosted-runner variance without allowing multi-tens-of-seconds regressions to become green CI.
+
+## Post-#287 hardening contract
+
+Audit issue #300 tightens the Library Core boundary before Image Core is allowed to depend on it.
+
+- `LibraryService` is the UI-facing boundary. It moves SQLite-backed registration and query work off the UI thread. `LibraryScanner` also enters through `LibraryBackgroundExecution` because Microsoft.Data.Sqlite and filesystem enumeration may synchronously block despite Task-shaped APIs.
+- Scan completeness is explicit: `InProgress`, `Complete`, or `Partial`. Filesystem enumeration failures are sampled and a partial scan never advances `last_scan_completed_at`.
+- The initial scanner is not a destructive reconciliation engine. It never deletes unseen rows. #290 owns incremental delete/rename handling and safe reconciliation.
+- Schema history is strict and sequential. Unknown future versions, gaps, name mismatches, and product tables without migration history fail closed.
+- WAL is a verified requirement rather than an assumed pragma.
+- `assets.id` uses `AUTOINCREMENT` so a deleted local identity is not reused. Re-adding the same path creates a new identity.
+- `source_revision` increments when source size or mtime changes. Derived width/height/format are invalidated on that transition, giving #288 a stable cache-invalidation input.
+- Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
+- Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.

@@ -1,12 +1,22 @@
 namespace Lumine.Library;
 
+public enum LibraryScanState
+{
+    Unknown = 0,
+    InProgress = 1,
+    Complete = 2,
+    Partial = 3
+}
+
 public sealed record LibraryInfo(
     long Id,
     string Name,
     string RootPath,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
-    DateTimeOffset? LastScanCompletedAtUtc);
+    DateTimeOffset? LastScanCompletedAtUtc,
+    DateTimeOffset? LastScanAttemptedAtUtc,
+    LibraryScanState ScanState);
 
 public sealed record AssetInfo(
     long Id,
@@ -17,6 +27,7 @@ public sealed record AssetInfo(
     string Extension,
     long FileSize,
     DateTimeOffset ModifiedAtUtc,
+    long SourceRevision,
     int? Width,
     int? Height,
     string? Format);
@@ -45,9 +56,15 @@ public sealed record LibraryScanProgress(
     int Skipped,
     string? CurrentRelativePath);
 
+public sealed record LibraryScanFailure(
+    string Path,
+    string Operation,
+    string ErrorType);
+
 public sealed record LibraryScanResult(
     int Discovered,
     int Persisted,
     int Skipped,
     bool Completed,
-    DateTimeOffset FinishedAtUtc);
+    DateTimeOffset FinishedAtUtc,
+    IReadOnlyList<LibraryScanFailure> FailureSamples);

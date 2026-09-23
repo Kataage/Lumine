@@ -43,7 +43,9 @@ public sealed class LibraryRepository
             RETURNING
                 id, name, root_path,
                 created_at_utc_ticks, updated_at_utc_ticks,
-                last_scan_completed_at_utc_ticks;
+                last_scan_completed_at_utc_ticks,
+                last_scan_attempted_at_utc_ticks,
+                scan_state;
             """;
         command.Parameters.AddWithValue("$name", name.Trim());
         command.Parameters.AddWithValue("$root", normalizedRoot);
@@ -71,7 +73,9 @@ public sealed class LibraryRepository
             SELECT
                 id, name, root_path,
                 created_at_utc_ticks, updated_at_utc_ticks,
-                last_scan_completed_at_utc_ticks
+                last_scan_completed_at_utc_ticks,
+                last_scan_attempted_at_utc_ticks,
+                scan_state
             FROM libraries
             WHERE id = $id;
             """;
@@ -111,6 +115,7 @@ public sealed class LibraryRepository
                 id, library_id, folder_id,
                 relative_path, file_name, extension,
                 file_size, modified_at_utc_ticks,
+                source_revision,
                 width, height, format
             FROM assets
             WHERE library_id = $library_id
@@ -130,6 +135,8 @@ public sealed class LibraryRepository
         IReadOnlyList<AssetUpsert> assets,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(assets);
+
         await using var session = await OpenIngestSessionAsync(libraryId, cancellationToken).ConfigureAwait(false);
         return await session.WriteBatchAsync(assets, cancellationToken).ConfigureAwait(false);
     }
@@ -154,7 +161,7 @@ public sealed class LibraryRepository
         }
     }
 
-    internal async Task<int> UpsertAssetsOnConnectionAsync(
+    internal static async Task<int> UpsertAssetsOnConnectionAsync(
         SqliteConnection connection,
         long libraryId,
         IReadOnlyList<AssetUpsert> assets,
@@ -236,12 +243,165 @@ public sealed class LibraryRepository
         return assets.Count;
     }
 
+    public async Task<bool> RemoveAssetAsync(
+        long libraryId,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        var pathKey = LibraryPaths.RelativePathKey(relativePath);
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM assets
+            WHERE library_id = $library_id
+              AND relative_path_key = $path_key;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$path_key", pathKey);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+    }
+
+    public async Task<AssetPage> GetAssetPageAsync(
+        long libraryId,
+        int limit,
+        AssetCursor? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Page size must be between 1 and 1000.");
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+
+        command.CommandText = cursor is null
+            ? """
+              SELECT
+                  id, library_id, folder_id,
+                  relative_path, file_name, extension,
+                  file_size, modified_at_utc_ticks,
+                  source_revision,
+                  width, height, format
+              FROM assets
+              WHERE library_id = $library_id
+              ORDER BY modified_at_utc_ticks DESC, id DESC
+              LIMIT $limit;
+              """
+            : """
+              SELECT
+                  id, library_id, folder_id,
+                  relative_path, file_name, extension,
+                  file_size, modified_at_utc_ticks,
+                  source_revision,
+                  width, height, format
+              FROM assets
+              WHERE library_id = $library_id
+                AND (
+                    modified_at_utc_ticks < $cursor_modified
+                    OR (
+                        modified_at_utc_ticks = $cursor_modified
+                        AND id < $cursor_id
+                    )
+                )
+              ORDER BY modified_at_utc_ticks DESC, id DESC
+              LIMIT $limit;
+              """;
+
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$limit", limit + 1);
+
+        if (cursor is { } value)
+        {
+            command.Parameters.AddWithValue("$cursor_modified", value.ModifiedAtUtcTicks);
+            command.Parameters.AddWithValue("$cursor_id", value.Id);
+        }
+
+        var items = new List<AssetInfo>(limit + 1);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            items.Add(ReadAsset(reader));
+        }
+
+        var hasMore = items.Count > limit;
+        if (hasMore)
+        {
+            items.RemoveAt(items.Count - 1);
+        }
+
+        AssetCursor? nextCursor = hasMore && items.Count > 0
+            ? AssetCursor.From(items[^1])
+            : null;
+
+        return new AssetPage(items, nextCursor);
+    }
+
+    public async Task MarkScanStartedAsync(
+        long libraryId,
+        DateTimeOffset startedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE libraries
+            SET scan_state = $state,
+                last_scan_attempted_at_utc_ticks = $attempted,
+                updated_at_utc_ticks = $attempted
+            WHERE id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$state", (int)LibraryScanState.InProgress);
+        command.Parameters.AddWithValue("$attempted", startedAtUtc.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        EnsureSingleLibraryUpdated(
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false),
+            libraryId);
+    }
+
+    public async Task MarkScanFinishedAsync(
+        long libraryId,
+        DateTimeOffset finishedAtUtc,
+        bool completed,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE libraries
+            SET scan_state = $state,
+                last_scan_attempted_at_utc_ticks = $attempted,
+                last_scan_completed_at_utc_ticks =
+                    CASE WHEN $completed = 1 THEN $attempted
+                         ELSE last_scan_completed_at_utc_ticks
+                    END,
+                updated_at_utc_ticks = $attempted
+            WHERE id = $library_id;
+            """;
+        command.Parameters.AddWithValue(
+            "$state",
+            completed ? (int)LibraryScanState.Complete : (int)LibraryScanState.Partial);
+        command.Parameters.AddWithValue("$completed", completed ? 1 : 0);
+        command.Parameters.AddWithValue("$attempted", finishedAtUtc.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        EnsureSingleLibraryUpdated(
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false),
+            libraryId);
+    }
+
     private static async Task EnsureMissingFoldersAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         long libraryId,
         IReadOnlyList<PreparedAsset> prepared,
-        IReadOnlyDictionary<string, long> existingFolderIds,
+        Dictionary<string, long> existingFolderIds,
         CancellationToken cancellationToken)
     {
         var missing = prepared
@@ -292,7 +452,7 @@ public sealed class LibraryRepository
         SqliteTransaction transaction,
         long libraryId,
         IReadOnlyList<PreparedAsset> prepared,
-        IReadOnlyDictionary<string, long> folderIds,
+        Dictionary<string, long> folderIds,
         CancellationToken cancellationToken)
     {
         const int rowsPerCommand = 64;
@@ -388,8 +548,8 @@ public sealed class LibraryRepository
             rows[index] =
                 $"($library_id, {folderId.ParameterName}, {relativePath.ParameterName}, " +
                 $"{relativePathKey.ParameterName}, {fileName.ParameterName}, {extension.ParameterName}, " +
-                $"{fileSize.ParameterName}, {modifiedAt.ParameterName}, {width.ParameterName}, " +
-                $"{height.ParameterName}, {format.ParameterName}, $now, $now)";
+                $"{fileSize.ParameterName}, {modifiedAt.ParameterName}, 1, " +
+                $"{width.ParameterName}, {height.ParameterName}, {format.ParameterName}, $now, $now)";
         }
 
         command.CommandText =
@@ -399,6 +559,7 @@ public sealed class LibraryRepository
                 relative_path, relative_path_key,
                 file_name, extension,
                 file_size, modified_at_utc_ticks,
+                source_revision,
                 width, height, format,
                 created_at_utc_ticks, updated_at_utc_ticks)
             VALUES {string.Join(", ", rows)}
@@ -407,11 +568,32 @@ public sealed class LibraryRepository
                 relative_path = excluded.relative_path,
                 file_name = excluded.file_name,
                 extension = excluded.extension,
+                source_revision =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN assets.source_revision + 1
+                         ELSE assets.source_revision
+                    END,
+                width =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN excluded.width
+                         ELSE COALESCE(excluded.width, assets.width)
+                    END,
+                height =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN excluded.height
+                         ELSE COALESCE(excluded.height, assets.height)
+                    END,
+                format =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN excluded.format
+                         ELSE COALESCE(excluded.format, assets.format)
+                    END,
                 file_size = excluded.file_size,
                 modified_at_utc_ticks = excluded.modified_at_utc_ticks,
-                width = COALESCE(excluded.width, assets.width),
-                height = COALESCE(excluded.height, assets.height),
-                format = COALESCE(excluded.format, assets.format),
                 updated_at_utc_ticks = excluded.updated_at_utc_ticks;
             """;
 
@@ -425,7 +607,7 @@ public sealed class LibraryRepository
         IReadOnlyList<PreparedAsset> prepared,
         int offset,
         int count,
-        IReadOnlyDictionary<string, long> folderIds)
+        Dictionary<string, long> folderIds)
     {
         command.Parameters["$now"].Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
 
@@ -450,103 +632,6 @@ public sealed class LibraryRepository
                 string.IsNullOrWhiteSpace(item.Source.Format)
                     ? item.Extension
                     : item.Source.Format.Trim();
-        }
-    }
-
-    public async Task<AssetPage> GetAssetPageAsync(
-        long libraryId,
-        int limit,
-        AssetCursor? cursor = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (limit is < 1 or > 1000)
-        {
-            throw new ArgumentOutOfRangeException(nameof(limit), "Page size must be between 1 and 1000.");
-        }
-
-        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-
-        command.CommandText = cursor is null
-            ? """
-              SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  width, height, format
-              FROM assets
-              WHERE library_id = $library_id
-              ORDER BY modified_at_utc_ticks DESC, id DESC
-              LIMIT $limit;
-              """
-            : """
-              SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  width, height, format
-              FROM assets
-              WHERE library_id = $library_id
-                AND (
-                    modified_at_utc_ticks < $cursor_modified
-                    OR (
-                        modified_at_utc_ticks = $cursor_modified
-                        AND id < $cursor_id
-                    )
-                )
-              ORDER BY modified_at_utc_ticks DESC, id DESC
-              LIMIT $limit;
-              """;
-
-        command.Parameters.AddWithValue("$library_id", libraryId);
-        command.Parameters.AddWithValue("$limit", limit + 1);
-
-        if (cursor is { } value)
-        {
-            command.Parameters.AddWithValue("$cursor_modified", value.ModifiedAtUtcTicks);
-            command.Parameters.AddWithValue("$cursor_id", value.Id);
-        }
-
-        var items = new List<AssetInfo>(limit + 1);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            items.Add(ReadAsset(reader));
-        }
-
-        var hasMore = items.Count > limit;
-        if (hasMore)
-        {
-            items.RemoveAt(items.Count - 1);
-        }
-
-        AssetCursor? nextCursor = hasMore && items.Count > 0
-            ? AssetCursor.From(items[^1])
-            : null;
-
-        return new AssetPage(items, nextCursor);
-    }
-
-    public async Task MarkScanCompletedAsync(
-        long libraryId,
-        DateTimeOffset completedAtUtc,
-        CancellationToken cancellationToken = default)
-    {
-        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            UPDATE libraries
-            SET last_scan_completed_at_utc_ticks = $completed,
-                updated_at_utc_ticks = $completed
-            WHERE id = $library_id;
-            """;
-        command.Parameters.AddWithValue("$completed", completedAtUtc.UtcDateTime.Ticks);
-        command.Parameters.AddWithValue("$library_id", libraryId);
-
-        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
-        {
-            throw new InvalidOperationException($"Library {libraryId} does not exist.");
         }
     }
 
@@ -635,6 +720,14 @@ public sealed class LibraryRepository
         }
     }
 
+    private static void EnsureSingleLibraryUpdated(int affectedRows, long libraryId)
+    {
+        if (affectedRows != 1)
+        {
+            throw new InvalidOperationException($"Library {libraryId} does not exist.");
+        }
+    }
+
     private static LibraryInfo ReadLibrary(SqliteDataReader reader) =>
         new(
             reader.GetInt64(0),
@@ -642,7 +735,9 @@ public sealed class LibraryRepository
             reader.GetString(2),
             FromTicks(reader.GetInt64(3)),
             FromTicks(reader.GetInt64(4)),
-            reader.IsDBNull(5) ? null : FromTicks(reader.GetInt64(5)));
+            reader.IsDBNull(5) ? null : FromTicks(reader.GetInt64(5)),
+            reader.IsDBNull(6) ? null : FromTicks(reader.GetInt64(6)),
+            (LibraryScanState)reader.GetInt32(7));
 
     private static AssetInfo ReadAsset(SqliteDataReader reader) =>
         new(
@@ -654,9 +749,10 @@ public sealed class LibraryRepository
             reader.GetString(5),
             reader.GetInt64(6),
             FromTicks(reader.GetInt64(7)),
-            reader.IsDBNull(8) ? null : reader.GetInt32(8),
+            reader.GetInt64(8),
             reader.IsDBNull(9) ? null : reader.GetInt32(9),
-            reader.IsDBNull(10) ? null : reader.GetString(10));
+            reader.IsDBNull(10) ? null : reader.GetInt32(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11));
 
     private static DateTimeOffset FromTicks(long ticks) =>
         new(new DateTime(ticks, DateTimeKind.Utc));
