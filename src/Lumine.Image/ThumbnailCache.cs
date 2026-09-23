@@ -22,7 +22,6 @@ public sealed class ThumbnailCache
 
         _rootPath = Path.GetFullPath(rootPath);
         Directory.CreateDirectory(_rootPath);
-        CleanupInterruptedWrites();
     }
 
     public string RootPath => _rootPath;
@@ -115,6 +114,7 @@ public sealed class ThumbnailCache
         var target = GetCachePath(cacheKey);
         var directory = Path.GetDirectoryName(target)!;
         Directory.CreateDirectory(directory);
+        CleanupInterruptedWritesInDirectory(directory);
 
         return Path.Combine(
             directory,
@@ -141,6 +141,12 @@ public sealed class ThumbnailCache
     public Task<ThumbnailCacheStats> GetStatsAsync(
         CancellationToken cancellationToken = default) =>
         Task.Run(() => GetStats(cancellationToken), cancellationToken);
+
+    public Task<long> RecoverInterruptedWritesAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () => CleanupInterruptedWrites(cancellationToken),
+            cancellationToken);
 
     public Task<ThumbnailPruneResult> PruneAsync(
         long maxBytes,
@@ -376,12 +382,32 @@ public sealed class ThumbnailCache
         long FileCount,
         long TotalBytes);
 
-    private void CleanupInterruptedWrites()
+    private long CleanupInterruptedWrites(CancellationToken cancellationToken)
     {
+        long deleted = 0;
+
         foreach (var path in Directory.EnumerateFiles(
                      _rootPath,
                      "*.tmp.webp",
                      SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (IsStaleInterruptedWrite(path) && DeleteBestEffort(path))
+            {
+                deleted++;
+            }
+        }
+
+        return deleted;
+    }
+
+    private static void CleanupInterruptedWritesInDirectory(string directory)
+    {
+        foreach (var path in Directory.EnumerateFiles(
+                     directory,
+                     "*.tmp.webp",
+                     SearchOption.TopDirectoryOnly))
         {
             if (IsStaleInterruptedWrite(path))
             {
@@ -405,16 +431,18 @@ public sealed class ThumbnailCache
         }
     }
 
-    private static void DeleteBestEffort(string path)
+    private static bool DeleteBestEffort(string path)
     {
         try
         {
             File.Delete(path);
+            return true;
         }
         catch (Exception exception) when (
             exception is IOException
             or UnauthorizedAccessException)
         {
+            return false;
         }
     }
 
