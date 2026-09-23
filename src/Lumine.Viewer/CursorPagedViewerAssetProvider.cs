@@ -83,17 +83,12 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider
 
         var checkpointPage = 0L;
         ViewerPageCursor? cursor = null;
-        long checkpointAccess = long.MinValue;
-
         foreach (var pair in _checkpoints)
         {
-            if (pair.Key <= pageIndex
-                && pair.Key >= checkpointPage
-                && pair.Value.LastAccess >= checkpointAccess)
+            if (pair.Key <= pageIndex && pair.Key >= checkpointPage)
             {
                 checkpointPage = pair.Key;
                 cursor = pair.Value.Cursor;
-                checkpointAccess = pair.Value.LastAccess;
             }
         }
 
