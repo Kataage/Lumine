@@ -4,6 +4,7 @@ public static class CoreMetricNames
 {
     public const string StartupWindowReady = "startup.window_ready";
     public const string DatabaseOpenMigration = "library.database_open_migration";
+    public const string DatabaseReopen = "library.database_reopen";
     public const string LibraryBulkUpsert = "library.bulk_upsert";
     public const string LibraryQuery = "library.query";
     public const string LibraryKeysetTraversal = "library.keyset_traversal";
