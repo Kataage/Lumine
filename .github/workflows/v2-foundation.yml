@@ -97,6 +97,9 @@ jobs:
       - name: Image Core smoke test
         run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
 
+      - name: Viewer virtualization smoke test
+        run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 

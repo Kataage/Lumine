@@ -28,6 +28,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Image.Smoke", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Image.Benchmarks", "tools\Lumine.Image.Benchmarks\Lumine.Image.Benchmarks.csproj", "{DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Viewer.Smoke", "tests\Lumine.Viewer.Smoke\Lumine.Viewer.Smoke.csproj", "{EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE}"
+EndProject
 Global
   GlobalSection(SolutionConfigurationPlatforms) = preSolution
     Debug|Any CPU = Debug|Any CPU
@@ -86,5 +88,9 @@ Global
     {DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
     {DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
     {DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}.Release|Any CPU.Build.0 = Release|Any CPU
+    {EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE}.Release|Any CPU.Build.0 = Release|Any CPU
   EndGlobalSection
 EndGlobal
