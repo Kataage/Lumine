@@ -5,6 +5,8 @@ namespace Lumine.Image;
 internal sealed class ThumbnailGenerator
 {
     private readonly ThumbnailCache _cache;
+    private readonly Dictionary<string, KeyGate> _keyGates = new(StringComparer.Ordinal);
+    private readonly object _keyGatesLock = new();
     private long _cacheHits;
     private long _cacheMisses;
     private long _generated;
@@ -41,7 +43,41 @@ internal sealed class ThumbnailGenerator
             return cached;
         }
 
-        Interlocked.Increment(ref _cacheMisses);
+        var keyGate = AcquireKeyGate(cacheKey);
+        try
+        {
+            keyGate.Semaphore.Wait(cancellationToken);
+            try
+            {
+                // Another worker may have generated this exact revision while
+                // this request was waiting. Re-check before touching original.
+                cached = _cache.TryOpenValid(cacheKey, cancellationToken);
+                if (cached is not null)
+                {
+                    Interlocked.Increment(ref _cacheHits);
+                    return cached;
+                }
+
+                Interlocked.Increment(ref _cacheMisses);
+                return Generate(source, profile, cacheKey, cancellationToken);
+            }
+            finally
+            {
+                keyGate.Semaphore.Release();
+            }
+        }
+        finally
+        {
+            ReleaseKeyGate(cacheKey, keyGate);
+        }
+    }
+
+    private ThumbnailResult Generate(
+        ThumbnailSource source,
+        ThumbnailProfile profile,
+        string cacheKey,
+        CancellationToken cancellationToken)
+    {
         var temporaryPath = _cache.CreateTemporaryPath(cacheKey);
 
         try
@@ -99,6 +135,44 @@ internal sealed class ThumbnailGenerator
             TryDelete(temporaryPath);
             throw;
         }
+    }
+
+    private KeyGate AcquireKeyGate(string cacheKey)
+    {
+        lock (_keyGatesLock)
+        {
+            if (!_keyGates.TryGetValue(cacheKey, out var gate))
+            {
+                gate = new KeyGate();
+                _keyGates.Add(cacheKey, gate);
+            }
+
+            gate.Users++;
+            return gate;
+        }
+    }
+
+    private void ReleaseKeyGate(string cacheKey, KeyGate gate)
+    {
+        lock (_keyGatesLock)
+        {
+            gate.Users--;
+
+            if (gate.Users == 0
+                && _keyGates.TryGetValue(cacheKey, out var current)
+                && ReferenceEquals(current, gate))
+            {
+                _keyGates.Remove(cacheKey);
+                gate.Semaphore.Dispose();
+            }
+        }
+    }
+
+    private sealed class KeyGate
+    {
+        public SemaphoreSlim Semaphore { get; } = new(1, 1);
+
+        public int Users { get; set; }
     }
 
     private static void TryDelete(string path)
