@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Lumine.Core/Lumine.Core.csproj" />
+    <ProjectReference Include="../Lumine.Diagnostics/Lumine.Diagnostics.csproj" />
     <ProjectReference Include="../Lumine.Library/Lumine.Library.csproj" />
     <ProjectReference Include="../Lumine.Image/Lumine.Image.csproj" />
     <ProjectReference Include="../Lumine.Viewer/Lumine.Viewer.csproj" />
