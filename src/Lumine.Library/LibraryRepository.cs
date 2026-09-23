@@ -159,6 +159,7 @@ public sealed class LibraryRepository
         foreach (var asset in assets)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ValidateAsset(asset);
 
             var relativePath = LibraryPaths.NormalizeRelativePath(asset.RelativePath);
             var extension = Path.GetExtension(relativePath).TrimStart('.').ToLowerInvariant();
@@ -187,101 +188,181 @@ public sealed class LibraryRepository
             prepared,
             cancellationToken).ConfigureAwait(false);
 
-        foreach (var item in prepared)
+        if (folderIds.Count < prepared.Count)
         {
-            if (item.FolderKey is null || folderIds.ContainsKey(item.FolderKey))
-            {
-                continue;
-            }
-
-            var folderId = await CreateOrGetFolderIdAsync(
+            await EnsureMissingFoldersAsync(
                 connection,
                 transaction,
                 libraryId,
-                item.FolderPath,
-                item.FolderKey,
+                prepared,
+                folderIds,
                 cancellationToken).ConfigureAwait(false);
-            folderIds[item.FolderKey] = folderId;
+
+            folderIds = await LoadExistingFolderIdsAsync(
+                connection,
+                transaction,
+                libraryId,
+                prepared,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        await using var assetCommand = connection.CreateCommand();
-        assetCommand.Transaction = transaction;
-        assetCommand.CommandText =
-            """
-            INSERT INTO assets(
-                asset_key, library_id, folder_id,
-                relative_path, relative_path_key,
-                file_name, extension,
-                file_size, modified_at_utc_ticks,
-                width, height, format,
-                created_at_utc_ticks, updated_at_utc_ticks)
-            VALUES(
-                $asset_key, $library_id, $folder_id,
-                $relative_path, $relative_path_key,
-                $file_name, $extension,
-                $file_size, $modified_at,
-                $width, $height, $format,
-                $created_at, $updated_at)
-            ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
-                folder_id = excluded.folder_id,
-                relative_path = excluded.relative_path,
-                file_name = excluded.file_name,
-                extension = excluded.extension,
-                file_size = excluded.file_size,
-                modified_at_utc_ticks = excluded.modified_at_utc_ticks,
-                width = COALESCE(excluded.width, assets.width),
-                height = COALESCE(excluded.height, assets.height),
-                format = COALESCE(excluded.format, assets.format),
-                updated_at_utc_ticks = excluded.updated_at_utc_ticks;
-            """;
-
-        var pAssetKey = assetCommand.Parameters.Add("$asset_key", SqliteType.Text);
-        var pLibraryId = assetCommand.Parameters.Add("$library_id", SqliteType.Integer);
-        var pFolderId = assetCommand.Parameters.Add("$folder_id", SqliteType.Integer);
-        var pRelativePath = assetCommand.Parameters.Add("$relative_path", SqliteType.Text);
-        var pRelativePathKey = assetCommand.Parameters.Add("$relative_path_key", SqliteType.Text);
-        var pFileName = assetCommand.Parameters.Add("$file_name", SqliteType.Text);
-        var pExtension = assetCommand.Parameters.Add("$extension", SqliteType.Text);
-        var pFileSize = assetCommand.Parameters.Add("$file_size", SqliteType.Integer);
-        var pModifiedAt = assetCommand.Parameters.Add("$modified_at", SqliteType.Integer);
-        var pWidth = assetCommand.Parameters.Add("$width", SqliteType.Integer);
-        var pHeight = assetCommand.Parameters.Add("$height", SqliteType.Integer);
-        var pFormat = assetCommand.Parameters.Add("$format", SqliteType.Text);
-        var pCreatedAt = assetCommand.Parameters.Add("$created_at", SqliteType.Integer);
-        var pUpdatedAt = assetCommand.Parameters.Add("$updated_at", SqliteType.Integer);
-
-        foreach (var item in prepared)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ValidateAsset(item.Source);
-
-            var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
-            long? folderId = item.FolderKey is null
-                ? null
-                : folderIds[item.FolderKey];
-
-            pAssetKey.Value = Guid.NewGuid().ToString("N");
-            pLibraryId.Value = libraryId;
-            pFolderId.Value = folderId.HasValue ? folderId.Value : DBNull.Value;
-            pRelativePath.Value = item.RelativePath;
-            pRelativePathKey.Value = item.RelativePathKey;
-            pFileName.Value = item.FileName;
-            pExtension.Value = item.Extension;
-            pFileSize.Value = item.Source.FileSize;
-            pModifiedAt.Value = item.Source.ModifiedAtUtc.UtcDateTime.Ticks;
-            pWidth.Value = item.Source.Width.HasValue ? item.Source.Width.Value : DBNull.Value;
-            pHeight.Value = item.Source.Height.HasValue ? item.Source.Height.Value : DBNull.Value;
-            pFormat.Value = string.IsNullOrWhiteSpace(item.Source.Format)
-                ? item.Extension
-                : item.Source.Format.Trim();
-            pCreatedAt.Value = nowTicks;
-            pUpdatedAt.Value = nowTicks;
-
-            await assetCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await UpsertPreparedAssetsAsync(
+            connection,
+            transaction,
+            libraryId,
+            prepared,
+            folderIds,
+            cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
         return assets.Count;
+    }
+
+    private static async Task EnsureMissingFoldersAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        IReadOnlyList<PreparedAsset> prepared,
+        IReadOnlyDictionary<string, long> existingFolderIds,
+        CancellationToken cancellationToken)
+    {
+        var missing = prepared
+            .Where(static item => item.FolderKey is not null)
+            .GroupBy(static item => item.FolderKey!, StringComparer.Ordinal)
+            .Where(group => !existingFolderIds.ContainsKey(group.Key))
+            .Select(static group => group.First())
+            .ToArray();
+
+        const int rowsPerCommand = 400;
+        for (var offset = 0; offset < missing.Length; offset += rowsPerCommand)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(rowsPerCommand, missing.Length - offset);
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+
+            var rows = new string[count];
+            command.Parameters.AddWithValue("$library_id", libraryId);
+            command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+
+            for (var index = 0; index < count; index++)
+            {
+                var item = missing[offset + index];
+                var pathName = $"$folder_path_{index}";
+                var keyName = $"$folder_key_{index}";
+                rows[index] = $"($library_id, {pathName}, {keyName}, $created)";
+                command.Parameters.AddWithValue(pathName, item.FolderPath);
+                command.Parameters.AddWithValue(keyName, item.FolderKey!);
+            }
+
+            command.CommandText =
+                $"""
+                INSERT INTO folders(
+                    library_id, relative_path, relative_path_key, created_at_utc_ticks)
+                VALUES {string.Join(", ", rows)}
+                ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
+                    relative_path = excluded.relative_path;
+                """;
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task UpsertPreparedAssetsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        IReadOnlyList<PreparedAsset> prepared,
+        IReadOnlyDictionary<string, long> folderIds,
+        CancellationToken cancellationToken)
+    {
+        // 64 rows * 15 bound values = 960 variables, which stays below
+        // SQLite's historical 999-variable floor while reducing managed/native
+        // command crossings by roughly two orders of magnitude.
+        const int rowsPerCommand = 64;
+
+        for (var offset = 0; offset < prepared.Count; offset += rowsPerCommand)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(rowsPerCommand, prepared.Count - offset);
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+
+            var rows = new string[count];
+            var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+            for (var index = 0; index < count; index++)
+            {
+                var item = prepared[offset + index];
+                var suffix = index.ToString(CultureInfo.InvariantCulture);
+                var assetKey = "$asset_key_" + suffix;
+                var folderId = "$folder_id_" + suffix;
+                var relativePath = "$relative_path_" + suffix;
+                var relativePathKey = "$relative_path_key_" + suffix;
+                var fileName = "$file_name_" + suffix;
+                var extension = "$extension_" + suffix;
+                var fileSize = "$file_size_" + suffix;
+                var modifiedAt = "$modified_at_" + suffix;
+                var width = "$width_" + suffix;
+                var height = "$height_" + suffix;
+                var format = "$format_" + suffix;
+                var createdAt = "$created_at_" + suffix;
+                var updatedAt = "$updated_at_" + suffix;
+
+                rows[index] =
+                    $"({assetKey}, $library_id, {folderId}, {relativePath}, {relativePathKey}, " +
+                    $"{fileName}, {extension}, {fileSize}, {modifiedAt}, {width}, {height}, {format}, " +
+                    $"{createdAt}, {updatedAt})";
+
+                command.Parameters.AddWithValue(assetKey, Guid.CreateVersion7().ToString("N"));
+                command.Parameters.AddWithValue(
+                    folderId,
+                    item.FolderKey is null ? DBNull.Value : folderIds[item.FolderKey]);
+                command.Parameters.AddWithValue(relativePath, item.RelativePath);
+                command.Parameters.AddWithValue(relativePathKey, item.RelativePathKey);
+                command.Parameters.AddWithValue(fileName, item.FileName);
+                command.Parameters.AddWithValue(extension, item.Extension);
+                command.Parameters.AddWithValue(fileSize, item.Source.FileSize);
+                command.Parameters.AddWithValue(modifiedAt, item.Source.ModifiedAtUtc.UtcDateTime.Ticks);
+                command.Parameters.AddWithValue(width, item.Source.Width.HasValue ? item.Source.Width.Value : DBNull.Value);
+                command.Parameters.AddWithValue(height, item.Source.Height.HasValue ? item.Source.Height.Value : DBNull.Value);
+                command.Parameters.AddWithValue(
+                    format,
+                    string.IsNullOrWhiteSpace(item.Source.Format)
+                        ? item.Extension
+                        : item.Source.Format.Trim());
+                command.Parameters.AddWithValue(createdAt, nowTicks);
+                command.Parameters.AddWithValue(updatedAt, nowTicks);
+            }
+
+            command.Parameters.AddWithValue("$library_id", libraryId);
+            command.CommandText =
+                $"""
+                INSERT INTO assets(
+                    asset_key, library_id, folder_id,
+                    relative_path, relative_path_key,
+                    file_name, extension,
+                    file_size, modified_at_utc_ticks,
+                    width, height, format,
+                    created_at_utc_ticks, updated_at_utc_ticks)
+                VALUES {string.Join(", ", rows)}
+                ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
+                    folder_id = excluded.folder_id,
+                    relative_path = excluded.relative_path,
+                    file_name = excluded.file_name,
+                    extension = excluded.extension,
+                    file_size = excluded.file_size,
+                    modified_at_utc_ticks = excluded.modified_at_utc_ticks,
+                    width = COALESCE(excluded.width, assets.width),
+                    height = COALESCE(excluded.height, assets.height),
+                    format = COALESCE(excluded.format, assets.format),
+                    updated_at_utc_ticks = excluded.updated_at_utc_ticks;
+                """;
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task<AssetPage> GetAssetPageAsync(
@@ -425,35 +506,6 @@ public sealed class LibraryRepository
         }
 
         return result;
-    }
-
-    private static async Task<long> CreateOrGetFolderIdAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        long libraryId,
-        string folderPath,
-        string folderKey,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            INSERT INTO folders(
-                library_id, relative_path, relative_path_key, created_at_utc_ticks)
-            VALUES($library_id, $relative_path, $relative_path_key, $created)
-            ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
-                relative_path = excluded.relative_path
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("$library_id", libraryId);
-        command.Parameters.AddWithValue("$relative_path", folderPath);
-        command.Parameters.AddWithValue("$relative_path_key", folderKey);
-        command.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
-
-        return Convert.ToInt64(
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
-            CultureInfo.InvariantCulture);
     }
 
     private sealed record PreparedAsset(
