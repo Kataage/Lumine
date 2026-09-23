@@ -139,7 +139,19 @@ public sealed class LibraryRepository
         CancellationToken cancellationToken = default)
     {
         var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return new LibraryIngestSession(this, connection, libraryId);
+        try
+        {
+            return await LibraryIngestSession.CreateAsync(
+                this,
+                connection,
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     internal async Task<int> UpsertAssetsOnConnectionAsync(
