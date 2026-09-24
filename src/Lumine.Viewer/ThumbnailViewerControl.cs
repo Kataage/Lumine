@@ -530,6 +530,7 @@ public sealed class ThumbnailViewerControl : UserControl
             }
             catch
             {
+                _session.NotifyTileLoadFailed();
                 await Dispatcher.UIThread.InvokeAsync(() => _label.Text = "!");
             }
             finally
