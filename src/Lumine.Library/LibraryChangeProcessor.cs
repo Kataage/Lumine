@@ -403,7 +403,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
                 default:
                     throw new ArgumentOutOfRangeException(
-                        nameof(change),
+                        nameof(changes),
                         change.Kind,
                         "Unknown filesystem change kind.");
             }
