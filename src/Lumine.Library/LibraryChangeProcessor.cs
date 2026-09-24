@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Threading.Channels;
 
 namespace Lumine.Library;
@@ -52,6 +51,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
         _processorTask = ProcessLoopAsync(_shutdown.Token);
     }
+
+    public Task Completion => _processorTask;
 
     public LibrarySyncDiagnostics Diagnostics =>
         new(
@@ -149,7 +150,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
         foreach (var change in coalesced.Values)
         {
-            if (await ApplyAsync(change, cancellationToken).ConfigureAwait(false))
+            if (await ApplyWithRecoveryAsync(change, cancellationToken).ConfigureAwait(false))
             {
                 await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                 return;
@@ -209,9 +210,9 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 if (coalesced.Count >= CoalesceCapacity)
                 {
                     Interlocked.Increment(ref _overflows);
-                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     coalesced.Clear();
                     DrainQueue();
+                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     break;
                 }
             }
@@ -220,7 +221,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var requiresReconcile = await ApplyAsync(
+                var requiresReconcile = await ApplyWithRecoveryAsync(
                     change,
                     cancellationToken).ConfigureAwait(false);
 
@@ -232,6 +233,39 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 }
             }
         }
+    }
+
+    private async Task<bool> ApplyWithRecoveryAsync(
+        DirectoryChange change,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return await ApplyAsync(change, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                if (attempt == 2)
+                {
+                    await _repository.MarkReconcileRequiredAsync(
+                        _libraryId,
+                        $"Incremental filesystem apply failed for '{change.RelativePath}': {exception.GetType().Name}.",
+                        cancellationToken).ConfigureAwait(false);
+                    return true;
+                }
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(50 * (attempt + 1)),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return true;
     }
 
     private async Task<bool> ApplyAsync(
@@ -442,6 +476,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             if (!result.Completed)
             {
                 Interlocked.Increment(ref _reconcileFailures);
+                throw new InvalidOperationException(
+                    "Filesystem reconciliation was incomplete; incremental synchronization cannot safely continue.");
             }
         }
         catch

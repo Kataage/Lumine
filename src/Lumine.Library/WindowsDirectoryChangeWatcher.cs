@@ -27,7 +27,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
     private readonly string _rootPath;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _watchTask;
-    private TaskCompletionSource _ready =
+    private readonly TaskCompletionSource _ready =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public WindowsDirectoryChangeWatcher(string rootPath)
@@ -350,8 +350,31 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                     }
                 }
 
-                var wait = WaitHandle.WaitAny(
-                    [completed, cancellationToken.WaitHandle]);
+                int wait;
+                while (true)
+                {
+                    wait = WaitHandle.WaitAny(
+                        [completed, cancellationToken.WaitHandle],
+                        pendingRenameOld is null ? Timeout.Infinite : 100);
+
+                    if (wait != WaitHandle.WaitTimeout)
+                    {
+                        break;
+                    }
+
+                    if (pendingRenameOld is not null)
+                    {
+                        publish(
+                            [
+                                new DirectoryChange(
+                                    DirectoryChangeKind.Removed,
+                                    pendingRenameOld,
+                                    null,
+                                    DateTimeOffset.UtcNow)
+                            ]);
+                        pendingRenameOld = null;
+                    }
+                }
 
                 if (wait == 1)
                 {
