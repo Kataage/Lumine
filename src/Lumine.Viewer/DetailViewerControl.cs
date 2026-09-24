@@ -204,8 +204,11 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
+        var selectionVersion = snapshot.SelectionVersion;
         await _session.EnsureOriginalAsync(cancellationToken);
-        if (!_session.Snapshot.IsOriginal)
+        var current = _session.Snapshot;
+        if (current.SelectionVersion != selectionVersion
+            || !current.IsOriginal)
         {
             return;
         }
@@ -238,8 +241,11 @@ public sealed class DetailViewerControl : UserControl
 
         if (clamped >= 1 && !snapshot.IsOriginal)
         {
+            var selectionVersion = snapshot.SelectionVersion;
             await _session.EnsureOriginalAsync(cancellationToken);
-            if (!_session.Snapshot.IsOriginal)
+            var current = _session.Snapshot;
+            if (current.SelectionVersion != selectionVersion
+                || !current.IsOriginal)
             {
                 return;
             }
@@ -273,9 +279,12 @@ public sealed class DetailViewerControl : UserControl
                     : snapshot.Bitmap.PixelSize.Width / renderScaling;
             var targetWidthDip = currentWidthDip * factor;
 
+            var selectionVersion = snapshot.SelectionVersion;
             await _session.EnsureOriginalAsync();
             var original = _session.Snapshot;
-            if (!original.IsOriginal || original.Bitmap is null)
+            if (original.SelectionVersion != selectionVersion
+                || !original.IsOriginal
+                || original.Bitmap is null)
             {
                 return;
             }
