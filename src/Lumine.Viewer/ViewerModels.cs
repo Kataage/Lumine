@@ -94,4 +94,6 @@ public readonly record struct ViewerRuntimeDiagnostics(
     int AttachedTiles,
     int ReadyTiles,
     int DecodedBitmapEntries,
-    long DecodedBitmapBytes);
+    long DecodedBitmapBytes,
+    int ActiveBitmapDecodes,
+    int PeakConcurrentBitmapDecodes);
