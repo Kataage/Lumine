@@ -232,9 +232,17 @@ public sealed class ThumbnailViewerControl : UserControl
         long next;
         if (_selectedIndex < 0)
         {
-            next = e.Key == Key.End
-                ? AssetCount - 1
-                : 0;
+            next = e.Key switch
+            {
+                Key.Left or Key.Right or Key.Up or Key.Down or Key.Home => 0,
+                Key.End => AssetCount - 1,
+                _ => -1
+            };
+
+            if (next < 0)
+            {
+                return;
+            }
         }
         else
         {
