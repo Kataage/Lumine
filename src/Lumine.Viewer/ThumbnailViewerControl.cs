@@ -60,6 +60,17 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    public long? FirstVisibleAssetIndex
+    {
+        get
+        {
+            var firstRow = GetFirstVisibleRowIndex();
+            return firstRow >= 0
+                ? checked((long)firstRow * _columns)
+                : null;
+        }
+    }
+
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
@@ -116,15 +127,58 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private long? GetViewportAnchorAssetIndex()
     {
-        if (_selectedIndex >= 0 && SelectedRealizedTileCount > 0)
+        var firstVisibleRow = GetFirstVisibleRowIndex();
+        if (firstVisibleRow >= 0)
         {
-            return _selectedIndex;
+            return checked((long)firstVisibleRow * _columns);
         }
 
-        var firstRow = GetFirstRealizedRowIndex();
-        return firstRow >= 0
-            ? checked((long)firstRow * _columns)
+        var firstRealizedRow = GetFirstRealizedRowIndex();
+        if (firstRealizedRow >= 0)
+        {
+            return checked((long)firstRealizedRow * _columns);
+        }
+
+        return _selectedIndex >= 0
+            ? _selectedIndex
             : null;
+    }
+
+    private int GetFirstVisibleRowIndex()
+    {
+        var viewportHeight = _rows.Bounds.Height;
+        var bestIndex = -1;
+        var bestTop = double.PositiveInfinity;
+
+        foreach (var container in _rows.GetRealizedContainers())
+        {
+            var index = _rows.IndexFromContainer(container);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var origin = container.TranslatePoint(default, _rows);
+            if (origin is not { } point)
+            {
+                continue;
+            }
+
+            var top = point.Y;
+            var bottom = top + container.Bounds.Height;
+            if (bottom <= 0 || top >= viewportHeight)
+            {
+                continue;
+            }
+
+            if (top < bestTop)
+            {
+                bestTop = top;
+                bestIndex = index;
+            }
+        }
+
+        return bestIndex;
     }
 
     private int GetFirstRealizedRowIndex() =>
