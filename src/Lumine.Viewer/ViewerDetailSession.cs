@@ -353,7 +353,11 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         _shutdown.Cancel();
         selection?.Cancel();
         selection?.Dispose();
-        PreviewBitmapCache.Dispose();
+        var previewCache = PreviewBitmapCache;
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            previewCache.Dispose,
+            Avalonia.Threading.DispatcherPriority.Background);
+
         _shutdown.Dispose();
 
         await Task.CompletedTask;

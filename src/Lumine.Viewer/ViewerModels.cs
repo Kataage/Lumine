@@ -137,8 +137,21 @@ public sealed class ViewerOriginalBitmap : IDisposable
 
     public ViewerDetailMetadata Metadata { get; }
 
-    public void Dispose() =>
-        Interlocked.Exchange(ref _bitmap, null)?.Dispose();
+    public void Dispose()
+    {
+        var bitmap = Interlocked.Exchange(ref _bitmap, null);
+        if (bitmap is null)
+        {
+            return;
+        }
+
+        // Avalonia composition can retain the previous Image.Source until the
+        // next render commit. Disposing the platform bitmap synchronously here
+        // can race that commit during rapid navigation/window teardown.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            bitmap.Dispose,
+            Avalonia.Threading.DispatcherPriority.Background);
+    }
 }
 
 public interface IViewerDetailProvider

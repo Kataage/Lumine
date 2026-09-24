@@ -112,7 +112,7 @@ public sealed class DetailViewerControl : UserControl
 
         _session.StateChanged += OnStateChanged;
         _session.SelectedIndexChanged += OnSessionSelectionChanged;
-        DetachedFromVisualTree += (_, _) => UnbindGrid();
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
 
         ApplySnapshot(_session.Snapshot);
     }
@@ -236,6 +236,14 @@ public sealed class DetailViewerControl : UserControl
 
         _image.Width = bitmap.PixelSize.Width * zoom;
         _image.Height = bitmap.PixelSize.Height * zoom;
+    }
+
+    private void OnDetachedFromVisualTree(
+        object? sender,
+        Avalonia.VisualTree.VisualTreeAttachmentEventArgs e)
+    {
+        _image.Source = null;
+        UnbindGrid();
     }
 
     private void OnStateChanged(
