@@ -116,7 +116,8 @@ public sealed class LibraryRepository
                 relative_path, file_name, extension,
                 file_size, modified_at_utc_ticks,
                 source_revision,
-                width, height, format
+                width, height, format,
+                observed_generation
             FROM assets
             WHERE library_id = $library_id
               AND relative_path_key = $path_key;
@@ -396,6 +397,340 @@ public sealed class LibraryRepository
             libraryId);
     }
 
+    public async Task<LibrarySyncState> GetOrCreateSyncStateAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using (var ensure = connection.CreateCommand())
+        {
+            ensure.CommandText =
+                """
+                INSERT INTO library_sync_state(library_id)
+                VALUES ($library_id)
+                ON CONFLICT(library_id) DO NOTHING;
+                """;
+            ensure.Parameters.AddWithValue("$library_id", libraryId);
+            await ensure.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                library_id,
+                reconcile_generation,
+                reconcile_required,
+                usn_journal_id,
+                next_usn,
+                watcher_stopped_at_utc_ticks,
+                last_reconciled_at_utc_ticks,
+                last_error
+            FROM library_sync_state
+            WHERE library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"Library {libraryId} sync state could not be created.");
+        }
+
+        return ReadSyncState(reader);
+    }
+
+    public async Task<long> BeginReconcileGenerationAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO library_sync_state(
+                library_id,
+                reconcile_generation,
+                reconcile_required)
+            VALUES ($library_id, 1, 1)
+            ON CONFLICT(library_id) DO UPDATE SET
+                reconcile_generation = library_sync_state.reconcile_generation + 1,
+                reconcile_required = 1,
+                last_error = NULL
+            RETURNING reconcile_generation;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+    }
+
+    public async Task<long> CompleteReconcileAsync(
+        long libraryId,
+        long generation,
+        DateTimeOffset completedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        long deleted;
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText =
+                """
+                DELETE FROM assets
+                WHERE library_id = $library_id
+                  AND observed_generation <> $generation;
+                """;
+            delete.Parameters.AddWithValue("$library_id", libraryId);
+            delete.Parameters.AddWithValue("$generation", generation);
+            deleted = await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var state = connection.CreateCommand())
+        {
+            state.Transaction = transaction;
+            state.CommandText =
+                """
+                UPDATE library_sync_state
+                SET reconcile_required = 0,
+                    last_reconciled_at_utc_ticks = $completed,
+                    last_error = NULL
+                WHERE library_id = $library_id
+                  AND reconcile_generation = $generation;
+                """;
+            state.Parameters.AddWithValue("$completed", completedAtUtc.UtcDateTime.Ticks);
+            state.Parameters.AddWithValue("$library_id", libraryId);
+            state.Parameters.AddWithValue("$generation", generation);
+
+            if (await state.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Library {libraryId} reconcile generation changed while reconciliation was running.");
+            }
+        }
+
+        transaction.Commit();
+        return deleted;
+    }
+
+    public async Task MarkReconcileRequiredAsync(
+        long libraryId,
+        string? error = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO library_sync_state(
+                library_id,
+                reconcile_required,
+                last_error)
+            VALUES ($library_id, 1, $error)
+            ON CONFLICT(library_id) DO UPDATE SET
+                reconcile_required = 1,
+                last_error = excluded.last_error;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task UpdateUsnCheckpointAsync(
+        long libraryId,
+        string? journalId,
+        long? nextUsn,
+        bool reconcileRequired,
+        DateTimeOffset? watcherStoppedAtUtc,
+        string? error,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO library_sync_state(
+                library_id,
+                reconcile_required,
+                usn_journal_id,
+                next_usn,
+                watcher_stopped_at_utc_ticks,
+                last_error)
+            VALUES (
+                $library_id,
+                $reconcile_required,
+                $journal_id,
+                $next_usn,
+                $stopped,
+                $error)
+            ON CONFLICT(library_id) DO UPDATE SET
+                reconcile_required = excluded.reconcile_required,
+                usn_journal_id = excluded.usn_journal_id,
+                next_usn = excluded.next_usn,
+                watcher_stopped_at_utc_ticks = excluded.watcher_stopped_at_utc_ticks,
+                last_error = excluded.last_error;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$reconcile_required", reconcileRequired ? 1 : 0);
+        command.Parameters.AddWithValue("$journal_id", (object?)journalId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$next_usn", (object?)nextUsn ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$stopped",
+            watcherStoppedAtUtc is { } stopped
+                ? stopped.UtcDateTime.Ticks
+                : DBNull.Value);
+        command.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> RenameAssetAsync(
+        long libraryId,
+        string oldRelativePath,
+        AssetUpsert replacement,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateAsset(replacement);
+
+        var oldKey = LibraryPaths.RelativePathKey(oldRelativePath);
+        var newPath = LibraryPaths.NormalizeRelativePath(replacement.RelativePath);
+        var newKey = LibraryPaths.RelativePathKey(newPath);
+        var folderPath = LibraryPaths.FolderRelativePath(newPath);
+        var folderKey = folderPath.Length == 0
+            ? null
+            : LibraryPaths.FolderPathKey(folderPath);
+        var extension = LibraryFileTypes.GetFormat(newPath);
+        var now = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        long? folderId = null;
+        if (folderKey is not null)
+        {
+            await using var folder = connection.CreateCommand();
+            folder.Transaction = transaction;
+            folder.CommandText =
+                """
+                INSERT INTO folders(
+                    library_id,
+                    relative_path,
+                    relative_path_key,
+                    created_at_utc_ticks)
+                VALUES ($library_id, $path, $key, $created)
+                ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
+                    relative_path = excluded.relative_path
+                RETURNING id;
+                """;
+            folder.Parameters.AddWithValue("$library_id", libraryId);
+            folder.Parameters.AddWithValue("$path", folderPath);
+            folder.Parameters.AddWithValue("$key", folderKey);
+            folder.Parameters.AddWithValue("$created", now);
+            folderId = Convert.ToInt64(
+                await folder.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE assets
+            SET folder_id = $folder_id,
+                relative_path = $new_path,
+                relative_path_key = $new_key,
+                file_name = $file_name,
+                extension = $extension,
+                source_revision =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN source_revision + 1
+                         ELSE source_revision
+                    END,
+                width =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN $width
+                         ELSE COALESCE($width, width)
+                    END,
+                height =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN $height
+                         ELSE COALESCE($height, height)
+                    END,
+                format =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN $format
+                         ELSE COALESCE($format, format)
+                    END,
+                file_size = $file_size,
+                modified_at_utc_ticks = $modified,
+                observed_generation =
+                    CASE WHEN $observed_generation > 0
+                         THEN $observed_generation
+                         ELSE observed_generation
+                    END,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND relative_path_key = $old_key;
+            """;
+        command.Parameters.AddWithValue("$folder_id", (object?)folderId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$new_path", newPath);
+        command.Parameters.AddWithValue("$new_key", newKey);
+        command.Parameters.AddWithValue("$file_name", Path.GetFileName(newPath));
+        command.Parameters.AddWithValue("$extension", extension);
+        command.Parameters.AddWithValue("$file_size", replacement.FileSize);
+        command.Parameters.AddWithValue("$modified", replacement.ModifiedAtUtc.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$width", (object?)replacement.Width ?? DBNull.Value);
+        command.Parameters.AddWithValue("$height", (object?)replacement.Height ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$format",
+            string.IsNullOrWhiteSpace(replacement.Format)
+                ? extension
+                : replacement.Format.Trim());
+        command.Parameters.AddWithValue(
+            "$observed_generation",
+            replacement.ObservationGeneration);
+        command.Parameters.AddWithValue("$updated", now);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$old_key", oldKey);
+
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        transaction.Commit();
+        return updated == 1;
+    }
+
+    public async Task<bool> HasTrackedFolderAsync(
+        long libraryId,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        var pathKey = LibraryPaths.FolderPathKey(relativePath);
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM folders
+                WHERE library_id = $library_id
+                  AND relative_path_key = $path_key
+            );
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$path_key", pathKey);
+
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture) != 0;
+    }
+
     private static async Task EnsureMissingFoldersAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -532,6 +867,9 @@ public sealed class LibraryRepository
             var width = command.Parameters.Add("$width_" + suffix, SqliteType.Integer);
             var height = command.Parameters.Add("$height_" + suffix, SqliteType.Integer);
             var format = command.Parameters.Add("$format_" + suffix, SqliteType.Text);
+            var observationGeneration = command.Parameters.Add(
+                "$observed_generation_" + suffix,
+                SqliteType.Integer);
 
             bindings[index] = new AssetCommandBinding(
                 folderId,
@@ -543,13 +881,15 @@ public sealed class LibraryRepository
                 modifiedAt,
                 width,
                 height,
-                format);
+                format,
+                observationGeneration);
 
             rows[index] =
                 $"($library_id, {folderId.ParameterName}, {relativePath.ParameterName}, " +
                 $"{relativePathKey.ParameterName}, {fileName.ParameterName}, {extension.ParameterName}, " +
                 $"{fileSize.ParameterName}, {modifiedAt.ParameterName}, 1, " +
-                $"{width.ParameterName}, {height.ParameterName}, {format.ParameterName}, $now, $now)";
+                $"{width.ParameterName}, {height.ParameterName}, {format.ParameterName}, " +
+                $"{observationGeneration.ParameterName}, $now, $now)";
         }
 
         command.CommandText =
@@ -561,6 +901,7 @@ public sealed class LibraryRepository
                 file_size, modified_at_utc_ticks,
                 source_revision,
                 width, height, format,
+                observed_generation,
                 created_at_utc_ticks, updated_at_utc_ticks)
             VALUES {string.Join(", ", rows)}
             ON CONFLICT(library_id, relative_path_key) DO UPDATE SET
@@ -594,6 +935,11 @@ public sealed class LibraryRepository
                     END,
                 file_size = excluded.file_size,
                 modified_at_utc_ticks = excluded.modified_at_utc_ticks,
+                observed_generation =
+                    CASE WHEN excluded.observed_generation > 0
+                         THEN excluded.observed_generation
+                         ELSE assets.observed_generation
+                    END,
                 updated_at_utc_ticks = excluded.updated_at_utc_ticks;
             """;
 
@@ -632,6 +978,7 @@ public sealed class LibraryRepository
                 string.IsNullOrWhiteSpace(item.Source.Format)
                     ? item.Extension
                     : item.Source.Format.Trim();
+            binding.ObservationGeneration.Value = item.Source.ObservationGeneration;
         }
     }
 
@@ -691,7 +1038,8 @@ public sealed class LibraryRepository
         SqliteParameter ModifiedAt,
         SqliteParameter Width,
         SqliteParameter Height,
-        SqliteParameter Format);
+        SqliteParameter Format,
+        SqliteParameter ObservationGeneration);
 
     private sealed record PreparedAsset(
         AssetUpsert Source,
@@ -738,6 +1086,17 @@ public sealed class LibraryRepository
             reader.IsDBNull(5) ? null : FromTicks(reader.GetInt64(5)),
             reader.IsDBNull(6) ? null : FromTicks(reader.GetInt64(6)),
             (LibraryScanState)reader.GetInt32(7));
+
+    private static LibrarySyncState ReadSyncState(SqliteDataReader reader) =>
+        new(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetInt32(2) != 0,
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetInt64(4),
+            reader.IsDBNull(5) ? null : FromTicks(reader.GetInt64(5)),
+            reader.IsDBNull(6) ? null : FromTicks(reader.GetInt64(6)),
+            reader.IsDBNull(7) ? null : reader.GetString(7));
 
     private static AssetInfo ReadAsset(SqliteDataReader reader) =>
         new(

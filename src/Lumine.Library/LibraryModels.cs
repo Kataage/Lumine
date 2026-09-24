@@ -48,7 +48,8 @@ public sealed record AssetUpsert(
     DateTimeOffset ModifiedAtUtc,
     int? Width = null,
     int? Height = null,
-    string? Format = null);
+    string? Format = null,
+    long ObservationGeneration = 0);
 
 public sealed record LibraryScanProgress(
     int Discovered,
@@ -68,3 +69,13 @@ public sealed record LibraryScanResult(
     bool Completed,
     DateTimeOffset FinishedAtUtc,
     IReadOnlyList<LibraryScanFailure> FailureSamples);
+
+public sealed record LibrarySyncState(
+    long LibraryId,
+    long ReconcileGeneration,
+    bool ReconcileRequired,
+    string? UsnJournalId,
+    long? NextUsn,
+    DateTimeOffset? WatcherStoppedAtUtc,
+    DateTimeOffset? LastReconciledAtUtc,
+    string? LastError);

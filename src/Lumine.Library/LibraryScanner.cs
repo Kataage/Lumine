@@ -4,13 +4,6 @@ public sealed class LibraryScanner
 {
     private const int MaxFailureSamples = 32;
 
-    private static readonly HashSet<string> SupportedExtensions = new(
-        [
-            ".jpg", ".jpeg", ".png", ".webp", ".gif",
-            ".avif", ".heif", ".heic", ".bmp", ".tif", ".tiff"
-        ],
-        StringComparer.OrdinalIgnoreCase);
-
     private readonly LibraryRepository _repository;
 
     public LibraryScanner(LibraryRepository repository)
@@ -95,7 +88,7 @@ public sealed class LibraryScanner
                         continue;
                     }
 
-                    if (!SupportedExtensions.Contains(Path.GetExtension(entry)))
+                    if (!LibraryFileTypes.IsSupportedPath(entry))
                     {
                         continue;
                     }
@@ -105,7 +98,7 @@ public sealed class LibraryScanner
                         var info = new FileInfo(entry);
                         current = LibraryPaths.NormalizeRelativePath(
                             Path.GetRelativePath(library.RootPath, entry));
-                        var extension = Path.GetExtension(entry).TrimStart('.').ToLowerInvariant();
+                        var extension = LibraryFileTypes.GetFormat(entry);
 
                         batch.Add(new AssetUpsert(
                             current,
