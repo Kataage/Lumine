@@ -781,7 +781,7 @@ internal static class Program
             previewPath,
             TimeSpan.FromMilliseconds(30),
             originalWidth: 16,
-            originalHeight: 12);
+            originalHeight: 16);
 
         await using var session = new ViewerDetailSession(
             assets,
@@ -792,7 +792,7 @@ internal static class Program
                 PreviewDecodedByteLimit = 4L * 1024 * 1024,
                 OriginalDecodedByteLimit = 4L * 1024 * 1024,
                 MinZoom = 0.05,
-                MaxZoom = 8,
+                MaxZoom = 1000,
                 ZoomStep = 1.25
             });
 
@@ -819,15 +819,19 @@ internal static class Program
         var expectedPromotedZoom = Math.Clamp(
             DetailViewerControl.CalculatePromotedZoom(
                 session.Snapshot.Bitmap!.PixelSize,
-                new PixelSize(16, 12),
+                new PixelSize(16, 16),
                 Math.Clamp(
-                    previewZoom * session.Options.ZoomStep,
+                    previewZoom
+                    * session.Options.ZoomStep
+                    * session.Options.ZoomStep,
                     session.Options.MinZoom,
                     session.Options.MaxZoom)),
             session.Options.MinZoom,
             session.Options.MaxZoom);
 
-        await detail.ZoomByAsync(session.Options.ZoomStep);
+        var firstZoom = detail.ZoomByAsync(session.Options.ZoomStep);
+        var secondZoom = detail.ZoomByAsync(session.Options.ZoomStep);
+        await Task.WhenAll(firstZoom, secondZoom);
 
         Require(
             session.Snapshot.IsOriginal,

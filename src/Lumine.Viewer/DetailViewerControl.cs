@@ -32,6 +32,7 @@ public sealed class DetailViewerControl : UserControl
     private TopLevel? _topLevel;
     private readonly object _zoomGate = new();
     private double _requestedZoom = 1;
+    private PixelSize _requestedZoomBasis;
     private long _zoomCommandVersion;
 
     public DetailViewerControl(ViewerDetailSession session)
@@ -321,7 +322,7 @@ public sealed class DetailViewerControl : UserControl
             snapshot,
             clamped,
             commandVersion,
-            preserveUnknownPreviewScale: false,
+            requestedBasis: default,
             cancellationToken);
     }
 
@@ -337,17 +338,14 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        var (commandVersion, target) = BeginRelativeZoomCommand(factor);
-        var preserveUnknownPreviewScale =
-            !snapshot.IsOriginal
-            && !HasKnownSourcePixelSize(snapshot)
-            && ShouldUseOriginal(snapshot, target);
+        var (commandVersion, target, requestedBasis) =
+            BeginRelativeZoomCommand(factor);
 
         await ApplyZoomCommandAsync(
             snapshot,
             target,
             commandVersion,
-            preserveUnknownPreviewScale,
+            requestedBasis,
             cancellationToken);
     }
 
@@ -355,7 +353,7 @@ public sealed class DetailViewerControl : UserControl
         ViewerDetailSnapshot snapshot,
         double target,
         long commandVersion,
-        bool preserveUnknownPreviewScale,
+        PixelSize requestedBasis,
         CancellationToken cancellationToken)
     {
         var committedTarget = target;
@@ -387,16 +385,6 @@ public sealed class DetailViewerControl : UserControl
                 return;
             }
 
-            if (preserveUnknownPreviewScale)
-            {
-                committedTarget = Math.Clamp(
-                    CalculatePromotedZoom(
-                        snapshot.Bitmap!.PixelSize,
-                        current.Bitmap.PixelSize,
-                        target),
-                    _session.Options.MinZoom,
-                    _session.Options.MaxZoom);
-            }
         }
 
         if (!IsCurrentZoomCommand(commandVersion))
@@ -410,6 +398,17 @@ public sealed class DetailViewerControl : UserControl
         {
             ResetRequestedZoomIfCurrent(commandVersion);
             return;
+        }
+
+        if (requestedBasis.Width > 0 && requestedBasis.Height > 0)
+        {
+            committedTarget = Math.Clamp(
+                CalculatePromotedZoom(
+                    requestedBasis,
+                    GetSourcePixelSize(latest),
+                    target),
+                _session.Options.MinZoom,
+                _session.Options.MaxZoom);
         }
 
         _fitMode = false;
@@ -489,7 +488,12 @@ public sealed class DetailViewerControl : UserControl
                 "Preview and original pixel sizes must be positive.");
         }
 
-        return previewZoom * previewSize.Width / originalSize.Width;
+        var widthScale =
+            previewSize.Width / (double)originalSize.Width;
+        var heightScale =
+            previewSize.Height / (double)originalSize.Height;
+
+        return previewZoom * Math.Min(widthScale, heightScale);
     }
 
     internal bool IsFitMode => _fitMode;
@@ -499,12 +503,15 @@ public sealed class DetailViewerControl : UserControl
         lock (_zoomGate)
         {
             _requestedZoom = target;
+            // Explicit commands such as 1:1 are source-pixel zoom requests,
+            // even while the original dimensions are not known yet.
+            _requestedZoomBasis = default;
             return ++_zoomCommandVersion;
         }
     }
 
-    private (long Version, double Target) BeginRelativeZoomCommand(
-        double factor)
+    private (long Version, double Target, PixelSize Basis)
+        BeginRelativeZoomCommand(double factor)
     {
         lock (_zoomGate)
         {
@@ -512,7 +519,10 @@ public sealed class DetailViewerControl : UserControl
                 _requestedZoom * factor,
                 _session.Options.MinZoom,
                 _session.Options.MaxZoom);
-            return (++_zoomCommandVersion, _requestedZoom);
+            return (
+                ++_zoomCommandVersion,
+                _requestedZoom,
+                _requestedZoomBasis);
         }
     }
 
@@ -526,30 +536,47 @@ public sealed class DetailViewerControl : UserControl
 
     private void SynchronizeRequestedZoom(double zoom)
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             _requestedZoom = zoom;
+            _requestedZoomBasis = basis;
         }
     }
 
     private void ResetRequestedZoomIfCurrent(long version)
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             if (_zoomCommandVersion == version)
             {
                 _requestedZoom = _zoom;
+                _requestedZoomBasis = basis;
             }
         }
     }
 
     private void CancelPendingZoomCommands()
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             _zoomCommandVersion++;
             _requestedZoom = _zoom;
+            _requestedZoomBasis = basis;
         }
+    }
+
+    private PixelSize GetCurrentZoomBasis()
+    {
+        var snapshot = _session.Snapshot;
+        return snapshot.Bitmap is null
+            ? default
+            : GetSourcePixelSize(snapshot);
     }
 
     private void PrepareForSelectionChange()
@@ -558,6 +585,7 @@ public sealed class DetailViewerControl : UserControl
         {
             _zoomCommandVersion++;
             _requestedZoom = 1;
+            _requestedZoomBasis = default;
         }
 
         _fitMode = true;
