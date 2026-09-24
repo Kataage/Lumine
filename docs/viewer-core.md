@@ -98,3 +98,9 @@ This keeps the Viewer benchmark honest about the actual Library Core integration
 ## Decoded-cache realism audit
 
 The performance fixture uses multiple distinct 512 x 512 WebP cache paths rather than a shared 1 x 1 placeholder. This forces real Avalonia bitmap decode, LRU churn, and byte accounting during the 100k fast-scroll workload. CI rejects a 100k run that does not reach meaningful decoded-cache pressure, so a future benchmark cannot accidentally pass by sharing one tiny bitmap across every logical asset.
+
+## Paint and bitmap-lifetime audit
+
+`viewer.first_paint` is defined as the first realized viewport **with at least one decoded thumbnail ready**, not merely the creation of row/tile Controls. This prevents a regression where layout appears quickly while actual images remain blank.
+
+Decoded bitmap disposal is lease-safe. Disposing the cache blocks new admissions and disposes unleased entries immediately, but a bitmap still referenced by a visible tile remains valid until that lease is released. Teardown acceptance requires attached tiles, ready tiles, and in-flight thumbnail work all to reach zero.

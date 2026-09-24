@@ -39,6 +39,7 @@ foreach ($result in $results) {
     $cancelled = [long]$result.metadata.thumbnail_requests_cancelled
     $inflight = [int]$result.metadata.inflight_thumbnail_requests
     $finalAttached = [int]$result.metadata.final_attached_tiles
+    $finalReady = [int]$result.metadata.final_ready_tiles
     $decodedEntries = [int]$result.metadata.decoded_bitmap_entries
     $decodedBytes = [long]$result.metadata.decoded_bitmap_bytes
     $peak = [long]$result.metadata.peak_working_set_bytes
@@ -75,6 +76,10 @@ foreach ($result in $results) {
 
     if ($finalAttached -ne 0) {
         throw "$count Viewer left realized tiles attached after teardown: $finalAttached"
+    }
+
+    if ($finalReady -ne 0) {
+        throw "$count Viewer left ready bitmap tiles after teardown: $finalReady"
     }
 
     if ($decodedEntries -gt 64) {

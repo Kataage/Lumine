@@ -76,7 +76,7 @@ public sealed class DecodedBitmapCache : IDisposable
 
     public void Dispose()
     {
-        List<Bitmap> bitmaps;
+        List<Bitmap> disposeNow = [];
 
         lock (_gate)
         {
@@ -86,12 +86,24 @@ public sealed class DecodedBitmapCache : IDisposable
             }
 
             _disposed = true;
-            bitmaps = _entries.Values.Select(static entry => entry.Bitmap).ToList();
-            _entries.Clear();
-            _estimatedBytes = 0;
+
+            foreach (var pair in _entries.ToArray())
+            {
+                var entry = pair.Value;
+                if (entry.Leases == 0)
+                {
+                    _entries.Remove(pair.Key);
+                    _estimatedBytes -= entry.EstimatedBytes;
+                    disposeNow.Add(entry.Bitmap);
+                }
+                else
+                {
+                    entry.DisposeWhenReleased = true;
+                }
+            }
         }
 
-        foreach (var bitmap in bitmaps)
+        foreach (var bitmap in disposeNow)
         {
             bitmap.Dispose();
         }
@@ -99,6 +111,8 @@ public sealed class DecodedBitmapCache : IDisposable
 
     internal void Release(string key)
     {
+        Bitmap? dispose = null;
+
         lock (_gate)
         {
             if (!_entries.TryGetValue(key, out var entry))
@@ -111,7 +125,16 @@ public sealed class DecodedBitmapCache : IDisposable
                 entry.Leases--;
                 entry.LastAccess = NextSequence();
             }
+
+            if (entry.Leases == 0 && (_disposed || entry.DisposeWhenReleased))
+            {
+                _entries.Remove(key);
+                _estimatedBytes -= entry.EstimatedBytes;
+                dispose = entry.Bitmap;
+            }
         }
+
+        dispose?.Dispose();
     }
 
     private DecodedBitmapLease Acquire(
@@ -232,5 +255,7 @@ public sealed class DecodedBitmapCache : IDisposable
         public long LastAccess { get; set; } = lastAccess;
 
         public int Leases { get; set; }
+
+        public bool DisposeWhenReleased { get; set; }
     }
 }

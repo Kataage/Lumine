@@ -176,6 +176,7 @@ internal static class Program
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
+                    ["final_ready_tiles"] = finalDiagnostics.ReadyTiles.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_entries"] = finalDiagnostics.DecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_bytes"] = finalDiagnostics.DecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
                     ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -312,6 +313,7 @@ internal static class Program
 
             var diagnostics = session.Diagnostics;
             if (diagnostics.AttachedTiles == 0
+                && diagnostics.ReadyTiles == 0
                 && diagnostics.InFlightThumbnailRequests == 0)
             {
                 return;
@@ -322,7 +324,7 @@ internal static class Program
 
         var final = session.Diagnostics;
         throw new InvalidOperationException(
-            $"Viewer did not become idle after teardown: attached={final.AttachedTiles}, inflight={final.InFlightThumbnailRequests}.");
+            $"Viewer did not become idle after teardown: attached={final.AttachedTiles}, ready={final.ReadyTiles}, inflight={final.InFlightThumbnailRequests}.");
     }
 
     private static async Task WaitForRealizationAsync(ThumbnailViewerControl viewer)
@@ -332,7 +334,8 @@ internal static class Program
             Dispatcher.UIThread.RunJobs();
 
             if (viewer.RealizedRowCount > 0
-                && viewer.Diagnostics.AttachedTiles > 0)
+                && viewer.Diagnostics.AttachedTiles > 0
+                && viewer.Diagnostics.ReadyTiles > 0)
             {
                 return;
             }
@@ -341,7 +344,7 @@ internal static class Program
         }
 
         throw new InvalidOperationException(
-            "Viewer did not realize its first viewport within the benchmark window.");
+            "Viewer did not render its first decoded thumbnail within the benchmark window.");
     }
 
     private static string[] CreateThumbnailFixtures(string tempRoot, int count)

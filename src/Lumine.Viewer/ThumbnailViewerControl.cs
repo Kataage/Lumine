@@ -262,6 +262,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly TextBlock _label;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
+        private bool _isReady;
 
         public ViewerTileControl(
             ThumbnailViewerControl owner,
@@ -354,6 +355,12 @@ public sealed class ThumbnailViewerControl : UserControl
             _loadCancellation?.Dispose();
             _loadCancellation = null;
 
+            if (_isReady)
+            {
+                _isReady = false;
+                _session.NotifyTileNotReady();
+            }
+
             _image.Source = null;
             _bitmapLease?.Dispose();
             _bitmapLease = null;
@@ -385,6 +392,12 @@ public sealed class ThumbnailViewerControl : UserControl
                     lease = null;
                     _image.Source = _bitmapLease.Bitmap;
                     _label.Text = asset.DisplayName;
+
+                    if (!_isReady)
+                    {
+                        _isReady = true;
+                        _session.NotifyTileReady();
+                    }
                 });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

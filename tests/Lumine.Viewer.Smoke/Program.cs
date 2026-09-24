@@ -104,6 +104,21 @@ internal static class Program
             Require(diagnostics.EntryCount <= 4, "Decoded bitmap entry hard limit was exceeded.");
             Require(diagnostics.EstimatedBytes <= 16, "Decoded bitmap byte hard limit was exceeded.");
         }
+
+        var pinnedPath = Path.Combine(tempRoot, "decoded-pinned.png");
+        File.Copy(sourceThumbnail, pinnedPath);
+        var pinned = await cache.AcquireAsync(pinnedPath);
+        cache.Dispose();
+
+        Require(
+            pinned.Bitmap.PixelSize.Width == 1,
+            "Cache disposal invalidated an actively leased bitmap.");
+
+        pinned.Dispose();
+        Require(
+            cache.Diagnostics.EntryCount == 0
+            && cache.Diagnostics.EstimatedBytes == 0,
+            "Leased bitmap was not released after disposed-cache lease completion.");
     }
 
     private static async Task VerifyRequestCoalescingAndCancellationAsync(
@@ -183,9 +198,16 @@ internal static class Program
         };
 
         window.Show();
-        await Task.Delay(75);
-        Dispatcher.UIThread.RunJobs();
 
+        for (var attempt = 0;
+             attempt < 250 && viewer.Diagnostics.ReadyTiles == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(viewer.Diagnostics.ReadyTiles > 0, "Viewer rendered no decoded thumbnail.");
         Require(viewer.Columns >= 4, "Viewer did not adapt columns to viewport width.");
         Require(
             viewer.RealizedRowCount is > 0 and < 64,

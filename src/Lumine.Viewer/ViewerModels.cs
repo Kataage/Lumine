@@ -92,5 +92,6 @@ public readonly record struct ViewerRuntimeDiagnostics(
     long ThumbnailRequestsFailed,
     int InFlightThumbnailRequests,
     int AttachedTiles,
+    int ReadyTiles,
     int DecodedBitmapEntries,
     long DecodedBitmapBytes);

@@ -12,6 +12,7 @@ public sealed class ViewerSession : IAsyncDisposable
     private long _thumbnailRequestsCancelled;
     private long _thumbnailRequestsFailed;
     private int _attachedTiles;
+    private int _readyTiles;
     private bool _disposed;
 
     public ViewerSession(
@@ -54,6 +55,7 @@ public sealed class ViewerSession : IAsyncDisposable
                     Interlocked.Read(ref _thumbnailRequestsFailed),
                     _inFlight.Count,
                     Volatile.Read(ref _attachedTiles),
+                    Volatile.Read(ref _readyTiles),
                     bitmap.EntryCount,
                     bitmap.EstimatedBytes);
             }
@@ -63,6 +65,10 @@ public sealed class ViewerSession : IAsyncDisposable
     public void NotifyTileAttached() => Interlocked.Increment(ref _attachedTiles);
 
     public void NotifyTileDetached() => Interlocked.Decrement(ref _attachedTiles);
+
+    public void NotifyTileReady() => Interlocked.Increment(ref _readyTiles);
+
+    public void NotifyTileNotReady() => Interlocked.Decrement(ref _readyTiles);
 
     public ValueTask<ViewerAsset> GetAssetAsync(
         long index,
