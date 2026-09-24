@@ -39,6 +39,7 @@ internal static class Program
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
+                    await VerifyUnknownMetadataPromotionReversalAsync(thumbnailPath);
                     await VerifyOriginalFailureKeepsFitAsync(thumbnailPath);
                     return 0;
                 },
@@ -839,6 +840,105 @@ internal static class Program
         Require(
             Math.Abs(detail.Zoom - expectedPromotedZoom) < 0.001,
             $"Preview-to-original promotion changed visual scale: actual={detail.Zoom}, expected={expectedPromotedZoom}.");
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static async Task VerifyUnknownMetadataPromotionReversalAsync(
+        string previewPath)
+    {
+        var assets = new DirectFixtureAssetProvider(
+            1,
+            width: null,
+            height: null);
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.FromMilliseconds(120),
+            originalWidth: 16,
+            originalHeight: 16);
+
+        await using var session = new ViewerDetailSession(
+            assets,
+            provider,
+            new ViewerDetailOptions
+            {
+                PreviewDecodedEntryLimit = 2,
+                PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                OriginalDecodedByteLimit = 4L * 1024 * 1024,
+                MinZoom = 0.01,
+                MaxZoom = 1000,
+                ZoomStep = 1.25
+            });
+
+        var detail = new DetailViewerControl(session);
+        var window = new Window
+        {
+            Width = 800,
+            Height = 600,
+            Content = detail
+        };
+
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        await detail.SetZoomAsync(0.8);
+        var previewBasis = session.Snapshot.Bitmap!.PixelSize;
+
+        var promote = detail.ZoomByAsync(session.Options.ZoomStep);
+
+        for (var attempt = 0;
+             attempt < 300 && provider.ActiveOriginalLoads == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.ActiveOriginalLoads == 1,
+            "Reverse zoom race never started the original decode.");
+
+        await detail.ZoomByAsync(0.5);
+        var previewZoomAfterReversal = detail.Zoom;
+
+        Require(
+            Math.Abs(previewZoomAfterReversal - 0.5) < 0.001,
+            $"Reverse zoom command did not commit in preview space: {previewZoomAfterReversal}.");
+
+        var expectedOriginalZoom = Math.Clamp(
+            DetailViewerControl.CalculatePromotedZoom(
+                previewBasis,
+                new PixelSize(16, 16),
+                previewZoomAfterReversal),
+            session.Options.MinZoom,
+            session.Options.MaxZoom);
+
+        await promote;
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady);
+
+        for (var attempt = 0;
+             attempt < 300
+             && Math.Abs(detail.Zoom - expectedOriginalZoom) >= 0.001;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            Math.Abs(detail.Zoom - expectedOriginalZoom) < 0.001,
+            $"Late original reinterpreted committed preview zoom: actual={detail.Zoom}, expected={expectedOriginalZoom}.");
 
         window.Close();
         Dispatcher.UIThread.RunJobs();
