@@ -97,6 +97,9 @@ jobs:
       - name: Image Core smoke test
         run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
 
+      - name: App Detail adapter smoke test
+        run: dotnet run --project tests/Lumine.App.Smoke/Lumine.App.Smoke.csproj -c Release --no-build
+
       - name: Windows filesystem sync smoke test
         run: dotnet run --project tests/Lumine.Filesystem.Smoke/Lumine.Filesystem.Smoke.csproj -c Release --no-build
 
