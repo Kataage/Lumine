@@ -240,7 +240,7 @@ public sealed class DetailViewerControl : UserControl
 
     private void OnDetachedFromVisualTree(
         object? sender,
-        Avalonia.VisualTree.VisualTreeAttachmentEventArgs e)
+        VisualTreeAttachmentEventArgs e)
     {
         _image.Source = null;
         UnbindGrid();
