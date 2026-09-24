@@ -100,17 +100,55 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _queue.Writer.TryComplete();
-        _shutdown.Cancel();
 
         try
         {
             await _processorTask.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        finally
         {
+            _shutdown.Cancel();
+            _shutdown.Dispose();
+        }
+    }
+
+    internal async Task ApplyBootstrapChangesAsync(
+        IReadOnlyList<DirectoryChange> changes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+
+        var coalesced = new Dictionary<string, DirectoryChange>(
+            Math.Min(changes.Count, CoalesceCapacity),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var change in changes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (change.Kind == DirectoryChangeKind.Overflow)
+            {
+                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            Coalesce(coalesced, change);
+
+            if (coalesced.Count >= CoalesceCapacity)
+            {
+                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
         }
 
-        _shutdown.Dispose();
+        foreach (var change in coalesced.Values)
+        {
+            if (await ApplyAsync(change, cancellationToken).ConfigureAwait(false))
+            {
+                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
     }
 
     private async Task ProcessLoopAsync(CancellationToken cancellationToken)

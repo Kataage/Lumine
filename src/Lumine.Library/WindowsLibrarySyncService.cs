@@ -1,24 +1,45 @@
 namespace Lumine.Library;
 
+public enum LibrarySyncBootstrapMode
+{
+    Reconcile = 1,
+    UsnDelta = 2,
+    ReconcileFallback = 3
+}
+
 public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 {
     private readonly long _libraryId;
     private readonly LibraryRepository _repository;
     private readonly LibraryChangeProcessor _processor;
     private readonly WindowsDirectoryChangeWatcher _watcher;
+    private readonly WindowsUsnJournal _usnJournal;
+    private readonly string _rootPath;
     private bool _disposed;
 
     internal WindowsLibrarySyncSession(
         long libraryId,
         LibraryRepository repository,
         LibraryChangeProcessor processor,
-        WindowsDirectoryChangeWatcher watcher)
+        WindowsDirectoryChangeWatcher watcher,
+        WindowsUsnJournal usnJournal,
+        string rootPath,
+        LibrarySyncBootstrapMode bootstrapMode,
+        UsnCatchUpResult? catchUp)
     {
         _libraryId = libraryId;
         _repository = repository;
         _processor = processor;
         _watcher = watcher;
+        _usnJournal = usnJournal;
+        _rootPath = rootPath;
+        BootstrapMode = bootstrapMode;
+        CatchUp = catchUp;
     }
+
+    public LibrarySyncBootstrapMode BootstrapMode { get; }
+
+    public UsnCatchUpResult? CatchUp { get; }
 
     public LibrarySyncDiagnostics Diagnostics => _processor.Diagnostics;
 
@@ -31,6 +52,11 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
         _disposed = true;
 
+        // Capture a conservative journal boundary while the watcher is still
+        // active. Events after this USN may also be applied before shutdown;
+        // replaying them next start is idempotent and safer than skipping a gap.
+        var checkpoint = _usnJournal.Query(_rootPath);
+
         await _watcher.DisposeAsync().ConfigureAwait(false);
         await _processor.DisposeAsync().ConfigureAwait(false);
 
@@ -39,11 +65,13 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
         await _repository.UpdateUsnCheckpointAsync(
             _libraryId,
-            state.UsnJournalId,
-            state.NextUsn,
+            checkpoint.Available ? checkpoint.JournalId : null,
+            checkpoint.Available ? checkpoint.NextUsn : null,
             state.ReconcileRequired,
             DateTimeOffset.UtcNow,
-            state.LastError).ConfigureAwait(false);
+            checkpoint.Available
+                ? state.LastError
+                : checkpoint.UnavailableReason).ConfigureAwait(false);
     }
 }
 
@@ -51,6 +79,7 @@ public sealed class WindowsLibrarySyncService
 {
     private readonly LibraryRepository _repository;
     private readonly LibraryReconciler _reconciler;
+    private readonly WindowsUsnJournal _usnJournal = new();
 
     public WindowsLibrarySyncService(LibraryDatabase database)
     {
@@ -79,43 +108,113 @@ public sealed class WindowsLibrarySyncService
             libraryId,
             cancellationToken).ConfigureAwait(false);
 
-        if (state.ReconcileRequired)
-        {
-            var reconcile = await _reconciler.ReconcileAsync(
-                libraryId,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            if (!reconcile.Completed)
-            {
-                throw new InvalidOperationException(
-                    "Library reconciliation was incomplete; incremental watcher was not started.");
-            }
-        }
-
         var processor = new LibraryChangeProcessor(
             libraryId,
             library,
             _repository,
             _reconciler);
         var watcher = new WindowsDirectoryChangeWatcher(library.RootPath);
+        var router = new BootstrapChangeRouter();
 
         try
         {
+            // Start watching first. Bootstrap work can take hundreds of
+            // milliseconds; changes that occur during it are buffered and
+            // replayed after the baseline is established.
             await watcher.StartAsync(
-                processor.Publish,
+                router.Publish,
                 cancellationToken).ConfigureAwait(false);
+
+            var journalAtStart = _usnJournal.Query(library.RootPath);
+            UsnCatchUpResult? catchUp = null;
+            LibrarySyncBootstrapMode bootstrapMode;
+
+            var canUseCheckpoint =
+                !state.ReconcileRequired
+                && journalAtStart.Available
+                && state.UsnJournalId is not null
+                && state.NextUsn is not null;
+
+            if (canUseCheckpoint)
+            {
+                catchUp = _usnJournal.ReadChanges(
+                    library.RootPath,
+                    state.UsnJournalId!,
+                    state.NextUsn!.Value,
+                    journalAtStart.NextUsn,
+                    cancellationToken);
+
+                if (catchUp.RequiresReconcile)
+                {
+                    await RequireCompleteReconcileAsync(
+                        libraryId,
+                        cancellationToken).ConfigureAwait(false);
+                    bootstrapMode = LibrarySyncBootstrapMode.ReconcileFallback;
+                }
+                else
+                {
+                    await processor.ApplyBootstrapChangesAsync(
+                        catchUp.Changes,
+                        cancellationToken).ConfigureAwait(false);
+                    bootstrapMode = LibrarySyncBootstrapMode.UsnDelta;
+                }
+            }
+            else
+            {
+                await RequireCompleteReconcileAsync(
+                    libraryId,
+                    cancellationToken).ConfigureAwait(false);
+
+                bootstrapMode = journalAtStart.Available
+                    ? LibrarySyncBootstrapMode.Reconcile
+                    : LibrarySyncBootstrapMode.ReconcileFallback;
+            }
+
+            await _repository.UpdateUsnCheckpointAsync(
+                libraryId,
+                journalAtStart.Available ? journalAtStart.JournalId : null,
+                journalAtStart.Available ? journalAtStart.NextUsn : null,
+                false,
+                null,
+                journalAtStart.Available
+                    ? null
+                    : journalAtStart.UnavailableReason,
+                cancellationToken).ConfigureAwait(false);
+
+            // Preserve watcher ordering: buffered events are queued before the
+            // router begins forwarding newly arriving events directly.
+            _ = router.Activate(processor);
 
             return new WindowsLibrarySyncSession(
                 libraryId,
                 _repository,
                 processor,
-                watcher);
+                watcher,
+                _usnJournal,
+                library.RootPath,
+                bootstrapMode,
+                catchUp);
         }
         catch
         {
             await watcher.DisposeAsync().ConfigureAwait(false);
             await processor.DisposeAsync().ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private async Task RequireCompleteReconcileAsync(
+        long libraryId,
+        CancellationToken cancellationToken)
+    {
+        var reconcile = await _reconciler.ReconcileAsync(
+            libraryId,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (!reconcile.Completed)
+        {
+            throw new InvalidOperationException(
+                "Library reconciliation was incomplete; incremental watcher was not started.");
         }
     }
 }
