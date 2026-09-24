@@ -98,11 +98,30 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        var anchorAssetIndex = GetViewportAnchorAssetIndex();
         _columns = columns;
-        RebuildRows();
+        RebuildRows(anchorAssetIndex);
     }
 
-    private void RebuildRows()
+    private long? GetViewportAnchorAssetIndex()
+    {
+        if (_selectedIndex >= 0)
+        {
+            return _selectedIndex;
+        }
+
+        var firstRow = _rows.GetRealizedContainers()
+            .Select(_rows.IndexFromContainer)
+            .Where(static index => index >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
+
+        return firstRow >= 0
+            ? checked((long)firstRow * _columns)
+            : null;
+    }
+
+    private void RebuildRows(long? anchorAssetIndex = null)
     {
         _rows.ItemsSource = new VirtualRowIndexList(AssetCount, _columns);
         _rows.ItemTemplate = new FuncDataTemplate<long>(
@@ -112,6 +131,17 @@ public sealed class ThumbnailViewerControl : UserControl
                 rowIndex,
                 _columns),
             supportsRecycling: false);
+
+        if (anchorAssetIndex is { } anchor
+            && AssetCount > 0)
+        {
+            var clamped = Math.Clamp(anchor, 0, AssetCount - 1);
+            var row = checked((int)(clamped / _columns));
+
+            Dispatcher.UIThread.Post(
+                () => _rows.ScrollIntoView(row),
+                DispatcherPriority.Loaded);
+        }
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
