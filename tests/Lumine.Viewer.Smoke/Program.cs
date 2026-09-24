@@ -498,6 +498,34 @@ internal static class Program
                 snapshot.SelectedIndex == 1
                 && snapshot.State == ViewerDetailLoadState.PreviewReady);
 
+        var raceStartZoom = detail.Zoom;
+        var raceFirst = detail.ZoomByAsync(detailSession.Options.ZoomStep);
+        var raceSecond = detail.ZoomByAsync(detailSession.Options.ZoomStep);
+        await Task.WhenAll(raceFirst, raceSecond);
+
+        var expectedRaceZoom = Math.Clamp(
+            raceStartZoom
+            * detailSession.Options.ZoomStep
+            * detailSession.Options.ZoomStep,
+            detailSession.Options.MinZoom,
+            detailSession.Options.MaxZoom);
+        Require(
+            Math.Abs(detail.Zoom - expectedRaceZoom) < 0.001,
+            $"Concurrent zoom commands collapsed or completed out of order: actual={detail.Zoom}, expected={expectedRaceZoom}.");
+
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        await detail.SelectAsync(1);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
         var originalBefore = provider.OriginalRequests;
         var originalFirst = detailSession.EnsureOriginalAsync();
         var originalSecond = detailSession.EnsureOriginalAsync();
@@ -518,6 +546,24 @@ internal static class Program
             Math.Abs(detail.Zoom - 1) < 0.001,
             "Actual-size command did not set 1:1 zoom.");
 
+        var detailImage = GetDetailImage(detail);
+        var originalScaling = window.RenderScaling;
+        var alternateScaling = Math.Abs(originalScaling - 2) < 0.001
+            ? 1.25
+            : 2;
+        window.RenderScaling = alternateScaling;
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            Math.Abs(
+                detailImage.Width
+                - detailSession.Snapshot.Metadata!.Width / window.RenderScaling)
+            < 0.01,
+            "Actual-size display did not react to TopLevel DPI scaling change.");
+
+        window.RenderScaling = originalScaling;
+        Dispatcher.UIThread.RunJobs();
+
         await detail.SetZoomAsync(2);
         Require(
             Math.Abs(detail.Zoom - 2) < 0.001,
@@ -528,6 +574,27 @@ internal static class Program
         Require(
             detail.PanOffset.X > 0 || detail.PanOffset.Y > 0,
             "Detail pan did not change scroll offset at high zoom.");
+
+        RaiseKey(detail, Key.Right);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 2
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detail.Zoom < 2
+            && detail.PanOffset.X < 0.001
+            && detail.PanOffset.Y < 0.001,
+            "Previous/next navigation retained stale zoom or pan instead of fitting the new asset.");
+
+        await detail.SelectAsync(1);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
 
         detail.Fit();
         Require(
@@ -694,6 +761,19 @@ internal static class Program
 
         throw new InvalidOperationException(
             $"Detail viewer did not reach expected state; current={session.Snapshot.State}, index={session.Snapshot.SelectedIndex}.");
+    }
+
+    private static Image GetDetailImage(DetailViewerControl detail)
+    {
+        var layout = detail.Content as Grid
+            ?? throw new InvalidOperationException("Detail root layout missing.");
+        var scroll = layout.Children[1] as ScrollViewer
+            ?? throw new InvalidOperationException("Detail scroll viewer missing.");
+        var surface = scroll.Content as Border
+            ?? throw new InvalidOperationException("Detail image surface missing.");
+
+        return surface.Child as Image
+            ?? throw new InvalidOperationException("Detail image control missing.");
     }
 
     private static void RaiseKey(InputElement viewer, Key key)
@@ -923,7 +1003,9 @@ internal sealed class DelayedDetailProvider(
             catch (OperationCanceledException)
             {
                 Interlocked.Increment(ref _cancelledOriginals);
-                await Task.Delay(TimeSpan.FromMilliseconds(80));
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(80),
+                    CancellationToken.None);
                 throw;
             }
 

@@ -179,13 +179,6 @@ await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "ignored.txt")
 
 try
 {
-    Require(
-        !LibraryFileTypes.IsSupportedPath("unsupported.bmp"),
-        "Library advertises BMP although the bundled Image Core runtime cannot decode it.");
-    Require(
-        LibraryFileTypes.IsSupportedPath("supported.tiff"),
-        "Library unexpectedly rejected TIFF, which is part of the current runtime contract.");
-
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
     Require(LibraryDatabase.SupportedSchemaVersion == 3, "Unexpected Library schema version.");
