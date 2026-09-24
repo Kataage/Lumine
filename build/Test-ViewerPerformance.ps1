@@ -38,6 +38,7 @@ foreach ($result in $results) {
     $requests = [long]$result.metadata.thumbnail_requests
     $cancelled = [long]$result.metadata.thumbnail_requests_cancelled
     $inflight = [int]$result.metadata.inflight_thumbnail_requests
+    $finalAttached = [int]$result.metadata.final_attached_tiles
     $decodedEntries = [int]$result.metadata.decoded_bitmap_entries
     $decodedBytes = [long]$result.metadata.decoded_bitmap_bytes
     $peak = [long]$result.metadata.peak_working_set_bytes
@@ -69,7 +70,11 @@ foreach ($result in $results) {
     }
 
     if ($inflight -ne 0) {
-        throw "$count Viewer left thumbnail work in-flight: $inflight"
+        throw "$count Viewer left thumbnail work in-flight after teardown: $inflight"
+    }
+
+    if ($finalAttached -ne 0) {
+        throw "$count Viewer left realized tiles attached after teardown: $finalAttached"
     }
 
     if ($decodedEntries -gt 64) {
