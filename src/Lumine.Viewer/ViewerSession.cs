@@ -57,7 +57,9 @@ public sealed class ViewerSession : IAsyncDisposable
                     Volatile.Read(ref _attachedTiles),
                     Volatile.Read(ref _readyTiles),
                     bitmap.EntryCount,
-                    bitmap.EstimatedBytes);
+                    bitmap.EstimatedBytes,
+                    bitmap.ActiveDecodes,
+                    bitmap.PeakConcurrentDecodes);
             }
         }
     }
