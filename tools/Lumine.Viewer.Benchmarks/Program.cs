@@ -42,6 +42,10 @@ internal static class Program
         long peakAdditionalWorkingSetBytes = 0;
         var maxRealizedRows = 0;
         var maxAttachedTiles = 0;
+        var maxReadyTiles = 0;
+        var maxDecodedBitmapEntries = 0;
+        long maxDecodedBitmapBytes = 0;
+        var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
@@ -106,8 +110,7 @@ internal static class Program
                             await Task.Delay(1);
                         }
 
-                        await Task.Delay(60);
-                        Dispatcher.UIThread.RunJobs();
+                        await WaitForViewportReadyAsync(viewer);
                         Observe(viewer);
                     }
 
@@ -136,12 +139,26 @@ internal static class Program
 
                     void Observe(ThumbnailViewerControl control)
                     {
+                        var diagnostics = control.Diagnostics;
+
                         maxRealizedRows = Math.Max(
                             maxRealizedRows,
                             control.RealizedRowCount);
                         maxAttachedTiles = Math.Max(
                             maxAttachedTiles,
-                            control.Diagnostics.AttachedTiles);
+                            diagnostics.AttachedTiles);
+                        maxReadyTiles = Math.Max(
+                            maxReadyTiles,
+                            diagnostics.ReadyTiles);
+                        maxDecodedBitmapEntries = Math.Max(
+                            maxDecodedBitmapEntries,
+                            diagnostics.DecodedBitmapEntries);
+                        maxDecodedBitmapBytes = Math.Max(
+                            maxDecodedBitmapBytes,
+                            diagnostics.DecodedBitmapBytes);
+                        maxConcurrentBitmapDecodes = Math.Max(
+                            maxConcurrentBitmapDecodes,
+                            diagnostics.PeakConcurrentBitmapDecodes);
                     }
                 },
                 CancellationToken.None);
@@ -171,6 +188,10 @@ internal static class Program
                     ["columns"] = finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),
+                    ["max_ready_tiles"] = maxReadyTiles.ToString(CultureInfo.InvariantCulture),
+                    ["max_decoded_bitmap_entries"] = maxDecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
+                    ["max_decoded_bitmap_bytes"] = maxDecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
+                    ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
@@ -308,6 +329,28 @@ internal static class Program
             final.PagesFetched - pagesAfterEnd,
             final.CachedPages,
             final.CursorCheckpoints);
+    }
+
+    private static async Task WaitForViewportReadyAsync(ThumbnailViewerControl viewer)
+    {
+        for (var attempt = 0; attempt < 1500; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+
+            var diagnostics = viewer.Diagnostics;
+            if (diagnostics.AttachedTiles > 0
+                && diagnostics.ReadyTiles == diagnostics.AttachedTiles
+                && diagnostics.ActiveBitmapDecodes == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(1);
+        }
+
+        var final = viewer.Diagnostics;
+        throw new InvalidOperationException(
+            $"Viewer viewport did not become image-ready: attached={final.AttachedTiles}, ready={final.ReadyTiles}, decodes={final.ActiveBitmapDecodes}, inflight={final.InFlightThumbnailRequests}.");
     }
 
     private static async Task WaitForViewerIdleAsync(ViewerSession session)
