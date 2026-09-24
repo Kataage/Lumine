@@ -126,7 +126,6 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
 internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
 {
     private readonly ThumbnailPipeline _thumbnailPipeline;
-    private readonly FullResolutionDecoder _fullResolution = new();
     private readonly string _libraryRoot;
     private readonly string _libraryRootPrefix;
 
@@ -174,7 +173,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         CancellationToken cancellationToken = default)
     {
         var sourcePath = ResolveSourcePath(asset);
-        var info = await _fullResolution.ProbeAsync(
+        var info = await FullResolutionDecoder.ProbeAsync(
             new FullResolutionSource(
                 sourcePath,
                 asset.FileSize,
@@ -222,7 +221,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
 
         try
         {
-            await _fullResolution.DecodeAsync(
+            await FullResolutionDecoder.DecodeAsync(
                 source,
                 maxDecodedBytes,
                 stripe =>

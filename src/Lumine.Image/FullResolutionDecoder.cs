@@ -24,7 +24,7 @@ public sealed class FullResolutionDecoder
 {
     public const int DefaultStripeHeight = 64;
 
-    public Task<FullResolutionInfo> ProbeAsync(
+    public static Task<FullResolutionInfo> ProbeAsync(
         FullResolutionSource source,
         CancellationToken cancellationToken = default)
     {
@@ -35,7 +35,7 @@ public sealed class FullResolutionDecoder
             cancellationToken);
     }
 
-    public Task DecodeAsync(
+    public static Task DecodeAsync(
         FullResolutionSource source,
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
