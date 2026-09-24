@@ -323,8 +323,8 @@ public sealed class DetailViewerControl : UserControl
     private static bool HasKnownSourcePixelSize(
         ViewerDetailSnapshot snapshot) =>
         snapshot.Metadata is { Width: > 0, Height: > 0 }
-        || (snapshot.Asset?.Width is > 0
-            && snapshot.Asset.Height is > 0);
+        || ((snapshot.Asset?.Width ?? 0) > 0
+            && (snapshot.Asset?.Height ?? 0) > 0);
 
     private static PixelSize GetSourcePixelSize(
         ViewerDetailSnapshot snapshot)
@@ -334,10 +334,11 @@ public sealed class DetailViewerControl : UserControl
             return new PixelSize(metadata.Width, metadata.Height);
         }
 
-        if (snapshot.Asset?.Width is > 0 width
-            && snapshot.Asset.Height is > 0 height)
+        var assetWidth = snapshot.Asset?.Width ?? 0;
+        var assetHeight = snapshot.Asset?.Height ?? 0;
+        if (assetWidth > 0 && assetHeight > 0)
         {
-            return new PixelSize(width, height);
+            return new PixelSize(assetWidth, assetHeight);
         }
 
         return snapshot.Bitmap?.PixelSize ?? default;
