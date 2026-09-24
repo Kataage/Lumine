@@ -79,8 +79,7 @@ try
         libraryRoot);
 
     var syncService = new WindowsLibrarySyncService(database);
-    var journal = new WindowsUsnJournal();
-    var journalBefore = journal.Query(libraryRoot);
+    var journalBefore = WindowsUsnJournal.Query(libraryRoot);
 
     long initialId;
     long initialRevision;
