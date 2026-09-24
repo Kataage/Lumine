@@ -467,6 +467,10 @@ internal static class Program
         Require(
             !detail.IsOriginal,
             "Detail incorrectly reported original residency while preview-only.");
+        Require(
+            detail.MetadataText.Contains("1024×768", StringComparison.Ordinal)
+            && detail.MetadataText.Contains("png", StringComparison.Ordinal),
+            "Detail preview did not expose stored technical metadata without opening original.");
 
         var originalBefore = provider.OriginalRequests;
         var originalFirst = detailSession.EnsureOriginalAsync();
@@ -719,7 +723,10 @@ internal sealed class DirectFixtureAssetProvider(long count) : IViewerAssetProvi
                 $"fixture/{index:D6}.jpg",
                 $"asset-{index:D6}.jpg",
                 10_000 + index,
-                DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks));
+                DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks,
+                1024,
+                768,
+                "png"));
     }
 }
 

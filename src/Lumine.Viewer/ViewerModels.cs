@@ -120,9 +120,11 @@ public sealed record ViewerDetailMetadata(
     long FileSize,
     long EstimatedRgbaBytes);
 
-public sealed class ViewerOriginalBitmap : IDisposable
+public sealed class ViewerOriginalBitmap : IDisposable, IAsyncDisposable
 {
     private Avalonia.Media.Imaging.Bitmap? _bitmap;
+    private readonly TaskCompletionSource _disposed =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ViewerOriginalBitmap(
         Avalonia.Media.Imaging.Bitmap bitmap,
@@ -137,20 +139,45 @@ public sealed class ViewerOriginalBitmap : IDisposable
 
     public ViewerDetailMetadata Metadata { get; }
 
-    public void Dispose()
+    public bool IsDisposePending =>
+        _bitmap is null && !_disposed.Task.IsCompleted;
+
+    public Task DisposalCompletion => _disposed.Task;
+
+    public void Dispose() =>
+        _ = BeginDispose();
+
+    public ValueTask DisposeAsync() =>
+        new(BeginDispose());
+
+    public Task BeginDispose()
     {
         var bitmap = Interlocked.Exchange(ref _bitmap, null);
         if (bitmap is null)
         {
-            return;
+            return _disposed.Task;
         }
 
         // Avalonia composition can retain the previous Image.Source until the
-        // next render commit. Disposing the platform bitmap synchronously here
-        // can race that commit during rapid navigation/window teardown.
+        // next render commit. Dispose on a later UI turn, and expose completion
+        // so the Detail session can prevent a second giant original from being
+        // admitted while the previous platform bitmap is still resident.
         Avalonia.Threading.Dispatcher.UIThread.Post(
-            bitmap.Dispose,
+            () =>
+            {
+                try
+                {
+                    bitmap.Dispose();
+                    _disposed.TrySetResult();
+                }
+                catch (Exception exception)
+                {
+                    _disposed.TrySetException(exception);
+                }
+            },
             Avalonia.Threading.DispatcherPriority.Background);
+
+        return _disposed.Task;
     }
 }
 

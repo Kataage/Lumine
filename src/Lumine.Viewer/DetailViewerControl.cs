@@ -127,6 +127,8 @@ public sealed class DetailViewerControl : UserControl
 
     public Vector PanOffset => _scroll.Offset;
 
+    public string MetadataText => _metadata.Text ?? string.Empty;
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public Task SelectAsync(
@@ -273,9 +275,9 @@ public sealed class DetailViewerControl : UserControl
         var metadata = snapshot.Metadata;
         _metadata.Text = snapshot.Asset is null
             ? string.Empty
-            : metadata is null
-                ? $"{snapshot.Asset.DisplayName} · {snapshot.Asset.FileSize:N0} bytes"
-                : $"{snapshot.Asset.DisplayName} · {metadata.Width}×{metadata.Height} · {metadata.Format ?? snapshot.Asset.Format ?? "unknown"} · {metadata.FileSize:N0} bytes";
+            : metadata is not null
+                ? $"{snapshot.Asset.DisplayName} · {metadata.Width}×{metadata.Height} · {metadata.Format ?? snapshot.Asset.Format ?? "unknown"} · {metadata.FileSize:N0} bytes"
+                : FormatAssetMetadata(snapshot.Asset);
 
         _previous.IsEnabled = snapshot.SelectedIndex > 0;
         _next.IsEnabled = snapshot.SelectedIndex >= 0
@@ -292,6 +294,18 @@ public sealed class DetailViewerControl : UserControl
                 SetZoom(_zoom);
             }
         }
+    }
+
+    private static string FormatAssetMetadata(ViewerAsset asset)
+    {
+        var dimensions = asset.Width is > 0 && asset.Height is > 0
+            ? $" · {asset.Width}×{asset.Height}"
+            : string.Empty;
+        var format = string.IsNullOrWhiteSpace(asset.Format)
+            ? string.Empty
+            : $" · {asset.Format}";
+
+        return $"{asset.DisplayName}{dimensions}{format} · {asset.FileSize:N0} bytes";
     }
 
     private void OnSessionSelectionChanged(object? sender, long index)

@@ -11,6 +11,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private ViewerOriginalBitmap? _original;
     private Task? _originalLoadTask;
     private long _originalLoadVersion;
+    private Task _previousOriginalDisposal = Task.CompletedTask;
     private ViewerDetailSnapshot _snapshot =
         new(
             -1,
@@ -241,6 +242,9 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     {
         try
         {
+            await _previousOriginalDisposal.WaitAsync(
+                selection.Token).ConfigureAwait(false);
+
             var original = await _provider.LoadOriginalAsync(
                 asset,
                 Options.OriginalDecodedByteLimit,
@@ -328,6 +332,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         CancellationTokenSource? selection;
+        Task? originalLoad;
+        Task originalDisposal;
 
         lock (_gate)
         {
@@ -339,20 +345,47 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             _disposed = true;
             selection = _selectionCancellation;
             _selectionCancellation = null;
+            originalLoad = _originalLoadTask;
             ReleaseImagesLocked();
+            originalDisposal = _previousOriginalDisposal;
         }
 
         _shutdown.Cancel();
         selection?.Cancel();
+
+        if (originalLoad is not null)
+        {
+            try
+            {
+                await originalLoad.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                // State/error propagation is irrelevant after disposal; the
+                // important invariant is that the native decode has stopped.
+            }
+        }
+
+        try
+        {
+            await originalDisposal.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Platform bitmap disposal is best-effort during teardown.
+        }
+
         selection?.Dispose();
+
         var previewCache = PreviewBitmapCache;
         Avalonia.Threading.Dispatcher.UIThread.Post(
             previewCache.Dispose,
             Avalonia.Threading.DispatcherPriority.Background);
 
         _shutdown.Dispose();
-
-        await Task.CompletedTask;
     }
 
     private void CancelSelectionLocked()
@@ -374,8 +407,11 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         _previewLease?.Dispose();
         _previewLease = null;
 
-        _original?.Dispose();
-        _original = null;
+        if (_original is not null)
+        {
+            _previousOriginalDisposal = _original.BeginDispose();
+            _original = null;
+        }
     }
 
     private bool IsCurrentLocked(
