@@ -111,4 +111,4 @@ The resident bitmap cache limit is not the only memory bound. A fast warm-cache 
 
 ## Resize anchor
 
-Changing the number of columns rebuilds the virtual row shape, but it must not teleport a large library back to row zero. Viewer preserves the selected asset as the resize anchor; when there is no selection it preserves the first realized row's asset index. Headless smoke verifies this near the end of a 100k library.
+Changing the number of columns rebuilds the virtual row shape, but it must not teleport a large library back to row zero. Avalonia may temporarily retain realized containers outside the current viewport, so Viewer anchors resize to the first row that actually intersects the visible ListBox viewport. It falls back to realized/selected state only when no visible row can be resolved. Headless smoke verifies this near the end of a 100k library while an older selection remains offscreen.
