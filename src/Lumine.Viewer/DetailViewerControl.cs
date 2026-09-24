@@ -109,7 +109,7 @@ public sealed class DetailViewerControl : UserControl
         {
             if (_fitMode)
             {
-                Fit();
+                ApplyFit();
             }
         };
 
