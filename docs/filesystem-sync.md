@@ -63,3 +63,7 @@ Windows CI performs real filesystem operations against a temporary library:
 ## Path case-sensitivity contract
 
 The current Library identity key is deliberately Windows-style case-insensitive. Windows can enable case sensitivity per directory, so silently indexing such a directory could collapse distinct names such as `A.jpg` and `a.jpg`. Initial scan, reconciliation, and Windows sync therefore query directory case-sensitivity and fail closed when the per-directory case-sensitive flag is enabled. A future schema may add a separate case-sensitive identity mode; v2 Core does not guess.
+
+## Performance acceptance
+
+CI runs a file-only burst benchmark after the correctness smoke: 128 creates, 64 modifications, 64 renames, and deletion of the full set through the real `ReadDirectoryChangesW` pipeline. The normal file-only path must finish without queue overflow or reconciliation fallback. Event-to-database latency, total operation duration, and sampled peak working set are gated. This prevents a future implementation from preserving correctness by silently converting ordinary changes into repeated full walks.

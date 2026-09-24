@@ -100,6 +100,13 @@ jobs:
       - name: Windows filesystem sync smoke test
         run: dotnet run --project tests/Lumine.Filesystem.Smoke/Lumine.Filesystem.Smoke.csproj -c Release --no-build
 
+      - name: Generate filesystem sync benchmark
+        run: dotnet run --project tools/Lumine.Filesystem.Benchmarks/Lumine.Filesystem.Benchmarks.csproj -c Release --no-build -- --count 128 --output artifacts/benchmarks/filesystem-sync.json
+
+      - name: Enforce filesystem performance acceptance
+        shell: pwsh
+        run: ./build/Test-FilesystemPerformance.ps1
+
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
 
