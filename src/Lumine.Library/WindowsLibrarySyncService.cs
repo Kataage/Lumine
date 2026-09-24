@@ -106,6 +106,8 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         {
             throw shutdownFailure;
         }
+    }
+
     private async Task MonitorWatcherAsync()
     {
         try
