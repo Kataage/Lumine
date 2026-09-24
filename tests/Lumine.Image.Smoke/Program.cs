@@ -503,7 +503,7 @@ try
         webpRows == 200,
         "Full-resolution WebP decode did not stream the complete image.");
 
-    await VerifyFullResolutionAsync(jpgPath, 320, 200, "JPEG");
+    await VerifyFullResolutionAsync(corruptSourcePath, 320, 200, "JPEG");
     await VerifyFullResolutionAsync(bmpPath, 320, 200, "BMP");
     await VerifyFullResolutionAsync(tiffPath, 320, 200, "TIFF");
 
