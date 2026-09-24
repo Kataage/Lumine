@@ -27,6 +27,8 @@ public sealed class DetailViewerControl : UserControl
     private ThumbnailViewerControl? _grid;
     private bool _syncingSelection;
     private bool _sessionEventsAttached;
+    private bool _gridEventsAttached;
+    private bool _visualAttached;
     private TopLevel? _topLevel;
     private readonly object _zoomGate = new();
     private double _requestedZoom = 1;
@@ -160,23 +162,59 @@ public sealed class DetailViewerControl : UserControl
         UnbindGrid();
 
         _grid = grid;
-        _grid.SelectedAssetIndexChanged += OnGridSelectionChanged;
 
-        if (_grid.SelectedAssetIndex >= 0)
+        if (_visualAttached)
         {
-            _ = SelectAsync(_grid.SelectedAssetIndex);
+            AttachGridEvents();
+            SynchronizeFromGrid();
         }
     }
 
     public void UnbindGrid()
     {
-        if (_grid is null)
+        DetachGridEvents();
+        _grid = null;
+    }
+
+    private void AttachGridEvents()
+    {
+        if (_grid is null || _gridEventsAttached)
+        {
+            return;
+        }
+
+        _grid.SelectedAssetIndexChanged += OnGridSelectionChanged;
+        _gridEventsAttached = true;
+    }
+
+    private void DetachGridEvents()
+    {
+        if (_grid is null || !_gridEventsAttached)
         {
             return;
         }
 
         _grid.SelectedAssetIndexChanged -= OnGridSelectionChanged;
-        _grid = null;
+        _gridEventsAttached = false;
+    }
+
+    private void SynchronizeFromGrid()
+    {
+        if (_grid is null || _grid.SelectedAssetIndex < 0)
+        {
+            return;
+        }
+
+        var selected = _grid.SelectedAssetIndex;
+        var snapshot = _session.Snapshot;
+        if (snapshot.SelectedIndex == selected
+            && snapshot.State is not ViewerDetailLoadState.Empty
+                and not ViewerDetailLoadState.Error)
+        {
+            return;
+        }
+
+        _ = SelectAsync(selected);
     }
 
     public void Fit()
@@ -546,17 +584,21 @@ public sealed class DetailViewerControl : UserControl
         object? sender,
         VisualTreeAttachmentEventArgs e)
     {
+        _visualAttached = true;
         AttachSessionEvents();
         AttachTopLevelScaling();
+        AttachGridEvents();
         ApplySnapshot(_session.Snapshot);
+        SynchronizeFromGrid();
     }
 
     private void OnDetachedFromVisualTree(
         object? sender,
         VisualTreeAttachmentEventArgs e)
     {
+        _visualAttached = false;
         _image.Source = null;
-        UnbindGrid();
+        DetachGridEvents();
         DetachSessionEvents();
         DetachTopLevelScaling();
         CancelPendingZoomCommands();

@@ -693,6 +693,39 @@ internal static class Program
             grid.SelectedAssetIndex == 2,
             "Detail previous/next navigation did not synchronize Grid selection.");
 
+        await detail.ActualSizeAsync();
+        Require(
+            detailSession.Snapshot.IsOriginal,
+            "Reattach test did not establish an original before detaching Detail.");
+
+        layout.Children.Remove(detail);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detailSession.Snapshot.State == ViewerDetailLoadState.Empty
+            && detailSession.Snapshot.Bitmap is null,
+            "Temporary Detail detach did not release the active image lifetime.");
+
+        layout.Children.Add(detail);
+        Grid.SetColumn(detail, 1);
+        Dispatcher.UIThread.RunJobs();
+
+        await WaitForDetailAsync(
+            detailSession,
+            snapshot =>
+                snapshot.SelectedIndex == grid.SelectedAssetIndex
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        grid.SelectAsset(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        Require(
+            detail.SelectedAssetIndex == 0,
+            "Detail did not restore Grid selection synchronization after reattach.");
+
         await using (var budgetSession = new ViewerDetailSession(
                          assets,
                          provider,
