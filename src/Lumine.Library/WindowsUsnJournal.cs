@@ -97,7 +97,7 @@ public sealed class WindowsUsnJournal
     private const int MaxRelevantChanges = 4096;
     private const long MaxRecordsScanned = 100_000;
 
-    public UsnJournalSnapshot Query(string libraryRoot)
+    public static UsnJournalSnapshot Query(string libraryRoot)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -121,7 +121,7 @@ public sealed class WindowsUsnJournal
                 reason);
         }
 
-        var fileSystem = new StringBuilder(32);
+        var fileSystem = new char[32];
         if (!GetVolumeInformationW(
                 volumeRoot,
                 null,
@@ -130,7 +130,7 @@ public sealed class WindowsUsnJournal
                 out _,
                 out _,
                 fileSystem,
-                fileSystem.Capacity))
+                fileSystem.Length))
         {
             return new UsnJournalSnapshot(
                 false,
@@ -142,7 +142,7 @@ public sealed class WindowsUsnJournal
         }
 
         if (!string.Equals(
-                fileSystem.ToString(),
+                ReadNullTerminated(fileSystem),
                 "NTFS",
                 StringComparison.OrdinalIgnoreCase))
         {
@@ -152,7 +152,7 @@ public sealed class WindowsUsnJournal
                 0,
                 0,
                 0,
-                $"Filesystem '{fileSystem}' is not NTFS.");
+                $"Filesystem '{ReadNullTerminated(fileSystem)}' is not NTFS.");
         }
 
         using var handle = CreateFileW(
@@ -216,7 +216,7 @@ public sealed class WindowsUsnJournal
         }
     }
 
-    public UsnCatchUpResult ReadChanges(
+    public static UsnCatchUpResult ReadChanges(
         string libraryRoot,
         string expectedJournalId,
         long startUsn,
@@ -439,12 +439,25 @@ public sealed class WindowsUsnJournal
                         continue;
                     }
 
+                    var preferRecordedPath =
+                        (reasonFlags & (UsnReasonRenameOldName | UsnReasonFileDelete)) != 0;
+
                     var relativePath = ResolveRelativePath(
                         volume,
                         libraryRoot,
                         fileReference,
                         parentReference,
-                        fileName);
+                        fileName,
+                        preferRecordedPath);
+
+                    if (relativePath is null)
+                    {
+                        return RequiresReconcile(
+                            snapshot.JournalId,
+                            startUsn,
+                            targetUsn,
+                            $"USN path could not be resolved for record {fileReference:X16}.");
+                    }
 
                     if ((attributes & FileAttributeDirectory) != 0)
                     {
@@ -595,13 +608,30 @@ public sealed class WindowsUsnJournal
         string libraryRoot,
         ulong fileReference,
         ulong parentReference,
-        string fileName)
+        string fileName,
+        bool preferRecordedPath)
     {
-        var current = TryOpenPathById(volume, fileReference);
-        if (current is not null
-            && TryMakeRelative(libraryRoot, current, out var currentRelative))
+        if (preferRecordedPath)
         {
-            return currentRelative;
+            var recordedParent = TryOpenPathById(volume, parentReference);
+            if (recordedParent is not null)
+            {
+                var recorded = Path.Combine(recordedParent, fileName);
+                if (TryMakeRelative(libraryRoot, recorded, out var recordedRelative))
+                {
+                    return recordedRelative;
+                }
+
+                return null;
+            }
+        }
+
+        var current = TryOpenPathById(volume, fileReference);
+        if (current is not null)
+        {
+            return TryMakeRelative(libraryRoot, current, out var currentRelative)
+                ? currentRelative
+                : null;
         }
 
         var parent = TryOpenPathById(volume, parentReference);
@@ -640,12 +670,11 @@ public sealed class WindowsUsnJournal
             return null;
         }
 
-        var capacity = 512;
-        var buffer = new StringBuilder(capacity);
+        var buffer = new char[512];
         var length = GetFinalPathNameByHandleW(
             handle,
             buffer,
-            (uint)buffer.Capacity,
+            (uint)buffer.Length,
             0);
 
         if (length == 0)
@@ -653,22 +682,34 @@ public sealed class WindowsUsnJournal
             return null;
         }
 
-        if (length >= buffer.Capacity)
+        if (length >= buffer.Length)
         {
-            buffer.EnsureCapacity(checked((int)length + 1));
+            buffer = new char[checked((int)length + 1)];
             length = GetFinalPathNameByHandleW(
                 handle,
                 buffer,
-                (uint)buffer.Capacity,
+                (uint)buffer.Length,
                 0);
 
-            if (length == 0 || length >= buffer.Capacity)
+            if (length == 0 || length >= buffer.Length)
             {
                 return null;
             }
         }
 
-        return NormalizeFinalPath(buffer.ToString());
+        return NormalizeFinalPath(
+            new string(buffer, 0, checked((int)length)));
+    }
+
+    private static string ReadNullTerminated(char[] buffer)
+    {
+        var length = Array.IndexOf(buffer, '\0');
+        if (length < 0)
+        {
+            length = buffer.Length;
+        }
+
+        return new string(buffer, 0, length);
     }
 
     private static string NormalizeFinalPath(string path)
@@ -819,7 +860,7 @@ public sealed class WindowsUsnJournal
         SetLastError = true)]
     private static extern uint GetFinalPathNameByHandleW(
         SafeFileHandle hFile,
-        StringBuilder lpszFilePath,
+        [Out] char[] lpszFilePath,
         uint cchFilePath,
         uint dwFlags);
 
@@ -830,11 +871,11 @@ public sealed class WindowsUsnJournal
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetVolumeInformationW(
         string lpRootPathName,
-        StringBuilder? lpVolumeNameBuffer,
+        [Out] char[]? lpVolumeNameBuffer,
         int nVolumeNameSize,
         out uint lpVolumeSerialNumber,
         out uint lpMaximumComponentLength,
         out uint lpFileSystemFlags,
-        StringBuilder lpFileSystemNameBuffer,
+        [Out] char[] lpFileSystemNameBuffer,
         int nFileSystemNameSize);
 }
