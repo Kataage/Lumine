@@ -38,6 +38,8 @@ internal static class Program
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
+                    await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
+                    await VerifyOriginalFailureKeepsFitAsync(thumbnailPath);
                     return 0;
                 },
                 CancellationToken.None);
@@ -768,6 +770,150 @@ internal static class Program
             "Detaching Detail did not release the selected bitmap lifetime.");
     }
 
+    private static async Task VerifyUnknownMetadataPromotionAsync(
+        string previewPath)
+    {
+        var assets = new DirectFixtureAssetProvider(
+            1,
+            width: null,
+            height: null);
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.FromMilliseconds(30),
+            originalWidth: 16,
+            originalHeight: 12);
+
+        await using var session = new ViewerDetailSession(
+            assets,
+            provider,
+            new ViewerDetailOptions
+            {
+                PreviewDecodedEntryLimit = 2,
+                PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                OriginalDecodedByteLimit = 4L * 1024 * 1024,
+                MinZoom = 0.05,
+                MaxZoom = 8,
+                ZoomStep = 1.25
+            });
+
+        var detail = new DetailViewerControl(session);
+        var window = new Window
+        {
+            Width = 800,
+            Height = 600,
+            Content = detail
+        };
+
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        detail.Fit();
+        var previewZoom = detail.Zoom;
+        var expectedPromotedZoom = Math.Clamp(
+            DetailViewerControl.CalculatePromotedZoom(
+                session.Snapshot.Bitmap!.PixelSize,
+                new PixelSize(16, 12),
+                Math.Clamp(
+                    previewZoom * session.Options.ZoomStep,
+                    session.Options.MinZoom,
+                    session.Options.MaxZoom)),
+            session.Options.MinZoom,
+            session.Options.MaxZoom);
+
+        await detail.ZoomByAsync(session.Options.ZoomStep);
+
+        Require(
+            session.Snapshot.IsOriginal,
+            "Unknown-metadata zoom did not promote the preview to the original.");
+        Require(
+            Math.Abs(detail.Zoom - expectedPromotedZoom) < 0.001,
+            $"Preview-to-original promotion changed visual scale: actual={detail.Zoom}, expected={expectedPromotedZoom}.");
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private static async Task VerifyOriginalFailureKeepsFitAsync(
+        string previewPath)
+    {
+        var assets = new DirectFixtureAssetProvider(
+            1,
+            width: 16,
+            height: 12);
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.FromMilliseconds(10),
+            originalWidth: 16,
+            originalHeight: 12);
+
+        await using var session = new ViewerDetailSession(
+            assets,
+            provider,
+            new ViewerDetailOptions
+            {
+                PreviewDecodedEntryLimit = 2,
+                PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                OriginalDecodedByteLimit = 128,
+                MinZoom = 0.05,
+                MaxZoom = 100,
+                ZoomStep = 1.25
+            });
+
+        var detail = new DetailViewerControl(session);
+        var window = new Window
+        {
+            Width = 800,
+            Height = 600,
+            Content = detail
+        };
+
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        detail.Fit();
+        Require(detail.IsFitMode, "Detail did not start the failure test in Fit mode.");
+
+        await detail.SetZoomAsync(1);
+
+        Require(
+            session.Snapshot.State == ViewerDetailLoadState.PreviewReady
+            && !session.Snapshot.IsOriginal
+            && !string.IsNullOrWhiteSpace(session.Snapshot.ErrorMessage),
+            "Original failure did not safely retain the preview.");
+        Require(
+            detail.IsFitMode,
+            "Failed original promotion incorrectly disabled Fit mode.");
+
+        var beforeResize = detail.Zoom;
+        window.Width = 480;
+        window.Height = 360;
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detail.IsFitMode,
+            "Window resize after original failure left Fit mode.");
+        Require(
+            detail.Zoom < beforeResize,
+            $"Fit did not react to resize after original failure: before={beforeResize}, after={detail.Zoom}.");
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
     private static async Task<ViewerDetailSnapshot> WaitForDetailAsync(
         ViewerDetailSession session,
         Func<ViewerDetailSnapshot, bool> predicate)
@@ -877,7 +1023,11 @@ internal sealed class FixturePageSource(long count) : IViewerPageSource
             DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks);
 }
 
-internal sealed class DirectFixtureAssetProvider(long count) : IViewerAssetProvider
+internal sealed class DirectFixtureAssetProvider(
+    long count,
+    int? width = 1024,
+    int? height = 768,
+    string? format = "png") : IViewerAssetProvider
 {
     public long Count { get; } = count;
 
@@ -900,9 +1050,9 @@ internal sealed class DirectFixtureAssetProvider(long count) : IViewerAssetProvi
                 $"asset-{index:D6}.jpg",
                 10_000 + index,
                 DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks,
-                1024,
-                768,
-                "png"));
+                width,
+                height,
+                format));
     }
 }
 
@@ -957,7 +1107,9 @@ internal sealed class DelayedThumbnailProvider(
 
 internal sealed class DelayedDetailProvider(
     string previewPath,
-    TimeSpan originalDelay) : IViewerDetailProvider
+    TimeSpan originalDelay,
+    int originalWidth = 1024,
+    int originalHeight = 768) : IViewerDetailProvider
 {
     private int _previewRequests;
     private int _originalRequests;
@@ -1002,7 +1154,8 @@ internal sealed class DelayedDetailProvider(
 
         try
         {
-            const long required = 1024L * 768 * 4;
+            var required = checked(
+                (long)originalWidth * originalHeight * 4L);
             if (required > maxDecodedBytes)
             {
                 throw new InvalidOperationException(
@@ -1024,7 +1177,7 @@ internal sealed class DelayedDetailProvider(
 
             var bitmap = await Dispatcher.UIThread.InvokeAsync(
                 () => new WriteableBitmap(
-                    new PixelSize(1024, 768),
+                    new PixelSize(originalWidth, originalHeight),
                     new Vector(96, 96),
                     PixelFormats.Rgba8888,
                     AlphaFormat.Unpremul));
@@ -1032,8 +1185,8 @@ internal sealed class DelayedDetailProvider(
             return new ViewerOriginalBitmap(
                 bitmap,
                 new ViewerDetailMetadata(
-                    1024,
-                    768,
+                    originalWidth,
+                    originalHeight,
                     true,
                     "png",
                     asset.FileSize,
