@@ -9,6 +9,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private CancellationTokenSource? _selectionCancellation;
     private DecodedBitmapLease? _previewLease;
     private ViewerOriginalBitmap? _original;
+    private Task? _originalLoadTask;
+    private long _originalLoadVersion;
     private ViewerDetailSnapshot _snapshot =
         new(
             -1,
@@ -97,6 +99,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             }
 
             CancelSelectionLocked();
+            _originalLoadTask = null;
             ReleaseImagesLocked();
 
             selection = CancellationTokenSource.CreateLinkedTokenSource(
@@ -188,9 +191,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     public async Task EnsureOriginalAsync(
         CancellationToken cancellationToken = default)
     {
-        ViewerAsset asset;
-        CancellationTokenSource selection;
-        long version;
+        Task loadTask;
+        var publishLoading = false;
 
         lock (_gate)
         {
@@ -201,33 +203,56 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 return;
             }
 
-            asset = _snapshot.Asset
+            var asset = _snapshot.Asset
                 ?? throw new InvalidOperationException(
                     "Select an asset before requesting full resolution.");
-            selection = _selectionCancellation
+            var selection = _selectionCancellation
                 ?? throw new InvalidOperationException(
                     "Detail selection has no active lifetime.");
-            version = _snapshot.SelectionVersion;
+            var version = _snapshot.SelectionVersion;
 
-            _snapshot = _snapshot with
+            if (_originalLoadTask is { IsCompleted: false }
+                && _originalLoadVersion == version)
             {
-                State = ViewerDetailLoadState.LoadingOriginal,
-                ErrorMessage = null
-            };
+                loadTask = _originalLoadTask;
+            }
+            else
+            {
+                _snapshot = _snapshot with
+                {
+                    State = ViewerDetailLoadState.LoadingOriginal,
+                    ErrorMessage = null
+                };
+
+                loadTask = LoadOriginalCoreAsync(
+                    asset,
+                    selection,
+                    version);
+                _originalLoadTask = loadTask;
+                _originalLoadVersion = version;
+                publishLoading = true;
+            }
         }
 
-        PublishState();
+        if (publishLoading)
+        {
+            PublishState();
+        }
 
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            selection.Token);
+        await loadTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
+    private async Task LoadOriginalCoreAsync(
+        ViewerAsset asset,
+        CancellationTokenSource selection,
+        long version)
+    {
         try
         {
             var original = await _provider.LoadOriginalAsync(
                 asset,
                 Options.OriginalDecodedByteLimit,
-                linked.Token).ConfigureAwait(false);
+                selection.Token).ConfigureAwait(false);
 
             lock (_gate)
             {
@@ -255,7 +280,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             PublishState();
         }
         catch (OperationCanceledException)
-            when (linked.IsCancellationRequested)
+            when (selection.IsCancellationRequested)
         {
         }
         catch (Exception exception)
@@ -277,6 +302,16 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             }
 
             PublishState();
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (_originalLoadVersion == version)
+                {
+                    _originalLoadTask = null;
+                }
+            }
         }
     }
 
