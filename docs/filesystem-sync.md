@@ -75,3 +75,7 @@ CI runs a file-only burst benchmark after the correctness smoke: 128 creates, 64
 ## Shutdown budget
 
 After the native watcher is stopped, the event processor gets a five-second graceful drain budget. If queued filesystem work cannot finish within that budget, the processor is cancelled and the database is marked `reconcile_required`. Shutdown therefore does not trade correctness for responsiveness: an incomplete drain becomes an explicit startup recovery obligation instead of an unbounded exit wait or a silently lost event.
+
+## Loss-path acceptance
+
+The Windows smoke also validates the native parser independently of live timing: a zero-byte completion becomes an overflow, and rename old/new records can be paired across separate native buffers. It deliberately corrupts a persisted journal identifier and requires an explicit reconciliation fallback, and verifies that a UNC path does not pretend to have local NTFS journal support.

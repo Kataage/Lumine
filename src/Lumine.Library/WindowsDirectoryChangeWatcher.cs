@@ -110,7 +110,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
             flushPendingRename: true);
     }
 
-    private static List<DirectoryChange> ParseBuffer(
+    internal static List<DirectoryChange> ParseBuffer(
         IntPtr buffer,
         uint bytes,
         DateTimeOffset observedAtUtc,

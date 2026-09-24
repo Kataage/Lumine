@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Lumine.Library;
 
 static void Require(bool condition, string message)
@@ -51,6 +52,78 @@ static async Task WaitUntilAsync(
     throw new InvalidOperationException(failure);
 }
 
+static IntPtr CreateNotifyRecord(uint action, string name, out uint bytes)
+{
+    var nameBytes = System.Text.Encoding.Unicode.GetBytes(name);
+    bytes = checked((uint)(12 + nameBytes.Length));
+    var buffer = Marshal.AllocHGlobal(checked((int)bytes));
+    Marshal.WriteInt32(buffer, 0, 0);
+    Marshal.WriteInt32(buffer, 4, checked((int)action));
+    Marshal.WriteInt32(buffer, 8, nameBytes.Length);
+    Marshal.Copy(nameBytes, 0, IntPtr.Add(buffer, 12), nameBytes.Length);
+    return buffer;
+}
+
+static void VerifyNativeBufferParser()
+{
+    var now = DateTimeOffset.UtcNow;
+
+    var overflow = WindowsDirectoryChangeWatcher.ParseBuffer(
+        IntPtr.Zero,
+        0,
+        now);
+    Require(
+        overflow.Count == 1
+        && overflow[0].Kind == DirectoryChangeKind.Overflow,
+        "Zero-byte ReadDirectoryChangesW completion was not classified as overflow.");
+
+    string? pendingOld = null;
+    var oldBuffer = CreateNotifyRecord(4, "old-name.jpg", out var oldBytes);
+
+    try
+    {
+        var old = WindowsDirectoryChangeWatcher.ParseBuffer(
+            oldBuffer,
+            oldBytes,
+            now,
+            ref pendingOld,
+            flushPendingRename: false);
+
+        Require(old.Count == 0, "Rename-old record was emitted before a pairing opportunity.");
+        Require(
+            string.Equals(pendingOld, "old-name.jpg", StringComparison.Ordinal),
+            "Rename-old state was not retained across native buffers.");
+    }
+    finally
+    {
+        Marshal.FreeHGlobal(oldBuffer);
+    }
+
+    var newBuffer = CreateNotifyRecord(5, "new-name.jpg", out var newBytes);
+
+    try
+    {
+        var renamed = WindowsDirectoryChangeWatcher.ParseBuffer(
+            newBuffer,
+            newBytes,
+            now,
+            ref pendingOld,
+            flushPendingRename: false);
+
+        Require(
+            renamed.Count == 1
+            && renamed[0].Kind == DirectoryChangeKind.Renamed
+            && renamed[0].OldRelativePath == "old-name.jpg"
+            && renamed[0].RelativePath == "new-name.jpg",
+            "Cross-buffer rename pair was not reconstructed.");
+        Require(pendingOld is null, "Rename pairing left stale pending state.");
+    }
+    finally
+    {
+        Marshal.FreeHGlobal(newBuffer);
+    }
+}
+
 if (!OperatingSystem.IsWindows())
 {
     Console.WriteLine("Filesystem sync smoke skipped: Windows-only.");
@@ -70,6 +143,13 @@ await File.WriteAllBytesAsync(
 
 try
 {
+    VerifyNativeBufferParser();
+
+    var uncProbe = WindowsUsnJournal.Query(@"\\invalid-lumine-test\share");
+    Require(
+        !uncProbe.Available,
+        "UNC path unexpectedly reported local NTFS USN availability.");
+
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
 
@@ -242,6 +322,38 @@ try
                 offlineRenamed.Id == offlineAsset.Id,
                 "USN offline rename did not preserve stable asset identity.");
         }
+    }
+
+    if (journalBefore.Available)
+    {
+        var validState = await repository.GetOrCreateSyncStateAsync(library.Id);
+        Require(
+            validState.NextUsn is not null,
+            "Valid NTFS shutdown did not persist a USN checkpoint.");
+
+        await repository.UpdateUsnCheckpointAsync(
+            library.Id,
+            "0000000000000000",
+            validState.NextUsn,
+            reconcileRequired: false,
+            watcherStoppedAtUtc: validState.WatcherStoppedAtUtc,
+            error: null);
+
+        var gapPath = Path.Combine(libraryRoot, "journal-gap.jpg");
+        await File.WriteAllBytesAsync(gapPath, [4, 4, 4, 4]);
+
+        await using var gapRecovery = await syncService.StartAsync(library.Id);
+        Require(
+            gapRecovery.BootstrapMode == LibrarySyncBootstrapMode.ReconcileFallback,
+            "Journal identifier mismatch did not force reconciliation fallback.");
+        Require(
+            gapRecovery.CatchUp is { RequiresReconcile: true },
+            "Journal identifier mismatch was not reported as a USN gap.");
+
+        _ = await WaitForAsync(
+            () => repository.GetAssetAsync(library.Id, "journal-gap.jpg"),
+            static asset => asset.FileSize == 4,
+            "Journal-gap reconciliation did not recover the offline file.");
     }
 
     // Explicit watcher overflow must force a safe reconciliation.
