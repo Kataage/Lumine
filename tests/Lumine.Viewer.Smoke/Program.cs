@@ -265,8 +265,8 @@ internal static class Program
         RaiseKey(viewer, Key.End);
         Require(viewer.SelectedAssetIndex == 99_999, "End navigation failed.");
 
+        viewer.SelectAsset(0);
         viewer.ScrollToAsset(99_900);
-        viewer.SelectAsset(99_900, scrollIntoView: false);
         await Task.Delay(75);
         Dispatcher.UIThread.RunJobs();
 
@@ -277,10 +277,35 @@ internal static class Program
             viewer.Diagnostics.AttachedTiles < 512,
             "Fast scroll caused tile count to expand with library size.");
         Require(
+            viewer.FirstRealizedAssetIndex is > 99_000,
+            "Fast scroll did not move the viewport near the requested far asset.");
+        Require(
+            viewer.SelectedRealizedTileCount == 0,
+            "Offscreen selection unexpectedly remained realized after far scroll.");
+
+        window.Width = 760;
+        for (var attempt = 0; attempt < 150; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            if (viewer.FirstRealizedAssetIndex is > 99_000)
+            {
+                break;
+            }
+
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.FirstRealizedAssetIndex is > 99_000,
+            "Resize jumped from the current far viewport back to an offscreen selection.");
+
+        viewer.SelectAsset(99_900, scrollIntoView: false);
+        Dispatcher.UIThread.RunJobs();
+        Require(
             viewer.SelectedRealizedTileCount == 1,
             "Far selection did not render after fast scroll.");
 
-        window.Width = 760;
+        window.Width = 900;
         for (var attempt = 0; attempt < 150; attempt++)
         {
             Dispatcher.UIThread.RunJobs();
