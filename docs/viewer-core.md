@@ -116,3 +116,7 @@ Changing the number of columns rebuilds the virtual row shape, but it must not t
 ## Failure visibility
 
 Provider failures and visible tile load/decode failures are separate diagnostics. The benchmark gate requires both to remain zero. A successful first thumbnail therefore cannot mask corrupt/decode-failing tiles elsewhere in the fast-scroll workload.
+
+## Image-ready scroll metric
+
+Fast-scroll timing ends only after the final realized viewport has decoded images ready for all attached tiles and active bitmap decode work has drained. Cache-pressure acceptance uses peak decoded entries/bytes observed during the workload rather than teardown-state occupancy. This prevents a benchmark from passing because controls moved quickly while images were still blank, or because LRU eviction reduced the final cache before measurement.
