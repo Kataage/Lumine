@@ -90,6 +90,7 @@ try
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
+    var detailCachePath = Path.Combine(sourceRoot, "detail-cache.jpg");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
@@ -100,6 +101,7 @@ try
     WriteRgb(concurrentPath, 1200, 800);
     WriteP3ProfileJpeg(p3Path);
     WriteRgb(cancellationPath, 6000, 6000);
+    WriteRgb(detailCachePath, 2200, 1400);
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -223,6 +225,46 @@ try
         Require(
             restartedPipeline.Diagnostics.SourceOpens == 0,
             "Fresh pipeline persistent hit touched the deleted original source.");
+    }
+
+    var detailPersistentSource = SourceFor(21, 1, detailCachePath);
+    var detailPersistentFirst = await pipeline.RequestAsync(
+        detailPersistentSource,
+        ThumbnailProfiles.DetailPreview);
+    Require(
+        !detailPersistentFirst.CacheHit,
+        "Detail preview first request unexpectedly hit cache.");
+
+    var detailSourceOpensBeforeHit = pipeline.Diagnostics.SourceOpens;
+    File.Delete(detailCachePath);
+
+    var detailPersistentHit = await pipeline.RequestAsync(
+        detailPersistentSource,
+        ThumbnailProfiles.DetailPreview);
+    Require(
+        detailPersistentHit.CacheHit,
+        "Detail preview did not prefer persistent cache after original disappeared.");
+    Require(
+        pipeline.Diagnostics.SourceOpens == detailSourceOpensBeforeHit,
+        "Warm Detail preview cache hit touched the original source.");
+
+    await using (var restartedDetailPipeline = new ThumbnailPipeline(
+                     new ThumbnailCache(cacheRoot),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 1,
+                         QueueCapacity = 2
+                     }))
+    {
+        var restartedDetailHit = await restartedDetailPipeline.RequestAsync(
+            detailPersistentSource,
+            ThumbnailProfiles.DetailPreview);
+        Require(
+            restartedDetailHit.CacheHit,
+            "Restarted pipeline did not reuse persistent Detail preview.");
+        Require(
+            restartedDetailPipeline.Diagnostics.SourceOpens == 0,
+            "Restarted Detail preview cache hit touched the missing original.");
     }
 
     var corruptSource = SourceFor(30, 1, corruptSourcePath);
@@ -397,6 +439,25 @@ try
         && p3FirstStripe[1] > 170
         && p3FirstStripe[2] < 50,
         "Full-resolution embedded P3 profile was not normalized to sRGB.");
+
+    var webpFullSource = new FullResolutionSource(
+        webpPath,
+        new FileInfo(webpPath).Length,
+        File.GetLastWriteTimeUtc(webpPath).Ticks);
+    var webpFullInfo = await FullResolutionDecoder.ProbeAsync(webpFullSource);
+    Require(
+        webpFullInfo.Width == 320 && webpFullInfo.Height == 200,
+        $"Full-resolution WebP probe mismatch: {webpFullInfo.Width}x{webpFullInfo.Height}.");
+
+    var webpRows = 0;
+    await FullResolutionDecoder.DecodeAsync(
+        webpFullSource,
+        16L * 1024 * 1024,
+        stripe => webpRows += stripe.Height,
+        stripeHeight: 31);
+    Require(
+        webpRows == 200,
+        "Full-resolution WebP decode did not stream the complete image.");
 
     var gifFullSource = new FullResolutionSource(
         gifPath,
