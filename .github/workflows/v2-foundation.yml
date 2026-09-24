@@ -156,7 +156,7 @@ jobs:
         run: ./build/Test-ImagePerformance.ps1
 
       - name: Upload Core benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lumine-core-baselines-${{ github.run_id }}
           path: artifacts/benchmarks/*.json
