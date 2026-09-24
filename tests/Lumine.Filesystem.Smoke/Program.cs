@@ -196,9 +196,11 @@ try
             && stoppedState.NextUsn is not null)
         {
             Require(
-                restarted.BootstrapMode is LibrarySyncBootstrapMode.UsnDelta
-                    or LibrarySyncBootstrapMode.ReconcileFallback,
-                "NTFS restart did not use USN delta or an explicit safe reconciliation fallback.");
+                restarted.BootstrapMode == LibrarySyncBootstrapMode.UsnDelta,
+                $"Available NTFS USN journal did not perform delta catch-up: {restarted.CatchUp?.Reason}");
+            Require(
+                restarted.CatchUp is { AppliedAsDelta: true, RequiresReconcile: false },
+                "USN delta catch-up did not report a clean applied delta.");
         }
         else
         {
@@ -208,11 +210,78 @@ try
         }
     }
 
+    var offlineAsset = await repository.GetAssetAsync(library.Id, "offline.jpg")
+        ?? throw new InvalidOperationException("Offline catch-up asset disappeared.");
+
+    var offlineRenamedPath = Path.Combine(libraryRoot, "offline-renamed.jpg");
+    File.Move(offlinePath, offlineRenamedPath);
+
+    await using (var renameRestart = await syncService.StartAsync(library.Id))
+    {
+        var offlineRenamed = await WaitForAsync(
+            () => repository.GetAssetAsync(library.Id, "offline-renamed.jpg"),
+            static asset => asset.FileSize == 5,
+            "Restart recovery did not catch an offline rename.");
+
+        Require(
+            await repository.GetAssetAsync(library.Id, "offline.jpg") is null,
+            "Offline rename left the old path indexed.");
+
+        if (journalBefore.Available)
+        {
+            Require(
+                renameRestart.BootstrapMode == LibrarySyncBootstrapMode.UsnDelta,
+                $"Available NTFS USN journal did not replay offline rename: {renameRestart.CatchUp?.Reason}");
+            Require(
+                offlineRenamed.Id == offlineAsset.Id,
+                "USN offline rename did not preserve stable asset identity.");
+        }
+    }
+
+    // Explicit watcher overflow must force a safe reconciliation.
+    var overflowPath = Path.Combine(libraryRoot, "overflow.jpg");
+    await File.WriteAllBytesAsync(overflowPath, [7, 7, 7]);
+    var reconcile = new LibraryReconciler(repository);
+    var overflowSeed = await reconcile.ReconcileAsync(library.Id);
+    Require(overflowSeed.Completed, "Overflow seed reconciliation failed.");
+    Require(
+        await repository.GetAssetAsync(library.Id, "overflow.jpg") is not null,
+        "Overflow seed asset was not indexed.");
+
+    File.Delete(overflowPath);
+
+    var libraryInfo = await repository.GetLibraryAsync(library.Id)
+        ?? throw new InvalidOperationException("Library disappeared before overflow test.");
+
+    await using (var overflowProcessor = new LibraryChangeProcessor(
+                     library.Id,
+                     libraryInfo,
+                     repository,
+                     reconcile))
+    {
+        overflowProcessor.Publish(
+            [
+                new DirectoryChange(
+                    DirectoryChangeKind.Overflow,
+                    string.Empty,
+                    null,
+                    DateTimeOffset.UtcNow)
+            ]);
+
+        await WaitUntilAsync(
+            async () =>
+            {
+                var diagnostics = overflowProcessor.Diagnostics;
+                var asset = await repository.GetAssetAsync(library.Id, "overflow.jpg");
+                return diagnostics.Reconciliations > 0 && asset is null;
+            },
+            "Explicit watcher overflow did not reconcile stale state.");
+    }
+
     // Reconciliation deletes stale rows only after a complete walk.
     await File.WriteAllBytesAsync(
         Path.Combine(libraryRoot, "stale.jpg"),
         [1]);
-    var reconcile = new LibraryReconciler(repository);
     var complete = await reconcile.ReconcileAsync(library.Id);
     Require(complete.Completed, "Complete reconciliation unexpectedly failed.");
     Require(
