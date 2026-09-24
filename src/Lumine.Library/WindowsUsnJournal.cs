@@ -442,7 +442,7 @@ public sealed class WindowsUsnJournal
                     var preferRecordedPath =
                         (reasonFlags & (UsnReasonRenameOldName | UsnReasonFileDelete)) != 0;
 
-                    var relativePath = ResolveRelativePath(
+                    var resolution = ResolveRelativePath(
                         volume,
                         libraryRoot,
                         fileReference,
@@ -450,7 +450,7 @@ public sealed class WindowsUsnJournal
                         fileName,
                         preferRecordedPath);
 
-                    if (relativePath is null)
+                    if (resolution.Kind == PathResolutionKind.Unresolved)
                     {
                         return RequiresReconcile(
                             snapshot.JournalId,
@@ -459,23 +459,24 @@ public sealed class WindowsUsnJournal
                             $"USN path could not be resolved for record {fileReference:X16}.");
                     }
 
-                    if ((attributes & FileAttributeDirectory) != 0)
+                    if (resolution.Kind == PathResolutionKind.OutsideLibrary)
                     {
-                        if (relativePath is not null)
-                        {
-                            return RequiresReconcile(
-                                snapshot.JournalId,
-                                startUsn,
-                                targetUsn,
-                                $"Directory journal change requires reconciliation: {relativePath}.");
-                        }
-
                         offset += recordLength;
                         continue;
                     }
 
-                    if (relativePath is null
-                        || !LibraryFileTypes.IsSupportedPath(relativePath))
+                    var relativePath = resolution.RelativePath!;
+
+                    if ((attributes & FileAttributeDirectory) != 0)
+                    {
+                        return RequiresReconcile(
+                            snapshot.JournalId,
+                            startUsn,
+                            targetUsn,
+                            $"Directory journal change requires reconciliation: {relativePath}.");
+                    }
+
+                    if (!LibraryFileTypes.IsSupportedPath(relativePath))
                     {
                         offset += recordLength;
                         continue;
@@ -603,7 +604,7 @@ public sealed class WindowsUsnJournal
             0,
             []);
 
-    private static string? ResolveRelativePath(
+    private static PathResolution ResolveRelativePath(
         SafeFileHandle volume,
         string libraryRoot,
         ulong fileReference,
@@ -616,35 +617,41 @@ public sealed class WindowsUsnJournal
             var recordedParent = TryOpenPathById(volume, parentReference);
             if (recordedParent is not null)
             {
-                var recorded = Path.Combine(recordedParent, fileName);
-                if (TryMakeRelative(libraryRoot, recorded, out var recordedRelative))
-                {
-                    return recordedRelative;
-                }
-
-                return null;
+                return ResolveKnownFullPath(
+                    libraryRoot,
+                    Path.Combine(recordedParent, fileName));
             }
+
+            return new PathResolution(
+                PathResolutionKind.Unresolved,
+                null);
         }
 
         var current = TryOpenPathById(volume, fileReference);
         if (current is not null)
         {
-            return TryMakeRelative(libraryRoot, current, out var currentRelative)
-                ? currentRelative
-                : null;
+            return ResolveKnownFullPath(libraryRoot, current);
         }
 
         var parent = TryOpenPathById(volume, parentReference);
         if (parent is null)
         {
-            return null;
+            return new PathResolution(
+                PathResolutionKind.Unresolved,
+                null);
         }
 
-        var combined = Path.Combine(parent, fileName);
-        return TryMakeRelative(libraryRoot, combined, out var relative)
-            ? relative
-            : null;
+        return ResolveKnownFullPath(
+            libraryRoot,
+            Path.Combine(parent, fileName));
     }
+
+    private static PathResolution ResolveKnownFullPath(
+        string libraryRoot,
+        string fullPath) =>
+        TryMakeRelative(libraryRoot, fullPath, out var relative)
+            ? new PathResolution(PathResolutionKind.InsideLibrary, relative)
+            : new PathResolution(PathResolutionKind.OutsideLibrary, null);
 
     private static string? TryOpenPathById(
         SafeFileHandle volume,
@@ -779,6 +786,17 @@ public sealed class WindowsUsnJournal
         reason = null;
         return true;
     }
+
+    private enum PathResolutionKind
+    {
+        InsideLibrary = 1,
+        OutsideLibrary = 2,
+        Unresolved = 3
+    }
+
+    private readonly record struct PathResolution(
+        PathResolutionKind Kind,
+        string? RelativePath);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct UsnJournalDataV0
