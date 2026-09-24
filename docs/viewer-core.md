@@ -108,3 +108,7 @@ Decoded bitmap disposal is lease-safe. Disposing the cache blocks new admissions
 ## Decode-work bound
 
 The resident bitmap cache limit is not the only memory bound. A fast warm-cache scroll could otherwise start many cancelled-but-still-decoding Avalonia bitmap tasks at once. Viewer therefore uses a process-wide decode gate capped at two concurrent bitmap decodes (or fewer on small machines). Diagnostics and CI record both active and peak concurrent decodes, and teardown must reach zero decode work.
+
+## Resize anchor
+
+Changing the number of columns rebuilds the virtual row shape, but it must not teleport a large library back to row zero. Viewer preserves the selected asset as the resize anchor; when there is no selection it preserves the first realized row's asset index. Headless smoke verifies this near the end of a 100k library.
