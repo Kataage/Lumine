@@ -32,7 +32,9 @@ public sealed class DetailViewerControl : UserControl
     private TopLevel? _topLevel;
     private readonly object _zoomGate = new();
     private double _requestedZoom = 1;
+    private PixelSize _requestedZoomBasis;
     private long _zoomCommandVersion;
+    private long _pendingZoomCommandVersion;
 
     public DetailViewerControl(ViewerDetailSession session)
     {
@@ -107,7 +109,7 @@ public sealed class DetailViewerControl : UserControl
         {
             if (_fitMode)
             {
-                Fit();
+                ApplyFit();
             }
         };
 
@@ -253,7 +255,7 @@ public sealed class DetailViewerControl : UserControl
 
         _fitMode = true;
         SetZoom(zoom);
-        SynchronizeRequestedZoom(zoom);
+        SynchronizeFitZoomIfIdle(zoom);
         _scroll.Offset = default;
     }
 
@@ -268,9 +270,18 @@ public sealed class DetailViewerControl : UserControl
 
         var commandVersion = BeginZoomCommand(1);
         var selectionVersion = snapshot.SelectionVersion;
-        _fitMode = false;
 
-        await _session.EnsureOriginalAsync(cancellationToken);
+        try
+        {
+            await _session.EnsureOriginalAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            ResetRequestedZoomIfCurrent(commandVersion);
+            throw;
+        }
+
         var current = _session.Snapshot;
         if (!IsCurrentZoomCommand(commandVersion)
             || current.SelectionVersion != selectionVersion
@@ -280,6 +291,7 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
+        _fitMode = false;
         SetZoom(1);
         SynchronizeRequestedZoom(1);
     }
@@ -306,12 +318,12 @@ public sealed class DetailViewerControl : UserControl
             _session.Options.MinZoom,
             _session.Options.MaxZoom);
         var commandVersion = BeginZoomCommand(clamped);
-        _fitMode = false;
 
         await ApplyZoomCommandAsync(
             snapshot,
             clamped,
             commandVersion,
+            requestedBasis: default,
             cancellationToken);
     }
 
@@ -327,13 +339,14 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        var (commandVersion, target) = BeginRelativeZoomCommand(factor);
-        _fitMode = false;
+        var (commandVersion, target, requestedBasis) =
+            BeginRelativeZoomCommand(factor);
 
         await ApplyZoomCommandAsync(
             snapshot,
             target,
             commandVersion,
+            requestedBasis,
             cancellationToken);
     }
 
@@ -341,22 +354,38 @@ public sealed class DetailViewerControl : UserControl
         ViewerDetailSnapshot snapshot,
         double target,
         long commandVersion,
+        PixelSize requestedBasis,
         CancellationToken cancellationToken)
     {
+        var committedTarget = target;
+
         if (!snapshot.IsOriginal
             && ShouldUseOriginal(snapshot, target))
         {
             var selectionVersion = snapshot.SelectionVersion;
-            await _session.EnsureOriginalAsync(cancellationToken);
+
+            try
+            {
+                await _session.EnsureOriginalAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                ResetRequestedZoomIfCurrent(commandVersion);
+                throw;
+            }
+
             var current = _session.Snapshot;
 
             if (!IsCurrentZoomCommand(commandVersion)
                 || current.SelectionVersion != selectionVersion
-                || !current.IsOriginal)
+                || !current.IsOriginal
+                || current.Bitmap is null)
             {
                 ResetRequestedZoomIfCurrent(commandVersion);
                 return;
             }
+
         }
 
         if (!IsCurrentZoomCommand(commandVersion))
@@ -372,8 +401,20 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        SetZoom(target);
-        SynchronizeRequestedZoom(target);
+        if (requestedBasis.Width > 0 && requestedBasis.Height > 0)
+        {
+            committedTarget = Math.Clamp(
+                CalculatePromotedZoom(
+                    requestedBasis,
+                    GetSourcePixelSize(latest),
+                    target),
+                _session.Options.MinZoom,
+                _session.Options.MaxZoom);
+        }
+
+        _fitMode = false;
+        SetZoom(committedTarget);
+        SynchronizeRequestedZoom(committedTarget);
     }
 
     private async Task MoveAsync(long delta)
@@ -431,17 +472,49 @@ public sealed class DetailViewerControl : UserControl
             sourceSize.Height * zoom / renderScaling);
     }
 
+    internal static double CalculatePromotedZoom(
+        PixelSize previewSize,
+        PixelSize originalSize,
+        double previewZoom)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(previewZoom, 0);
+
+        if (previewSize.Width <= 0
+            || previewSize.Height <= 0
+            || originalSize.Width <= 0
+            || originalSize.Height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(previewSize),
+                "Preview and original pixel sizes must be positive.");
+        }
+
+        var widthScale =
+            previewSize.Width / (double)originalSize.Width;
+        var heightScale =
+            previewSize.Height / (double)originalSize.Height;
+
+        return previewZoom * Math.Min(widthScale, heightScale);
+    }
+
+    internal bool IsFitMode => _fitMode;
+
     private long BeginZoomCommand(double target)
     {
         lock (_zoomGate)
         {
             _requestedZoom = target;
-            return ++_zoomCommandVersion;
+            // Explicit commands such as 1:1 are source-pixel zoom requests,
+            // even while the original dimensions are not known yet.
+            _requestedZoomBasis = default;
+            var version = ++_zoomCommandVersion;
+            _pendingZoomCommandVersion = version;
+            return version;
         }
     }
 
-    private (long Version, double Target) BeginRelativeZoomCommand(
-        double factor)
+    private (long Version, double Target, PixelSize Basis)
+        BeginRelativeZoomCommand(double factor)
     {
         lock (_zoomGate)
         {
@@ -449,7 +522,12 @@ public sealed class DetailViewerControl : UserControl
                 _requestedZoom * factor,
                 _session.Options.MinZoom,
                 _session.Options.MaxZoom);
-            return (++_zoomCommandVersion, _requestedZoom);
+            var version = ++_zoomCommandVersion;
+            _pendingZoomCommandVersion = version;
+            return (
+                version,
+                _requestedZoom,
+                _requestedZoomBasis);
         }
     }
 
@@ -463,30 +541,66 @@ public sealed class DetailViewerControl : UserControl
 
     private void SynchronizeRequestedZoom(double zoom)
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             _requestedZoom = zoom;
+            _requestedZoomBasis = basis;
+            _pendingZoomCommandVersion = 0;
+        }
+    }
+
+    private void SynchronizeFitZoomIfIdle(double zoom)
+    {
+        var basis = GetCurrentZoomBasis();
+
+        lock (_zoomGate)
+        {
+            if (_pendingZoomCommandVersion != 0)
+            {
+                return;
+            }
+
+            _requestedZoom = zoom;
+            _requestedZoomBasis = basis;
         }
     }
 
     private void ResetRequestedZoomIfCurrent(long version)
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             if (_zoomCommandVersion == version)
             {
                 _requestedZoom = _zoom;
+                _requestedZoomBasis = basis;
+                _pendingZoomCommandVersion = 0;
             }
         }
     }
 
     private void CancelPendingZoomCommands()
     {
+        var basis = GetCurrentZoomBasis();
+
         lock (_zoomGate)
         {
             _zoomCommandVersion++;
             _requestedZoom = _zoom;
+            _requestedZoomBasis = basis;
+            _pendingZoomCommandVersion = 0;
         }
+    }
+
+    private PixelSize GetCurrentZoomBasis()
+    {
+        var snapshot = _session.Snapshot;
+        return snapshot.Bitmap is null
+            ? default
+            : GetSourcePixelSize(snapshot);
     }
 
     private void PrepareForSelectionChange()
@@ -495,6 +609,8 @@ public sealed class DetailViewerControl : UserControl
         {
             _zoomCommandVersion++;
             _requestedZoom = 1;
+            _requestedZoomBasis = default;
+            _pendingZoomCommandVersion = 0;
         }
 
         _fitMode = true;
