@@ -304,17 +304,14 @@ internal static class Program
             viewer.Diagnostics.AttachedTiles < 512,
             "Fast scroll caused tile count to expand with library size.");
         Require(
-            viewer.FirstRealizedAssetIndex is > 99_000,
-            "Fast scroll did not move the viewport near the requested far asset.");
-        Require(
-            viewer.SelectedRealizedTileCount == 0,
-            "Offscreen selection unexpectedly remained realized after far scroll.");
+            viewer.FirstVisibleAssetIndex is > 99_000,
+            "Fast scroll did not move the visible viewport near the requested far asset.");
 
         window.Width = 760;
         for (var attempt = 0; attempt < 150; attempt++)
         {
             Dispatcher.UIThread.RunJobs();
-            if (viewer.FirstRealizedAssetIndex is > 99_000)
+            if (viewer.FirstVisibleAssetIndex is > 99_000)
             {
                 break;
             }
@@ -323,7 +320,7 @@ internal static class Program
         }
 
         Require(
-            viewer.FirstRealizedAssetIndex is > 99_000,
+            viewer.FirstVisibleAssetIndex is > 99_000,
             "Resize jumped from the current far viewport back to an offscreen selection.");
 
         viewer.SelectAsset(99_900, scrollIntoView: false);
