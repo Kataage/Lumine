@@ -334,7 +334,7 @@ internal static class Program
             viewer.FirstVisibleAssetIndex is > 99_000,
             "Resize jumped from the current far viewport back to an offscreen selection.");
 
-        viewer.SelectAsset(99_900, scrollIntoView: false);
+        viewer.SelectAsset(99_900, scrollIntoView: true);
         for (var attempt = 0;
              attempt < 150 && viewer.SelectedRealizedTileCount != 1;
              attempt++)
