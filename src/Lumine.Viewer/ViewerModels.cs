@@ -90,6 +90,7 @@ public readonly record struct ViewerRuntimeDiagnostics(
     long ThumbnailRequestsCoalesced,
     long ThumbnailRequestsCancelled,
     long ThumbnailRequestsFailed,
+    long TileLoadFailures,
     int InFlightThumbnailRequests,
     int AttachedTiles,
     int ReadyTiles,
