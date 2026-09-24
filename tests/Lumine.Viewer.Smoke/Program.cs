@@ -606,6 +606,16 @@ internal static class Program
             provider.PeakActiveOriginalLoads == 1,
             $"Full-resolution providers overlapped across selections: peak={provider.PeakActiveOriginalLoads}.");
 
+        // Return to a different preview state before exercising Grid-driven
+        // selection. The prior assertion intentionally leaves index 1 in
+        // OriginalReady, so selecting index 1 again would be a no-op.
+        await detailSession.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
         grid.SelectAsset(1);
         await WaitForDetailAsync(
             detailSession,
