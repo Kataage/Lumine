@@ -62,6 +62,8 @@ public sealed class LibraryScanner
 
             try
             {
+                WindowsFilesystemSemantics.RequireCaseInsensitiveDirectory(directory);
+
                 foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();

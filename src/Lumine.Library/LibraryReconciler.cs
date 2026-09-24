@@ -68,6 +68,8 @@ public sealed class LibraryReconciler
 
             try
             {
+                WindowsFilesystemSemantics.RequireCaseInsensitiveDirectory(directory);
+
                 foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();

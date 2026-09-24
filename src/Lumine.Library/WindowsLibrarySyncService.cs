@@ -166,6 +166,8 @@ public sealed class WindowsLibrarySyncService
             ?? throw new InvalidOperationException(
                 $"Library {libraryId} does not exist.");
 
+        WindowsFilesystemSemantics.RequireCaseInsensitiveDirectory(library.RootPath);
+
         var state = await _repository.GetOrCreateSyncStateAsync(
             libraryId,
             cancellationToken).ConfigureAwait(false);

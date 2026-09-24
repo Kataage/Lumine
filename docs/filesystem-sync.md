@@ -59,3 +59,7 @@ Windows CI performs real filesystem operations against a temporary library:
 - offline file creation followed by USN delta or explicit fallback recovery;
 - complete stale deletion;
 - partial reconciliation non-destruction.
+
+## Path case-sensitivity contract
+
+The current Library identity key is deliberately Windows-style case-insensitive. Windows can enable case sensitivity per directory, so silently indexing such a directory could collapse distinct names such as `A.jpg` and `a.jpg`. Initial scan, reconciliation, and Windows sync therefore query directory case-sensitivity and fail closed when the per-directory case-sensitive flag is enabled. A future schema may add a separate case-sensitive identity mode; v2 Core does not guess.

@@ -608,6 +608,23 @@ public sealed class LibraryRepository
         await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction();
 
+        if (!string.Equals(oldKey, newKey, StringComparison.Ordinal))
+        {
+            await using var removeDestination = connection.CreateCommand();
+            removeDestination.Transaction = transaction;
+            removeDestination.CommandText =
+                """
+                DELETE FROM assets
+                WHERE library_id = $library_id
+                  AND relative_path_key = $new_key
+                  AND relative_path_key <> $old_key;
+                """;
+            removeDestination.Parameters.AddWithValue("$library_id", libraryId);
+            removeDestination.Parameters.AddWithValue("$new_key", newKey);
+            removeDestination.Parameters.AddWithValue("$old_key", oldKey);
+            await removeDestination.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         long? folderId = null;
         if (folderKey is not null)
         {
