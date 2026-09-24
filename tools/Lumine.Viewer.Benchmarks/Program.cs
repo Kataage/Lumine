@@ -5,8 +5,10 @@ using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Lumine.Diagnostics;
+using Lumine.Image;
 using Lumine.Library;
 using Lumine.Viewer;
+using NetVips;
 
 namespace Lumine.Viewer.Benchmarks;
 
@@ -33,11 +35,7 @@ internal static class Program
             $"lumine-viewer-benchmark-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
 
-        var thumbnailPath = Path.Combine(tempRoot, "thumb.png");
-        await File.WriteAllBytesAsync(
-            thumbnailPath,
-            Convert.FromBase64String(
-                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        var thumbnailPaths = CreateThumbnailFixtures(tempRoot, 96);
 
         var recorder = new BenchmarkRecorder();
         long peakWorkingSetBytes = 0;
@@ -60,7 +58,7 @@ internal static class Program
                 async () =>
                 {
                     var thumbnailProvider = new DelayedBenchmarkThumbnailProvider(
-                        thumbnailPath,
+                        thumbnailPaths,
                         TimeSpan.FromMilliseconds(12));
 
                     await using var session = new ViewerSession(
@@ -346,6 +344,34 @@ internal static class Program
             "Viewer did not realize its first viewport within the benchmark window.");
     }
 
+    private static string[] CreateThumbnailFixtures(string tempRoot, int count)
+    {
+        VipsRuntimePolicy.EnsureConfigured();
+
+        var seedPath = Path.Combine(tempRoot, "thumb-seed.webp");
+        using (var blank = NetVips.Image.Black(512, 512, bands: 3))
+        using (var values = blank.NewFromImage([48, 112, 196]))
+        using (var srgb = values.Copy(interpretation: Enums.Interpretation.Srgb))
+        {
+            srgb.Webpsave(
+                seedPath,
+                q: 82,
+                smartSubsample: true,
+                keep: Enums.ForeignKeep.None);
+        }
+
+        var result = new string[count];
+        for (var index = 0; index < count; index++)
+        {
+            var path = Path.Combine(tempRoot, $"thumb-{index:D3}.webp");
+            File.Copy(seedPath, path);
+            result[index] = path;
+        }
+
+        File.Delete(seedPath);
+        return result;
+    }
+
     private static string? ReadOption(string[] args, string name)
     {
         for (var index = 0; index < args.Length - 1; index++)
@@ -443,7 +469,7 @@ internal sealed class FixtureAssetProvider(long count) : IViewerAssetProvider
 }
 
 internal sealed class DelayedBenchmarkThumbnailProvider(
-    string path,
+    IReadOnlyList<string> paths,
     TimeSpan delay) : IViewerThumbnailProvider
 {
     public async ValueTask<ViewerThumbnail> RequestAsync(
@@ -453,10 +479,11 @@ internal sealed class DelayedBenchmarkThumbnailProvider(
     {
         await Task.Delay(delay, cancellationToken);
 
+        var path = paths[checked((int)(asset.Id % paths.Count))];
         return new ViewerThumbnail(
             $"fixture-{asset.Id}",
             path,
-            1,
-            1);
+            512,
+            512);
     }
 }

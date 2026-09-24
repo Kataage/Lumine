@@ -81,8 +81,16 @@ foreach ($result in $results) {
         throw "$count Viewer decoded bitmap cache exceeded 64 entries: $decodedEntries"
     }
 
+    if ($count -eq 100000 -and $decodedEntries -lt 16) {
+        throw "100k Viewer benchmark did not exercise decoded bitmap cache pressure: entries=$decodedEntries"
+    }
+
     if ($decodedBytes -gt 32MB) {
         throw "$count Viewer decoded bitmap cache exceeded 32 MiB: $decodedBytes bytes"
+    }
+
+    if ($count -eq 100000 -and $decodedBytes -lt 16MB) {
+        throw "100k Viewer benchmark did not exercise realistic decoded memory pressure: $decodedBytes bytes"
     }
 
     if ($peak -gt 160MB) {

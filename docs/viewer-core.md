@@ -94,3 +94,7 @@ The UI-only benchmark is not sufficient because a direct logical asset provider 
 - the same hard metadata-page and cursor-checkpoint limits
 
 This keeps the Viewer benchmark honest about the actual Library Core integration path while preserving keyset paging; no SQL OFFSET path is introduced.
+
+## Decoded-cache realism audit
+
+The performance fixture uses multiple distinct 512 x 512 WebP cache paths rather than a shared 1 x 1 placeholder. This forces real Avalonia bitmap decode, LRU churn, and byte accounting during the 100k fast-scroll workload. CI rejects a 100k run that does not reach meaningful decoded-cache pressure, so a future benchmark cannot accidentally pass by sharing one tiny bitmap across every logical asset.
