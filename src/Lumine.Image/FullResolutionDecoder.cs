@@ -100,7 +100,7 @@ public sealed class FullResolutionDecoder
 
         using var input = NetVips.Image.NewFromFile(
             source.SourcePath,
-            access: Enums.Access.Sequential,
+            access: Enums.Access.Random,
             failOn: Enums.FailOn.Error);
         using var oriented = input.Autorot();
 
