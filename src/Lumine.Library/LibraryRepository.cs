@@ -244,6 +244,48 @@ public sealed class LibraryRepository
         return assets.Count;
     }
 
+    public async Task<int> RemoveAssetsAsync(
+        long libraryId,
+        IReadOnlyList<string> relativePaths,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(relativePaths);
+
+        if (relativePaths.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            DELETE FROM assets
+            WHERE library_id = $library_id
+              AND relative_path_key = $path_key;
+            """;
+
+        var libraryParameter = command.Parameters.Add("$library_id", SqliteType.Integer);
+        var pathParameter = command.Parameters.Add("$path_key", SqliteType.Text);
+        libraryParameter.Value = libraryId;
+        command.Prepare();
+
+        var removed = 0;
+
+        foreach (var relativePath in relativePaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            pathParameter.Value = LibraryPaths.RelativePathKey(relativePath);
+            removed += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        transaction.Commit();
+        return removed;
+    }
+
     public async Task<bool> RemoveAssetAsync(
         long libraryId,
         string relativePath,

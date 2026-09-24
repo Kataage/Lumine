@@ -245,22 +245,158 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 }
             }
 
-            foreach (var change in coalesced.Values)
+            var requiresReconcile = await ApplyBatchAsync(
+                coalesced.Values,
+                cancellationToken).ConfigureAwait(false);
+
+            if (requiresReconcile)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var requiresReconcile = await ApplyWithRecoveryAsync(
-                    change,
-                    cancellationToken).ConfigureAwait(false);
-
-                if (requiresReconcile)
-                {
-                    DrainQueue();
-                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
-                    break;
-                }
+                DrainQueue();
+                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task<bool> ApplyBatchAsync(
+        IEnumerable<DirectoryChange> changes,
+        CancellationToken cancellationToken)
+    {
+        var upserts = new List<(AssetUpsert Asset, DirectoryChange Change)>();
+        var deletes = new List<(string Path, DirectoryChange Change)>();
+        var renames = new List<DirectoryChange>();
+
+        foreach (var change in changes.OrderBy(static item => item.ObservedAtUtc))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (change.Kind == DirectoryChangeKind.Overflow)
+            {
+                return true;
+            }
+
+            var fullPath = Path.Combine(
+                _library.RootPath,
+                change.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+
+            switch (change.Kind)
+            {
+                case DirectoryChangeKind.Added:
+                case DirectoryChangeKind.Modified:
+                    if (Directory.Exists(fullPath))
+                    {
+                        if (change.Kind == DirectoryChangeKind.Added)
+                        {
+                            return true;
+                        }
+
+                        continue;
+                    }
+
+                    if (LibraryFileTypes.IsSupportedPath(change.RelativePath)
+                        && File.Exists(fullPath))
+                    {
+                        try
+                        {
+                            upserts.Add((
+                                CreateUpsert(change.RelativePath, fullPath),
+                                change));
+                        }
+                        catch (Exception exception) when (
+                            exception is IOException
+                            or UnauthorizedAccessException
+                            or System.Security.SecurityException)
+                        {
+                            return await ApplyWithRecoveryAsync(
+                                change,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+
+                    break;
+
+                case DirectoryChangeKind.Removed:
+                    if (await _repository.HasTrackedFolderAtOrBelowAsync(
+                            _libraryId,
+                            change.RelativePath,
+                            cancellationToken).ConfigureAwait(false))
+                    {
+                        return true;
+                    }
+
+                    if (LibraryFileTypes.IsSupportedPath(change.RelativePath))
+                    {
+                        deletes.Add((change.RelativePath, change));
+                    }
+
+                    break;
+
+                case DirectoryChangeKind.Renamed:
+                    renames.Add(change);
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(change),
+                        change.Kind,
+                        "Unknown filesystem change kind.");
+            }
+        }
+
+        // Preserve rename identity before applying any follow-up writes that may
+        // target the new path in the same debounce window.
+        foreach (var change in renames)
+        {
+            if (await ApplyWithRecoveryAsync(
+                    change,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        if (upserts.Count > 0)
+        {
+            try
+            {
+                await _repository.UpsertAssetsAsync(
+                    _libraryId,
+                    upserts.Select(static item => item.Asset).ToArray(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or System.Security.SecurityException)
+            {
+                await _repository.MarkReconcileRequiredAsync(
+                    _libraryId,
+                    $"Batched filesystem upsert failed: {exception.GetType().Name}.",
+                    cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
+            Interlocked.Add(ref _upserts, upserts.Count);
+            foreach (var item in upserts)
+            {
+                RecordApplied(item.Change);
+            }
+        }
+
+        if (deletes.Count > 0)
+        {
+            var removed = await _repository.RemoveAssetsAsync(
+                _libraryId,
+                deletes.Select(static item => item.Path).ToArray(),
+                cancellationToken).ConfigureAwait(false);
+
+            Interlocked.Add(ref _deletes, removed);
+            foreach (var item in deletes)
+            {
+                RecordApplied(item.Change);
+            }
+        }
+
+        return false;
     }
 
     private async Task<bool> ApplyWithRecoveryAsync(
