@@ -478,6 +478,26 @@ internal static class Program
             && detail.MetadataText.Contains("png", StringComparison.Ordinal),
             "Detail preview did not expose stored technical metadata without opening original.");
 
+        var densityOriginalBefore = provider.OriginalRequests;
+        await detail.SetZoomAsync(0.5);
+        Require(
+            provider.OriginalRequests == densityOriginalBefore + 1
+            && detailSession.Snapshot.IsOriginal,
+            "Detail kept stretching a preview after requested source-pixel density exceeded the preview bitmap.");
+
+        await detailSession.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        await detailSession.SelectAsync(1);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
         var originalBefore = provider.OriginalRequests;
         var originalFirst = detailSession.EnsureOriginalAsync();
         var originalSecond = detailSession.EnsureOriginalAsync();

@@ -239,7 +239,8 @@ public sealed class DetailViewerControl : UserControl
             _session.Options.MinZoom,
             _session.Options.MaxZoom);
 
-        if (clamped >= 1 && !snapshot.IsOriginal)
+        if (!snapshot.IsOriginal
+            && ShouldUseOriginal(snapshot, clamped))
         {
             var selectionVersion = snapshot.SelectionVersion;
             await _session.EnsureOriginalAsync(cancellationToken);
@@ -268,8 +269,8 @@ public sealed class DetailViewerControl : UserControl
             _session.Options.MinZoom,
             _session.Options.MaxZoom);
 
-        if (target >= 1
-            && !snapshot.IsOriginal
+        if (!snapshot.IsOriginal
+            && ShouldUseOriginal(snapshot, target)
             && !HasKnownSourcePixelSize(snapshot))
         {
             var renderScaling = GetRenderScaling();
@@ -327,6 +328,29 @@ public sealed class DetailViewerControl : UserControl
 
         _image.Width = sourceSize.Width * zoom / renderScaling;
         _image.Height = sourceSize.Height * zoom / renderScaling;
+    }
+
+    private static bool ShouldUseOriginal(
+        ViewerDetailSnapshot snapshot,
+        double zoom)
+    {
+        if (snapshot.IsOriginal || snapshot.Bitmap is null)
+        {
+            return false;
+        }
+
+        if (!HasKnownSourcePixelSize(snapshot))
+        {
+            // Without persisted source dimensions, preview pixel coordinates
+            // are the only safe scale until the original is probed.
+            return zoom >= 1;
+        }
+
+        var sourceSize = GetSourcePixelSize(snapshot);
+        var previewSize = snapshot.Bitmap.PixelSize;
+
+        return sourceSize.Width * zoom > previewSize.Width
+            || sourceSize.Height * zoom > previewSize.Height;
     }
 
     private static bool HasKnownSourcePixelSize(
