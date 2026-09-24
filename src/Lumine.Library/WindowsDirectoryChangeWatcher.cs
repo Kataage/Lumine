@@ -96,7 +96,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
         _shutdown.Dispose();
     }
 
-    internal static IReadOnlyList<DirectoryChange> ParseBuffer(
+    internal static List<DirectoryChange> ParseBuffer(
         IntPtr buffer,
         uint bytes,
         DateTimeOffset observedAtUtc)
@@ -110,7 +110,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
             flushPendingRename: true);
     }
 
-    private static IReadOnlyList<DirectoryChange> ParseBuffer(
+    private static List<DirectoryChange> ParseBuffer(
         IntPtr buffer,
         uint bytes,
         DateTimeOffset observedAtUtc,
