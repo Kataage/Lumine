@@ -244,6 +244,49 @@ try
                 "album.jpg/nested.jpg") is null,
             "Directory removal fallback did not reconcile stale nested asset.");
 
+    // Batched ordering: deleting a destination and then renaming a source
+    // into that same path must leave the renamed source present.
+    var barrierSourcePath = Path.Combine(libraryRoot, "barrier-source.jpg");
+    var barrierDestinationPath = Path.Combine(libraryRoot, "barrier-destination.jpg");
+    await File.WriteAllBytesAsync(barrierSourcePath, [1, 1, 1]);
+    await File.WriteAllBytesAsync(barrierDestinationPath, [2, 2, 2, 2]);
+
+    _ = await WaitForAsync(
+        () => repository.GetAssetAsync(library.Id, "barrier-source.jpg"),
+        static asset => asset.FileSize == 3,
+        "Barrier source was not indexed.");
+    _ = await WaitForAsync(
+        () => repository.GetAssetAsync(library.Id, "barrier-destination.jpg"),
+        static asset => asset.FileSize == 4,
+        "Barrier destination was not indexed.");
+
+    var barrierSource = await repository.GetAssetAsync(
+        library.Id,
+        "barrier-source.jpg")
+        ?? throw new InvalidOperationException("Barrier source disappeared before rename.");
+
+    File.Delete(barrierDestinationPath);
+    File.Move(barrierSourcePath, barrierDestinationPath);
+
+    var barrierFinal = await WaitForAsync(
+        () => repository.GetAssetAsync(library.Id, "barrier-destination.jpg"),
+        asset => asset.Id == barrierSource.Id && asset.FileSize == 3,
+        "Delete-then-rename ordering was not preserved across the batched debounce window.");
+
+    Require(
+        barrierFinal.Id == barrierSource.Id,
+        "Batched rename barrier lost stable source identity.");
+    Require(
+        await repository.GetAssetAsync(library.Id, "barrier-source.jpg") is null,
+        "Batched rename barrier retained the old source path.");
+
+    File.Delete(barrierDestinationPath);
+    await WaitUntilAsync(
+        async () => await repository.GetAssetAsync(
+            library.Id,
+            "barrier-destination.jpg") is null,
+        "Batched rename barrier cleanup was not applied.");
+
         // No periodic idle reconciliation: after the directory-triggered
         // fallback settles, idle time must not keep increasing the count.
         await Task.Delay(250);
