@@ -137,6 +137,28 @@ public sealed class LibraryDatabase
 
             CREATE INDEX idx_assets_library_folder
                 ON assets(library_id, folder_id);
+            """),
+        new(
+            3,
+            "incremental-filesystem-sync",
+            """
+            ALTER TABLE assets
+                ADD COLUMN observed_generation INTEGER NOT NULL DEFAULT 0;
+
+            CREATE TABLE library_sync_state (
+                library_id INTEGER PRIMARY KEY,
+                reconcile_generation INTEGER NOT NULL DEFAULT 0,
+                reconcile_required INTEGER NOT NULL DEFAULT 1,
+                usn_journal_id TEXT NULL,
+                next_usn INTEGER NULL,
+                watcher_stopped_at_utc_ticks INTEGER NULL,
+                last_reconciled_at_utc_ticks INTEGER NULL,
+                last_error TEXT NULL,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            INSERT INTO library_sync_state(library_id)
+            SELECT id FROM libraries;
             """)
     ];
 

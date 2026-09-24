@@ -181,7 +181,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 2, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 3, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -390,15 +390,16 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 2, "v1 database did not migrate to v2.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 3, "v1 database did not migrate to v3.");
 
         await using var asset = legacyConnection.CreateCommand();
-        asset.CommandText = "SELECT id, source_revision, width, height FROM assets WHERE relative_path = 'legacy.jpg';";
+        asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
         await using var reader = await asset.ExecuteReaderAsync();
         Require(await reader.ReadAsync(), "Legacy asset disappeared during migration.");
         Require(reader.GetInt64(0) == 42, "Migration changed existing stable asset id.");
         Require(reader.GetInt64(1) == 1, "Migrated asset source revision was not initialized.");
         Require(reader.GetInt32(2) == 640 && reader.GetInt32(3) == 480, "Migration lost technical metadata.");
+        Require(reader.GetInt64(4) == 0, "Migrated legacy asset should start outside any reconciliation generation.");
     }
 
     var futurePath = Path.Combine(tempRoot, "future.db");

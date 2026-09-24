@@ -35,12 +35,16 @@ public sealed class LibraryService
     private readonly LibraryDatabase _database;
     private readonly LibraryRepository _repository;
     private readonly LibraryScanner _scanner;
+    private readonly LibraryReconciler _reconciler;
+    private readonly WindowsLibrarySyncService _syncService;
 
     public LibraryService(string databasePath)
     {
         _database = new LibraryDatabase(databasePath);
         _repository = new LibraryRepository(_database);
         _scanner = new LibraryScanner(_repository);
+        _reconciler = new LibraryReconciler(_repository);
+        _syncService = new WindowsLibrarySyncService(_database);
     }
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
@@ -86,4 +90,22 @@ public sealed class LibraryService
         int batchSize = 2048,
         CancellationToken cancellationToken = default) =>
         _scanner.ScanAsync(libraryId, progress, batchSize, cancellationToken);
+
+    public Task<LibraryReconcileResult> ReconcileAsync(
+        long libraryId,
+        IProgress<LibraryScanProgress>? progress = null,
+        int batchSize = 2048,
+        CancellationToken cancellationToken = default) =>
+        _reconciler.ReconcileAsync(
+            libraryId,
+            progress,
+            batchSize,
+            cancellationToken);
+
+    public Task<WindowsLibrarySyncSession> StartWindowsSyncAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _syncService.StartAsync(libraryId, token),
+            cancellationToken);
 }
