@@ -179,6 +179,9 @@ internal static class Program
                     ["final_ready_tiles"] = finalDiagnostics.ReadyTiles.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_entries"] = finalDiagnostics.DecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_bytes"] = finalDiagnostics.DecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
+                    ["active_bitmap_decodes"] = finalDiagnostics.ActiveBitmapDecodes.ToString(CultureInfo.InvariantCulture),
+                    ["peak_concurrent_bitmap_decodes"] = finalDiagnostics.PeakConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
+                    ["bitmap_decode_concurrency_limit"] = DecodedBitmapCache.DecodeConcurrencyLimit.ToString(CultureInfo.InvariantCulture),
                     ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
                     ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
                     ["cursor_end_seek_pages"] = cursorEndSeekPages.ToString(CultureInfo.InvariantCulture),
@@ -314,7 +317,8 @@ internal static class Program
             var diagnostics = session.Diagnostics;
             if (diagnostics.AttachedTiles == 0
                 && diagnostics.ReadyTiles == 0
-                && diagnostics.InFlightThumbnailRequests == 0)
+                && diagnostics.InFlightThumbnailRequests == 0
+                && diagnostics.ActiveBitmapDecodes == 0)
             {
                 return;
             }
@@ -324,7 +328,7 @@ internal static class Program
 
         var final = session.Diagnostics;
         throw new InvalidOperationException(
-            $"Viewer did not become idle after teardown: attached={final.AttachedTiles}, ready={final.ReadyTiles}, inflight={final.InFlightThumbnailRequests}.");
+            $"Viewer did not become idle after teardown: attached={final.AttachedTiles}, ready={final.ReadyTiles}, inflight={final.InFlightThumbnailRequests}, decodes={final.ActiveBitmapDecodes}.");
     }
 
     private static async Task WaitForRealizationAsync(ThumbnailViewerControl viewer)
