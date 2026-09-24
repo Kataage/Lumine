@@ -199,7 +199,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             sourcePath,
             asset.FileSize,
             asset.ModifiedAtUtcTicks);
-        var info = await _fullResolution.ProbeAsync(
+        var info = await FullResolutionDecoder.ProbeAsync(
             source,
             cancellationToken).ConfigureAwait(false);
 
