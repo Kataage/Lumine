@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -35,6 +37,7 @@ internal static class Program
                 {
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
+                    await VerifyDetailViewerAsync(thumbnailPath);
                     return 0;
                 },
                 CancellationToken.None);
@@ -396,7 +399,217 @@ internal static class Program
         window.Close();
     }
 
-    private static void RaiseKey(ThumbnailViewerControl viewer, Key key)
+    private static async Task VerifyDetailViewerAsync(string previewPath)
+    {
+        var assets = new DirectFixtureAssetProvider(3);
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.FromMilliseconds(160));
+
+        await using var detailSession = new ViewerDetailSession(
+            assets,
+            provider,
+            new ViewerDetailOptions
+            {
+                PreviewDecodedEntryLimit = 2,
+                PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                OriginalDecodedByteLimit = 8L * 1024 * 1024,
+                MinZoom = 0.05,
+                MaxZoom = 8,
+                ZoomStep = 1.25
+            });
+
+        await using var gridSession = new ViewerSession(
+            assets,
+            new ImmediateThumbnailProvider(previewPath),
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 8,
+                DecodedBitmapByteLimit = 8L * 1024 * 1024
+            });
+
+        var grid = new ThumbnailViewerControl(gridSession);
+        var detail = new DetailViewerControl(detailSession);
+        detail.BindGrid(grid);
+
+        var layout = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("320,*")
+        };
+        layout.Children.Add(grid);
+        Grid.SetColumn(detail, 1);
+        layout.Children.Add(detail);
+
+        var window = new Window
+        {
+            Width = 1200,
+            Height = 800,
+            Content = layout
+        };
+
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        grid.SelectAsset(1);
+        await WaitForDetailAsync(
+            detailSession,
+            snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        Require(
+            provider.PreviewRequests == 1,
+            "Detail selection did not request exactly one persistent preview.");
+        Require(
+            provider.OriginalRequests == 0,
+            "Detail selection eagerly loaded the original before 1:1/high zoom.");
+        Require(
+            !detail.IsOriginal,
+            "Detail incorrectly reported original residency while preview-only.");
+
+        var originalBefore = provider.OriginalRequests;
+        var originalFirst = detailSession.EnsureOriginalAsync();
+        var originalSecond = detailSession.EnsureOriginalAsync();
+        await Task.WhenAll(originalFirst, originalSecond);
+
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady);
+
+        Require(
+            provider.OriginalRequests == originalBefore + 1,
+            "Concurrent original requests were not coalesced.");
+        Require(detailSession.Snapshot.IsOriginal, "Full-resolution original did not become active.");
+
+        await detail.ActualSizeAsync();
+        Require(
+            Math.Abs(detail.Zoom - 1) < 0.001,
+            "Actual-size command did not set 1:1 zoom.");
+
+        await detail.SetZoomAsync(2);
+        Require(
+            Math.Abs(detail.Zoom - 2) < 0.001,
+            "Detail zoom command did not apply requested scale.");
+
+        detail.PanBy(80, 60);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.PanOffset.X > 0 || detail.PanOffset.Y > 0,
+            "Detail pan did not change scroll offset at high zoom.");
+
+        detail.Fit();
+        Require(
+            detail.Zoom > 0
+            && detail.Zoom <= detailSession.Options.MaxZoom,
+            "Detail fit produced an invalid zoom.");
+
+        await detailSession.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        var cancelledBefore = provider.CancelledOriginals;
+        var staleOriginal = detailSession.EnsureOriginalAsync();
+
+        for (var attempt = 0;
+             attempt < 300 && provider.ActiveOriginalLoads == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.ActiveOriginalLoads > 0,
+            "Rapid-navigation test never started original decode.");
+
+        await detailSession.SelectAsync(2);
+        await staleOriginal;
+
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 2
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        Require(
+            provider.CancelledOriginals > cancelledBefore,
+            "Rapid navigation did not cancel stale original decode.");
+
+        grid.SelectAsset(1);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        RaiseKey(detail, Key.Right);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 2
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        Require(
+            grid.SelectedAssetIndex == 2,
+            "Detail previous/next navigation did not synchronize Grid selection.");
+
+        await using (var budgetSession = new ViewerDetailSession(
+                         assets,
+                         provider,
+                         new ViewerDetailOptions
+                         {
+                             PreviewDecodedEntryLimit = 2,
+                             PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                             OriginalDecodedByteLimit = 1024
+                         }))
+        {
+            await budgetSession.SelectAsync(0);
+            await WaitForDetailAsync(
+                budgetSession,
+                static snapshot =>
+                    snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+            await budgetSession.EnsureOriginalAsync();
+            var budgetSnapshot = budgetSession.Snapshot;
+
+            Require(
+                budgetSnapshot.State == ViewerDetailLoadState.PreviewReady
+                && budgetSnapshot.Bitmap is not null
+                && !budgetSnapshot.IsOriginal
+                && !string.IsNullOrWhiteSpace(budgetSnapshot.ErrorMessage),
+                "Original budget failure did not safely retain preview state.");
+        }
+
+        detail.UnbindGrid();
+        window.Close();
+    }
+
+    private static async Task<ViewerDetailSnapshot> WaitForDetailAsync(
+        ViewerDetailSession session,
+        Func<ViewerDetailSnapshot, bool> predicate)
+    {
+        for (var attempt = 0; attempt < 1000; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            var snapshot = session.Snapshot;
+
+            if (predicate(snapshot))
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(1);
+        }
+
+        throw new InvalidOperationException(
+            $"Detail viewer did not reach expected state; current={session.Snapshot.State}, index={session.Snapshot.SelectedIndex}.");
+    }
+
+    private static void RaiseKey(InputElement viewer, Key key)
     {
         viewer.RaiseEvent(
             new KeyEventArgs
@@ -556,5 +769,104 @@ internal sealed class DelayedThumbnailProvider(
             path,
             1,
             1);
+    }
+}
+
+internal sealed class DelayedDetailProvider(
+    string previewPath,
+    TimeSpan originalDelay) : IViewerDetailProvider
+{
+    private int _previewRequests;
+    private int _originalRequests;
+    private int _cancelledOriginals;
+    private int _activeOriginalLoads;
+
+    public int PreviewRequests => Volatile.Read(ref _previewRequests);
+
+    public int OriginalRequests => Volatile.Read(ref _originalRequests);
+
+    public int CancelledOriginals => Volatile.Read(ref _cancelledOriginals);
+
+    public int ActiveOriginalLoads => Volatile.Read(ref _activeOriginalLoads);
+
+    public ValueTask<ViewerThumbnail> RequestPreviewAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _previewRequests);
+
+        return ValueTask.FromResult(
+            new ViewerThumbnail(
+                $"detail-preview-{asset.Id}",
+                previewPath,
+                1,
+                1));
+    }
+
+    public ValueTask<ViewerDetailMetadata> ProbeOriginalAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.FromResult(
+            new ViewerDetailMetadata(
+                1024,
+                768,
+                true,
+                "png",
+                asset.FileSize,
+                1024L * 768 * 4));
+    }
+
+    public async Task<ViewerOriginalBitmap> LoadOriginalAsync(
+        ViewerAsset asset,
+        long maxDecodedBytes,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _originalRequests);
+        Interlocked.Increment(ref _activeOriginalLoads);
+
+        try
+        {
+            const long required = 1024L * 768 * 4;
+            if (required > maxDecodedBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Original requires {required:N0} bytes, above detail budget {maxDecodedBytes:N0}.");
+            }
+
+            try
+            {
+                await Task.Delay(originalDelay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref _cancelledOriginals);
+                throw;
+            }
+
+            var bitmap = await Dispatcher.UIThread.InvokeAsync(
+                () => new WriteableBitmap(
+                    new PixelSize(1024, 768),
+                    new Vector(96, 96),
+                    PixelFormats.Rgba8888,
+                    AlphaFormat.Unpremul));
+
+            return new ViewerOriginalBitmap(
+                bitmap,
+                new ViewerDetailMetadata(
+                    1024,
+                    768,
+                    true,
+                    "png",
+                    asset.FileSize,
+                    required));
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeOriginalLoads);
+        }
     }
 }
