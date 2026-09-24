@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Lumine.Viewer;
@@ -216,6 +217,54 @@ internal static class Program
             viewer.Diagnostics.AttachedTiles is > 0 and < 512,
             "100k viewer attached an unbounded tile count.");
 
+        var wideColumns = viewer.Columns;
+        window.Width = 760;
+        for (var attempt = 0;
+             attempt < 100 && viewer.Columns == wideColumns;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.Columns < wideColumns,
+            "Viewer did not recompute columns after viewport resize.");
+
+        window.Width = 1200;
+        for (var attempt = 0;
+             attempt < 100 && viewer.Columns != wideColumns;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.Columns == wideColumns,
+            "Viewer did not restore column count after viewport resize.");
+
+        viewer.SelectAsset(0);
+        Dispatcher.UIThread.RunJobs();
+        Require(viewer.SelectedAssetIndex == 0, "Viewer did not select first asset.");
+        Require(
+            viewer.SelectedRealizedTileCount == 1,
+            "Viewer selection was not rendered on exactly one realized tile.");
+
+        RaiseKey(viewer, Key.Right);
+        Require(viewer.SelectedAssetIndex == 1, "Right-arrow navigation failed.");
+
+        RaiseKey(viewer, Key.Down);
+        Require(
+            viewer.SelectedAssetIndex == 1 + viewer.Columns,
+            "Down-arrow navigation failed.");
+
+        RaiseKey(viewer, Key.Home);
+        Require(viewer.SelectedAssetIndex == 0, "Home navigation failed.");
+
+        RaiseKey(viewer, Key.End);
+        Require(viewer.SelectedAssetIndex == 99_999, "End navigation failed.");
+
         viewer.ScrollToAsset(99_900);
         await Task.Delay(75);
         Dispatcher.UIThread.RunJobs();
@@ -233,6 +282,16 @@ internal static class Program
             "Viewer selection did not reach final 100k asset.");
 
         window.Close();
+    }
+
+    private static void RaiseKey(ThumbnailViewerControl viewer, Key key)
+    {
+        viewer.RaiseEvent(
+            new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = key
+            });
     }
 
     private static async Task ExpectCancellationAsync(Task task)
