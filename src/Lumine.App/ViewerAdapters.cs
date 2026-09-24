@@ -205,7 +205,25 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                 maxDecodedBytes,
                 stripe =>
                 {
+                    var expectedRowBytes = checked(info.Width * 4);
+                    var endY = checked(stripe.Y + stripe.Height);
+
+                    if (stripe.Y < 0
+                        || stripe.Height <= 0
+                        || stripe.Width != info.Width
+                        || stripe.RowBytes != expectedRowBytes
+                        || endY > info.Height)
+                    {
+                        throw new InvalidOperationException(
+                            $"Full-resolution stripe escaped the probed bitmap bounds: stripe={stripe.Width}x{stripe.Height}@{stripe.Y}, rowBytes={stripe.RowBytes}; bitmap={info.Width}x{info.Height}, rowBytes={expectedRowBytes}.");
+                    }
+
                     using var framebuffer = bitmap.Lock();
+                    if (framebuffer.RowBytes < stripe.RowBytes)
+                    {
+                        throw new InvalidOperationException(
+                            $"Full-resolution framebuffer stride {framebuffer.RowBytes} is smaller than stripe stride {stripe.RowBytes}.");
+                    }
 
                     for (var row = 0; row < stripe.Height; row++)
                     {
@@ -219,6 +237,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                             stripe.RowBytes);
                     }
                 },
+                expectedInfo: info,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return new ViewerOriginalBitmap(
@@ -233,7 +252,8 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         }
         catch
         {
-            bitmap.Dispose();
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                () => bitmap.Dispose());
             throw;
         }
     }

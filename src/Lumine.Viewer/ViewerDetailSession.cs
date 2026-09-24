@@ -6,6 +6,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private readonly IViewerDetailProvider _provider;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _originalAdmission = new(1, 1);
     private CancellationTokenSource? _selectionCancellation;
     private DecodedBitmapLease? _previewLease;
     private ViewerOriginalBitmap? _original;
@@ -240,8 +241,14 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         CancellationTokenSource selection,
         long version)
     {
+        var admitted = false;
+
         try
         {
+            await _originalAdmission.WaitAsync(
+                selection.Token).ConfigureAwait(false);
+            admitted = true;
+
             await _previousOriginalDisposal.WaitAsync(
                 selection.Token).ConfigureAwait(false);
 
@@ -250,30 +257,43 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 Options.OriginalDecodedByteLimit,
                 selection.Token).ConfigureAwait(false);
 
+            Task? staleDisposal = null;
+            var publish = false;
+
             lock (_gate)
             {
                 if (!IsCurrentLocked(version, selection))
                 {
-                    original.Dispose();
-                    return;
+                    staleDisposal = original.BeginDispose();
                 }
-
-                _original?.Dispose();
-                _original = original;
-                _previewLease?.Dispose();
-                _previewLease = null;
-
-                _snapshot = _snapshot with
+                else
                 {
-                    Metadata = original.Metadata,
-                    State = ViewerDetailLoadState.OriginalReady,
-                    Bitmap = original.Bitmap,
-                    IsOriginal = true,
-                    ErrorMessage = null
-                };
+                    _original = original;
+                    _previewLease?.Dispose();
+                    _previewLease = null;
+
+                    _snapshot = _snapshot with
+                    {
+                        Metadata = original.Metadata,
+                        State = ViewerDetailLoadState.OriginalReady,
+                        Bitmap = original.Bitmap,
+                        IsOriginal = true,
+                        ErrorMessage = null
+                    };
+                    publish = true;
+                }
             }
 
-            PublishState();
+            if (staleDisposal is not null)
+            {
+                await staleDisposal.ConfigureAwait(false);
+                return;
+            }
+
+            if (publish)
+            {
+                PublishState();
+            }
         }
         catch (OperationCanceledException)
             when (selection.IsCancellationRequested)
@@ -308,6 +328,11 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                     _originalLoadTask = null;
                 }
             }
+
+            if (admitted)
+            {
+                _originalAdmission.Release();
+            }
         }
     }
 
@@ -329,6 +354,31 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         return SelectAsync(target, cancellationToken);
     }
 
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            ThrowIfDisposedLocked();
+
+            CancelSelectionLocked();
+            _originalLoadTask = null;
+            ReleaseImagesLocked();
+
+            var version = ++_version;
+            _snapshot = new ViewerDetailSnapshot(
+                -1,
+                null,
+                null,
+                ViewerDetailLoadState.Empty,
+                null,
+                false,
+                null,
+                version);
+        }
+
+        PublishState();
+    }
+
     public async ValueTask DisposeAsync()
     {
         CancellationTokenSource? selection;
@@ -348,6 +398,17 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             originalLoad = _originalLoadTask;
             ReleaseImagesLocked();
             originalDisposal = _previousOriginalDisposal;
+
+            var version = ++_version;
+            _snapshot = new ViewerDetailSnapshot(
+                -1,
+                null,
+                null,
+                ViewerDetailLoadState.Empty,
+                null,
+                false,
+                null,
+                version);
         }
 
         _shutdown.Cancel();
@@ -369,6 +430,9 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             }
         }
 
+        await _originalAdmission.WaitAsync().ConfigureAwait(false);
+        _originalAdmission.Release();
+
         try
         {
             await originalDisposal.ConfigureAwait(false);
@@ -380,11 +444,10 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
         selection?.Dispose();
 
-        var previewCache = PreviewBitmapCache;
-        Avalonia.Threading.Dispatcher.UIThread.Post(
-            previewCache.Dispose,
-            Avalonia.Threading.DispatcherPriority.Background);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+            () => PreviewBitmapCache.Dispose());
 
+        _originalAdmission.Dispose();
         _shutdown.Dispose();
     }
 

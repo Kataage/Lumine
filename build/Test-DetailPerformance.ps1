@@ -35,8 +35,16 @@ if ($elapsed -gt 10000) {
     throw "Detail full-resolution decode exceeded 10 seconds: $elapsed ms"
 }
 
+# The measurement starts before the destination WriteableBitmap is allocated.
+# Require a substantial fraction of that bitmap to appear in the incremental
+# peak so this gate cannot silently regress to measuring decode overhead only.
+$minimumMeasuredDestination = [long]($required * 0.75)
+if ($peakAdditional -lt $minimumMeasuredDestination) {
+    throw "Detail benchmark did not include destination bitmap residency: peak+$peakAdditional minimum=$minimumMeasuredDestination required=$required"
+}
+
 # One final RGBA bitmap plus bounded libvips/stripe overhead is expected.
-# A second full-image buffer would push this well beyond this bound.
+# A second full-image destination would push this beyond this bound.
 $peakLimit = [long]($required * 1.75) + 48MB
 if ($peakAdditional -gt $peakLimit) {
     throw "Detail decode peak suggests duplicate/unbounded full-image residency: peak+$peakAdditional limit=$peakLimit required=$required"

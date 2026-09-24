@@ -40,6 +40,7 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight = DefaultStripeHeight,
+        FullResolutionInfo? expectedInfo = null,
         CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
@@ -57,6 +58,7 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes,
                 consume,
                 stripeHeight,
+                expectedInfo,
                 cancellationToken),
             cancellationToken);
     }
@@ -67,6 +69,7 @@ public sealed class FullResolutionDecoder
     {
         VipsRuntimePolicy.EnsureConfigured();
         cancellationToken.ThrowIfCancellationRequested();
+        ValidateSourceIdentity(source);
 
         using var input = NetVips.Image.NewFromFile(
             source.SourcePath,
@@ -75,6 +78,7 @@ public sealed class FullResolutionDecoder
         using var oriented = input.Autorot();
 
         cancellationToken.ThrowIfCancellationRequested();
+        ValidateSourceIdentity(source);
 
         var bytes = checked(
             (long)oriented.Width
@@ -93,10 +97,12 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight,
+        FullResolutionInfo? expectedInfo,
         CancellationToken cancellationToken)
     {
         VipsRuntimePolicy.EnsureConfigured();
         cancellationToken.ThrowIfCancellationRequested();
+        ValidateSourceIdentity(source);
 
         using var input = NetVips.Image.NewFromFile(
             source.SourcePath,
@@ -142,6 +148,16 @@ public sealed class FullResolutionDecoder
                     pixels.Height,
                     estimatedBytes,
                     maxDecodedBytes);
+            }
+
+            if (expectedInfo is not null
+                && (pixels.Width != expectedInfo.Width
+                    || pixels.Height != expectedInfo.Height
+                    || estimatedBytes != expectedInfo.EstimatedRgbaBytes))
+            {
+                throw new FullResolutionSourceChangedException(
+                    source.SourcePath,
+                    $"Probed {expectedInfo.Width}x{expectedInfo.Height} ({expectedInfo.EstimatedRgbaBytes:N0} RGBA bytes) but decode opened {pixels.Width}x{pixels.Height} ({estimatedBytes:N0} RGBA bytes).");
             }
 
             for (var y = 0; y < pixels.Height; y += stripeHeight)
@@ -192,6 +208,8 @@ public sealed class FullResolutionDecoder
                         checked(pixels.Width * 4),
                         bytes));
             }
+
+            ValidateSourceIdentity(source);
         }
         finally
         {
@@ -216,6 +234,40 @@ public sealed class FullResolutionDecoder
                 source.SourcePath);
         }
     }
+
+    private static void ValidateSourceIdentity(FullResolutionSource source)
+    {
+        var info = new FileInfo(source.SourcePath);
+        info.Refresh();
+
+        if (!info.Exists)
+        {
+            throw new FileNotFoundException(
+                "Full-resolution source no longer exists.",
+                source.SourcePath);
+        }
+
+        if (info.Length != source.FileSize
+            || info.LastWriteTimeUtc.Ticks != source.ModifiedAtUtcTicks)
+        {
+            throw new FullResolutionSourceChangedException(
+                source.SourcePath,
+                $"Expected size={source.FileSize:N0}, modified={source.ModifiedAtUtcTicks}, actual size={info.Length:N0}, modified={info.LastWriteTimeUtc.Ticks}.");
+        }
+    }
+}
+
+public sealed class FullResolutionSourceChangedException : IOException
+{
+    public FullResolutionSourceChangedException(
+        string sourcePath,
+        string detail)
+        : base($"Full-resolution source changed while preparing the Detail image: {detail}")
+    {
+        SourcePath = sourcePath;
+    }
+
+    public string SourcePath { get; }
 }
 
 public sealed class FullResolutionBudgetExceededException : InvalidOperationException

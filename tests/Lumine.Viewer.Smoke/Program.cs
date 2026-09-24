@@ -451,6 +451,12 @@ internal static class Program
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
+        await detail.ActualSizeAsync();
+        await detail.SetZoomAsync(2);
+        Require(
+            provider.OriginalRequests == 0,
+            "Detail attempted original load with no selection.");
+
         grid.SelectAsset(1);
         await WaitForDetailAsync(
             detailSession,
@@ -544,6 +550,42 @@ internal static class Program
             provider.CancelledOriginals > cancelledBefore,
             "Rapid navigation did not cancel stale original decode.");
 
+        await detailSession.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        var firstCrossSelectionOriginal = detailSession.EnsureOriginalAsync();
+        for (var attempt = 0;
+             attempt < 300 && provider.ActiveOriginalLoads == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.ActiveOriginalLoads == 1,
+            "Cross-selection admission test never started the first original.");
+
+        await detailSession.SelectAsync(1);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        var secondCrossSelectionOriginal = detailSession.EnsureOriginalAsync();
+        await Task.WhenAll(
+            firstCrossSelectionOriginal,
+            secondCrossSelectionOriginal);
+
+        Require(
+            provider.PeakActiveOriginalLoads == 1,
+            $"Full-resolution providers overlapped across selections: peak={provider.PeakActiveOriginalLoads}.");
+
         grid.SelectAsset(1);
         await WaitForDetailAsync(
             detailSession,
@@ -588,8 +630,19 @@ internal static class Program
                 "Original budget failure did not safely retain preview state.");
         }
 
+        await detail.ActualSizeAsync();
+        Require(
+            detailSession.Snapshot.IsOriginal,
+            "Detail detach test did not establish an original bitmap.");
+
         detail.UnbindGrid();
         window.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detailSession.Snapshot.State == ViewerDetailLoadState.Empty
+            && detailSession.Snapshot.Bitmap is null,
+            "Detaching Detail did not release the selected bitmap lifetime.");
     }
 
     private static async Task<ViewerDetailSnapshot> WaitForDetailAsync(
@@ -787,6 +840,7 @@ internal sealed class DelayedDetailProvider(
     private int _originalRequests;
     private int _cancelledOriginals;
     private int _activeOriginalLoads;
+    private int _peakActiveOriginalLoads;
 
     public int PreviewRequests => Volatile.Read(ref _previewRequests);
 
@@ -795,6 +849,9 @@ internal sealed class DelayedDetailProvider(
     public int CancelledOriginals => Volatile.Read(ref _cancelledOriginals);
 
     public int ActiveOriginalLoads => Volatile.Read(ref _activeOriginalLoads);
+
+    public int PeakActiveOriginalLoads =>
+        Volatile.Read(ref _peakActiveOriginalLoads);
 
     public ValueTask<ViewerThumbnail> RequestPreviewAsync(
         ViewerAsset asset,
@@ -817,7 +874,8 @@ internal sealed class DelayedDetailProvider(
         CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _originalRequests);
-        Interlocked.Increment(ref _activeOriginalLoads);
+        var active = Interlocked.Increment(ref _activeOriginalLoads);
+        UpdatePeakActiveOriginalLoads(active);
 
         try
         {
@@ -835,6 +893,7 @@ internal sealed class DelayedDetailProvider(
             catch (OperationCanceledException)
             {
                 Interlocked.Increment(ref _cancelledOriginals);
+                await Task.Delay(TimeSpan.FromMilliseconds(80));
                 throw;
             }
 
@@ -858,6 +917,26 @@ internal sealed class DelayedDetailProvider(
         finally
         {
             Interlocked.Decrement(ref _activeOriginalLoads);
+        }
+    }
+
+    private void UpdatePeakActiveOriginalLoads(int active)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _peakActiveOriginalLoads);
+            if (active <= current)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(
+                    ref _peakActiveOriginalLoads,
+                    active,
+                    current) == current)
+            {
+                return;
+            }
         }
     }
 }

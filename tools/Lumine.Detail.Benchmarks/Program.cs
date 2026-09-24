@@ -79,12 +79,6 @@ try
                     $"Full-resolution probe mismatch: {probe.Width}x{probe.Height}, {probe.EstimatedRgbaBytes:N0} bytes.");
             }
 
-            using var bitmap = new WriteableBitmap(
-                new PixelSize(width, height),
-                new Vector(96, 96),
-                PixelFormats.Rgba8888,
-                AlphaFormat.Unpremul);
-
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -93,6 +87,12 @@ try
             var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
             var timer = Stopwatch.StartNew();
             var peak = PeakWorkingSetMonitor.Start(TimeSpan.FromMilliseconds(5));
+
+            using var bitmap = new WriteableBitmap(
+                new PixelSize(width, height),
+                new Vector(96, 96),
+                PixelFormats.Rgba8888,
+                AlphaFormat.Unpremul);
 
             await FullResolutionDecoder.DecodeAsync(
                 sourceInfo,
@@ -124,6 +124,7 @@ try
                     stripeCount++;
                     decodedRows += stripe.Height;
                 },
+                expectedInfo: probe,
                 cancellationToken: CancellationToken.None);
 
             timer.Stop();
