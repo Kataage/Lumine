@@ -490,6 +490,23 @@ public sealed class LibraryRepository
             deleted = await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await using (var cleanupFolders = connection.CreateCommand())
+        {
+            cleanupFolders.Transaction = transaction;
+            cleanupFolders.CommandText =
+                """
+                DELETE FROM folders
+                WHERE library_id = $library_id
+                  AND NOT EXISTS(
+                      SELECT 1
+                      FROM assets
+                      WHERE assets.folder_id = folders.id
+                  );
+                """;
+            cleanupFolders.Parameters.AddWithValue("$library_id", libraryId);
+            await cleanupFolders.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await using (var state = connection.CreateCommand())
         {
             state.Transaction = transaction;

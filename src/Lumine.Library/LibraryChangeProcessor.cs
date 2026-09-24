@@ -313,6 +313,17 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 break;
 
             case DirectoryChangeKind.Removed:
+                // A directory may legally end in an image-looking extension.
+                // Check structural state before interpreting a vanished path
+                // as an individual image file.
+                if (await _repository.HasTrackedFolderAtOrBelowAsync(
+                        _libraryId,
+                        change.RelativePath,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    return true;
+                }
+
                 if (LibraryFileTypes.IsSupportedPath(change.RelativePath))
                 {
                     if (await _repository.RemoveAssetAsync(
@@ -322,13 +333,6 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     {
                         Interlocked.Increment(ref _deletes);
                     }
-                }
-                else if (await _repository.HasTrackedFolderAtOrBelowAsync(
-                             _libraryId,
-                             change.RelativePath,
-                             cancellationToken).ConfigureAwait(false))
-                {
-                    return true;
                 }
 
                 break;

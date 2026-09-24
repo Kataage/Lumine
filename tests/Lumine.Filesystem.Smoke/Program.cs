@@ -142,7 +142,9 @@ try
                 "renamed.jpg") is null,
             "Delete event was not applied.");
 
-        var directory = Path.Combine(libraryRoot, "album");
+        // Use an image-looking directory name so removal cannot be
+        // misclassified from its extension alone.
+        var directory = Path.Combine(libraryRoot, "album.jpg");
         Directory.CreateDirectory(directory);
         await File.WriteAllBytesAsync(
             Path.Combine(directory, "nested.jpg"),
@@ -151,7 +153,7 @@ try
         _ = await WaitForAsync(
             () => repository.GetAssetAsync(
                 library.Id,
-                "album/nested.jpg"),
+                "album.jpg/nested.jpg"),
             static asset => asset.FileSize == 3,
             "Directory creation fallback did not reconcile nested image.");
 
@@ -159,7 +161,7 @@ try
         await WaitUntilAsync(
             async () => await repository.GetAssetAsync(
                 library.Id,
-                "album/nested.jpg") is null,
+                "album.jpg/nested.jpg") is null,
             "Directory removal fallback did not reconcile stale nested asset.");
 
         // No periodic idle reconciliation: after the directory-triggered

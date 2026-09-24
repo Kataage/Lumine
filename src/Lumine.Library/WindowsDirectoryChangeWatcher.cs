@@ -302,8 +302,6 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                 $"Unable to open directory watcher handle for '{_rootPath}'.");
         }
 
-        _ready.TrySetResult();
-
         var buffer = Marshal.AllocHGlobal(BufferSize);
         var overlapped = Marshal.AllocHGlobal(Marshal.SizeOf<OverlappedNative>());
         string? pendingRenameOld = null;
@@ -349,6 +347,10 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                             "ReadDirectoryChangesW failed.");
                     }
                 }
+
+                // StartAsync is not considered ready until the first native
+                // subtree read has actually been armed.
+                _ready.TrySetResult();
 
                 int wait;
                 while (true)
