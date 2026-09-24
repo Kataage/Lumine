@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Lumine.Diagnostics;
@@ -36,6 +37,7 @@ internal static class Program
         Directory.CreateDirectory(tempRoot);
 
         var thumbnailPaths = CreateThumbnailFixtures(tempRoot, 96);
+        VerifyThumbnailFixture(thumbnailPaths[0]);
 
         var recorder = new BenchmarkRecorder();
         long peakWorkingSetBytes = 0;
@@ -394,6 +396,35 @@ internal static class Program
 
         throw new InvalidOperationException(
             "Viewer did not render its first decoded thumbnail within the benchmark window.");
+    }
+
+    private static void VerifyThumbnailFixture(string path)
+    {
+        using (var vips = NetVips.Image.NewFromFile(path))
+        {
+            if (vips.Width != 512 || vips.Height != 512)
+            {
+                throw new InvalidOperationException(
+                    $"libvips fixture dimensions were {vips.Width}x{vips.Height}, expected 512x512.");
+            }
+
+            vips.Invalidate();
+        }
+
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        using var avalonia = new Bitmap(stream);
+
+        if (avalonia.PixelSize.Width != 512 || avalonia.PixelSize.Height != 512)
+        {
+            throw new InvalidOperationException(
+                $"Avalonia fixture dimensions were {avalonia.PixelSize.Width}x{avalonia.PixelSize.Height}, expected 512x512.");
+        }
     }
 
     private static string[] CreateThumbnailFixtures(string tempRoot, int count)
