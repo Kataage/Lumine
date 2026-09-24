@@ -397,6 +397,17 @@ internal static class Program
 
 internal sealed class TestApplication : Application
 {
+    public static AppBuilder BuildAvaloniaApp() =>
+        AppBuilder.Configure<TestApplication>()
+            .UseHarfBuzz()
+            .UseSkia()
+            .UseHeadless(
+                new AvaloniaHeadlessPlatformOptions
+                {
+                    UseHeadlessDrawing = false,
+                    OverlayPopups = false
+                });
+
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());

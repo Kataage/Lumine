@@ -120,3 +120,7 @@ Provider failures and visible tile load/decode failures are separate diagnostics
 ## Image-ready scroll metric
 
 Fast-scroll timing ends only after the final realized viewport has decoded images ready for all attached tiles and active bitmap decode work has drained. Cache-pressure acceptance uses peak decoded entries/bytes observed during the workload rather than teardown-state occupancy. This prevents a benchmark from passing because controls moved quickly while images were still blank, or because LRU eviction reduced the final cache before measurement.
+
+## Real rendering backend in CI
+
+Avalonia Headless's default drawing backend uses a lightweight stub and is not suitable for validating real decoded bitmap dimensions or memory. Viewer smoke/benchmark therefore configure Avalonia Headless with `UseHeadlessDrawing=false` and the Skia rendering subsystem. The benchmark asserts that the generated persistent-cache WebP is observed as 512 x 512 by both libvips and Avalonia before performance measurements begin.

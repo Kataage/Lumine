@@ -519,6 +519,17 @@ internal sealed class LibraryBenchmarkPageSource(
 
 internal sealed class BenchmarkApplication : Application
 {
+    public static AppBuilder BuildAvaloniaApp() =>
+        AppBuilder.Configure<BenchmarkApplication>()
+            .UseHarfBuzz()
+            .UseSkia()
+            .UseHeadless(
+                new AvaloniaHeadlessPlatformOptions
+                {
+                    UseHeadlessDrawing = false,
+                    OverlayPopups = false
+                });
+
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
