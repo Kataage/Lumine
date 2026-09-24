@@ -107,6 +107,13 @@ jobs:
         shell: pwsh
         run: ./build/Test-FilesystemPerformance.ps1
 
+      - name: Generate Detail full-resolution benchmark
+        run: dotnet run --project tools/Lumine.Detail.Benchmarks/Lumine.Detail.Benchmarks.csproj -c Release --no-build -- --output artifacts/benchmarks/detail-full-resolution.json
+
+      - name: Enforce Detail full-resolution performance acceptance
+        shell: pwsh
+        run: ./build/Test-DetailPerformance.ps1
+
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
 
