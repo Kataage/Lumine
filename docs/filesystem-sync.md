@@ -71,3 +71,7 @@ CI runs a file-only burst benchmark after the correctness smoke: 128 creates, 64
 ## Watch-arm and directory classification audit
 
 `StartAsync` does not report watcher readiness until the first overlapped `ReadDirectoryChangesW` request has been armed, closing the bootstrap gap between "watcher started" and the first native subscription. Removed paths are classified against tracked folder ancestry before extension checks, because Windows permits directories such as `album.jpg`; such structural removals reconcile safely instead of leaving descendants stale. Complete reconciliation also prunes folder rows that no longer own assets.
+
+## Shutdown budget
+
+After the native watcher is stopped, the event processor gets a five-second graceful drain budget. If queued filesystem work cannot finish within that budget, the processor is cancelled and the database is marked `reconcile_required`. Shutdown therefore does not trade correctness for responsiveness: an incomplete drain becomes an explicit startup recovery obligation instead of an unbounded exit wait or a silently lost event.
