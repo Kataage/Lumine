@@ -13,7 +13,6 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
     private readonly LibraryRepository _repository;
     private readonly LibraryChangeProcessor _processor;
     private readonly WindowsDirectoryChangeWatcher _watcher;
-    private readonly WindowsUsnJournal _usnJournal;
     private readonly string _rootPath;
     private readonly Task _watcherMonitor;
     private bool _disposed;
@@ -23,7 +22,6 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         LibraryRepository repository,
         LibraryChangeProcessor processor,
         WindowsDirectoryChangeWatcher watcher,
-        WindowsUsnJournal usnJournal,
         string rootPath,
         LibrarySyncBootstrapMode bootstrapMode,
         UsnCatchUpResult? catchUp)
@@ -32,7 +30,6 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         _repository = repository;
         _processor = processor;
         _watcher = watcher;
-        _usnJournal = usnJournal;
         _rootPath = rootPath;
         BootstrapMode = bootstrapMode;
         CatchUp = catchUp;
@@ -59,7 +56,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         // Capture a conservative journal boundary while the watcher is still
         // active. Events after this USN may also be applied before shutdown;
         // replaying them next start is idempotent and safer than skipping a gap.
-        var checkpoint = _usnJournal.Query(_rootPath);
+        var checkpoint = WindowsUsnJournal.Query(_rootPath);
 
         await _watcher.DisposeAsync().ConfigureAwait(false);
         await _processor.DisposeAsync().ConfigureAwait(false);
@@ -108,7 +105,6 @@ public sealed class WindowsLibrarySyncService
 {
     private readonly LibraryRepository _repository;
     private readonly LibraryReconciler _reconciler;
-    private readonly WindowsUsnJournal _usnJournal = new();
 
     public WindowsLibrarySyncService(LibraryDatabase database)
     {
@@ -154,7 +150,7 @@ public sealed class WindowsLibrarySyncService
                 router.Publish,
                 cancellationToken).ConfigureAwait(false);
 
-            var journalAtStart = _usnJournal.Query(library.RootPath);
+            var journalAtStart = WindowsUsnJournal.Query(library.RootPath);
             UsnCatchUpResult? catchUp = null;
             LibrarySyncBootstrapMode bootstrapMode;
 
@@ -166,7 +162,7 @@ public sealed class WindowsLibrarySyncService
 
             if (canUseCheckpoint)
             {
-                catchUp = _usnJournal.ReadChanges(
+                catchUp = WindowsUsnJournal.ReadChanges(
                     library.RootPath,
                     state.UsnJournalId!,
                     state.NextUsn!.Value,
@@ -219,7 +215,6 @@ public sealed class WindowsLibrarySyncService
                 _repository,
                 processor,
                 watcher,
-                _usnJournal,
                 library.RootPath,
                 bootstrapMode,
                 catchUp);
