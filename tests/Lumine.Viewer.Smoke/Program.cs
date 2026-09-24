@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.Viewer;
 
 namespace Lumine.Viewer.Smoke;
@@ -216,6 +217,32 @@ internal static class Program
         Require(
             viewer.Diagnostics.AttachedTiles is > 0 and < 512,
             "100k viewer attached an unbounded tile count.");
+
+        Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
+
+        var firstTile = viewer.GetVisualDescendants()
+            .OfType<Border>()
+            .FirstOrDefault(
+                border => Math.Abs(border.Width - 160) < 0.1
+                    && Math.Abs(border.Height - 190) < 0.1)
+            ?? throw new InvalidOperationException("No realized thumbnail tile was available for mouse selection.");
+
+        var tileCenter = new Point(
+            firstTile.Bounds.Width / 2,
+            firstTile.Bounds.Height / 2);
+        var windowPoint = firstTile.TranslatePoint(tileCenter, window)
+            ?? throw new InvalidOperationException("Unable to map thumbnail tile to window coordinates.");
+
+        window.MouseDown(windowPoint, MouseButton.Left);
+        window.MouseUp(windowPoint, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            viewer.SelectedAssetIndex is >= 0 and < 7,
+            "Mouse click did not select a tile in the first realized row.");
+        Require(
+            viewer.SelectedRealizedTileCount == 1,
+            "Mouse selection was not rendered on exactly one realized tile.");
 
         var wideColumns = viewer.Columns;
         window.Width = 760;
