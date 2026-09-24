@@ -51,7 +51,8 @@ var count = countText is null
 if (count is < 32 or > 512)
 {
     throw new ArgumentOutOfRangeException(
-        nameof(count),
+        nameof(args),
+        count,
         "Filesystem burst count must be between 32 and 512.");
 }
 
