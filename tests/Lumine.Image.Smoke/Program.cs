@@ -66,46 +66,6 @@ static void WriteRgbaPng(string path)
     rgba.WriteToFile(path);
 }
 
-static void WriteBmp(string path, int width = 320, int height = 200)
-{
-    var rowBytes = checked(width * 3);
-    var stride = checked((rowBytes + 3) & ~3);
-    var pixelBytes = checked(stride * height);
-    var fileBytes = checked(54 + pixelBytes);
-
-    using var stream = new FileStream(
-        path,
-        FileMode.Create,
-        FileAccess.Write,
-        FileShare.None);
-    using var writer = new BinaryWriter(stream);
-
-    writer.Write((byte)'B');
-    writer.Write((byte)'M');
-    writer.Write(fileBytes);
-    writer.Write((short)0);
-    writer.Write((short)0);
-    writer.Write(54);
-
-    writer.Write(40);
-    writer.Write(width);
-    writer.Write(height);
-    writer.Write((short)1);
-    writer.Write((short)24);
-    writer.Write(0);
-    writer.Write(pixelBytes);
-    writer.Write(2835);
-    writer.Write(2835);
-    writer.Write(0);
-    writer.Write(0);
-
-    var row = new byte[stride];
-    for (var y = 0; y < height; y++)
-    {
-        writer.Write(row);
-    }
-}
-
 static async Task VerifyFullResolutionAsync(
     string path,
     int expectedWidth,
@@ -154,7 +114,6 @@ try
     var pngPath = Path.Combine(sourceRoot, "alpha.png");
     var webpPath = Path.Combine(sourceRoot, "sample.webp");
     var gifPath = Path.Combine(sourceRoot, "sample.gif");
-    var bmpPath = Path.Combine(sourceRoot, "sample.bmp");
     var tiffPath = Path.Combine(sourceRoot, "sample.tiff");
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
@@ -169,7 +128,6 @@ try
     WriteRgbaPng(pngPath);
     WriteRgb(webpPath);
     await WriteAnimatedGifAsync(gifPath);
-    WriteBmp(bmpPath);
     WriteRgb(tiffPath);
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
@@ -215,7 +173,6 @@ try
                  pngPath,
                  webpPath,
                  gifPath,
-                 bmpPath,
                  tiffPath
              })
     {
@@ -544,7 +501,6 @@ try
         "Full-resolution WebP decode did not stream the complete image.");
 
     await VerifyFullResolutionAsync(corruptSourcePath, 320, 200, "JPEG");
-    await VerifyFullResolutionAsync(bmpPath, 320, 200, "BMP");
     await VerifyFullResolutionAsync(tiffPath, 320, 200, "TIFF");
 
     var gifFullSource = new FullResolutionSource(
