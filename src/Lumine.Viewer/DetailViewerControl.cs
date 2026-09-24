@@ -34,6 +34,7 @@ public sealed class DetailViewerControl : UserControl
     private double _requestedZoom = 1;
     private PixelSize _requestedZoomBasis;
     private long _zoomCommandVersion;
+    private long _pendingZoomCommandVersion;
 
     public DetailViewerControl(ViewerDetailSession session)
     {
@@ -254,7 +255,7 @@ public sealed class DetailViewerControl : UserControl
 
         _fitMode = true;
         SetZoom(zoom);
-        SynchronizeRequestedZoom(zoom);
+        SynchronizeFitZoomIfIdle(zoom);
         _scroll.Offset = default;
     }
 
@@ -506,7 +507,9 @@ public sealed class DetailViewerControl : UserControl
             // Explicit commands such as 1:1 are source-pixel zoom requests,
             // even while the original dimensions are not known yet.
             _requestedZoomBasis = default;
-            return ++_zoomCommandVersion;
+            var version = ++_zoomCommandVersion;
+            _pendingZoomCommandVersion = version;
+            return version;
         }
     }
 
@@ -519,8 +522,10 @@ public sealed class DetailViewerControl : UserControl
                 _requestedZoom * factor,
                 _session.Options.MinZoom,
                 _session.Options.MaxZoom);
+            var version = ++_zoomCommandVersion;
+            _pendingZoomCommandVersion = version;
             return (
-                ++_zoomCommandVersion,
+                version,
                 _requestedZoom,
                 _requestedZoomBasis);
         }
@@ -542,6 +547,23 @@ public sealed class DetailViewerControl : UserControl
         {
             _requestedZoom = zoom;
             _requestedZoomBasis = basis;
+            _pendingZoomCommandVersion = 0;
+        }
+    }
+
+    private void SynchronizeFitZoomIfIdle(double zoom)
+    {
+        var basis = GetCurrentZoomBasis();
+
+        lock (_zoomGate)
+        {
+            if (_pendingZoomCommandVersion != 0)
+            {
+                return;
+            }
+
+            _requestedZoom = zoom;
+            _requestedZoomBasis = basis;
         }
     }
 
@@ -555,6 +577,7 @@ public sealed class DetailViewerControl : UserControl
             {
                 _requestedZoom = _zoom;
                 _requestedZoomBasis = basis;
+                _pendingZoomCommandVersion = 0;
             }
         }
     }
@@ -568,6 +591,7 @@ public sealed class DetailViewerControl : UserControl
             _zoomCommandVersion++;
             _requestedZoom = _zoom;
             _requestedZoomBasis = basis;
+            _pendingZoomCommandVersion = 0;
         }
     }
 
@@ -586,6 +610,7 @@ public sealed class DetailViewerControl : UserControl
             _zoomCommandVersion++;
             _requestedZoom = 1;
             _requestedZoomBasis = default;
+            _pendingZoomCommandVersion = 0;
         }
 
         _fitMode = true;
