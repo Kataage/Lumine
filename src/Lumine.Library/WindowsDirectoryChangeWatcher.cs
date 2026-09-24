@@ -27,6 +27,8 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
     private readonly string _rootPath;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _watchTask;
+    private TaskCompletionSource _ready =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public WindowsDirectoryChangeWatcher(string rootPath)
     {
@@ -34,7 +36,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
         _rootPath = LibraryPaths.NormalizeRoot(rootPath);
     }
 
-    public Task StartAsync(
+    public async Task StartAsync(
         Action<IReadOnlyList<DirectoryChange>> publish,
         CancellationToken cancellationToken = default)
     {
@@ -56,6 +58,11 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                 {
                     RunLoop(publish, linked.Token);
                 }
+                catch (Exception exception)
+                {
+                    _ready.TrySetException(exception);
+                    throw;
+                }
                 finally
                 {
                     linked.Dispose();
@@ -65,8 +72,11 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
-        return Task.CompletedTask;
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public Task Completion =>
+        _watchTask ?? Task.CompletedTask;
 
     public async ValueTask DisposeAsync()
     {
@@ -91,6 +101,22 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
         uint bytes,
         DateTimeOffset observedAtUtc)
     {
+        string? pendingRenameOld = null;
+        return ParseBuffer(
+            buffer,
+            bytes,
+            observedAtUtc,
+            ref pendingRenameOld,
+            flushPendingRename: true);
+    }
+
+    private static IReadOnlyList<DirectoryChange> ParseBuffer(
+        IntPtr buffer,
+        uint bytes,
+        DateTimeOffset observedAtUtc,
+        ref string? pendingRenameOld,
+        bool flushPendingRename)
+    {
         if (bytes == 0)
         {
             return
@@ -104,7 +130,6 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
         }
 
         var result = new List<DirectoryChange>();
-        string? pendingRenameOld = null;
         var offset = 0;
 
         while ((uint)offset < bytes)
@@ -143,6 +168,17 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
             }
 
             var relativePath = LibraryPaths.NormalizeRelativePath(name);
+
+            if (pendingRenameOld is not null && action != 5)
+            {
+                result.Add(
+                    new DirectoryChange(
+                        DirectoryChangeKind.Removed,
+                        pendingRenameOld,
+                        null,
+                        observedAtUtc));
+                pendingRenameOld = null;
+            }
 
             switch (action)
             {
@@ -226,7 +262,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
             offset += nextOffset;
         }
 
-        if (pendingRenameOld is not null)
+        if (flushPendingRename && pendingRenameOld is not null)
         {
             result.Add(
                 new DirectoryChange(
@@ -234,6 +270,7 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                     pendingRenameOld,
                     null,
                     observedAtUtc));
+            pendingRenameOld = null;
         }
 
         return result;
@@ -265,8 +302,11 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                 $"Unable to open directory watcher handle for '{_rootPath}'.");
         }
 
+        _ready.TrySetResult();
+
         var buffer = Marshal.AllocHGlobal(BufferSize);
         var overlapped = Marshal.AllocHGlobal(Marshal.SizeOf<OverlappedNative>());
+        string? pendingRenameOld = null;
 
         try
         {
@@ -349,7 +389,9 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                     ParseBuffer(
                         buffer,
                         bytes,
-                        DateTimeOffset.UtcNow));
+                        DateTimeOffset.UtcNow,
+                        ref pendingRenameOld,
+                        flushPendingRename: false));
             }
         }
         finally

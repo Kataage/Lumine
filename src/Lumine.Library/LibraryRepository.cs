@@ -705,7 +705,7 @@ public sealed class LibraryRepository
         return updated == 1;
     }
 
-    public async Task<bool> HasTrackedFolderAsync(
+    public async Task<bool> HasTrackedFolderAtOrBelowAsync(
         long libraryId,
         string relativePath,
         CancellationToken cancellationToken = default)
@@ -720,11 +720,17 @@ public sealed class LibraryRepository
                 SELECT 1
                 FROM folders
                 WHERE library_id = $library_id
-                  AND relative_path_key = $path_key
+                  AND (
+                      relative_path_key = $path_key
+                      OR relative_path_key LIKE $path_prefix ESCAPE '\'
+                  )
             );
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
         command.Parameters.AddWithValue("$path_key", pathKey);
+        command.Parameters.AddWithValue(
+            "$path_prefix",
+            EscapeLike(pathKey) + "/%");
 
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
@@ -1049,6 +1055,12 @@ public sealed class LibraryRepository
         string Extension,
         string FolderPath,
         string? FolderKey);
+
+    private static string EscapeLike(string value) =>
+        value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
 
     private static void ValidateAsset(AssetUpsert asset)
     {

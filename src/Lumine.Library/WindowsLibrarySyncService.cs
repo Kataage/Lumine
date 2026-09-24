@@ -15,6 +15,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
     private readonly WindowsDirectoryChangeWatcher _watcher;
     private readonly WindowsUsnJournal _usnJournal;
     private readonly string _rootPath;
+    private readonly Task _watcherMonitor;
     private bool _disposed;
 
     internal WindowsLibrarySyncSession(
@@ -35,6 +36,7 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         _rootPath = rootPath;
         BootstrapMode = bootstrapMode;
         CatchUp = catchUp;
+        _watcherMonitor = MonitorWatcherAsync();
     }
 
     public LibrarySyncBootstrapMode BootstrapMode { get; }
@@ -42,6 +44,8 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
     public UsnCatchUpResult? CatchUp { get; }
 
     public LibrarySyncDiagnostics Diagnostics => _processor.Diagnostics;
+
+    public Task Completion => _watcherMonitor;
 
     public async ValueTask DisposeAsync()
     {
@@ -60,6 +64,14 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
         await _watcher.DisposeAsync().ConfigureAwait(false);
         await _processor.DisposeAsync().ConfigureAwait(false);
 
+        try
+        {
+            await _watcherMonitor.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
         var state = await _repository.GetOrCreateSyncStateAsync(
             _libraryId).ConfigureAwait(false);
 
@@ -72,6 +84,23 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
             checkpoint.Available
                 ? state.LastError
                 : checkpoint.UnavailableReason).ConfigureAwait(false);
+    private async Task MonitorWatcherAsync()
+    {
+        try
+        {
+            await _watcher.Completion.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_disposed)
+        {
+        }
+        catch (Exception exception)
+        {
+            await _repository.MarkReconcileRequiredAsync(
+                _libraryId,
+                $"Directory watcher failed: {exception.GetType().Name}: {exception.Message}")
+                .ConfigureAwait(false);
+            throw;
+        }
     }
 }
 

@@ -44,7 +44,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         _queue = Channel.CreateBounded<DirectoryChange>(
             new BoundedChannelOptions(QueueCapacity)
             {
-                FullMode = BoundedChannelFullMode.DropWrite,
+                FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
                 SingleWriter = false,
                 AllowSynchronousContinuations = false
@@ -82,6 +82,12 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             {
                 Interlocked.Exchange(ref _overflowRequested, 1);
                 Interlocked.Increment(ref _overflows);
+
+                if (_queue.Writer.TryWrite(change))
+                {
+                    Interlocked.Increment(ref _queueDepth);
+                }
+
                 continue;
             }
 
@@ -161,8 +167,11 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         {
             if (Interlocked.Exchange(ref _overflowRequested, 0) != 0)
             {
-                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
+                // Discard events known to precede the overflow, then reconcile.
+                // Events arriving while reconciliation runs remain queued and
+                // are processed afterward.
                 DrainQueue();
+                await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -176,9 +185,9 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 if (coalesced.Count >= CoalesceCapacity)
                 {
                     Interlocked.Increment(ref _overflows);
-                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     coalesced.Clear();
                     DrainQueue();
+                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     break;
                 }
             }
@@ -217,8 +226,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
                 if (requiresReconcile)
                 {
-                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     DrainQueue();
+                    await ReconcileAsync(cancellationToken).ConfigureAwait(false);
                     break;
                 }
             }
@@ -280,7 +289,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                         Interlocked.Increment(ref _deletes);
                     }
                 }
-                else if (await _repository.HasTrackedFolderAsync(
+                else if (await _repository.HasTrackedFolderAtOrBelowAsync(
                              _libraryId,
                              change.RelativePath,
                              cancellationToken).ConfigureAwait(false))
@@ -383,7 +392,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             return false;
         }
 
-        if (await _repository.HasTrackedFolderAsync(
+        if (await _repository.HasTrackedFolderAtOrBelowAsync(
                 _libraryId,
                 oldPath,
                 cancellationToken).ConfigureAwait(false))
