@@ -4,7 +4,9 @@ namespace Lumine.Viewer;
 
 public readonly record struct DecodedBitmapCacheDiagnostics(
     int EntryCount,
-    long EstimatedBytes);
+    long EstimatedBytes,
+    int ActiveDecodes,
+    int PeakConcurrentDecodes);
 
 public sealed class DecodedBitmapLease : IDisposable
 {
@@ -32,6 +34,12 @@ public sealed class DecodedBitmapLease : IDisposable
 
 public sealed class DecodedBitmapCache : IDisposable
 {
+    public static int DecodeConcurrencyLimit { get; } =
+        Math.Clamp(Environment.ProcessorCount / 2, 1, 2);
+
+    private static readonly SemaphoreSlim DecodeGate =
+        new(DecodeConcurrencyLimit, DecodeConcurrencyLimit);
+
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries =
         new(StringComparer.OrdinalIgnoreCase);
@@ -39,6 +47,8 @@ public sealed class DecodedBitmapCache : IDisposable
     private readonly long _byteLimit;
     private long _estimatedBytes;
     private long _sequence;
+    private int _activeDecodes;
+    private int _peakConcurrentDecodes;
     private bool _disposed;
 
     public DecodedBitmapCache(int entryLimit, long byteLimit)
@@ -58,20 +68,48 @@ public sealed class DecodedBitmapCache : IDisposable
             {
                 return new DecodedBitmapCacheDiagnostics(
                     _entries.Count,
-                    _estimatedBytes);
+                    _estimatedBytes,
+                    Volatile.Read(ref _activeDecodes),
+                    Volatile.Read(ref _peakConcurrentDecodes));
             }
         }
     }
 
-    public Task<DecodedBitmapLease> AcquireAsync(
+    public async Task<DecodedBitmapLease> AcquireAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.Run(
-            () => Acquire(path, cancellationToken),
-            cancellationToken);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var fullPath = Path.GetFullPath(path);
+            if (_entries.TryGetValue(fullPath, out var existing))
+            {
+                existing.Leases++;
+                existing.LastAccess = NextSequence();
+                return new DecodedBitmapLease(this, fullPath, existing.Bitmap);
+            }
+        }
+
+        await DecodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var active = Interlocked.Increment(ref _activeDecodes);
+        UpdatePeakConcurrentDecodes(active);
+
+        try
+        {
+            return await Task.Run(
+                () => Acquire(path, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeDecodes);
+            DecodeGate.Release();
+        }
     }
 
     public void Dispose()
@@ -238,6 +276,26 @@ public sealed class DecodedBitmapCache : IDisposable
             _entries.Remove(candidate.Key);
             _estimatedBytes -= candidate.Value.EstimatedBytes;
             candidate.Value.Bitmap.Dispose();
+        }
+    }
+
+    private void UpdatePeakConcurrentDecodes(int active)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _peakConcurrentDecodes);
+            if (active <= current)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(
+                    ref _peakConcurrentDecodes,
+                    active,
+                    current) == current)
+            {
+                return;
+            }
         }
     }
 
