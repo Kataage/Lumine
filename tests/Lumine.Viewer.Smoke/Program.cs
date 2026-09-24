@@ -246,6 +246,10 @@ internal static class Program
 
         viewer.ClearSelection();
         Require(viewer.SelectedAssetIndex == -1, "Viewer did not clear selection.");
+        RaiseKey(viewer, Key.A);
+        Require(
+            viewer.SelectedAssetIndex == -1,
+            "Non-navigation key unexpectedly created a selection.");
         RaiseKey(viewer, Key.Right);
         Require(
             viewer.SelectedAssetIndex == 0,
