@@ -78,6 +78,10 @@ try
         "Filesystem smoke",
         libraryRoot);
 
+    Require(
+        !WindowsFilesystemSemantics.IsCaseSensitiveDirectory(libraryRoot),
+        "CI temporary library unexpectedly uses per-directory case sensitivity.");
+
     var syncService = new WindowsLibrarySyncService(database);
     var journalBefore = WindowsUsnJournal.Query(libraryRoot);
 
@@ -277,6 +281,66 @@ try
             },
             "Explicit watcher overflow did not reconcile stale state.");
     }
+
+    await repository.UpsertAssetsAsync(
+        library.Id,
+        [
+            new AssetUpsert(
+                "collision-source.jpg",
+                10,
+                DateTimeOffset.UtcNow,
+                Format: "jpg"),
+            new AssetUpsert(
+                "collision-destination.jpg",
+                20,
+                DateTimeOffset.UtcNow.AddSeconds(1),
+                Format: "jpg")
+        ]);
+
+    var collisionSource = await repository.GetAssetAsync(
+        library.Id,
+        "collision-source.jpg")
+        ?? throw new InvalidOperationException("Rename-collision source fixture missing.");
+
+    var collisionDestination = await repository.GetAssetAsync(
+        library.Id,
+        "collision-destination.jpg")
+        ?? throw new InvalidOperationException("Rename-collision destination fixture missing.");
+
+    Require(
+        collisionSource.Id != collisionDestination.Id,
+        "Rename-collision fixtures unexpectedly shared identity.");
+
+    var collisionRenamed = await repository.RenameAssetAsync(
+        library.Id,
+        "collision-source.jpg",
+        new AssetUpsert(
+            "collision-destination.jpg",
+            30,
+            DateTimeOffset.UtcNow.AddSeconds(2),
+            Format: "jpg"));
+
+    Require(collisionRenamed, "Rename into an existing destination was not applied.");
+
+    var collisionAfter = await repository.GetAssetAsync(
+        library.Id,
+        "collision-destination.jpg")
+        ?? throw new InvalidOperationException("Rename destination disappeared.");
+
+    Require(
+        collisionAfter.Id == collisionSource.Id,
+        "Rename replacement did not preserve source identity.");
+    Require(
+        collisionAfter.Id != collisionDestination.Id,
+        "Rename replacement incorrectly preserved overwritten destination identity.");
+    Require(
+        await repository.GetAssetAsync(library.Id, "collision-source.jpg") is null,
+        "Rename replacement retained the old source path.");
+
+    // Remove DB-only collision fixture before filesystem reconciliation.
+    Require(
+        await repository.RemoveAssetAsync(library.Id, "collision-destination.jpg"),
+        "Rename-collision fixture cleanup failed.");
 
     // Reconciliation deletes stale rows only after a complete walk.
     await File.WriteAllBytesAsync(
