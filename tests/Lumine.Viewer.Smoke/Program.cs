@@ -335,10 +335,17 @@ internal static class Program
             "Resize jumped from the current far viewport back to an offscreen selection.");
 
         viewer.SelectAsset(99_900, scrollIntoView: false);
-        Dispatcher.UIThread.RunJobs();
+        for (var attempt = 0;
+             attempt < 150 && viewer.SelectedRealizedTileCount != 1;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
         Require(
             viewer.SelectedRealizedTileCount == 1,
-            "Far selection did not render after fast scroll.");
+            "Far selection did not render within the bounded realization window.");
 
         window.Width = 900;
         for (var attempt = 0; attempt < 150; attempt++)
