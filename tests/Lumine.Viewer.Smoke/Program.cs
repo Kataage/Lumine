@@ -546,23 +546,16 @@ internal static class Program
             Math.Abs(detail.Zoom - 1) < 0.001,
             "Actual-size command did not set 1:1 zoom.");
 
-        var detailImage = GetDetailImage(detail);
-        var originalScaling = window.RenderScaling;
-        var alternateScaling = Math.Abs(originalScaling - 2) < 0.001
-            ? 1.25
-            : 2;
-        window.RenderScaling = alternateScaling;
-        Dispatcher.UIThread.RunJobs();
-
+        var twoXDisplay = DetailViewerControl.CalculateDisplaySize(
+            new PixelSize(
+                detailSession.Snapshot.Metadata!.Width,
+                detailSession.Snapshot.Metadata.Height),
+            1,
+            2);
         Require(
-            Math.Abs(
-                detailImage.Width
-                - detailSession.Snapshot.Metadata!.Width / window.RenderScaling)
-            < 0.01,
-            "Actual-size display did not react to TopLevel DPI scaling change.");
-
-        window.RenderScaling = originalScaling;
-        Dispatcher.UIThread.RunJobs();
+            Math.Abs(twoXDisplay.Width - 512) < 0.001
+            && Math.Abs(twoXDisplay.Height - 384) < 0.001,
+            "Actual-size DPI conversion did not preserve one source pixel per physical pixel at 200% scaling.");
 
         await detail.SetZoomAsync(2);
         Require(
@@ -761,19 +754,6 @@ internal static class Program
 
         throw new InvalidOperationException(
             $"Detail viewer did not reach expected state; current={session.Snapshot.State}, index={session.Snapshot.SelectedIndex}.");
-    }
-
-    private static Image GetDetailImage(DetailViewerControl detail)
-    {
-        var layout = detail.Content as Grid
-            ?? throw new InvalidOperationException("Detail root layout missing.");
-        var scroll = layout.Children[1] as ScrollViewer
-            ?? throw new InvalidOperationException("Detail scroll viewer missing.");
-        var surface = scroll.Content as Border
-            ?? throw new InvalidOperationException("Detail image surface missing.");
-
-        return surface.Child as Image
-            ?? throw new InvalidOperationException("Detail image control missing.");
     }
 
     private static void RaiseKey(InputElement viewer, Key key)

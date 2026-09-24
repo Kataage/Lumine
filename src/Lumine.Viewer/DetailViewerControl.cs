@@ -371,10 +371,26 @@ public sealed class DetailViewerControl : UserControl
         }
 
         var sourceSize = GetSourcePixelSize(snapshot);
-        var renderScaling = GetRenderScaling();
+        var displaySize = CalculateDisplaySize(
+            sourceSize,
+            zoom,
+            GetRenderScaling());
 
-        _image.Width = sourceSize.Width * zoom / renderScaling;
-        _image.Height = sourceSize.Height * zoom / renderScaling;
+        _image.Width = displaySize.Width;
+        _image.Height = displaySize.Height;
+    }
+
+    internal static Size CalculateDisplaySize(
+        PixelSize sourceSize,
+        double zoom,
+        double renderScaling)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(zoom, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(renderScaling, 0);
+
+        return new Size(
+            sourceSize.Width * zoom / renderScaling,
+            sourceSize.Height * zoom / renderScaling);
     }
 
     private long BeginZoomCommand(double target)
