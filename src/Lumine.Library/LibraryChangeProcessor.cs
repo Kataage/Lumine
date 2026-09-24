@@ -6,6 +6,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 {
     private const int QueueCapacity = 4096;
     private const int CoalesceCapacity = 4096;
+    private static readonly TimeSpan ShutdownDrainTimeout = TimeSpan.FromSeconds(5);
 
     private readonly long _libraryId;
     private readonly LibraryInfo _library;
@@ -107,10 +108,37 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _queue.Writer.TryComplete();
+        var forced = false;
 
         try
         {
-            await _processorTask.ConfigureAwait(false);
+            try
+            {
+                await _processorTask
+                    .WaitAsync(ShutdownDrainTimeout)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                forced = true;
+                _shutdown.Cancel();
+
+                try
+                {
+                    await _processorTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            if (forced)
+            {
+                await _repository.MarkReconcileRequiredAsync(
+                    _libraryId,
+                    "Filesystem event queue did not drain within the shutdown budget; startup reconciliation is required.",
+                    CancellationToken.None).ConfigureAwait(false);
+            }
         }
         finally
         {
