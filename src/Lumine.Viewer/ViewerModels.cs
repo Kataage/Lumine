@@ -160,10 +160,6 @@ public interface IViewerDetailProvider
         ViewerAsset asset,
         CancellationToken cancellationToken = default);
 
-    ValueTask<ViewerDetailMetadata> ProbeOriginalAsync(
-        ViewerAsset asset,
-        CancellationToken cancellationToken = default);
-
     Task<ViewerOriginalBitmap> LoadOriginalAsync(
         ViewerAsset asset,
         long maxDecodedBytes,

@@ -804,22 +804,6 @@ internal sealed class DelayedDetailProvider(
                 1));
     }
 
-    public ValueTask<ViewerDetailMetadata> ProbeOriginalAsync(
-        ViewerAsset asset,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return ValueTask.FromResult(
-            new ViewerDetailMetadata(
-                1024,
-                768,
-                true,
-                "png",
-                asset.FileSize,
-                1024L * 768 * 4));
-    }
-
     public async Task<ViewerOriginalBitmap> LoadOriginalAsync(
         ViewerAsset asset,
         long maxDecodedBytes,

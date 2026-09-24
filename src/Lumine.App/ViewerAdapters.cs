@@ -168,27 +168,6 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             result.Height);
     }
 
-    public async ValueTask<ViewerDetailMetadata> ProbeOriginalAsync(
-        ViewerAsset asset,
-        CancellationToken cancellationToken = default)
-    {
-        var sourcePath = ResolveSourcePath(asset);
-        var info = await FullResolutionDecoder.ProbeAsync(
-            new FullResolutionSource(
-                sourcePath,
-                asset.FileSize,
-                asset.ModifiedAtUtcTicks),
-            cancellationToken).ConfigureAwait(false);
-
-        return new ViewerDetailMetadata(
-            info.Width,
-            info.Height,
-            info.HasAlpha,
-            asset.Format ?? Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant(),
-            asset.FileSize,
-            info.EstimatedRgbaBytes);
-    }
-
     public async Task<ViewerOriginalBitmap> LoadOriginalAsync(
         ViewerAsset asset,
         long maxDecodedBytes,

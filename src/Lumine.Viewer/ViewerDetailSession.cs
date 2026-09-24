@@ -127,17 +127,9 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             var asset = await _assets.GetAssetAsync(
                 index,
                 selection.Token).ConfigureAwait(false);
-            var metadataTask = _provider.ProbeOriginalAsync(
+            var preview = await _provider.RequestPreviewAsync(
                 asset,
-                selection.Token).AsTask();
-            var previewTask = _provider.RequestPreviewAsync(
-                asset,
-                selection.Token).AsTask();
-
-            await Task.WhenAll(metadataTask, previewTask).ConfigureAwait(false);
-
-            var metadata = metadataTask.Result;
-            var preview = previewTask.Result;
+                selection.Token).ConfigureAwait(false);
             var lease = await PreviewBitmapCache.AcquireAsync(
                 preview.CachePath,
                 selection.Token).ConfigureAwait(false);
@@ -154,7 +146,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 _snapshot = new ViewerDetailSnapshot(
                     index,
                     asset,
-                    metadata,
+                    null,
                     ViewerDetailLoadState.PreviewReady,
                     lease.Bitmap,
                     false,
