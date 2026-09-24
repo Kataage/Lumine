@@ -99,6 +99,17 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    public void ClearSelection()
+    {
+        if (_selectedIndex < 0)
+        {
+            return;
+        }
+
+        _selectedIndex = -1;
+        SelectedAssetIndexChanged?.Invoke(this, -1);
+    }
+
     public void ScrollToAsset(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
@@ -218,17 +229,26 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
-        var current = _selectedIndex < 0 ? 0 : _selectedIndex;
-        var next = e.Key switch
+        long next;
+        if (_selectedIndex < 0)
         {
-            Key.Left => current - 1,
-            Key.Right => current + 1,
-            Key.Up => current - _columns,
-            Key.Down => current + _columns,
-            Key.Home => 0,
-            Key.End => AssetCount - 1,
-            _ => current
-        };
+            next = e.Key == Key.End
+                ? AssetCount - 1
+                : 0;
+        }
+        else
+        {
+            next = e.Key switch
+            {
+                Key.Left => _selectedIndex - 1,
+                Key.Right => _selectedIndex + 1,
+                Key.Up => _selectedIndex - _columns,
+                Key.Down => _selectedIndex + _columns,
+                Key.Home => 0,
+                Key.End => AssetCount - 1,
+                _ => _selectedIndex
+            };
+        }
 
         next = Math.Clamp(next, 0, AssetCount - 1);
         if (next != _selectedIndex)
