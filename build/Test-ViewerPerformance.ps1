@@ -37,6 +37,8 @@ foreach ($result in $results) {
     $attachedTiles = [int]$result.metadata.max_attached_tiles
     $requests = [long]$result.metadata.thumbnail_requests
     $cancelled = [long]$result.metadata.thumbnail_requests_cancelled
+    $requestFailures = [long]$result.metadata.thumbnail_requests_failed
+    $tileFailures = [long]$result.metadata.tile_load_failures
     $inflight = [int]$result.metadata.inflight_thumbnail_requests
     $finalAttached = [int]$result.metadata.final_attached_tiles
     $finalReady = [int]$result.metadata.final_ready_tiles
@@ -71,6 +73,14 @@ foreach ($result in $results) {
 
     if ($cancelled -le 0) {
         throw "$count Viewer did not cancel stale thumbnail work."
+    }
+
+    if ($requestFailures -ne 0) {
+        throw "$count Viewer thumbnail provider failures were observed: $requestFailures"
+    }
+
+    if ($tileFailures -ne 0) {
+        throw "$count Viewer visible tile load failures were observed: $tileFailures"
     }
 
     if ($inflight -ne 0) {
