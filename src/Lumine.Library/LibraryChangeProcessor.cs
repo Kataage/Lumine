@@ -263,7 +263,55 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     {
         var upserts = new List<(AssetUpsert Asset, DirectoryChange Change)>();
         var deletes = new List<(string Path, DirectoryChange Change)>();
-        var renames = new List<DirectoryChange>();
+
+        async Task FlushPendingAsync()
+        {
+            if (upserts.Count > 0)
+            {
+                try
+                {
+                    await _repository.UpsertAssetsAsync(
+                        _libraryId,
+                        upserts.Select(static item => item.Asset).ToArray(),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (
+                    exception is IOException
+                    or UnauthorizedAccessException
+                    or System.Security.SecurityException)
+                {
+                    await _repository.MarkReconcileRequiredAsync(
+                        _libraryId,
+                        $"Batched filesystem upsert failed: {exception.GetType().Name}.",
+                        cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
+
+                Interlocked.Add(ref _upserts, upserts.Count);
+                foreach (var item in upserts)
+                {
+                    RecordApplied(item.Change);
+                }
+
+                upserts.Clear();
+            }
+
+            if (deletes.Count > 0)
+            {
+                var removed = await _repository.RemoveAssetsAsync(
+                    _libraryId,
+                    deletes.Select(static item => item.Path).ToArray(),
+                    cancellationToken).ConfigureAwait(false);
+
+                Interlocked.Add(ref _deletes, removed);
+                foreach (var item in deletes)
+                {
+                    RecordApplied(item.Change);
+                }
+
+                deletes.Clear();
+            }
+        }
 
         foreach (var change in changes.OrderBy(static item => item.ObservedAtUtc))
         {
@@ -271,6 +319,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
             if (change.Kind == DirectoryChangeKind.Overflow)
             {
+                await FlushPendingAsync().ConfigureAwait(false);
                 return true;
             }
 
@@ -286,6 +335,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     {
                         if (change.Kind == DirectoryChangeKind.Added)
                         {
+                            await FlushPendingAsync().ConfigureAwait(false);
                             return true;
                         }
 
@@ -306,9 +356,14 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                             or UnauthorizedAccessException
                             or System.Security.SecurityException)
                         {
-                            return await ApplyWithRecoveryAsync(
-                                change,
-                                cancellationToken).ConfigureAwait(false);
+                            await FlushPendingAsync().ConfigureAwait(false);
+
+                            if (await ApplyWithRecoveryAsync(
+                                    change,
+                                    cancellationToken).ConfigureAwait(false))
+                            {
+                                return true;
+                            }
                         }
                     }
 
@@ -320,6 +375,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                             change.RelativePath,
                             cancellationToken).ConfigureAwait(false))
                     {
+                        await FlushPendingAsync().ConfigureAwait(false);
                         return true;
                     }
 
@@ -331,7 +387,18 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     break;
 
                 case DirectoryChangeKind.Renamed:
-                    renames.Add(change);
+                    // Rename is an ordering barrier. Flushing file operations
+                    // on each side preserves final-state semantics such as
+                    // "delete destination, then rename source into it".
+                    await FlushPendingAsync().ConfigureAwait(false);
+
+                    if (await ApplyWithRecoveryAsync(
+                            change,
+                            cancellationToken).ConfigureAwait(false))
+                    {
+                        return true;
+                    }
+
                     break;
 
                 default:
@@ -342,60 +409,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             }
         }
 
-        // Preserve rename identity before applying any follow-up writes that may
-        // target the new path in the same debounce window.
-        foreach (var change in renames)
-        {
-            if (await ApplyWithRecoveryAsync(
-                    change,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                return true;
-            }
-        }
-
-        if (upserts.Count > 0)
-        {
-            try
-            {
-                await _repository.UpsertAssetsAsync(
-                    _libraryId,
-                    upserts.Select(static item => item.Asset).ToArray(),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (
-                exception is IOException
-                or UnauthorizedAccessException
-                or System.Security.SecurityException)
-            {
-                await _repository.MarkReconcileRequiredAsync(
-                    _libraryId,
-                    $"Batched filesystem upsert failed: {exception.GetType().Name}.",
-                    cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-
-            Interlocked.Add(ref _upserts, upserts.Count);
-            foreach (var item in upserts)
-            {
-                RecordApplied(item.Change);
-            }
-        }
-
-        if (deletes.Count > 0)
-        {
-            var removed = await _repository.RemoveAssetsAsync(
-                _libraryId,
-                deletes.Select(static item => item.Path).ToArray(),
-                cancellationToken).ConfigureAwait(false);
-
-            Interlocked.Add(ref _deletes, removed);
-            foreach (var item in deletes)
-            {
-                RecordApplied(item.Change);
-            }
-        }
-
+        await FlushPendingAsync().ConfigureAwait(false);
         return false;
     }
 
