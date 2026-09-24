@@ -369,6 +369,30 @@ internal static class Program
             viewer.SelectedAssetIndex == 99_999,
             "Viewer selection did not reach final 100k asset.");
 
+        var columnsBeforeDpi = viewer.Columns;
+        var selectedBeforeDpi = viewer.SelectedAssetIndex;
+        window.SetRenderScaling(2.0);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            Math.Abs(window.RenderScaling - 2.0) < 0.001,
+            "Headless DPI scaling change was not applied.");
+        Require(
+            viewer.Columns == columnsBeforeDpi,
+            "DPI scaling incorrectly changed DIP-based Viewer column count.");
+        Require(
+            viewer.SelectedAssetIndex == selectedBeforeDpi,
+            "DPI scaling changed Viewer selection.");
+        Require(
+            viewer.FirstVisibleAssetIndex is > 99_000,
+            "DPI scaling lost the far viewport anchor in a 100k library.");
+
+        window.SetRenderScaling(1.0);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            viewer.Columns == columnsBeforeDpi,
+            "Restoring DPI scaling changed DIP-based Viewer column count.");
+
         window.Close();
     }
 
