@@ -96,6 +96,13 @@ internal static class Program
 
                     Observe(viewer);
 
+                    using (recorder.Measure(CoreMetricNames.ViewerFirstViewportReady))
+                    {
+                        await WaitForViewportReadyAsync(viewer);
+                    }
+
+                    Observe(viewer);
+
                     using (recorder.Measure(CoreMetricNames.ViewerFastScrollRefresh))
                     {
                         const int jumps = 40;

@@ -31,6 +31,7 @@ $results = @($tenK, $fiftyK, $hundredK)
 foreach ($result in $results) {
     $count = [int]$result.metadata.asset_count
     $firstPaint = Get-Metric $result "viewer.first_paint"
+    $firstViewportReady = Get-Metric $result "viewer.first_viewport_ready"
     $fastScroll = Get-Metric $result "viewer.fast_scroll_refresh"
 
     $realizedRows = [int]$result.metadata.max_realized_rows
@@ -57,6 +58,10 @@ foreach ($result in $results) {
 
     if ([double]$firstPaint.durationMs -gt 1500) {
         throw "$count Viewer first paint exceeded 1.5 s: $($firstPaint.durationMs) ms"
+    }
+
+    if ([double]$firstViewportReady.durationMs -gt 1500) {
+        throw "$count Viewer first full viewport exceeded 1.5 s after first paint: $($firstViewportReady.durationMs) ms"
     }
 
     if ([double]$fastScroll.durationMs -gt 1500) {
@@ -159,6 +164,8 @@ foreach ($result in $results) {
 $cursorEnd = Get-Metric $hundredK "viewer.cursor_seek_end"
 $cursorRandom = Get-Metric $hundredK "viewer.cursor_random_seek"
 $cursorEndPages = [long]$hundredK.metadata.cursor_end_seek_pages
+$cursorEndAllocated = [long]$cursorEnd.after.totalAllocatedBytes - [long]$cursorEnd.before.totalAllocatedBytes
+$cursorRandomAllocated = [long]$cursorRandom.after.totalAllocatedBytes - [long]$cursorRandom.before.totalAllocatedBytes
 $cursorRandomPages = [long]$hundredK.metadata.cursor_random_seek_pages
 $cursorCachedPages = [int]$hundredK.metadata.cursor_cached_pages
 $cursorCheckpoints = [int]$hundredK.metadata.cursor_checkpoints
@@ -169,6 +176,14 @@ if ([double]$cursorEnd.durationMs -gt 1500) {
 
 if ([double]$cursorRandom.durationMs -gt 1500) {
     throw "100k cursor random-seek workload exceeded 1.5 s: $($cursorRandom.durationMs) ms"
+}
+
+if ($cursorEndAllocated -gt 64MB) {
+    throw "100k cold cursor end seek allocated more than 64 MiB: $cursorEndAllocated bytes"
+}
+
+if ($cursorRandomAllocated -gt 64MB) {
+    throw "100k random cursor seek allocated more than 64 MiB: $cursorRandomAllocated bytes"
 }
 
 if ($cursorEndPages -gt 400) {
@@ -210,27 +225,32 @@ Write-Host "Viewer performance acceptance passed."
 foreach ($result in $results) {
     $count = [int]$result.metadata.asset_count
     $firstPaint = Get-Metric $result "viewer.first_paint"
+    $firstViewportReady = Get-Metric $result "viewer.first_viewport_ready"
     $fastScroll = Get-Metric $result "viewer.fast_scroll_refresh"
     $scrollAllocated = [long]$fastScroll.after.totalAllocatedBytes - [long]$fastScroll.before.totalAllocatedBytes
 
     Write-Host (
-        "{0:N0}: first={1:N1} ms, scroll={2:N1} ms, rows={3}, tiles={4}, requests={5}, cancelled={6}, peak={7:N1} MiB, scroll alloc={8:N1} MiB" -f
+        "{0:N0}: first={1:N1} ms, first-full={2:N1} ms, scroll={3:N1} ms, rows={4}, tiles={5}, requests={6}, cancelled={7}, peak={8:N1} MiB, decoded-peak={9:N1} MiB, scroll alloc={10:N1} MiB" -f
         $count,
         $firstPaint.durationMs,
+        $firstViewportReady.durationMs,
         $fastScroll.durationMs,
         $result.metadata.max_realized_rows,
         $result.metadata.max_attached_tiles,
         $result.metadata.thumbnail_requests,
         $result.metadata.thumbnail_requests_cancelled,
         ([long]$result.metadata.peak_working_set_bytes / 1MB),
+        ([long]$result.metadata.max_decoded_bitmap_bytes / 1MB),
         ($scrollAllocated / 1MB))
 }
 
 Write-Host (
-    "100k cursor integration: end={0:N1} ms/{1} pages, random={2:N1} ms/{3} pages, cache={4}, checkpoints={5}" -f
+    "100k cursor integration: end={0:N1} ms/{1} pages/{2:N1} MiB alloc, random={3:N1} ms/{4} pages/{5:N1} MiB alloc, cache={6}, checkpoints={7}" -f
     $cursorEnd.durationMs,
     $cursorEndPages,
+    ($cursorEndAllocated / 1MB),
     $cursorRandom.durationMs,
     $cursorRandomPages,
+    ($cursorRandomAllocated / 1MB),
     $cursorCachedPages,
     $cursorCheckpoints)

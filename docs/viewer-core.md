@@ -124,3 +124,7 @@ Fast-scroll timing ends only after the final realized viewport has decoded image
 ## Real rendering backend in CI
 
 Avalonia Headless's default drawing backend uses a lightweight stub and is not suitable for validating real decoded bitmap dimensions or memory. Viewer smoke/benchmark therefore configure Avalonia Headless with `UseHeadlessDrawing=false` and the Skia rendering subsystem. The benchmark asserts that the generated persistent-cache WebP is observed as 512 x 512 by both libvips and Avalonia before performance measurements begin.
+
+## First viewport acceptance
+
+CI distinguishes first paint (at least one decoded thumbnail visible) from first full viewport readiness. After first paint, all currently attached tiles must become image-ready within the separate 1.5 s viewport budget before the scroll workload begins. Cursor integration measurements also carry explicit managed-allocation limits, not only page-count and latency limits.
