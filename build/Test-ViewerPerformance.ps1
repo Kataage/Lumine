@@ -35,6 +35,10 @@ foreach ($result in $results) {
 
     $realizedRows = [int]$result.metadata.max_realized_rows
     $attachedTiles = [int]$result.metadata.max_attached_tiles
+    $maxReadyTiles = [int]$result.metadata.max_ready_tiles
+    $maxDecodedEntries = [int]$result.metadata.max_decoded_bitmap_entries
+    $maxDecodedBytes = [long]$result.metadata.max_decoded_bitmap_bytes
+    $maxConcurrentDecodes = [int]$result.metadata.max_concurrent_bitmap_decodes
     $requests = [long]$result.metadata.thumbnail_requests
     $cancelled = [long]$result.metadata.thumbnail_requests_cancelled
     $requestFailures = [long]$result.metadata.thumbnail_requests_failed
@@ -99,16 +103,28 @@ foreach ($result in $results) {
         throw "$count Viewer decoded bitmap cache exceeded 64 entries: $decodedEntries"
     }
 
-    if ($count -eq 100000 -and $decodedEntries -lt 16) {
-        throw "100k Viewer benchmark did not exercise decoded bitmap cache pressure: entries=$decodedEntries"
+    if ($maxReadyTiles -le 0) {
+        throw "$count Viewer benchmark never rendered an image-ready tile."
+    }
+
+    if ($maxDecodedEntries -gt 64) {
+        throw "$count Viewer peak decoded bitmap entries exceeded 64: $maxDecodedEntries"
+    }
+
+    if ($maxDecodedBytes -gt 32MB) {
+        throw "$count Viewer peak decoded bitmap cache exceeded 32 MiB: $maxDecodedBytes bytes"
     }
 
     if ($decodedBytes -gt 32MB) {
-        throw "$count Viewer decoded bitmap cache exceeded 32 MiB: $decodedBytes bytes"
+        throw "$count Viewer final decoded bitmap cache exceeded 32 MiB: $decodedBytes bytes"
     }
 
-    if ($count -eq 100000 -and $decodedBytes -lt 16MB) {
-        throw "100k Viewer benchmark did not exercise realistic decoded memory pressure: $decodedBytes bytes"
+    if ($count -eq 100000 -and $maxDecodedEntries -lt 16) {
+        throw "100k Viewer benchmark did not exercise decoded bitmap cache pressure: peak entries=$maxDecodedEntries"
+    }
+
+    if ($count -eq 100000 -and $maxDecodedBytes -lt 16MB) {
+        throw "100k Viewer benchmark did not exercise realistic decoded memory pressure: peak=$maxDecodedBytes bytes"
     }
 
     if ($activeDecodes -ne 0) {
@@ -117,6 +133,10 @@ foreach ($result in $results) {
 
     if ($peakDecodes -lt 1 -or $peakDecodes -gt $decodeLimit) {
         throw "$count Viewer bitmap decode concurrency escaped bound: peak=$peakDecodes limit=$decodeLimit"
+    }
+
+    if ($maxConcurrentDecodes -gt $decodeLimit) {
+        throw "$count Viewer observed decode concurrency above the hard limit: max=$maxConcurrentDecodes limit=$decodeLimit"
     }
 
     if ($decodeLimit -gt 2) {
