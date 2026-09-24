@@ -111,10 +111,24 @@ internal static class Program
                     viewer.SelectAsset(count - 1);
                     Observe(viewer);
 
-                    finalDiagnostics = viewer.Diagnostics;
                     finalColumns = viewer.Columns;
 
                     window.Close();
+                    await WaitForViewerIdleAsync(session);
+                    finalDiagnostics = viewer.Diagnostics;
+
+                    if (finalDiagnostics.AttachedTiles != 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Viewer teardown left {finalDiagnostics.AttachedTiles} tile(s) attached.");
+                    }
+
+                    if (finalDiagnostics.InFlightThumbnailRequests != 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Viewer teardown left {finalDiagnostics.InFlightThumbnailRequests} thumbnail request(s) in-flight.");
+                    }
+
                     return 0;
 
                     void Observe(ThumbnailViewerControl control)
@@ -146,6 +160,7 @@ internal static class Program
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
+                    ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_entries"] = finalDiagnostics.DecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_bytes"] = finalDiagnostics.DecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
                     ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -163,6 +178,27 @@ internal static class Program
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    private static async Task WaitForViewerIdleAsync(ViewerSession session)
+    {
+        for (var attempt = 0; attempt < 1000; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+
+            var diagnostics = session.Diagnostics;
+            if (diagnostics.AttachedTiles == 0
+                && diagnostics.InFlightThumbnailRequests == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(1);
+        }
+
+        var final = session.Diagnostics;
+        throw new InvalidOperationException(
+            $"Viewer did not become idle after teardown: attached={final.AttachedTiles}, inflight={final.InFlightThumbnailRequests}.");
     }
 
     private static async Task WaitForRealizationAsync(ThumbnailViewerControl viewer)
