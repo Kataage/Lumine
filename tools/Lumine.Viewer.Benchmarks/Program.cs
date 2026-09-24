@@ -37,7 +37,6 @@ internal static class Program
         Directory.CreateDirectory(tempRoot);
 
         var thumbnailPaths = CreateThumbnailFixtures(tempRoot, 96);
-        VerifyThumbnailFixture(thumbnailPaths[0]);
 
         var recorder = new BenchmarkRecorder();
         long peakWorkingSetBytes = 0;
@@ -63,6 +62,7 @@ internal static class Program
             await headless.Dispatch(
                 async () =>
                 {
+                    VerifyThumbnailFixture(thumbnailPaths[0]);
                     var thumbnailProvider = new DelayedBenchmarkThumbnailProvider(
                         thumbnailPaths,
                         TimeSpan.FromMilliseconds(12));
