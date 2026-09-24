@@ -83,3 +83,14 @@ The hosted Windows benchmark uses 10k, 50k and 100k logical libraries. CI fails 
 - fast-scroll managed allocation: 96 MiB
 
 The gate also requires stale thumbnail cancellation, zero remaining in-flight work, and explicit non-scaling checks between 10k and 100k for realized rows, attached tiles, and peak working set.
+
+## Cursor integration audit
+
+The UI-only benchmark is not sufficient because a direct logical asset provider can hide cursor traversal cost. The 100k CI case therefore also builds a real SQLite Library Core fixture and exercises:
+
+- a cold logical seek to the last asset through `LibraryService -> keyset paging -> CursorPagedViewerAssetProvider`
+- 40 deterministic random logical seeks after sparse checkpoints have been established
+- page-fetch counts in addition to latency
+- the same hard metadata-page and cursor-checkpoint limits
+
+This keeps the Viewer benchmark honest about the actual Library Core integration path while preserving keyset paging; no SQL OFFSET path is introduced.

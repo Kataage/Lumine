@@ -98,6 +98,37 @@ foreach ($result in $results) {
     }
 }
 
+$cursorEnd = Get-Metric $hundredK "viewer.cursor_seek_end"
+$cursorRandom = Get-Metric $hundredK "viewer.cursor_random_seek"
+$cursorEndPages = [long]$hundredK.metadata.cursor_end_seek_pages
+$cursorRandomPages = [long]$hundredK.metadata.cursor_random_seek_pages
+$cursorCachedPages = [int]$hundredK.metadata.cursor_cached_pages
+$cursorCheckpoints = [int]$hundredK.metadata.cursor_checkpoints
+
+if ([double]$cursorEnd.durationMs -gt 1500) {
+    throw "100k cold cursor seek to end exceeded 1.5 s: $($cursorEnd.durationMs) ms"
+}
+
+if ([double]$cursorRandom.durationMs -gt 1500) {
+    throw "100k cursor random-seek workload exceeded 1.5 s: $($cursorRandom.durationMs) ms"
+}
+
+if ($cursorEndPages -gt 400) {
+    throw "100k cold cursor end seek fetched too many pages: $cursorEndPages"
+}
+
+if ($cursorRandomPages -gt 640) {
+    throw "100k random cursor workload fetched too many additional pages: $cursorRandomPages"
+}
+
+if ($cursorCachedPages -gt 8) {
+    throw "100k cursor integration exceeded metadata page cache bound: $cursorCachedPages"
+}
+
+if ($cursorCheckpoints -gt 128) {
+    throw "100k cursor integration exceeded checkpoint bound: $cursorCheckpoints"
+}
+
 $rows10 = [int]$tenK.metadata.max_realized_rows
 $rows100 = [int]$hundredK.metadata.max_realized_rows
 $tiles10 = [int]$tenK.metadata.max_attached_tiles
@@ -136,3 +167,12 @@ foreach ($result in $results) {
         ([long]$result.metadata.peak_working_set_bytes / 1MB),
         ($scrollAllocated / 1MB))
 }
+
+Write-Host (
+    "100k cursor integration: end={0:N1} ms/{1} pages, random={2:N1} ms/{3} pages, cache={4}, checkpoints={5}" -f
+    $cursorEnd.durationMs,
+    $cursorEndPages,
+    $cursorRandom.durationMs,
+    $cursorRandomPages,
+    $cursorCachedPages,
+    $cursorCheckpoints)

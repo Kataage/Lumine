@@ -5,6 +5,7 @@ using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Lumine.Diagnostics;
+using Lumine.Library;
 using Lumine.Viewer;
 
 namespace Lumine.Viewer.Benchmarks;
@@ -45,6 +46,10 @@ internal static class Program
         var maxAttachedTiles = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         var finalColumns = 0;
+        long cursorEndSeekPages = 0;
+        long cursorRandomSeekPages = 0;
+        var cursorCachedPages = 0;
+        var cursorCheckpoints = 0;
 
         try
         {
@@ -147,6 +152,18 @@ internal static class Program
             peakWorkingSetBytes = peak.PeakWorkingSetBytes;
             peakAdditionalWorkingSetBytes = peak.PeakAdditionalWorkingSetBytes;
 
+            if (count == 100_000)
+            {
+                var cursor = await MeasureLibraryCursorIntegrationAsync(
+                    recorder,
+                    tempRoot,
+                    count);
+                cursorEndSeekPages = cursor.EndSeekPages;
+                cursorRandomSeekPages = cursor.RandomSeekPages;
+                cursorCachedPages = cursor.CachedPages;
+                cursorCheckpoints = cursor.Checkpoints;
+            }
+
             await recorder.WriteJsonAsync(
                 output,
                 new Dictionary<string, string>(StringComparer.Ordinal)
@@ -164,7 +181,11 @@ internal static class Program
                     ["decoded_bitmap_entries"] = finalDiagnostics.DecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["decoded_bitmap_bytes"] = finalDiagnostics.DecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
                     ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
-                    ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture)
+                    ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+                    ["cursor_end_seek_pages"] = cursorEndSeekPages.ToString(CultureInfo.InvariantCulture),
+                    ["cursor_random_seek_pages"] = cursorRandomSeekPages.ToString(CultureInfo.InvariantCulture),
+                    ["cursor_cached_pages"] = cursorCachedPages.ToString(CultureInfo.InvariantCulture),
+                    ["cursor_checkpoints"] = cursorCheckpoints.ToString(CultureInfo.InvariantCulture)
                 });
 
             Console.WriteLine(
@@ -178,6 +199,111 @@ internal static class Program
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    private static async Task<CursorIntegrationResult> MeasureLibraryCursorIntegrationAsync(
+        BenchmarkRecorder recorder,
+        string tempRoot,
+        long count)
+    {
+        var databasePath = Path.Combine(tempRoot, "viewer-cursor.db");
+        var libraryRoot = Path.Combine(tempRoot, "viewer-cursor-root");
+        Directory.CreateDirectory(libraryRoot);
+
+        var database = new LibraryDatabase(databasePath);
+        await database.InitializeAsync();
+
+        var repository = new LibraryRepository(database);
+        var library = await repository.RegisterLibraryAsync(
+            "Viewer benchmark",
+            libraryRoot);
+
+        const int ingestBatchSize = 4096;
+        await using (var ingest = await repository.OpenIngestSessionAsync(library.Id))
+        {
+            var batch = new List<AssetUpsert>(ingestBatchSize);
+            var baseTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+            for (long index = 0; index < count; index++)
+            {
+                batch.Add(new AssetUpsert(
+                    $"fixture/{index:D8}.jpg",
+                    100_000 + index,
+                    baseTime.AddSeconds(index),
+                    512,
+                    512,
+                    "jpeg"));
+
+                if (batch.Count == ingestBatchSize)
+                {
+                    await ingest.WriteBatchAsync(batch);
+                    batch.Clear();
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                await ingest.WriteBatchAsync(batch);
+            }
+        }
+
+        LibraryDatabase.ClearPools();
+
+        var service = new LibraryService(databasePath);
+        await service.InitializeAsync();
+
+        using var provider = new CursorPagedViewerAssetProvider(
+            new LibraryBenchmarkPageSource(service, library.Id, count),
+            new ViewerOptions
+            {
+                MetadataPageSize = 256,
+                MetadataPageCacheSize = 8,
+                CursorCheckpointStride = 16,
+                CursorCheckpointLimit = 128
+            });
+
+        using (recorder.Measure("viewer.cursor_seek_end"))
+        {
+            var last = await provider.GetAssetAsync(count - 1);
+            if (last.Id != 1)
+            {
+                throw new InvalidOperationException(
+                    $"100k cursor end seek resolved asset {last.Id}, expected oldest asset id 1.");
+            }
+        }
+
+        var afterEnd = provider.Diagnostics;
+        var pagesAfterEnd = afterEnd.PagesFetched;
+
+        var randomIndexes = new long[]
+        {
+            5_000, 95_000, 12_500, 87_500, 25_000,
+            75_000, 33_333, 66_666, 1_000, 99_000,
+            40_000, 60_000, 20_000, 80_000, 10_000,
+            90_000, 45_000, 55_000, 30_000, 70_000,
+            2_500, 97_500, 15_000, 85_000, 35_000,
+            65_000, 22_500, 77_500, 42_500, 57_500,
+            7_500, 92_500, 27_500, 72_500, 47_500,
+            52_500, 17_500, 82_500, 37_500, 62_500
+        };
+
+        using (recorder.Measure("viewer.cursor_random_seek"))
+        {
+            foreach (var index in randomIndexes)
+            {
+                _ = await provider.GetAssetAsync(Math.Min(index, count - 1));
+            }
+        }
+
+        var final = provider.Diagnostics;
+
+        LibraryDatabase.ClearPools();
+
+        return new CursorIntegrationResult(
+            pagesAfterEnd,
+            final.PagesFetched - pagesAfterEnd,
+            final.CachedPages,
+            final.CursorCheckpoints);
     }
 
     private static async Task WaitForViewerIdleAsync(ViewerSession session)
@@ -231,6 +357,54 @@ internal static class Program
         }
 
         return null;
+    }
+}
+
+internal readonly record struct CursorIntegrationResult(
+    long EndSeekPages,
+    long RandomSeekPages,
+    int CachedPages,
+    int Checkpoints);
+
+internal sealed class LibraryBenchmarkPageSource(
+    LibraryService library,
+    long libraryId,
+    long count) : IViewerPageSource
+{
+    public long Count { get; } = count;
+
+    public async ValueTask<ViewerAssetPage> GetPageAsync(
+        int limit,
+        ViewerPageCursor? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        AssetCursor? libraryCursor = cursor is { } value
+            ? new AssetCursor(value.ModifiedAtUtcTicks, value.AssetId)
+            : null;
+
+        var page = await library.GetAssetPageAsync(
+            libraryId,
+            limit,
+            libraryCursor,
+            cancellationToken).ConfigureAwait(false);
+
+        var items = page.Items
+            .Select(static asset => new ViewerAsset(
+                asset.Id,
+                asset.SourceRevision,
+                asset.RelativePath,
+                asset.FileName,
+                asset.FileSize,
+                asset.ModifiedAtUtc.UtcDateTime.Ticks))
+            .ToArray();
+
+        ViewerPageCursor? next = page.NextCursor is { } nextCursor
+            ? new ViewerPageCursor(
+                nextCursor.ModifiedAtUtcTicks,
+                nextCursor.Id)
+            : null;
+
+        return new ViewerAssetPage(items, next);
     }
 }
 
