@@ -244,6 +244,13 @@ internal static class Program
             viewer.SelectedRealizedTileCount == 1,
             "Mouse selection was not rendered on exactly one realized tile.");
 
+        viewer.ClearSelection();
+        Require(viewer.SelectedAssetIndex == -1, "Viewer did not clear selection.");
+        RaiseKey(viewer, Key.Right);
+        Require(
+            viewer.SelectedAssetIndex == 0,
+            "Keyboard navigation from no selection did not start at the first asset.");
+
         var wideColumns = viewer.Columns;
         window.Width = 760;
         for (var attempt = 0;
