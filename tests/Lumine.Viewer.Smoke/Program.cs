@@ -266,6 +266,7 @@ internal static class Program
         Require(viewer.SelectedAssetIndex == 99_999, "End navigation failed.");
 
         viewer.ScrollToAsset(99_900);
+        viewer.SelectAsset(99_900, scrollIntoView: false);
         await Task.Delay(75);
         Dispatcher.UIThread.RunJobs();
 
@@ -275,6 +276,26 @@ internal static class Program
         Require(
             viewer.Diagnostics.AttachedTiles < 512,
             "Fast scroll caused tile count to expand with library size.");
+        Require(
+            viewer.SelectedRealizedTileCount == 1,
+            "Far selection did not render after fast scroll.");
+
+        window.Width = 760;
+        for (var attempt = 0; attempt < 150; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            if (viewer.SelectedRealizedTileCount == 1)
+            {
+                break;
+            }
+
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.SelectedAssetIndex == 99_900
+            && viewer.SelectedRealizedTileCount == 1,
+            "Resize lost the selected viewport anchor near the end of a 100k library.");
 
         viewer.SelectAsset(99_999);
         Require(
