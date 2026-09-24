@@ -104,3 +104,7 @@ The performance fixture uses multiple distinct 512 x 512 WebP cache paths rather
 `viewer.first_paint` is defined as the first realized viewport **with at least one decoded thumbnail ready**, not merely the creation of row/tile Controls. This prevents a regression where layout appears quickly while actual images remain blank.
 
 Decoded bitmap disposal is lease-safe. Disposing the cache blocks new admissions and disposes unleased entries immediately, but a bitmap still referenced by a visible tile remains valid until that lease is released. Teardown acceptance requires attached tiles, ready tiles, and in-flight thumbnail work all to reach zero.
+
+## Decode-work bound
+
+The resident bitmap cache limit is not the only memory bound. A fast warm-cache scroll could otherwise start many cancelled-but-still-decoding Avalonia bitmap tasks at once. Viewer therefore uses a process-wide decode gate capped at two concurrent bitmap decodes (or fewer on small machines). Diagnostics and CI record both active and peak concurrent decodes, and teardown must reach zero decode work.
