@@ -49,6 +49,17 @@ public sealed class ThumbnailViewerControl : UserControl
             .OfType<ViewerTileControl>()
             .Count(static tile => tile.IsSelected);
 
+    public long? FirstRealizedAssetIndex
+    {
+        get
+        {
+            var firstRow = GetFirstRealizedRowIndex();
+            return firstRow >= 0
+                ? checked((long)firstRow * _columns)
+                : null;
+        }
+    }
+
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
@@ -105,21 +116,23 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private long? GetViewportAnchorAssetIndex()
     {
-        if (_selectedIndex >= 0)
+        if (_selectedIndex >= 0 && SelectedRealizedTileCount > 0)
         {
             return _selectedIndex;
         }
 
-        var firstRow = _rows.GetRealizedContainers()
-            .Select(_rows.IndexFromContainer)
-            .Where(static index => index >= 0)
-            .DefaultIfEmpty(-1)
-            .Min();
-
+        var firstRow = GetFirstRealizedRowIndex();
         return firstRow >= 0
             ? checked((long)firstRow * _columns)
             : null;
     }
+
+    private int GetFirstRealizedRowIndex() =>
+        _rows.GetRealizedContainers()
+            .Select(_rows.IndexFromContainer)
+            .Where(static index => index >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
