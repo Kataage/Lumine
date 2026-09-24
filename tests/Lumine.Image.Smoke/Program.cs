@@ -328,6 +328,139 @@ try
             "Native cancellation left a temporary cache file behind.");
     }
 
+    var orientedFullSource = new FullResolutionSource(
+        orientedPath,
+        new FileInfo(orientedPath).Length,
+        File.GetLastWriteTimeUtc(orientedPath).Ticks);
+    var orientedFullInfo = await FullResolutionDecoder.ProbeAsync(
+        orientedFullSource);
+    Require(
+        orientedFullInfo.Width == 60 && orientedFullInfo.Height == 120,
+        $"Full-resolution EXIF orientation was not applied: {orientedFullInfo.Width}x{orientedFullInfo.Height}.");
+
+    var orientedRows = 0;
+    var orientedStripeCount = 0;
+    await FullResolutionDecoder.DecodeAsync(
+        orientedFullSource,
+        16L * 1024 * 1024,
+        stripe =>
+        {
+            Require(
+                stripe.Y == orientedRows,
+                "Full-resolution stripes were not emitted in top-to-bottom order.");
+            Require(
+                stripe.Width == 60,
+                "Full-resolution oriented stripe width mismatch.");
+            Require(
+                stripe.RowBytes == stripe.Width * 4,
+                "Full-resolution stripe row-byte contract mismatch.");
+
+            orientedRows += stripe.Height;
+            orientedStripeCount++;
+        },
+        stripeHeight: 17);
+    Require(
+        orientedRows == 120 && orientedStripeCount > 1,
+        "Full-resolution oriented decode did not stream the complete image.");
+
+    var alphaFullSource = new FullResolutionSource(
+        pngPath,
+        new FileInfo(pngPath).Length,
+        File.GetLastWriteTimeUtc(pngPath).Ticks);
+    var alphaFullInfo = await FullResolutionDecoder.ProbeAsync(alphaFullSource);
+    Require(alphaFullInfo.HasAlpha, "Full-resolution PNG probe lost alpha metadata.");
+
+    byte[]? alphaFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        alphaFullSource,
+        16L * 1024 * 1024,
+        stripe => alphaFirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 32);
+    Require(
+        alphaFirstStripe is { Length: > 4 }
+        && alphaFirstStripe[3] is >= 120 and <= 136,
+        "Full-resolution PNG decode did not preserve straight alpha.");
+
+    var p3FullSource = new FullResolutionSource(
+        p3Path,
+        new FileInfo(p3Path).Length,
+        File.GetLastWriteTimeUtc(p3Path).Ticks);
+    byte[]? p3FirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        p3FullSource,
+        16L * 1024 * 1024,
+        stripe => p3FirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 16);
+    Require(
+        p3FirstStripe is { Length: > 4 }
+        && p3FirstStripe[0] < 50
+        && p3FirstStripe[1] > 170
+        && p3FirstStripe[2] < 50,
+        "Full-resolution embedded P3 profile was not normalized to sRGB.");
+
+    var gifFullSource = new FullResolutionSource(
+        gifPath,
+        new FileInfo(gifPath).Length,
+        File.GetLastWriteTimeUtc(gifPath).Ticks);
+    var gifFullInfo = await FullResolutionDecoder.ProbeAsync(gifFullSource);
+    Require(
+        gifFullInfo.Width == 48 && gifFullInfo.Height == 32,
+        "Animated GIF full-resolution fallback must use the first frame.");
+
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                changedPath,
+                new FileInfo(changedPath).Length,
+                File.GetLastWriteTimeUtc(changedPath).Ticks),
+            1_000,
+            _ => { });
+        throw new InvalidOperationException(
+            "Full-resolution decode ignored the hard byte budget.");
+    }
+    catch (FullResolutionBudgetExceededException exception)
+    {
+        Require(
+            exception.RequiredBytes > exception.BudgetBytes,
+            "Full-resolution budget exception reported invalid byte accounting.");
+    }
+
+    using (var fullCancellation = new CancellationTokenSource())
+    {
+        var stripesObserved = 0;
+        var fullCancellationTask = FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                cancellationPath,
+                new FileInfo(cancellationPath).Length,
+                File.GetLastWriteTimeUtc(cancellationPath).Ticks),
+            200L * 1024 * 1024,
+            _ =>
+            {
+                stripesObserved++;
+                if (stripesObserved == 1)
+                {
+                    fullCancellation.Cancel();
+                }
+            },
+            stripeHeight: 32,
+            cancellationToken: fullCancellation.Token);
+
+        try
+        {
+            await fullCancellationTask;
+            throw new InvalidOperationException(
+                "Full-resolution strip decode ignored in-flight cancellation.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Require(
+            stripesObserved == 1,
+            $"Full-resolution cancellation continued for {stripesObserved} stripes.");
+    }
+
     if (capabilities.AvifRoundTrip)
     {
         var avifPath = Path.Combine(sourceRoot, "sample.avif");
