@@ -42,6 +42,9 @@ foreach ($result in $results) {
     $finalReady = [int]$result.metadata.final_ready_tiles
     $decodedEntries = [int]$result.metadata.decoded_bitmap_entries
     $decodedBytes = [long]$result.metadata.decoded_bitmap_bytes
+    $activeDecodes = [int]$result.metadata.active_bitmap_decodes
+    $peakDecodes = [int]$result.metadata.peak_concurrent_bitmap_decodes
+    $decodeLimit = [int]$result.metadata.bitmap_decode_concurrency_limit
     $peak = [long]$result.metadata.peak_working_set_bytes
     $peakAdditional = [long]$result.metadata.peak_additional_working_set_bytes
     $scrollAllocated = [long]$fastScroll.after.totalAllocatedBytes - [long]$fastScroll.before.totalAllocatedBytes
@@ -96,6 +99,18 @@ foreach ($result in $results) {
 
     if ($count -eq 100000 -and $decodedBytes -lt 16MB) {
         throw "100k Viewer benchmark did not exercise realistic decoded memory pressure: $decodedBytes bytes"
+    }
+
+    if ($activeDecodes -ne 0) {
+        throw "$count Viewer left bitmap decode work active after teardown: $activeDecodes"
+    }
+
+    if ($peakDecodes -lt 1 -or $peakDecodes -gt $decodeLimit) {
+        throw "$count Viewer bitmap decode concurrency escaped bound: peak=$peakDecodes limit=$decodeLimit"
+    }
+
+    if ($decodeLimit -gt 2) {
+        throw "$count Viewer bitmap decode concurrency limit is too high: $decodeLimit"
     }
 
     if ($peak -gt 160MB) {
