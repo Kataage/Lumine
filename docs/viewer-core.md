@@ -112,3 +112,7 @@ The resident bitmap cache limit is not the only memory bound. A fast warm-cache 
 ## Resize anchor
 
 Changing the number of columns rebuilds the virtual row shape, but it must not teleport a large library back to row zero. Avalonia may temporarily retain realized containers outside the current viewport, so Viewer anchors resize to the first row that actually intersects the visible ListBox viewport. It falls back to realized/selected state only when no visible row can be resolved. Headless smoke verifies this near the end of a 100k library while an older selection remains offscreen.
+
+## Failure visibility
+
+Provider failures and visible tile load/decode failures are separate diagnostics. The benchmark gate requires both to remain zero. A successful first thumbnail therefore cannot mask corrupt/decode-failing tiles elsewhere in the fast-scroll workload.
