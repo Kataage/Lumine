@@ -128,3 +128,7 @@ Avalonia Headless's default drawing backend uses a lightweight stub and is not s
 ## First viewport acceptance
 
 CI distinguishes first paint (at least one decoded thumbnail visible) from first full viewport readiness. After first paint, all currently attached tiles must become image-ready within the separate 1.5 s viewport budget before the scroll workload begins. Cursor integration measurements also carry explicit managed-allocation limits, not only page-count and latency limits.
+
+## DPI acceptance
+
+Headless Skia smoke applies an actual render-scaling transition from 100% to 200% and back through Avalonia's headless window implementation. Because tile sizing is expressed in device-independent units, logical column count remains stable at the same DIP width; the selected asset and far 100k viewport anchor must also survive the DPI transition.
