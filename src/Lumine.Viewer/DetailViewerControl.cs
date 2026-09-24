@@ -125,6 +125,8 @@ public sealed class DetailViewerControl : UserControl
 
     public bool IsOriginal => _session.Snapshot.IsOriginal;
 
+    public Vector PanOffset => _scroll.Offset;
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public Task SelectAsync(
@@ -189,6 +191,13 @@ public sealed class DetailViewerControl : UserControl
         _fitMode = false;
         await _session.EnsureOriginalAsync(cancellationToken);
         SetZoom(1);
+    }
+
+    public void PanBy(double horizontal, double vertical)
+    {
+        _scroll.Offset = new Vector(
+            Math.Max(0, _scroll.Offset.X + horizontal),
+            Math.Max(0, _scroll.Offset.Y + vertical));
     }
 
     public async Task SetZoomAsync(
