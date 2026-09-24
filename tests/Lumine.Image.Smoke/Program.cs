@@ -66,6 +66,36 @@ static void WriteRgbaPng(string path)
     rgba.WriteToFile(path);
 }
 
+static async Task VerifyFullResolutionAsync(
+    string path,
+    int expectedWidth,
+    int expectedHeight,
+    string label)
+{
+    var file = new FileInfo(path);
+    var source = new FullResolutionSource(
+        path,
+        file.Length,
+        file.LastWriteTimeUtc.Ticks);
+    var info = await FullResolutionDecoder.ProbeAsync(source);
+
+    Require(
+        info.Width == expectedWidth && info.Height == expectedHeight,
+        $"{label} full-resolution probe mismatch: {info.Width}x{info.Height}.");
+
+    var rows = 0;
+    await FullResolutionDecoder.DecodeAsync(
+        source,
+        32L * 1024 * 1024,
+        stripe => rows += stripe.Height,
+        stripeHeight: 29,
+        expectedInfo: info);
+
+    Require(
+        rows == expectedHeight,
+        $"{label} full-resolution decode returned {rows} rows; expected {expectedHeight}.");
+}
+
 var capabilities = VipsCapabilities.Probe();
 Require(capabilities.JpegLoad, "Bundled libvips has no JPEG loader.");
 Require(capabilities.PngLoad, "Bundled libvips has no PNG loader.");
@@ -84,22 +114,28 @@ try
     var pngPath = Path.Combine(sourceRoot, "alpha.png");
     var webpPath = Path.Combine(sourceRoot, "sample.webp");
     var gifPath = Path.Combine(sourceRoot, "sample.gif");
+    var tiffPath = Path.Combine(sourceRoot, "sample.tiff");
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
+    var detailCachePath = Path.Combine(sourceRoot, "detail-cache.jpg");
+    var sourceChangePath = Path.Combine(sourceRoot, "source-change.jpg");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
     WriteRgb(webpPath);
     await WriteAnimatedGifAsync(gifPath);
+    WriteRgb(tiffPath);
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
     WriteP3ProfileJpeg(p3Path);
     WriteRgb(cancellationPath, 6000, 6000);
+    WriteRgb(detailCachePath, 2200, 1400);
+    WriteRgb(sourceChangePath, 320, 200);
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -131,7 +167,14 @@ try
     Require(pipeline.MaxForegroundBurst == 8, "Foreground fairness bound was not applied.");
 
     long assetId = 1;
-    foreach (var sourcePath in new[] { jpgPath, pngPath, webpPath, gifPath })
+    foreach (var sourcePath in new[]
+             {
+                 jpgPath,
+                 pngPath,
+                 webpPath,
+                 gifPath,
+                 tiffPath
+             })
     {
         var source = SourceFor(assetId++, 1, sourcePath);
         var result = await pipeline.RequestAsync(source, ThumbnailProfiles.GridSmall);
@@ -223,6 +266,46 @@ try
         Require(
             restartedPipeline.Diagnostics.SourceOpens == 0,
             "Fresh pipeline persistent hit touched the deleted original source.");
+    }
+
+    var detailPersistentSource = SourceFor(21, 1, detailCachePath);
+    var detailPersistentFirst = await pipeline.RequestAsync(
+        detailPersistentSource,
+        ThumbnailProfiles.DetailPreview);
+    Require(
+        !detailPersistentFirst.CacheHit,
+        "Detail preview first request unexpectedly hit cache.");
+
+    var detailSourceOpensBeforeHit = pipeline.Diagnostics.SourceOpens;
+    File.Delete(detailCachePath);
+
+    var detailPersistentHit = await pipeline.RequestAsync(
+        detailPersistentSource,
+        ThumbnailProfiles.DetailPreview);
+    Require(
+        detailPersistentHit.CacheHit,
+        "Detail preview did not prefer persistent cache after original disappeared.");
+    Require(
+        pipeline.Diagnostics.SourceOpens == detailSourceOpensBeforeHit,
+        "Warm Detail preview cache hit touched the original source.");
+
+    await using (var restartedDetailPipeline = new ThumbnailPipeline(
+                     new ThumbnailCache(cacheRoot),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 1,
+                         QueueCapacity = 2
+                     }))
+    {
+        var restartedDetailHit = await restartedDetailPipeline.RequestAsync(
+            detailPersistentSource,
+            ThumbnailProfiles.DetailPreview);
+        Require(
+            restartedDetailHit.CacheHit,
+            "Restarted pipeline did not reuse persistent Detail preview.");
+        Require(
+            restartedDetailPipeline.Diagnostics.SourceOpens == 0,
+            "Restarted Detail preview cache hit touched the missing original.");
     }
 
     var corruptSource = SourceFor(30, 1, corruptSourcePath);
@@ -328,6 +411,219 @@ try
             "Native cancellation left a temporary cache file behind.");
     }
 
+    var orientedFullSource = new FullResolutionSource(
+        orientedPath,
+        new FileInfo(orientedPath).Length,
+        File.GetLastWriteTimeUtc(orientedPath).Ticks);
+    var orientedFullInfo = await FullResolutionDecoder.ProbeAsync(
+        orientedFullSource);
+    Require(
+        orientedFullInfo.Width == 60 && orientedFullInfo.Height == 120,
+        $"Full-resolution EXIF orientation was not applied: {orientedFullInfo.Width}x{orientedFullInfo.Height}.");
+
+    var orientedRows = 0;
+    var orientedStripeCount = 0;
+    await FullResolutionDecoder.DecodeAsync(
+        orientedFullSource,
+        16L * 1024 * 1024,
+        stripe =>
+        {
+            Require(
+                stripe.Y == orientedRows,
+                "Full-resolution stripes were not emitted in top-to-bottom order.");
+            Require(
+                stripe.Width == 60,
+                "Full-resolution oriented stripe width mismatch.");
+            Require(
+                stripe.RowBytes == stripe.Width * 4,
+                "Full-resolution stripe row-byte contract mismatch.");
+
+            orientedRows += stripe.Height;
+            orientedStripeCount++;
+        },
+        stripeHeight: 17);
+    Require(
+        orientedRows == 120 && orientedStripeCount > 1,
+        "Full-resolution oriented decode did not stream the complete image.");
+
+    var alphaFullSource = new FullResolutionSource(
+        pngPath,
+        new FileInfo(pngPath).Length,
+        File.GetLastWriteTimeUtc(pngPath).Ticks);
+    var alphaFullInfo = await FullResolutionDecoder.ProbeAsync(alphaFullSource);
+    Require(alphaFullInfo.HasAlpha, "Full-resolution PNG probe lost alpha metadata.");
+
+    byte[]? alphaFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        alphaFullSource,
+        16L * 1024 * 1024,
+        stripe => alphaFirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 32);
+    Require(
+        alphaFirstStripe is { Length: > 4 }
+        && alphaFirstStripe[3] is >= 120 and <= 136,
+        "Full-resolution PNG decode did not preserve straight alpha.");
+
+    var p3FullSource = new FullResolutionSource(
+        p3Path,
+        new FileInfo(p3Path).Length,
+        File.GetLastWriteTimeUtc(p3Path).Ticks);
+    byte[]? p3FirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        p3FullSource,
+        16L * 1024 * 1024,
+        stripe => p3FirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 16);
+    Require(
+        p3FirstStripe is { Length: > 4 }
+        && p3FirstStripe[0] < 50
+        && p3FirstStripe[1] > 170
+        && p3FirstStripe[2] < 50,
+        "Full-resolution embedded P3 profile was not normalized to sRGB.");
+
+    var webpFullSource = new FullResolutionSource(
+        webpPath,
+        new FileInfo(webpPath).Length,
+        File.GetLastWriteTimeUtc(webpPath).Ticks);
+    var webpFullInfo = await FullResolutionDecoder.ProbeAsync(webpFullSource);
+    Require(
+        webpFullInfo.Width == 320 && webpFullInfo.Height == 200,
+        $"Full-resolution WebP probe mismatch: {webpFullInfo.Width}x{webpFullInfo.Height}.");
+
+    var webpRows = 0;
+    await FullResolutionDecoder.DecodeAsync(
+        webpFullSource,
+        16L * 1024 * 1024,
+        stripe => webpRows += stripe.Height,
+        stripeHeight: 31);
+    Require(
+        webpRows == 200,
+        "Full-resolution WebP decode did not stream the complete image.");
+
+    await VerifyFullResolutionAsync(corruptSourcePath, 320, 200, "JPEG");
+    await VerifyFullResolutionAsync(tiffPath, 320, 200, "TIFF");
+
+    var gifFullSource = new FullResolutionSource(
+        gifPath,
+        new FileInfo(gifPath).Length,
+        File.GetLastWriteTimeUtc(gifPath).Ticks);
+    var gifFullInfo = await FullResolutionDecoder.ProbeAsync(gifFullSource);
+    Require(
+        gifFullInfo.Width == 48 && gifFullInfo.Height == 32,
+        "Animated GIF full-resolution fallback must use the first frame.");
+
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                changedPath,
+                new FileInfo(changedPath).Length,
+                File.GetLastWriteTimeUtc(changedPath).Ticks),
+            1_000,
+            _ => { });
+        throw new InvalidOperationException(
+            "Full-resolution decode ignored the hard byte budget.");
+    }
+    catch (FullResolutionBudgetExceededException exception)
+    {
+        Require(
+            exception.RequiredBytes > exception.BudgetBytes,
+            "Full-resolution budget exception reported invalid byte accounting.");
+    }
+
+    var staleIdentityFile = new FileInfo(sourceChangePath);
+    var staleIdentitySource = new FullResolutionSource(
+        sourceChangePath,
+        staleIdentityFile.Length,
+        staleIdentityFile.LastWriteTimeUtc.Ticks);
+    var staleIdentityInfo =
+        await FullResolutionDecoder.ProbeAsync(staleIdentitySource);
+
+    await Task.Delay(20);
+    WriteRgb(sourceChangePath, 640, 480);
+    File.SetLastWriteTimeUtc(
+        sourceChangePath,
+        DateTime.UtcNow.AddSeconds(2));
+
+    var staleIdentityStripes = 0;
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            staleIdentitySource,
+            32L * 1024 * 1024,
+            _ => staleIdentityStripes++,
+            expectedInfo: staleIdentityInfo);
+        throw new InvalidOperationException(
+            "Full-resolution decode accepted a source that changed after probe.");
+    }
+    catch (FullResolutionSourceChangedException)
+    {
+    }
+
+    Require(
+        staleIdentityStripes == 0,
+        "Changed source emitted pixels before its identity mismatch was rejected.");
+
+    var replacementFile = new FileInfo(sourceChangePath);
+    var replacementSource = new FullResolutionSource(
+        sourceChangePath,
+        replacementFile.Length,
+        replacementFile.LastWriteTimeUtc.Ticks);
+    var mismatchedProbeStripes = 0;
+
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            replacementSource,
+            32L * 1024 * 1024,
+            _ => mismatchedProbeStripes++,
+            expectedInfo: staleIdentityInfo);
+        throw new InvalidOperationException(
+            "Full-resolution decode accepted dimensions that no longer match the probed bitmap.");
+    }
+    catch (FullResolutionSourceChangedException)
+    {
+    }
+
+    Require(
+        mismatchedProbeStripes == 0,
+        "Probe/decode dimension mismatch emitted pixels before rejection.");
+
+    using (var fullCancellation = new CancellationTokenSource())
+    {
+        var stripesObserved = 0;
+        var fullCancellationTask = FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                cancellationPath,
+                new FileInfo(cancellationPath).Length,
+                File.GetLastWriteTimeUtc(cancellationPath).Ticks),
+            200L * 1024 * 1024,
+            _ =>
+            {
+                stripesObserved++;
+                if (stripesObserved == 1)
+                {
+                    fullCancellation.Cancel();
+                }
+            },
+            stripeHeight: 32,
+            cancellationToken: fullCancellation.Token);
+
+        try
+        {
+            await fullCancellationTask;
+            throw new InvalidOperationException(
+                "Full-resolution strip decode ignored in-flight cancellation.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Require(
+            stripesObserved == 1,
+            $"Full-resolution cancellation continued for {stripesObserved} stripes.");
+    }
+
     if (capabilities.AvifRoundTrip)
     {
         var avifPath = Path.Combine(sourceRoot, "sample.avif");
@@ -338,6 +634,7 @@ try
             SourceFor(50, 1, avifPath),
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(avifResult.CachePath), "AVIF capability was reported but AVIF smoke failed.");
+        await VerifyFullResolutionAsync(avifPath, 8, 6, "AVIF");
     }
 
     if (capabilities.HeicRoundTrip)
@@ -350,6 +647,7 @@ try
             SourceFor(51, 1, heicPath),
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(heicResult.CachePath), "HEIC capability was reported but HEIC smoke failed.");
+        await VerifyFullResolutionAsync(heicPath, 8, 6, "HEIC");
     }
 
     var statsBeforePrune = await cache.GetStatsAsync();

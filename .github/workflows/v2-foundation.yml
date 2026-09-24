@@ -97,6 +97,9 @@ jobs:
       - name: Image Core smoke test
         run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
 
+      - name: App Detail adapter smoke test
+        run: dotnet run --project tests/Lumine.App.Smoke/Lumine.App.Smoke.csproj -c Release --no-build
+
       - name: Windows filesystem sync smoke test
         run: dotnet run --project tests/Lumine.Filesystem.Smoke/Lumine.Filesystem.Smoke.csproj -c Release --no-build
 
@@ -106,6 +109,13 @@ jobs:
       - name: Enforce filesystem performance acceptance
         shell: pwsh
         run: ./build/Test-FilesystemPerformance.ps1
+
+      - name: Generate Detail full-resolution benchmark
+        run: dotnet run --project tools/Lumine.Detail.Benchmarks/Lumine.Detail.Benchmarks.csproj -c Release --no-build -- --output artifacts/benchmarks/detail-full-resolution.json
+
+      - name: Enforce Detail full-resolution performance acceptance
+        shell: pwsh
+        run: ./build/Test-DetailPerformance.ps1
 
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build

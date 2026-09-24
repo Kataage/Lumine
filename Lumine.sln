@@ -36,6 +36,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Filesystem.Smoke", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Filesystem.Benchmarks", "tools\Lumine.Filesystem.Benchmarks\Lumine.Filesystem.Benchmarks.csproj", "{ACACACAC-ACAC-4CAC-8CAC-ACACACACACAC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Detail.Benchmarks", "tools\Lumine.Detail.Benchmarks\Lumine.Detail.Benchmarks.csproj", "{ADADADAD-ADAD-4DAD-8DAD-ADADADADADAD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.App.Smoke", "tests\Lumine.App.Smoke\Lumine.App.Smoke.csproj", "{AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}"
+EndProject
 Global
   GlobalSection(SolutionConfigurationPlatforms) = preSolution
     Debug|Any CPU = Debug|Any CPU
@@ -110,5 +114,13 @@ Global
     {ACACACAC-ACAC-4CAC-8CAC-ACACACACACAC}.Debug|Any CPU.Build.0 = Debug|Any CPU
     {ACACACAC-ACAC-4CAC-8CAC-ACACACACACAC}.Release|Any CPU.ActiveCfg = Release|Any CPU
     {ACACACAC-ACAC-4CAC-8CAC-ACACACACACAC}.Release|Any CPU.Build.0 = Release|Any CPU
+    {ADADADAD-ADAD-4DAD-8DAD-ADADADADADAD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {ADADADAD-ADAD-4DAD-8DAD-ADADADADADAD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {ADADADAD-ADAD-4DAD-8DAD-ADADADADADAD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {ADADADAD-ADAD-4DAD-8DAD-ADADADADADAD}.Release|Any CPU.Build.0 = Release|Any CPU
+    {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Release|Any CPU.Build.0 = Release|Any CPU
   EndGlobalSection
 EndGlobal

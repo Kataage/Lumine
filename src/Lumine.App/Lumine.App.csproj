@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Lumine.App.Smoke</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Lumine.Core/Lumine.Core.csproj" />
     <ProjectReference Include="../Lumine.Diagnostics/Lumine.Diagnostics.csproj" />
     <ProjectReference Include="../Lumine.Library/Lumine.Library.csproj" />

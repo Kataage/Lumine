@@ -16,7 +16,10 @@ public sealed record ViewerAsset(
     string RelativePath,
     string DisplayName,
     long FileSize,
-    long ModifiedAtUtcTicks);
+    long ModifiedAtUtcTicks,
+    int? Width = null,
+    int? Height = null,
+    string? Format = null);
 
 public sealed record ViewerAssetPage(
     IReadOnlyList<ViewerAsset> Items,
@@ -98,3 +101,121 @@ public readonly record struct ViewerRuntimeDiagnostics(
     long DecodedBitmapBytes,
     int ActiveBitmapDecodes,
     int PeakConcurrentBitmapDecodes);
+
+public enum ViewerDetailLoadState
+{
+    Empty = 0,
+    LoadingPreview = 1,
+    PreviewReady = 2,
+    LoadingOriginal = 3,
+    OriginalReady = 4,
+    Error = 5
+}
+
+public sealed record ViewerDetailMetadata(
+    int Width,
+    int Height,
+    bool HasAlpha,
+    string? Format,
+    long FileSize,
+    long EstimatedRgbaBytes);
+
+public sealed class ViewerOriginalBitmap : IDisposable, IAsyncDisposable
+{
+    private Avalonia.Media.Imaging.Bitmap? _bitmap;
+    private readonly TaskCompletionSource _disposed =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ViewerOriginalBitmap(
+        Avalonia.Media.Imaging.Bitmap bitmap,
+        ViewerDetailMetadata metadata)
+    {
+        _bitmap = bitmap ?? throw new ArgumentNullException(nameof(bitmap));
+        Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+    }
+
+    public Avalonia.Media.Imaging.Bitmap Bitmap =>
+        _bitmap ?? throw new ObjectDisposedException(nameof(ViewerOriginalBitmap));
+
+    public ViewerDetailMetadata Metadata { get; }
+
+    public bool IsDisposePending =>
+        _bitmap is null && !_disposed.Task.IsCompleted;
+
+    public Task DisposalCompletion => _disposed.Task;
+
+    public void Dispose() =>
+        _ = BeginDispose();
+
+    public ValueTask DisposeAsync() =>
+        new(BeginDispose());
+
+    public Task BeginDispose()
+    {
+        var bitmap = Interlocked.Exchange(ref _bitmap, null);
+        if (bitmap is null)
+        {
+            return _disposed.Task;
+        }
+
+        // Avalonia composition can retain the previous Image.Source until the
+        // next render commit. Dispose on a later UI turn, and expose completion
+        // so the Detail session can prevent a second giant original from being
+        // admitted while the previous platform bitmap is still resident.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                try
+                {
+                    bitmap.Dispose();
+                    _disposed.TrySetResult();
+                }
+                catch (Exception exception)
+                {
+                    _disposed.TrySetException(exception);
+                }
+            },
+            Avalonia.Threading.DispatcherPriority.Background);
+
+        return _disposed.Task;
+    }
+}
+
+public interface IViewerDetailProvider
+{
+    ValueTask<ViewerThumbnail> RequestPreviewAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken = default);
+
+    Task<ViewerOriginalBitmap> LoadOriginalAsync(
+        ViewerAsset asset,
+        long maxDecodedBytes,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class ViewerDetailOptions
+{
+    public long PreviewDecodedByteLimit { get; init; } =
+        48L * 1024 * 1024;
+
+    public int PreviewDecodedEntryLimit { get; init; } = 4;
+
+    public long OriginalDecodedByteLimit { get; init; } =
+        256L * 1024 * 1024;
+
+    public double MinZoom { get; init; } = 0.05;
+
+    public double MaxZoom { get; init; } = 16;
+
+    public double ZoomStep { get; init; } = 1.25;
+}
+
+public sealed record ViewerDetailSnapshot(
+    long SelectedIndex,
+    ViewerAsset? Asset,
+    ViewerDetailMetadata? Metadata,
+    ViewerDetailLoadState State,
+    Avalonia.Media.Imaging.Bitmap? Bitmap,
+    bool IsOriginal,
+    string? ErrorMessage,
+    long SelectionVersion);
