@@ -33,7 +33,7 @@ public sealed class ThumbnailCache
 
         var payload = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{GeneratorVersion}|{source.AssetId}|{source.SourceRevision}|{source.FileSize}|{source.ModifiedAtUtcTicks}|{profile.Id}|{profile.Version}|{profile.MaxWidth}|{profile.MaxHeight}|{profile.Quality}");
+            $"{GeneratorVersion}|{source.AssetId}|{source.SourceRevision}|{source.FileSize}|{source.ModifiedAtUtcTicks}|{source.ContentSha256 ?? "-"}|{profile.Id}|{profile.Version}|{profile.MaxWidth}|{profile.MaxHeight}|{profile.Quality}");
 
         return Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
