@@ -5,13 +5,18 @@ namespace Lumine.Image;
 public sealed record FullResolutionSource(
     string SourcePath,
     long FileSize,
-    long ModifiedAtUtcTicks);
+    long ModifiedAtUtcTicks,
+    string? ContentSha256 = null);
 
 public sealed record FullResolutionInfo(
     int Width,
     int Height,
     bool HasAlpha,
-    long EstimatedRgbaBytes);
+    long EstimatedRgbaBytes,
+    string? ContentSha256 = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    string? Format = null);
 
 public sealed record FullResolutionStripe(
     int Y,
@@ -67,29 +72,23 @@ public sealed class FullResolutionDecoder
         FullResolutionSource source,
         CancellationToken cancellationToken)
     {
-        VipsRuntimePolicy.EnsureConfigured();
-        cancellationToken.ThrowIfCancellationRequested();
-        ValidateSourceIdentity(source);
-
-        using var input = NetVips.Image.NewFromFile(
+        using var snapshot = ImageSourceSnapshot.Open(
             source.SourcePath,
-            access: Enums.Access.Sequential,
-            failOn: Enums.FailOn.Error);
-        using var oriented = input.Autorot();
-
-        cancellationToken.ThrowIfCancellationRequested();
-        ValidateSourceIdentity(source);
-
-        var bytes = checked(
-            (long)oriented.Width
-            * oriented.Height
-            * 4L);
+            source.FileSize,
+            source.ModifiedAtUtcTicks,
+            source.ContentSha256,
+            cancellationToken);
+        var metadata = snapshot.Metadata;
 
         return new FullResolutionInfo(
-            oriented.Width,
-            oriented.Height,
-            oriented.HasAlpha(),
-            bytes);
+            metadata.Width,
+            metadata.Height,
+            metadata.HasAlpha,
+            metadata.EstimatedRgbaBytes,
+            metadata.ContentSha256,
+            metadata.RawWidth,
+            metadata.RawHeight,
+            metadata.Format);
     }
 
     private static void Decode(
@@ -100,12 +99,45 @@ public sealed class FullResolutionDecoder
         FullResolutionInfo? expectedInfo,
         CancellationToken cancellationToken)
     {
-        VipsRuntimePolicy.EnsureConfigured();
+        var expectedFingerprint =
+            source.ContentSha256
+            ?? expectedInfo?.ContentSha256;
+
+        if (!string.IsNullOrWhiteSpace(source.ContentSha256)
+            && !string.IsNullOrWhiteSpace(expectedInfo?.ContentSha256)
+            && !string.Equals(
+                source.ContentSha256,
+                expectedInfo.ContentSha256,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ImageSourceChangedException(
+                source.SourcePath,
+                "The requested source identity and probed source identity disagree.");
+        }
+
+        using var snapshot = ImageSourceSnapshot.Open(
+            source.SourcePath,
+            source.FileSize,
+            source.ModifiedAtUtcTicks,
+            expectedFingerprint,
+            cancellationToken);
+        var snapshotMetadata = snapshot.Metadata;
+
+        if (expectedInfo is not null
+            && (snapshotMetadata.Width != expectedInfo.Width
+                || snapshotMetadata.Height != expectedInfo.Height
+                || snapshotMetadata.EstimatedRgbaBytes
+                    != expectedInfo.EstimatedRgbaBytes))
+        {
+            throw new FullResolutionSourceChangedException(
+                source.SourcePath,
+                $"Probed {expectedInfo.Width}x{expectedInfo.Height} ({expectedInfo.EstimatedRgbaBytes:N0} RGBA bytes) but decode snapshot is {snapshotMetadata.Width}x{snapshotMetadata.Height} ({snapshotMetadata.EstimatedRgbaBytes:N0} RGBA bytes).");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateSourceIdentity(source);
 
         using var input = NetVips.Image.NewFromFile(
-            source.SourcePath,
+            snapshot.SourcePath,
             access: Enums.Access.Random,
             failOn: Enums.FailOn.Error);
         using var oriented = input.Autorot();
@@ -150,14 +182,14 @@ public sealed class FullResolutionDecoder
                     maxDecodedBytes);
             }
 
-            if (expectedInfo is not null
-                && (pixels.Width != expectedInfo.Width
-                    || pixels.Height != expectedInfo.Height
-                    || estimatedBytes != expectedInfo.EstimatedRgbaBytes))
+            if (pixels.Width != snapshotMetadata.Width
+                || pixels.Height != snapshotMetadata.Height
+                || estimatedBytes
+                    != snapshotMetadata.EstimatedRgbaBytes)
             {
                 throw new FullResolutionSourceChangedException(
                     source.SourcePath,
-                    $"Probed {expectedInfo.Width}x{expectedInfo.Height} ({expectedInfo.EstimatedRgbaBytes:N0} RGBA bytes) but decode opened {pixels.Width}x{pixels.Height} ({estimatedBytes:N0} RGBA bytes).");
+                    $"Stable snapshot metadata is {snapshotMetadata.Width}x{snapshotMetadata.Height} ({snapshotMetadata.EstimatedRgbaBytes:N0} RGBA bytes) but decode produced {pixels.Width}x{pixels.Height} ({estimatedBytes:N0} RGBA bytes).");
             }
 
             for (var y = 0; y < pixels.Height; y += stripeHeight)
@@ -208,8 +240,6 @@ public sealed class FullResolutionDecoder
                         checked(pixels.Width * 4),
                         bytes));
             }
-
-            ValidateSourceIdentity(source);
         }
         finally
         {
@@ -232,27 +262,6 @@ public sealed class FullResolutionDecoder
             throw new FileNotFoundException(
                 "Full-resolution source no longer exists.",
                 source.SourcePath);
-        }
-    }
-
-    private static void ValidateSourceIdentity(FullResolutionSource source)
-    {
-        var info = new FileInfo(source.SourcePath);
-        info.Refresh();
-
-        if (!info.Exists)
-        {
-            throw new FileNotFoundException(
-                "Full-resolution source no longer exists.",
-                source.SourcePath);
-        }
-
-        if (info.Length != source.FileSize
-            || info.LastWriteTimeUtc.Ticks != source.ModifiedAtUtcTicks)
-        {
-            throw new FullResolutionSourceChangedException(
-                source.SourcePath,
-                $"Expected size={source.FileSize:N0}, modified={source.ModifiedAtUtcTicks}, actual size={info.Length:N0}, modified={info.LastWriteTimeUtc.Ticks}.");
         }
     }
 }
