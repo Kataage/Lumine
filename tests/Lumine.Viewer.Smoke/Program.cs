@@ -1047,8 +1047,8 @@ internal static class Program
         await ExpectCancellationAsync(
             session.EnsureOriginalAsync(cancelledCommand.Token));
         Require(
-            session.Snapshot.State == ViewerDetailLoadState.OriginalReady,
-            "Pre-cancelled EnsureOriginalAsync corrupted an already-ready original.");
+            session.Snapshot.State == ViewerDetailLoadState.PreviewReady,
+            "Pre-cancelled EnsureOriginalAsync mutated the current preview state.");
     }
 
     private static async Task VerifyUnknownMetadataPromotionAsync(
