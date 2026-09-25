@@ -242,7 +242,6 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             asset.ModifiedAtUtcTicks,
             asset.SourceContentSha256);
 
-        var persisted = asset.PersistedSourceMetadata;
         var info = await FullResolutionDecoder.ProbeAsync(
             source,
             cancellationToken).ConfigureAwait(false);
