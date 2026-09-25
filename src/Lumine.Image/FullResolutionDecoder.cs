@@ -72,10 +72,8 @@ public sealed class FullResolutionDecoder
         FullResolutionSource source,
         CancellationToken cancellationToken)
     {
-        using var snapshot = ImageSourceSnapshot.Open(
-            source.SourcePath,
-            source.FileSize,
-            source.ModifiedAtUtcTicks,
+        using var snapshot = OpenStableSnapshot(
+            source,
             source.ContentSha256,
             cancellationToken);
         var metadata = snapshot.Metadata;
@@ -115,10 +113,8 @@ public sealed class FullResolutionDecoder
                 "The requested source identity and probed source identity disagree.");
         }
 
-        using var snapshot = ImageSourceSnapshot.Open(
-            source.SourcePath,
-            source.FileSize,
-            source.ModifiedAtUtcTicks,
+        using var snapshot = OpenStableSnapshot(
+            source,
             expectedFingerprint,
             cancellationToken);
         var snapshotMetadata = snapshot.Metadata;
@@ -248,6 +244,28 @@ public sealed class FullResolutionDecoder
             colorManaged?.Dispose();
             oriented.Invalidate();
             input.Invalidate();
+        }
+    }
+
+    private static ImageSourceSnapshot OpenStableSnapshot(
+        FullResolutionSource source,
+        string? expectedContentSha256,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ImageSourceSnapshot.Open(
+                source.SourcePath,
+                source.FileSize,
+                source.ModifiedAtUtcTicks,
+                expectedContentSha256,
+                cancellationToken);
+        }
+        catch (ImageSourceChangedException exception)
+        {
+            throw new FullResolutionSourceChangedException(
+                source.SourcePath,
+                exception.Message);
         }
     }
 
