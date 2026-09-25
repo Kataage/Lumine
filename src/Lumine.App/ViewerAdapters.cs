@@ -182,6 +182,8 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             source,
             cancellationToken).ConfigureAwait(false);
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (info.EstimatedRgbaBytes > maxDecodedBytes)
         {
             throw new FullResolutionBudgetExceededException(
@@ -192,14 +194,12 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         }
 
         var bitmap = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
-            () => new Avalonia.Media.Imaging.WriteableBitmap(
-                new Avalonia.PixelSize(info.Width, info.Height),
-                new Avalonia.Vector(96, 96),
-                Avalonia.Platform.PixelFormats.Rgba8888,
-                Avalonia.Platform.AlphaFormat.Unpremul));
+            () => CreateOriginalBitmap(info, cancellationToken));
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             await FullResolutionDecoder.DecodeAsync(
                 source,
                 maxDecodedBytes,
@@ -256,6 +256,20 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                 () => bitmap.Dispose());
             throw;
         }
+    }
+
+    internal static Avalonia.Media.Imaging.WriteableBitmap CreateOriginalBitmap(
+        FullResolutionInfo info,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return new Avalonia.Media.Imaging.WriteableBitmap(
+            new Avalonia.PixelSize(info.Width, info.Height),
+            new Avalonia.Vector(96, 96),
+            Avalonia.Platform.PixelFormats.Rgba8888,
+            Avalonia.Platform.AlphaFormat.Unpremul);
     }
 
     private string ResolveSourcePath(ViewerAsset asset)

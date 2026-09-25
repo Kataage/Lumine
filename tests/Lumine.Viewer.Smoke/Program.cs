@@ -38,6 +38,7 @@ internal static class Program
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
+                    await VerifyDetailSelectionCallerCancellationAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionReversalAsync(thumbnailPath);
                     await VerifyOriginalFailureKeepsFitAsync(thumbnailPath);
@@ -771,6 +772,61 @@ internal static class Program
             "Detaching Detail did not release the selected bitmap lifetime.");
     }
 
+    private static async Task VerifyDetailSelectionCallerCancellationAsync(
+        string previewPath)
+    {
+        var assets = new DirectFixtureAssetProvider(1);
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.FromMilliseconds(10),
+            previewDelay: TimeSpan.FromMilliseconds(120));
+
+        await using var session = new ViewerDetailSession(
+            assets,
+            provider);
+
+        using var cancellation = new CancellationTokenSource();
+        var cancelledSelection = session.SelectAsync(
+            0,
+            cancellation.Token);
+
+        for (var attempt = 0;
+             attempt < 300 && provider.ActivePreviewLoads == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.ActivePreviewLoads == 1,
+            "Caller-cancellation regression never entered preview loading.");
+
+        cancellation.Cancel();
+        await ExpectCancellationAsync(cancelledSelection);
+
+        Require(
+            session.Snapshot.SelectedIndex == 0
+            && session.Snapshot.State == ViewerDetailLoadState.Error
+            && session.Snapshot.Bitmap is null,
+            $"Caller-cancelled selection was not left retryable: state={session.Snapshot.State}, index={session.Snapshot.SelectedIndex}.");
+        Require(
+            provider.CancelledPreviews > 0,
+            "Preview provider did not observe caller cancellation.");
+
+        await session.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady
+                && snapshot.Bitmap is not null);
+
+        Require(
+            provider.PreviewRequests >= 2,
+            "Retrying the same asset after caller cancellation was incorrectly short-circuited.");
+    }
+
     private static async Task VerifyUnknownMetadataPromotionAsync(
         string previewPath)
     {
@@ -1213,15 +1269,22 @@ internal sealed class DelayedDetailProvider(
     string previewPath,
     TimeSpan originalDelay,
     int originalWidth = 1024,
-    int originalHeight = 768) : IViewerDetailProvider
+    int originalHeight = 768,
+    TimeSpan? previewDelay = null) : IViewerDetailProvider
 {
     private int _previewRequests;
+    private int _cancelledPreviews;
+    private int _activePreviewLoads;
     private int _originalRequests;
     private int _cancelledOriginals;
     private int _activeOriginalLoads;
     private int _peakActiveOriginalLoads;
 
     public int PreviewRequests => Volatile.Read(ref _previewRequests);
+
+    public int CancelledPreviews => Volatile.Read(ref _cancelledPreviews);
+
+    public int ActivePreviewLoads => Volatile.Read(ref _activePreviewLoads);
 
     public int OriginalRequests => Volatile.Read(ref _originalRequests);
 
@@ -1232,19 +1295,41 @@ internal sealed class DelayedDetailProvider(
     public int PeakActiveOriginalLoads =>
         Volatile.Read(ref _peakActiveOriginalLoads);
 
-    public ValueTask<ViewerThumbnail> RequestPreviewAsync(
+    public async ValueTask<ViewerThumbnail> RequestPreviewAsync(
         ViewerAsset asset,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Increment(ref _previewRequests);
+        Interlocked.Increment(ref _activePreviewLoads);
 
-        return ValueTask.FromResult(
-            new ViewerThumbnail(
+        try
+        {
+            if (previewDelay is { } delay && delay > TimeSpan.Zero)
+            {
+                try
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref _cancelledPreviews);
+                    throw;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return new ViewerThumbnail(
                 $"detail-preview-{asset.Id}",
                 previewPath,
                 1,
-                1));
+                1);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activePreviewLoads);
+        }
     }
 
     public async Task<ViewerOriginalBitmap> LoadOriginalAsync(

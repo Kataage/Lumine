@@ -129,6 +129,28 @@ try
             {
             }
 
+            using (var cancelled = new CancellationTokenSource())
+            {
+                cancelled.Cancel();
+
+                try
+                {
+                    using var unexpected =
+                        ImageViewerDetailProvider.CreateOriginalBitmap(
+                            new FullResolutionInfo(
+                                6000,
+                                4000,
+                                true,
+                                6000L * 4000 * 4),
+                            cancelled.Token);
+                    throw new InvalidOperationException(
+                        "Production Detail bitmap allocation ignored cancellation.");
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
             return 0;
         },
         CancellationToken.None);
