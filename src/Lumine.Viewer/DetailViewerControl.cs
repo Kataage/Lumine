@@ -263,6 +263,8 @@ public sealed class DetailViewerControl : UserControl
     public async Task ActualSizeAsync(
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var snapshot = _session.Snapshot;
         if (snapshot.Asset is null || snapshot.Bitmap is null)
         {
@@ -308,6 +310,8 @@ public sealed class DetailViewerControl : UserControl
         double zoom,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var snapshot = _session.Snapshot;
         if (snapshot.Bitmap is null)
         {
@@ -333,6 +337,7 @@ public sealed class DetailViewerControl : UserControl
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factor, 0);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var snapshot = _session.Snapshot;
         if (snapshot.Bitmap is null)

@@ -933,6 +933,53 @@ internal static class Program
             session.Snapshot.State == ViewerDetailLoadState.PreviewReady
             && session.Snapshot.SelectedIndex == 0,
             "A pre-cancelled no-op selection corrupted the existing ready snapshot.");
+
+        using var completedCaller = new CancellationTokenSource();
+        await session.SelectAsync(0);
+        await session.SelectAsync(0, completedCaller.Token);
+
+        completedCaller.Cancel();
+
+        await session.EnsureOriginalAsync();
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady
+                && snapshot.IsOriginal);
+
+        Require(
+            session.Snapshot.IsOriginal,
+            "Cancelling a caller token after SelectAsync completed poisoned the active selection lifetime.");
+
+        using var cancelledCommand = new CancellationTokenSource();
+        cancelledCommand.Cancel();
+
+        var detail = new DetailViewerControl(session);
+        var zoomBefore = detail.Zoom;
+
+        await ExpectCancellationAsync(
+            detail.SetZoomAsync(2, cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled SetZoomAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            detail.ZoomByAsync(1.25, cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled ZoomByAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            detail.ActualSizeAsync(cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled ActualSizeAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            session.EnsureOriginalAsync(cancelledCommand.Token));
+        Require(
+            session.Snapshot.State == ViewerDetailLoadState.OriginalReady,
+            "Pre-cancelled EnsureOriginalAsync corrupted an already-ready original.");
     }
 
     private static async Task VerifyUnknownMetadataPromotionAsync(
