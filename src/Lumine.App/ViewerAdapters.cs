@@ -243,25 +243,19 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             asset.SourceContentSha256);
 
         var persisted = asset.PersistedSourceMetadata;
-        var info = persisted is not null
-            ? new FullResolutionInfo(
-                persisted.Width,
-                persisted.Height,
-                persisted.HasAlpha,
-                persisted.EstimatedRgbaBytes,
-                persisted.ContentSha256,
-                persisted.RawWidth,
-                persisted.RawHeight,
-                persisted.Format)
-            : await FullResolutionDecoder.ProbeAsync(
-                source,
-                cancellationToken).ConfigureAwait(false);
+        var info = await FullResolutionDecoder.ProbeAsync(
+            source,
+            cancellationToken).ConfigureAwait(false);
 
-        if (persisted is null
-            && info.ContentSha256 is not null
+        if (info.ContentSha256 is not null
             && info.RawWidth is > 0
             && info.RawHeight is > 0
-            && !string.IsNullOrWhiteSpace(info.Format))
+            && !string.IsNullOrWhiteSpace(info.Format)
+            && (persisted is null
+                || !string.Equals(
+                    persisted.ContentSha256,
+                    info.ContentSha256,
+                    StringComparison.OrdinalIgnoreCase)))
         {
             await ViewerImageMetadataBridge.PersistAsync(
                 _library,
