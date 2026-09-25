@@ -256,11 +256,14 @@ public sealed class ViewerSession : IAsyncDisposable
             return;
         }
 
+        var ownedRequests = requests!;
+        var ownedOperationDrain = operationDrain!;
+
         try
         {
             _shutdown.Cancel();
 
-            foreach (var request in requests!)
+            foreach (var request in ownedRequests)
             {
                 request.Cancel();
             }
@@ -268,7 +271,7 @@ public sealed class ViewerSession : IAsyncDisposable
             try
             {
                 await Task.WhenAll(
-                    requests.Select(
+                    ownedRequests.Select(
                         static request => request.Task))
                     .ConfigureAwait(false);
             }
@@ -278,10 +281,10 @@ public sealed class ViewerSession : IAsyncDisposable
                 // provider cancellation/failure.
             }
 
-            await operationDrain!
+            await ownedOperationDrain
                 .ConfigureAwait(false);
 
-            foreach (var request in requests)
+            foreach (var request in ownedRequests)
             {
                 request.DisposeCancellation();
             }
