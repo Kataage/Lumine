@@ -12,6 +12,7 @@ public static class CoreMetricNames
     public const string ThumbnailGenerate = "image.thumbnail_generate";
     public const string ThumbnailCacheHit = "image.thumbnail_cache_hit";
     public const string ThumbnailBatchGenerate = "image.thumbnail_batch_generate";
+    public const string SourceMetadataProbeBatch = "image.source_metadata_probe_batch";
     public const string ViewerFirstPaint = "viewer.first_paint";
     public const string ViewerFirstViewportReady = "viewer.first_viewport_ready";
     public const string ViewerFastScrollRefresh = "viewer.fast_scroll_refresh";
