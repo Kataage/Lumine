@@ -36,10 +36,12 @@ public sealed class DetailViewerControl : UserControl
     private PixelSize _displayedZoomBasis;
     private long _zoomCommandVersion;
     private long _pendingZoomCommandVersion;
+    private long _observedSelectionVersion;
 
     public DetailViewerControl(ViewerDetailSession session)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _observedSelectionVersion = _session.Snapshot.SelectionVersion;
         Focusable = true;
 
         _previous = new Button { Content = "◀" };
@@ -145,18 +147,30 @@ public sealed class DetailViewerControl : UserControl
         long index,
         CancellationToken cancellationToken = default)
     {
-        if ((ulong)index < (ulong)_session.Count)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var before = _session.Snapshot;
+        var shouldReset =
+            (ulong)index < (ulong)_session.Count
+            && (before.SelectedIndex != index
+                || before.State is ViewerDetailLoadState.Empty
+                    or ViewerDetailLoadState.Error);
+
+        var task = _session.SelectAsync(index, cancellationToken);
+
+        if (shouldReset)
         {
-            var snapshot = _session.Snapshot;
-            if (snapshot.SelectedIndex != index
-                || snapshot.State is ViewerDetailLoadState.Empty
-                    or ViewerDetailLoadState.Error)
+            var current = _session.Snapshot;
+            if (current.SelectionVersion != before.SelectionVersion
+                && current.SelectedIndex == index)
             {
                 PrepareForSelectionChange();
+                _observedSelectionVersion =
+                    current.SelectionVersion;
             }
         }
 
-        return _session.SelectAsync(index, cancellationToken);
+        return task;
     }
 
     public void BindGrid(ThumbnailViewerControl grid)
@@ -827,6 +841,12 @@ public sealed class DetailViewerControl : UserControl
 
     private void ApplySnapshot(ViewerDetailSnapshot snapshot)
     {
+        if (snapshot.SelectionVersion != _observedSelectionVersion)
+        {
+            PrepareForSelectionChange();
+            _observedSelectionVersion = snapshot.SelectionVersion;
+        }
+
         _image.Source = snapshot.Bitmap;
 
         _status.Text = snapshot.State switch
@@ -882,25 +902,36 @@ public sealed class DetailViewerControl : UserControl
         return $"{asset.DisplayName}{dimensions}{format} · {asset.FileSize:N0} bytes";
     }
 
-    private void OnSessionSelectionChanged(object? sender, long index)
-    {
-        SelectedAssetIndexChanged?.Invoke(this, index);
+    private void OnSessionSelectionChanged(
+        object? sender,
+        long index) =>
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!_sessionEventsAttached
+                    || _session.Snapshot.SelectedIndex != index)
+                {
+                    return;
+                }
 
-        if (_grid is null || _syncingSelection)
-        {
-            return;
-        }
+                SelectedAssetIndexChanged?.Invoke(this, index);
 
-        _syncingSelection = true;
-        try
-        {
-            _grid.SelectAsset(index);
-        }
-        finally
-        {
-            _syncingSelection = false;
-        }
-    }
+                if (_grid is null || _syncingSelection)
+                {
+                    return;
+                }
+
+                _syncingSelection = true;
+                try
+                {
+                    _grid.SelectAsset(index);
+                }
+                finally
+                {
+                    _syncingSelection = false;
+                }
+            },
+            DispatcherPriority.Render);
 
     private void OnGridSelectionChanged(object? sender, long index)
     {

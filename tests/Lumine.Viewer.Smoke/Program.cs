@@ -794,6 +794,34 @@ internal static class Program
             grid.SelectedAssetIndex == 2,
             "Detail previous/next navigation did not synchronize Grid selection.");
 
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        await detail.SetZoomAsync(2);
+        detail.PanBy(80, 60);
+        Dispatcher.UIThread.RunJobs();
+
+        await Task.Run(
+            async () => await detailSession.SelectAsync(1));
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detail.Zoom < 2
+            && detail.PanOffset.X < 0.001
+            && detail.PanOffset.Y < 0.001,
+            "External session selection retained stale Detail zoom or pan.");
+        Require(
+            grid.SelectedAssetIndex == 1,
+            "Background session selection did not synchronize Grid on the UI dispatcher.");
+
         await detail.ActualSizeAsync();
         Require(
             detailSession.Snapshot.IsOriginal,
