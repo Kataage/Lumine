@@ -111,6 +111,29 @@ try
         && persisted.SourceContentSha256 is { Length: 64 },
         "Image source technical metadata was not persisted through the App composition boundary.");
 
+    LibraryDatabase.ClearPools();
+    var restartedLibraryService = new LibraryService(databasePath);
+    await restartedLibraryService.InitializeAsync();
+    persisted = await restartedLibraryService.GetAssetAsync(
+        library.Id,
+        "adapter-source.png")
+        ?? throw new InvalidOperationException(
+            "Restarted LibraryService did not reload persisted source metadata.");
+    Require(
+        persisted.Width == 320
+        && persisted.Height == 200
+        && persisted.RawWidth == 320
+        && persisted.RawHeight == 200
+        && persisted.HasAlpha == true
+        && persisted.SourceContentSha256 is { Length: 64 },
+        "Restarted LibraryService lost persisted source technical metadata.");
+
+    provider = new ImageViewerDetailProvider(
+        pipeline,
+        libraryRoot,
+        restartedLibraryService,
+        library.Id);
+
     asset = new ViewerAsset(
         persisted.Id,
         persisted.SourceRevision,
