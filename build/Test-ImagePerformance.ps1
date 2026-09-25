@@ -22,6 +22,7 @@ function Get-Metric([string]$Name) {
 $generate = Get-Metric "image.thumbnail_generate"
 $hits = Get-Metric "image.thumbnail_cache_hit"
 $batch = Get-Metric "image.thumbnail_batch_generate"
+$metadataProbeBatch = Get-Metric "image.source_metadata_probe_batch"
 
 $requestCount = [int]$result.metadata.batch_request_count
 $workerCount = [int]$result.metadata.worker_count
@@ -32,6 +33,8 @@ $sourceOpens = [long]$result.metadata.source_opens
 $metadataProbes = [long]$result.metadata.metadata_probes
 $metadataBytesHashed = [long]$result.metadata.metadata_bytes_hashed
 $metadataMemoryHits = [long]$result.metadata.metadata_memory_hits
+$metadataProbeFixtureCount = [int]$result.metadata.metadata_probe_fixture_count
+$metadataProbeFixtureBytes = [long]$result.metadata.metadata_probe_fixture_bytes
 $cacheFiles = [long]$result.metadata.cache_files
 $cacheBytes = [long]$result.metadata.cache_bytes
 $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
@@ -84,6 +87,10 @@ if ($metadataMemoryHits -ne 1000) {
     throw "Warm thumbnail benchmark did not reuse bounded in-session source metadata exactly 1,000 times: $metadataMemoryHits"
 }
 
+if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -le 0) {
+    throw "Source metadata probe fixture is incomplete: count=$metadataProbeFixtureCount bytes=$metadataProbeFixtureBytes"
+}
+
 if ($generated -ne 65 -or $cacheFiles -ne 65) {
     throw "Expected 65 generated/cache files after benchmark: generated=$generated files=$cacheFiles"
 }
@@ -120,6 +127,7 @@ Write-Host "Image performance acceptance passed."
 Write-Host ("Cold generation: {0:N1} ms" -f $generate.durationMs)
 Write-Host ("1,000 cache hits: {0:N1} ms" -f $hits.durationMs)
 Write-Host ("64-request batch: {0:N1} ms" -f $batch.durationMs)
+Write-Host ("10k source metadata probes: {0:N1} ms ({1:N1} MiB logical I/O)" -f $metadataProbeBatch.durationMs, ($metadataProbeFixtureBytes / 1MB))
 Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))
 Write-Host ("libvips open files after batch: {0}" -f $vipsOpenFiles)
