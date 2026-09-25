@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Lumine.App;
 using Lumine.Image;
+using Lumine.Library;
 using Lumine.Viewer;
 using NetVips;
 
@@ -21,6 +22,7 @@ var root = Path.Combine(
     $"lumine-app-smoke-{Guid.NewGuid():N}");
 var libraryRoot = Path.Combine(root, "library");
 var cacheRoot = Path.Combine(root, "cache");
+var databasePath = Path.Combine(root, "library.db");
 var sourcePath = Path.Combine(libraryRoot, "adapter-source.png");
 
 Directory.CreateDirectory(libraryRoot);
@@ -36,17 +38,34 @@ try
         rgba.Pngsave(sourcePath);
     }
 
-    var file = new FileInfo(sourcePath);
+    var libraryService = new LibraryService(databasePath);
+    await libraryService.InitializeAsync();
+    var library = await libraryService.RegisterLibraryAsync(
+        "App smoke",
+        libraryRoot);
+    var scan = await libraryService.ScanAsync(library.Id);
+    Require(scan.Completed, "App smoke library scan did not complete.");
+
+    var indexed = await libraryService.GetAssetAsync(
+        library.Id,
+        "adapter-source.png")
+        ?? throw new InvalidOperationException(
+            "App smoke source was not indexed.");
+
     var asset = new ViewerAsset(
-        1,
-        1,
-        "adapter-source.png",
-        "adapter-source.png",
-        file.Length,
-        file.LastWriteTimeUtc.Ticks,
-        320,
-        200,
-        "png");
+        indexed.Id,
+        indexed.SourceRevision,
+        indexed.RelativePath,
+        indexed.FileName,
+        indexed.FileSize,
+        indexed.ModifiedAtUtc.UtcDateTime.Ticks,
+        indexed.Width,
+        indexed.Height,
+        indexed.Format,
+        indexed.SourceContentSha256,
+        indexed.RawWidth,
+        indexed.RawHeight,
+        indexed.HasAlpha);
 
     var cache = new ThumbnailCache(cacheRoot);
     await using var pipeline = new ThumbnailPipeline(
@@ -59,7 +78,9 @@ try
         });
     var provider = new ImageViewerDetailProvider(
         pipeline,
-        libraryRoot);
+        libraryRoot,
+        libraryService,
+        library.Id);
 
     var preview = await provider.RequestPreviewAsync(asset);
     Require(
@@ -67,6 +88,60 @@ try
         && preview.Width == 320
         && preview.Height == 200,
         "Production Detail adapter failed to produce its persistent preview.");
+    Require(
+        preview.SourceMetadata is not null
+        && preview.SourceMetadata.Width == 320
+        && preview.SourceMetadata.Height == 200
+        && preview.SourceMetadata.RawWidth == 320
+        && preview.SourceMetadata.RawHeight == 200
+        && preview.SourceMetadata.HasAlpha,
+        "Production Detail adapter did not expose source technical metadata.");
+
+    var persisted = await libraryService.GetAssetAsync(
+        library.Id,
+        "adapter-source.png")
+        ?? throw new InvalidOperationException(
+            "Persisted app smoke asset disappeared.");
+    Require(
+        persisted.Width == 320
+        && persisted.Height == 200
+        && persisted.RawWidth == 320
+        && persisted.RawHeight == 200
+        && persisted.HasAlpha == true
+        && persisted.SourceContentSha256 is { Length: 64 },
+        "Image source technical metadata was not persisted through the App composition boundary.");
+
+    asset = new ViewerAsset(
+        persisted.Id,
+        persisted.SourceRevision,
+        persisted.RelativePath,
+        persisted.FileName,
+        persisted.FileSize,
+        persisted.ModifiedAtUtc.UtcDateTime.Ticks,
+        persisted.Width,
+        persisted.Height,
+        persisted.Format,
+        persisted.SourceContentSha256,
+        persisted.RawWidth,
+        persisted.RawHeight,
+        persisted.HasAlpha);
+
+    var hiddenSource = sourcePath + ".hidden";
+    var warmDiagnostics = pipeline.Diagnostics;
+    File.Move(sourcePath, hiddenSource);
+    try
+    {
+        var warmPreview = await provider.RequestPreviewAsync(asset);
+        Require(
+            warmPreview.CacheHitEquivalent()
+            && pipeline.Diagnostics.MetadataProbes
+                == warmDiagnostics.MetadataProbes,
+            "Warm Detail preview cache hit reopened or reprobed the original source.");
+    }
+    finally
+    {
+        File.Move(hiddenSource, sourcePath);
+    }
 
     await using var headless = HeadlessUnitTestSession.StartNew(
         typeof(AppAdapterSmokeApplication));
@@ -164,6 +239,12 @@ finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static class ViewerThumbnailSmokeExtensions
+{
+    public static bool CacheHitEquivalent(this ViewerThumbnail thumbnail) =>
+        File.Exists(thumbnail.CachePath);
 }
 
 internal sealed class AppAdapterSmokeApplication : Application
