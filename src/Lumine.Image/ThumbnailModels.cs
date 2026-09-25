@@ -104,7 +104,9 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long CacheMisses,
     long Generated,
     long Failed,
-    long SourceOpens);
+    long SourceOpens,
+    long MetadataProbes,
+    long MetadataBytesHashed);
 
 public sealed class ThumbnailPipelineOptions
 {
