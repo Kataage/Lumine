@@ -121,7 +121,6 @@ public sealed class ViewerSession : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         InFlightRequest request;
-        var created = false;
 
         lock (_gate)
         {
@@ -166,15 +165,11 @@ public sealed class ViewerSession : IAsyncDisposable
             };
             _inFlight[asset.Id] = request;
             _activeRequests.Add(request);
+            request.CleanupTask =
+                ObserveRequestCompletionAsync(
+                    asset.Id,
+                    request);
             Interlocked.Increment(ref _thumbnailRequests);
-            created = true;
-        }
-
-        if (created)
-        {
-            _ = ObserveRequestCompletionAsync(
-                asset.Id,
-                request);
         }
 
         return AwaitSharedAsync(
@@ -282,6 +277,11 @@ public sealed class ViewerSession : IAsyncDisposable
             }
 
             await ownedOperationDrain
+                .ConfigureAwait(false);
+
+            await Task.WhenAll(
+                ownedRequests.Select(
+                    static request => request.CleanupTask))
                 .ConfigureAwait(false);
 
             foreach (var request in ownedRequests)
@@ -500,6 +500,9 @@ public sealed class ViewerSession : IAsyncDisposable
         public ViewerThumbnailPriority Priority { get; } = priority;
 
         public Task<ViewerThumbnail> Task { get; } = task;
+
+        public Task CleanupTask { get; set; } =
+            Task.CompletedTask;
 
         public int Waiters { get; set; }
 
