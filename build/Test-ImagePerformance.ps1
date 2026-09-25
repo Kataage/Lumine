@@ -31,6 +31,7 @@ $generated = [long]$result.metadata.generated
 $sourceOpens = [long]$result.metadata.source_opens
 $metadataProbes = [long]$result.metadata.metadata_probes
 $metadataBytesHashed = [long]$result.metadata.metadata_bytes_hashed
+$metadataMemoryHits = [long]$result.metadata.metadata_memory_hits
 $cacheFiles = [long]$result.metadata.cache_files
 $cacheBytes = [long]$result.metadata.cache_bytes
 $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
@@ -79,6 +80,10 @@ if ($metadataBytesHashed -le 0) {
     throw "Source metadata benchmark hashed zero bytes."
 }
 
+if ($metadataMemoryHits -ne 1000) {
+    throw "Warm thumbnail benchmark did not reuse bounded in-session source metadata exactly 1,000 times: $metadataMemoryHits"
+}
+
 if ($generated -ne 65 -or $cacheFiles -ne 65) {
     throw "Expected 65 generated/cache files after benchmark: generated=$generated files=$cacheFiles"
 }
@@ -119,5 +124,5 @@ Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))
 Write-Host ("libvips open files after batch: {0}" -f $vipsOpenFiles)
 Write-Host ("libvips operation cache size: {0}" -f $vipsOperationCacheSize)
-Write-Host ("Source metadata probes: {0} ({1:N1} MiB hashed)" -f $metadataProbes, ($metadataBytesHashed / 1MB))
+Write-Host ("Source metadata probes: {0} ({1:N1} MiB hashed, {2} memory hits)" -f $metadataProbes, ($metadataBytesHashed / 1MB), $metadataMemoryHits)
 Write-Host ("libvips concurrency: {0} (workers={1})" -f $vipsConcurrency, $workerCount)
