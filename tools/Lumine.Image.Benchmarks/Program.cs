@@ -42,6 +42,8 @@ long batchPeakWorkingSetBytes = 0;
 long batchPeakAdditionalWorkingSetBytes = 0;
 long cacheBytes = 0;
 long cacheFiles = 0;
+const int metadataProbeFixtureCount = 10_000;
+long metadataProbeFixtureBytes = 0;
 
 try
 {
@@ -136,6 +138,27 @@ try
     batchPeakWorkingSetBytes = batchPeak.PeakWorkingSetBytes;
     batchPeakAdditionalWorkingSetBytes = batchPeak.PeakAdditionalWorkingSetBytes;
 
+    info.Refresh();
+    using (recorder.Measure(CoreMetricNames.SourceMetadataProbeBatch))
+    {
+        for (var index = 0; index < metadataProbeFixtureCount; index++)
+        {
+            using var snapshot = await ImageSourceSnapshot.OpenAsync(
+                sourcePath,
+                info.Length,
+                info.LastWriteTimeUtc.Ticks);
+            if (snapshot.Metadata.Width <= 0
+                || snapshot.Metadata.Height <= 0
+                || snapshot.Metadata.ContentSha256.Length != 64)
+            {
+                throw new InvalidOperationException(
+                    "Source metadata probe benchmark returned invalid metadata.");
+            }
+        }
+    }
+    metadataProbeFixtureBytes = checked(
+        info.Length * metadataProbeFixtureCount);
+
     var diagnostics = pipeline.Diagnostics;
     var stats = await cache.GetStatsAsync();
     cacheBytes = stats.TotalBytes;
@@ -156,6 +179,8 @@ try
             ["metadata_probes"] = diagnostics.MetadataProbes.ToString(CultureInfo.InvariantCulture),
             ["metadata_bytes_hashed"] = diagnostics.MetadataBytesHashed.ToString(CultureInfo.InvariantCulture),
             ["metadata_memory_hits"] = diagnostics.MetadataMemoryHits.ToString(CultureInfo.InvariantCulture),
+            ["metadata_probe_fixture_count"] = metadataProbeFixtureCount.ToString(CultureInfo.InvariantCulture),
+            ["metadata_probe_fixture_bytes"] = metadataProbeFixtureBytes.ToString(CultureInfo.InvariantCulture),
             ["cache_files"] = cacheFiles.ToString(CultureInfo.InvariantCulture),
             ["cache_bytes"] = cacheBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
