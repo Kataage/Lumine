@@ -60,6 +60,10 @@ if ([int]$hundredK.metadata.technical_metadata_persist_count -ne 10000) {
     throw "100k benchmark did not persist technical metadata for the required 10,000-asset sample."
 }
 
+if ([double]$metadataPersist100.durationMs -gt 8000) {
+    throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
+}
+
 # Budgets intentionally include substantial hosted-runner headroom while still
 # rejecting the previously observed 17-45 second write-path regressions.
 if ([double]$coldBulk100.durationMs -gt 12000) {
