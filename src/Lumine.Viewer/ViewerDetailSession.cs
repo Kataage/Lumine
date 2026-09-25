@@ -108,16 +108,16 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             ReleaseImagesLocked();
 
             // The selected asset outlives this SelectAsync call. The caller
-            // token only owns this one selection operation; it must not poison
-            // the lifetime used later by EnsureOriginalAsync.
+            // token owns only this operation; later cancellation must not
+            // poison EnsureOriginalAsync for the active selection.
             selectionLifetime =
                 CancellationTokenSource.CreateLinkedTokenSource(
                     _shutdown.Token);
-            _selectionLifetimeCancellation = selectionLifetime;
             operation =
                 CancellationTokenSource.CreateLinkedTokenSource(
                     selectionLifetime.Token,
                     cancellationToken);
+            _selectionLifetimeCancellation = selectionLifetime;
             version = ++_version;
 
             _snapshot = new ViewerDetailSnapshot(
@@ -136,122 +136,119 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
         using (operation)
         {
-            await SelectCoreAsync();
-        }
-
-        async Task SelectCoreAsync()
-        {
             var callerCancelledAtCommit = false;
 
-        try
-        {
-            var asset = await _assets.GetAssetAsync(
-                index,
-                operation.Token).ConfigureAwait(false);
-            var preview = await _provider.RequestPreviewAsync(
-                asset,
-                operation.Token).ConfigureAwait(false);
-            var lease = await PreviewBitmapCache.AcquireAsync(
-                preview.CachePath,
-                operation.Token).ConfigureAwait(false);
-
-            var publishPreview = false;
-
-            lock (_gate)
+            try
             {
-                if (!IsSelectionIdentityCurrentLocked(
-                        version,
-                        selectionLifetime))
+                var asset = await _assets.GetAssetAsync(
+                    index,
+                    operation.Token).ConfigureAwait(false);
+                var preview = await _provider.RequestPreviewAsync(
+                    asset,
+                    operation.Token).ConfigureAwait(false);
+                var lease = await PreviewBitmapCache.AcquireAsync(
+                    preview.CachePath,
+                    operation.Token).ConfigureAwait(false);
+
+                var publishPreview = false;
+
+                lock (_gate)
                 {
-                    lease.Dispose();
-                    return;
+                    if (!IsSelectionIdentityCurrentLocked(
+                            version,
+                            selectionLifetime))
+                    {
+                        lease.Dispose();
+                        return;
+                    }
+
+                    if (operation.IsCancellationRequested)
+                    {
+                        lease.Dispose();
+
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            _snapshot = _snapshot with
+                            {
+                                State = ViewerDetailLoadState.Error,
+                                ErrorMessage = "Selection cancelled."
+                            };
+                            callerCancelledAtCommit = true;
+                        }
+                    }
+                    else
+                    {
+                        _previewLease = lease;
+                        _snapshot = new ViewerDetailSnapshot(
+                            index,
+                            asset,
+                            null,
+                            ViewerDetailLoadState.PreviewReady,
+                            lease.Bitmap,
+                            false,
+                            null,
+                            version);
+                        publishPreview = true;
+                    }
                 }
 
-                if (operation.IsCancellationRequested)
+                if (callerCancelledAtCommit || publishPreview)
                 {
-                    lease.Dispose();
+                    PublishState();
+                }
+            }
+            catch (OperationCanceledException)
+                when (operation.IsCancellationRequested)
+            {
+                var callerCancelled =
+                    cancellationToken.IsCancellationRequested;
+                var publishCancelled = false;
 
-                    if (cancellationToken.IsCancellationRequested)
+                lock (_gate)
+                {
+                    if (callerCancelled
+                        && IsSelectionIdentityCurrentLocked(
+                            version,
+                            selectionLifetime))
                     {
                         _snapshot = _snapshot with
                         {
                             State = ViewerDetailLoadState.Error,
                             ErrorMessage = "Selection cancelled."
                         };
-                        callerCancelledAtCommit = true;
+                        publishCancelled = true;
                     }
                 }
-                else
+
+                if (publishCancelled)
                 {
-                    _previewLease = lease;
-                    _snapshot = new ViewerDetailSnapshot(
-                        index,
-                        asset,
-                        null,
-                        ViewerDetailLoadState.PreviewReady,
-                        lease.Bitmap,
-                        false,
-                        null,
-                        version);
-                    publishPreview = true;
+                    PublishState();
+                }
+
+                if (callerCancelled)
+                {
+                    throw new OperationCanceledException(
+                        cancellationToken);
                 }
             }
-
-            if (callerCancelledAtCommit || publishPreview)
+            catch (Exception exception)
             {
-                PublishState();
-            }
-        }
-        catch (OperationCanceledException)
-            when (operation.IsCancellationRequested)
-        {
-            var callerCancelled = cancellationToken.IsCancellationRequested;
-            var publishCancelled = false;
-
-            lock (_gate)
-            {
-                if (callerCancelled
-                    && IsSelectionIdentityCurrentLocked(
-                        version,
-                        selectionLifetime))
+                lock (_gate)
                 {
+                    if (!IsCurrentLocked(version, selectionLifetime))
+                    {
+                        return;
+                    }
+
                     _snapshot = _snapshot with
                     {
                         State = ViewerDetailLoadState.Error,
-                        ErrorMessage = "Selection cancelled."
+                        ErrorMessage = exception.Message
                     };
-                    publishCancelled = true;
                 }
-            }
 
-            if (publishCancelled)
-            {
                 PublishState();
             }
-
-            if (callerCancelled)
-            {
-                throw new OperationCanceledException(cancellationToken);
-            }
-        }
-        catch (Exception exception)
-        {
-            lock (_gate)
-            {
-                if (!IsCurrentLocked(version, selectionLifetime))
-                {
-                    return;
-                }
-
-                _snapshot = _snapshot with
-                {
-                    State = ViewerDetailLoadState.Error,
-                    ErrorMessage = exception.Message
-                };
-            }
-
-            PublishState();
-        }
 
             if (callerCancelledAtCommit)
             {

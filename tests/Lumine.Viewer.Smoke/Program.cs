@@ -957,6 +957,69 @@ internal static class Program
             session.Snapshot.IsOriginal,
             "Cancelling a caller token after SelectAsync completed poisoned the active selection lifetime.");
 
+        session.Clear();
+        await session.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        var originalRequestsBeforeCancelledWait =
+            provider.OriginalRequests;
+        using (var cancelledOriginalWait =
+               new CancellationTokenSource())
+        {
+            var originalWait = session.EnsureOriginalAsync(
+                cancelledOriginalWait.Token);
+
+            for (var attempt = 0;
+                 attempt < 300 && provider.ActiveOriginalLoads == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                provider.ActiveOriginalLoads == 1,
+                "Original caller-cancellation matrix never started the shared original load.");
+
+            cancelledOriginalWait.Cancel();
+            await ExpectCancellationAsync(originalWait);
+        }
+
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady
+                && snapshot.IsOriginal);
+
+        Require(
+            provider.OriginalRequests
+                == originalRequestsBeforeCancelledWait + 1,
+            "Cancelling an EnsureOriginalAsync waiter cancelled or duplicated the shared selection load.");
+
+        session.Clear();
+        await session.SelectAsync(0);
+        var originalRequestsBeforePreCancelled =
+            provider.OriginalRequests;
+
+        using (var preCancelledOriginal =
+               new CancellationTokenSource())
+        {
+            preCancelledOriginal.Cancel();
+            await ExpectCancellationAsync(
+                session.EnsureOriginalAsync(
+                    preCancelledOriginal.Token));
+        }
+
+        Require(
+            session.Snapshot.State
+                == ViewerDetailLoadState.PreviewReady
+            && provider.OriginalRequests
+                == originalRequestsBeforePreCancelled,
+            "Pre-cancelled EnsureOriginalAsync mutated state or started a provider load.");
+
         using var cancelledCommand = new CancellationTokenSource();
         cancelledCommand.Cancel();
 
