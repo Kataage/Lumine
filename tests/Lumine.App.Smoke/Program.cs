@@ -133,7 +133,9 @@ try
     {
         var warmPreview = await provider.RequestPreviewAsync(asset);
         Require(
-            warmPreview.CacheHitEquivalent()
+            File.Exists(warmPreview.CachePath)
+            && pipeline.Diagnostics.SourceOpens
+                == warmDiagnostics.SourceOpens
             && pipeline.Diagnostics.MetadataProbes
                 == warmDiagnostics.MetadataProbes,
             "Warm Detail preview cache hit reopened or reprobed the original source.");
@@ -239,12 +241,6 @@ finally
     {
         Directory.Delete(root, recursive: true);
     }
-}
-
-static class ViewerThumbnailSmokeExtensions
-{
-    public static bool CacheHitEquivalent(this ViewerThumbnail thumbnail) =>
-        File.Exists(thumbnail.CachePath);
 }
 
 internal sealed class AppAdapterSmokeApplication : Application
