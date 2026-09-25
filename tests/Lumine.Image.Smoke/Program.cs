@@ -66,6 +66,30 @@ static void WriteRgbaPng(string path)
     rgba.WriteToFile(path);
 }
 
+static void WriteSolidJpeg(string path, int value)
+{
+    using var blank = NetVips.Image.Black(320, 200, bands: 3);
+    using var values = blank.NewFromImage([value, value, value]);
+    using var image = values.Copy(interpretation: Enums.Interpretation.Srgb);
+    image.Jpegsave(path, q: 90);
+}
+
+static void PadToLength(string path, long length)
+{
+    using var stream = new FileStream(
+        path,
+        FileMode.Open,
+        FileAccess.Write,
+        FileShare.None);
+    if (stream.Length > length)
+    {
+        throw new InvalidOperationException(
+            "Cannot pad a file to a smaller length.");
+    }
+
+    stream.SetLength(length);
+}
+
 static async Task VerifyFullResolutionAsync(
     string path,
     int expectedWidth,
@@ -118,6 +142,8 @@ try
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
+    var identityPath = Path.Combine(sourceRoot, "identity.jpg");
+    var identityReplacementPath = Path.Combine(sourceRoot, "identity-replacement.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
@@ -354,6 +380,58 @@ try
     Require(
         !string.Equals(changedFirst.CachePath, changedSecond.CachePath, StringComparison.Ordinal),
         "Source revision did not move to a new cache path.");
+
+    WriteSolidJpeg(identityPath, 24);
+    WriteSolidJpeg(identityReplacementPath, 220);
+    var identityLength = Math.Max(
+        new FileInfo(identityPath).Length,
+        new FileInfo(identityReplacementPath).Length);
+    PadToLength(identityPath, identityLength);
+    PadToLength(identityReplacementPath, identityLength);
+    var identityTimestamp = DateTime.UtcNow.AddMinutes(-5);
+    File.SetLastWriteTimeUtc(identityPath, identityTimestamp);
+    File.SetLastWriteTimeUtc(identityReplacementPath, identityTimestamp);
+
+    var identityStat = new FileInfo(identityPath);
+    using var identitySnapshot = await ImageSourceSnapshot.OpenAsync(
+        identityPath,
+        identityStat.Length,
+        identityStat.LastWriteTimeUtc.Ticks);
+    var identityMetadata = identitySnapshot.Metadata;
+    identitySnapshot.Dispose();
+
+    var replacementBytes = await File.ReadAllBytesAsync(
+        identityReplacementPath);
+    await File.WriteAllBytesAsync(
+        identityPath,
+        replacementBytes);
+    File.SetLastWriteTimeUtc(
+        identityPath,
+        identityTimestamp);
+
+    var replacedStat = new FileInfo(identityPath);
+    Require(
+        replacedStat.Length == identityStat.Length
+        && replacedStat.LastWriteTimeUtc.Ticks
+            == identityStat.LastWriteTimeUtc.Ticks,
+        "Same-stat replacement fixture did not preserve size/mtime.");
+
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                identityPath,
+                identityStat.Length,
+                identityStat.LastWriteTimeUtc.Ticks,
+                identityMetadata.ContentSha256),
+            32L * 1024 * 1024,
+            _ => { });
+        throw new InvalidOperationException(
+            "Same-size/mtime source replacement was not rejected by content identity.");
+    }
+    catch (ImageSourceChangedException)
+    {
+    }
 
     var concurrentSource = SourceFor(45, 1, concurrentPath);
     var concurrentResults = await Task.WhenAll(
