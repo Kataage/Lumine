@@ -10,11 +10,14 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - stable asset id
 - Library Core source revision
 - source file size and persisted modified timestamp
+- persisted source content SHA-256
 - thumbnail profile id/version/dimensions/quality
 
-A valid cache hit opens only the cached WebP file. It does not stat, open or decode the original. The original path is needed only for a cache miss or corrupt-cache recovery.
+A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
 
-Old revisions remain harmless orphaned cache entries until bounded pruning removes them.
+Issue #308 moves the cache-key contract to generator version 2. The first cold/miss path opens a stable source snapshot, computes SHA-256, captures raw/oriented dimensions, alpha and normalized format, then keeps a read-sharing guard open while libvips evaluates the thumbnail. App composition persists that metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source.
+
+Old revisions and pre-#308 cache keys remain harmless orphaned cache entries until bounded pruning removes them.
 
 ## Profiles
 
@@ -57,7 +60,15 @@ The common benchmark contract records:
 - bounded parallel batch generation
 - cache files/bytes
 - cache hit/miss/generation/source-open counters
+- source metadata probe count and bytes hashed
 - generation and batch peak working set
 - libvips tracked-memory high-water mark, open-file count, and operation-cache size
 
 The Windows CI benchmark is enforced by `build/Test-ImagePerformance.ps1`. It gates cold generation, 1,000 persistent cache hits, bounded 64-request batch throughput, source-open/cache-hit invariants, and both absolute and incremental peak working set during batch generation.
+
+
+## Source technical metadata contract
+
+Image Core owns derivation, not persistence. It returns `SourceTechnicalMetadata` containing oriented dimensions, raw dimensions, alpha, normalized format and content SHA-256. `Lumine.App` is the only layer allowed to bridge that result into Library Core.
+
+A persisted source fingerprint is validated on a thumbnail cache miss and on full-resolution decode. This catches replacements that preserve size, mtime and displayed dimensions. Detail preview carries the metadata through Viewer contracts, so selecting a warm preview can show dimensions/format without probing the original. Full-resolution decode uses the persisted metadata for allocation/budget checks and validates the content identity only when the user actually requests the original.
