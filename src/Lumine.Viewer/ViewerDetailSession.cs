@@ -86,6 +86,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         CancellationTokenSource selection;
         long version;
 
@@ -136,27 +138,57 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 preview.CachePath,
                 selection.Token).ConfigureAwait(false);
 
+            var publishPreview = false;
+            var callerCancelledAtCommit = false;
+
             lock (_gate)
             {
-                if (!IsCurrentLocked(version, selection))
+                if (!IsSelectionIdentityCurrentLocked(version, selection))
                 {
                     lease.Dispose();
                     return;
                 }
 
-                _previewLease = lease;
-                _snapshot = new ViewerDetailSnapshot(
-                    index,
-                    asset,
-                    null,
-                    ViewerDetailLoadState.PreviewReady,
-                    lease.Bitmap,
-                    false,
-                    null,
-                    version);
+                if (selection.IsCancellationRequested)
+                {
+                    lease.Dispose();
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        _snapshot = _snapshot with
+                        {
+                            State = ViewerDetailLoadState.Error,
+                            ErrorMessage = "Selection cancelled."
+                        };
+                        callerCancelledAtCommit = true;
+                    }
+                }
+                else
+                {
+                    _previewLease = lease;
+                    _snapshot = new ViewerDetailSnapshot(
+                        index,
+                        asset,
+                        null,
+                        ViewerDetailLoadState.PreviewReady,
+                        lease.Bitmap,
+                        false,
+                        null,
+                        version);
+                    publishPreview = true;
+                }
             }
 
-            PublishState();
+            if (callerCancelledAtCommit)
+            {
+                PublishState();
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            if (publishPreview)
+            {
+                PublishState();
+            }
         }
         catch (OperationCanceledException)
             when (selection.IsCancellationRequested)
