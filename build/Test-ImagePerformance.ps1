@@ -87,8 +87,12 @@ if ($metadataMemoryHits -ne 1000) {
     throw "Warm thumbnail benchmark did not reuse bounded in-session source metadata exactly 1,000 times: $metadataMemoryHits"
 }
 
-if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -le 0) {
+if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -lt 512MB) {
     throw "Source metadata probe fixture is incomplete: count=$metadataProbeFixtureCount bytes=$metadataProbeFixtureBytes"
+}
+
+if ([double]$metadataProbeBatch.durationMs -gt 30000) {
+    throw "10k source metadata probes exceeded 30 seconds: $($metadataProbeBatch.durationMs) ms"
 }
 
 if ($generated -ne 65 -or $cacheFiles -ne 65) {
