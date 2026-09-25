@@ -794,6 +794,34 @@ internal static class Program
             grid.SelectedAssetIndex == 2,
             "Detail previous/next navigation did not synchronize Grid selection.");
 
+        await detail.SelectAsync(0);
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        await detail.SetZoomAsync(2);
+        detail.PanBy(80, 60);
+        Dispatcher.UIThread.RunJobs();
+
+        await Task.Run(
+            async () => await detailSession.SelectAsync(1));
+        await WaitForDetailAsync(
+            detailSession,
+            static snapshot =>
+                snapshot.SelectedIndex == 1
+                && snapshot.State == ViewerDetailLoadState.PreviewReady);
+        Dispatcher.UIThread.RunJobs();
+
+        Require(
+            detail.Zoom < 2
+            && detail.PanOffset.X < 0.001
+            && detail.PanOffset.Y < 0.001,
+            "External session selection retained stale Detail zoom or pan.");
+        Require(
+            grid.SelectedAssetIndex == 1,
+            "Background session selection did not synchronize Grid on the UI dispatcher.");
+
         await detail.ActualSizeAsync();
         Require(
             detailSession.Snapshot.IsOriginal,
@@ -933,6 +961,122 @@ internal static class Program
             session.Snapshot.State == ViewerDetailLoadState.PreviewReady
             && session.Snapshot.SelectedIndex == 0,
             "A pre-cancelled no-op selection corrupted the existing ready snapshot.");
+
+        using var completedCaller = new CancellationTokenSource();
+        session.Clear();
+        await session.SelectAsync(0, completedCaller.Token);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady
+                && snapshot.Bitmap is not null);
+
+        completedCaller.Cancel();
+
+        await session.EnsureOriginalAsync();
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady
+                && snapshot.IsOriginal);
+
+        Require(
+            session.Snapshot.IsOriginal,
+            "Cancelling a caller token after SelectAsync completed poisoned the active selection lifetime.");
+
+        session.Clear();
+        await session.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        var originalRequestsBeforeCancelledWait =
+            provider.OriginalRequests;
+        using (var cancelledOriginalWait =
+               new CancellationTokenSource())
+        {
+            var originalWait = session.EnsureOriginalAsync(
+                cancelledOriginalWait.Token);
+
+            for (var attempt = 0;
+                 attempt < 300 && provider.ActiveOriginalLoads == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                provider.ActiveOriginalLoads == 1,
+                "Original caller-cancellation matrix never started the shared original load.");
+
+            cancelledOriginalWait.Cancel();
+            await ExpectCancellationAsync(originalWait);
+        }
+
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.OriginalReady
+                && snapshot.IsOriginal);
+
+        Require(
+            provider.OriginalRequests
+                == originalRequestsBeforeCancelledWait + 1,
+            "Cancelling an EnsureOriginalAsync waiter cancelled or duplicated the shared selection load.");
+
+        session.Clear();
+        await session.SelectAsync(0);
+        var originalRequestsBeforePreCancelled =
+            provider.OriginalRequests;
+
+        using (var preCancelledOriginal =
+               new CancellationTokenSource())
+        {
+            preCancelledOriginal.Cancel();
+            await ExpectCancellationAsync(
+                session.EnsureOriginalAsync(
+                    preCancelledOriginal.Token));
+        }
+
+        Require(
+            session.Snapshot.State
+                == ViewerDetailLoadState.PreviewReady
+            && provider.OriginalRequests
+                == originalRequestsBeforePreCancelled,
+            "Pre-cancelled EnsureOriginalAsync mutated state or started a provider load.");
+
+        using var cancelledCommand = new CancellationTokenSource();
+        cancelledCommand.Cancel();
+
+        var detail = new DetailViewerControl(session);
+        var zoomBefore = detail.Zoom;
+
+        await ExpectCancellationAsync(
+            detail.SetZoomAsync(2, cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled SetZoomAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            detail.ZoomByAsync(1.25, cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled ZoomByAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            detail.ActualSizeAsync(cancelledCommand.Token));
+        Require(
+            Math.Abs(detail.Zoom - zoomBefore) < 0.001,
+            "Pre-cancelled ActualSizeAsync mutated zoom.");
+
+        await ExpectCancellationAsync(
+            session.EnsureOriginalAsync(cancelledCommand.Token));
+        Require(
+            session.Snapshot.State == ViewerDetailLoadState.PreviewReady,
+            "Pre-cancelled EnsureOriginalAsync mutated the current preview state.");
     }
 
     private static async Task VerifyUnknownMetadataPromotionAsync(
