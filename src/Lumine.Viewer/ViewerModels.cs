@@ -19,17 +19,56 @@ public sealed record ViewerAsset(
     long ModifiedAtUtcTicks,
     int? Width = null,
     int? Height = null,
-    string? Format = null);
+    string? Format = null,
+    string? SourceContentSha256 = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    bool? HasAlpha = null)
+{
+    public ViewerSourceTechnicalMetadata? PersistedSourceMetadata =>
+        Width is > 0
+        && Height is > 0
+        && RawWidth is > 0
+        && RawHeight is > 0
+        && HasAlpha.HasValue
+        && !string.IsNullOrWhiteSpace(Format)
+        && SourceContentSha256 is { Length: 64 }
+        && SourceContentSha256.All(
+            static character => Uri.IsHexDigit(character))
+            ? new ViewerSourceTechnicalMetadata(
+                Width.Value,
+                Height.Value,
+                RawWidth.Value,
+                RawHeight.Value,
+                HasAlpha.Value,
+                Format!,
+                SourceContentSha256)
+            : null;
+}
 
 public sealed record ViewerAssetPage(
     IReadOnlyList<ViewerAsset> Items,
     ViewerPageCursor? NextCursor);
 
+public sealed record ViewerSourceTechnicalMetadata(
+    int Width,
+    int Height,
+    int RawWidth,
+    int RawHeight,
+    bool HasAlpha,
+    string Format,
+    string ContentSha256)
+{
+    public long EstimatedRgbaBytes =>
+        checked((long)Width * Height * 4L);
+}
+
 public sealed record ViewerThumbnail(
     string CacheKey,
     string CachePath,
     int Width,
-    int Height);
+    int Height,
+    ViewerSourceTechnicalMetadata? SourceMetadata = null);
 
 public interface IViewerPageSource
 {
