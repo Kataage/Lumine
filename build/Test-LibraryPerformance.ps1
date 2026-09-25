@@ -38,6 +38,7 @@ $coldBulk100 = Get-Metric $coldHundredK "library.bulk_upsert"
 $reopen100 = Get-Metric $hundredK "library.database_reopen"
 $query100 = Get-Metric $hundredK "library.query"
 $keyset100 = Get-Metric $hundredK "library.keyset_traversal"
+$metadataPersist100 = Get-Metric $hundredK "library.technical_metadata_persist"
 
 $peakWorkingSet100 = [long]$hundredK.metadata.peak_working_set_bytes
 $coldPeakWorkingSet100 = [long]$coldHundredK.metadata.peak_working_set_bytes
@@ -53,6 +54,10 @@ if ([int]$hundredK.metadata.traversed_asset_count -ne 100000) {
 
 if ($hundredK.metadata.paging -ne "keyset:modified_at_utc_ticks,id") {
     throw "100k benchmark is not using the required keyset paging contract."
+}
+
+if ([int]$hundredK.metadata.technical_metadata_persist_count -ne 10000) {
+    throw "100k benchmark did not persist technical metadata for the required 10,000-asset sample."
 }
 
 # Budgets intentionally include substantial hosted-runner headroom while still
@@ -104,4 +109,5 @@ Write-Host ("100k ingest: {0:N1} ms" -f $bulk100.durationMs)
 Write-Host ("100k reopen: {0:N1} ms" -f $reopen100.durationMs)
 Write-Host ("100k first-page query: {0:N1} ms" -f $query100.durationMs)
 Write-Host ("100k keyset traversal: {0:N1} ms" -f $keyset100.durationMs)
+Write-Host ("10k technical metadata persistence: {0:N1} ms" -f $metadataPersist100.durationMs)
 Write-Host ("100k database size: {0:N1} MiB" -f ($databaseBytes100 / 1MB))
