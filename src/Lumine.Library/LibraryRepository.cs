@@ -117,6 +117,8 @@ public sealed class LibraryRepository
                 file_size, modified_at_utc_ticks,
                 source_revision,
                 width, height, format,
+                source_content_sha256,
+                raw_width, raw_height, has_alpha,
                 observed_generation
             FROM assets
             WHERE library_id = $library_id
@@ -129,6 +131,98 @@ public sealed class LibraryRepository
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? ReadAsset(reader)
             : null;
+    }
+
+    public async Task<bool> UpdateTechnicalMetadataAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        AssetTechnicalMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(assetId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedSourceRevision);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedFileSize);
+
+        if (metadata.Width <= 0
+            || metadata.Height <= 0
+            || metadata.RawWidth <= 0
+            || metadata.RawHeight <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(metadata),
+                "Technical image dimensions must be positive.");
+        }
+
+        if (string.IsNullOrWhiteSpace(metadata.Format)
+            || metadata.Format.Length > 64)
+        {
+            throw new ArgumentException(
+                "Technical image format must be present and at most 64 characters.",
+                nameof(metadata));
+        }
+
+        if (metadata.ContentSha256.Length != 64
+            || metadata.ContentSha256.Any(
+                static character => !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException(
+                "Source content identity must be a SHA-256 hex digest.",
+                nameof(metadata));
+        }
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE assets
+            SET width = $width,
+                height = $height,
+                raw_width = $raw_width,
+                raw_height = $raw_height,
+                has_alpha = $has_alpha,
+                format = $format,
+                source_content_sha256 = $content_sha256,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND id = $asset_id
+              AND source_revision = $source_revision
+              AND file_size = $file_size
+              AND modified_at_utc_ticks = $modified
+              AND (
+                  source_content_sha256 IS NULL
+                  OR lower(source_content_sha256) = lower($content_sha256)
+              );
+            """;
+        command.Parameters.AddWithValue("$width", metadata.Width);
+        command.Parameters.AddWithValue("$height", metadata.Height);
+        command.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
+        command.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
+        command.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
+        command.Parameters.AddWithValue("$format", metadata.Format.Trim());
+        command.Parameters.AddWithValue(
+            "$content_sha256",
+            metadata.ContentSha256.ToLowerInvariant());
+        command.Parameters.AddWithValue(
+            "$updated",
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$asset_id", assetId);
+        command.Parameters.AddWithValue(
+            "$source_revision",
+            expectedSourceRevision);
+        command.Parameters.AddWithValue("$file_size", expectedFileSize);
+        command.Parameters.AddWithValue(
+            "$modified",
+            expectedModifiedAtUtcTicks);
+
+        return await command.ExecuteNonQueryAsync(
+            cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task<int> UpsertAssetsAsync(
@@ -200,6 +294,13 @@ public sealed class LibraryRepository
         }
 
         using var transaction = connection.BeginTransaction();
+
+        await ApplyForcedSourceRevisionHintsAsync(
+            connection,
+            transaction,
+            libraryId,
+            prepared,
+            cancellationToken).ConfigureAwait(false);
 
         var folderIds = await LoadExistingFolderIdsAsync(
             connection,
@@ -328,7 +429,9 @@ public sealed class LibraryRepository
                   relative_path, file_name, extension,
                   file_size, modified_at_utc_ticks,
                   source_revision,
-                  width, height, format
+                  width, height, format,
+                  source_content_sha256,
+                  raw_width, raw_height, has_alpha
               FROM assets
               WHERE library_id = $library_id
               ORDER BY modified_at_utc_ticks DESC, id DESC
@@ -340,7 +443,9 @@ public sealed class LibraryRepository
                   relative_path, file_name, extension,
                   file_size, modified_at_utc_ticks,
                   source_revision,
-                  width, height, format
+                  width, height, format,
+                  source_content_sha256,
+                  raw_width, raw_height, has_alpha
               FROM assets
               WHERE library_id = $library_id
                 AND (
@@ -744,6 +849,30 @@ public sealed class LibraryRepository
                          THEN $format
                          ELSE COALESCE($format, format)
                     END,
+                source_content_sha256 =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN NULL
+                         ELSE source_content_sha256
+                    END,
+                raw_width =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN NULL
+                         ELSE raw_width
+                    END,
+                raw_height =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN NULL
+                         ELSE raw_height
+                    END,
+                has_alpha =
+                    CASE WHEN file_size <> $file_size
+                               OR modified_at_utc_ticks <> $modified
+                         THEN NULL
+                         ELSE has_alpha
+                    END,
                 file_size = $file_size,
                 modified_at_utc_ticks = $modified,
                 observed_generation =
@@ -861,6 +990,62 @@ public sealed class LibraryRepository
                 """;
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task ApplyForcedSourceRevisionHintsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        IReadOnlyList<PreparedAsset> prepared,
+        CancellationToken cancellationToken)
+    {
+        var forced = prepared
+            .Where(static item => item.Source.ForceSourceRevision)
+            .ToArray();
+
+        if (forced.Length == 0)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE assets
+            SET source_revision = source_revision + 1,
+                width = NULL,
+                height = NULL,
+                format = NULL,
+                source_content_sha256 = NULL,
+                raw_width = NULL,
+                raw_height = NULL,
+                has_alpha = NULL,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND relative_path_key = $path_key
+              AND file_size = $file_size
+              AND modified_at_utc_ticks = $modified;
+            """;
+
+        var updated = command.Parameters.Add("$updated", SqliteType.Integer);
+        var library = command.Parameters.Add("$library_id", SqliteType.Integer);
+        var path = command.Parameters.Add("$path_key", SqliteType.Text);
+        var size = command.Parameters.Add("$file_size", SqliteType.Integer);
+        var modified = command.Parameters.Add("$modified", SqliteType.Integer);
+        library.Value = libraryId;
+        command.Prepare();
+
+        foreach (var item in forced)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            updated.Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+            path.Value = item.RelativePathKey;
+            size.Value = item.Source.FileSize;
+            modified.Value = item.Source.ModifiedAtUtc.UtcDateTime.Ticks;
+            await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -1014,6 +1199,30 @@ public sealed class LibraryRepository
                                OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
                          THEN excluded.format
                          ELSE COALESCE(excluded.format, assets.format)
+                    END,
+                source_content_sha256 =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN NULL
+                         ELSE assets.source_content_sha256
+                    END,
+                raw_width =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN NULL
+                         ELSE assets.raw_width
+                    END,
+                raw_height =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN NULL
+                         ELSE assets.raw_height
+                    END,
+                has_alpha =
+                    CASE WHEN assets.file_size <> excluded.file_size
+                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
+                         THEN NULL
+                         ELSE assets.has_alpha
                     END,
                 file_size = excluded.file_size,
                 modified_at_utc_ticks = excluded.modified_at_utc_ticks,
@@ -1199,7 +1408,11 @@ public sealed class LibraryRepository
             reader.GetInt64(8),
             reader.IsDBNull(9) ? null : reader.GetInt32(9),
             reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(13) ? null : reader.GetInt32(13),
+            reader.IsDBNull(14) ? null : reader.GetInt32(14),
+            reader.IsDBNull(15) ? null : reader.GetInt32(15) != 0);
 
     private static DateTimeOffset FromTicks(long ticks) =>
         new(new DateTime(ticks, DateTimeKind.Utc));
