@@ -7,6 +7,10 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private readonly object _gate = new();
     private readonly CancellationTokenSource _shutdown = new();
     private readonly SemaphoreSlim _originalAdmission = new(1, 1);
+    private TaskCompletionSource _selectionOperationsDrained =
+        NewCompletedSignal();
+    private readonly TaskCompletionSource _disposeCompletion =
+        NewSignal();
     private CancellationTokenSource? _selectionLifetimeCancellation;
     private DecodedBitmapLease? _previewLease;
     private ViewerOriginalBitmap? _original;
@@ -24,6 +28,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             null,
             0);
     private long _version;
+    private int _activeSelectionOperations;
     private bool _disposed;
 
     public ViewerDetailSession(
@@ -117,6 +122,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 CancellationTokenSource.CreateLinkedTokenSource(
                     selectionLifetime.Token,
                     cancellationToken);
+            RegisterSelectionOperationLocked();
             _selectionLifetimeCancellation = selectionLifetime;
             version = ++_version;
 
@@ -131,11 +137,13 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 version);
         }
 
-        PublishState();
-        PublishSelectedIndexChanged(index);
-
-        using (operation)
+        try
         {
+            PublishState();
+            PublishSelectedIndexChanged(index);
+
+            using (operation)
+            {
             var callerCancelledAtCommit = false;
 
             try
@@ -250,10 +258,15 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 PublishState();
             }
 
-            if (callerCancelledAtCommit)
-            {
-                throw new OperationCanceledException(cancellationToken);
+                if (callerCancelledAtCommit)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
             }
+        }
+        finally
+        {
+            CompleteSelectionOperation();
         }
     }
 
@@ -459,77 +472,140 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        CancellationTokenSource? selectionLifetime;
-        Task? originalLoad;
-        Task originalDisposal;
+        CancellationTokenSource? selectionLifetime = null;
+        Task? originalLoad = null;
+        Task originalDisposal = Task.CompletedTask;
+        Task selectionOperationDrain = Task.CompletedTask;
+        var ownsShutdown = false;
 
         lock (_gate)
         {
-            if (_disposed)
+            if (!_disposed)
             {
-                return;
+                _disposed = true;
+                ownsShutdown = true;
+                selectionLifetime = _selectionLifetimeCancellation;
+                _selectionLifetimeCancellation = null;
+                originalLoad = _originalLoadTask;
+                selectionOperationDrain =
+                    _selectionOperationsDrained.Task;
+                ReleaseImagesLocked();
+                originalDisposal = _previousOriginalDisposal;
+
+                var version = ++_version;
+                _snapshot = new ViewerDetailSnapshot(
+                    -1,
+                    null,
+                    null,
+                    ViewerDetailLoadState.Empty,
+                    null,
+                    false,
+                    null,
+                    version);
             }
-
-            _disposed = true;
-            selectionLifetime = _selectionLifetimeCancellation;
-            _selectionLifetimeCancellation = null;
-            originalLoad = _originalLoadTask;
-            ReleaseImagesLocked();
-            originalDisposal = _previousOriginalDisposal;
-
-            var version = ++_version;
-            _snapshot = new ViewerDetailSnapshot(
-                -1,
-                null,
-                null,
-                ViewerDetailLoadState.Empty,
-                null,
-                false,
-                null,
-                version);
         }
 
-        CancelSourceNoThrow(_shutdown);
-        if (selectionLifetime is not null)
+        if (!ownsShutdown)
         {
-            CancelSourceNoThrow(selectionLifetime);
+            await _disposeCompletion.Task
+                .ConfigureAwait(false);
+            return;
         }
-
-        if (originalLoad is not null)
-        {
-            try
-            {
-                await originalLoad.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch
-            {
-                // State/error propagation is irrelevant after disposal; the
-                // important invariant is that the native decode has stopped.
-            }
-        }
-
-        await _originalAdmission.WaitAsync().ConfigureAwait(false);
-        _originalAdmission.Release();
 
         try
         {
-            await originalDisposal.ConfigureAwait(false);
+            CancelSourceNoThrow(_shutdown);
+            if (selectionLifetime is not null)
+            {
+                CancelSourceNoThrow(selectionLifetime);
+            }
+
+            // Begin cache shutdown on the UI thread so resident Avalonia
+            // bitmaps are released on the same thread as the visual owner.
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                () => PreviewBitmapCache.Dispose());
+
+            if (originalLoad is not null)
+            {
+                try
+                {
+                    await originalLoad.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch
+                {
+                    // State/error propagation is irrelevant after disposal;
+                    // the important invariant is that native decode stopped.
+                }
+            }
+
+            await selectionOperationDrain
+                .ConfigureAwait(false);
+
+            await PreviewBitmapCache.DisposeAsync()
+                .ConfigureAwait(false);
+
+            await _originalAdmission.WaitAsync()
+                .ConfigureAwait(false);
+            _originalAdmission.Release();
+
+            try
+            {
+                await originalDisposal.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Platform bitmap disposal is best-effort during teardown.
+            }
+
+            selectionLifetime?.Dispose();
+            _originalAdmission.Dispose();
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetResult();
         }
-        catch
+        catch (Exception exception)
         {
-            // Platform bitmap disposal is best-effort during teardown.
+            _disposeCompletion.TrySetException(exception);
+            throw;
+        }
+    }
+
+    private void RegisterSelectionOperationLocked()
+    {
+        if (_activeSelectionOperations == 0)
+        {
+            _selectionOperationsDrained = NewSignal();
         }
 
-        selectionLifetime?.Dispose();
+        _activeSelectionOperations++;
+    }
 
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
-            () => PreviewBitmapCache.Dispose());
+    private void CompleteSelectionOperation()
+    {
+        TaskCompletionSource? drained = null;
 
-        _originalAdmission.Dispose();
-        _shutdown.Dispose();
+        lock (_gate)
+        {
+            _activeSelectionOperations--;
+            if (_activeSelectionOperations == 0)
+            {
+                drained = _selectionOperationsDrained;
+            }
+        }
+
+        drained?.TrySetResult();
+    }
+
+    private static TaskCompletionSource NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static TaskCompletionSource NewCompletedSignal()
+    {
+        var signal = NewSignal();
+        signal.TrySetResult();
+        return signal;
     }
 
     private void CancelSelectionLifetimeLocked()

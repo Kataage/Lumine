@@ -43,6 +43,8 @@ internal static class Program
                     await VerifyDetailViewerAsync(thumbnailPath);
                     await VerifyDetailObserverIsolationAsync(
                         thumbnailPath);
+                    await VerifyDetailSessionShutdownAsync(
+                        thumbnailPath);
                     await VerifyDetailSelectionCallerCancellationAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionReversalAsync(thumbnailPath);
@@ -444,6 +446,78 @@ internal static class Program
         catch (ObjectDisposedException)
         {
         }
+
+        using var decodeStarted = new ManualResetEventSlim();
+        using var decodeCancelled = new ManualResetEventSlim();
+        var allowDecodeExit =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var shutdownCache = new DecodedBitmapCache(
+            entryLimit: 2,
+            byteLimit: 4 * 1024 * 1024,
+            decodeBitmap:
+                (path, cancellationToken) =>
+                {
+                    decodeStarted.Set();
+                    cancellationToken.WaitHandle.WaitOne();
+                    decodeCancelled.Set();
+                    allowDecodeExit.Task.GetAwaiter().GetResult();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    using var stream = new FileStream(
+                        path,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read);
+                    return new Bitmap(stream);
+                });
+
+        var cacheSession = new ViewerSession(
+            new DirectFixtureAssetProvider(1),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 2,
+                DecodedBitmapByteLimit = 4 * 1024 * 1024
+            },
+            shutdownCache);
+
+        var activeDecode =
+            cacheSession.BitmapCache.AcquireAsync(thumbnailPath);
+
+        Require(
+            decodeStarted.Wait(TimeSpan.FromSeconds(2)),
+            "ViewerSession cache shutdown integration never entered decode.");
+
+        var cacheSessionDispose =
+            cacheSession.DisposeAsync().AsTask();
+
+        Require(
+            decodeCancelled.Wait(TimeSpan.FromSeconds(2)),
+            "ViewerSession shutdown did not cancel active bitmap decode.");
+        Require(
+            !cacheSessionDispose.IsCompleted,
+            "ViewerSession.DisposeAsync returned before bitmap decode drained.");
+
+        allowDecodeExit.TrySetResult();
+        await cacheSessionDispose.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        try
+        {
+            using var unexpected = await activeDecode;
+            throw new InvalidOperationException(
+                "ViewerSession shutdown admitted a cancelled bitmap decode.");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        Require(
+            shutdownCache.Diagnostics.ActiveDecodes == 0,
+            "ViewerSession.DisposeAsync did not drain active bitmap decode.");
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
@@ -1061,6 +1135,47 @@ internal static class Program
             detailSession.Snapshot.State == ViewerDetailLoadState.Empty
             && detailSession.Snapshot.Bitmap is null,
             "Detaching Detail did not release the selected bitmap lifetime.");
+    }
+
+    private static async Task VerifyDetailSessionShutdownAsync(
+        string previewPath)
+    {
+        var provider = new BlockingPreviewDetailProvider(
+            previewPath);
+        var session = new ViewerDetailSession(
+            new DirectFixtureAssetProvider(1),
+            provider);
+
+        var selection = session.SelectAsync(0);
+        await provider.Started.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        var firstDispose = session.DisposeAsync().AsTask();
+        var secondDispose = session.DisposeAsync().AsTask();
+
+        await provider.CancellationObserved.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        Require(
+            !firstDispose.IsCompleted
+            && !secondDispose.IsCompleted,
+            "Concurrent Detail DisposeAsync returned before active selection work drained.");
+
+        provider.AllowExit();
+
+        await Task.WhenAll(
+            firstDispose,
+            secondDispose).WaitAsync(
+                TimeSpan.FromSeconds(2));
+        await selection.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        Require(
+            provider.ActivePreviewLoads == 0,
+            "Detail DisposeAsync returned before preview provider work drained.");
+        Require(
+            session.PreviewBitmapCache.Diagnostics.ActiveDecodes == 0,
+            "Detail DisposeAsync returned before preview cache decode drained.");
     }
 
     private static async Task VerifyDetailObserverIsolationAsync(
@@ -1785,6 +1900,64 @@ internal sealed class DelayedThumbnailProvider(
             Interlocked.Decrement(ref _active);
         }
     }
+}
+
+internal sealed class BlockingPreviewDetailProvider(
+    string previewPath) : IViewerDetailProvider
+{
+    private readonly TaskCompletionSource _started =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _cancellationObserved =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _allowExit =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _activePreviewLoads;
+
+    public Task Started => _started.Task;
+
+    public Task CancellationObserved =>
+        _cancellationObserved.Task;
+
+    public int ActivePreviewLoads =>
+        Volatile.Read(ref _activePreviewLoads);
+
+    public void AllowExit() =>
+        _allowExit.TrySetResult();
+
+    public async ValueTask<ViewerThumbnail> RequestPreviewAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _activePreviewLoads);
+        _started.TrySetResult();
+
+        using var registration =
+            cancellationToken.Register(
+                () => _cancellationObserved.TrySetResult());
+
+        try
+        {
+            await _allowExit.Task.ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return new ViewerThumbnail(
+                $"blocking-preview-{asset.Id}",
+                previewPath,
+                1,
+                1);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activePreviewLoads);
+        }
+    }
+
+    public Task<ViewerOriginalBitmap> LoadOriginalAsync(
+        ViewerAsset asset,
+        long maxDecodedBytes,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException(
+            "Blocking preview provider does not support original loading.");
 }
 
 internal sealed class DelayedDetailProvider(

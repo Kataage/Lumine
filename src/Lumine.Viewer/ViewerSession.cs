@@ -27,6 +27,19 @@ public sealed class ViewerSession : IAsyncDisposable
         IViewerAssetProvider assets,
         IViewerThumbnailProvider thumbnails,
         ViewerOptions? options = null)
+        : this(
+            assets,
+            thumbnails,
+            options,
+            bitmapCache: null)
+    {
+    }
+
+    internal ViewerSession(
+        IViewerAssetProvider assets,
+        IViewerThumbnailProvider thumbnails,
+        ViewerOptions? options,
+        DecodedBitmapCache? bitmapCache)
     {
         _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _thumbnails = thumbnails ?? throw new ArgumentNullException(nameof(thumbnails));
@@ -38,9 +51,10 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
 
-        BitmapCache = new DecodedBitmapCache(
-            Options.DecodedBitmapEntryLimit,
-            Options.DecodedBitmapByteLimit);
+        BitmapCache = bitmapCache
+            ?? new DecodedBitmapCache(
+                Options.DecodedBitmapEntryLimit,
+                Options.DecodedBitmapByteLimit);
     }
 
     public ViewerOptions Options { get; }
@@ -98,7 +112,7 @@ public sealed class ViewerSession : IAsyncDisposable
         long index,
         CancellationToken cancellationToken = default)
     {
-        using var operation = BeginOperation(
+        var operation = BeginOperation(
             cancellationToken);
 
         try
@@ -109,6 +123,7 @@ public sealed class ViewerSession : IAsyncDisposable
         }
         finally
         {
+            operation.Dispose();
             CompleteOperation();
         }
     }
@@ -183,7 +198,7 @@ public sealed class ViewerSession : IAsyncDisposable
         int count,
         CancellationToken cancellationToken = default)
     {
-        using var operation = BeginOperation(
+        var operation = BeginOperation(
             cancellationToken);
 
         try
@@ -222,6 +237,7 @@ public sealed class ViewerSession : IAsyncDisposable
         }
         finally
         {
+            operation.Dispose();
             CompleteOperation();
         }
     }
