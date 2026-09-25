@@ -366,7 +366,9 @@ internal static class Program
             provider.Active == 1,
             "Viewer shutdown regression never entered provider work.");
 
-        await session.DisposeAsync();
+        var firstDispose = session.DisposeAsync().AsTask();
+        var secondDispose = session.DisposeAsync().AsTask();
+        await Task.WhenAll(firstDispose, secondDispose);
 
         await ExpectCancellationAsync(first);
         await ExpectCancellationAsync(second);
@@ -385,6 +387,59 @@ internal static class Program
                 ViewerThumbnailPriority.Foreground);
             throw new InvalidOperationException(
                 "Disposed ViewerSession admitted new thumbnail work.");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        var assetProvider = new DelayedAssetProvider(
+            count: 4,
+            delay: TimeSpan.FromMilliseconds(500));
+        var assetSession = new ViewerSession(
+            assetProvider,
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 4,
+                DecodedBitmapByteLimit = 4 * 1024 * 1024
+            });
+
+        var assetLoad = assetSession.GetAssetAsync(0).AsTask();
+
+        for (var attempt = 0;
+             attempt < 300 && assetProvider.Active == 0;
+             attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        Require(
+            assetProvider.Active == 1,
+            "Viewer asset shutdown regression never entered asset work.");
+
+        var assetDisposeA =
+            assetSession.DisposeAsync().AsTask();
+        var assetDisposeB =
+            assetSession.DisposeAsync().AsTask();
+
+        await Task.WhenAll(
+            assetDisposeA,
+            assetDisposeB);
+        await ExpectCancellationAsync(assetLoad);
+
+        Require(
+            assetProvider.Active == 0,
+            "ViewerSession.DisposeAsync returned before active asset work drained.");
+        Require(
+            assetProvider.Cancelled > 0,
+            "Active asset provider did not observe Viewer shutdown cancellation.");
+
+        try
+        {
+            _ = await assetSession.GetAssetAsync(1);
+            throw new InvalidOperationException(
+                "Disposed ViewerSession admitted new asset work.");
         }
         catch (ObjectDisposedException)
         {
@@ -1583,6 +1638,60 @@ internal sealed class FixturePageSource(long count) : IViewerPageSource
             $"asset-{index:D6}.jpg",
             10_000 + index,
             DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks);
+}
+
+internal sealed class DelayedAssetProvider(
+    long count,
+    TimeSpan delay) : IViewerAssetProvider
+{
+    private int _active;
+    private int _cancelled;
+
+    public long Count { get; } = count;
+
+    public int Active => Volatile.Read(ref _active);
+
+    public int Cancelled => Volatile.Read(ref _cancelled);
+
+    public async ValueTask<ViewerAsset> GetAssetAsync(
+        long index,
+        CancellationToken cancellationToken = default)
+    {
+        if ((ulong)index >= (ulong)Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        Interlocked.Increment(ref _active);
+        try
+        {
+            try
+            {
+                await Task.Delay(
+                    delay,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref _cancelled);
+                throw;
+            }
+
+            return new ViewerAsset(
+                index + 1,
+                1,
+                $"fixture/{index:D6}.jpg",
+                $"asset-{index:D6}.jpg",
+                10_000 + index,
+                DateTimeOffset.UnixEpoch
+                    .AddSeconds(index)
+                    .UtcDateTime.Ticks);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _active);
+        }
+    }
 }
 
 internal sealed class DirectFixtureAssetProvider(
