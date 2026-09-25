@@ -429,7 +429,7 @@ try
         throw new InvalidOperationException(
             "Same-size/mtime source replacement was not rejected by content identity.");
     }
-    catch (ImageSourceChangedException)
+    catch (FullResolutionSourceChangedException)
     {
     }
 
