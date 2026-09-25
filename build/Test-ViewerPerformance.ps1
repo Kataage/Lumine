@@ -44,6 +44,7 @@ foreach ($result in $results) {
     $cancelled = [long]$result.metadata.thumbnail_requests_cancelled
     $requestFailures = [long]$result.metadata.thumbnail_requests_failed
     $tileFailures = [long]$result.metadata.tile_load_failures
+    $lastTileError = [string]$result.metadata.last_tile_load_error
     $inflight = [int]$result.metadata.inflight_thumbnail_requests
     $finalAttached = [int]$result.metadata.final_attached_tiles
     $finalReady = [int]$result.metadata.final_ready_tiles
@@ -89,7 +90,7 @@ foreach ($result in $results) {
     }
 
     if ($tileFailures -ne 0) {
-        throw "$count Viewer visible tile load failures were observed: $tileFailures"
+        throw "$count Viewer visible tile load failures were observed: $tileFailures; last=$lastTileError"
     }
 
     if ($inflight -ne 0) {

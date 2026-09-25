@@ -206,6 +206,7 @@ internal static class Program
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_failed"] = finalDiagnostics.ThumbnailRequestsFailed.ToString(CultureInfo.InvariantCulture),
                     ["tile_load_failures"] = finalDiagnostics.TileLoadFailures.ToString(CultureInfo.InvariantCulture),
+                    ["last_tile_load_error"] = finalDiagnostics.LastTileLoadError ?? string.Empty,
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
                     ["final_ready_tiles"] = finalDiagnostics.ReadyTiles.ToString(CultureInfo.InvariantCulture),

@@ -128,6 +128,103 @@ internal static class Program
             cache.Diagnostics.EntryCount == 0
             && cache.Diagnostics.EstimatedBytes == 0,
             "Leased bitmap was not released after disposed-cache lease completion.");
+
+        using (var oversizeCache = new DecodedBitmapCache(
+                   entryLimit: 2,
+                   byteLimit: 3))
+        {
+            try
+            {
+                using var unexpected = await oversizeCache.AcquireAsync(
+                    sourceThumbnail);
+                throw new InvalidOperationException(
+                    "Per-bitmap byte-limit violation incorrectly entered capacity waiting.");
+            }
+            catch (InvalidOperationException exception)
+                when (exception.Message.Contains(
+                    "above cache limit",
+                    StringComparison.Ordinal))
+            {
+            }
+        }
+
+        var pressurePaths = Enumerable.Range(0, 5)
+            .Select(index =>
+            {
+                var path = Path.Combine(
+                    tempRoot,
+                    $"decoded-pressure-{index:D2}.png");
+                File.Copy(sourceThumbnail, path);
+                return path;
+            })
+            .ToArray();
+
+        var pressureCache = new DecodedBitmapCache(
+            entryLimit: 2,
+            byteLimit: 8);
+
+        var firstPinned = await pressureCache.AcquireAsync(
+            pressurePaths[0]);
+        var secondPinned = await pressureCache.AcquireAsync(
+            pressurePaths[1]);
+
+        var waitingForCapacity = pressureCache.AcquireAsync(
+            pressurePaths[2]);
+        await Task.Delay(40);
+
+        Require(
+            !waitingForCapacity.IsCompleted,
+            "Fully pinned cache pressure failed immediately instead of waiting for capacity.");
+
+        firstPinned.Dispose();
+
+        var admittedAfterRelease = await waitingForCapacity.WaitAsync(
+            TimeSpan.FromSeconds(2));
+        Require(
+            admittedAfterRelease.Bitmap.PixelSize.Width == 1,
+            "Waiting cache admission did not recover after a lease was released.");
+
+        using (var cancellation = new CancellationTokenSource())
+        {
+            var cancelledWait = pressureCache.AcquireAsync(
+                pressurePaths[3],
+                cancellation.Token);
+            await Task.Delay(40);
+
+            Require(
+                !cancelledWait.IsCompleted,
+                "Pinned-cache cancellation regression never entered capacity wait.");
+
+            cancellation.Cancel();
+            await ExpectCancellationAsync(cancelledWait);
+        }
+
+        var disposedWait = pressureCache.AcquireAsync(
+            pressurePaths[4]);
+        await Task.Delay(40);
+        Require(
+            !disposedWait.IsCompleted,
+            "Pinned-cache disposal regression never entered capacity wait.");
+
+        pressureCache.Dispose();
+
+        try
+        {
+            _ = await disposedWait;
+            throw new InvalidOperationException(
+                "Disposed cache left a capacity waiter alive.");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        secondPinned.Dispose();
+        admittedAfterRelease.Dispose();
+
+        Require(
+            pressureCache.Diagnostics.EntryCount == 0
+            && pressureCache.Diagnostics.EstimatedBytes == 0,
+            "Disposed pressure cache retained leased bitmap state after release.");
     }
 
     private static async Task VerifyRequestCoalescingAndCancellationAsync(
