@@ -126,6 +126,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         PublishState();
         SelectedIndexChanged?.Invoke(this, index);
 
+        var callerCancelledAtCommit = false;
+
         try
         {
             var asset = await _assets.GetAssetAsync(
@@ -139,7 +141,6 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 selection.Token).ConfigureAwait(false);
 
             var publishPreview = false;
-            var callerCancelledAtCommit = false;
 
             lock (_gate)
             {
@@ -179,13 +180,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 }
             }
 
-            if (callerCancelledAtCommit)
-            {
-                PublishState();
-                throw new OperationCanceledException(cancellationToken);
-            }
-
-            if (publishPreview)
+            if (callerCancelledAtCommit || publishPreview)
             {
                 PublishState();
             }
@@ -237,6 +232,11 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             }
 
             PublishState();
+        }
+
+        if (callerCancelledAtCommit)
+        {
+            throw new OperationCanceledException(cancellationToken);
         }
     }
 
