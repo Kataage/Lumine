@@ -502,7 +502,7 @@ public sealed class ViewerSession : IAsyncDisposable
         public Task<ViewerThumbnail> Task { get; } = task;
 
         public Task CleanupTask { get; set; } =
-            Task.CompletedTask;
+            System.Threading.Tasks.Task.CompletedTask;
 
         public int Waiters { get; set; }
 
