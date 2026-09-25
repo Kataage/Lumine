@@ -161,6 +161,32 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         catch (OperationCanceledException)
             when (selection.IsCancellationRequested)
         {
+            var callerCancelled = cancellationToken.IsCancellationRequested;
+            var publishCancelled = false;
+
+            lock (_gate)
+            {
+                if (callerCancelled
+                    && IsSelectionIdentityCurrentLocked(version, selection))
+                {
+                    _snapshot = _snapshot with
+                    {
+                        State = ViewerDetailLoadState.Error,
+                        ErrorMessage = "Selection cancelled."
+                    };
+                    publishCancelled = true;
+                }
+            }
+
+            if (publishCancelled)
+            {
+                PublishState();
+            }
+
+            if (callerCancelled)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
         }
         catch (Exception exception)
         {
@@ -480,10 +506,15 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private bool IsCurrentLocked(
         long version,
         CancellationTokenSource selection) =>
+        IsSelectionIdentityCurrentLocked(version, selection)
+        && !selection.IsCancellationRequested;
+
+    private bool IsSelectionIdentityCurrentLocked(
+        long version,
+        CancellationTokenSource selection) =>
         !_disposed
         && _version == version
-        && ReferenceEquals(_selectionCancellation, selection)
-        && !selection.IsCancellationRequested;
+        && ReferenceEquals(_selectionCancellation, selection);
 
     private void PublishState()
     {
