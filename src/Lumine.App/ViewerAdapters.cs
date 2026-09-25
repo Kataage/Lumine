@@ -250,12 +250,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         if (info.ContentSha256 is not null
             && info.RawWidth is > 0
             && info.RawHeight is > 0
-            && !string.IsNullOrWhiteSpace(info.Format)
-            && (persisted is null
-                || !string.Equals(
-                    persisted.ContentSha256,
-                    info.ContentSha256,
-                    StringComparison.OrdinalIgnoreCase)))
+            && !string.IsNullOrWhiteSpace(info.Format))
         {
             await ViewerImageMetadataBridge.PersistAsync(
                 _library,
