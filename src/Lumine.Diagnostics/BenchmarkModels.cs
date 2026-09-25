@@ -8,6 +8,7 @@ public static class CoreMetricNames
     public const string LibraryBulkUpsert = "library.bulk_upsert";
     public const string LibraryQuery = "library.query";
     public const string LibraryKeysetTraversal = "library.keyset_traversal";
+    public const string LibraryTechnicalMetadataPersist = "library.technical_metadata_persist";
     public const string ThumbnailGenerate = "image.thumbnail_generate";
     public const string ThumbnailCacheHit = "image.thumbnail_cache_hit";
     public const string ThumbnailBatchGenerate = "image.thumbnail_batch_generate";
