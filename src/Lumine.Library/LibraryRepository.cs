@@ -166,7 +166,8 @@ public sealed class LibraryRepository
                 nameof(metadata));
         }
 
-        if (metadata.ContentSha256.Length != 64
+        if (string.IsNullOrWhiteSpace(metadata.ContentSha256)
+            || metadata.ContentSha256.Length != 64
             || metadata.ContentSha256.Any(
                 static character => !Uri.IsHexDigit(character)))
         {
