@@ -49,7 +49,11 @@ internal sealed class LibraryViewerPageSource : IViewerPageSource
                 asset.ModifiedAtUtc.UtcDateTime.Ticks,
                 asset.Width,
                 asset.Height,
-                asset.Format))
+                asset.Format,
+                asset.SourceContentSha256,
+                asset.RawWidth,
+                asset.RawHeight,
+                asset.HasAlpha))
             .ToArray();
 
         ViewerPageCursor? next = page.NextCursor is { } nextCursor
@@ -67,14 +71,36 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
     private readonly ThumbnailPipeline _pipeline;
     private readonly string _libraryRoot;
     private readonly string _libraryRootPrefix;
+    private readonly LibraryService? _library;
+    private readonly long _libraryId;
 
     public ImageViewerThumbnailProvider(
         ThumbnailPipeline pipeline,
         string libraryRoot)
+        : this(
+            pipeline,
+            libraryRoot,
+            library: null,
+            libraryId: 0)
+    {
+    }
+
+    public ImageViewerThumbnailProvider(
+        ThumbnailPipeline pipeline,
+        string libraryRoot,
+        LibraryService? library,
+        long libraryId)
     {
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
 
+        if (library is not null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        }
+
+        _library = library;
+        _libraryId = libraryId;
         _libraryRoot = Path.GetFullPath(libraryRoot);
         _libraryRootPrefix =
             _libraryRoot.TrimEnd(
@@ -103,23 +129,30 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
         }
 
         var result = await _pipeline.RequestAsync(
-            new ThumbnailSource(
-                asset.Id,
-                asset.SourceRevision,
-                sourcePath,
-                asset.FileSize,
-                asset.ModifiedAtUtcTicks),
+            ViewerImageMetadataBridge.CreateThumbnailSource(
+                asset,
+                sourcePath),
             ThumbnailProfiles.GridSmall,
             priority == ViewerThumbnailPriority.Foreground
                 ? ThumbnailPriority.Foreground
                 : ThumbnailPriority.Background,
             cancellationToken).ConfigureAwait(false);
 
+        await ViewerImageMetadataBridge.PersistAsync(
+            _library,
+            _libraryId,
+            asset,
+            sourcePath,
+            result.SourceMetadata,
+            cancellationToken).ConfigureAwait(false);
+
         return new ViewerThumbnail(
             result.CacheKey,
             result.CachePath,
             result.Width,
-            result.Height);
+            result.Height,
+            ViewerImageMetadataBridge.ToViewerMetadata(
+                result.SourceMetadata));
     }
 }
 
@@ -128,15 +161,37 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
     private readonly ThumbnailPipeline _thumbnailPipeline;
     private readonly string _libraryRoot;
     private readonly string _libraryRootPrefix;
+    private readonly LibraryService? _library;
+    private readonly long _libraryId;
 
     public ImageViewerDetailProvider(
         ThumbnailPipeline thumbnailPipeline,
         string libraryRoot)
+        : this(
+            thumbnailPipeline,
+            libraryRoot,
+            library: null,
+            libraryId: 0)
+    {
+    }
+
+    public ImageViewerDetailProvider(
+        ThumbnailPipeline thumbnailPipeline,
+        string libraryRoot,
+        LibraryService? library,
+        long libraryId)
     {
         _thumbnailPipeline = thumbnailPipeline
             ?? throw new ArgumentNullException(nameof(thumbnailPipeline));
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
 
+        if (library is not null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        }
+
+        _library = library;
+        _libraryId = libraryId;
         _libraryRoot = Path.GetFullPath(libraryRoot);
         _libraryRootPrefix =
             _libraryRoot.TrimEnd(
@@ -151,21 +206,28 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
     {
         var sourcePath = ResolveSourcePath(asset);
         var result = await _thumbnailPipeline.RequestAsync(
-            new ThumbnailSource(
-                asset.Id,
-                asset.SourceRevision,
-                sourcePath,
-                asset.FileSize,
-                asset.ModifiedAtUtcTicks),
+            ViewerImageMetadataBridge.CreateThumbnailSource(
+                asset,
+                sourcePath),
             ThumbnailProfiles.DetailPreview,
             ThumbnailPriority.Foreground,
+            cancellationToken).ConfigureAwait(false);
+
+        await ViewerImageMetadataBridge.PersistAsync(
+            _library,
+            _libraryId,
+            asset,
+            sourcePath,
+            result.SourceMetadata,
             cancellationToken).ConfigureAwait(false);
 
         return new ViewerThumbnail(
             result.CacheKey,
             result.CachePath,
             result.Width,
-            result.Height);
+            result.Height,
+            ViewerImageMetadataBridge.ToViewerMetadata(
+                result.SourceMetadata));
     }
 
     public async Task<ViewerOriginalBitmap> LoadOriginalAsync(
@@ -177,10 +239,45 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         var source = new FullResolutionSource(
             sourcePath,
             asset.FileSize,
-            asset.ModifiedAtUtcTicks);
-        var info = await FullResolutionDecoder.ProbeAsync(
-            source,
-            cancellationToken).ConfigureAwait(false);
+            asset.ModifiedAtUtcTicks,
+            asset.SourceContentSha256);
+
+        var persisted = asset.PersistedSourceMetadata;
+        var info = persisted is not null
+            ? new FullResolutionInfo(
+                persisted.Width,
+                persisted.Height,
+                persisted.HasAlpha,
+                persisted.EstimatedRgbaBytes,
+                persisted.ContentSha256,
+                persisted.RawWidth,
+                persisted.RawHeight,
+                persisted.Format)
+            : await FullResolutionDecoder.ProbeAsync(
+                source,
+                cancellationToken).ConfigureAwait(false);
+
+        if (persisted is null
+            && info.ContentSha256 is not null
+            && info.RawWidth is > 0
+            && info.RawHeight is > 0
+            && !string.IsNullOrWhiteSpace(info.Format))
+        {
+            await ViewerImageMetadataBridge.PersistAsync(
+                _library,
+                _libraryId,
+                asset,
+                sourcePath,
+                new SourceTechnicalMetadata(
+                    info.Width,
+                    info.Height,
+                    info.RawWidth.Value,
+                    info.RawHeight.Value,
+                    info.HasAlpha,
+                    info.Format,
+                    info.ContentSha256),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -246,7 +343,9 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                     info.Width,
                     info.Height,
                     info.HasAlpha,
-                    asset.Format ?? Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant(),
+                    info.Format
+                    ?? asset.Format
+                    ?? Path.GetExtension(sourcePath).TrimStart('.').ToLowerInvariant(),
                     asset.FileSize,
                     info.EstimatedRgbaBytes));
         }
@@ -289,5 +388,99 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         }
 
         return sourcePath;
+    }
+}
+
+
+internal static class ViewerImageMetadataBridge
+{
+    public static ThumbnailSource CreateThumbnailSource(
+        ViewerAsset asset,
+        string sourcePath)
+    {
+        var metadata = asset.PersistedSourceMetadata;
+
+        return new ThumbnailSource(
+            asset.Id,
+            asset.SourceRevision,
+            sourcePath,
+            asset.FileSize,
+            asset.ModifiedAtUtcTicks,
+            metadata?.Width,
+            metadata?.Height,
+            metadata?.RawWidth,
+            metadata?.RawHeight,
+            metadata?.HasAlpha,
+            metadata?.Format,
+            metadata?.ContentSha256);
+    }
+
+    public static ViewerSourceTechnicalMetadata? ToViewerMetadata(
+        SourceTechnicalMetadata? metadata) =>
+        metadata is null
+            ? null
+            : new ViewerSourceTechnicalMetadata(
+                metadata.Width,
+                metadata.Height,
+                metadata.RawWidth,
+                metadata.RawHeight,
+                metadata.HasAlpha,
+                metadata.Format,
+                metadata.ContentSha256);
+
+    public static async ValueTask PersistAsync(
+        LibraryService? library,
+        long libraryId,
+        ViewerAsset asset,
+        string sourcePath,
+        SourceTechnicalMetadata? metadata,
+        CancellationToken cancellationToken)
+    {
+        if (library is null || metadata is null)
+        {
+            return;
+        }
+
+        var existing = asset.PersistedSourceMetadata;
+        if (existing is not null
+            && existing.Width == metadata.Width
+            && existing.Height == metadata.Height
+            && existing.RawWidth == metadata.RawWidth
+            && existing.RawHeight == metadata.RawHeight
+            && existing.HasAlpha == metadata.HasAlpha
+            && string.Equals(
+                existing.Format,
+                metadata.Format,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                existing.ContentSha256,
+                metadata.ContentSha256,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var persisted = await library.UpdateTechnicalMetadataAsync(
+            libraryId,
+            asset.Id,
+            asset.SourceRevision,
+            asset.FileSize,
+            asset.ModifiedAtUtcTicks,
+            new AssetTechnicalMetadata(
+                metadata.Width,
+                metadata.Height,
+                metadata.RawWidth,
+                metadata.RawHeight,
+                metadata.HasAlpha,
+                metadata.Format,
+                metadata.ContentSha256),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!persisted)
+        {
+            throw new ImageSourceChangedException(
+                sourcePath,
+                "Library source revision advanced before technical metadata could be committed.");
+        }
     }
 }
