@@ -47,6 +47,7 @@ public sealed class DecodedBitmapCache : IDisposable
     private readonly long _byteLimit;
     private long _estimatedBytes;
     private long _sequence;
+    private TaskCompletionSource _capacityChanged = NewCapacitySignal();
     private int _activeDecodes;
     private int _peakConcurrentDecodes;
     private bool _disposed;
@@ -82,33 +83,55 @@ public sealed class DecodedBitmapCache : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+        var fullPath = Path.GetFullPath(path);
 
-            var fullPath = Path.GetFullPath(path);
-            if (_entries.TryGetValue(fullPath, out var existing))
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (_gate)
             {
-                existing.Leases++;
-                existing.LastAccess = NextSequence();
-                return new DecodedBitmapLease(this, fullPath, existing.Bitmap);
+                ObjectDisposedException.ThrowIf(_disposed, this);
+
+                if (_entries.TryGetValue(fullPath, out var existing))
+                {
+                    existing.Leases++;
+                    existing.LastAccess = NextSequence();
+                    return new DecodedBitmapLease(
+                        this,
+                        fullPath,
+                        existing.Bitmap);
+                }
             }
-        }
 
-        await DecodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var active = Interlocked.Increment(ref _activeDecodes);
-        UpdatePeakConcurrentDecodes(active);
+            await DecodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var active = Interlocked.Increment(ref _activeDecodes);
+            UpdatePeakConcurrentDecodes(active);
 
-        try
-        {
-            return await Task.Run(
-                () => Acquire(path, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            Interlocked.Decrement(ref _activeDecodes);
-            DecodeGate.Release();
+            AcquireAttempt attempt;
+            try
+            {
+                attempt = await Task.Run(
+                    () => TryAcquire(fullPath, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeDecodes);
+                DecodeGate.Release();
+            }
+
+            if (attempt.Lease is not null)
+            {
+                return attempt.Lease;
+            }
+
+            var capacityChanged = attempt.CapacityChanged
+                ?? throw new InvalidOperationException(
+                    "Decoded bitmap cache returned a blocked admission without a capacity signal.");
+
+            await capacityChanged.WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -124,6 +147,7 @@ public sealed class DecodedBitmapCache : IDisposable
             }
 
             _disposed = true;
+            SignalCapacityChangedLocked();
 
             foreach (var pair in _entries.ToArray())
             {
@@ -162,6 +186,11 @@ public sealed class DecodedBitmapCache : IDisposable
             {
                 entry.Leases--;
                 entry.LastAccess = NextSequence();
+
+                if (entry.Leases == 0)
+                {
+                    SignalCapacityChangedLocked();
+                }
             }
 
             if (entry.Leases == 0 && (_disposed || entry.DisposeWhenReleased))
@@ -175,12 +204,11 @@ public sealed class DecodedBitmapCache : IDisposable
         dispose?.Dispose();
     }
 
-    private DecodedBitmapLease Acquire(
-        string path,
+    private AcquireAttempt TryAcquire(
+        string fullPath,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var fullPath = Path.GetFullPath(path);
 
         lock (_gate)
         {
@@ -190,7 +218,12 @@ public sealed class DecodedBitmapCache : IDisposable
             {
                 existing.Leases++;
                 existing.LastAccess = NextSequence();
-                return new DecodedBitmapLease(this, fullPath, existing.Bitmap);
+                return new AcquireAttempt(
+                    new DecodedBitmapLease(
+                        this,
+                        fullPath,
+                        existing.Bitmap),
+                    null);
             }
         }
 
@@ -221,7 +254,12 @@ public sealed class DecodedBitmapCache : IDisposable
                 {
                     raced.Leases++;
                     raced.LastAccess = NextSequence();
-                    return new DecodedBitmapLease(this, fullPath, raced.Bitmap);
+                    return new AcquireAttempt(
+                        new DecodedBitmapLease(
+                            this,
+                            fullPath,
+                            raced.Bitmap),
+                        null);
                 }
 
                 if (estimatedBytes > _byteLimit)
@@ -235,11 +273,19 @@ public sealed class DecodedBitmapCache : IDisposable
                 if (_entries.Count >= _entryLimit
                     || _estimatedBytes + estimatedBytes > _byteLimit)
                 {
-                    throw new InvalidOperationException(
-                        "Decoded thumbnail cache is fully pinned and cannot admit another bitmap within its hard limits.");
+                    // Every eviction candidate is still leased. This is
+                    // transient viewport pressure, not a decode failure.
+                    // Capture the signal while holding the same lock so a
+                    // lease release cannot be missed between detection and wait.
+                    return new AcquireAttempt(
+                        null,
+                        _capacityChanged.Task);
                 }
 
-                var entry = new Entry(bitmap, estimatedBytes, NextSequence())
+                var entry = new Entry(
+                    bitmap,
+                    estimatedBytes,
+                    NextSequence())
                 {
                     Leases = 1
                 };
@@ -247,7 +293,12 @@ public sealed class DecodedBitmapCache : IDisposable
                 _estimatedBytes += estimatedBytes;
                 admitted = true;
 
-                return new DecodedBitmapLease(this, fullPath, bitmap);
+                return new AcquireAttempt(
+                    new DecodedBitmapLease(
+                        this,
+                        fullPath,
+                        bitmap),
+                    null);
             }
         }
         finally
@@ -279,6 +330,16 @@ public sealed class DecodedBitmapCache : IDisposable
         }
     }
 
+    private static TaskCompletionSource NewCapacitySignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void SignalCapacityChangedLocked()
+    {
+        var previous = _capacityChanged;
+        _capacityChanged = NewCapacitySignal();
+        previous.TrySetResult();
+    }
+
     private void UpdatePeakConcurrentDecodes(int active)
     {
         while (true)
@@ -300,6 +361,10 @@ public sealed class DecodedBitmapCache : IDisposable
     }
 
     private long NextSequence() => ++_sequence;
+
+    private readonly record struct AcquireAttempt(
+        DecodedBitmapLease? Lease,
+        Task? CapacityChanged);
 
     private sealed class Entry(
         Bitmap bitmap,

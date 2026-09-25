@@ -12,6 +12,7 @@ public sealed class ViewerSession : IAsyncDisposable
     private long _thumbnailRequestsCancelled;
     private long _thumbnailRequestsFailed;
     private long _tileLoadFailures;
+    private string? _lastTileLoadError;
     private int _attachedTiles;
     private int _readyTiles;
     private bool _disposed;
@@ -61,7 +62,8 @@ public sealed class ViewerSession : IAsyncDisposable
                     bitmap.EntryCount,
                     bitmap.EstimatedBytes,
                     bitmap.ActiveDecodes,
-                    bitmap.PeakConcurrentDecodes);
+                    bitmap.PeakConcurrentDecodes,
+                    _lastTileLoadError);
             }
         }
     }
@@ -74,7 +76,17 @@ public sealed class ViewerSession : IAsyncDisposable
 
     public void NotifyTileNotReady() => Interlocked.Decrement(ref _readyTiles);
 
-    public void NotifyTileLoadFailed() => Interlocked.Increment(ref _tileLoadFailures);
+    public void NotifyTileLoadFailed(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        Interlocked.Increment(ref _tileLoadFailures);
+
+        lock (_gate)
+        {
+            _lastTileLoadError =
+                $"{exception.GetType().Name}: {exception.Message}";
+        }
+    }
 
     public ValueTask<ViewerAsset> GetAssetAsync(
         long index,

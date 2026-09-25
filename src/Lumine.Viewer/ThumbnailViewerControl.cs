@@ -528,9 +528,9 @@ public sealed class ThumbnailViewerControl : UserControl
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
             }
-            catch
+            catch (Exception exception)
             {
-                _session.NotifyTileLoadFailed();
+                _session.NotifyTileLoadFailed(exception);
                 await Dispatcher.UIThread.InvokeAsync(() => _label.Text = "!");
             }
             finally

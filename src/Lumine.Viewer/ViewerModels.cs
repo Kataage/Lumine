@@ -100,7 +100,8 @@ public readonly record struct ViewerRuntimeDiagnostics(
     int DecodedBitmapEntries,
     long DecodedBitmapBytes,
     int ActiveBitmapDecodes,
-    int PeakConcurrentBitmapDecodes);
+    int PeakConcurrentBitmapDecodes,
+    string? LastTileLoadError);
 
 public enum ViewerDetailLoadState
 {
