@@ -77,10 +77,9 @@ try
             firstSource,
             ThumbnailProfiles.GridMedium);
     }
-    firstSource = firstSource.WithMetadata(
-        firstResult.SourceMetadata
+    _ = firstResult.SourceMetadata
         ?? throw new InvalidOperationException(
-            "Cold thumbnail generation did not return source metadata."));
+            "Cold thumbnail generation did not return source metadata.");
     await peak.DisposeAsync();
     peakWorkingSetBytes = peak.PeakWorkingSetBytes;
     peakAdditionalWorkingSetBytes = peak.PeakAdditionalWorkingSetBytes;
@@ -156,6 +155,7 @@ try
             ["source_opens"] = diagnostics.SourceOpens.ToString(CultureInfo.InvariantCulture),
             ["metadata_probes"] = diagnostics.MetadataProbes.ToString(CultureInfo.InvariantCulture),
             ["metadata_bytes_hashed"] = diagnostics.MetadataBytesHashed.ToString(CultureInfo.InvariantCulture),
+            ["metadata_memory_hits"] = diagnostics.MetadataMemoryHits.ToString(CultureInfo.InvariantCulture),
             ["cache_files"] = cacheFiles.ToString(CultureInfo.InvariantCulture),
             ["cache_bytes"] = cacheBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
