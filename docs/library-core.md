@@ -51,7 +51,7 @@ The next page uses the previous page's final `(modified_at_utc_ticks, id)` pair.
 
 Incremental change tracking (`ReadDirectoryChangesW` / USN) remains #290.
 
-Image dimensions are nullable because Library Core does not decode images. A later Image Core stage may enrich width/height/format through the same technical metadata upsert path without changing asset identity.
+Image dimensions are nullable because Library Core does not decode images. Issue #308 persists Image Core enrichment as oriented width/height, raw width/height, alpha, normalized format and source content SHA-256. The update is conditional on the exact asset id, source_revision, file size and persisted mtime, so stale background work cannot overwrite a newer source revision.
 
 ## Acceptance
 
@@ -86,6 +86,14 @@ Audit issue #300 tightens the Library Core boundary before Image Core is allowed
 - Schema history is strict and sequential. Unknown future versions, gaps, name mismatches, and product tables without migration history fail closed.
 - WAL is a verified requirement rather than an assumed pragma.
 - `assets.id` uses `AUTOINCREMENT` so a deleted local identity is not reused. Re-adding the same path creates a new identity.
-- `source_revision` increments when source size or mtime changes. Derived width/height/format are invalidated on that transition, giving #288 a stable cache-invalidation input.
+- `source_revision` increments when source size or mtime changes. Explicit filesystem add/modify events also advance the revision when size/mtime are unchanged, preventing same-stat writes from preserving stale metadata.
+- Source technical metadata is revision-bound. Width/height/raw dimensions/alpha/content SHA are invalidated whenever the source revision advances. The content SHA provides a stronger identity check for later Image Core work than size+mtime alone.
 - Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
 - Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.
+
+
+## #308 metadata persistence acceptance
+
+Schema v4 adds `source_content_sha256`, `raw_width`, `raw_height` and `has_alpha` while retaining `width`/`height` as oriented display dimensions. Metadata is not populated by an unconditional full-library image decode. It is derived lazily when Image Core first needs a source for a thumbnail/detail path and then committed through `LibraryService`.
+
+The synthetic Library benchmark separately measures technical metadata persistence for up to 10,000 assets. This measurement is outside the base ingest timing so the established 10k/50k/100k ingest regression gate remains comparable.
