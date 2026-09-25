@@ -33,7 +33,49 @@ public sealed record ThumbnailSource(
     long SourceRevision,
     string SourcePath,
     long FileSize,
-    long ModifiedAtUtcTicks);
+    long ModifiedAtUtcTicks,
+    int? SourceWidth = null,
+    int? SourceHeight = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    bool? HasAlpha = null,
+    string? Format = null,
+    string? ContentSha256 = null)
+{
+    public SourceTechnicalMetadata? PersistedMetadata =>
+        SourceWidth is > 0
+        && SourceHeight is > 0
+        && RawWidth is > 0
+        && RawHeight is > 0
+        && HasAlpha.HasValue
+        && !string.IsNullOrWhiteSpace(Format)
+        && IsSha256(ContentSha256)
+            ? new SourceTechnicalMetadata(
+                SourceWidth.Value,
+                SourceHeight.Value,
+                RawWidth.Value,
+                RawHeight.Value,
+                HasAlpha.Value,
+                Format!,
+                ContentSha256!)
+            : null;
+
+    public ThumbnailSource WithMetadata(SourceTechnicalMetadata metadata) =>
+        this with
+        {
+            SourceWidth = metadata.Width,
+            SourceHeight = metadata.Height,
+            RawWidth = metadata.RawWidth,
+            RawHeight = metadata.RawHeight,
+            HasAlpha = metadata.HasAlpha,
+            Format = metadata.Format,
+            ContentSha256 = metadata.ContentSha256
+        };
+
+    private static bool IsSha256(string? value) =>
+        value is { Length: 64 }
+        && value.All(static character => Uri.IsHexDigit(character));
+}
 
 public sealed record ThumbnailResult(
     string CacheKey,
@@ -41,7 +83,8 @@ public sealed record ThumbnailResult(
     bool CacheHit,
     int Width,
     int Height,
-    long CacheFileBytes);
+    long CacheFileBytes,
+    SourceTechnicalMetadata? SourceMetadata = null);
 
 public sealed record ThumbnailCacheStats(
     long FileCount,
