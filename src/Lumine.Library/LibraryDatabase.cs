@@ -159,6 +159,26 @@ public sealed class LibraryDatabase
 
             INSERT INTO library_sync_state(library_id)
             SELECT id FROM libraries;
+            """),
+        new(
+            4,
+            "persist-source-technical-metadata",
+            """
+            ALTER TABLE assets
+                ADD COLUMN source_content_sha256 TEXT NULL
+                    CHECK(source_content_sha256 IS NULL OR length(source_content_sha256) = 64);
+
+            ALTER TABLE assets
+                ADD COLUMN raw_width INTEGER NULL
+                    CHECK(raw_width IS NULL OR raw_width > 0);
+
+            ALTER TABLE assets
+                ADD COLUMN raw_height INTEGER NULL
+                    CHECK(raw_height IS NULL OR raw_height > 0);
+
+            ALTER TABLE assets
+                ADD COLUMN has_alpha INTEGER NULL
+                    CHECK(has_alpha IS NULL OR has_alpha IN (0, 1));
             """)
     ];
 
