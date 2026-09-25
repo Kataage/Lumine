@@ -315,18 +315,34 @@ public sealed class DecodedBitmapCache : IDisposable
         while (_entries.Count >= _entryLimit
                || _estimatedBytes + incomingBytes > _byteLimit)
         {
-            var candidate = _entries
-                .Where(static pair => pair.Value.Leases == 0)
-                .MinBy(static pair => pair.Value.LastAccess);
+            KeyValuePair<string, Entry>? candidate = null;
 
-            if (candidate.Key is null)
+            foreach (var pair in _entries)
             {
+                if (pair.Value.Leases != 0)
+                {
+                    continue;
+                }
+
+                if (candidate is null
+                    || pair.Value.LastAccess
+                        < candidate.Value.Value.LastAccess)
+                {
+                    candidate = pair;
+                }
+            }
+
+            if (candidate is not { } selected)
+            {
+                // All resident entries are leased. The caller will capture
+                // the capacity-change signal and wait instead of treating
+                // temporary viewport pressure as a decode failure.
                 return;
             }
 
-            _entries.Remove(candidate.Key);
-            _estimatedBytes -= candidate.Value.EstimatedBytes;
-            candidate.Value.Bitmap.Dispose();
+            _entries.Remove(selected.Key);
+            _estimatedBytes -= selected.Value.EstimatedBytes;
+            selected.Value.Bitmap.Dispose();
         }
     }
 
