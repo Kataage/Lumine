@@ -81,6 +81,11 @@ try
         }
     }
 
+    await peakMonitor.DisposeAsync();
+    startingWorkingSetBytes = peakMonitor.StartingWorkingSetBytes;
+    peakWorkingSetBytes = peakMonitor.PeakWorkingSetBytes;
+    peakAdditionalWorkingSetBytes = peakMonitor.PeakAdditionalWorkingSetBytes;
+
     var metadataTarget = Math.Min(count, 10_000);
     using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataPersist))
     {
@@ -141,11 +146,6 @@ try
         throw new InvalidOperationException(
             $"Persisted technical metadata for {metadataPersisted:N0} assets, expected {metadataTarget:N0}.");
     }
-
-    await peakMonitor.DisposeAsync();
-    startingWorkingSetBytes = peakMonitor.StartingWorkingSetBytes;
-    peakWorkingSetBytes = peakMonitor.PeakWorkingSetBytes;
-    peakAdditionalWorkingSetBytes = peakMonitor.PeakAdditionalWorkingSetBytes;
 
     using (recorder.Measure(CoreMetricNames.DatabaseReopen))
     {
