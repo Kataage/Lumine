@@ -181,7 +181,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 3, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 4, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -231,6 +231,78 @@ try
     Require(enriched.Id == stableId, "Asset identity changed during path-stable metadata enrichment.");
     Require(enriched.SourceRevision == stableRevision, "Metadata enrichment changed source revision.");
     Require(enriched.Width == 1920 && enriched.Height == 1080, "Technical metadata enrichment failed.");
+
+    var sameStat = await repository.GetAssetAsync(library.Id, "b.png")
+        ?? throw new InvalidOperationException("b.png was not indexed.");
+    var technicalSha = new string('a', 64);
+    Require(
+        await repository.UpdateTechnicalMetadataAsync(
+            library.Id,
+            sameStat.Id,
+            sameStat.SourceRevision,
+            sameStat.FileSize,
+            sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                640,
+                480,
+                640,
+                480,
+                true,
+                "png",
+                technicalSha)),
+        "Technical metadata update was rejected for the current source revision.");
+
+    var technical = await repository.GetAssetAsync(library.Id, "b.png")
+        ?? throw new InvalidOperationException("Technical metadata asset disappeared.");
+    Require(
+        technical.Width == 640
+        && technical.Height == 480
+        && technical.RawWidth == 640
+        && technical.RawHeight == 480
+        && technical.HasAlpha == true
+        && technical.SourceContentSha256 == technicalSha,
+        "Persistent source technical metadata did not round-trip.");
+
+    await repository.UpsertAssetsAsync(
+        library.Id,
+        [
+            new AssetUpsert(
+                "b.png",
+                technical.FileSize,
+                technical.ModifiedAtUtc,
+                Format: "png",
+                ForceSourceRevision: true)
+        ]);
+
+    var forcedRevision = await repository.GetAssetAsync(library.Id, "b.png")
+        ?? throw new InvalidOperationException("Forced-revision asset disappeared.");
+    Require(
+        forcedRevision.SourceRevision == technical.SourceRevision + 1,
+        "Explicit same-stat source change did not advance source_revision.");
+    Require(
+        forcedRevision.Width is null
+        && forcedRevision.Height is null
+        && forcedRevision.RawWidth is null
+        && forcedRevision.RawHeight is null
+        && forcedRevision.HasAlpha is null
+        && forcedRevision.SourceContentSha256 is null,
+        "Explicit same-stat source change retained stale technical metadata.");
+    Require(
+        !await repository.UpdateTechnicalMetadataAsync(
+            library.Id,
+            forcedRevision.Id,
+            technical.SourceRevision,
+            forcedRevision.FileSize,
+            forcedRevision.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                640,
+                480,
+                640,
+                480,
+                true,
+                "png",
+                technicalSha)),
+        "Stale source revision was allowed to overwrite technical metadata.");
 
     await repository.UpsertAssetsAsync(
         library.Id,
@@ -390,7 +462,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 3, "v1 database did not migrate to v3.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 4, "v1 database did not migrate to v4.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
