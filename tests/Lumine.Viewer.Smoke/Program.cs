@@ -129,6 +129,25 @@ internal static class Program
             && cache.Diagnostics.EstimatedBytes == 0,
             "Leased bitmap was not released after disposed-cache lease completion.");
 
+        using (var oversizeCache = new DecodedBitmapCache(
+                   entryLimit: 2,
+                   byteLimit: 3))
+        {
+            try
+            {
+                using var unexpected = await oversizeCache.AcquireAsync(
+                    sourceThumbnail);
+                throw new InvalidOperationException(
+                    "Per-bitmap byte-limit violation incorrectly entered capacity waiting.");
+            }
+            catch (InvalidOperationException exception)
+                when (exception.Message.Contains(
+                    "above cache limit",
+                    StringComparison.Ordinal))
+            {
+            }
+        }
+
         var pressurePaths = Enumerable.Range(0, 5)
             .Select(index =>
             {
