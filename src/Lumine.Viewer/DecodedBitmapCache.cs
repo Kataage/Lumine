@@ -25,6 +25,181 @@ public sealed class DecodedBitmapLease : IDisposable
 
     public Bitmap Bitmap { get; }
 
+    public void Dispose()
+    {
+        var owner = Interlocked.Exchange(ref _owner, null);
+        owner?.Release(_key);
+    }
+}
+
+public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
+{
+    public static int DecodeConcurrencyLimit { get; } =
+        Math.Clamp(Environment.ProcessorCount / 2, 1, 2);
+
+    private static readonly SemaphoreSlim DecodeGate =
+        new(DecodeConcurrencyLimit, DecodeConcurrencyLimit);
+
+    private readonly object _gate = new();
+    private readonly Dictionary<string, Entry> _entries =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly Func<string, CancellationToken, Bitmap> _decodeBitmap;
+    private readonly int _entryLimit;
+    private readonly long _byteLimit;
+    private long _estimatedBytes;
+    private long _sequence;
+    private TaskCompletionSource _capacityChanged = NewCapacitySignal();
+    private TaskCompletionSource _operationsDrained =
+        NewCompletedSignal();
+    private readonly TaskCompletionSource _disposeCompletion =
+        NewCapacitySignal();
+    private int _activeOperations;
+    private int _activeDecodes;
+    private int _peakConcurrentDecodes;
+    private bool _disposed;
+
+    public DecodedBitmapCache(int entryLimit, long byteLimit)
+        : this(entryLimit, byteLimit, DecodeBitmapFromFile)
+    {
+    }
+
+    internal DecodedBitmapCache(
+        int entryLimit,
+        long byteLimit,
+        Func<string, CancellationToken, Bitmap> decodeBitmap)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(entryLimit);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
+        ArgumentNullException.ThrowIfNull(decodeBitmap);
+
+        _entryLimit = entryLimit;
+        _byteLimit = byteLimit;
+        _decodeBitmap = decodeBitmap;
+    }
+
+    public DecodedBitmapCacheDiagnostics Diagnostics
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new DecodedBitmapCacheDiagnostics(
+                    _entries.Count,
+                    _estimatedBytes,
+                    Volatile.Read(ref _activeDecodes),
+                    Volatile.Read(ref _peakConcurrentDecodes));
+            }
+        }
+    }
+
+    public async Task<DecodedBitmapLease> AcquireAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var fullPath = Path.GetFullPath(path);
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            RegisterOperationLocked();
+        }
+
+        try
+        {
+            using var operation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    _shutdown.Token);
+            var operationToken = operation.Token;
+
+            try
+            {
+                while (true)
+                {
+                    operationToken.ThrowIfCancellationRequested();
+
+                    lock (_gate)
+                    {
+                        ObjectDisposedException.ThrowIf(_disposed, this);
+
+                        if (_entries.TryGetValue(fullPath, out var existing))
+                        {
+                            existing.Leases++;
+                            existing.LastAccess = NextSequence();
+                            return new DecodedBitmapLease(
+                                this,
+                                fullPath,
+                                existing.Bitmap);
+                        }
+                    }
+
+                    await DecodeGate.WaitAsync(operationToken)
+                        .ConfigureAwait(false);
+                    var decodeRegistered = false;
+
+                    AcquireAttempt attempt;
+                    try
+                    {
+                        lock (_gate)
+                        {
+                            ObjectDisposedException.ThrowIf(
+                                _disposed,
+                                this);
+                            var active = Interlocked.Increment(
+                                ref _activeDecodes);
+                            UpdatePeakConcurrentDecodes(active);
+                            decodeRegistered = true;
+                        }
+
+                        attempt = await Task.Run(
+                            () => TryAcquire(
+                                fullPath,
+                                operationToken),
+                            operationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        if (decodeRegistered)
+                        {
+                            Interlocked.Decrement(
+                                ref _activeDecodes);
+                        }
+
+                        DecodeGate.Release();
+                    }
+
+                    if (attempt.Lease is not null)
+                    {
+                        return attempt.Lease;
+                    }
+
+                    var capacityChanged =
+                        attempt.CapacityChanged
+                        ?? throw new InvalidOperationException(
+                            "Decoded bitmap cache returned a blocked admission without a capacity signal.");
+
+                    await capacityChanged.WaitAsync(operationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+                when (_shutdown.IsCancellationRequested
+                    && !cancellationToken.IsCancellationRequested)
+            {
+                throw new ObjectDisposedException(
+                    nameof(DecodedBitmapCache));
+            }
+        }
+        finally
+        {
+            CompleteOperation();
+        }
+    }
+
     public void Dispose() =>
         BeginDispose();
 
