@@ -133,7 +133,9 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
         VALUES
             (1, 'initial-library-core', 1),
             (2, 'harden-library-core-invariants', 2),
-            (3, 'future-schema', 3);
+            (3, 'incremental-filesystem-sync', 3),
+            (4, 'persist-source-technical-metadata', 4),
+            (5, 'future-schema', 5);
         """;
     await command.ExecuteNonQueryAsync();
 }
