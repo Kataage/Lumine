@@ -33,6 +33,7 @@ public sealed class DetailViewerControl : UserControl
     private readonly object _zoomGate = new();
     private double _requestedZoom = 1;
     private PixelSize _requestedZoomBasis;
+    private PixelSize _displayedZoomBasis;
     private long _zoomCommandVersion;
     private long _pendingZoomCommandVersion;
 
@@ -107,7 +108,7 @@ public sealed class DetailViewerControl : UserControl
 
         _scroll.SizeChanged += (_, _) =>
         {
-            if (_fitMode)
+            if (_fitMode && !HasPendingZoomCommand())
             {
                 ApplyFit();
             }
@@ -255,7 +256,7 @@ public sealed class DetailViewerControl : UserControl
 
         _fitMode = true;
         SetZoom(zoom);
-        SynchronizeFitZoomIfIdle(zoom);
+        SynchronizeRequestedZoomIfIdle(zoom);
         _scroll.Offset = default;
     }
 
@@ -455,6 +456,7 @@ public sealed class DetailViewerControl : UserControl
             zoom,
             GetRenderScaling());
 
+        _displayedZoomBasis = sourceSize;
         _image.Width = displaySize.Width;
         _image.Height = displaySize.Height;
     }
@@ -551,7 +553,7 @@ public sealed class DetailViewerControl : UserControl
         }
     }
 
-    private void SynchronizeFitZoomIfIdle(double zoom)
+    private void SynchronizeRequestedZoomIfIdle(double zoom)
     {
         var basis = GetCurrentZoomBasis();
 
@@ -564,6 +566,14 @@ public sealed class DetailViewerControl : UserControl
 
             _requestedZoom = zoom;
             _requestedZoomBasis = basis;
+        }
+    }
+
+    private bool HasPendingZoomCommand()
+    {
+        lock (_zoomGate)
+        {
+            return _pendingZoomCommandVersion != 0;
         }
     }
 
@@ -603,6 +613,32 @@ public sealed class DetailViewerControl : UserControl
             : GetSourcePixelSize(snapshot);
     }
 
+    private void ApplyZoomAcrossBasisChange(
+        ViewerDetailSnapshot snapshot)
+    {
+        var targetBasis = GetSourcePixelSize(snapshot);
+        var zoom = _zoom;
+
+        if (_displayedZoomBasis.Width > 0
+            && _displayedZoomBasis.Height > 0
+            && targetBasis.Width > 0
+            && targetBasis.Height > 0
+            && (_displayedZoomBasis.Width != targetBasis.Width
+                || _displayedZoomBasis.Height != targetBasis.Height))
+        {
+            zoom = Math.Clamp(
+                CalculatePromotedZoom(
+                    _displayedZoomBasis,
+                    targetBasis,
+                    _zoom),
+                _session.Options.MinZoom,
+                _session.Options.MaxZoom);
+        }
+
+        SetZoom(zoom);
+        SynchronizeRequestedZoomIfIdle(zoom);
+    }
+
     private void PrepareForSelectionChange()
     {
         lock (_zoomGate)
@@ -610,6 +646,7 @@ public sealed class DetailViewerControl : UserControl
             _zoomCommandVersion++;
             _requestedZoom = 1;
             _requestedZoomBasis = default;
+            _displayedZoomBasis = default;
             _pendingZoomCommandVersion = 0;
         }
 
@@ -760,7 +797,7 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        if (_fitMode)
+        if (_fitMode && !HasPendingZoomCommand())
         {
             ApplyFit();
         }
@@ -817,13 +854,13 @@ public sealed class DetailViewerControl : UserControl
 
         if (snapshot.Bitmap is not null)
         {
-            if (_fitMode)
+            if (_fitMode && !HasPendingZoomCommand())
             {
                 ApplyFit();
             }
             else
             {
-                SetZoom(_zoom);
+                ApplyZoomAcrossBasisChange(snapshot);
             }
         }
     }
