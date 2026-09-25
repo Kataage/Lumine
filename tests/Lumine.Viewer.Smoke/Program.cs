@@ -30,14 +30,19 @@ internal static class Program
         {
             await VerifyCursorPagingAsync();
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
+            await VerifyViewerSessionShutdownAsync(thumbnailPath);
 
             await using var headless = HeadlessUnitTestSession.StartNew(typeof(TestApplication));
             await headless.Dispatch(
                 async () =>
                 {
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
+                    await VerifyDecodedCacheAsyncShutdown(
+                        thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
+                    await VerifyDetailObserverIsolationAsync(
+                        thumbnailPath);
                     await VerifyDetailSelectionCallerCancellationAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionReversalAsync(thumbnailPath);
@@ -227,6 +232,52 @@ internal static class Program
             "Disposed pressure cache retained leased bitmap state after release.");
     }
 
+    private static async Task VerifyDecodedCacheAsyncShutdown(
+        string sourceThumbnail)
+    {
+        using var decodeStarted = new ManualResetEventSlim();
+        var cache = new DecodedBitmapCache(
+            entryLimit: 2,
+            byteLimit: 16,
+            decodeBitmap:
+                (path, cancellationToken) =>
+                {
+                    decodeStarted.Set();
+                    cancellationToken.WaitHandle.WaitOne();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    using var stream = new FileStream(
+                        path,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read);
+                    return new Bitmap(stream);
+                });
+
+        var acquire = cache.AcquireAsync(sourceThumbnail);
+
+        Require(
+            decodeStarted.Wait(TimeSpan.FromSeconds(2)),
+            "Async cache shutdown regression never entered decode work.");
+
+        var dispose = cache.DisposeAsync().AsTask();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            using var unexpected = await acquire;
+            throw new InvalidOperationException(
+                "Cache shutdown left an active decode admitted.");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        Require(
+            cache.Diagnostics.ActiveDecodes == 0,
+            "DecodedBitmapCache.DisposeAsync returned before active decode drained.");
+    }
+
     private static async Task VerifyRequestCoalescingAndCancellationAsync(
         string thumbnailPath)
     {
@@ -278,6 +329,66 @@ internal static class Program
         Require(diagnostics.ThumbnailRequestsCancelled >= 1, "Stale shared thumbnail request was not cancelled.");
         Require(diagnostics.InFlightThumbnailRequests == 0, "Cancelled thumbnail request remained in-flight.");
         Require(thumbnailProvider.Cancelled > 0, "Provider did not observe cancellation.");
+    }
+
+    private static async Task VerifyViewerSessionShutdownAsync(
+        string thumbnailPath)
+    {
+        var provider = new DelayedThumbnailProvider(
+            thumbnailPath,
+            TimeSpan.FromMilliseconds(500));
+        var session = new ViewerSession(
+            new DirectFixtureAssetProvider(10),
+            provider,
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 4,
+                DecodedBitmapByteLimit = 4 * 1024 * 1024
+            });
+
+        var asset = await session.GetAssetAsync(0);
+        var first = session.GetThumbnailAsync(
+            asset,
+            ViewerThumbnailPriority.Foreground).AsTask();
+        var second = session.GetThumbnailAsync(
+            asset,
+            ViewerThumbnailPriority.Foreground).AsTask();
+
+        for (var attempt = 0;
+             attempt < 300 && provider.Active == 0;
+             attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.Active == 1,
+            "Viewer shutdown regression never entered provider work.");
+
+        await session.DisposeAsync();
+
+        await ExpectCancellationAsync(first);
+        await ExpectCancellationAsync(second);
+
+        Require(
+            provider.Active == 0,
+            "ViewerSession.DisposeAsync returned before provider work drained.");
+        Require(
+            session.Diagnostics.InFlightThumbnailRequests == 0,
+            "ViewerSession.DisposeAsync left coalesced requests registered.");
+
+        try
+        {
+            _ = await session.GetThumbnailAsync(
+                asset,
+                ViewerThumbnailPriority.Foreground);
+            throw new InvalidOperationException(
+                "Disposed ViewerSession admitted new thumbnail work.");
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
@@ -897,6 +1008,45 @@ internal static class Program
             "Detaching Detail did not release the selected bitmap lifetime.");
     }
 
+    private static async Task VerifyDetailObserverIsolationAsync(
+        string previewPath)
+    {
+        var session = new ViewerDetailSession(
+            new DirectFixtureAssetProvider(1),
+            new DelayedDetailProvider(
+                previewPath,
+                TimeSpan.FromMilliseconds(10)));
+
+        var stateNotifications = 0;
+        var selectionNotifications = 0;
+
+        session.StateChanged += static (_, _) =>
+            throw new InvalidOperationException(
+                "Synthetic StateChanged observer failure.");
+        session.StateChanged += (_, _) =>
+            Interlocked.Increment(ref stateNotifications);
+        session.SelectedIndexChanged += static (_, _) =>
+            throw new InvalidOperationException(
+                "Synthetic SelectedIndexChanged observer failure.");
+        session.SelectedIndexChanged += (_, _) =>
+            Interlocked.Increment(ref selectionNotifications);
+
+        await session.SelectAsync(0);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        Require(
+            stateNotifications >= 2,
+            "Throwing StateChanged observer prevented later observers or state publication.");
+        Require(
+            selectionNotifications == 1,
+            "Throwing SelectedIndexChanged observer interrupted selection publication.");
+
+        await session.DisposeAsync();
+    }
+
     private static async Task VerifyDetailSelectionCallerCancellationAsync(
         string previewPath)
     {
@@ -1491,29 +1641,40 @@ internal sealed class DelayedThumbnailProvider(
     TimeSpan delay) : IViewerThumbnailProvider
 {
     private int _cancelled;
+    private int _active;
 
     public int Cancelled => Volatile.Read(ref _cancelled);
+
+    public int Active => Volatile.Read(ref _active);
 
     public async ValueTask<ViewerThumbnail> RequestAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,
         CancellationToken cancellationToken = default)
     {
+        Interlocked.Increment(ref _active);
         try
         {
-            await Task.Delay(delay, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            Interlocked.Increment(ref _cancelled);
-            throw;
-        }
+            try
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref _cancelled);
+                throw;
+            }
 
-        return new ViewerThumbnail(
-            $"fixture-{asset.Id}",
-            path,
-            1,
-            1);
+            return new ViewerThumbnail(
+                $"fixture-{asset.Id}",
+                path,
+                1,
+                1);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _active);
+        }
     }
 }
 

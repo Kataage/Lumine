@@ -132,7 +132,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         }
 
         PublishState();
-        SelectedIndexChanged?.Invoke(this, index);
+        PublishSelectedIndexChanged(index);
 
         using (operation)
         {
@@ -576,7 +576,38 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             snapshot = _snapshot;
         }
 
-        StateChanged?.Invoke(this, snapshot);
+        InvokeObserversSafely(
+            StateChanged,
+            snapshot);
+    }
+
+    private void PublishSelectedIndexChanged(long index) =>
+        InvokeObserversSafely(
+            SelectedIndexChanged,
+            index);
+
+    private void InvokeObserversSafely<T>(
+        EventHandler<T>? handlers,
+        T args)
+    {
+        if (handlers is null)
+        {
+            return;
+        }
+
+        foreach (EventHandler<T> handler
+                 in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch
+            {
+                // UI/app lifecycle must not be corrupted by an observer.
+                // #293 owns the later diagnostic logging policy.
+            }
+        }
     }
 
     private void ThrowIfDisposedLocked() =>
