@@ -15,7 +15,7 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 
 A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
 
-Issue #308 moves the cache-key contract to generator version 2. The first cold/miss path opens a stable source snapshot, computes SHA-256, captures raw/oriented dimensions, alpha and normalized format, then keeps a read-sharing guard open while libvips evaluates the thumbnail. App composition persists that metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source.
+Issue #308 moves the cache-key contract to generator version 2. The first cold/miss path opens a stable source snapshot, computes SHA-256, captures raw/oriented dimensions, alpha and normalized format, then keeps a read-sharing guard open while libvips evaluates the thumbnail. App composition persists that metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat so revisiting the same asset does not immediately re-hash the original before the refreshed DB DTO is observed.
 
 Old revisions and pre-#308 cache keys remain harmless orphaned cache entries until bounded pruning removes them.
 
@@ -60,7 +60,8 @@ The common benchmark contract records:
 - bounded parallel batch generation
 - cache files/bytes
 - cache hit/miss/generation/source-open counters
-- source metadata probe count and bytes hashed
+- source metadata probe count, in-process metadata-memory hits and bytes hashed
+- a 10,000-operation source metadata probe workload with measured latency/logical I/O
 - generation and batch peak working set
 - libvips tracked-memory high-water mark, open-file count, and operation-cache size
 
