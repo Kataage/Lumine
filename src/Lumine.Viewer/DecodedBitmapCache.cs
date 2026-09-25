@@ -32,7 +32,7 @@ public sealed class DecodedBitmapLease : IDisposable
     }
 }
 
-public sealed class DecodedBitmapCache : IDisposable
+public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
 {
     public static int DecodeConcurrencyLimit { get; } =
         Math.Clamp(Environment.ProcessorCount / 2, 1, 2);
@@ -43,22 +43,39 @@ public sealed class DecodedBitmapCache : IDisposable
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly Func<string, CancellationToken, Bitmap> _decodeBitmap;
     private readonly int _entryLimit;
     private readonly long _byteLimit;
     private long _estimatedBytes;
     private long _sequence;
     private TaskCompletionSource _capacityChanged = NewCapacitySignal();
+    private TaskCompletionSource _operationsDrained =
+        NewCompletedSignal();
+    private readonly TaskCompletionSource _disposeCompletion =
+        NewCapacitySignal();
+    private int _activeOperations;
     private int _activeDecodes;
     private int _peakConcurrentDecodes;
     private bool _disposed;
 
     public DecodedBitmapCache(int entryLimit, long byteLimit)
+        : this(entryLimit, byteLimit, DecodeBitmapFromFile)
+    {
+    }
+
+    internal DecodedBitmapCache(
+        int entryLimit,
+        long byteLimit,
+        Func<string, CancellationToken, Bitmap> decodeBitmap)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(entryLimit);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
+        ArgumentNullException.ThrowIfNull(decodeBitmap);
 
         _entryLimit = entryLimit;
         _byteLimit = byteLimit;
+        _decodeBitmap = decodeBitmap;
     }
 
     public DecodedBitmapCacheDiagnostics Diagnostics
@@ -85,59 +102,117 @@ public sealed class DecodedBitmapCache : IDisposable
 
         var fullPath = Path.GetFullPath(path);
 
-        while (true)
+        lock (_gate)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            RegisterOperationLocked();
+        }
 
-            lock (_gate)
-            {
-                ObjectDisposedException.ThrowIf(_disposed, this);
+        try
+        {
+            using var operation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    _shutdown.Token);
+            var operationToken = operation.Token;
 
-                if (_entries.TryGetValue(fullPath, out var existing))
-                {
-                    existing.Leases++;
-                    existing.LastAccess = NextSequence();
-                    return new DecodedBitmapLease(
-                        this,
-                        fullPath,
-                        existing.Bitmap);
-                }
-            }
-
-            await DecodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            var active = Interlocked.Increment(ref _activeDecodes);
-            UpdatePeakConcurrentDecodes(active);
-
-            AcquireAttempt attempt;
             try
             {
-                attempt = await Task.Run(
-                    () => TryAcquire(fullPath, cancellationToken),
-                    cancellationToken).ConfigureAwait(false);
+                while (true)
+                {
+                    operationToken.ThrowIfCancellationRequested();
+
+                    lock (_gate)
+                    {
+                        ObjectDisposedException.ThrowIf(_disposed, this);
+
+                        if (_entries.TryGetValue(fullPath, out var existing))
+                        {
+                            existing.Leases++;
+                            existing.LastAccess = NextSequence();
+                            return new DecodedBitmapLease(
+                                this,
+                                fullPath,
+                                existing.Bitmap);
+                        }
+                    }
+
+                    await DecodeGate.WaitAsync(operationToken)
+                        .ConfigureAwait(false);
+                    var decodeRegistered = false;
+
+                    AcquireAttempt attempt;
+                    try
+                    {
+                        lock (_gate)
+                        {
+                            ObjectDisposedException.ThrowIf(
+                                _disposed,
+                                this);
+                            var active = Interlocked.Increment(
+                                ref _activeDecodes);
+                            UpdatePeakConcurrentDecodes(active);
+                            decodeRegistered = true;
+                        }
+
+                        attempt = await Task.Run(
+                            () => TryAcquire(
+                                fullPath,
+                                operationToken),
+                            operationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        if (decodeRegistered)
+                        {
+                            Interlocked.Decrement(
+                                ref _activeDecodes);
+                        }
+
+                        DecodeGate.Release();
+                    }
+
+                    if (attempt.Lease is not null)
+                    {
+                        return attempt.Lease;
+                    }
+
+                    var capacityChanged =
+                        attempt.CapacityChanged
+                        ?? throw new InvalidOperationException(
+                            "Decoded bitmap cache returned a blocked admission without a capacity signal.");
+
+                    await capacityChanged.WaitAsync(operationToken)
+                        .ConfigureAwait(false);
+                }
             }
-            finally
+            catch (OperationCanceledException)
+                when (_shutdown.IsCancellationRequested
+                    && !cancellationToken.IsCancellationRequested)
             {
-                Interlocked.Decrement(ref _activeDecodes);
-                DecodeGate.Release();
+                throw new ObjectDisposedException(
+                    nameof(DecodedBitmapCache));
             }
-
-            if (attempt.Lease is not null)
-            {
-                return attempt.Lease;
-            }
-
-            var capacityChanged = attempt.CapacityChanged
-                ?? throw new InvalidOperationException(
-                    "Decoded bitmap cache returned a blocked admission without a capacity signal.");
-
-            await capacityChanged.WaitAsync(cancellationToken)
-                .ConfigureAwait(false);
+        }
+        finally
+        {
+            CompleteOperation();
         }
     }
 
-    public void Dispose()
+    public void Dispose() =>
+        BeginDispose();
+
+    public ValueTask DisposeAsync()
+    {
+        BeginDispose();
+        return new ValueTask(_disposeCompletion.Task);
+    }
+
+    private void BeginDispose()
     {
         List<Bitmap> disposeNow = [];
+        Task operationDrain;
 
         lock (_gate)
         {
@@ -148,6 +223,7 @@ public sealed class DecodedBitmapCache : IDisposable
 
             _disposed = true;
             SignalCapacityChangedLocked();
+            operationDrain = _operationsDrained.Task;
 
             foreach (var pair in _entries.ToArray())
             {
@@ -165,9 +241,27 @@ public sealed class DecodedBitmapCache : IDisposable
             }
         }
 
+        CancelSourceNoThrow(_shutdown);
+
         foreach (var bitmap in disposeNow)
         {
             bitmap.Dispose();
+        }
+
+        _ = FinishDisposeAsync(operationDrain);
+    }
+
+    private async Task FinishDisposeAsync(Task operationDrain)
+    {
+        try
+        {
+            await operationDrain.ConfigureAwait(false);
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            _disposeCompletion.TrySetException(exception);
         }
     }
 
@@ -227,14 +321,9 @@ public sealed class DecodedBitmapCache : IDisposable
             }
         }
 
-        using var stream = new FileStream(
+        var bitmap = _decodeBitmap(
             fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 64 * 1024,
-            FileOptions.SequentialScan);
-        var bitmap = new Bitmap(stream);
+            cancellationToken);
         var admitted = false;
 
         try
@@ -346,8 +435,79 @@ public sealed class DecodedBitmapCache : IDisposable
         }
     }
 
+    private static Bitmap DecodeBitmapFromFile(
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var stream = new FileStream(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        var bitmap = new Bitmap(stream);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            bitmap.Dispose();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return bitmap;
+    }
+
+    private void RegisterOperationLocked()
+    {
+        if (_activeOperations == 0)
+        {
+            _operationsDrained = NewCapacitySignal();
+        }
+
+        _activeOperations++;
+    }
+
+    private void CompleteOperation()
+    {
+        TaskCompletionSource? drained = null;
+
+        lock (_gate)
+        {
+            _activeOperations--;
+            if (_activeOperations == 0)
+            {
+                drained = _operationsDrained;
+            }
+        }
+
+        drained?.TrySetResult();
+    }
+
+    private static void CancelSourceNoThrow(
+        CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch
+        {
+            // Decode cancellation callbacks cannot be allowed to abort
+            // cache teardown.
+        }
+    }
+
     private static TaskCompletionSource NewCapacitySignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static TaskCompletionSource NewCompletedSignal()
+    {
+        var signal = NewCapacitySignal();
+        signal.TrySetResult();
+        return signal;
+    }
 
     private void SignalCapacityChangedLocked()
     {

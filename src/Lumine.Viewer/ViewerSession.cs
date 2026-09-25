@@ -6,7 +6,13 @@ public sealed class ViewerSession : IAsyncDisposable
     private readonly IViewerThumbnailProvider _thumbnails;
     private readonly object _gate = new();
     private readonly Dictionary<long, InFlightRequest> _inFlight = [];
+    private readonly HashSet<InFlightRequest> _activeRequests = [];
     private readonly CancellationTokenSource _shutdown = new();
+    private TaskCompletionSource _operationsDrained =
+        NewCompletedSignal();
+    private readonly TaskCompletionSource _disposeCompletion =
+        NewSignal();
+    private int _activeOperations;
     private long _thumbnailRequests;
     private long _thumbnailRequestsCoalesced;
     private long _thumbnailRequestsCancelled;
@@ -21,6 +27,19 @@ public sealed class ViewerSession : IAsyncDisposable
         IViewerAssetProvider assets,
         IViewerThumbnailProvider thumbnails,
         ViewerOptions? options = null)
+        : this(
+            assets,
+            thumbnails,
+            options,
+            bitmapCache: null)
+    {
+    }
+
+    internal ViewerSession(
+        IViewerAssetProvider assets,
+        IViewerThumbnailProvider thumbnails,
+        ViewerOptions? options,
+        DecodedBitmapCache? bitmapCache)
     {
         _assets = assets ?? throw new ArgumentNullException(nameof(assets));
         _thumbnails = thumbnails ?? throw new ArgumentNullException(nameof(thumbnails));
@@ -32,9 +51,10 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
 
-        BitmapCache = new DecodedBitmapCache(
-            Options.DecodedBitmapEntryLimit,
-            Options.DecodedBitmapByteLimit);
+        BitmapCache = bitmapCache
+            ?? new DecodedBitmapCache(
+                Options.DecodedBitmapEntryLimit,
+                Options.DecodedBitmapByteLimit);
     }
 
     public ViewerOptions Options { get; }
@@ -88,10 +108,25 @@ public sealed class ViewerSession : IAsyncDisposable
         }
     }
 
-    public ValueTask<ViewerAsset> GetAssetAsync(
+    public async ValueTask<ViewerAsset> GetAssetAsync(
         long index,
-        CancellationToken cancellationToken = default) =>
-        _assets.GetAssetAsync(index, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        var operation = BeginOperation(
+            cancellationToken);
+
+        try
+        {
+            return await _assets.GetAssetAsync(
+                index,
+                operation.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Dispose();
+            CompleteOperation();
+        }
+    }
 
     public ValueTask<ViewerThumbnail> GetThumbnailAsync(
         ViewerAsset asset,
@@ -99,40 +134,63 @@ public sealed class ViewerSession : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ThrowIfDisposed();
 
         InFlightRequest request;
+
         lock (_gate)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             if (_inFlight.TryGetValue(asset.Id, out var existing))
             {
                 if (existing.Priority == ViewerThumbnailPriority.Background
                     && priority == ViewerThumbnailPriority.Foreground)
                 {
-                    existing.Cancellation.Cancel();
+                    existing.Cancel();
                     _inFlight.Remove(asset.Id);
-                    Interlocked.Increment(ref _thumbnailRequestsCancelled);
+                    Interlocked.Increment(
+                        ref _thumbnailRequestsCancelled);
                 }
                 else
                 {
                     existing.Waiters++;
-                    Interlocked.Increment(ref _thumbnailRequestsCoalesced);
+                    Interlocked.Increment(
+                        ref _thumbnailRequestsCoalesced);
                     request = existing;
-                    return AwaitSharedAsync(asset.Id, request, cancellationToken);
+                    return AwaitSharedAsync(
+                        asset.Id,
+                        request,
+                        cancellationToken);
                 }
             }
 
-            var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
-            var task = RequestCoreAsync(asset, priority, requestCancellation.Token);
-            request = new InFlightRequest(priority, requestCancellation, task)
+            var requestCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    _shutdown.Token);
+            var task = RequestCoreAsync(
+                asset,
+                priority,
+                requestCancellation.Token);
+            request = new InFlightRequest(
+                priority,
+                requestCancellation,
+                task)
             {
                 Waiters = 1
             };
             _inFlight[asset.Id] = request;
+            _activeRequests.Add(request);
+            request.CleanupTask =
+                ObserveRequestCompletionAsync(
+                    asset.Id,
+                    request);
             Interlocked.Increment(ref _thumbnailRequests);
         }
 
-        return AwaitSharedAsync(asset.Id, request, cancellationToken);
+        return AwaitSharedAsync(
+            asset.Id,
+            request,
+            cancellationToken);
     }
 
     public async Task PrefetchAsync(
@@ -140,61 +198,124 @@ public sealed class ViewerSession : IAsyncDisposable
         int count,
         CancellationToken cancellationToken = default)
     {
-        if (count <= 0 || Count == 0)
+        var operation = BeginOperation(
+            cancellationToken);
+
+        try
         {
-            return;
-        }
+            var operationToken = operation.Token;
 
-        var start = Math.Clamp(startIndex, 0, Count - 1);
-        var endExclusive = Math.Min(Count, start + count);
-        var tasks = new List<Task>(checked((int)Math.Min(endExclusive - start, 256)));
-
-        for (var index = start; index < endExclusive; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            tasks.Add(PrefetchOneAsync(index, cancellationToken));
-        }
-
-        await Task.WhenAll(tasks).ConfigureAwait(false);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        List<InFlightRequest> requests;
-        lock (_gate)
-        {
-            if (_disposed)
+            if (count <= 0 || Count == 0)
             {
                 return;
             }
 
-            _disposed = true;
-            requests = [.. _inFlight.Values];
-            _inFlight.Clear();
+            var start = Math.Clamp(
+                startIndex,
+                0,
+                Count - 1);
+            var endExclusive = Math.Min(
+                Count,
+                start + count);
+            var tasks = new List<Task>(
+                checked((int)Math.Min(
+                    endExclusive - start,
+                    256)));
+
+            for (var index = start;
+                 index < endExclusive;
+                 index++)
+            {
+                operationToken.ThrowIfCancellationRequested();
+                tasks.Add(PrefetchOneAsync(
+                    index,
+                    operationToken));
+            }
+
+            await Task.WhenAll(tasks)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            operation.Dispose();
+            CompleteOperation();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        List<InFlightRequest>? requests = null;
+        Task? operationDrain = null;
+        var ownsShutdown = false;
+
+        lock (_gate)
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                requests = [.. _activeRequests];
+                _inFlight.Clear();
+                operationDrain = _operationsDrained.Task;
+                ownsShutdown = true;
+            }
         }
 
-        _shutdown.Cancel();
-        foreach (var request in requests)
+        if (!ownsShutdown)
         {
-            request.Cancellation.Cancel();
+            await _disposeCompletion.Task
+                .ConfigureAwait(false);
+            return;
         }
+
+        var ownedRequests = requests!;
+        var ownedOperationDrain = operationDrain!;
 
         try
         {
-            await Task.WhenAll(requests.Select(static request => request.Task)).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Individual waiters already observe their own failures/cancellation.
-        }
+            CancelSourceNoThrow(_shutdown);
 
-        foreach (var request in requests)
-        {
-            request.Cancellation.Dispose();
-        }
+            foreach (var request in ownedRequests)
+            {
+                request.Cancel();
+            }
 
-        BitmapCache.Dispose();
-        _shutdown.Dispose();
+            try
+            {
+                await Task.WhenAll(
+                    ownedRequests.Select(
+                        static request => request.Task))
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Shutdown owns draining, not propagation of individual
+                // provider cancellation/failure.
+            }
+
+            await ownedOperationDrain
+                .ConfigureAwait(false);
+
+            await Task.WhenAll(
+                ownedRequests.Select(
+                    static request => request.CleanupTask))
+                .ConfigureAwait(false);
+
+            foreach (var request in ownedRequests)
+            {
+                request.DisposeCancellation();
+            }
+
+            await BitmapCache.DisposeAsync()
+                .ConfigureAwait(false);
+
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            _disposeCompletion.TrySetException(exception);
+            throw;
+        }
     }
 
     private async Task PrefetchOneAsync(long index, CancellationToken cancellationToken)
@@ -217,6 +338,82 @@ public sealed class ViewerSession : IAsyncDisposable
             // Background prefetch is opportunistic. A visible tile will retry
             // and surface the failure if/when the asset enters the viewport.
         }
+    }
+
+    private CancellationTokenSource BeginOperation(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_activeOperations == 0)
+            {
+                _operationsDrained = NewSignal();
+            }
+
+            _activeOperations++;
+
+            try
+            {
+                return CancellationTokenSource
+                    .CreateLinkedTokenSource(
+                        cancellationToken,
+                        _shutdown.Token);
+            }
+            catch
+            {
+                var drained = CompleteOperationLocked();
+                drained?.TrySetResult();
+                throw;
+            }
+        }
+    }
+
+    private void CompleteOperation()
+    {
+        TaskCompletionSource? drained;
+
+        lock (_gate)
+        {
+            drained = CompleteOperationLocked();
+        }
+
+        drained?.TrySetResult();
+    }
+
+    private TaskCompletionSource? CompleteOperationLocked()
+    {
+        _activeOperations--;
+        return _activeOperations == 0
+            ? _operationsDrained
+            : null;
+    }
+
+    private static void CancelSourceNoThrow(
+        CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch
+        {
+            // Cancellation callbacks are external to lifecycle ownership.
+            // Cleanup continues and #293 will own diagnostic logging.
+        }
+    }
+
+    private static TaskCompletionSource NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static TaskCompletionSource NewCompletedSignal()
+    {
+        var signal = NewSignal();
+        signal.TrySetResult();
+        return signal;
     }
 
     private async Task<ViewerThumbnail> RequestCoreAsync(
@@ -242,6 +439,39 @@ public sealed class ViewerSession : IAsyncDisposable
         }
     }
 
+    private async Task ObserveRequestCompletionAsync(
+        long assetId,
+        InFlightRequest request)
+    {
+        try
+        {
+            await request.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Individual waiters observe the actual result. This task owns
+            // request lifetime cleanup only.
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _activeRequests.Remove(request);
+
+                if (request.Waiters == 0
+                    && _inFlight.TryGetValue(
+                        assetId,
+                        out var current)
+                    && ReferenceEquals(current, request))
+                {
+                    _inFlight.Remove(assetId);
+                }
+            }
+
+            request.DisposeCancellation();
+        }
+    }
+
     private async ValueTask<ViewerThumbnail> AwaitSharedAsync(
         long assetId,
         InFlightRequest request,
@@ -261,8 +491,9 @@ public sealed class ViewerSession : IAsyncDisposable
                 {
                     if (!request.Task.IsCompleted)
                     {
-                        request.Cancellation.Cancel();
-                        Interlocked.Increment(ref _thumbnailRequestsCancelled);
+                        request.Cancel();
+                        Interlocked.Increment(
+                            ref _thumbnailRequestsCancelled);
                     }
 
                     if (_inFlight.TryGetValue(assetId, out var current)
@@ -270,18 +501,8 @@ public sealed class ViewerSession : IAsyncDisposable
                     {
                         _inFlight.Remove(assetId);
                     }
-
-                    request.Cancellation.Dispose();
                 }
             }
-        }
-    }
-
-    private void ThrowIfDisposed()
-    {
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 
@@ -290,12 +511,45 @@ public sealed class ViewerSession : IAsyncDisposable
         CancellationTokenSource cancellation,
         Task<ViewerThumbnail> task)
     {
-        public ViewerThumbnailPriority Priority { get; } = priority;
+        private int _cancellationDisposed;
 
-        public CancellationTokenSource Cancellation { get; } = cancellation;
+        public ViewerThumbnailPriority Priority { get; } = priority;
 
         public Task<ViewerThumbnail> Task { get; } = task;
 
+        public Task CleanupTask { get; set; } =
+            System.Threading.Tasks.Task.CompletedTask;
+
         public int Waiters { get; set; }
+
+        public void Cancel()
+        {
+            if (Volatile.Read(ref _cancellationDisposed) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch
+            {
+                // Cancellation callbacks are outside ViewerSession ownership.
+                // Shutdown must still continue; #293 owns later diagnostics.
+            }
+        }
+
+        public void DisposeCancellation()
+        {
+            if (Interlocked.Exchange(
+                    ref _cancellationDisposed,
+                    1) != 0)
+            {
+                return;
+            }
+
+            cancellation.Dispose();
+        }
     }
 }
