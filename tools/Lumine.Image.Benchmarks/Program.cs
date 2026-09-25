@@ -70,12 +70,17 @@ try
         info.LastWriteTimeUtc.Ticks);
 
     var peak = PeakWorkingSetMonitor.Start();
+    ThumbnailResult firstResult;
     using (recorder.Measure(CoreMetricNames.ThumbnailGenerate))
     {
-        _ = await pipeline.RequestAsync(
+        firstResult = await pipeline.RequestAsync(
             firstSource,
             ThumbnailProfiles.GridMedium);
     }
+    firstSource = firstSource.WithMetadata(
+        firstResult.SourceMetadata
+        ?? throw new InvalidOperationException(
+            "Cold thumbnail generation did not return source metadata."));
     await peak.DisposeAsync();
     peakWorkingSetBytes = peak.PeakWorkingSetBytes;
     peakAdditionalWorkingSetBytes = peak.PeakAdditionalWorkingSetBytes;
@@ -149,6 +154,8 @@ try
             ["cache_misses"] = diagnostics.CacheMisses.ToString(CultureInfo.InvariantCulture),
             ["generated"] = diagnostics.Generated.ToString(CultureInfo.InvariantCulture),
             ["source_opens"] = diagnostics.SourceOpens.ToString(CultureInfo.InvariantCulture),
+            ["metadata_probes"] = diagnostics.MetadataProbes.ToString(CultureInfo.InvariantCulture),
+            ["metadata_bytes_hashed"] = diagnostics.MetadataBytesHashed.ToString(CultureInfo.InvariantCulture),
             ["cache_files"] = cacheFiles.ToString(CultureInfo.InvariantCulture),
             ["cache_bytes"] = cacheBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
