@@ -4,9 +4,15 @@ namespace Lumine.Image;
 
 internal sealed class ThumbnailGenerator
 {
+    private const int MetadataMemoryCacheLimit = 4096;
+
     private readonly ThumbnailCache _cache;
     private readonly Dictionary<string, KeyGate> _keyGates = new(StringComparer.Ordinal);
     private readonly object _keyGatesLock = new();
+    private readonly object _metadataGate = new();
+    private readonly Dictionary<SourceMetadataKey, MetadataCacheEntry>
+        _metadataCache = [];
+    private readonly LinkedList<SourceMetadataKey> _metadataLru = [];
     private long _cacheHits;
     private long _cacheMisses;
     private long _generated;
@@ -14,6 +20,7 @@ internal sealed class ThumbnailGenerator
     private long _sourceOpens;
     private long _metadataProbes;
     private long _metadataBytesHashed;
+    private long _metadataMemoryHits;
 
     public ThumbnailGenerator(ThumbnailCache cache)
     {
@@ -28,7 +35,8 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _failed),
             Interlocked.Read(ref _sourceOpens),
             Interlocked.Read(ref _metadataProbes),
-            Interlocked.Read(ref _metadataBytesHashed));
+            Interlocked.Read(ref _metadataBytesHashed),
+            Interlocked.Read(ref _metadataMemoryHits));
 
     public ThumbnailResult GetOrCreate(
         ThumbnailSource source,
@@ -39,9 +47,12 @@ internal sealed class ThumbnailGenerator
         ThumbnailCache.ValidateProfile(profile);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var persisted = source.PersistedMetadata;
+        var persisted = source.PersistedMetadata
+            ?? TryGetRememberedMetadata(source);
+
         if (persisted is not null)
         {
+            source = source.WithMetadata(persisted);
             var cacheKey = ThumbnailCache.GetCacheKey(source, profile);
             var cached = _cache.TryOpenValid(cacheKey, cancellationToken);
             if (cached is not null)
@@ -63,6 +74,7 @@ internal sealed class ThumbnailGenerator
             source,
             expectedContentSha256: null,
             cancellationToken);
+        RememberMetadata(source, snapshot.Metadata);
         var prepared = source.WithMetadata(snapshot.Metadata);
         var preparedKey = ThumbnailCache.GetCacheKey(prepared, profile);
 
@@ -265,6 +277,83 @@ internal sealed class ThumbnailGenerator
                 sourcePath,
                 "Persisted technical metadata no longer describes the current source snapshot.");
         }
+    }
+
+    private SourceTechnicalMetadata? TryGetRememberedMetadata(
+        ThumbnailSource source)
+    {
+        var key = SourceMetadataKey.From(source);
+
+        lock (_metadataGate)
+        {
+            if (!_metadataCache.TryGetValue(key, out var entry))
+            {
+                return null;
+            }
+
+            _metadataLru.Remove(entry.Node);
+            _metadataLru.AddFirst(entry.Node);
+            Interlocked.Increment(ref _metadataMemoryHits);
+            return entry.Metadata;
+        }
+    }
+
+    private void RememberMetadata(
+        ThumbnailSource source,
+        SourceTechnicalMetadata metadata)
+    {
+        var key = SourceMetadataKey.From(source);
+
+        lock (_metadataGate)
+        {
+            if (_metadataCache.TryGetValue(key, out var existing))
+            {
+                existing.Metadata = metadata;
+                _metadataLru.Remove(existing.Node);
+                _metadataLru.AddFirst(existing.Node);
+                return;
+            }
+
+            var node = _metadataLru.AddFirst(key);
+            _metadataCache.Add(
+                key,
+                new MetadataCacheEntry(metadata, node));
+
+            while (_metadataCache.Count > MetadataMemoryCacheLimit)
+            {
+                var last = _metadataLru.Last;
+                if (last is null)
+                {
+                    break;
+                }
+
+                _metadataLru.RemoveLast();
+                _metadataCache.Remove(last.Value);
+            }
+        }
+    }
+
+    private readonly record struct SourceMetadataKey(
+        long AssetId,
+        long SourceRevision,
+        long FileSize,
+        long ModifiedAtUtcTicks)
+    {
+        public static SourceMetadataKey From(ThumbnailSource source) =>
+            new(
+                source.AssetId,
+                source.SourceRevision,
+                source.FileSize,
+                source.ModifiedAtUtcTicks);
+    }
+
+    private sealed class MetadataCacheEntry(
+        SourceTechnicalMetadata metadata,
+        LinkedListNode<SourceMetadataKey> node)
+    {
+        public SourceTechnicalMetadata Metadata { get; set; } = metadata;
+
+        public LinkedListNode<SourceMetadataKey> Node { get; } = node;
     }
 
     private KeyGate AcquireKeyGate(string cacheKey)
