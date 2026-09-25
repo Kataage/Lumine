@@ -12,6 +12,8 @@ internal sealed class ThumbnailGenerator
     private long _generated;
     private long _failed;
     private long _sourceOpens;
+    private long _metadataProbes;
+    private long _metadataBytesHashed;
 
     public ThumbnailGenerator(ThumbnailCache cache)
     {
@@ -24,7 +26,9 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _cacheMisses),
             Interlocked.Read(ref _generated),
             Interlocked.Read(ref _failed),
-            Interlocked.Read(ref _sourceOpens));
+            Interlocked.Read(ref _sourceOpens),
+            Interlocked.Read(ref _metadataProbes),
+            Interlocked.Read(ref _metadataBytesHashed));
 
     public ThumbnailResult GetOrCreate(
         ThumbnailSource source,
@@ -35,31 +39,104 @@ internal sealed class ThumbnailGenerator
         ThumbnailCache.ValidateProfile(profile);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheKey = ThumbnailCache.GetCacheKey(source, profile);
-        var cached = _cache.TryOpenValid(cacheKey, cancellationToken);
-        if (cached is not null)
+        var persisted = source.PersistedMetadata;
+        if (persisted is not null)
         {
-            Interlocked.Increment(ref _cacheHits);
-            return cached;
+            var cacheKey = ThumbnailCache.GetCacheKey(source, profile);
+            var cached = _cache.TryOpenValid(cacheKey, cancellationToken);
+            if (cached is not null)
+            {
+                Interlocked.Increment(ref _cacheHits);
+                return cached with { SourceMetadata = persisted };
+            }
+
+            return GetOrCreateForPreparedSource(
+                source,
+                persisted,
+                profile,
+                cacheKey,
+                snapshot: null,
+                cancellationToken);
         }
 
+        using var snapshot = OpenSnapshot(
+            source,
+            expectedContentSha256: null,
+            cancellationToken);
+        var prepared = source.WithMetadata(snapshot.Metadata);
+        var preparedKey = ThumbnailCache.GetCacheKey(prepared, profile);
+
+        var preparedCached = _cache.TryOpenValid(
+            preparedKey,
+            cancellationToken);
+        if (preparedCached is not null)
+        {
+            Interlocked.Increment(ref _cacheHits);
+            return preparedCached with
+            {
+                SourceMetadata = snapshot.Metadata
+            };
+        }
+
+        return GetOrCreateForPreparedSource(
+            prepared,
+            snapshot.Metadata,
+            profile,
+            preparedKey,
+            snapshot,
+            cancellationToken);
+    }
+
+    private ThumbnailResult GetOrCreateForPreparedSource(
+        ThumbnailSource source,
+        SourceTechnicalMetadata metadata,
+        ThumbnailProfile profile,
+        string cacheKey,
+        ImageSourceSnapshot? snapshot,
+        CancellationToken cancellationToken)
+    {
         var keyGate = AcquireKeyGate(cacheKey);
         try
         {
             keyGate.Semaphore.Wait(cancellationToken);
             try
             {
-                // Another worker may have generated this exact revision while
-                // this request was waiting. Re-check before touching original.
-                cached = _cache.TryOpenValid(cacheKey, cancellationToken);
+                var cached = _cache.TryOpenValid(
+                    cacheKey,
+                    cancellationToken);
                 if (cached is not null)
                 {
                     Interlocked.Increment(ref _cacheHits);
-                    return cached;
+                    return cached with { SourceMetadata = metadata };
                 }
 
                 Interlocked.Increment(ref _cacheMisses);
-                return Generate(source, profile, cacheKey, cancellationToken);
+
+                if (snapshot is not null)
+                {
+                    return Generate(
+                        source,
+                        metadata,
+                        profile,
+                        cacheKey,
+                        cancellationToken);
+                }
+
+                using var validated = OpenSnapshot(
+                    source,
+                    metadata.ContentSha256,
+                    cancellationToken);
+                EnsureSameMetadata(
+                    source.SourcePath,
+                    metadata,
+                    validated.Metadata);
+
+                return Generate(
+                    source,
+                    validated.Metadata,
+                    profile,
+                    cacheKey,
+                    cancellationToken);
             }
             finally
             {
@@ -72,8 +149,25 @@ internal sealed class ThumbnailGenerator
         }
     }
 
+    private ImageSourceSnapshot OpenSnapshot(
+        ThumbnailSource source,
+        string? expectedContentSha256,
+        CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _metadataProbes);
+        Interlocked.Add(ref _metadataBytesHashed, source.FileSize);
+
+        return ImageSourceSnapshot.Open(
+            source.SourcePath,
+            source.FileSize,
+            source.ModifiedAtUtcTicks,
+            expectedContentSha256,
+            cancellationToken);
+    }
+
     private ThumbnailResult Generate(
         ThumbnailSource source,
+        SourceTechnicalMetadata metadata,
         ThumbnailProfile profile,
         string cacheKey,
         CancellationToken cancellationToken)
@@ -115,7 +209,9 @@ internal sealed class ThumbnailGenerator
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var cachePath = _cache.CommitTemporaryFile(cacheKey, temporaryPath);
+            var cachePath = _cache.CommitTemporaryFile(
+                cacheKey,
+                temporaryPath);
 
             using var persisted = NetVips.Image.NewFromFile(
                 cachePath,
@@ -132,7 +228,8 @@ internal sealed class ThumbnailGenerator
                 false,
                 width,
                 height,
-                new FileInfo(cachePath).Length);
+                new FileInfo(cachePath).Length,
+                metadata);
 
             Interlocked.Increment(ref _generated);
             return result;
@@ -142,6 +239,31 @@ internal sealed class ThumbnailGenerator
             Interlocked.Increment(ref _failed);
             TryDelete(temporaryPath);
             throw;
+        }
+    }
+
+    private static void EnsureSameMetadata(
+        string sourcePath,
+        SourceTechnicalMetadata expected,
+        SourceTechnicalMetadata actual)
+    {
+        if (!string.Equals(
+                expected.ContentSha256,
+                actual.ContentSha256,
+                StringComparison.OrdinalIgnoreCase)
+            || expected.Width != actual.Width
+            || expected.Height != actual.Height
+            || expected.RawWidth != actual.RawWidth
+            || expected.RawHeight != actual.RawHeight
+            || expected.HasAlpha != actual.HasAlpha
+            || !string.Equals(
+                expected.Format,
+                actual.Format,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ImageSourceChangedException(
+                sourcePath,
+                "Persisted technical metadata no longer describes the current source snapshot.");
         }
     }
 
