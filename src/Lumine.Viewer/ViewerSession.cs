@@ -261,7 +261,7 @@ public sealed class ViewerSession : IAsyncDisposable
 
         try
         {
-            _shutdown.Cancel();
+            CancelSourceNoThrow(_shutdown);
 
             foreach (var request in ownedRequests)
             {
@@ -374,6 +374,20 @@ public sealed class ViewerSession : IAsyncDisposable
         return _activeOperations == 0
             ? _operationsDrained
             : null;
+    }
+
+    private static void CancelSourceNoThrow(
+        CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch
+        {
+            // Cancellation callbacks are external to lifecycle ownership.
+            // Cleanup continues and #293 will own diagnostic logging.
+        }
     }
 
     private static TaskCompletionSource NewSignal() =>
@@ -500,9 +514,10 @@ public sealed class ViewerSession : IAsyncDisposable
             {
                 cancellation.Cancel();
             }
-            catch (ObjectDisposedException)
+            catch
             {
-                // Completion cleanup won the race. No work remains to cancel.
+                // Cancellation callbacks are outside ViewerSession ownership.
+                // Shutdown must still continue; #293 owns later diagnostics.
             }
         }
 

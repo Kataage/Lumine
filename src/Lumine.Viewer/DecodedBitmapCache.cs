@@ -241,7 +241,7 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
             }
         }
 
-        _shutdown.Cancel();
+        CancelSourceNoThrow(_shutdown);
 
         foreach (var bitmap in disposeNow)
         {
@@ -483,6 +483,20 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
         }
 
         drained?.TrySetResult();
+    }
+
+    private static void CancelSourceNoThrow(
+        CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch
+        {
+            // Decode cancellation callbacks cannot be allowed to abort
+            // cache teardown.
+        }
     }
 
     private static TaskCompletionSource NewCapacitySignal() =>

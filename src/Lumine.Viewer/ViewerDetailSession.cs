@@ -489,8 +489,11 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 version);
         }
 
-        _shutdown.Cancel();
-        selectionLifetime?.Cancel();
+        CancelSourceNoThrow(_shutdown);
+        if (selectionLifetime is not null)
+        {
+            CancelSourceNoThrow(selectionLifetime);
+        }
 
         if (originalLoad is not null)
         {
@@ -539,7 +542,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             return;
         }
 
-        previous.Cancel();
+        CancelSourceNoThrow(previous);
         previous.Dispose();
     }
 
@@ -607,6 +610,20 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 // UI/app lifecycle must not be corrupted by an observer.
                 // #293 owns the later diagnostic logging policy.
             }
+        }
+    }
+
+    private static void CancelSourceNoThrow(
+        CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch
+        {
+            // Lifecycle cancellation must complete even if an external
+            // cancellation callback fails. #293 owns diagnostics.
         }
     }
 
