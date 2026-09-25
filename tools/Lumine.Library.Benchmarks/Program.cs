@@ -36,6 +36,7 @@ long startingWorkingSetBytes = 0;
 long peakAdditionalWorkingSetBytes = 0;
 var pageCount = 0;
 var traversed = 0;
+var metadataPersisted = 0;
 
 try
 {
@@ -78,6 +79,67 @@ try
         {
             await ingest.WriteBatchAsync(batch);
         }
+    }
+
+    var metadataTarget = Math.Min(count, 10_000);
+    using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataPersist))
+    {
+        AssetCursor? metadataCursor = null;
+
+        while (metadataPersisted < metadataTarget)
+        {
+            var page = await repository.GetAssetPageAsync(
+                library.Id,
+                Math.Min(500, metadataTarget - metadataPersisted),
+                metadataCursor);
+
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var asset in page.Items)
+            {
+                var sha = asset.Id
+                    .ToString("x", CultureInfo.InvariantCulture)
+                    .PadLeft(64, '0');
+
+                var stored = await repository.UpdateTechnicalMetadataAsync(
+                    library.Id,
+                    asset.Id,
+                    asset.SourceRevision,
+                    asset.FileSize,
+                    asset.ModifiedAtUtc.UtcDateTime.Ticks,
+                    new AssetTechnicalMetadata(
+                        asset.Width ?? 1,
+                        asset.Height ?? 1,
+                        asset.Width ?? 1,
+                        asset.Height ?? 1,
+                        false,
+                        asset.Format ?? asset.Extension,
+                        sha));
+
+                if (!stored)
+                {
+                    throw new InvalidOperationException(
+                        $"Technical metadata persistence rejected fixture asset {asset.Id}.");
+                }
+
+                metadataPersisted++;
+            }
+
+            metadataCursor = page.NextCursor;
+            if (metadataCursor is null)
+            {
+                break;
+            }
+        }
+    }
+
+    if (metadataPersisted != metadataTarget)
+    {
+        throw new InvalidOperationException(
+            $"Persisted technical metadata for {metadataPersisted:N0} assets, expected {metadataTarget:N0}.");
     }
 
     await peakMonitor.DisposeAsync();
@@ -135,6 +197,7 @@ try
             ["fixture_asset_count"] = count.ToString(CultureInfo.InvariantCulture),
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
             ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
             ["starting_working_set_bytes"] = startingWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -144,6 +207,7 @@ try
 
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
+    Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
     Console.WriteLine($"Database: {databaseBytes:N0} bytes");
     Console.WriteLine($"Result: {Path.GetFullPath(output)}");
 }
