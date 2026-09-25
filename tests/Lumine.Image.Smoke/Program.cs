@@ -239,6 +239,11 @@ try
         persistentSource,
         ThumbnailProfiles.GridMedium);
     Require(!persistentFirst.CacheHit, "Persistent cache first request unexpectedly hit.");
+    Require(
+        persistentFirst.SourceMetadata is not null,
+        "Persistent cache generation did not return source technical metadata.");
+    persistentSource = persistentSource.WithMetadata(
+        persistentFirst.SourceMetadata!);
 
     var diagnosticsBeforeHit = pipeline.Diagnostics;
     File.Delete(jpgPath);
@@ -248,8 +253,9 @@ try
         ThumbnailProfiles.GridMedium);
     Require(persistentHit.CacheHit, "Warm cache request missed after original deletion.");
     Require(
-        pipeline.Diagnostics.SourceOpens == diagnosticsBeforeHit.SourceOpens,
-        "Cache hit touched the original source.");
+        pipeline.Diagnostics.SourceOpens == diagnosticsBeforeHit.SourceOpens
+        && pipeline.Diagnostics.MetadataProbes == diagnosticsBeforeHit.MetadataProbes,
+        "Warm cache hit touched or reprobed the original source.");
 
     await using (var restartedPipeline = new ThumbnailPipeline(
                      new ThumbnailCache(cacheRoot),
@@ -264,7 +270,8 @@ try
             ThumbnailProfiles.GridMedium);
         Require(restartedHit.CacheHit, "Fresh pipeline/cache instance did not reuse persistent thumbnail.");
         Require(
-            restartedPipeline.Diagnostics.SourceOpens == 0,
+            restartedPipeline.Diagnostics.SourceOpens == 0
+            && restartedPipeline.Diagnostics.MetadataProbes == 0,
             "Fresh pipeline persistent hit touched the deleted original source.");
     }
 
@@ -275,8 +282,13 @@ try
     Require(
         !detailPersistentFirst.CacheHit,
         "Detail preview first request unexpectedly hit cache.");
+    Require(
+        detailPersistentFirst.SourceMetadata is not null,
+        "Detail preview generation did not return source metadata.");
+    detailPersistentSource = detailPersistentSource.WithMetadata(
+        detailPersistentFirst.SourceMetadata!);
 
-    var detailSourceOpensBeforeHit = pipeline.Diagnostics.SourceOpens;
+    var detailDiagnosticsBeforeHit = pipeline.Diagnostics;
     File.Delete(detailCachePath);
 
     var detailPersistentHit = await pipeline.RequestAsync(
@@ -286,8 +298,9 @@ try
         detailPersistentHit.CacheHit,
         "Detail preview did not prefer persistent cache after original disappeared.");
     Require(
-        pipeline.Diagnostics.SourceOpens == detailSourceOpensBeforeHit,
-        "Warm Detail preview cache hit touched the original source.");
+        pipeline.Diagnostics.SourceOpens == detailDiagnosticsBeforeHit.SourceOpens
+        && pipeline.Diagnostics.MetadataProbes == detailDiagnosticsBeforeHit.MetadataProbes,
+        "Warm Detail preview cache hit touched or reprobed the original source.");
 
     await using (var restartedDetailPipeline = new ThumbnailPipeline(
                      new ThumbnailCache(cacheRoot),
@@ -304,7 +317,8 @@ try
             restartedDetailHit.CacheHit,
             "Restarted pipeline did not reuse persistent Detail preview.");
         Require(
-            restartedDetailPipeline.Diagnostics.SourceOpens == 0,
+            restartedDetailPipeline.Diagnostics.SourceOpens == 0
+            && restartedDetailPipeline.Diagnostics.MetadataProbes == 0,
             "Restarted Detail preview cache hit touched the missing original.");
     }
 
