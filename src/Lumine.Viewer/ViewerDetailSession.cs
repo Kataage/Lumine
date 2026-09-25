@@ -89,6 +89,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         CancellationTokenSource selectionLifetime;
+        CancellationTokenSource operation;
         long version;
 
         lock (_gate)
@@ -113,6 +114,10 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 CancellationTokenSource.CreateLinkedTokenSource(
                     _shutdown.Token);
             _selectionLifetimeCancellation = selectionLifetime;
+            operation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    selectionLifetime.Token,
+                    cancellationToken);
             version = ++_version;
 
             _snapshot = new ViewerDetailSnapshot(
@@ -129,12 +134,14 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         PublishState();
         SelectedIndexChanged?.Invoke(this, index);
 
-        using var operation =
-            CancellationTokenSource.CreateLinkedTokenSource(
-                selectionLifetime.Token,
-                cancellationToken);
+        using (operation)
+        {
+            await SelectCoreAsync();
+        }
 
-        var callerCancelledAtCommit = false;
+        async Task SelectCoreAsync()
+        {
+            var callerCancelledAtCommit = false;
 
         try
         {
@@ -246,9 +253,10 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             PublishState();
         }
 
-        if (callerCancelledAtCommit)
-        {
-            throw new OperationCanceledException(cancellationToken);
+            if (callerCancelledAtCommit)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
         }
     }
 
@@ -313,21 +321,22 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         CancellationTokenSource selectionLifetime,
         long version)
     {
+        var selectionToken = selectionLifetime.Token;
         var admitted = false;
 
         try
         {
             await _originalAdmission.WaitAsync(
-                selectionLifetime.Token).ConfigureAwait(false);
+                selectionToken).ConfigureAwait(false);
             admitted = true;
 
             await _previousOriginalDisposal.WaitAsync(
-                selectionLifetime.Token).ConfigureAwait(false);
+                selectionToken).ConfigureAwait(false);
 
             var original = await _provider.LoadOriginalAsync(
                 asset,
                 Options.OriginalDecodedByteLimit,
-                selectionLifetime.Token).ConfigureAwait(false);
+                selectionToken).ConfigureAwait(false);
 
             Task? staleDisposal = null;
             var publish = false;
