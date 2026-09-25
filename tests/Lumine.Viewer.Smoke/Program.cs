@@ -922,6 +922,17 @@ internal static class Program
         Require(
             provider.PreviewRequests >= 2,
             "Retrying the same asset after caller cancellation was incorrectly short-circuited.");
+
+        using var preCancelled = new CancellationTokenSource();
+        preCancelled.Cancel();
+
+        await ExpectCancellationAsync(
+            session.SelectAsync(0, preCancelled.Token));
+
+        Require(
+            session.Snapshot.State == ViewerDetailLoadState.PreviewReady
+            && session.Snapshot.SelectedIndex == 0,
+            "A pre-cancelled no-op selection corrupted the existing ready snapshot.");
     }
 
     private static async Task VerifyUnknownMetadataPromotionAsync(
