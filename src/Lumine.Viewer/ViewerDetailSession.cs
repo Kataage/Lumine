@@ -272,7 +272,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             var asset = _snapshot.Asset
                 ?? throw new InvalidOperationException(
                     "Select an asset before requesting full resolution.");
-            var selection = _selectionLifetimeCancellation
+            var selectionLifetime = _selectionLifetimeCancellation
                 ?? throw new InvalidOperationException(
                     "Detail selection has no active lifetime.");
             var version = _snapshot.SelectionVersion;
@@ -292,7 +292,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
                 loadTask = LoadOriginalCoreAsync(
                     asset,
-                    selection,
+                    selectionLifetime,
                     version);
                 _originalLoadTask = loadTask;
                 _originalLoadVersion = version;
@@ -368,7 +368,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
             }
         }
         catch (OperationCanceledException)
-            when (selection.IsCancellationRequested)
+            when (selectionLifetime.IsCancellationRequested)
         {
         }
         catch (Exception exception)
@@ -553,7 +553,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
         long version,
         CancellationTokenSource selectionLifetime) =>
         IsSelectionIdentityCurrentLocked(version, selectionLifetime)
-        && !selection.IsCancellationRequested;
+        && !selectionLifetime.IsCancellationRequested;
 
     private bool IsSelectionIdentityCurrentLocked(
         long version,

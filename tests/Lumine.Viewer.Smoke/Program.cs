@@ -935,8 +935,14 @@ internal static class Program
             "A pre-cancelled no-op selection corrupted the existing ready snapshot.");
 
         using var completedCaller = new CancellationTokenSource();
-        await session.SelectAsync(0);
+        session.Clear();
         await session.SelectAsync(0, completedCaller.Token);
+        await WaitForDetailAsync(
+            session,
+            static snapshot =>
+                snapshot.SelectedIndex == 0
+                && snapshot.State == ViewerDetailLoadState.PreviewReady
+                && snapshot.Bitmap is not null);
 
         completedCaller.Cancel();
 
