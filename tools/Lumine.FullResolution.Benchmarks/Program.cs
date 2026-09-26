@@ -163,16 +163,50 @@ static void WriteLargeBackingPng(
     int width,
     int height)
 {
-    using var blank = NetVips.Image.Black(
+    var pixels = CreateEntropyPixels(
         width,
         height,
-        bands: 4);
-    using var values = blank.NewFromImage(
-        [32, 96, 192, 180]);
-    using var rgba = values.Copy(
+        4,
+        alpha: true);
+
+    using var memory = NetVips.Image.NewFromMemory<byte>(
+        pixels,
+        width,
+        height,
+        4,
+        Enums.BandFormat.Uchar);
+    using var rgba = memory.Copy(
         interpretation: Enums.Interpretation.Srgb);
 
     rgba.Pngsave(path);
+}
+
+static void WriteIccPng(
+    string path,
+    int width,
+    int height)
+{
+    var pixels = CreateEntropyPixels(
+        width,
+        height,
+        4,
+        alpha: true);
+
+    using var memory = NetVips.Image.NewFromMemory<byte>(
+        pixels,
+        width,
+        height,
+        4,
+        Enums.BandFormat.Uchar);
+    using var srgb = memory.Copy(
+        interpretation: Enums.Interpretation.Srgb);
+    using var p3 = srgb.IccTransform(
+        "p3",
+        inputProfile: "srgb");
+
+    p3.Pngsave(
+        path,
+        keep: Enums.ForeignKeep.Icc);
 }
 
 static FullResolutionSource SourceFor(string path)
@@ -470,6 +504,20 @@ try
             height,
             standardBudget));
 
+    var pngIccPath =
+        Path.Combine(sources, "icc.png");
+    WriteIccPng(
+        pngIccPath,
+        width,
+        height);
+    fixtures.Add(
+        new FixtureSpec(
+            "png-icc",
+            pngIccPath,
+            width,
+            height,
+            standardBudget));
+
     var webpPath = Path.Combine(sources, "photo.webp");
     WriteEntropyRgba(
         webpPath,
@@ -648,7 +696,7 @@ try
         {
             sequential.AddFailure(
                 new InvalidOperationException(
-                    $"{fixture.Name} pixel outputDigest differs between Random ({random.OutputDigest}) and Sequential ({sequential.OutputDigest})."));
+                    $"{fixture.Name} full-output digest differs between Random ({random.OutputDigest}) and Sequential ({sequential.OutputDigest})."));
         }
     }
 
@@ -902,7 +950,7 @@ internal sealed class CaseAggregate
         {
             AddFailure(
                 new InvalidOperationException(
-                    $"Repeated decode outputDigest changed from {_runs[0].OutputDigest} to {run.OutputDigest}."));
+                    $"Repeated decode output digest changed from {_runs[0].OutputDigest} to {run.OutputDigest}."));
             return;
         }
 
