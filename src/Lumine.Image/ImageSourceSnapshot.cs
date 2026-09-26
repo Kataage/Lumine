@@ -233,7 +233,7 @@ public sealed class ImageSourceSnapshot : IDisposable
 
             return value is >= 1 and <= 8
                 ? value
-                : 1;
+                : 0;
         }
         catch (Exception exception)
             when (exception is VipsException
@@ -241,7 +241,10 @@ public sealed class ImageSourceSnapshot : IDisposable
                   or FormatException
                   or OverflowException)
         {
-            return 1;
+            // 0 means the source advertised orientation metadata but it could
+            // not be trusted. Adaptive full-resolution policy treats every
+            // non-1 value, including unknown, as Random.
+            return 0;
         }
     }
 
