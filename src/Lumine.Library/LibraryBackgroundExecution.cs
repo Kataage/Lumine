@@ -38,6 +38,8 @@ public sealed class LibraryService
     private readonly LibraryReconciler _reconciler;
     private readonly WindowsLibrarySyncService _syncService;
 
+    public string DatabasePath => _database.DatabasePath;
+
     public LibraryService(string databasePath)
     {
         _database = new LibraryDatabase(databasePath);
