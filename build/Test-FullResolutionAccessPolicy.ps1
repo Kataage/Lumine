@@ -59,6 +59,7 @@ $mandatory = @(
     "jpeg-oriented",
     "jpeg-icc-oriented",
     "png-alpha",
+    "png-icc",
     "webp",
     "tiff",
     "png-large-backing"
@@ -69,11 +70,11 @@ foreach ($case in $mandatory) {
     $sequentialOk = Require-PolicyCase $case "sequential" $false
 
     if ($randomOk -and $sequentialOk) {
-        $randomChecksum = [long](Get-Metadata "case.$case.random.checksum")
-        $sequentialChecksum = [long](Get-Metadata "case.$case.sequential.checksum")
+        $randomChecksum = [long](Get-Metadata "case.$case.random.output_digest_sha256")
+        $sequentialChecksum = [long](Get-Metadata "case.$case.sequential.output_digest_sha256")
 
         if ($randomChecksum -ne $sequentialChecksum) {
-            throw "$case decoded different pixels between Random and Sequential."
+            throw "$case produced different full-output SHA-256 digests between Random and Sequential."
         }
     }
 }
@@ -110,6 +111,7 @@ $expectedProductionPolicies = @{
     "jpeg-oriented" = "random"
     "jpeg-icc-oriented" = "random"
     "png-alpha" = "sequential"
+    "png-icc" = "sequential"
     "webp" = "random"
     "tiff" = "random"
     "png-large-backing" = "sequential"
