@@ -257,7 +257,6 @@ static async Task<PolicyRun> DecodeOnceAsync(
         {
             decodedRows += stripe.Height;
         },
-        stripeHeight: stripeHeight,
         accessPolicy: policy,
         cancellationToken: CancellationToken.None);
 
@@ -309,6 +308,7 @@ static async Task<string> ComputeOutputDigestAsync(
             decodedRows += stripe.Height;
             digest.AppendData(stripe.RgbaBytes);
         },
+        stripeHeight: stripeHeight,
         accessPolicy: policy,
         cancellationToken: CancellationToken.None);
 
