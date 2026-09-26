@@ -98,10 +98,12 @@ static void WriteEntropyRgba(
     image.WriteToFile(path);
 }
 
-static void WriteIccOrientedJpeg(
+static void WriteSpecialJpeg(
     string path,
     int width,
-    int height)
+    int height,
+    bool useIcc,
+    int orientation)
 {
     var pixels = CreateEntropyPixels(
         width,
@@ -117,19 +119,42 @@ static void WriteIccOrientedJpeg(
         Enums.BandFormat.Uchar);
     using var srgb = memory.Copy(
         interpretation: Enums.Interpretation.Srgb);
-    using var p3 = srgb.IccTransform(
-        "p3",
-        inputProfile: "srgb");
-    using var oriented = p3.Mutate(
-        image => image.Set(
-            GValue.GIntType,
-            "orientation",
-            6));
 
-    oriented.Jpegsave(
-        path,
-        q: 90,
-        keep: Enums.ForeignKeep.All);
+    NetVips.Image? profiled = null;
+    NetVips.Image? oriented = null;
+
+    try
+    {
+        var source = srgb;
+
+        if (useIcc)
+        {
+            profiled = srgb.IccTransform(
+                "p3",
+                inputProfile: "srgb");
+            source = profiled;
+        }
+
+        if (orientation != 1)
+        {
+            oriented = source.Mutate(
+                image => image.Set(
+                    GValue.GIntType,
+                    "orientation",
+                    orientation));
+            source = oriented;
+        }
+
+        source.Jpegsave(
+            path,
+            q: 90,
+            keep: Enums.ForeignKeep.All);
+    }
+    finally
+    {
+        oriented?.Dispose();
+        profiled?.Dispose();
+    }
 }
 
 static void WriteLargeBackingPng(
@@ -387,12 +412,46 @@ try
             height,
             standardBudget));
 
+    var iccPath =
+        Path.Combine(sources, "icc.jpg");
+    WriteSpecialJpeg(
+        iccPath,
+        width,
+        height,
+        useIcc: true,
+        orientation: 1);
+    fixtures.Add(
+        new FixtureSpec(
+            "jpeg-icc",
+            iccPath,
+            width,
+            height,
+            standardBudget));
+
+    var orientedPath =
+        Path.Combine(sources, "oriented.jpg");
+    WriteSpecialJpeg(
+        orientedPath,
+        width,
+        height,
+        useIcc: false,
+        orientation: 6);
+    fixtures.Add(
+        new FixtureSpec(
+            "jpeg-oriented",
+            orientedPath,
+            height,
+            width,
+            standardBudget));
+
     var iccOrientedPath =
         Path.Combine(sources, "icc-oriented.jpg");
-    WriteIccOrientedJpeg(
+    WriteSpecialJpeg(
         iccOrientedPath,
         width,
-        height);
+        height,
+        useIcc: true,
+        orientation: 6);
     fixtures.Add(
         new FixtureSpec(
             "jpeg-icc-oriented",
