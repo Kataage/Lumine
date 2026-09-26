@@ -263,8 +263,10 @@ public sealed class FullResolutionDecoder
                     "Prepared BMP metadata no longer matches the stable snapshot.");
             }
 
+            using var bmpStream =
+                snapshot.OpenStableReadStream();
             BmpFallbackDecoder.DecodeStripes(
-                snapshot.SourceStream,
+                bmpStream,
                 bmp,
                 stripeHeight,
                 consume,
