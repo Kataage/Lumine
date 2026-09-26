@@ -70,15 +70,6 @@ try
     await headless.Dispatch(
         async () =>
         {
-            var probe = await FullResolutionDecoder.ProbeAsync(sourceInfo);
-            if (probe.Width != width
-                || probe.Height != height
-                || probe.EstimatedRgbaBytes != requiredBytes)
-            {
-                throw new InvalidOperationException(
-                    $"Full-resolution probe mismatch: {probe.Width}x{probe.Height}, {probe.EstimatedRgbaBytes:N0} bytes.");
-            }
-
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
@@ -88,14 +79,25 @@ try
             var timer = Stopwatch.StartNew();
             var peak = PeakWorkingSetMonitor.Start(TimeSpan.FromMilliseconds(5));
 
+            using var prepared = await FullResolutionDecoder.PrepareAsync(
+                sourceInfo);
+
+            if (prepared.Info.Width != width
+                || prepared.Info.Height != height
+                || prepared.Info.EstimatedRgbaBytes != requiredBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Full-resolution prepare mismatch: {prepared.Info.Width}x{prepared.Info.Height}, {prepared.Info.EstimatedRgbaBytes:N0} bytes.");
+            }
+
             using var bitmap = new WriteableBitmap(
                 new PixelSize(width, height),
                 new Vector(96, 96),
                 PixelFormats.Rgba8888,
                 AlphaFormat.Unpremul);
 
-            await FullResolutionDecoder.DecodeAsync(
-                sourceInfo,
+            await FullResolutionDecoder.DecodePreparedAsync(
+                prepared,
                 budgetBytes,
                 stripe =>
                 {
@@ -124,7 +126,6 @@ try
                     stripeCount++;
                     decodedRows += stripe.Height;
                 },
-                expectedInfo: probe,
                 cancellationToken: CancellationToken.None);
 
             timer.Stop();
@@ -165,6 +166,7 @@ try
             ["stripe_height"] = FullResolutionDecoder.DefaultStripeHeight.ToString(CultureInfo.InvariantCulture),
             ["stripe_count"] = stripeCount.ToString(CultureInfo.InvariantCulture),
             ["decode_elapsed_ms"] = elapsedMs.ToString(CultureInfo.InvariantCulture),
+            ["measurement_scope"] = "prepare+bitmap+decode",
             ["starting_working_set_bytes"] = startWorkingSet.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSet.ToString(CultureInfo.InvariantCulture),
             ["peak_additional_working_set_bytes"] = peakAdditional.ToString(CultureInfo.InvariantCulture),
@@ -176,7 +178,7 @@ try
         });
 
     Console.WriteLine(
-        $"Detail full-resolution benchmark: {width}x{height}, decode={elapsedMs} ms, peak+={peakAdditional / 1024d / 1024d:F1} MiB");
+        $"Detail full-resolution benchmark: {width}x{height}, prepare+decode={elapsedMs} ms, peak+={peakAdditional / 1024d / 1024d:F1} MiB");
     Console.WriteLine($"Result: {Path.GetFullPath(output)}");
 }
 finally
