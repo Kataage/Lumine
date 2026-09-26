@@ -31,10 +31,13 @@ public static class FileSourceIdentityProbe
         cancellationToken.ThrowIfCancellationRequested();
 
         if (OperatingSystem.IsWindows()
-            && TryReadNtfsUsn(stream.SafeFileHandle, out var usn))
+            && TryReadNtfsIdentity(
+                stream.SafeFileHandle,
+                out var usn,
+                out var changeTime))
         {
             return new FileSourceIdentity(
-                $"ntfs-usn:{unchecked((ulong)usn):x16}",
+                $"ntfs-usn:{unchecked((ulong)usn):x16}:{unchecked((ulong)changeTime):x16}",
                 false,
                 0);
         }
@@ -102,9 +105,11 @@ public static class FileSourceIdentityProbe
 
         if (value.StartsWith("ntfs-usn:", StringComparison.Ordinal))
         {
-            return IsHex(
-                value.AsSpan("ntfs-usn:".Length),
-                16);
+            var payload = value.AsSpan("ntfs-usn:".Length);
+            return payload.Length == 33
+                && payload[16] == ':'
+                && IsHex(payload[..16], 16)
+                && IsHex(payload[17..], 16);
         }
 
         if (value.StartsWith("sha256:", StringComparison.Ordinal))
@@ -153,11 +158,13 @@ public static class FileSourceIdentityProbe
         return true;
     }
 
-    private static bool TryReadNtfsUsn(
+    private static bool TryReadNtfsIdentity(
         SafeFileHandle handle,
-        out long usn)
+        out long usn,
+        out long changeTime)
     {
         usn = 0;
+        changeTime = 0;
 
         var input = new ReadFileUsnData
         {
@@ -201,8 +208,32 @@ public static class FileSourceIdentityProbe
                 return false;
             }
 
-            usn = Marshal.ReadInt64(outputBuffer, 24);
-            return usn != 0;
+            var basicInfoSize = Marshal.SizeOf<FileBasicInfo>();
+            var basicInfoBuffer = Marshal.AllocHGlobal(basicInfoSize);
+
+            try
+            {
+                if (!GetFileInformationByHandleEx(
+                        handle,
+                        FileBasicInfoClass,
+                        basicInfoBuffer,
+                        (uint)basicInfoSize))
+                {
+                    return false;
+                }
+
+                var basicInfo =
+                    Marshal.PtrToStructure<FileBasicInfo>(
+                        basicInfoBuffer);
+
+                usn = Marshal.ReadInt64(outputBuffer, 24);
+                changeTime = basicInfo.ChangeTime;
+                return usn != 0 && changeTime != 0;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(basicInfoBuffer);
+            }
         }
         finally
         {
@@ -211,12 +242,34 @@ public static class FileSourceIdentityProbe
         }
     }
 
+    private const int FileBasicInfoClass = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileBasicInfo
+    {
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public long ChangeTime;
+        public uint FileAttributes;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct ReadFileUsnData
     {
         public ushort MinMajorVersion;
         public ushort MaxMajorVersion;
     }
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle hFile,
+        int fileInformationClass,
+        IntPtr lpFileInformation,
+        uint dwBufferSize);
 
     [DllImport(
         "kernel32.dll",
