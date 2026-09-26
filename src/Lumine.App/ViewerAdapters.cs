@@ -228,13 +228,15 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         CancellationToken cancellationToken = default)
     {
         var sourcePath = ResolveSourcePath(asset);
-        var (source, info, effectiveAsset) =
-            await ViewerImageMetadataBridge.ProbeOriginalWithRepairAsync(
+        using var prepared =
+            await ViewerImageMetadataBridge.PrepareOriginalWithRepairAsync(
                 _library,
                 _libraryId,
                 asset,
                 sourcePath,
                 cancellationToken).ConfigureAwait(false);
+        var info = prepared.Prepared.Info;
+        var effectiveAsset = prepared.Asset;
 
         if (info.SourceIdentity is not null
             && info.RawWidth is > 0
@@ -277,8 +279,8 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await FullResolutionDecoder.DecodeAsync(
-                source,
+            await FullResolutionDecoder.DecodePreparedAsync(
+                prepared.Prepared,
                 maxDecodedBytes,
                 stripe =>
                 {
@@ -314,7 +316,6 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                             stripe.RowBytes);
                     }
                 },
-                expectedInfo: info,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return new ViewerOriginalBitmap(
@@ -472,9 +473,8 @@ internal static class ViewerImageMetadataBridge
     }
 
     public static async Task<(
-        FullResolutionSource Source,
-        FullResolutionInfo Info,
-        ViewerAsset Asset)> ProbeOriginalWithRepairAsync(
+        FullResolutionPreparedSource Prepared,
+        ViewerAsset Asset)> PrepareOriginalWithRepairAsync(
             LibraryService? library,
             long libraryId,
             ViewerAsset asset,
@@ -493,10 +493,10 @@ internal static class ViewerImageMetadataBridge
 
             try
             {
-                var info = await FullResolutionDecoder.ProbeAsync(
+                var prepared = await FullResolutionDecoder.PrepareAsync(
                     source,
                     cancellationToken).ConfigureAwait(false);
-                return (source, info, current);
+                return (prepared, current);
             }
             catch (FullResolutionSourceChangedException)
                 when (library is not null && attempt == 0)
