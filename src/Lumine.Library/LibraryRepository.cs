@@ -1018,11 +1018,21 @@ public sealed class LibraryRepository
         IReadOnlyList<PreparedAsset> prepared,
         CancellationToken cancellationToken)
     {
-        var forced = prepared
-            .Where(static item => item.Source.ForceSourceRevision)
-            .ToArray();
+        Dictionary<string, PreparedAsset>? forced = null;
 
-        if (forced.Length == 0)
+        foreach (var item in prepared)
+        {
+            if (!item.Source.ForceSourceRevision)
+            {
+                continue;
+            }
+
+            forced ??= new Dictionary<string, PreparedAsset>(
+                StringComparer.Ordinal);
+            forced[item.RelativePathKey] = item;
+        }
+
+        if (forced is null)
         {
             return;
         }
@@ -1051,7 +1061,7 @@ public sealed class LibraryRepository
         library.Value = libraryId;
         command.Prepare();
 
-        foreach (var item in forced)
+        foreach (var item in forced.Values)
         {
             cancellationToken.ThrowIfCancellationRequested();
             updated.Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
