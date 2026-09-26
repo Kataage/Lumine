@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Lumine.Core;
 using Lumine.Library;
 
 static void Require(bool condition, string message)
@@ -438,6 +439,61 @@ try
             },
             "Explicit watcher overflow did not reconcile stale state.");
     }
+
+    // A reconciliation fallback must catch a content replacement even when
+    // size and mtime are deliberately restored to their previous values.
+    var sameStatPath = Path.Combine(libraryRoot, "same-stat.jpg");
+    await File.WriteAllBytesAsync(sameStatPath, [1, 2, 3, 4]);
+    var sameStatSeedReconcile = await reconcile.ReconcileAsync(library.Id);
+    Require(
+        sameStatSeedReconcile.Completed,
+        "Same-stat identity seed reconciliation failed.");
+
+    var sameStatSeed = await repository.GetAssetAsync(
+        library.Id,
+        "same-stat.jpg")
+        ?? throw new InvalidOperationException(
+            "Same-stat identity seed asset was not indexed.");
+    var sameStatIdentity = FileSourceIdentityProbe.Read(sameStatPath);
+    Require(
+        await repository.UpdateTechnicalMetadataAsync(
+            library.Id,
+            sameStatSeed.Id,
+            sameStatSeed.SourceRevision,
+            sameStatSeed.FileSize,
+            sameStatSeed.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                1,
+                1,
+                1,
+                1,
+                false,
+                "jpeg",
+                sameStatIdentity.Value)),
+        "Same-stat identity fixture metadata was not persisted.");
+
+    var sameStatTimestamp = File.GetLastWriteTimeUtc(sameStatPath);
+    await File.WriteAllBytesAsync(sameStatPath, [9, 8, 7, 6]);
+    File.SetLastWriteTimeUtc(sameStatPath, sameStatTimestamp);
+
+    var sameStatReconcile = await reconcile.ReconcileAsync(library.Id);
+    Require(
+        sameStatReconcile.Completed,
+        "Same-stat replacement reconciliation failed.");
+
+    var sameStatAfter = await repository.GetAssetAsync(
+        library.Id,
+        "same-stat.jpg")
+        ?? throw new InvalidOperationException(
+            "Same-stat replacement asset disappeared.");
+    Require(
+        sameStatAfter.SourceRevision == sameStatSeed.SourceRevision + 1,
+        "Reconciliation did not advance source_revision for a same-size/mtime content replacement.");
+    Require(
+        sameStatAfter.SourceIdentity is null
+        && sameStatAfter.Width is null
+        && sameStatAfter.Height is null,
+        "Reconciliation retained stale metadata after a same-stat content replacement.");
 
     await repository.UpsertAssetsAsync(
         library.Id,
