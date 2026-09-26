@@ -135,6 +135,7 @@ internal sealed class ThumbnailGenerator
                         metadata,
                         profile,
                         cacheKey,
+                        snapshot,
                         cancellationToken);
                 }
 
@@ -152,6 +153,7 @@ internal sealed class ThumbnailGenerator
                     validated.Metadata,
                     profile,
                     cacheKey,
+                    validated,
                     cancellationToken);
             }
             finally
@@ -199,30 +201,59 @@ internal sealed class ThumbnailGenerator
         SourceTechnicalMetadata metadata,
         ThumbnailProfile profile,
         string cacheKey,
+        ImageSourceSnapshot snapshot,
         CancellationToken cancellationToken)
     {
         var temporaryPath = _cache.CreateTemporaryPath(cacheKey);
+        NetVips.Image? bmpMemory = null;
+        NetVips.Image? thumbnail = null;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _sourceOpens);
 
-            using var thumbnail = NetVips.Image.Thumbnail(
-                source.SourcePath,
-                profile.MaxWidth,
-                height: profile.MaxHeight,
-                size: Enums.Size.Down,
-                noRotate: false,
-                linear: true,
-                outputProfile: "srgb",
-                failOn: Enums.FailOn.Error);
+            if (snapshot.BmpInfo is { } bmp)
+            {
+                var decoded =
+                    BmpFallbackDecoder.DecodeThumbnail(
+                        snapshot.SourceStream,
+                        bmp,
+                        profile.MaxWidth,
+                        profile.MaxHeight,
+                        cancellationToken);
+
+                bmpMemory =
+                    NetVips.Image.NewFromMemory<byte>(
+                        decoded.Rgba,
+                        decoded.Width,
+                        decoded.Height,
+                        4,
+                        Enums.BandFormat.Uchar);
+                thumbnail = bmpMemory.Copy(
+                    interpretation:
+                        Enums.Interpretation.Srgb);
+            }
+            else
+            {
+                thumbnail = NetVips.Image.Thumbnail(
+                    source.SourcePath,
+                    profile.MaxWidth,
+                    height: profile.MaxHeight,
+                    size: Enums.Size.Down,
+                    noRotate: false,
+                    linear: true,
+                    outputProfile: "srgb",
+                    failOn: Enums.FailOn.Error);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var nativeCancellation = cancellationToken.Register(
-                static state => ((NetVips.Image)state!).SetKill(true),
-                thumbnail);
+            using var nativeCancellation =
+                cancellationToken.Register(
+                    static state =>
+                        ((NetVips.Image)state!).SetKill(true),
+                    thumbnail);
 
             try
             {
@@ -232,9 +263,11 @@ internal sealed class ThumbnailGenerator
                     smartSubsample: true,
                     keep: Enums.ForeignKeep.None);
             }
-            catch (VipsException) when (cancellationToken.IsCancellationRequested)
+            catch (VipsException)
+                when (cancellationToken.IsCancellationRequested)
             {
-                throw new OperationCanceledException(cancellationToken);
+                throw new OperationCanceledException(
+                    cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -268,6 +301,11 @@ internal sealed class ThumbnailGenerator
             Interlocked.Increment(ref _failed);
             TryDelete(temporaryPath);
             throw;
+        }
+        finally
+        {
+            thumbnail?.Dispose();
+            bmpMemory?.Dispose();
         }
     }
 
