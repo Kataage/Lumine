@@ -293,6 +293,10 @@ static void AddCaseMetadata(
     var prefix =
         $"case.{fixture}.{policy.ToString().ToLowerInvariant()}";
 
+    metadata[$"{prefix}.success"] =
+        aggregate.Success.ToString(CultureInfo.InvariantCulture);
+    metadata[$"{prefix}.error"] =
+        aggregate.Error ?? string.Empty;
     metadata[$"{prefix}.decode_ms"] =
         aggregate.AverageDecodeMs.ToString(
             "F3",
@@ -553,22 +557,42 @@ try
 
             foreach (var policy in order)
             {
-                var run = await DecodeOnceAsync(
-                    recorder,
-                    fixture,
-                    policy,
-                    vipsTemp,
-                    iteration);
+                var aggregate =
+                    aggregates[(fixture.Name, policy)];
 
-                aggregates[(fixture.Name, policy)]
-                    .Add(run);
+                if (!aggregate.Success)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var run = await DecodeOnceAsync(
+                        recorder,
+                        fixture,
+                        policy,
+                        vipsTemp,
+                        iteration);
+
+                    aggregate.Add(run);
+                }
+                catch (Exception exception)
+                    when (exception is VipsException
+                          or IOException
+                          or InvalidOperationException)
+                {
+                    aggregate.AddFailure(exception);
+                }
             }
         }
 
-        if (random.Checksum != sequential.Checksum)
+        if (random.Success
+            && sequential.Success
+            && random.Checksum != sequential.Checksum)
         {
-            throw new InvalidOperationException(
-                $"{fixture.Name} pixel checksum differs between Random ({random.Checksum}) and Sequential ({sequential.Checksum}).");
+            sequential.AddFailure(
+                new InvalidOperationException(
+                    $"{fixture.Name} pixel checksum differs between Random ({random.Checksum}) and Sequential ({sequential.Checksum})."));
         }
     }
 
@@ -576,10 +600,24 @@ try
         await MeasureCancellationAsync(
             largeFixture,
             FullResolutionAccessPolicy.Random);
-    var sequentialCancellation =
-        await MeasureCancellationAsync(
-            largeFixture,
-            FullResolutionAccessPolicy.Sequential);
+    double? sequentialCancellation = null;
+    string? sequentialCancellationError = null;
+
+    try
+    {
+        sequentialCancellation =
+            await MeasureCancellationAsync(
+                largeFixture,
+                FullResolutionAccessPolicy.Sequential);
+    }
+    catch (Exception exception)
+        when (exception is VipsException
+              or IOException
+              or InvalidOperationException)
+    {
+        sequentialCancellationError =
+            $"{exception.GetType().Name}: {exception.Message}";
+    }
 
     var metadata =
         new Dictionary<string, string>(
@@ -617,9 +655,13 @@ try
                     "F3",
                     CultureInfo.InvariantCulture),
             ["cancellation.sequential_ms"] =
-                sequentialCancellation.ToString(
+                sequentialCancellation?.ToString(
                     "F3",
-                    CultureInfo.InvariantCulture),
+                    CultureInfo.InvariantCulture)
+                ?? string.Empty,
+            ["cancellation.sequential_error"] =
+                sequentialCancellationError
+                ?? string.Empty,
             ["fixture_count"] =
                 fixtures.Count.ToString(
                     CultureInfo.InvariantCulture)
@@ -661,11 +703,11 @@ try
                  FullResolutionAccessPolicy.Sequential)];
 
         Console.WriteLine(
-            $"{fixture.Name}: random={random.AverageDecodeMs:F1} ms / +{random.PeakAdditionalWorkingSetBytes / 1048576d:F1} MiB / temp={random.PeakTempBytes / 1048576d:F1} MiB; sequential={sequential.AverageDecodeMs:F1} ms / +{sequential.PeakAdditionalWorkingSetBytes / 1048576d:F1} MiB / temp={sequential.PeakTempBytes / 1048576d:F1} MiB");
+            $"{fixture.Name}: random={(random.Success ? $"{random.AverageDecodeMs:F1} ms / +{random.PeakAdditionalWorkingSetBytes / 1048576d:F1} MiB / temp={random.PeakTempBytes / 1048576d:F1} MiB" : random.Error)}; sequential={(sequential.Success ? $"{sequential.AverageDecodeMs:F1} ms / +{sequential.PeakAdditionalWorkingSetBytes / 1048576d:F1} MiB / temp={sequential.PeakTempBytes / 1048576d:F1} MiB" : sequential.Error)}");
     }
 
     Console.WriteLine(
-        $"Cancellation: random={randomCancellation:F1} ms, sequential={sequentialCancellation:F1} ms");
+        $"Cancellation: random={randomCancellation:F1} ms, sequential={(sequentialCancellation.HasValue ? $"{sequentialCancellation.Value:F1} ms" : sequentialCancellationError)}");
     Console.WriteLine(
         $"Result: {Path.GetFullPath(output)}");
 }
@@ -721,43 +763,66 @@ internal sealed class CaseAggregate
 {
     private readonly List<PolicyRun> _runs = [];
 
+    public bool Success =>
+        Error is null;
+
+    public string? Error { get; private set; }
+
     public double AveragePrepareMs =>
-        _runs.Average(
-            static run => run.PrepareMs);
+        _runs.Count == 0
+            ? 0
+            : _runs.Average(
+                static run => run.PrepareMs);
 
     public double AverageDecodeMs =>
-        _runs.Average(
-            static run => run.DecodeMs);
+        _runs.Count == 0
+            ? 0
+            : _runs.Average(
+                static run => run.DecodeMs);
 
     public long PeakWorkingSetBytes =>
-        _runs.Max(
-            static run => run.PeakWorkingSetBytes);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run => run.PeakWorkingSetBytes);
 
     public long PeakAdditionalWorkingSetBytes =>
-        _runs.Max(
-            static run =>
-                run.PeakAdditionalWorkingSetBytes);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run =>
+                    run.PeakAdditionalWorkingSetBytes);
 
     public long PeakVipsTrackedBytes =>
-        _runs.Max(
-            static run => run.PeakVipsTrackedBytes);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run => run.PeakVipsTrackedBytes);
 
     public int PeakVipsOpenFiles =>
-        _runs.Max(
-            static run => run.PeakVipsOpenFiles);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run => run.PeakVipsOpenFiles);
 
     public long PeakTempBytes =>
-        _runs.Max(
-            static run => run.PeakTempBytes);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run => run.PeakTempBytes);
 
     public int PeakTempFiles =>
-        _runs.Max(
-            static run => run.PeakTempFiles);
+        _runs.Count == 0
+            ? 0
+            : _runs.Max(
+                static run => run.PeakTempFiles);
 
     public long AverageAllocatedBytes =>
-        (long)_runs.Average(
-            static run =>
-                (double)run.AllocatedBytes);
+        _runs.Count == 0
+            ? 0
+            : (long)_runs.Average(
+                static run =>
+                    (double)run.AllocatedBytes);
 
     public long Checksum =>
         _runs.Count == 0
@@ -769,11 +834,19 @@ internal sealed class CaseAggregate
         if (_runs.Count > 0
             && _runs[0].Checksum != run.Checksum)
         {
-            throw new InvalidOperationException(
-                $"Repeated decode checksum changed from {_runs[0].Checksum} to {run.Checksum}.");
+            AddFailure(
+                new InvalidOperationException(
+                    $"Repeated decode checksum changed from {_runs[0].Checksum} to {run.Checksum}."));
+            return;
         }
 
         _runs.Add(run);
+    }
+
+    public void AddFailure(Exception exception)
+    {
+        Error ??=
+            $"{exception.GetType().Name}: {exception.Message}";
     }
 }
 
