@@ -52,7 +52,7 @@ static void WriteHighEntropyBmp24(
         checked((uint)fileSize));
     BinaryPrimitives.WriteUInt32LittleEndian(
         header[10..14],
-        pixelOffset);
+        checked((uint)pixelOffset));
     BinaryPrimitives.WriteUInt32LittleEndian(
         header[14..18],
         40);
