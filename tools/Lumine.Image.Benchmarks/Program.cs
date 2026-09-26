@@ -149,7 +149,7 @@ try
                 info.LastWriteTimeUtc.Ticks);
             if (snapshot.Metadata.Width <= 0
                 || snapshot.Metadata.Height <= 0
-                || snapshot.Metadata.ContentSha256.Length != 64)
+                || snapshot.Metadata.SourceIdentity.Length != 64)
             {
                 throw new InvalidOperationException(
                     "Source metadata probe benchmark returned invalid metadata.");
