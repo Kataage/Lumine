@@ -93,7 +93,7 @@ public sealed class LibraryRepository
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM assets WHERE a.library_id = $library_id;";
+        command.CommandText = "SELECT COUNT(*) FROM assets WHERE library_id = $library_id;";
         command.Parameters.AddWithValue("$library_id", libraryId);
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
@@ -192,7 +192,7 @@ public sealed class LibraryRepository
                 height = $height,
                 format = $format,
                 updated_at_utc_ticks = $updated
-            WHERE a.library_id = $library_id
+            WHERE library_id = $library_id
               AND id = $asset_id
               AND source_revision = $source_revision
               AND file_size = $file_size
@@ -401,7 +401,7 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             DELETE FROM assets
-            WHERE a.library_id = $library_id
+            WHERE library_id = $library_id
               AND relative_path_key = $path_key;
             """;
 
@@ -435,7 +435,7 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             DELETE FROM assets
-            WHERE a.library_id = $library_id
+            WHERE library_id = $library_id
               AND relative_path_key = $path_key;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
@@ -616,7 +616,7 @@ public sealed class LibraryRepository
                 last_reconciled_at_utc_ticks,
                 last_error
             FROM library_sync_state
-            WHERE a.library_id = $library_id;
+            WHERE library_id = $library_id;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
 
@@ -671,7 +671,7 @@ public sealed class LibraryRepository
             delete.CommandText =
                 """
                 DELETE FROM assets
-                WHERE a.library_id = $library_id
+                WHERE library_id = $library_id
                   AND observed_generation <> $generation;
                 """;
             delete.Parameters.AddWithValue("$library_id", libraryId);
@@ -685,7 +685,7 @@ public sealed class LibraryRepository
             cleanupFolders.CommandText =
                 """
                 DELETE FROM folders
-                WHERE a.library_id = $library_id
+                WHERE library_id = $library_id
                   AND NOT EXISTS(
                       SELECT 1
                       FROM assets
@@ -705,7 +705,7 @@ public sealed class LibraryRepository
                 SET reconcile_required = 0,
                     last_reconciled_at_utc_ticks = $completed,
                     last_error = NULL
-                WHERE a.library_id = $library_id
+                WHERE library_id = $library_id
                   AND reconcile_generation = $generation;
                 """;
             state.Parameters.AddWithValue("$completed", completedAtUtc.UtcDateTime.Ticks);
@@ -821,7 +821,7 @@ public sealed class LibraryRepository
             removeDestination.CommandText =
                 """
                 DELETE FROM assets
-                WHERE a.library_id = $library_id
+                WHERE library_id = $library_id
                   AND relative_path_key = $new_key
                   AND relative_path_key <> $old_key;
                 """;
@@ -899,7 +899,7 @@ public sealed class LibraryRepository
                          ELSE observed_generation
                     END,
                 updated_at_utc_ticks = $updated
-            WHERE a.library_id = $library_id
+            WHERE library_id = $library_id
               AND relative_path_key = $old_key;
             """;
         command.Parameters.AddWithValue("$folder_id", (object?)folderId ?? DBNull.Value);
@@ -942,7 +942,7 @@ public sealed class LibraryRepository
             SELECT EXISTS(
                 SELECT 1
                 FROM folders
-                WHERE a.library_id = $library_id
+                WHERE library_id = $library_id
                   AND (
                       relative_path_key = $path_key
                       OR relative_path_key LIKE $path_prefix ESCAPE '\'
@@ -1037,7 +1037,7 @@ public sealed class LibraryRepository
                 height = NULL,
                 format = NULL,
                 updated_at_utc_ticks = $updated
-            WHERE a.library_id = $library_id
+            WHERE library_id = $library_id
               AND relative_path_key = $path_key
               AND file_size = $file_size
               AND modified_at_utc_ticks = $modified;
@@ -1297,7 +1297,7 @@ public sealed class LibraryRepository
 
             command.Parameters.AddWithValue("$library_id", libraryId);
             command.CommandText =
-                $"SELECT relative_path_key, id FROM folders WHERE a.library_id = $library_id AND relative_path_key IN ({string.Join(", ", parameterNames)});";
+                $"SELECT relative_path_key, id FROM folders WHERE library_id = $library_id AND relative_path_key IN ({string.Join(", ", parameterNames)});";
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
