@@ -380,6 +380,10 @@ internal static class ViewerImageMetadataBridge
     private static readonly Dictionary<PersistedMetadataKey, LinkedListNode<PersistedMetadataKey>>
         PersistedMetadata = [];
     private static readonly LinkedList<PersistedMetadataKey> PersistedMetadataLru = [];
+    private static long _metadataPersistenceWrites;
+
+    internal static long MetadataPersistenceWrites =>
+        Interlocked.Read(ref _metadataPersistenceWrites);
 
     public static ThumbnailSource CreateThumbnailSource(
         ViewerAsset asset,
@@ -580,6 +584,7 @@ internal static class ViewerImageMetadataBridge
                 "Library source revision advanced before technical metadata could be committed.");
         }
 
+        Interlocked.Increment(ref _metadataPersistenceWrites);
         RememberPersisted(key);
     }
 
