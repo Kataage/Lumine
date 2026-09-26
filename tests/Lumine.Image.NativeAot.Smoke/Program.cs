@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using Lumine.Image;
 using NetVips;
@@ -56,6 +57,66 @@ static async Task<string> DecodeDigestAsync(
     return Convert.ToHexString(
             digest.GetHashAndReset())
         .ToLowerInvariant();
+}
+
+static void WriteBmp24(
+    string path,
+    int width,
+    int height)
+{
+    var rowStride =
+        checked(((width * 3 + 3) / 4) * 4);
+    var pixelOffset = 54;
+    var fileSize = checked(
+        pixelOffset + (rowStride * height));
+    var bytes = new byte[fileSize];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)fileSize));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        checked((uint)pixelOffset));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        40);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        24);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(34, 4),
+        checked((uint)(rowStride * height)));
+
+    for (var y = 0; y < height; y++)
+    {
+        var storedY = height - 1 - y;
+        var row =
+            pixelOffset + (storedY * rowStride);
+
+        for (var x = 0; x < width; x++)
+        {
+            var offset = row + (x * 3);
+            bytes[offset] =
+                (byte)(40 + x + y);
+            bytes[offset + 1] =
+                (byte)(70 + y);
+            bytes[offset + 2] =
+                (byte)(100 + x);
+        }
+    }
+
+    File.WriteAllBytes(path, bytes);
 }
 
 static void WritePlainPng(
@@ -204,12 +265,22 @@ try
     var iccPath = Path.Combine(
         root,
         "icc-alpha.png");
+    var bmpPath = Path.Combine(
+        root,
+        "fallback.bmp");
+    var bmpCacheRoot = Path.Combine(
+        root,
+        "bmp-cache");
 
     WritePlainPng(
         plainPath,
         plainWidth,
         plainHeight);
     WriteIccPng(iccPath);
+    WriteBmp24(
+        bmpPath,
+        17,
+        9);
 
     await VerifyAdaptiveMatchesAsync(
         plainPath,
@@ -229,6 +300,63 @@ try
         iccPath,
         FullResolutionAccessPolicy.Random,
         "ICC PNG");
+
+    var bmpFile = new FileInfo(bmpPath);
+    using (var bmpPrepared =
+           await FullResolutionDecoder.PrepareAsync(
+               new FullResolutionSource(
+                   bmpPath,
+                   bmpFile.Length,
+                   bmpFile.LastWriteTimeUtc.Ticks)))
+    {
+        Require(
+            bmpPrepared.Info.Width == 17
+            && bmpPrepared.Info.Height == 9
+            && string.Equals(
+                bmpPrepared.Info.Format,
+                "bmp",
+                StringComparison.Ordinal)
+            && bmpPrepared.RecommendedAccessPolicy
+                == FullResolutionAccessPolicy.Random,
+            "NativeAOT BMP fallback probe contract failed.");
+    }
+
+    await VerifyAdaptiveMatchesAsync(
+        bmpPath,
+        FullResolutionAccessPolicy.Random,
+        "BMP fallback");
+
+    await using (var bmpPipeline =
+                 new ThumbnailPipeline(
+                     new ThumbnailCache(
+                         bmpCacheRoot),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 1,
+                         QueueCapacity = 2
+                     }))
+    {
+        var bmpThumbnail =
+            await bmpPipeline.RequestAsync(
+                new ThumbnailSource(
+                    1,
+                    1,
+                    bmpPath,
+                    bmpFile.Length,
+                    bmpFile.LastWriteTimeUtc.Ticks),
+                ThumbnailProfiles.GridSmall);
+
+        Require(
+            File.Exists(
+                bmpThumbnail.CachePath)
+            && bmpThumbnail.Width == 17
+            && bmpThumbnail.Height == 9
+            && string.Equals(
+                bmpThumbnail.SourceMetadata?.Format,
+                "bmp",
+                StringComparison.Ordinal),
+            "NativeAOT BMP thumbnail fallback failed.");
+    }
 
     Console.WriteLine(
         "NativeAOT Image smoke passed.");
