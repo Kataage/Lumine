@@ -40,13 +40,15 @@ Issue #310 measures libvips `Random` and `Sequential` access against Lumine's re
 
 The production policy is adaptive and deliberately conservative:
 
-- PNG with normal orientation uses `Sequential`.
-- JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
+- PNG uses `Sequential` only when orientation is normal, there is no embedded ICC profile, and decoded source size is at least 100 MiB.
+- Smaller PNG, ICC-bearing PNG, JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
 - Any source with non-normal EXIF orientation uses `Random` regardless of format.
 
-The Windows comparison matrix showed why this is necessary. Large PNG benefited strongly from `Sequential`, eliminating the temporary backing observed with `Random` and materially reducing decode time and working-set growth. However, TIFF and EXIF-oriented JPEG rejected `Sequential`, and an existing normal-JPEG smoke using 29-row stripes also produced libvips `out of order read`. Therefore JPEG remains `Random` even though some benchmark JPEGs can complete sequentially. AVIF/HEIF also remain `Random` until the dedicated #312 contract validation is complete.
+The 100 MiB threshold matches the bundled libvips default point where large random-access loads can switch from memory materialization to temporary-disc backing. Lumine calculates the source-decoded byte size from raw dimensions, band count and band format rather than from compressed file size.
 
-CI keeps the exploratory Random-vs-Sequential matrix so future libvips/runtime upgrades can be measured without silently changing production behavior. It also gates the adaptive per-fixture decision and the large-PNG temporary-backing improvement.
+The Windows comparison matrix showed why this is necessary. On the high-entropy alpha PNG fixture below the threshold, Random was faster and did not create temporary backing, while Sequential reduced memory at the cost of latency. On the high-entropy large PNG above the threshold, Sequential eliminated the temporary backing used by Random and also reduced working-set growth. ICC-bearing PNG produced an actual `out of order read` under the production stripe stress test, so ICC forces Random. TIFF and EXIF-oriented JPEG also rejected Sequential, and an existing normal-JPEG smoke using 29-row stripes produced the same class of failure. AVIF/HEIF remain Random until the dedicated #312 contract validation is complete.
+
+CI retains the exploratory Random-vs-Sequential matrix so future libvips/runtime upgrades can be measured without silently changing production behavior. Equivalence is checked by SHA-256 over the complete emitted RGBA stream, not sample pixels. The gate locks the 100 MiB threshold, per-fixture adaptive decision, high-entropy large-PNG temporary-backing improvement, cancellation behavior, and a NativeAOT runtime smoke that executes both the large-PNG Sequential branch and ICC-PNG Random fallback.
 
 ## Crash and corruption behavior
 
