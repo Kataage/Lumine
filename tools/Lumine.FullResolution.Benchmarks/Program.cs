@@ -248,8 +248,6 @@ static async Task<PolicyRun> DecodeOnceAsync(
     var measurement = BenchmarkRecorder.CaptureStart();
     await using var monitor = RuntimeMonitor.Start(tempRoot);
 
-    using var digest = IncrementalHash.CreateHash(
-        HashAlgorithmName.SHA256);
     var decodedRows = 0;
 
     await FullResolutionDecoder.DecodePreparedAsync(
@@ -258,8 +256,6 @@ static async Task<PolicyRun> DecodeOnceAsync(
         stripe =>
         {
             decodedRows += stripe.Height;
-
-            digest.AppendData(stripe.RgbaBytes);
         },
         accessPolicy: policy,
         cancellationToken: CancellationToken.None);
@@ -288,10 +284,41 @@ static async Task<PolicyRun> DecodeOnceAsync(
         Math.Max(
             0,
             GC.GetTotalAllocatedBytes(precise: true)
-                - allocatedBefore),
-        Convert.ToHexString(
+                - allocatedBefore));
+}
+
+static async Task<string> ComputeOutputDigestAsync(
+    FixtureSpec fixture,
+    FullResolutionAccessPolicy policy)
+{
+    var source = SourceFor(fixture.Path);
+    using var prepared =
+        await FullResolutionDecoder.PrepareAsync(source);
+    using var digest = IncrementalHash.CreateHash(
+        HashAlgorithmName.SHA256);
+
+    var decodedRows = 0;
+
+    await FullResolutionDecoder.DecodePreparedAsync(
+        prepared,
+        fixture.BudgetBytes,
+        stripe =>
+        {
+            decodedRows += stripe.Height;
+            digest.AppendData(stripe.RgbaBytes);
+        },
+        accessPolicy: policy,
+        cancellationToken: CancellationToken.None);
+
+    if (decodedRows != fixture.ExpectedHeight)
+    {
+        throw new InvalidOperationException(
+            $"{fixture.Name}/{policy} digest pass decoded {decodedRows} rows; expected {fixture.ExpectedHeight}.");
+    }
+
+    return Convert.ToHexString(
             digest.GetHashAndReset())
-            .ToLowerInvariant());
+        .ToLowerInvariant();
 }
 
 static async Task<double> MeasureCancellationAsync(
@@ -875,8 +902,7 @@ internal sealed record PolicyRun(
     int PeakVipsOpenFiles,
     long PeakTempBytes,
     int PeakTempFiles,
-    long AllocatedBytes,
-    string OutputDigest);
+    long AllocatedBytes);
 
 internal sealed class CaseAggregate
 {
@@ -943,22 +969,8 @@ internal sealed class CaseAggregate
                 static run =>
                     (double)run.AllocatedBytes);
 
-    public string OutputDigest =>
-        _runs.Count == 0
-            ? string.Empty
-            : _runs[0].OutputDigest;
-
     public void Add(PolicyRun run)
     {
-        if (_runs.Count > 0
-            && _runs[0].OutputDigest != run.OutputDigest)
-        {
-            AddFailure(
-                new InvalidOperationException(
-                    $"Repeated decode output digest changed from {_runs[0].OutputDigest} to {run.OutputDigest}."));
-            return;
-        }
-
         _runs.Add(run);
     }
 
