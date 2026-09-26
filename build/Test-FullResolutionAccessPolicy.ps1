@@ -86,8 +86,21 @@ foreach ($case in $mandatory) {
 foreach ($optional in @("avif", "heic")) {
     $capability = [bool]::Parse((Get-Metadata "capability.$optional"))
     if ($capability) {
-        $null = Require-PolicyCase $optional "random" $true
-        $null = Require-PolicyCase $optional "sequential" $false
+        $randomOk = Require-PolicyCase $optional "random" $true
+        $sequentialOk = Require-PolicyCase $optional "sequential" $false
+
+        if ($randomOk -and $sequentialOk) {
+            $randomDigest = Get-Metadata "case.$optional.random.output_digest_sha256"
+            $sequentialDigest = Get-Metadata "case.$optional.sequential.output_digest_sha256"
+
+            if ($randomDigest.Length -ne 64 -or $sequentialDigest.Length -ne 64) {
+                throw "$optional reported an invalid SHA-256 output digest."
+            }
+
+            if ($randomDigest -ne $sequentialDigest) {
+                throw "$optional produced different full-output SHA-256 digests between Random and Sequential."
+            }
+        }
     }
 }
 
