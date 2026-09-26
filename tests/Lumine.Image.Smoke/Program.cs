@@ -189,7 +189,7 @@ try
         "Production full-resolution access policy is not Adaptive.");
     await VerifyRecommendedAccessPolicyAsync(
         jpgPath,
-        FullResolutionAccessPolicy.Sequential,
+        FullResolutionAccessPolicy.Random,
         "JPEG");
     await VerifyRecommendedAccessPolicyAsync(
         pngPath,
@@ -205,7 +205,7 @@ try
         "TIFF");
     await VerifyRecommendedAccessPolicyAsync(
         p3Path,
-        FullResolutionAccessPolicy.Sequential,
+        FullResolutionAccessPolicy.Random,
         "JPEG ICC");
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
