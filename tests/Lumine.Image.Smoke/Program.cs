@@ -207,8 +207,8 @@ try
         "JPEG");
     await VerifyRecommendedAccessPolicyAsync(
         pngPath,
-        FullResolutionAccessPolicy.Sequential,
-        "PNG");
+        FullResolutionAccessPolicy.Random,
+        "small PNG");
     await VerifyRecommendedAccessPolicyAsync(
         webpPath,
         FullResolutionAccessPolicy.Random,
