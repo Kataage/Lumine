@@ -6,7 +6,7 @@ namespace Lumine.Image;
 
 public sealed class ThumbnailCache
 {
-    public const int GeneratorVersion = 2;
+    public const int GeneratorVersion = 3;
 
     private const int PruneCandidateBatchSize = 4096;
 
