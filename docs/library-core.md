@@ -70,7 +70,8 @@ The hosted Windows CI baseline is treated as a regression guard, not as a promis
 - 100k existing-database reopen: <= 1.5 s
 - 100k first-page keyset query: <= 50 ms
 - complete 100k keyset traversal: <= 1.5 s
-- working set after 100k ingest: <= 160 MiB
+- transient 100k ingest working set: <= 192 MiB absolute / <= 160 MiB above the pre-ingest baseline
+- post-full-GC retained 100k ingest working set: <= 160 MiB absolute / <= 96 MiB above the pre-ingest baseline
 - 100k metadata database: <= 40 MiB
 - 100k ingest may not exceed 3x the 50k result plus 1 s
 
@@ -89,7 +90,7 @@ Audit issue #300 tightens the Library Core boundary before Image Core is allowed
 - `source_revision` increments when source size or mtime changes. Explicit filesystem add/modify events also advance the revision when size/mtime are unchanged, preventing same-stat writes from preserving stale metadata.
 - Source technical metadata is revision-bound. Width/height/format are invalidated on source revision changes; the separate source-identity/raw-dimensions/alpha row automatically stops joining when its stored revision is stale. Reconciliation compares the stored source identity when size and mtime are unchanged, so a fallback walk can still advance `source_revision` for same-stat replacements.
 - Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
-- Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.
+- Performance acceptance records both sampled transient peak working set and a post-full-GC retained working set. The transient ceiling catches runaway residency, while the tighter retained gate avoids treating implementation-dependent GC segment commitment as persistent Library state.
 
 
 ## #308 metadata persistence acceptance
