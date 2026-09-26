@@ -1,4 +1,5 @@
 using System.Globalization;
+using Lumine.Core;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -117,7 +118,7 @@ public sealed class LibraryRepository
                 a.file_size, a.modified_at_utc_ticks,
                 a.source_revision,
                 a.width, a.height, a.format,
-                tm.source_content_sha256,
+                tm.source_identity,
                 tm.raw_width, tm.raw_height, tm.has_alpha,
                 a.observed_generation
             FROM assets AS a
@@ -169,13 +170,10 @@ public sealed class LibraryRepository
                 nameof(metadata));
         }
 
-        if (string.IsNullOrWhiteSpace(metadata.ContentSha256)
-            || metadata.ContentSha256.Length != 64
-            || metadata.ContentSha256.Any(
-                static character => !Uri.IsHexDigit(character)))
+        if (!FileSourceIdentityProbe.IsValid(metadata.SourceIdentity))
         {
             throw new ArgumentException(
-                "Source content identity must be a SHA-256 hex digest.",
+                "Source identity must be a valid NTFS-USN or SHA-256 identity.",
                 nameof(metadata));
         }
 
@@ -202,7 +200,7 @@ public sealed class LibraryRepository
                   FROM asset_technical_metadata AS tm
                   WHERE tm.asset_id = assets.id
                     AND tm.source_revision = assets.source_revision
-                    AND lower(tm.source_content_sha256) <> lower($content_sha256)
+                    AND lower(tm.source_identity) <> lower($source_identity)
               );
             """;
         updateAsset.Parameters.AddWithValue("$width", metadata.Width);
@@ -215,8 +213,8 @@ public sealed class LibraryRepository
         updateAsset.Parameters.AddWithValue("$file_size", expectedFileSize);
         updateAsset.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
         updateAsset.Parameters.AddWithValue(
-            "$content_sha256",
-            metadata.ContentSha256.ToLowerInvariant());
+            "$source_identity",
+            metadata.SourceIdentity);
 
         if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
         {
@@ -230,17 +228,17 @@ public sealed class LibraryRepository
             """
             INSERT INTO asset_technical_metadata(
                 asset_id, source_revision,
-                source_content_sha256,
+                source_identity,
                 raw_width, raw_height, has_alpha,
                 updated_at_utc_ticks)
             VALUES(
                 $asset_id, $source_revision,
-                $content_sha256,
+                $source_identity,
                 $raw_width, $raw_height, $has_alpha,
                 $updated)
             ON CONFLICT(asset_id) DO UPDATE SET
                 source_revision = excluded.source_revision,
-                source_content_sha256 = excluded.source_content_sha256,
+                source_identity = excluded.source_identity,
                 raw_width = excluded.raw_width,
                 raw_height = excluded.raw_height,
                 has_alpha = excluded.has_alpha,
@@ -249,8 +247,8 @@ public sealed class LibraryRepository
         upsertMetadata.Parameters.AddWithValue("$asset_id", assetId);
         upsertMetadata.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
         upsertMetadata.Parameters.AddWithValue(
-            "$content_sha256",
-            metadata.ContentSha256.ToLowerInvariant());
+            "$source_identity",
+            metadata.SourceIdentity);
         upsertMetadata.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
         upsertMetadata.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
         upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
@@ -259,6 +257,95 @@ public sealed class LibraryRepository
 
         transaction.Commit();
         return true;
+    }
+
+    public async Task<bool> AdvanceSourceRevisionAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(assetId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedSourceRevision);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedFileSize);
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE assets
+            SET source_revision = source_revision + 1,
+                width = NULL,
+                height = NULL,
+                format = NULL,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND id = $asset_id
+              AND source_revision = $source_revision
+              AND file_size = $file_size
+              AND modified_at_utc_ticks = $modified;
+            """;
+        command.Parameters.AddWithValue(
+            "$updated",
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$asset_id", assetId);
+        command.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        command.Parameters.AddWithValue("$file_size", expectedFileSize);
+        command.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
+
+        return await command.ExecuteNonQueryAsync(
+            cancellationToken).ConfigureAwait(false) == 1;
+    }
+
+    internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
+        LoadTrackedSourceIdentitiesAsync(
+            long libraryId,
+            CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                a.id,
+                a.source_revision,
+                a.relative_path_key,
+                a.file_size,
+                a.modified_at_utc_ticks,
+                tm.source_identity
+            FROM assets AS a
+            INNER JOIN asset_technical_metadata AS tm
+              ON tm.asset_id = a.id
+             AND tm.source_revision = a.source_revision
+            WHERE a.library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        var result = new Dictionary<string, TrackedSourceIdentity>(
+            StringComparer.Ordinal);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var tracked = new TrackedSourceIdentity(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetString(2),
+                reader.GetInt64(3),
+                reader.GetInt64(4),
+                reader.GetString(5));
+            result[tracked.RelativePathKey] = tracked;
+        }
+
+        return result;
     }
 
     public async Task<int> UpsertAssetsAsync(
@@ -466,7 +553,7 @@ public sealed class LibraryRepository
                   a.file_size, a.modified_at_utc_ticks,
                   a.source_revision,
                   a.width, a.height, a.format,
-                  tm.source_content_sha256,
+                  tm.source_identity,
                   tm.raw_width, tm.raw_height, tm.has_alpha
               FROM assets AS a
               LEFT JOIN asset_technical_metadata AS tm
@@ -483,7 +570,7 @@ public sealed class LibraryRepository
                   a.file_size, a.modified_at_utc_ticks,
                   a.source_revision,
                   a.width, a.height, a.format,
-                  tm.source_content_sha256,
+                  tm.source_identity,
                   tm.raw_width, tm.raw_height, tm.has_alpha
               FROM assets AS a
               LEFT JOIN asset_technical_metadata AS tm
