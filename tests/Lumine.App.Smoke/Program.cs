@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Lumine.App;
+using Lumine.Core;
 using Lumine.Image;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -108,7 +109,7 @@ try
         && persisted.RawWidth == 320
         && persisted.RawHeight == 200
         && persisted.HasAlpha == true
-        && persisted.SourceIdentity is { Length: 64 },
+        && FileSourceIdentityProbe.IsValid(persisted.SourceIdentity),
         "Image source technical metadata was not persisted through the App composition boundary.");
 
     LibraryDatabase.ClearPools();
@@ -125,7 +126,7 @@ try
         && persisted.RawWidth == 320
         && persisted.RawHeight == 200
         && persisted.HasAlpha == true
-        && persisted.SourceIdentity is { Length: 64 },
+        && FileSourceIdentityProbe.IsValid(persisted.SourceIdentity),
         "Restarted LibraryService lost persisted source technical metadata.");
 
     provider = new ImageViewerDetailProvider(
