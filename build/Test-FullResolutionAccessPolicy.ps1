@@ -70,10 +70,14 @@ foreach ($case in $mandatory) {
     $sequentialOk = Require-PolicyCase $case "sequential" $false
 
     if ($randomOk -and $sequentialOk) {
-        $randomChecksum = [long](Get-Metadata "case.$case.random.output_digest_sha256")
-        $sequentialChecksum = [long](Get-Metadata "case.$case.sequential.output_digest_sha256")
+        $randomDigest = Get-Metadata "case.$case.random.output_digest_sha256"
+        $sequentialDigest = Get-Metadata "case.$case.sequential.output_digest_sha256"
 
-        if ($randomChecksum -ne $sequentialChecksum) {
+        if ($randomDigest.Length -ne 64 -or $sequentialDigest.Length -ne 64) {
+            throw "$case reported an invalid SHA-256 output digest."
+        }
+
+        if ($randomDigest -ne $sequentialDigest) {
             throw "$case produced different full-output SHA-256 digests between Random and Sequential."
         }
     }
