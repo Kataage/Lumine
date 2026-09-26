@@ -21,6 +21,8 @@ internal sealed class ThumbnailGenerator
     private long _metadataProbes;
     private long _metadataBytesHashed;
     private long _metadataMemoryHits;
+    private long _metadataFastIdentityHits;
+    private long _metadataFullHashFallbacks;
 
     public ThumbnailGenerator(ThumbnailCache cache)
     {
@@ -36,7 +38,9 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _sourceOpens),
             Interlocked.Read(ref _metadataProbes),
             Interlocked.Read(ref _metadataBytesHashed),
-            Interlocked.Read(ref _metadataMemoryHits));
+            Interlocked.Read(ref _metadataMemoryHits),
+            Interlocked.Read(ref _metadataFastIdentityHits),
+            Interlocked.Read(ref _metadataFullHashFallbacks));
 
     public ThumbnailResult GetOrCreate(
         ThumbnailSource source,
@@ -72,7 +76,7 @@ internal sealed class ThumbnailGenerator
 
         using var snapshot = OpenSnapshot(
             source,
-            expectedContentSha256: null,
+            expectedSourceIdentity: null,
             cancellationToken);
         RememberMetadata(source, snapshot.Metadata);
         var prepared = source.WithMetadata(snapshot.Metadata);
@@ -136,7 +140,7 @@ internal sealed class ThumbnailGenerator
 
                 using var validated = OpenSnapshot(
                     source,
-                    metadata.ContentSha256,
+                    metadata.SourceIdentity,
                     cancellationToken);
                 EnsureSameMetadata(
                     source.SourcePath,
@@ -163,18 +167,31 @@ internal sealed class ThumbnailGenerator
 
     private ImageSourceSnapshot OpenSnapshot(
         ThumbnailSource source,
-        string? expectedContentSha256,
+        string? expectedSourceIdentity,
         CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _metadataProbes);
-        Interlocked.Add(ref _metadataBytesHashed, source.FileSize);
 
-        return ImageSourceSnapshot.Open(
+        var snapshot = ImageSourceSnapshot.Open(
             source.SourcePath,
             source.FileSize,
             source.ModifiedAtUtcTicks,
-            expectedContentSha256,
+            expectedSourceIdentity,
             cancellationToken);
+
+        if (snapshot.Metadata.UsedFullHash)
+        {
+            Interlocked.Increment(ref _metadataFullHashFallbacks);
+            Interlocked.Add(
+                ref _metadataBytesHashed,
+                snapshot.Metadata.BytesHashed);
+        }
+        else
+        {
+            Interlocked.Increment(ref _metadataFastIdentityHits);
+        }
+
+        return snapshot;
     }
 
     private ThumbnailResult Generate(
@@ -260,8 +277,8 @@ internal sealed class ThumbnailGenerator
         SourceTechnicalMetadata actual)
     {
         if (!string.Equals(
-                expected.ContentSha256,
-                actual.ContentSha256,
+                expected.SourceIdentity,
+                actual.SourceIdentity,
                 StringComparison.OrdinalIgnoreCase)
             || expected.Width != actual.Width
             || expected.Height != actual.Height
