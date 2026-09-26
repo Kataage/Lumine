@@ -127,6 +127,27 @@ if ($pngThreshold -ne 100MB) {
     throw "PNG Sequential threshold changed unexpectedly: $pngThreshold bytes"
 }
 
+$productionStripeHeight = [int](Get-Metadata "production_stripe_height")
+if ($productionStripeHeight -ne 64) {
+    throw "Production full-resolution stripe height changed unexpectedly: $productionStripeHeight"
+}
+
+$nonDefaultStripeHeight = [int](Get-Metadata "png_large_nondefault_stripe_height")
+$adaptiveNonDefaultDigest = Get-Metadata "png_large_adaptive_nondefault_digest_sha256"
+$randomNonDefaultDigest = Get-Metadata "png_large_random_nondefault_digest_sha256"
+
+if ($nonDefaultStripeHeight -eq $productionStripeHeight) {
+    throw "Non-default stripe fallback fixture accidentally uses the production stripe height."
+}
+
+if ($adaptiveNonDefaultDigest.Length -ne 64 -or $randomNonDefaultDigest.Length -ne 64) {
+    throw "Non-default stripe fallback reported an invalid SHA-256 digest."
+}
+
+if ($adaptiveNonDefaultDigest -ne $randomNonDefaultDigest) {
+    throw "Adaptive non-default stripe output differs from Random fallback."
+}
+
 $expectedProductionPolicies = @{
     "jpeg" = "random"
     "jpeg-icc" = "random"
