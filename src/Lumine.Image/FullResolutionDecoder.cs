@@ -393,7 +393,8 @@ public sealed class FullResolutionDecoder
     private static FullResolutionAccessPolicy RecommendAccessPolicy(
         ImageSourceSnapshot snapshot)
     {
-        if (snapshot.Orientation != 1)
+        if (snapshot.Orientation != 1
+            || snapshot.HasEmbeddedIcc)
         {
             return FullResolutionAccessPolicy.Random;
         }
