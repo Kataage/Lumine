@@ -70,8 +70,8 @@ public sealed class FullResolutionDecoder
     public const FullResolutionAccessPolicy ProductionAccessPolicy =
         FullResolutionAccessPolicy.Adaptive;
 
-    public const long PngSequentialThresholdBytes =
-        100L * 1024 * 1024;
+    public static long PngSequentialThresholdBytes =>
+        checked((long)VipsRuntimePolicy.DiscThresholdBytes);
 
     public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
@@ -411,7 +411,7 @@ public sealed class FullResolutionDecoder
                    "png",
                    StringComparison.OrdinalIgnoreCase)
                && snapshot.DecodedSourceBytes
-                   >= PngSequentialThresholdBytes
+                   > PngSequentialThresholdBytes
             ? FullResolutionAccessPolicy.Sequential
             : FullResolutionAccessPolicy.Random;
     }
