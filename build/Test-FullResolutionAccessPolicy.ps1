@@ -55,6 +55,8 @@ function Require-PolicyCase(
 
 $mandatory = @(
     "jpeg",
+    "jpeg-icc",
+    "jpeg-oriented",
     "jpeg-icc-oriented",
     "png-alpha",
     "webp",
