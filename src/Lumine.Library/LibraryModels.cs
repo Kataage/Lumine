@@ -31,7 +31,7 @@ public sealed record AssetInfo(
     int? Width,
     int? Height,
     string? Format,
-    string? SourceContentSha256 = null,
+    string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
     bool? HasAlpha = null);
@@ -43,7 +43,7 @@ public sealed record AssetTechnicalMetadata(
     int RawHeight,
     bool HasAlpha,
     string Format,
-    string ContentSha256);
+    string SourceIdentity);
 
 public readonly record struct AssetCursor(long ModifiedAtUtcTicks, long Id)
 {
@@ -93,3 +93,12 @@ public sealed record LibrarySyncState(
     DateTimeOffset? WatcherStoppedAtUtc,
     DateTimeOffset? LastReconciledAtUtc,
     string? LastError);
+
+
+internal sealed record TrackedSourceIdentity(
+    long AssetId,
+    long SourceRevision,
+    string RelativePathKey,
+    long FileSize,
+    long ModifiedAtUtcTicks,
+    string SourceIdentity);
