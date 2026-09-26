@@ -51,7 +51,7 @@ The next page uses the previous page's final `(modified_at_utc_ticks, id)` pair.
 
 Incremental change tracking (`ReadDirectoryChangesW` / USN) remains #290.
 
-Image dimensions are nullable because Library Core does not decode images. Issue #308 persists Image Core enrichment as oriented width/height, raw width/height, alpha, normalized format and source content SHA-256. The update is conditional on the exact asset id, source_revision, file size and persisted mtime, so stale background work cannot overwrite a newer source revision.
+Image dimensions are nullable because Library Core does not decode images. Issue #308 persists Image Core enrichment as oriented width/height, raw width/height, alpha, normalized format and source source identity. The update is conditional on the exact asset id, source_revision, file size and persisted mtime, so stale background work cannot overwrite a newer source revision.
 
 ## Acceptance
 
@@ -87,7 +87,7 @@ Audit issue #300 tightens the Library Core boundary before Image Core is allowed
 - WAL is a verified requirement rather than an assumed pragma.
 - `assets.id` uses `AUTOINCREMENT` so a deleted local identity is not reused. Re-adding the same path creates a new identity.
 - `source_revision` increments when source size or mtime changes. Explicit filesystem add/modify events also advance the revision when size/mtime are unchanged, preventing same-stat writes from preserving stale metadata.
-- Source technical metadata is revision-bound. Width/height/format are invalidated on source revision changes; the separate SHA/raw-dimensions/alpha row automatically stops joining when its stored revision is stale. The content SHA provides a stronger identity check for later Image Core work than size+mtime alone.
+- Source technical metadata is revision-bound. Width/height/format are invalidated on source revision changes; the separate SHA/raw-dimensions/alpha row automatically stops joining when its stored revision is stale. The source identity provides a stronger identity check for later Image Core work than size+mtime alone.
 - Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
 - Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.
 
