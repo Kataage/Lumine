@@ -44,6 +44,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.FullResolution.Bench
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Image.NativeAot.Smoke", "tests\Lumine.Image.NativeAot.Smoke\Lumine.Image.NativeAot.Smoke.csproj", "{B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Bmp.Benchmarks", "tools\Lumine.Bmp.Benchmarks\Lumine.Bmp.Benchmarks.csproj", "{C1C1C1C1-C1C1-41C1-81C1-C1C1C1C1C1C1}"
+EndProject
 Global
   GlobalSection(SolutionConfigurationPlatforms) = preSolution
     Debug|Any CPU = Debug|Any CPU
@@ -134,5 +136,9 @@ Global
     {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
     {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
     {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Release|Any CPU.Build.0 = Release|Any CPU
+    {C1C1C1C1-C1C1-41C1-81C1-C1C1C1C1C1C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {C1C1C1C1-C1C1-41C1-81C1-C1C1C1C1C1C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {C1C1C1C1-C1C1-41C1-81C1-C1C1C1C1C1C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {C1C1C1C1-C1C1-41C1-81C1-C1C1C1C1C1C1}.Release|Any CPU.Build.0 = Release|Any CPU
   EndGlobalSection
 EndGlobal
