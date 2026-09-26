@@ -90,6 +90,24 @@ static void PadToLength(string path, long length)
     stream.SetLength(length);
 }
 
+static async Task VerifyRecommendedAccessPolicyAsync(
+    string path,
+    FullResolutionAccessPolicy expected,
+    string label)
+{
+    var file = new FileInfo(path);
+    using var prepared =
+        await FullResolutionDecoder.PrepareAsync(
+            new FullResolutionSource(
+                path,
+                file.Length,
+                file.LastWriteTimeUtc.Ticks));
+
+    Require(
+        prepared.RecommendedAccessPolicy == expected,
+        $"{label} adaptive access policy was {prepared.RecommendedAccessPolicy}; expected {expected}.");
+}
+
 static async Task VerifyFullResolutionAsync(
     string path,
     int expectedWidth,
@@ -165,6 +183,31 @@ try
     WriteRgb(detailCachePath, 2200, 1400);
     WriteRgb(sourceChangePath, 320, 200);
 
+    Require(
+        FullResolutionDecoder.ProductionAccessPolicy
+            == FullResolutionAccessPolicy.Adaptive,
+        "Production full-resolution access policy is not Adaptive.");
+    await VerifyRecommendedAccessPolicyAsync(
+        jpgPath,
+        FullResolutionAccessPolicy.Sequential,
+        "JPEG");
+    await VerifyRecommendedAccessPolicyAsync(
+        pngPath,
+        FullResolutionAccessPolicy.Sequential,
+        "PNG");
+    await VerifyRecommendedAccessPolicyAsync(
+        webpPath,
+        FullResolutionAccessPolicy.Random,
+        "WebP");
+    await VerifyRecommendedAccessPolicyAsync(
+        tiffPath,
+        FullResolutionAccessPolicy.Random,
+        "TIFF");
+    await VerifyRecommendedAccessPolicyAsync(
+        p3Path,
+        FullResolutionAccessPolicy.Sequential,
+        "JPEG ICC");
+
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
     using (var oriented = baseImage.Mutate(
@@ -172,6 +215,11 @@ try
     {
         oriented.WriteToFile(orientedPath);
     }
+
+    await VerifyRecommendedAccessPolicyAsync(
+        orientedPath,
+        FullResolutionAccessPolicy.Random,
+        "EXIF-oriented JPEG");
 
     var disguisedInfo = new FileInfo(disguisedPngPath);
     using (var disguisedSnapshot = await ImageSourceSnapshot.OpenAsync(
@@ -743,6 +791,10 @@ try
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(avifResult.CachePath), "AVIF capability was reported but AVIF smoke failed.");
         await VerifyFullResolutionAsync(avifPath, 8, 6, "AVIF");
+        await VerifyRecommendedAccessPolicyAsync(
+            avifPath,
+            FullResolutionAccessPolicy.Sequential,
+            "AVIF");
     }
 
     if (capabilities.HeicRoundTrip)
@@ -756,6 +808,10 @@ try
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(heicResult.CachePath), "HEIC capability was reported but HEIC smoke failed.");
         await VerifyFullResolutionAsync(heicPath, 8, 6, "HEIC");
+        await VerifyRecommendedAccessPolicyAsync(
+            heicPath,
+            FullResolutionAccessPolicy.Sequential,
+            "HEIC");
     }
 
     var statsBeforePrune = await cache.GetStatsAsync();
