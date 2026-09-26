@@ -202,6 +202,19 @@ jobs:
           if (-not (Test-Path $exe)) {
             throw "NativeAOT Image smoke executable was not produced: $exe"
           }
+
+          # Fresh process 1: prove Lumine follows a non-default libvips threshold.
+          $env:VIPS_DISC_THRESHOLD = "67108864"
+          $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "67108864"
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          # Fresh process 2: prove the production comparison is strictly '>'
+          # rather than '>=' when decoded bytes exactly equal the threshold.
+          $env:VIPS_DISC_THRESHOLD = "84934656"
+          $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "84934656"
           & $exe
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
