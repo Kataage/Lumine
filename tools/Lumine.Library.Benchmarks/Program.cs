@@ -34,6 +34,10 @@ long databaseBytes = 0;
 long peakWorkingSetBytes = 0;
 long startingWorkingSetBytes = 0;
 long peakAdditionalWorkingSetBytes = 0;
+long retainedWorkingSetBytes = 0;
+long retainedAdditionalWorkingSetBytes = 0;
+long postGcHeapSizeBytes = 0;
+long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
@@ -59,6 +63,8 @@ try
     GC.WaitForPendingFinalizers();
     GC.Collect();
 
+    var allocatedBeforeIngest =
+        GC.GetTotalAllocatedBytes(precise: true);
     var peakMonitor = PeakWorkingSetMonitor.Start();
 
     using (recorder.Measure(CoreMetricNames.LibraryBulkUpsert))
@@ -94,6 +100,25 @@ try
     startingWorkingSetBytes = peakMonitor.StartingWorkingSetBytes;
     peakWorkingSetBytes = peakMonitor.PeakWorkingSetBytes;
     peakAdditionalWorkingSetBytes = peakMonitor.PeakAdditionalWorkingSetBytes;
+    ingestAllocatedBytes = Math.Max(
+        0,
+        GC.GetTotalAllocatedBytes(precise: true)
+            - allocatedBeforeIngest);
+
+    // Separate transient GC-segment commitment from memory retained by the
+    // completed ingest path. WorkingSet peak remains diagnostic/gated, while
+    // this post-full-GC sample is the stable regression signal for retained
+    // process residency.
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+    await Task.Delay(50);
+    retainedWorkingSetBytes = Environment.WorkingSet;
+    retainedAdditionalWorkingSetBytes = Math.Max(
+        0,
+        retainedWorkingSetBytes - startingWorkingSetBytes);
+    postGcHeapSizeBytes =
+        GC.GetGCMemoryInfo(GCKind.FullBlocking).HeapSizeBytes;
 
     var metadataTarget = Math.Min(count, 10_000);
     using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataPersist))
@@ -211,12 +236,18 @@ try
             ["starting_working_set_bytes"] = startingWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["retained_working_set_bytes"] = retainedWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["retained_additional_working_set_bytes"] = retainedAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["post_gc_heap_size_bytes"] = postGcHeapSizeBytes.ToString(CultureInfo.InvariantCulture),
+            ["ingest_allocated_bytes"] = ingestAllocatedBytes.ToString(CultureInfo.InvariantCulture),
             ["paging"] = "keyset:modified_at_utc_ticks,id"
         });
 
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
+    Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
+    Console.WriteLine($"Ingest retained working set: {retainedWorkingSetBytes / 1048576d:N1} MiB (+{retainedAdditionalWorkingSetBytes / 1048576d:N1} MiB), post-GC heap={postGcHeapSizeBytes / 1048576d:N1} MiB");
     Console.WriteLine($"Database: {databaseBytes:N0} bytes");
     Console.WriteLine($"Result: {Path.GetFullPath(output)}");
 }
