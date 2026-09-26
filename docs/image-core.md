@@ -48,7 +48,7 @@ The fallback is pure managed code and is intentionally narrow:
 - explicit alpha masks
 - both top-down and bottom-up row order
 
-Palette BMP, RLE, 16-bit BMP, OS/2 headers, non-contiguous/overlapping masks and malformed/truncated ranges are rejected rather than silently decoded incorrectly. Source-row allocation is hard-bounded to 64 MiB.
+Palette BMP, RLE, 16-bit BMP, OS/2 headers, non-contiguous/overlapping masks, embedded/linked/calibrated BMP color profiles and malformed/truncated ranges are rejected rather than silently decoded incorrectly. BMP V4/V5 sources are accepted only when their declared color space is sRGB/Windows (or unspecified). Source-row allocation is hard-bounded to 16 MiB.
 
 BMP detection is by the actual `BM` file signature, not by extension. The same stable source snapshot and source identity used by the normal Image Core path are retained while the BMP header and pixels are read.
 
