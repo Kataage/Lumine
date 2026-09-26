@@ -273,6 +273,103 @@ try
         },
         CancellationToken.None);
 
+    var staleRevision = asset.SourceRevision;
+    var staleIdentity = asset.SourceIdentity
+        ?? throw new InvalidOperationException(
+            "App smoke asset lost source identity before repair test.");
+    var staleLength = new FileInfo(sourcePath).Length;
+    var staleTimestamp = File.GetLastWriteTimeUtc(sourcePath);
+    var replacementPath = Path.Combine(
+        libraryRoot,
+        "adapter-replacement.png");
+
+    using (var blank = NetVips.Image.Black(320, 200, bands: 4))
+    using (var values = blank.NewFromImage([180, 40, 70, 128]))
+    using (var rgba = values.Copy(interpretation: Enums.Interpretation.Srgb))
+    {
+        rgba.Pngsave(replacementPath);
+    }
+
+    var replacementLength = new FileInfo(replacementPath).Length;
+    Require(
+        replacementLength <= staleLength,
+        $"Same-stat replacement PNG unexpectedly exceeded the original length: replacement={replacementLength}, original={staleLength}.");
+
+    using (var replacement = new FileStream(
+               replacementPath,
+               FileMode.Open,
+               FileAccess.Write,
+               FileShare.None))
+    {
+        replacement.SetLength(staleLength);
+    }
+
+    await File.WriteAllBytesAsync(
+        sourcePath,
+        await File.ReadAllBytesAsync(replacementPath));
+    File.SetLastWriteTimeUtc(sourcePath, staleTimestamp);
+
+    var sameStatReplacement = new FileInfo(sourcePath);
+    Require(
+        sameStatReplacement.Length == staleLength
+        && sameStatReplacement.LastWriteTimeUtc.Ticks
+            == staleTimestamp.Ticks,
+        "App same-stat replacement fixture did not preserve size/mtime.");
+
+    await headless.Dispatch(
+        async () =>
+        {
+            var repaired = await provider.LoadOriginalAsync(
+                asset,
+                8L * 1024 * 1024);
+
+            try
+            {
+                var writable = repaired.Bitmap as WriteableBitmap
+                    ?? throw new InvalidOperationException(
+                        "Repaired original did not return a WriteableBitmap.");
+                using var framebuffer = writable.Lock();
+                var pixel = new byte[4];
+                Marshal.Copy(
+                    framebuffer.Address,
+                    pixel,
+                    0,
+                    pixel.Length);
+
+                Require(
+                    pixel[0] == 180
+                    && pixel[1] == 40
+                    && pixel[2] == 70
+                    && pixel[3] is >= 127 and <= 129,
+                    $"Identity repair decoded stale pixels: {string.Join(",", pixel)}.");
+            }
+            finally
+            {
+                var disposal = repaired.BeginDispose();
+                Dispatcher.UIThread.RunJobs();
+                await disposal;
+            }
+
+            return 0;
+        },
+        CancellationToken.None);
+
+    var repairedAsset = await restartedLibraryService.GetAssetAsync(
+        library.Id,
+        "adapter-source.png")
+        ?? throw new InvalidOperationException(
+            "Identity-repaired asset disappeared.");
+    Require(
+        repairedAsset.SourceRevision == staleRevision + 1,
+        "Identity mismatch did not self-heal by advancing source_revision.");
+    Require(
+        FileSourceIdentityProbe.IsValid(repairedAsset.SourceIdentity)
+        && !string.Equals(
+            repairedAsset.SourceIdentity,
+            staleIdentity,
+            StringComparison.Ordinal),
+        "Identity repair did not persist the replacement source identity.");
+
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");
 }
