@@ -40,6 +40,18 @@ static void WriteP3ProfileJpeg(string path)
         keep: Enums.ForeignKeep.Icc);
 }
 
+static void WriteP3ProfilePng(string path)
+{
+    using var blank = NetVips.Image.Black(256, 192, bands: 4);
+    using var values = blank.NewFromImage([32, 220, 64, 180]);
+    using var srgb = values.Copy(interpretation: Enums.Interpretation.Srgb);
+    using var p3 = srgb.IccTransform("p3", inputProfile: "srgb");
+
+    p3.Pngsave(
+        path,
+        keep: Enums.ForeignKeep.Icc);
+}
+
 static ThumbnailSource SourceFor(long assetId, long revision, string path)
 {
     var info = new FileInfo(path);
@@ -165,6 +177,7 @@ try
     var identityReplacementPath = Path.Combine(sourceRoot, "identity-replacement.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
+    var p3PngPath = Path.Combine(sourceRoot, "profile-p3.png");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
     var detailCachePath = Path.Combine(sourceRoot, "detail-cache.jpg");
     var sourceChangePath = Path.Combine(sourceRoot, "source-change.jpg");
@@ -179,6 +192,7 @@ try
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
     WriteP3ProfileJpeg(p3Path);
+    WriteP3ProfilePng(p3PngPath);
     WriteRgb(cancellationPath, 6000, 6000);
     WriteRgb(detailCachePath, 2200, 1400);
     WriteRgb(sourceChangePath, 320, 200);
@@ -207,6 +221,10 @@ try
         p3Path,
         FullResolutionAccessPolicy.Random,
         "JPEG ICC");
+    await VerifyRecommendedAccessPolicyAsync(
+        p3PngPath,
+        FullResolutionAccessPolicy.Sequential,
+        "PNG ICC");
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -636,6 +654,24 @@ try
         && p3FirstStripe[1] > 170
         && p3FirstStripe[2] < 50,
         "Full-resolution embedded P3 profile was not normalized to sRGB.");
+
+    var p3PngFullSource = new FullResolutionSource(
+        p3PngPath,
+        new FileInfo(p3PngPath).Length,
+        File.GetLastWriteTimeUtc(p3PngPath).Ticks);
+    byte[]? p3PngFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        p3PngFullSource,
+        16L * 1024 * 1024,
+        stripe => p3PngFirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 23);
+    Require(
+        p3PngFirstStripe is { Length: > 4 }
+        && p3PngFirstStripe[0] < 80
+        && p3PngFirstStripe[1] > 140
+        && p3PngFirstStripe[2] < 100
+        && p3PngFirstStripe[3] is >= 170 and <= 190,
+        "Full-resolution PNG ICC Sequential path did not preserve sRGB-normalized color and alpha.");
 
     var webpFullSource = new FullResolutionSource(
         webpPath,
