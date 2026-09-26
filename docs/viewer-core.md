@@ -32,14 +32,17 @@ Visible tiles request foreground priority. Adjacent rows request background pref
 
 Grid tiles only decode the persistent thumbnail cache path. Original files are never decoded by Viewer.
 
+Detail preview receives revision-bound source technical metadata alongside the persistent preview result. `ViewerDetailSession` enriches its selected `ViewerAsset` with that metadata before exposing `PreviewReady`, so dimensions/format can be displayed and later full-resolution admission can use the persisted content identity without an extra Detail-time probe.
+
 ## Decoded bitmap cache
 
 `DecodedBitmapCache` has hard entry and estimated decoded-byte limits.
 
 - decoded size is estimated as width x height x 4
 - only unleased LRU entries can be evicted
-- if active leases pin the entire budget, admission fails rather than exceeding the configured hard limit
-- tile detach releases the lease
+- if active leases temporarily pin the entire budget, new admission waits cancellably for capacity rather than failing a visible tile or exceeding the hard limit
+- the just-decoded candidate is disposed before waiting, so pressure does not form an unbounded decoded queue
+- tile detach releases the lease and wakes capacity waiters
 - cache disposal releases all Avalonia bitmaps
 
 ## Interaction

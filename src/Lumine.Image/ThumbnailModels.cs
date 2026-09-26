@@ -33,7 +33,50 @@ public sealed record ThumbnailSource(
     long SourceRevision,
     string SourcePath,
     long FileSize,
-    long ModifiedAtUtcTicks);
+    long ModifiedAtUtcTicks,
+    int? SourceWidth = null,
+    int? SourceHeight = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    bool? HasAlpha = null,
+    string? Format = null,
+    string? SourceIdentity = null)
+{
+    public SourceTechnicalMetadata? PersistedMetadata =>
+        SourceWidth is > 0
+        && SourceHeight is > 0
+        && RawWidth is > 0
+        && RawHeight is > 0
+        && HasAlpha.HasValue
+        && !string.IsNullOrWhiteSpace(Format)
+        && IsSourceIdentity(SourceIdentity)
+            ? new SourceTechnicalMetadata(
+                SourceWidth.Value,
+                SourceHeight.Value,
+                RawWidth.Value,
+                RawHeight.Value,
+                HasAlpha.Value,
+                Format!,
+                SourceIdentity!,
+                false,
+                0)
+            : null;
+
+    public ThumbnailSource WithMetadata(SourceTechnicalMetadata metadata) =>
+        this with
+        {
+            SourceWidth = metadata.Width,
+            SourceHeight = metadata.Height,
+            RawWidth = metadata.RawWidth,
+            RawHeight = metadata.RawHeight,
+            HasAlpha = metadata.HasAlpha,
+            Format = metadata.Format,
+            SourceIdentity = metadata.SourceIdentity
+        };
+
+    private static bool IsSourceIdentity(string? value) =>
+        Lumine.Core.FileSourceIdentityProbe.IsValid(value);
+}
 
 public sealed record ThumbnailResult(
     string CacheKey,
@@ -41,7 +84,8 @@ public sealed record ThumbnailResult(
     bool CacheHit,
     int Width,
     int Height,
-    long CacheFileBytes);
+    long CacheFileBytes,
+    SourceTechnicalMetadata? SourceMetadata = null);
 
 public sealed record ThumbnailCacheStats(
     long FileCount,
@@ -61,7 +105,12 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long CacheMisses,
     long Generated,
     long Failed,
-    long SourceOpens);
+    long SourceOpens,
+    long MetadataProbes,
+    long MetadataBytesHashed,
+    long MetadataMemoryHits,
+    long MetadataFastIdentityHits,
+    long MetadataFullHashFallbacks);
 
 public sealed class ThumbnailPipelineOptions
 {

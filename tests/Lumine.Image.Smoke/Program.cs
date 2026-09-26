@@ -66,6 +66,30 @@ static void WriteRgbaPng(string path)
     rgba.WriteToFile(path);
 }
 
+static void WriteSolidJpeg(string path, int value)
+{
+    using var blank = NetVips.Image.Black(320, 200, bands: 3);
+    using var values = blank.NewFromImage([value, value, value]);
+    using var image = values.Copy(interpretation: Enums.Interpretation.Srgb);
+    image.Jpegsave(path, q: 90);
+}
+
+static void PadToLength(string path, long length)
+{
+    using var stream = new FileStream(
+        path,
+        FileMode.Open,
+        FileAccess.Write,
+        FileShare.None);
+    if (stream.Length > length)
+    {
+        throw new InvalidOperationException(
+            "Cannot pad a file to a smaller length.");
+    }
+
+    stream.SetLength(length);
+}
+
 static async Task VerifyFullResolutionAsync(
     string path,
     int expectedWidth,
@@ -112,12 +136,15 @@ try
 {
     var jpgPath = Path.Combine(sourceRoot, "sample.jpg");
     var pngPath = Path.Combine(sourceRoot, "alpha.png");
+    var disguisedPngPath = Path.Combine(sourceRoot, "png-with-jpg-extension.jpg");
     var webpPath = Path.Combine(sourceRoot, "sample.webp");
     var gifPath = Path.Combine(sourceRoot, "sample.gif");
     var tiffPath = Path.Combine(sourceRoot, "sample.tiff");
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
+    var identityPath = Path.Combine(sourceRoot, "identity.jpg");
+    var identityReplacementPath = Path.Combine(sourceRoot, "identity-replacement.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
@@ -126,6 +153,7 @@ try
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
+    File.Copy(pngPath, disguisedPngPath);
     WriteRgb(webpPath);
     await WriteAnimatedGifAsync(gifPath);
     WriteRgb(tiffPath);
@@ -143,6 +171,20 @@ try
                image => image.Set(GValue.GIntType, "orientation", 6)))
     {
         oriented.WriteToFile(orientedPath);
+    }
+
+    var disguisedInfo = new FileInfo(disguisedPngPath);
+    using (var disguisedSnapshot = await ImageSourceSnapshot.OpenAsync(
+               disguisedPngPath,
+               disguisedInfo.Length,
+               disguisedInfo.LastWriteTimeUtc.Ticks))
+    {
+        Require(
+            string.Equals(
+                disguisedSnapshot.Metadata.Format,
+                "png",
+                StringComparison.Ordinal),
+            $"Actual loader format was not detected for extension-mismatched PNG: {disguisedSnapshot.Metadata.Format}.");
     }
 
     var cache = new ThumbnailCache(cacheRoot);
@@ -239,6 +281,11 @@ try
         persistentSource,
         ThumbnailProfiles.GridMedium);
     Require(!persistentFirst.CacheHit, "Persistent cache first request unexpectedly hit.");
+    Require(
+        persistentFirst.SourceMetadata is not null,
+        "Persistent cache generation did not return source technical metadata.");
+    persistentSource = persistentSource.WithMetadata(
+        persistentFirst.SourceMetadata!);
 
     var diagnosticsBeforeHit = pipeline.Diagnostics;
     File.Delete(jpgPath);
@@ -248,8 +295,9 @@ try
         ThumbnailProfiles.GridMedium);
     Require(persistentHit.CacheHit, "Warm cache request missed after original deletion.");
     Require(
-        pipeline.Diagnostics.SourceOpens == diagnosticsBeforeHit.SourceOpens,
-        "Cache hit touched the original source.");
+        pipeline.Diagnostics.SourceOpens == diagnosticsBeforeHit.SourceOpens
+        && pipeline.Diagnostics.MetadataProbes == diagnosticsBeforeHit.MetadataProbes,
+        "Warm cache hit touched or reprobed the original source.");
 
     await using (var restartedPipeline = new ThumbnailPipeline(
                      new ThumbnailCache(cacheRoot),
@@ -264,7 +312,8 @@ try
             ThumbnailProfiles.GridMedium);
         Require(restartedHit.CacheHit, "Fresh pipeline/cache instance did not reuse persistent thumbnail.");
         Require(
-            restartedPipeline.Diagnostics.SourceOpens == 0,
+            restartedPipeline.Diagnostics.SourceOpens == 0
+            && restartedPipeline.Diagnostics.MetadataProbes == 0,
             "Fresh pipeline persistent hit touched the deleted original source.");
     }
 
@@ -275,8 +324,13 @@ try
     Require(
         !detailPersistentFirst.CacheHit,
         "Detail preview first request unexpectedly hit cache.");
+    Require(
+        detailPersistentFirst.SourceMetadata is not null,
+        "Detail preview generation did not return source metadata.");
+    detailPersistentSource = detailPersistentSource.WithMetadata(
+        detailPersistentFirst.SourceMetadata!);
 
-    var detailSourceOpensBeforeHit = pipeline.Diagnostics.SourceOpens;
+    var detailDiagnosticsBeforeHit = pipeline.Diagnostics;
     File.Delete(detailCachePath);
 
     var detailPersistentHit = await pipeline.RequestAsync(
@@ -286,8 +340,9 @@ try
         detailPersistentHit.CacheHit,
         "Detail preview did not prefer persistent cache after original disappeared.");
     Require(
-        pipeline.Diagnostics.SourceOpens == detailSourceOpensBeforeHit,
-        "Warm Detail preview cache hit touched the original source.");
+        pipeline.Diagnostics.SourceOpens == detailDiagnosticsBeforeHit.SourceOpens
+        && pipeline.Diagnostics.MetadataProbes == detailDiagnosticsBeforeHit.MetadataProbes,
+        "Warm Detail preview cache hit touched or reprobed the original source.");
 
     await using (var restartedDetailPipeline = new ThumbnailPipeline(
                      new ThumbnailCache(cacheRoot),
@@ -304,7 +359,8 @@ try
             restartedDetailHit.CacheHit,
             "Restarted pipeline did not reuse persistent Detail preview.");
         Require(
-            restartedDetailPipeline.Diagnostics.SourceOpens == 0,
+            restartedDetailPipeline.Diagnostics.SourceOpens == 0
+            && restartedDetailPipeline.Diagnostics.MetadataProbes == 0,
             "Restarted Detail preview cache hit touched the missing original.");
     }
 
@@ -340,6 +396,58 @@ try
     Require(
         !string.Equals(changedFirst.CachePath, changedSecond.CachePath, StringComparison.Ordinal),
         "Source revision did not move to a new cache path.");
+
+    WriteSolidJpeg(identityPath, 24);
+    WriteSolidJpeg(identityReplacementPath, 220);
+    var identityLength = Math.Max(
+        new FileInfo(identityPath).Length,
+        new FileInfo(identityReplacementPath).Length);
+    PadToLength(identityPath, identityLength);
+    PadToLength(identityReplacementPath, identityLength);
+    var identityTimestamp = DateTime.UtcNow.AddMinutes(-5);
+    File.SetLastWriteTimeUtc(identityPath, identityTimestamp);
+    File.SetLastWriteTimeUtc(identityReplacementPath, identityTimestamp);
+
+    var identityStat = new FileInfo(identityPath);
+    using var identitySnapshot = await ImageSourceSnapshot.OpenAsync(
+        identityPath,
+        identityStat.Length,
+        identityStat.LastWriteTimeUtc.Ticks);
+    var identityMetadata = identitySnapshot.Metadata;
+    identitySnapshot.Dispose();
+
+    var replacementBytes = await File.ReadAllBytesAsync(
+        identityReplacementPath);
+    await File.WriteAllBytesAsync(
+        identityPath,
+        replacementBytes);
+    File.SetLastWriteTimeUtc(
+        identityPath,
+        identityTimestamp);
+
+    var replacedStat = new FileInfo(identityPath);
+    Require(
+        replacedStat.Length == identityStat.Length
+        && replacedStat.LastWriteTimeUtc.Ticks
+            == identityStat.LastWriteTimeUtc.Ticks,
+        "Same-stat replacement fixture did not preserve size/mtime.");
+
+    try
+    {
+        await FullResolutionDecoder.DecodeAsync(
+            new FullResolutionSource(
+                identityPath,
+                identityStat.Length,
+                identityStat.LastWriteTimeUtc.Ticks,
+                identityMetadata.SourceIdentity),
+            32L * 1024 * 1024,
+            _ => { });
+        throw new InvalidOperationException(
+            "Same-size/mtime source replacement was not rejected by content identity.");
+    }
+    catch (FullResolutionSourceChangedException)
+    {
+    }
 
     var concurrentSource = SourceFor(45, 1, concurrentPath);
     var concurrentResults = await Task.WhenAll(

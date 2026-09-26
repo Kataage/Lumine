@@ -1,4 +1,5 @@
 using System.Globalization;
+using Lumine.Core;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -112,15 +113,20 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             SELECT
-                id, library_id, folder_id,
-                relative_path, file_name, extension,
-                file_size, modified_at_utc_ticks,
-                source_revision,
-                width, height, format,
-                observed_generation
-            FROM assets
-            WHERE library_id = $library_id
-              AND relative_path_key = $path_key;
+                a.id, a.library_id, a.folder_id,
+                a.relative_path, a.file_name, a.extension,
+                a.file_size, a.modified_at_utc_ticks,
+                a.source_revision,
+                a.width, a.height, a.format,
+                tm.source_identity,
+                tm.raw_width, tm.raw_height, tm.has_alpha,
+                a.observed_generation
+            FROM assets AS a
+            LEFT JOIN asset_technical_metadata AS tm
+              ON tm.asset_id = a.id
+             AND tm.source_revision = a.source_revision
+            WHERE a.library_id = $library_id
+              AND a.relative_path_key = $path_key;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
         command.Parameters.AddWithValue("$path_key", pathKey);
@@ -129,6 +135,215 @@ public sealed class LibraryRepository
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? ReadAsset(reader)
             : null;
+    }
+
+    public async Task<bool> UpdateTechnicalMetadataAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        AssetTechnicalMetadata metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(assetId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedSourceRevision);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedFileSize);
+
+        if (metadata.Width <= 0
+            || metadata.Height <= 0
+            || metadata.RawWidth <= 0
+            || metadata.RawHeight <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(metadata),
+                "Technical image dimensions must be positive.");
+        }
+
+        if (string.IsNullOrWhiteSpace(metadata.Format)
+            || metadata.Format.Length > 64)
+        {
+            throw new ArgumentException(
+                "Technical image format must be present and at most 64 characters.",
+                nameof(metadata));
+        }
+
+        if (!FileSourceIdentityProbe.IsValid(metadata.SourceIdentity))
+        {
+            throw new ArgumentException(
+                "Source identity must be a valid NTFS-USN or SHA-256 identity.",
+                nameof(metadata));
+        }
+
+        var normalizedIdentity =
+            FileSourceIdentityProbe.Normalize(metadata.SourceIdentity);
+        var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        await using var updateAsset = connection.CreateCommand();
+        updateAsset.Transaction = transaction;
+        updateAsset.CommandText =
+            """
+            UPDATE assets
+            SET width = $width,
+                height = $height,
+                format = $format,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND id = $asset_id
+              AND source_revision = $source_revision
+              AND file_size = $file_size
+              AND modified_at_utc_ticks = $modified
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM asset_technical_metadata AS tm
+                  WHERE tm.asset_id = assets.id
+                    AND tm.source_revision = assets.source_revision
+                    AND tm.source_identity <> $source_identity
+              );
+            """;
+        updateAsset.Parameters.AddWithValue("$width", metadata.Width);
+        updateAsset.Parameters.AddWithValue("$height", metadata.Height);
+        updateAsset.Parameters.AddWithValue("$format", metadata.Format.Trim());
+        updateAsset.Parameters.AddWithValue("$updated", nowTicks);
+        updateAsset.Parameters.AddWithValue("$library_id", libraryId);
+        updateAsset.Parameters.AddWithValue("$asset_id", assetId);
+        updateAsset.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        updateAsset.Parameters.AddWithValue("$file_size", expectedFileSize);
+        updateAsset.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
+        updateAsset.Parameters.AddWithValue(
+            "$source_identity",
+            normalizedIdentity);
+
+        if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        await using var upsertMetadata = connection.CreateCommand();
+        upsertMetadata.Transaction = transaction;
+        upsertMetadata.CommandText =
+            """
+            INSERT INTO asset_technical_metadata(
+                asset_id, source_revision,
+                source_identity,
+                raw_width, raw_height, has_alpha,
+                updated_at_utc_ticks)
+            VALUES(
+                $asset_id, $source_revision,
+                $source_identity,
+                $raw_width, $raw_height, $has_alpha,
+                $updated)
+            ON CONFLICT(asset_id) DO UPDATE SET
+                source_revision = excluded.source_revision,
+                source_identity = excluded.source_identity,
+                raw_width = excluded.raw_width,
+                raw_height = excluded.raw_height,
+                has_alpha = excluded.has_alpha,
+                updated_at_utc_ticks = excluded.updated_at_utc_ticks;
+            """;
+        upsertMetadata.Parameters.AddWithValue("$asset_id", assetId);
+        upsertMetadata.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        upsertMetadata.Parameters.AddWithValue(
+            "$source_identity",
+            normalizedIdentity);
+        upsertMetadata.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
+        upsertMetadata.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
+        upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
+        upsertMetadata.Parameters.AddWithValue("$updated", nowTicks);
+        await upsertMetadata.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        transaction.Commit();
+        return true;
+    }
+
+    internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
+        LoadTrackedSourceIdentitiesAsync(
+            long libraryId,
+            IReadOnlyList<string> relativePathKeys,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(relativePathKeys);
+
+        if (relativePathKeys.Count == 0)
+        {
+            return new Dictionary<string, TrackedSourceIdentity>(
+                StringComparer.Ordinal);
+        }
+
+        var keys = relativePathKeys
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var result = new Dictionary<string, TrackedSourceIdentity>(
+            keys.Length,
+            StringComparer.Ordinal);
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+
+        const int chunkSize = 400;
+        for (var offset = 0; offset < keys.Length; offset += chunkSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(
+                chunkSize,
+                keys.Length - offset);
+
+            await using var command = connection.CreateCommand();
+            command.Parameters.AddWithValue("$library_id", libraryId);
+
+            var parameterNames = new string[count];
+            for (var index = 0; index < count; index++)
+            {
+                var parameterName = $"$path_key_{index}";
+                parameterNames[index] = parameterName;
+                command.Parameters.AddWithValue(
+                    parameterName,
+                    keys[offset + index]);
+            }
+
+            command.CommandText =
+                $"""
+                SELECT
+                    a.id,
+                    a.source_revision,
+                    a.relative_path_key,
+                    a.file_size,
+                    a.modified_at_utc_ticks,
+                    tm.source_identity
+                FROM assets AS a
+                INNER JOIN asset_technical_metadata AS tm
+                  ON tm.asset_id = a.id
+                 AND tm.source_revision = a.source_revision
+                WHERE a.library_id = $library_id
+                  AND a.relative_path_key IN (
+                      {string.Join(", ", parameterNames)}
+                  );
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var tracked = new TrackedSourceIdentity(
+                    reader.GetInt64(0),
+                    reader.GetInt64(1),
+                    reader.GetString(2),
+                    reader.GetInt64(3),
+                    reader.GetInt64(4),
+                    reader.GetString(5));
+                result[tracked.RelativePathKey] = tracked;
+            }
+        }
+
+        return result;
     }
 
     public async Task<int> UpsertAssetsAsync(
@@ -200,6 +415,13 @@ public sealed class LibraryRepository
         }
 
         using var transaction = connection.BeginTransaction();
+
+        await ApplyForcedSourceRevisionHintsAsync(
+            connection,
+            transaction,
+            libraryId,
+            prepared,
+            cancellationToken).ConfigureAwait(false);
 
         var folderIds = await LoadExistingFolderIdsAsync(
             connection,
@@ -324,33 +546,43 @@ public sealed class LibraryRepository
         command.CommandText = cursor is null
             ? """
               SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  source_revision,
-                  width, height, format
-              FROM assets
-              WHERE library_id = $library_id
-              ORDER BY modified_at_utc_ticks DESC, id DESC
+                  a.id, a.library_id, a.folder_id,
+                  a.relative_path, a.file_name, a.extension,
+                  a.file_size, a.modified_at_utc_ticks,
+                  a.source_revision,
+                  a.width, a.height, a.format,
+                  tm.source_identity,
+                  tm.raw_width, tm.raw_height, tm.has_alpha
+              FROM assets AS a
+              LEFT JOIN asset_technical_metadata AS tm
+                ON tm.asset_id = a.id
+               AND tm.source_revision = a.source_revision
+              WHERE a.library_id = $library_id
+              ORDER BY a.modified_at_utc_ticks DESC, a.id DESC
               LIMIT $limit;
               """
             : """
               SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  source_revision,
-                  width, height, format
-              FROM assets
-              WHERE library_id = $library_id
+                  a.id, a.library_id, a.folder_id,
+                  a.relative_path, a.file_name, a.extension,
+                  a.file_size, a.modified_at_utc_ticks,
+                  a.source_revision,
+                  a.width, a.height, a.format,
+                  tm.source_identity,
+                  tm.raw_width, tm.raw_height, tm.has_alpha
+              FROM assets AS a
+              LEFT JOIN asset_technical_metadata AS tm
+                ON tm.asset_id = a.id
+               AND tm.source_revision = a.source_revision
+              WHERE a.library_id = $library_id
                 AND (
-                    modified_at_utc_ticks < $cursor_modified
+                    a.modified_at_utc_ticks < $cursor_modified
                     OR (
-                        modified_at_utc_ticks = $cursor_modified
-                        AND id < $cursor_id
+                        a.modified_at_utc_ticks = $cursor_modified
+                        AND a.id < $cursor_id
                     )
                 )
-              ORDER BY modified_at_utc_ticks DESC, id DESC
+              ORDER BY a.modified_at_utc_ticks DESC, a.id DESC
               LIMIT $limit;
               """;
 
@@ -864,6 +1096,68 @@ public sealed class LibraryRepository
         }
     }
 
+    private static async Task ApplyForcedSourceRevisionHintsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        IReadOnlyList<PreparedAsset> prepared,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, PreparedAsset>? forced = null;
+
+        foreach (var item in prepared)
+        {
+            if (!item.Source.ForceSourceRevision)
+            {
+                continue;
+            }
+
+            forced ??= new Dictionary<string, PreparedAsset>(
+                StringComparer.Ordinal);
+            forced[item.RelativePathKey] = item;
+        }
+
+        if (forced is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE assets
+            SET source_revision = source_revision + 1,
+                width = NULL,
+                height = NULL,
+                format = NULL,
+                updated_at_utc_ticks = $updated
+            WHERE library_id = $library_id
+              AND relative_path_key = $path_key
+              AND file_size = $file_size
+              AND modified_at_utc_ticks = $modified;
+            """;
+
+        var updated = command.Parameters.Add("$updated", SqliteType.Integer);
+        var library = command.Parameters.Add("$library_id", SqliteType.Integer);
+        var path = command.Parameters.Add("$path_key", SqliteType.Text);
+        var size = command.Parameters.Add("$file_size", SqliteType.Integer);
+        var modified = command.Parameters.Add("$modified", SqliteType.Integer);
+        library.Value = libraryId;
+        command.Prepare();
+
+        foreach (var item in forced.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            updated.Value = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+            path.Value = item.RelativePathKey;
+            size.Value = item.Source.FileSize;
+            modified.Value = item.Source.ModifiedAtUtc.UtcDateTime.Ticks;
+            await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     private static async Task UpsertPreparedAssetsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -1199,7 +1493,11 @@ public sealed class LibraryRepository
             reader.GetInt64(8),
             reader.IsDBNull(9) ? null : reader.GetInt32(9),
             reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(13) ? null : reader.GetInt32(13),
+            reader.IsDBNull(14) ? null : reader.GetInt32(14),
+            reader.IsDBNull(15) ? null : reader.GetInt32(15) != 0);
 
     private static DateTimeOffset FromTicks(long ticks) =>
         new(new DateTime(ticks, DateTimeKind.Utc));

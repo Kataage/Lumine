@@ -38,6 +38,8 @@ public sealed class LibraryService
     private readonly LibraryReconciler _reconciler;
     private readonly WindowsLibrarySyncService _syncService;
 
+    public string DatabasePath => _database.DatabasePath;
+
     public LibraryService(string databasePath)
     {
         _database = new LibraryDatabase(databasePath);
@@ -66,6 +68,48 @@ public sealed class LibraryService
         CancellationToken cancellationToken = default) =>
         LibraryBackgroundExecution.RunAsync(
             token => _repository.GetAssetAsync(libraryId, relativePath, token),
+            cancellationToken);
+
+    public Task<bool> UpdateTechnicalMetadataAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        AssetTechnicalMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdateTechnicalMetadataAsync(
+                libraryId,
+                assetId,
+                expectedSourceRevision,
+                expectedFileSize,
+                expectedModifiedAtUtcTicks,
+                metadata,
+                token),
+            cancellationToken);
+
+    public Task<int> RefreshAssetSourceAsync(
+        long libraryId,
+        string relativePath,
+        long fileSize,
+        long modifiedAtUtcTicks,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpsertAssetsAsync(
+                libraryId,
+                [
+                    new AssetUpsert(
+                        relativePath,
+                        fileSize,
+                        new DateTimeOffset(
+                            new DateTime(
+                                modifiedAtUtcTicks,
+                                DateTimeKind.Utc)),
+                        Format: LibraryFileTypes.GetFormat(relativePath),
+                        ForceSourceRevision: true)
+                ],
+                token),
             cancellationToken);
 
     public Task<AssetPage> GetAssetPageAsync(

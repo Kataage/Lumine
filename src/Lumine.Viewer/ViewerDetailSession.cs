@@ -154,6 +154,9 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 var preview = await _provider.RequestPreviewAsync(
                     asset,
                     operation.Token).ConfigureAwait(false);
+                var enrichedAsset = EnrichAsset(
+                    asset,
+                    preview.SourceMetadata);
                 var lease = await PreviewBitmapCache.AcquireAsync(
                     preview.CachePath,
                     operation.Token).ConfigureAwait(false);
@@ -189,8 +192,8 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                         _previewLease = lease;
                         _snapshot = new ViewerDetailSnapshot(
                             index,
-                            asset,
-                            null,
+                            enrichedAsset,
+                            CreateDetailMetadata(enrichedAsset),
                             ViewerDetailLoadState.PreviewReady,
                             lease.Bitmap,
                             false,
@@ -687,6 +690,43 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                 // #293 owns the later diagnostic logging policy.
             }
         }
+    }
+
+    private static ViewerAsset EnrichAsset(
+        ViewerAsset asset,
+        ViewerSourceTechnicalMetadata? metadata)
+    {
+        if (metadata is null)
+        {
+            return asset;
+        }
+
+        return asset with
+        {
+            SourceRevision = metadata.SourceRevision,
+            Width = metadata.Width,
+            Height = metadata.Height,
+            RawWidth = metadata.RawWidth,
+            RawHeight = metadata.RawHeight,
+            HasAlpha = metadata.HasAlpha,
+            Format = metadata.Format,
+            SourceIdentity = metadata.SourceIdentity
+        };
+    }
+
+    private static ViewerDetailMetadata? CreateDetailMetadata(
+        ViewerAsset asset)
+    {
+        var metadata = asset.PersistedSourceMetadata;
+        return metadata is null
+            ? null
+            : new ViewerDetailMetadata(
+                metadata.Width,
+                metadata.Height,
+                metadata.HasAlpha,
+                metadata.Format,
+                asset.FileSize,
+                metadata.EstimatedRgbaBytes);
     }
 
     private static void CancelSourceNoThrow(

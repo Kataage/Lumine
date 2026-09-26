@@ -30,7 +30,20 @@ public sealed record AssetInfo(
     long SourceRevision,
     int? Width,
     int? Height,
-    string? Format);
+    string? Format,
+    string? SourceIdentity = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    bool? HasAlpha = null);
+
+public sealed record AssetTechnicalMetadata(
+    int Width,
+    int Height,
+    int RawWidth,
+    int RawHeight,
+    bool HasAlpha,
+    string Format,
+    string SourceIdentity);
 
 public readonly record struct AssetCursor(long ModifiedAtUtcTicks, long Id)
 {
@@ -49,7 +62,8 @@ public sealed record AssetUpsert(
     int? Width = null,
     int? Height = null,
     string? Format = null,
-    long ObservationGeneration = 0);
+    long ObservationGeneration = 0,
+    bool ForceSourceRevision = false);
 
 public sealed record LibraryScanProgress(
     int Discovered,
@@ -79,3 +93,12 @@ public sealed record LibrarySyncState(
     DateTimeOffset? WatcherStoppedAtUtc,
     DateTimeOffset? LastReconciledAtUtc,
     string? LastError);
+
+
+internal sealed record TrackedSourceIdentity(
+    long AssetId,
+    long SourceRevision,
+    string RelativePathKey,
+    long FileSize,
+    long ModifiedAtUtcTicks,
+    string SourceIdentity);

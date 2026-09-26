@@ -51,7 +51,7 @@ The next page uses the previous page's final `(modified_at_utc_ticks, id)` pair.
 
 Incremental change tracking (`ReadDirectoryChangesW` / USN) remains #290.
 
-Image dimensions are nullable because Library Core does not decode images. A later Image Core stage may enrich width/height/format through the same technical metadata upsert path without changing asset identity.
+Image dimensions are nullable because Library Core does not decode images. Issue #308 persists Image Core enrichment as oriented width/height, raw width/height, alpha, normalized format and source identity. The update is conditional on the exact asset id, source_revision, file size and persisted mtime, so stale background work cannot overwrite a newer source revision.
 
 ## Acceptance
 
@@ -70,7 +70,8 @@ The hosted Windows CI baseline is treated as a regression guard, not as a promis
 - 100k existing-database reopen: <= 1.5 s
 - 100k first-page keyset query: <= 50 ms
 - complete 100k keyset traversal: <= 1.5 s
-- working set after 100k ingest: <= 160 MiB
+- transient 100k ingest working set: <= 192 MiB absolute / <= 160 MiB above the pre-ingest baseline
+- post-full-GC retained 100k ingest working set: <= 160 MiB absolute / <= 96 MiB above the pre-ingest baseline
 - 100k metadata database: <= 40 MiB
 - 100k ingest may not exceed 3x the 50k result plus 1 s
 
@@ -86,6 +87,16 @@ Audit issue #300 tightens the Library Core boundary before Image Core is allowed
 - Schema history is strict and sequential. Unknown future versions, gaps, name mismatches, and product tables without migration history fail closed.
 - WAL is a verified requirement rather than an assumed pragma.
 - `assets.id` uses `AUTOINCREMENT` so a deleted local identity is not reused. Re-adding the same path creates a new identity.
-- `source_revision` increments when source size or mtime changes. Derived width/height/format are invalidated on that transition, giving #288 a stable cache-invalidation input.
+- `source_revision` increments when source size or mtime changes. Explicit filesystem add/modify events also advance the revision when size/mtime are unchanged, preventing same-stat writes from preserving stale metadata.
+- Source technical metadata is revision-bound. Width/height/format are invalidated on source revision changes; the separate source-identity/raw-dimensions/alpha row automatically stops joining when its stored revision is stale. Reconciliation compares the stored source identity when size and mtime are unchanged, so a fallback walk can still advance `source_revision` for same-stat replacements.
 - Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
-- Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.
+- Performance acceptance records both sampled transient peak working set and a post-full-GC retained working set. The transient ceiling catches runaway residency, while the tighter retained gate avoids treating implementation-dependent GC segment commitment as persistent Library state.
+
+
+## #308 metadata persistence acceptance
+
+Schema v4 adds a separate `asset_technical_metadata` table keyed by stable `asset_id` and bound to `source_revision`. The hot `assets` row keeps the pre-#308 ingest shape; oriented `width`/`height`/`format` remain there for existing paging compatibility, while source identity, raw dimensions and alpha live off the hot ingest table. Queries expose the metadata only when the metadata row's revision matches the current asset revision. Metadata is not populated by an unconditional full-library image decode. It is derived lazily when Image Core first needs a source for a thumbnail/detail path and then committed transactionally through `LibraryService`.
+
+The synthetic Library benchmark separately measures technical metadata persistence for up to 10,000 assets. This measurement is outside the base ingest timing so the established 10k/50k/100k ingest regression gate remains comparable.
+
+The source identity string is scheme-tagged. `ntfs-usn:<usn-hex>:<change-time-hex>` is preferred on NTFS and `sha256:<hex>` is the portable fallback. Library Core treats it as an opaque, revision-bound identity and does not decode images.

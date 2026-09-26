@@ -348,7 +348,12 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                         try
                         {
                             upserts.Add((
-                                CreateUpsert(change.RelativePath, fullPath),
+                                CreateUpsert(
+                                    change.RelativePath,
+                                    fullPath,
+                                    forceSourceRevision:
+                                        change.Kind is DirectoryChangeKind.Added
+                                        or DirectoryChangeKind.Modified),
                                 change));
                         }
                         catch (Exception exception) when (
@@ -468,6 +473,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     await UpsertPathAsync(
                         change.RelativePath,
                         fullPath,
+                        forceSourceRevision: true,
                         cancellationToken).ConfigureAwait(false);
                 }
 
@@ -485,6 +491,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     await UpsertPathAsync(
                         change.RelativePath,
                         fullPath,
+                        forceSourceRevision: true,
                         cancellationToken).ConfigureAwait(false);
                 }
 
@@ -623,9 +630,13 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     private async Task UpsertPathAsync(
         string relativePath,
         string fullPath,
+        bool forceSourceRevision,
         CancellationToken cancellationToken)
     {
-        var upsert = CreateUpsert(relativePath, fullPath);
+        var upsert = CreateUpsert(
+            relativePath,
+            fullPath,
+            forceSourceRevision);
         await _repository.UpsertAssetsAsync(
             _libraryId,
             [upsert],
@@ -635,14 +646,16 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
     private static AssetUpsert CreateUpsert(
         string relativePath,
-        string fullPath)
+        string fullPath,
+        bool forceSourceRevision = false)
     {
         var info = new FileInfo(fullPath);
         return new AssetUpsert(
             relativePath,
             info.Length,
             new DateTimeOffset(info.LastWriteTimeUtc),
-            Format: LibraryFileTypes.GetFormat(relativePath));
+            Format: LibraryFileTypes.GetFormat(relativePath),
+            ForceSourceRevision: forceSourceRevision);
     }
 
     private async Task ReconcileAsync(CancellationToken cancellationToken)

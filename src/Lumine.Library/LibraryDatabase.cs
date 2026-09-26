@@ -159,6 +159,22 @@ public sealed class LibraryDatabase
 
             INSERT INTO library_sync_state(library_id)
             SELECT id FROM libraries;
+            """),
+        new(
+            4,
+            "persist-source-technical-metadata",
+            """
+            CREATE TABLE asset_technical_metadata (
+                asset_id INTEGER PRIMARY KEY,
+                source_revision INTEGER NOT NULL CHECK(source_revision > 0),
+                source_identity TEXT NOT NULL
+                    CHECK(length(source_identity) BETWEEN 18 AND 80),
+                raw_width INTEGER NOT NULL CHECK(raw_width > 0),
+                raw_height INTEGER NOT NULL CHECK(raw_height > 0),
+                has_alpha INTEGER NOT NULL CHECK(has_alpha IN (0, 1)),
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
             """)
     ];
 

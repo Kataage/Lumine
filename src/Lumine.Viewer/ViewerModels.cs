@@ -19,17 +19,56 @@ public sealed record ViewerAsset(
     long ModifiedAtUtcTicks,
     int? Width = null,
     int? Height = null,
-    string? Format = null);
+    string? Format = null,
+    string? SourceIdentity = null,
+    int? RawWidth = null,
+    int? RawHeight = null,
+    bool? HasAlpha = null)
+{
+    public ViewerSourceTechnicalMetadata? PersistedSourceMetadata =>
+        Width is > 0
+        && Height is > 0
+        && RawWidth is > 0
+        && RawHeight is > 0
+        && HasAlpha.HasValue
+        && !string.IsNullOrWhiteSpace(Format)
+        && Lumine.Core.FileSourceIdentityProbe.IsValid(SourceIdentity)
+            ? new ViewerSourceTechnicalMetadata(
+                SourceRevision,
+                Width.Value,
+                Height.Value,
+                RawWidth.Value,
+                RawHeight.Value,
+                HasAlpha.Value,
+                Format!,
+                SourceIdentity!)
+            : null;
+}
 
 public sealed record ViewerAssetPage(
     IReadOnlyList<ViewerAsset> Items,
     ViewerPageCursor? NextCursor);
 
+public sealed record ViewerSourceTechnicalMetadata(
+    long SourceRevision,
+    int Width,
+    int Height,
+    int RawWidth,
+    int RawHeight,
+    bool HasAlpha,
+    string Format,
+    string SourceIdentity)
+{
+    public long EstimatedRgbaBytes =>
+        checked((long)Width * Height * 4L);
+}
+
 public sealed record ViewerThumbnail(
     string CacheKey,
     string CachePath,
     int Width,
-    int Height);
+    int Height,
+    ViewerSourceTechnicalMetadata? SourceMetadata = null);
 
 public interface IViewerPageSource
 {

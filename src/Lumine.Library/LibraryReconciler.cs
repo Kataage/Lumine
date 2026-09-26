@@ -1,3 +1,5 @@
+using Lumine.Core;
+
 namespace Lumine.Library;
 
 public sealed class LibraryReconciler
@@ -118,9 +120,15 @@ public sealed class LibraryReconciler
 
                         if (batch.Count >= batchSize)
                         {
-                            persisted += await ingest.WriteBatchAsync(
+                            var flush = await FlushBatchAsync(
+                                libraryId,
+                                library.RootPath,
+                                ingest,
                                 batch,
+                                failures,
                                 cancellationToken).ConfigureAwait(false);
+                            persisted += flush.Persisted;
+                            skipped += flush.Skipped;
                             batch.Clear();
 
                             progress?.Report(
@@ -147,9 +155,16 @@ public sealed class LibraryReconciler
 
         if (batch.Count > 0)
         {
-            persisted += await ingest.WriteBatchAsync(
+            var flush = await FlushBatchAsync(
+                libraryId,
+                library.RootPath,
+                ingest,
                 batch,
+                failures,
                 cancellationToken).ConfigureAwait(false);
+            persisted += flush.Persisted;
+            skipped += flush.Skipped;
+            batch.Clear();
         }
 
         var finished = DateTimeOffset.UtcNow;
@@ -168,7 +183,7 @@ public sealed class LibraryReconciler
         {
             await _repository.MarkReconcileRequiredAsync(
                 libraryId,
-                "Filesystem enumeration was incomplete; destructive reconciliation was skipped.",
+                "Filesystem enumeration or source-identity validation was incomplete; destructive reconciliation was skipped.",
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -188,6 +203,119 @@ public sealed class LibraryReconciler
             completed,
             finished,
             failures);
+    }
+
+    private async Task<(int Persisted, int Skipped)> FlushBatchAsync(
+        long libraryId,
+        string libraryRoot,
+        LibraryIngestSession ingest,
+        IReadOnlyList<AssetUpsert> batch,
+        List<LibraryScanFailure> failures,
+        CancellationToken cancellationToken)
+    {
+        var pathKeys = batch
+            .Select(static item =>
+                LibraryPaths.RelativePathKey(item.RelativePath))
+            .ToArray();
+
+        var tracked = await _repository.LoadTrackedSourceIdentitiesAsync(
+            libraryId,
+            pathKeys,
+            cancellationToken).ConfigureAwait(false);
+
+        if (tracked.Count == 0)
+        {
+            var written = await ingest.WriteBatchAsync(
+                batch,
+                cancellationToken).ConfigureAwait(false);
+            return (written, 0);
+        }
+
+        var prepared = new List<AssetUpsert>(batch.Count);
+        var skipped = 0;
+
+        foreach (var item in batch)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var pathKey = LibraryPaths.RelativePathKey(
+                item.RelativePath);
+
+            if (!tracked.TryGetValue(pathKey, out var previous)
+                || previous.FileSize != item.FileSize
+                || previous.ModifiedAtUtcTicks
+                    != item.ModifiedAtUtc.UtcDateTime.Ticks)
+            {
+                prepared.Add(item);
+                continue;
+            }
+
+            var fullPath = Path.GetFullPath(
+                Path.Combine(
+                    libraryRoot,
+                    item.RelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)));
+
+            try
+            {
+                var currentIdentity = FileSourceIdentityProbe.Read(
+                    fullPath,
+                    cancellationToken);
+                var info = new FileInfo(fullPath);
+                info.Refresh();
+
+                if (!info.Exists)
+                {
+                    throw new FileNotFoundException(
+                        "Reconciliation source disappeared before identity validation.",
+                        fullPath);
+                }
+
+                var currentModifiedTicks =
+                    info.LastWriteTimeUtc.Ticks;
+                var sameStat =
+                    previous.FileSize == info.Length
+                    && previous.ModifiedAtUtcTicks
+                        == currentModifiedTicks;
+
+                prepared.Add(
+                    item with
+                    {
+                        FileSize = info.Length,
+                        ModifiedAtUtc = new DateTimeOffset(
+                            new DateTime(
+                                currentModifiedTicks,
+                                DateTimeKind.Utc)),
+                        ForceSourceRevision =
+                            sameStat
+                            && !string.Equals(
+                                previous.SourceIdentity,
+                                currentIdentity.Value,
+                                StringComparison.Ordinal)
+                    });
+            }
+            catch (Exception exception)
+                when (IsFilesystemFailure(exception))
+            {
+                skipped++;
+                AddFailureSample(
+                    failures,
+                    fullPath,
+                    "source-identity",
+                    exception);
+            }
+        }
+
+        if (prepared.Count == 0)
+        {
+            return (0, skipped);
+        }
+
+        var persisted = await ingest.WriteBatchAsync(
+            prepared,
+            cancellationToken).ConfigureAwait(false);
+        return (persisted, skipped);
     }
 
     private static bool IsFilesystemFailure(Exception exception) =>

@@ -18,6 +18,11 @@ $allocated = [long]$result.metadata.allocated_bytes
 $stripes = [int]$result.metadata.stripe_count
 $vipsFiles = [long]$result.metadata.vips_open_files
 $vipsCache = [long]$result.metadata.vips_operation_cache_size
+$scope = [string]$result.metadata.measurement_scope
+
+if ($scope -ne "prepare+bitmap+decode") {
+    throw "Detail benchmark does not include source prepare in its measurement scope: '$scope'"
+}
 
 if ($required -le 64MB) {
     throw "Detail benchmark fixture is too small to exercise full-resolution pressure: $required bytes"
@@ -32,7 +37,7 @@ if ($stripes -lt 2) {
 }
 
 if ($elapsed -gt 10000) {
-    throw "Detail full-resolution decode exceeded 10 seconds: $elapsed ms"
+    throw "Detail full-resolution prepare+decode exceeded 10 seconds: $elapsed ms"
 }
 
 # The measurement starts before the destination WriteableBitmap is allocated.
@@ -70,7 +75,7 @@ if ($vipsCache -ne 0) {
 }
 
 Write-Host "Detail full-resolution performance acceptance passed."
-Write-Host ("Decode: {0:N0} ms" -f $elapsed)
+Write-Host ("Prepare + decode: {0:N0} ms" -f $elapsed)
 Write-Host ("RGBA budget: {0:N1} MiB / {1:N1} MiB" -f ($required / 1MB), ($budget / 1MB))
 Write-Host ("Peak additional working set: {0:N1} MiB" -f ($peakAdditional / 1MB))
 Write-Host ("Managed allocation: {0:N1} MiB" -f ($allocated / 1MB))

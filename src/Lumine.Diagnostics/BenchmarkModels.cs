@@ -8,9 +8,11 @@ public static class CoreMetricNames
     public const string LibraryBulkUpsert = "library.bulk_upsert";
     public const string LibraryQuery = "library.query";
     public const string LibraryKeysetTraversal = "library.keyset_traversal";
+    public const string LibraryTechnicalMetadataPersist = "library.technical_metadata_persist";
     public const string ThumbnailGenerate = "image.thumbnail_generate";
     public const string ThumbnailCacheHit = "image.thumbnail_cache_hit";
     public const string ThumbnailBatchGenerate = "image.thumbnail_batch_generate";
+    public const string SourceMetadataProbeBatch = "image.source_metadata_probe_batch";
     public const string ViewerFirstPaint = "viewer.first_paint";
     public const string ViewerFirstViewportReady = "viewer.first_viewport_ready";
     public const string ViewerFastScrollRefresh = "viewer.fast_scroll_refresh";
