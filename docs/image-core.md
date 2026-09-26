@@ -41,14 +41,14 @@ The bundled `NetVips.Native.win-x64` runtime does not guarantee a BMP loader; li
 
 The fallback is pure managed code and is intentionally narrow:
 
-- Windows DIB headers from BITMAPINFOHEADER through BITMAPV5HEADER (40..124 bytes)
+- explicit Windows DIB header sizes 40 / 52 / 56 / 108 / 124 bytes only
 - 24-bit `BI_RGB`
 - 32-bit `BI_RGB`, with the fourth byte treated as reserved/opaque rather than implicit alpha
 - 32-bit `BI_BITFIELDS` / `BI_ALPHABITFIELDS` with contiguous, non-overlapping channel masks
 - explicit alpha masks
 - both top-down and bottom-up row order
 
-Palette BMP, RLE, 16-bit BMP, OS/2 headers, non-contiguous/overlapping masks, embedded/linked/calibrated BMP color profiles and malformed/truncated ranges are rejected rather than silently decoded incorrectly. BMP V4/V5 sources are accepted only when their declared color space is sRGB/Windows (or unspecified). Source-row allocation is hard-bounded to 16 MiB.
+Palette BMP, RLE, 16-bit BMP, OS/2/unknown DIB header sizes, non-contiguous/overlapping masks, embedded/linked/calibrated BMP color profiles and malformed/truncated ranges are rejected rather than silently decoded incorrectly. BMP V4/V5 sources are accepted only when their declared color space is explicitly sRGB or Windows default color space. Source-row allocation is hard-bounded to 16 MiB.
 
 BMP detection is by the actual `BM` file signature, not by extension. The same stable source snapshot and source identity used by the normal Image Core path are retained while the BMP header and pixels are read.
 
