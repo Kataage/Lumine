@@ -53,28 +53,28 @@ if ($newNativeDependencies -ne 0) {
     throw "BMP fallback introduced unexpected native dependencies: $newNativeDependencies"
 }
 
-if ([double]$thumbnail.durationMs -gt 3000) {
-    throw "BMP thumbnail fallback exceeded 3 s: $($thumbnail.durationMs) ms"
+if ([double]$thumbnail.durationMs -gt 1000) {
+    throw "BMP thumbnail fallback exceeded 1 s: $($thumbnail.durationMs) ms"
 }
 
-if ([double]$full.durationMs -gt 3000) {
-    throw "BMP full-resolution fallback exceeded 3 s: $($full.durationMs) ms"
+if ([double]$full.durationMs -gt 1000) {
+    throw "BMP full-resolution fallback exceeded 1 s: $($full.durationMs) ms"
 }
 
-if ($thumbnailPeak -gt 256MB -or $thumbnailPeakAdditional -gt 192MB) {
+if ($thumbnailPeak -gt 160MB -or $thumbnailPeakAdditional -gt 96MB) {
     throw "BMP thumbnail fallback exceeded working-set budget: absolute=$thumbnailPeak additional=$thumbnailPeakAdditional"
 }
 
-if ($fullPeak -gt 256MB -or $fullPeakAdditional -gt 192MB) {
+if ($fullPeak -gt 160MB -or $fullPeakAdditional -gt 96MB) {
     throw "BMP full-resolution fallback exceeded working-set budget: absolute=$fullPeak additional=$fullPeakAdditional"
 }
 
-if ($thumbnailAllocated -gt 128MB) {
-    throw "BMP thumbnail fallback allocated more than 128 MiB: $thumbnailAllocated"
+if ($thumbnailAllocated -gt 16MB) {
+    throw "BMP thumbnail fallback allocated more than 16 MiB: $thumbnailAllocated"
 }
 
-if ($fullAllocated -gt 128MB) {
-    throw "BMP full-resolution fallback allocated more than 128 MiB: $fullAllocated"
+if ($fullAllocated -gt 96MB) {
+    throw "BMP full-resolution fallback allocated more than 96 MiB: $fullAllocated"
 }
 
 if ($cacheBytes -le 0) {
