@@ -228,15 +228,16 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         CancellationToken cancellationToken = default)
     {
         var sourcePath = ResolveSourcePath(asset);
-        using var prepared =
+        var preparedResult =
             await ViewerImageMetadataBridge.PrepareOriginalWithRepairAsync(
                 _library,
                 _libraryId,
                 asset,
                 sourcePath,
                 cancellationToken).ConfigureAwait(false);
-        var info = prepared.Prepared.Info;
-        var effectiveAsset = prepared.Asset;
+        using var prepared = preparedResult.Prepared;
+        var info = prepared.Info;
+        var effectiveAsset = preparedResult.Asset;
 
         if (info.SourceIdentity is not null
             && info.RawWidth is > 0
@@ -280,7 +281,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             cancellationToken.ThrowIfCancellationRequested();
 
             await FullResolutionDecoder.DecodePreparedAsync(
-                prepared.Prepared,
+                prepared,
                 maxDecodedBytes,
                 stripe =>
                 {
