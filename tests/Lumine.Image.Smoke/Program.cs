@@ -412,6 +412,9 @@ Require(capabilities.PngLoad, "Bundled libvips has no PNG loader.");
 Require(capabilities.WebpLoad, "Bundled libvips has no WebP loader.");
 Require(capabilities.WebpSave, "Bundled libvips has no WebP saver.");
 Require(capabilities.GifLoad, "Bundled libvips has no GIF loader.");
+Require(
+    capabilities.BmpFallbackLoad,
+    "Lumine BMP fallback capability is unavailable.");
 
 var root = Path.Combine(Path.GetTempPath(), $"lumine-image-smoke-{Guid.NewGuid():N}");
 var sourceRoot = Path.Combine(root, "sources");
@@ -1315,7 +1318,7 @@ try
     Require(prune.BytesAfter == 0, "Thumbnail prune did not enforce zero-byte target.");
 
     Console.WriteLine(
-        $"Image smoke: jpeg/png/webp/gif OK; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
+        $"Image smoke: jpeg/png/webp/gif/BMP OK; BMP native={capabilities.BmpNativeLoad}, fallback={capabilities.BmpFallbackLoad}; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
         $"AVIF={capabilities.AvifRoundTrip}, HEIC={capabilities.HeicRoundTrip}; " +
         $"hits={pipeline.Diagnostics.CacheHits}, generated={pipeline.Diagnostics.Generated}, source-opens={pipeline.Diagnostics.SourceOpens}");
 }
