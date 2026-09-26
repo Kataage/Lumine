@@ -436,7 +436,7 @@ internal static class ViewerImageMetadataBridge
     {
         var current = asset;
 
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             try
             {
@@ -457,7 +457,7 @@ internal static class ViewerImageMetadataBridge
                 return (result, current);
             }
             catch (ImageSourceChangedException)
-                when (library is not null && attempt == 0)
+                when (library is not null && attempt < 2)
             {
                 current = await RefreshChangedSourceAsync(
                     library,
@@ -470,7 +470,7 @@ internal static class ViewerImageMetadataBridge
 
         throw new ImageSourceChangedException(
             sourcePath,
-            "Source identity changed repeatedly while retrying thumbnail generation.");
+            "Source identity changed repeatedly after DB catch-up and source-revision repair.");
     }
 
     public static async Task<(
@@ -484,7 +484,7 @@ internal static class ViewerImageMetadataBridge
     {
         var current = asset;
 
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             var source = new FullResolutionSource(
                 sourcePath,
@@ -500,7 +500,7 @@ internal static class ViewerImageMetadataBridge
                 return (prepared, current);
             }
             catch (FullResolutionSourceChangedException)
-                when (library is not null && attempt == 0)
+                when (library is not null && attempt < 2)
             {
                 current = await RefreshChangedSourceAsync(
                     library,
@@ -513,7 +513,7 @@ internal static class ViewerImageMetadataBridge
 
         throw new FullResolutionSourceChangedException(
             sourcePath,
-            "Source identity changed repeatedly while retrying original probe.");
+            "Source identity changed repeatedly after DB catch-up and source-revision repair.");
     }
 
     public static async ValueTask PersistAsync(
