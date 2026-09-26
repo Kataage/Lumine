@@ -98,4 +98,4 @@ Schema v4 adds a separate `asset_technical_metadata` table keyed by stable `asse
 
 The synthetic Library benchmark separately measures technical metadata persistence for up to 10,000 assets. This measurement is outside the base ingest timing so the established 10k/50k/100k ingest regression gate remains comparable.
 
-The source identity string is scheme-tagged. `ntfs-usn:<hex>` is preferred on NTFS and `sha256:<hex>` is the portable fallback. Library Core treats it as an opaque, revision-bound identity and does not decode images.
+The source identity string is scheme-tagged. `ntfs-usn:<usn-hex>:<change-time-hex>` is preferred on NTFS and `sha256:<hex>` is the portable fallback. Library Core treats it as an opaque, revision-bound identity and does not decode images.
