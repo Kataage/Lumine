@@ -87,13 +87,13 @@ Audit issue #300 tightens the Library Core boundary before Image Core is allowed
 - WAL is a verified requirement rather than an assumed pragma.
 - `assets.id` uses `AUTOINCREMENT` so a deleted local identity is not reused. Re-adding the same path creates a new identity.
 - `source_revision` increments when source size or mtime changes. Explicit filesystem add/modify events also advance the revision when size/mtime are unchanged, preventing same-stat writes from preserving stale metadata.
-- Source technical metadata is revision-bound. Width/height/raw dimensions/alpha/content SHA are invalidated whenever the source revision advances. The content SHA provides a stronger identity check for later Image Core work than size+mtime alone.
+- Source technical metadata is revision-bound. Width/height/format are invalidated on source revision changes; the separate SHA/raw-dimensions/alpha row automatically stops joining when its stored revision is stale. The content SHA provides a stronger identity check for later Image Core work than size+mtime alone.
 - Transaction rollback coverage now fails in SQLite after at least one earlier multi-row statement has executed.
 - Performance acceptance uses sampled peak working set rather than only a post-operation memory snapshot.
 
 
 ## #308 metadata persistence acceptance
 
-Schema v4 adds `source_content_sha256`, `raw_width`, `raw_height` and `has_alpha` while retaining `width`/`height` as oriented display dimensions. Metadata is not populated by an unconditional full-library image decode. It is derived lazily when Image Core first needs a source for a thumbnail/detail path and then committed through `LibraryService`.
+Schema v4 adds a separate `asset_technical_metadata` table keyed by stable `asset_id` and bound to `source_revision`. The hot `assets` row keeps the pre-#308 ingest shape; oriented `width`/`height`/`format` remain there for existing paging compatibility, while SHA-256, raw dimensions and alpha live off the hot ingest table. Queries expose the metadata only when the metadata row's revision matches the current asset revision. Metadata is not populated by an unconditional full-library image decode. It is derived lazily when Image Core first needs a source for a thumbnail/detail path and then committed transactionally through `LibraryService`.
 
 The synthetic Library benchmark separately measures technical metadata persistence for up to 10,000 assets. This measurement is outside the base ingest timing so the established 10k/50k/100k ingest regression gate remains comparable.
