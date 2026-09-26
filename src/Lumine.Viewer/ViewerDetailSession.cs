@@ -703,13 +703,14 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
         return asset with
         {
+            SourceRevision = metadata.SourceRevision,
             Width = metadata.Width,
             Height = metadata.Height,
             RawWidth = metadata.RawWidth,
             RawHeight = metadata.RawHeight,
             HasAlpha = metadata.HasAlpha,
             Format = metadata.Format,
-            SourceContentSha256 = metadata.ContentSha256
+            SourceIdentity = metadata.SourceIdentity
         };
     }
 
