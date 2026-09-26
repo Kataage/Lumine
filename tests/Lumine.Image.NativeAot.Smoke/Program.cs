@@ -14,7 +14,8 @@ static async Task<string> DecodeDigestAsync(
     string path,
     FullResolutionAccessPolicy accessPolicy,
     FullResolutionAccessPolicy expectedRecommendation,
-    string label)
+    string label,
+    int stripeHeight = FullResolutionDecoder.DefaultStripeHeight)
 {
     var file = new FileInfo(path);
     using var prepared =
@@ -45,7 +46,7 @@ static async Task<string> DecodeDigestAsync(
             rows += stripe.Height;
             digest.AppendData(stripe.RgbaBytes);
         },
-        stripeHeight: 23,
+        stripeHeight: stripeHeight,
         accessPolicy: accessPolicy);
 
     Require(
@@ -98,18 +99,21 @@ static void WriteIccPng(string path)
 static async Task VerifyAdaptiveMatchesAsync(
     string path,
     FullResolutionAccessPolicy expectedRecommendation,
-    string label)
+    string label,
+    int stripeHeight = FullResolutionDecoder.DefaultStripeHeight)
 {
     var adaptiveDigest = await DecodeDigestAsync(
         path,
         FullResolutionAccessPolicy.Adaptive,
         expectedRecommendation,
-        label);
+        label,
+        stripeHeight);
     var explicitDigest = await DecodeDigestAsync(
         path,
         expectedRecommendation,
         expectedRecommendation,
-        label);
+        label,
+        stripeHeight);
 
     Require(
         adaptiveDigest.Length == 64,
@@ -123,6 +127,35 @@ static async Task VerifyAdaptiveMatchesAsync(
 
     Console.WriteLine(
         $"NativeAOT {label}: Adaptive->{expectedRecommendation}, digest={adaptiveDigest}");
+}
+
+static async Task VerifyNonDefaultStripeFallsBackToRandomAsync(
+    string path)
+{
+    const int nonDefaultStripeHeight = 23;
+
+    var adaptiveDigest = await DecodeDigestAsync(
+        path,
+        FullResolutionAccessPolicy.Adaptive,
+        FullResolutionAccessPolicy.Sequential,
+        "large plain PNG non-default stripe",
+        nonDefaultStripeHeight);
+    var randomDigest = await DecodeDigestAsync(
+        path,
+        FullResolutionAccessPolicy.Random,
+        FullResolutionAccessPolicy.Sequential,
+        "large plain PNG non-default stripe",
+        nonDefaultStripeHeight);
+
+    Require(
+        string.Equals(
+            adaptiveDigest,
+            randomDigest,
+            StringComparison.Ordinal),
+        $"NativeAOT non-default Adaptive output differs from Random fallback: adaptive={adaptiveDigest}, random={randomDigest}.");
+
+    Console.WriteLine(
+        $"NativeAOT large plain PNG non-default stripe: Adaptive->Random fallback, digest={adaptiveDigest}");
 }
 
 Require(
@@ -154,6 +187,8 @@ try
         plainPath,
         FullResolutionAccessPolicy.Sequential,
         "large plain PNG");
+    await VerifyNonDefaultStripeFallsBackToRandomAsync(
+        plainPath);
     await VerifyAdaptiveMatchesAsync(
         iccPath,
         FullResolutionAccessPolicy.Random,
