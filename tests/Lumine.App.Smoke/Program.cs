@@ -62,7 +62,7 @@ try
         indexed.Width,
         indexed.Height,
         indexed.Format,
-        indexed.SourceContentSha256,
+        indexed.SourceIdentity,
         indexed.RawWidth,
         indexed.RawHeight,
         indexed.HasAlpha);
@@ -108,7 +108,7 @@ try
         && persisted.RawWidth == 320
         && persisted.RawHeight == 200
         && persisted.HasAlpha == true
-        && persisted.SourceContentSha256 is { Length: 64 },
+        && persisted.SourceIdentity is { Length: 64 },
         "Image source technical metadata was not persisted through the App composition boundary.");
 
     LibraryDatabase.ClearPools();
@@ -125,7 +125,7 @@ try
         && persisted.RawWidth == 320
         && persisted.RawHeight == 200
         && persisted.HasAlpha == true
-        && persisted.SourceContentSha256 is { Length: 64 },
+        && persisted.SourceIdentity is { Length: 64 },
         "Restarted LibraryService lost persisted source technical metadata.");
 
     provider = new ImageViewerDetailProvider(
@@ -144,7 +144,7 @@ try
         persisted.Width,
         persisted.Height,
         persisted.Format,
-        persisted.SourceContentSha256,
+        persisted.SourceIdentity,
         persisted.RawWidth,
         persisted.RawHeight,
         persisted.HasAlpha);
