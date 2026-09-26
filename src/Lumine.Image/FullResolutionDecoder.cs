@@ -70,6 +70,9 @@ public sealed class FullResolutionDecoder
     public const FullResolutionAccessPolicy ProductionAccessPolicy =
         FullResolutionAccessPolicy.Adaptive;
 
+    public const long PngSequentialThresholdBytes =
+        100L * 1024 * 1024;
+
     public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
         CancellationToken cancellationToken = default)
@@ -400,9 +403,11 @@ public sealed class FullResolutionDecoder
         }
 
         return string.Equals(
-                snapshot.Metadata.Format,
-                "png",
-                StringComparison.OrdinalIgnoreCase)
+                   snapshot.Metadata.Format,
+                   "png",
+                   StringComparison.OrdinalIgnoreCase)
+               && snapshot.DecodedSourceBytes
+                   >= PngSequentialThresholdBytes
             ? FullResolutionAccessPolicy.Sequential
             : FullResolutionAccessPolicy.Random;
     }
