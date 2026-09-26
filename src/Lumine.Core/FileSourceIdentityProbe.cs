@@ -86,7 +86,7 @@ public static class FileSourceIdentityProbe
             Path.GetFullPath(path),
             FileMode.Open,
             FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete,
+            FileShare.Read,
             bufferSize: 128 * 1024,
             FileOptions.SequentialScan);
 
