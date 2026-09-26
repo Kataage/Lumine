@@ -93,7 +93,7 @@ public sealed class LibraryRepository
     {
         await using var connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM assets WHERE library_id = $library_id;";
+        command.CommandText = "SELECT COUNT(*) FROM assets WHERE a.library_id = $library_id;";
         command.Parameters.AddWithValue("$library_id", libraryId);
         return Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
@@ -112,17 +112,20 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             SELECT
-                id, library_id, folder_id,
-                relative_path, file_name, extension,
-                file_size, modified_at_utc_ticks,
-                source_revision,
-                width, height, format,
-                source_content_sha256,
-                raw_width, raw_height, has_alpha,
-                observed_generation
-            FROM assets
-            WHERE library_id = $library_id
-              AND relative_path_key = $path_key;
+                a.id, a.library_id, a.folder_id,
+                a.relative_path, a.file_name, a.extension,
+                a.file_size, a.modified_at_utc_ticks,
+                a.source_revision,
+                a.width, a.height, a.format,
+                tm.source_content_sha256,
+                tm.raw_width, tm.raw_height, tm.has_alpha,
+                a.observed_generation
+            FROM assets AS a
+            LEFT JOIN asset_technical_metadata AS tm
+              ON tm.asset_id = a.id
+             AND tm.source_revision = a.source_revision
+            WHERE a.library_id = $library_id
+              AND a.relative_path_key = $path_key;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
         command.Parameters.AddWithValue("$path_key", pathKey);
@@ -178,52 +181,84 @@ public sealed class LibraryRepository
 
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
+        using var transaction = connection.BeginTransaction();
+
+        await using var updateAsset = connection.CreateCommand();
+        updateAsset.Transaction = transaction;
+        updateAsset.CommandText =
             """
             UPDATE assets
             SET width = $width,
                 height = $height,
-                raw_width = $raw_width,
-                raw_height = $raw_height,
-                has_alpha = $has_alpha,
                 format = $format,
-                source_content_sha256 = $content_sha256,
                 updated_at_utc_ticks = $updated
-            WHERE library_id = $library_id
+            WHERE a.library_id = $library_id
               AND id = $asset_id
               AND source_revision = $source_revision
               AND file_size = $file_size
               AND modified_at_utc_ticks = $modified
-              AND (
-                  source_content_sha256 IS NULL
-                  OR lower(source_content_sha256) = lower($content_sha256)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM asset_technical_metadata AS tm
+                  WHERE tm.asset_id = assets.id
+                    AND tm.source_revision = assets.source_revision
+                    AND lower(tm.source_content_sha256) <> lower($content_sha256)
               );
             """;
-        command.Parameters.AddWithValue("$width", metadata.Width);
-        command.Parameters.AddWithValue("$height", metadata.Height);
-        command.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
-        command.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
-        command.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
-        command.Parameters.AddWithValue("$format", metadata.Format.Trim());
-        command.Parameters.AddWithValue(
+        updateAsset.Parameters.AddWithValue("$width", metadata.Width);
+        updateAsset.Parameters.AddWithValue("$height", metadata.Height);
+        updateAsset.Parameters.AddWithValue("$format", metadata.Format.Trim());
+        updateAsset.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        updateAsset.Parameters.AddWithValue("$library_id", libraryId);
+        updateAsset.Parameters.AddWithValue("$asset_id", assetId);
+        updateAsset.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        updateAsset.Parameters.AddWithValue("$file_size", expectedFileSize);
+        updateAsset.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
+        updateAsset.Parameters.AddWithValue(
             "$content_sha256",
             metadata.ContentSha256.ToLowerInvariant());
-        command.Parameters.AddWithValue(
-            "$updated",
-            DateTimeOffset.UtcNow.UtcDateTime.Ticks);
-        command.Parameters.AddWithValue("$library_id", libraryId);
-        command.Parameters.AddWithValue("$asset_id", assetId);
-        command.Parameters.AddWithValue(
-            "$source_revision",
-            expectedSourceRevision);
-        command.Parameters.AddWithValue("$file_size", expectedFileSize);
-        command.Parameters.AddWithValue(
-            "$modified",
-            expectedModifiedAtUtcTicks);
 
-        return await command.ExecuteNonQueryAsync(
-            cancellationToken).ConfigureAwait(false) == 1;
+        if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            transaction.Rollback();
+            return false;
+        }
+
+        await using var upsertMetadata = connection.CreateCommand();
+        upsertMetadata.Transaction = transaction;
+        upsertMetadata.CommandText =
+            """
+            INSERT INTO asset_technical_metadata(
+                asset_id, source_revision,
+                source_content_sha256,
+                raw_width, raw_height, has_alpha,
+                updated_at_utc_ticks)
+            VALUES(
+                $asset_id, $source_revision,
+                $content_sha256,
+                $raw_width, $raw_height, $has_alpha,
+                $updated)
+            ON CONFLICT(asset_id) DO UPDATE SET
+                source_revision = excluded.source_revision,
+                source_content_sha256 = excluded.source_content_sha256,
+                raw_width = excluded.raw_width,
+                raw_height = excluded.raw_height,
+                has_alpha = excluded.has_alpha,
+                updated_at_utc_ticks = excluded.updated_at_utc_ticks;
+            """;
+        upsertMetadata.Parameters.AddWithValue("$asset_id", assetId);
+        upsertMetadata.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        upsertMetadata.Parameters.AddWithValue(
+            "$content_sha256",
+            metadata.ContentSha256.ToLowerInvariant());
+        upsertMetadata.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
+        upsertMetadata.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
+        upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
+        upsertMetadata.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        await upsertMetadata.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        transaction.Commit();
+        return true;
     }
 
     public async Task<int> UpsertAssetsAsync(
@@ -366,7 +401,7 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             DELETE FROM assets
-            WHERE library_id = $library_id
+            WHERE a.library_id = $library_id
               AND relative_path_key = $path_key;
             """;
 
@@ -400,7 +435,7 @@ public sealed class LibraryRepository
         command.CommandText =
             """
             DELETE FROM assets
-            WHERE library_id = $library_id
+            WHERE a.library_id = $library_id
               AND relative_path_key = $path_key;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
@@ -426,37 +461,43 @@ public sealed class LibraryRepository
         command.CommandText = cursor is null
             ? """
               SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  source_revision,
-                  width, height, format,
-                  source_content_sha256,
-                  raw_width, raw_height, has_alpha
-              FROM assets
-              WHERE library_id = $library_id
-              ORDER BY modified_at_utc_ticks DESC, id DESC
+                  a.id, a.library_id, a.folder_id,
+                  a.relative_path, a.file_name, a.extension,
+                  a.file_size, a.modified_at_utc_ticks,
+                  a.source_revision,
+                  a.width, a.height, a.format,
+                  tm.source_content_sha256,
+                  tm.raw_width, tm.raw_height, tm.has_alpha
+              FROM assets AS a
+              LEFT JOIN asset_technical_metadata AS tm
+                ON tm.asset_id = a.id
+               AND tm.source_revision = a.source_revision
+              WHERE a.library_id = $library_id
+              ORDER BY a.modified_at_utc_ticks DESC, a.id DESC
               LIMIT $limit;
               """
             : """
               SELECT
-                  id, library_id, folder_id,
-                  relative_path, file_name, extension,
-                  file_size, modified_at_utc_ticks,
-                  source_revision,
-                  width, height, format,
-                  source_content_sha256,
-                  raw_width, raw_height, has_alpha
-              FROM assets
-              WHERE library_id = $library_id
+                  a.id, a.library_id, a.folder_id,
+                  a.relative_path, a.file_name, a.extension,
+                  a.file_size, a.modified_at_utc_ticks,
+                  a.source_revision,
+                  a.width, a.height, a.format,
+                  tm.source_content_sha256,
+                  tm.raw_width, tm.raw_height, tm.has_alpha
+              FROM assets AS a
+              LEFT JOIN asset_technical_metadata AS tm
+                ON tm.asset_id = a.id
+               AND tm.source_revision = a.source_revision
+              WHERE a.library_id = $library_id
                 AND (
-                    modified_at_utc_ticks < $cursor_modified
+                    a.modified_at_utc_ticks < $cursor_modified
                     OR (
-                        modified_at_utc_ticks = $cursor_modified
-                        AND id < $cursor_id
+                        a.modified_at_utc_ticks = $cursor_modified
+                        AND a.id < $cursor_id
                     )
                 )
-              ORDER BY modified_at_utc_ticks DESC, id DESC
+              ORDER BY a.modified_at_utc_ticks DESC, a.id DESC
               LIMIT $limit;
               """;
 
@@ -575,7 +616,7 @@ public sealed class LibraryRepository
                 last_reconciled_at_utc_ticks,
                 last_error
             FROM library_sync_state
-            WHERE library_id = $library_id;
+            WHERE a.library_id = $library_id;
             """;
         command.Parameters.AddWithValue("$library_id", libraryId);
 
@@ -630,7 +671,7 @@ public sealed class LibraryRepository
             delete.CommandText =
                 """
                 DELETE FROM assets
-                WHERE library_id = $library_id
+                WHERE a.library_id = $library_id
                   AND observed_generation <> $generation;
                 """;
             delete.Parameters.AddWithValue("$library_id", libraryId);
@@ -644,7 +685,7 @@ public sealed class LibraryRepository
             cleanupFolders.CommandText =
                 """
                 DELETE FROM folders
-                WHERE library_id = $library_id
+                WHERE a.library_id = $library_id
                   AND NOT EXISTS(
                       SELECT 1
                       FROM assets
@@ -664,7 +705,7 @@ public sealed class LibraryRepository
                 SET reconcile_required = 0,
                     last_reconciled_at_utc_ticks = $completed,
                     last_error = NULL
-                WHERE library_id = $library_id
+                WHERE a.library_id = $library_id
                   AND reconcile_generation = $generation;
                 """;
             state.Parameters.AddWithValue("$completed", completedAtUtc.UtcDateTime.Ticks);
@@ -780,7 +821,7 @@ public sealed class LibraryRepository
             removeDestination.CommandText =
                 """
                 DELETE FROM assets
-                WHERE library_id = $library_id
+                WHERE a.library_id = $library_id
                   AND relative_path_key = $new_key
                   AND relative_path_key <> $old_key;
                 """;
@@ -850,30 +891,6 @@ public sealed class LibraryRepository
                          THEN $format
                          ELSE COALESCE($format, format)
                     END,
-                source_content_sha256 =
-                    CASE WHEN file_size <> $file_size
-                               OR modified_at_utc_ticks <> $modified
-                         THEN NULL
-                         ELSE source_content_sha256
-                    END,
-                raw_width =
-                    CASE WHEN file_size <> $file_size
-                               OR modified_at_utc_ticks <> $modified
-                         THEN NULL
-                         ELSE raw_width
-                    END,
-                raw_height =
-                    CASE WHEN file_size <> $file_size
-                               OR modified_at_utc_ticks <> $modified
-                         THEN NULL
-                         ELSE raw_height
-                    END,
-                has_alpha =
-                    CASE WHEN file_size <> $file_size
-                               OR modified_at_utc_ticks <> $modified
-                         THEN NULL
-                         ELSE has_alpha
-                    END,
                 file_size = $file_size,
                 modified_at_utc_ticks = $modified,
                 observed_generation =
@@ -882,7 +899,7 @@ public sealed class LibraryRepository
                          ELSE observed_generation
                     END,
                 updated_at_utc_ticks = $updated
-            WHERE library_id = $library_id
+            WHERE a.library_id = $library_id
               AND relative_path_key = $old_key;
             """;
         command.Parameters.AddWithValue("$folder_id", (object?)folderId ?? DBNull.Value);
@@ -925,7 +942,7 @@ public sealed class LibraryRepository
             SELECT EXISTS(
                 SELECT 1
                 FROM folders
-                WHERE library_id = $library_id
+                WHERE a.library_id = $library_id
                   AND (
                       relative_path_key = $path_key
                       OR relative_path_key LIKE $path_prefix ESCAPE '\'
@@ -1019,12 +1036,8 @@ public sealed class LibraryRepository
                 width = NULL,
                 height = NULL,
                 format = NULL,
-                source_content_sha256 = NULL,
-                raw_width = NULL,
-                raw_height = NULL,
-                has_alpha = NULL,
                 updated_at_utc_ticks = $updated
-            WHERE library_id = $library_id
+            WHERE a.library_id = $library_id
               AND relative_path_key = $path_key
               AND file_size = $file_size
               AND modified_at_utc_ticks = $modified;
@@ -1201,30 +1214,6 @@ public sealed class LibraryRepository
                          THEN excluded.format
                          ELSE COALESCE(excluded.format, assets.format)
                     END,
-                source_content_sha256 =
-                    CASE WHEN assets.file_size <> excluded.file_size
-                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
-                         THEN NULL
-                         ELSE assets.source_content_sha256
-                    END,
-                raw_width =
-                    CASE WHEN assets.file_size <> excluded.file_size
-                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
-                         THEN NULL
-                         ELSE assets.raw_width
-                    END,
-                raw_height =
-                    CASE WHEN assets.file_size <> excluded.file_size
-                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
-                         THEN NULL
-                         ELSE assets.raw_height
-                    END,
-                has_alpha =
-                    CASE WHEN assets.file_size <> excluded.file_size
-                               OR assets.modified_at_utc_ticks <> excluded.modified_at_utc_ticks
-                         THEN NULL
-                         ELSE assets.has_alpha
-                    END,
                 file_size = excluded.file_size,
                 modified_at_utc_ticks = excluded.modified_at_utc_ticks,
                 observed_generation =
@@ -1308,7 +1297,7 @@ public sealed class LibraryRepository
 
             command.Parameters.AddWithValue("$library_id", libraryId);
             command.CommandText =
-                $"SELECT relative_path_key, id FROM folders WHERE library_id = $library_id AND relative_path_key IN ({string.Join(", ", parameterNames)});";
+                $"SELECT relative_path_key, id FROM folders WHERE a.library_id = $library_id AND relative_path_key IN ({string.Join(", ", parameterNames)});";
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
