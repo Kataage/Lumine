@@ -29,6 +29,8 @@ internal static class BmpFallbackDecoder
     private const int BitmapFileHeaderSize = 14;
     private const uint MinimumWindowsDibHeaderSize = 40;
     private const uint MaximumAcceptedDibHeaderSize = 124;
+    private const int MaximumSourceRowBytes =
+        64 * 1024 * 1024;
 
     public static bool LooksLikeBmp(Stream stream)
     {
@@ -175,8 +177,17 @@ internal static class BmpFallbackDecoder
         }
 
         var rowStride = (int)rowStrideLong;
+
+        if (rowStride > MaximumSourceRowBytes)
+        {
+            throw new BmpUnsupportedException(
+                $"BMP source row requires {rowStride:N0} bytes, above the {MaximumSourceRowBytes:N0}-byte safety bound.");
+        }
+
         var pixelBytes = checked(
             rowStrideLong * height);
+        var requiredPixelEnd = checked(
+            (long)pixelOffset + pixelBytes);
 
         if (pixelOffset < BitmapFileHeaderSize + dibHeaderSize
             || pixelOffset > stream.Length
@@ -187,10 +198,11 @@ internal static class BmpFallbackDecoder
         }
 
         if (declaredFileSize != 0
-            && declaredFileSize > stream.Length)
+            && (declaredFileSize > stream.Length
+                || declaredFileSize < requiredPixelEnd))
         {
             throw new InvalidDataException(
-                "BMP declared file size exceeds the source length.");
+                "BMP declared file size does not contain the complete pixel range.");
         }
 
         uint redMask = 0;
@@ -233,6 +245,13 @@ internal static class BmpFallbackDecoder
                 {
                     throw new InvalidDataException(
                         "BMP BITFIELDS channel masks overlap.");
+                }
+
+                if (compression == BiAlphaBitfields
+                    && alphaMask == 0)
+                {
+                    throw new InvalidDataException(
+                        "BMP BI_ALPHABITFIELDS requires an explicit alpha mask.");
                 }
 
                 if (alphaMask != 0)
