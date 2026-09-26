@@ -25,6 +25,12 @@ public sealed record FullResolutionStripe(
     int RowBytes,
     byte[] RgbaBytes);
 
+public enum FullResolutionAccessPolicy
+{
+    Random = 0,
+    Sequential = 1
+}
+
 public sealed class FullResolutionPreparedSource : IDisposable
 {
     private ImageSourceSnapshot? _snapshot;
@@ -56,6 +62,9 @@ public sealed class FullResolutionDecoder
 {
     public const int DefaultStripeHeight = 64;
 
+    public const FullResolutionAccessPolicy ProductionAccessPolicy =
+        FullResolutionAccessPolicy.Random;
+
     public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
         CancellationToken cancellationToken = default)
@@ -82,6 +91,7 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight = DefaultStripeHeight,
+        FullResolutionAccessPolicy accessPolicy = ProductionAccessPolicy,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(prepared);
@@ -97,6 +107,7 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes,
                 consume,
                 stripeHeight,
+                accessPolicy,
                 cancellationToken),
             cancellationToken);
     }
@@ -107,6 +118,7 @@ public sealed class FullResolutionDecoder
         Action<FullResolutionStripe> consume,
         int stripeHeight = DefaultStripeHeight,
         FullResolutionInfo? expectedInfo = null,
+        FullResolutionAccessPolicy accessPolicy = ProductionAccessPolicy,
         CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
@@ -122,6 +134,7 @@ public sealed class FullResolutionDecoder
                 consume,
                 stripeHeight,
                 expectedInfo,
+                accessPolicy,
                 cancellationToken),
             cancellationToken);
     }
@@ -166,6 +179,7 @@ public sealed class FullResolutionDecoder
         Action<FullResolutionStripe> consume,
         int stripeHeight,
         FullResolutionInfo? expectedInfo,
+        FullResolutionAccessPolicy accessPolicy,
         CancellationToken cancellationToken)
     {
         var expectedIdentity =
@@ -204,6 +218,7 @@ public sealed class FullResolutionDecoder
             maxDecodedBytes,
             consume,
             stripeHeight,
+            accessPolicy,
             cancellationToken);
     }
 
@@ -213,6 +228,7 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight,
+        FullResolutionAccessPolicy accessPolicy,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -228,7 +244,15 @@ public sealed class FullResolutionDecoder
 
         using var input = NetVips.Image.NewFromFile(
             snapshot.SourcePath,
-            access: Enums.Access.Random,
+            access: accessPolicy switch
+            {
+                FullResolutionAccessPolicy.Random => Enums.Access.Random,
+                FullResolutionAccessPolicy.Sequential => Enums.Access.Sequential,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(accessPolicy),
+                    accessPolicy,
+                    "Unknown full-resolution access policy.")
+            },
             failOn: Enums.FailOn.Error);
         using var oriented = input.Autorot();
 
