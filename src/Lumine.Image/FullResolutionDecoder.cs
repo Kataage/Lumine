@@ -6,14 +6,14 @@ public sealed record FullResolutionSource(
     string SourcePath,
     long FileSize,
     long ModifiedAtUtcTicks,
-    string? ContentSha256 = null);
+    string? SourceIdentity = null);
 
 public sealed record FullResolutionInfo(
     int Width,
     int Height,
     bool HasAlpha,
     long EstimatedRgbaBytes,
-    string? ContentSha256 = null,
+    string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
     string? Format = null);
@@ -74,7 +74,7 @@ public sealed class FullResolutionDecoder
     {
         using var snapshot = OpenStableSnapshot(
             source,
-            source.ContentSha256,
+            source.SourceIdentity,
             cancellationToken);
         var metadata = snapshot.Metadata;
 
@@ -83,7 +83,7 @@ public sealed class FullResolutionDecoder
             metadata.Height,
             metadata.HasAlpha,
             metadata.EstimatedRgbaBytes,
-            metadata.ContentSha256,
+            metadata.SourceIdentity,
             metadata.RawWidth,
             metadata.RawHeight,
             metadata.Format);
@@ -98,14 +98,14 @@ public sealed class FullResolutionDecoder
         CancellationToken cancellationToken)
     {
         var expectedFingerprint =
-            source.ContentSha256
-            ?? expectedInfo?.ContentSha256;
+            source.SourceIdentity
+            ?? expectedInfo?.SourceIdentity;
 
-        if (!string.IsNullOrWhiteSpace(source.ContentSha256)
-            && !string.IsNullOrWhiteSpace(expectedInfo?.ContentSha256)
+        if (!string.IsNullOrWhiteSpace(source.SourceIdentity)
+            && !string.IsNullOrWhiteSpace(expectedInfo?.SourceIdentity)
             && !string.Equals(
-                source.ContentSha256,
-                expectedInfo.ContentSha256,
+                source.SourceIdentity,
+                expectedInfo.SourceIdentity,
                 StringComparison.OrdinalIgnoreCase))
         {
             throw new ImageSourceChangedException(
@@ -249,7 +249,7 @@ public sealed class FullResolutionDecoder
 
     private static ImageSourceSnapshot OpenStableSnapshot(
         FullResolutionSource source,
-        string? expectedContentSha256,
+        string? expectedSourceIdentity,
         CancellationToken cancellationToken)
     {
         try
@@ -258,7 +258,7 @@ public sealed class FullResolutionDecoder
                 source.SourcePath,
                 source.FileSize,
                 source.ModifiedAtUtcTicks,
-                expectedContentSha256,
+                expectedSourceIdentity,
                 cancellationToken);
         }
         catch (ImageSourceChangedException exception)
