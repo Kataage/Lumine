@@ -1155,7 +1155,7 @@ try
         stripe =>
             bmpBottomUpFirstStripe ??=
                 stripe.RgbaBytes,
-        stripeHeight: 2);
+        stripeHeight: 8);
     Require(
         bmpBottomUpFirstStripe is { Length: >= 4 }
         && bmpBottomUpFirstStripe[0] == 20
@@ -1175,7 +1175,7 @@ try
         stripe =>
             bmpTopDownFirstStripe ??=
                 stripe.RgbaBytes,
-        stripeHeight: 2);
+        stripeHeight: 8);
     Require(
         bmpTopDownFirstStripe is { Length: >= 4 }
         && bmpTopDownFirstStripe[0] == 20
@@ -1195,7 +1195,7 @@ try
         stripe =>
             bmpRgbFirstStripe ??=
                 stripe.RgbaBytes,
-        stripeHeight: 2);
+        stripeHeight: 8);
     Require(
         bmpRgbFirstStripe is { Length: >= 4 }
         && bmpRgbFirstStripe[3] == 255,
@@ -1212,7 +1212,7 @@ try
         stripe =>
             bmpAlphaFirstStripe ??=
                 stripe.RgbaBytes,
-        stripeHeight: 2);
+        stripeHeight: 8);
     Require(
         bmpAlphaFirstStripe is { Length: >= 4 }
         && bmpAlphaFirstStripe[0] == 90
