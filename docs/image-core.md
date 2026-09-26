@@ -33,6 +33,21 @@ libvips `thumbnail` is used directly from the source filename so format loaders 
 
 JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. HEIF/AVIF is capability-probed at runtime and exercised when both load/save operations are present.
 
+
+## Full-resolution access policy
+
+Issue #310 measures libvips `Random` and `Sequential` access against Lumine's real top-to-bottom stripe decode instead of assuming that one hint is globally superior.
+
+The production policy is adaptive and deliberately conservative:
+
+- PNG with normal orientation uses `Sequential`.
+- JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
+- Any source with non-normal EXIF orientation uses `Random` regardless of format.
+
+The Windows comparison matrix showed why this is necessary. Large PNG benefited strongly from `Sequential`, eliminating the temporary backing observed with `Random` and materially reducing decode time and working-set growth. However, TIFF and EXIF-oriented JPEG rejected `Sequential`, and an existing normal-JPEG smoke using 29-row stripes also produced libvips `out of order read`. Therefore JPEG remains `Random` even though some benchmark JPEGs can complete sequentially. AVIF/HEIF also remain `Random` until the dedicated #312 contract validation is complete.
+
+CI keeps the exploratory Random-vs-Sequential matrix so future libvips/runtime upgrades can be measured without silently changing production behavior. It also gates the adaptive per-fixture decision and the large-PNG temporary-backing improvement.
+
 ## Crash and corruption behavior
 
 Generation writes to a unique temporary WebP beside the final cache entry and moves it into place only after libvips completes the file. Cache construction performs no recursive disk walk. The shard touched by a cache miss receives local stale-temp cleanup, while full interrupted-write recovery is an explicit asynchronous maintenance operation. Temporary files are never deleted merely because another cache instance or prune pass sees them: only files older than the interrupted-write grace period are treated as stale and recovered. This prevents cleanup from racing an active atomic write without turning app startup into a cache-wide scan.
