@@ -40,11 +40,11 @@ Issue #310 measures libvips `Random` and `Sequential` access against Lumine's re
 
 The production policy is adaptive and deliberately conservative:
 
-- PNG uses `Sequential` only when orientation is normal, there is no embedded ICC profile, and decoded source size is at least 100 MiB.
-- Smaller PNG, ICC-bearing PNG, JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
+- PNG uses `Sequential` only when orientation is normal, there is no embedded ICC profile, decoded source size is at least 100 MiB, and the decoder is using Lumine's production 64-row stripe height.
+- Smaller PNG, ICC-bearing PNG, PNG requested with a non-production stripe height, JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
 - Any source with non-normal EXIF orientation uses `Random` regardless of format.
 
-The 100 MiB threshold matches the bundled libvips default point where large random-access loads can switch from memory materialization to temporary-disc backing. Lumine calculates the source-decoded byte size from raw dimensions, band count and band format rather than from compressed file size.
+The 100 MiB threshold matches the bundled libvips default point where large random-access loads can switch from memory materialization to temporary-disc backing. Lumine calculates the source-decoded byte size from raw dimensions, band count and band format rather than from compressed file size. Sequential is also restricted to the production 64-row stripe shape: an explicit 23-row stress case demonstrated that otherwise-valid large PNG could trigger `vipspng: out of order read`, so Adaptive falls back to Random for non-default stripe sizes.
 
 The Windows comparison matrix showed why this is necessary. On the high-entropy alpha PNG fixture below the threshold, Random was faster and did not create temporary backing, while Sequential reduced memory at the cost of latency. On the high-entropy large PNG above the threshold, Sequential eliminated the temporary backing used by Random and also reduced working-set growth. ICC-bearing PNG produced an actual `out of order read` under the production stripe stress test, so ICC forces Random. TIFF and EXIF-oriented JPEG also rejected Sequential, and an existing normal-JPEG smoke using 29-row stripes produced the same class of failure. AVIF/HEIF remain Random until the dedicated #312 contract validation is complete.
 
