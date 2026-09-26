@@ -239,29 +239,6 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
         var info = prepared.Info;
         var effectiveAsset = preparedResult.Asset;
 
-        if (info.SourceIdentity is not null
-            && info.RawWidth is > 0
-            && info.RawHeight is > 0
-            && !string.IsNullOrWhiteSpace(info.Format))
-        {
-            await ViewerImageMetadataBridge.PersistAsync(
-                _library,
-                _libraryId,
-                effectiveAsset,
-                sourcePath,
-                new SourceTechnicalMetadata(
-                    info.Width,
-                    info.Height,
-                    info.RawWidth.Value,
-                    info.RawHeight.Value,
-                    info.HasAlpha,
-                    info.Format,
-                    info.SourceIdentity,
-                    false,
-                    0),
-                cancellationToken).ConfigureAwait(false);
-        }
-
         cancellationToken.ThrowIfCancellationRequested();
 
         if (info.EstimatedRgbaBytes > maxDecodedBytes)
@@ -486,28 +463,64 @@ internal static class ViewerImageMetadataBridge
 
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var source = new FullResolutionSource(
-                sourcePath,
-                current.FileSize,
-                current.ModifiedAtUtcTicks,
-                current.SourceIdentity);
-
+            FullResolutionPreparedSource? prepared = null;
             try
             {
-                var prepared = await FullResolutionDecoder.PrepareAsync(
+                var source = new FullResolutionSource(
+                    sourcePath,
+                    current.FileSize,
+                    current.ModifiedAtUtcTicks,
+                    current.SourceIdentity);
+
+                prepared = await FullResolutionDecoder.PrepareAsync(
                     source,
                     cancellationToken).ConfigureAwait(false);
+                var info = prepared.Info;
+
+                if (library is not null
+                    && info.SourceIdentity is not null
+                    && info.RawWidth is > 0
+                    && info.RawHeight is > 0
+                    && !string.IsNullOrWhiteSpace(info.Format))
+                {
+                    await PersistAsync(
+                        library,
+                        libraryId,
+                        current,
+                        sourcePath,
+                        new SourceTechnicalMetadata(
+                            info.Width,
+                            info.Height,
+                            info.RawWidth.Value,
+                            info.RawHeight.Value,
+                            info.HasAlpha,
+                            info.Format,
+                            info.SourceIdentity,
+                            false,
+                            0),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 return (prepared, current);
             }
-            catch (FullResolutionSourceChangedException)
-                when (library is not null && attempt < 2)
+            catch (Exception exception)
+                when (library is not null
+                      && attempt < 2
+                      && exception is FullResolutionSourceChangedException
+                          or ImageSourceChangedException)
             {
+                prepared?.Dispose();
                 current = await RefreshChangedSourceAsync(
                     library,
                     libraryId,
                     current,
                     sourcePath,
                     cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                prepared?.Dispose();
+                throw;
             }
         }
 
