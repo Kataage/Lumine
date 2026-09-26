@@ -27,8 +27,9 @@ public sealed record FullResolutionStripe(
 
 public enum FullResolutionAccessPolicy
 {
-    Random = 0,
-    Sequential = 1
+    Adaptive = 0,
+    Random = 1,
+    Sequential = 2
 }
 
 public sealed class FullResolutionPreparedSource : IDisposable
@@ -38,16 +39,20 @@ public sealed class FullResolutionPreparedSource : IDisposable
     internal FullResolutionPreparedSource(
         FullResolutionSource source,
         ImageSourceSnapshot snapshot,
-        FullResolutionInfo info)
+        FullResolutionInfo info,
+        FullResolutionAccessPolicy recommendedAccessPolicy)
     {
         Source = source;
         _snapshot = snapshot;
         Info = info;
+        RecommendedAccessPolicy = recommendedAccessPolicy;
     }
 
     public FullResolutionSource Source { get; }
 
     public FullResolutionInfo Info { get; }
+
+    public FullResolutionAccessPolicy RecommendedAccessPolicy { get; }
 
     internal ImageSourceSnapshot Snapshot =>
         _snapshot
@@ -63,7 +68,7 @@ public sealed class FullResolutionDecoder
     public const int DefaultStripeHeight = 64;
 
     public const FullResolutionAccessPolicy ProductionAccessPolicy =
-        FullResolutionAccessPolicy.Random;
+        FullResolutionAccessPolicy.Adaptive;
 
     public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
@@ -164,7 +169,8 @@ public sealed class FullResolutionDecoder
             return new FullResolutionPreparedSource(
                 source,
                 snapshot,
-                info);
+                info,
+                RecommendAccessPolicy(snapshot));
         }
         catch
         {
@@ -242,16 +248,19 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes);
         }
 
+        var resolvedAccessPolicy =
+            ResolveAccessPolicy(
+                snapshot,
+                accessPolicy);
+
         using var input = NetVips.Image.NewFromFile(
             snapshot.SourcePath,
-            access: accessPolicy switch
+            access: resolvedAccessPolicy switch
             {
                 FullResolutionAccessPolicy.Random => Enums.Access.Random,
                 FullResolutionAccessPolicy.Sequential => Enums.Access.Sequential,
-                _ => throw new ArgumentOutOfRangeException(
-                    nameof(accessPolicy),
-                    accessPolicy,
-                    "Unknown full-resolution access policy.")
+                _ => throw new InvalidOperationException(
+                    $"Adaptive full-resolution access policy resolved to unsupported value '{resolvedAccessPolicy}'.")
             },
             failOn: Enums.FailOn.Error);
         using var oriented = input.Autorot();
@@ -362,6 +371,44 @@ public sealed class FullResolutionDecoder
             oriented.Invalidate();
             input.Invalidate();
         }
+    }
+
+    internal static FullResolutionAccessPolicy ResolveAccessPolicy(
+        ImageSourceSnapshot snapshot,
+        FullResolutionAccessPolicy requestedPolicy) =>
+        requestedPolicy switch
+        {
+            FullResolutionAccessPolicy.Adaptive =>
+                RecommendAccessPolicy(snapshot),
+            FullResolutionAccessPolicy.Random =>
+                FullResolutionAccessPolicy.Random,
+            FullResolutionAccessPolicy.Sequential =>
+                FullResolutionAccessPolicy.Sequential,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(requestedPolicy),
+                requestedPolicy,
+                "Unknown full-resolution access policy.")
+        };
+
+    private static FullResolutionAccessPolicy RecommendAccessPolicy(
+        ImageSourceSnapshot snapshot)
+    {
+        if (snapshot.Orientation != 1)
+        {
+            return FullResolutionAccessPolicy.Random;
+        }
+
+        return snapshot.Metadata.Format.ToLowerInvariant() switch
+        {
+            "jpeg" => FullResolutionAccessPolicy.Sequential,
+            "png" => FullResolutionAccessPolicy.Sequential,
+            "avif" => FullResolutionAccessPolicy.Sequential,
+            "heif" => FullResolutionAccessPolicy.Sequential,
+            "heic" => FullResolutionAccessPolicy.Sequential,
+            "webp" => FullResolutionAccessPolicy.Random,
+            "tiff" => FullResolutionAccessPolicy.Random,
+            _ => FullResolutionAccessPolicy.Random
+        };
     }
 
     private static FullResolutionInfo CreateInfo(
