@@ -50,6 +50,15 @@ try
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Benchmark", libraryRoot);
 
+    // Normalize the managed heap before measuring ingest. Database
+    // initialization/migration/registration deliberately stay outside the
+    // ingest metric; leaving their dead managed allocations for a later GC
+    // makes hosted-runner peak working set depend on GC timing rather than on
+    // the 100k ingest path itself.
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
     var peakMonitor = PeakWorkingSetMonitor.Start();
 
     using (recorder.Measure(CoreMetricNames.LibraryBulkUpsert))
