@@ -27,8 +27,11 @@ internal static class BmpFallbackDecoder
     private const uint BiBitfields = 3;
     private const uint BiAlphaBitfields = 6;
     private const int BitmapFileHeaderSize = 14;
-    private const uint MinimumWindowsDibHeaderSize = 40;
-    private const uint MaximumAcceptedDibHeaderSize = 124;
+    private const uint BitmapInfoHeaderSize = 40;
+    private const uint BitmapV2InfoHeaderSize = 52;
+    private const uint BitmapV3InfoHeaderSize = 56;
+    private const uint BitmapV4HeaderSize = 108;
+    private const uint BitmapV5HeaderSize = 124;
     private const int MaximumSourceRowBytes =
         16 * 1024 * 1024;
     private const uint LcsSrgb = 0x73524742;
@@ -72,7 +75,7 @@ internal static class BmpFallbackDecoder
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (stream.Length < BitmapFileHeaderSize + MinimumWindowsDibHeaderSize)
+        if (stream.Length < BitmapFileHeaderSize + BitmapInfoHeaderSize)
         {
             throw new InvalidDataException("BMP file is too small.");
         }
@@ -101,11 +104,15 @@ internal static class BmpFallbackDecoder
             BinaryPrimitives.ReadUInt32LittleEndian(
                 dibSizeBytes);
 
-        if (dibHeaderSize < MinimumWindowsDibHeaderSize
-            || dibHeaderSize > MaximumAcceptedDibHeaderSize)
+        if (dibHeaderSize is not (
+                BitmapInfoHeaderSize
+                or BitmapV2InfoHeaderSize
+                or BitmapV3InfoHeaderSize
+                or BitmapV4HeaderSize
+                or BitmapV5HeaderSize))
         {
             throw new InvalidDataException(
-                $"Unsupported BMP DIB header size {dibHeaderSize}. Only Windows BITMAPINFOHEADER/V2/V3/V4/V5 headers are supported.");
+                $"Unsupported BMP DIB header size {dibHeaderSize}. Lumine accepts only Windows 40/52/56/108/124-byte headers.");
         }
 
         var dib = new byte[checked((int)dibHeaderSize)];
@@ -130,19 +137,18 @@ internal static class BmpFallbackDecoder
             BinaryPrimitives.ReadUInt32LittleEndian(
                 dib.AsSpan(16, 4));
 
-        if (dibHeaderSize >= 108)
+        if (dibHeaderSize >= BitmapV4HeaderSize)
         {
             var colorSpaceType =
                 BinaryPrimitives.ReadUInt32LittleEndian(
                     dib.AsSpan(56, 4));
 
-            if (colorSpaceType != 0
-                && colorSpaceType != LcsSrgb
+            if (colorSpaceType != LcsSrgb
                 && colorSpaceType
                     != LcsWindowsColorSpace)
             {
                 throw new InvalidDataException(
-                    $"Unsupported BMP color-space/profile type 0x{colorSpaceType:x8}; the managed fallback accepts only sRGB/Windows color space.");
+                    $"Unsupported BMP color-space/profile type 0x{colorSpaceType:x8}; the managed fallback accepts only explicit sRGB/Windows color space for V4/V5 headers.");
             }
         }
 
@@ -182,6 +188,14 @@ internal static class BmpFallbackDecoder
         }
 
         var topDown = storedHeight < 0;
+
+        if (topDown
+            && compression is not (BiRgb or BiBitfields))
+        {
+            throw new InvalidDataException(
+                $"Top-down BMP requires BI_RGB or BI_BITFIELDS; compression {compression} is not supported.");
+        }
+
         var height = Math.Abs(storedHeight);
 
         var rowBits = checked((long)width * bitsPerPixel);
