@@ -262,7 +262,7 @@ try
         && technical.RawWidth == 640
         && technical.RawHeight == 480
         && technical.HasAlpha == true
-        && technical.SourceContentSha256 == technicalSha,
+        && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
 
     await repository.UpsertAssetsAsync(
@@ -287,7 +287,7 @@ try
         && forcedRevision.RawWidth is null
         && forcedRevision.RawHeight is null
         && forcedRevision.HasAlpha is null
-        && forcedRevision.SourceContentSha256 is null,
+        && forcedRevision.SourceIdentity is null,
         "Explicit same-stat source change retained stale technical metadata.");
     Require(
         !await repository.UpdateTechnicalMetadataAsync(
