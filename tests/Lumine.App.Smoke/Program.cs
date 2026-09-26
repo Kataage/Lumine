@@ -98,6 +98,23 @@ try
         && preview.SourceMetadata.HasAlpha,
         "Production Detail adapter did not expose source technical metadata.");
 
+    var persistenceWritesAfterFirstPreview =
+        ViewerImageMetadataBridge.MetadataPersistenceWrites;
+    Require(
+        persistenceWritesAfterFirstPreview == 1,
+        "First preview did not persist technical metadata exactly once.");
+
+    var repeatDiagnostics = pipeline.Diagnostics;
+    _ = await provider.RequestPreviewAsync(asset);
+    Require(
+        ViewerImageMetadataBridge.MetadataPersistenceWrites
+            == persistenceWritesAfterFirstPreview,
+        "Repeated stale ViewerAsset caused duplicate technical metadata DB writes.");
+    Require(
+        pipeline.Diagnostics.MetadataProbes
+            == repeatDiagnostics.MetadataProbes,
+        "Repeated stale ViewerAsset reprobed the original instead of using bounded metadata reuse.");
+
     var persisted = await libraryService.GetAssetAsync(
         library.Id,
         "adapter-source.png")
