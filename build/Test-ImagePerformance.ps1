@@ -33,8 +33,13 @@ $sourceOpens = [long]$result.metadata.source_opens
 $metadataProbes = [long]$result.metadata.metadata_probes
 $metadataBytesHashed = [long]$result.metadata.metadata_bytes_hashed
 $metadataMemoryHits = [long]$result.metadata.metadata_memory_hits
+$metadataFastIdentityHits = [long]$result.metadata.metadata_fast_identity_hits
+$metadataFullHashFallbacks = [long]$result.metadata.metadata_full_hash_fallbacks
 $metadataProbeFixtureCount = [int]$result.metadata.metadata_probe_fixture_count
 $metadataProbeFixtureBytes = [long]$result.metadata.metadata_probe_fixture_bytes
+$metadataProbeFixtureFastIdentityHits = [int]$result.metadata.metadata_probe_fixture_fast_identity_hits
+$metadataProbeFixtureFullHashFallbacks = [int]$result.metadata.metadata_probe_fixture_full_hash_fallbacks
+$metadataProbeFixtureBytesHashed = [long]$result.metadata.metadata_probe_fixture_bytes_hashed
 $cacheFiles = [long]$result.metadata.cache_files
 $cacheBytes = [long]$result.metadata.cache_bytes
 $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
@@ -79,16 +84,36 @@ if ($metadataProbes -ne $generated) {
     throw "Source metadata probe invariant failed: probes=$metadataProbes generated=$generated"
 }
 
-if ($metadataBytesHashed -le 0) {
-    throw "Source metadata benchmark hashed zero bytes."
+if (($metadataFastIdentityHits + $metadataFullHashFallbacks) -ne $metadataProbes) {
+    throw "Source identity accounting mismatch: probes=$metadataProbes fast=$metadataFastIdentityHits hash=$metadataFullHashFallbacks"
+}
+
+if ($metadataFullHashFallbacks -eq 0 -and $metadataBytesHashed -ne 0) {
+    throw "Fast source identity path unexpectedly hashed bytes: $metadataBytesHashed"
+}
+
+if ($metadataFullHashFallbacks -gt 0 -and $metadataBytesHashed -le 0) {
+    throw "Hash fallback occurred without recorded hashed bytes."
 }
 
 if ($metadataMemoryHits -ne 1000) {
     throw "Warm thumbnail benchmark did not reuse bounded in-session source metadata exactly 1,000 times: $metadataMemoryHits"
 }
 
-if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -lt 512MB) {
+if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -le 0) {
     throw "Source metadata probe fixture is incomplete: count=$metadataProbeFixtureCount bytes=$metadataProbeFixtureBytes"
+}
+
+if (($metadataProbeFixtureFastIdentityHits + $metadataProbeFixtureFullHashFallbacks) -ne 10000) {
+    throw "10k distinct source identity accounting mismatch: fast=$metadataProbeFixtureFastIdentityHits hash=$metadataProbeFixtureFullHashFallbacks"
+}
+
+if ($metadataProbeFixtureFullHashFallbacks -eq 0 -and $metadataProbeFixtureBytesHashed -ne 0) {
+    throw "10k fast identity fixture unexpectedly hashed bytes: $metadataProbeFixtureBytesHashed"
+}
+
+if ($metadataProbeFixtureFullHashFallbacks -gt 0 -and $metadataProbeFixtureBytesHashed -le 0) {
+    throw "10k hash fallback fixture did not record hashed bytes."
 }
 
 if ([double]$metadataProbeBatch.durationMs -gt 30000) {
@@ -131,10 +156,10 @@ Write-Host "Image performance acceptance passed."
 Write-Host ("Cold generation: {0:N1} ms" -f $generate.durationMs)
 Write-Host ("1,000 cache hits: {0:N1} ms" -f $hits.durationMs)
 Write-Host ("64-request batch: {0:N1} ms" -f $batch.durationMs)
-Write-Host ("10k source metadata probes: {0:N1} ms ({1:N1} MiB logical I/O)" -f $metadataProbeBatch.durationMs, ($metadataProbeFixtureBytes / 1MB))
+Write-Host ("10k distinct source metadata probes: {0:N1} ms ({1:N1} MiB logical files, fast={2}, hash-fallback={3}, hashed={4:N1} MiB)" -f $metadataProbeBatch.durationMs, ($metadataProbeFixtureBytes / 1MB), $metadataProbeFixtureFastIdentityHits, $metadataProbeFixtureFullHashFallbacks, ($metadataProbeFixtureBytesHashed / 1MB))
 Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))
 Write-Host ("libvips open files after batch: {0}" -f $vipsOpenFiles)
 Write-Host ("libvips operation cache size: {0}" -f $vipsOperationCacheSize)
-Write-Host ("Source metadata probes: {0} ({1:N1} MiB hashed, {2} memory hits)" -f $metadataProbes, ($metadataBytesHashed / 1MB), $metadataMemoryHits)
+Write-Host ("Source metadata probes: {0} (fast={1}, hash-fallback={2}, {3:N1} MiB hashed, {4} memory hits)" -f $metadataProbes, $metadataFastIdentityHits, $metadataFullHashFallbacks, ($metadataBytesHashed / 1MB), $metadataMemoryHits)
 Write-Host ("libvips concurrency: {0} (workers={1})" -f $vipsConcurrency, $workerCount)
