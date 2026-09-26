@@ -40,7 +40,7 @@ public sealed record ThumbnailSource(
     int? RawHeight = null,
     bool? HasAlpha = null,
     string? Format = null,
-    string? ContentSha256 = null)
+    string? SourceIdentity = null)
 {
     public SourceTechnicalMetadata? PersistedMetadata =>
         SourceWidth is > 0
@@ -49,7 +49,7 @@ public sealed record ThumbnailSource(
         && RawHeight is > 0
         && HasAlpha.HasValue
         && !string.IsNullOrWhiteSpace(Format)
-        && IsSha256(ContentSha256)
+        && IsSourceIdentity(SourceIdentity)
             ? new SourceTechnicalMetadata(
                 SourceWidth.Value,
                 SourceHeight.Value,
@@ -57,7 +57,9 @@ public sealed record ThumbnailSource(
                 RawHeight.Value,
                 HasAlpha.Value,
                 Format!,
-                ContentSha256!)
+                SourceIdentity!,
+                false,
+                0)
             : null;
 
     public ThumbnailSource WithMetadata(SourceTechnicalMetadata metadata) =>
@@ -69,12 +71,11 @@ public sealed record ThumbnailSource(
             RawHeight = metadata.RawHeight,
             HasAlpha = metadata.HasAlpha,
             Format = metadata.Format,
-            ContentSha256 = metadata.ContentSha256
+            SourceIdentity = metadata.SourceIdentity
         };
 
-    private static bool IsSha256(string? value) =>
-        value is { Length: 64 }
-        && value.All(static character => Uri.IsHexDigit(character));
+    private static bool IsSourceIdentity(string? value) =>
+        Lumine.Core.FileSourceIdentityProbe.IsValid(value);
 }
 
 public sealed record ThumbnailResult(
