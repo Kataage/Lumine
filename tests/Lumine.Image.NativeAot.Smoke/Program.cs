@@ -163,6 +163,34 @@ Require(
         == FullResolutionAccessPolicy.Adaptive,
     "NativeAOT smoke expected Adaptive production access policy.");
 
+const int plainWidth = 4608;
+const int plainHeight = 4608;
+const long plainDecodedBytes =
+    (long)plainWidth * plainHeight * 4L;
+
+var expectedThresholdText =
+    Environment.GetEnvironmentVariable(
+        "LUMINE_EXPECT_DISC_THRESHOLD_BYTES")
+    ?? throw new InvalidOperationException(
+        "LUMINE_EXPECT_DISC_THRESHOLD_BYTES is required.");
+
+Require(
+    long.TryParse(
+        expectedThresholdText,
+        out var expectedThresholdBytes)
+    && expectedThresholdBytes > 0,
+    $"Invalid expected disc threshold '{expectedThresholdText}'.");
+
+Require(
+    FullResolutionDecoder.PngSequentialThresholdBytes
+        == expectedThresholdBytes,
+    $"NativeAOT libvips disc threshold was {FullResolutionDecoder.PngSequentialThresholdBytes}; expected {expectedThresholdBytes}.");
+
+var expectedPlainPolicy =
+    plainDecodedBytes > expectedThresholdBytes
+        ? FullResolutionAccessPolicy.Sequential
+        : FullResolutionAccessPolicy.Random;
+
 var root = Path.Combine(
     Path.GetTempPath(),
     $"lumine-native-aot-image-{Guid.NewGuid():N}");
@@ -179,16 +207,24 @@ try
 
     WritePlainPng(
         plainPath,
-        5120,
-        5120);
+        plainWidth,
+        plainHeight);
     WriteIccPng(iccPath);
 
     await VerifyAdaptiveMatchesAsync(
         plainPath,
-        FullResolutionAccessPolicy.Sequential,
-        "large plain PNG");
-    await VerifyNonDefaultStripeFallsBackToRandomAsync(
-        plainPath);
+        expectedPlainPolicy,
+        "threshold PNG");
+
+    if (expectedPlainPolicy
+        == FullResolutionAccessPolicy.Sequential)
+    {
+        await VerifyNonDefaultStripeFallsBackToRandomAsync(
+            plainPath);
+    }
+
+    Console.WriteLine(
+        $"NativeAOT threshold contract: threshold={expectedThresholdBytes}, decoded={plainDecodedBytes}, policy={expectedPlainPolicy}");
     await VerifyAdaptiveMatchesAsync(
         iccPath,
         FullResolutionAccessPolicy.Random,
