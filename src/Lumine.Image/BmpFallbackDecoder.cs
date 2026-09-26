@@ -30,7 +30,9 @@ internal static class BmpFallbackDecoder
     private const uint MinimumWindowsDibHeaderSize = 40;
     private const uint MaximumAcceptedDibHeaderSize = 124;
     private const int MaximumSourceRowBytes =
-        64 * 1024 * 1024;
+        16 * 1024 * 1024;
+    private const uint LcsSrgb = 0x73524742;
+    private const uint LcsWindowsColorSpace = 0x57696e20;
 
     public static bool LooksLikeBmp(Stream stream)
     {
@@ -127,6 +129,22 @@ internal static class BmpFallbackDecoder
         var compression =
             BinaryPrimitives.ReadUInt32LittleEndian(
                 dib.AsSpan(16, 4));
+
+        if (dibHeaderSize >= 108)
+        {
+            var colorSpaceType =
+                BinaryPrimitives.ReadUInt32LittleEndian(
+                    dib.AsSpan(56, 4));
+
+            if (colorSpaceType != 0
+                && colorSpaceType != LcsSrgb
+                && colorSpaceType
+                    != LcsWindowsColorSpace)
+            {
+                throw new BmpUnsupportedException(
+                    $"Unsupported BMP color-space/profile type 0x{colorSpaceType:x8}; the managed fallback accepts only sRGB/Windows color space.");
+            }
+        }
 
         if (width <= 0
             || storedHeight == 0
