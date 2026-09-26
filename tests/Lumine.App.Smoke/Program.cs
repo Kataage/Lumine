@@ -25,6 +25,7 @@ var libraryRoot = Path.Combine(root, "library");
 var cacheRoot = Path.Combine(root, "cache");
 var databasePath = Path.Combine(root, "library.db");
 var sourcePath = Path.Combine(libraryRoot, "adapter-source.png");
+var replacementPath = Path.Combine(root, "adapter-replacement.png");
 
 Directory.CreateDirectory(libraryRoot);
 
@@ -37,6 +38,34 @@ try
     using (var rgba = values.Copy(interpretation: Enums.Interpretation.Srgb))
     {
         rgba.Pngsave(sourcePath);
+    }
+
+    using (var blank = NetVips.Image.Black(320, 200, bands: 4))
+    using (var values = blank.NewFromImage([180, 40, 70, 128]))
+    using (var rgba = values.Copy(interpretation: Enums.Interpretation.Srgb))
+    {
+        rgba.Pngsave(replacementPath);
+    }
+
+    var sameStatFixtureLength = Math.Max(
+        new FileInfo(sourcePath).Length,
+        new FileInfo(replacementPath).Length);
+    using (var source = new FileStream(
+               sourcePath,
+               FileMode.Open,
+               FileAccess.Write,
+               FileShare.None))
+    {
+        source.SetLength(sameStatFixtureLength);
+    }
+
+    using (var replacement = new FileStream(
+               replacementPath,
+               FileMode.Open,
+               FileAccess.Write,
+               FileShare.None))
+    {
+        replacement.SetLength(sameStatFixtureLength);
     }
 
     var libraryService = new LibraryService(databasePath);
@@ -279,31 +308,6 @@ try
             "App smoke asset lost source identity before repair test.");
     var staleLength = new FileInfo(sourcePath).Length;
     var staleTimestamp = File.GetLastWriteTimeUtc(sourcePath);
-    var replacementPath = Path.Combine(
-        libraryRoot,
-        "adapter-replacement.png");
-
-    using (var blank = NetVips.Image.Black(320, 200, bands: 4))
-    using (var values = blank.NewFromImage([180, 40, 70, 128]))
-    using (var rgba = values.Copy(interpretation: Enums.Interpretation.Srgb))
-    {
-        rgba.Pngsave(replacementPath);
-    }
-
-    var replacementLength = new FileInfo(replacementPath).Length;
-    Require(
-        replacementLength <= staleLength,
-        $"Same-stat replacement PNG unexpectedly exceeded the original length: replacement={replacementLength}, original={staleLength}.");
-
-    using (var replacement = new FileStream(
-               replacementPath,
-               FileMode.Open,
-               FileAccess.Write,
-               FileShare.None))
-    {
-        replacement.SetLength(staleLength);
-    }
-
     await File.WriteAllBytesAsync(
         sourcePath,
         await File.ReadAllBytesAsync(replacementPath));
