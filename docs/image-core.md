@@ -10,12 +10,12 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - stable asset id
 - Library Core source revision
 - source file size and persisted modified timestamp
-- persisted source source identity
+- persisted source identity
 - thumbnail profile id/version/dimensions/quality
 
 A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
 
-Issue #308 moves the cache-key contract to generator version 2. The first cold/miss path opens a stable source snapshot, computes SHA-256, captures raw/oriented dimensions, alpha and normalized format, then keeps a read-sharing guard open while libvips evaluates the thumbnail. App composition persists that metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat so revisiting the same asset does not immediately re-hash the original before the refreshed DB DTO is observed.
+Issue #308 moves the cache-key contract to generator version 2. The first cold/miss path opens a stable source snapshot and derives a source identity before capturing raw/oriented dimensions, alpha and actual loader format. On Windows/NTFS the primary identity is the file's current USN obtained with `FSCTL_READ_FILE_USN_DATA`, so the common path does not read the whole file merely to hash it. If that fast identity is unavailable, Image Core falls back to SHA-256. App composition persists the identity and metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat.
 
 Old revisions and pre-#308 cache keys remain harmless orphaned cache entries until bounded pruning removes them.
 
@@ -60,8 +60,8 @@ The common benchmark contract records:
 - bounded parallel batch generation
 - cache files/bytes
 - cache hit/miss/generation/source-open counters
-- source metadata probe count, in-process metadata-memory hits and bytes hashed
-- a 10,000-operation source metadata probe workload with measured latency/logical I/O
+- source metadata probe count, fast-identity hits, hash fallbacks, in-process metadata-memory hits and bytes hashed
+- a 10,000-distinct-file source metadata probe workload with measured latency/logical file bytes and actual hashed bytes
 - generation and batch peak working set
 - libvips tracked-memory high-water mark, open-file count, and operation-cache size
 
@@ -70,6 +70,6 @@ The Windows CI benchmark is enforced by `build/Test-ImagePerformance.ps1`. It ga
 
 ## Source technical metadata contract
 
-Image Core owns derivation, not persistence. It returns `SourceTechnicalMetadata` containing oriented dimensions, raw dimensions, alpha, normalized format and source identity. `Lumine.App` is the only layer allowed to bridge that result into Library Core.
+Image Core owns derivation, not persistence. It returns `SourceTechnicalMetadata` containing oriented dimensions, raw dimensions, alpha, actual loader-derived format and source identity. `Lumine.App` is the only layer allowed to bridge that result into Library Core.
 
-A persisted source fingerprint is validated on a thumbnail cache miss and on full-resolution decode. This catches replacements that preserve size, mtime and displayed dimensions. Detail preview carries the metadata through Viewer contracts, so selecting a warm preview can show dimensions/format without probing the original. Warm preview uses persisted metadata without touching the original. When the user explicitly requests full resolution, Image Core reopens the source and validates the persisted content fingerprint before the App allocates the full-size bitmap; decode validates the same identity again before emitting pixels. This preserves the #291 stale-allocation safety boundary while keeping ordinary Detail selection source-free.
+A persisted source identity is validated on a thumbnail cache miss and on full-resolution decode. NTFS USN catches same-size/mtime rewrites without a whole-file hash; non-NTFS/unavailable-USN environments use SHA-256 fallback. Reconciliation also compares persisted identity for same-stat files so watcher/USN gaps cannot silently preserve stale metadata. Detail preview carries the metadata through Viewer contracts, so selecting a warm preview can show dimensions/format without probing the original. Warm preview uses persisted metadata without touching the original. When the user explicitly requests full resolution, Image Core reopens the source and validates the persisted content fingerprint before the App allocates the full-size bitmap; decode validates the same identity again before emitting pixels. This preserves the #291 stale-allocation safety boundary while keeping ordinary Detail selection source-free.
