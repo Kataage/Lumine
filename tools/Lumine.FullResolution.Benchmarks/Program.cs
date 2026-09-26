@@ -746,6 +746,11 @@ try
                     .ProductionAccessPolicy
                     .ToString()
                     .ToLowerInvariant(),
+            ["png_sequential_threshold_bytes"] =
+                FullResolutionDecoder
+                    .PngSequentialThresholdBytes
+                    .ToString(
+                        CultureInfo.InvariantCulture),
             ["capability.avif"] =
                 capabilities.AvifRoundTrip
                     .ToString(
