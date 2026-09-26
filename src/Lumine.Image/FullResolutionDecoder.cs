@@ -251,6 +251,27 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes);
         }
 
+        if (snapshot.BmpInfo is { } bmp)
+        {
+            if (bmp.Width != info.Width
+                || bmp.Height != info.Height
+                || bmp.EstimatedRgbaBytes
+                    != info.EstimatedRgbaBytes)
+            {
+                throw new FullResolutionSourceChangedException(
+                    snapshot.SourcePath,
+                    "Prepared BMP metadata no longer matches the stable snapshot.");
+            }
+
+            BmpFallbackDecoder.DecodeStripes(
+                snapshot.SourceStream,
+                bmp,
+                stripeHeight,
+                consume,
+                cancellationToken);
+            return;
+        }
+
         var resolvedAccessPolicy =
             ResolveAccessPolicy(
                 snapshot,
