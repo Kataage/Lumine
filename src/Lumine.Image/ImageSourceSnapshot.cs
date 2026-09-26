@@ -1,3 +1,4 @@
+using System.Globalization;
 using Lumine.Core;
 using NetVips;
 
@@ -26,12 +27,14 @@ public sealed class ImageSourceSnapshot : IDisposable
         FileStream guard,
         long fileSize,
         long modifiedAtUtcTicks,
+        int orientation,
         SourceTechnicalMetadata metadata)
     {
         SourcePath = sourcePath;
         _guard = guard;
         FileSize = fileSize;
         ModifiedAtUtcTicks = modifiedAtUtcTicks;
+        Orientation = orientation;
         Metadata = metadata;
     }
 
@@ -40,6 +43,8 @@ public sealed class ImageSourceSnapshot : IDisposable
     public long FileSize { get; }
 
     public long ModifiedAtUtcTicks { get; }
+
+    public int Orientation { get; }
 
     public SourceTechnicalMetadata Metadata { get; }
 
@@ -113,6 +118,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 fullPath,
                 access: Enums.Access.Sequential,
                 failOn: Enums.FailOn.Error);
+            var orientation = ReadOrientation(raw);
             using var oriented = raw.Autorot();
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -140,6 +146,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 guard,
                 info.Length,
                 info.LastWriteTimeUtc.Ticks,
+                orientation,
                 metadata);
         }
         catch
@@ -170,6 +177,34 @@ public sealed class ImageSourceSnapshot : IDisposable
             throw new ImageSourceChangedException(
                 sourcePath,
                 $"Expected size={expectedFileSize:N0}, modified={expectedModifiedAtUtcTicks}, actual size={info.Length:N0}, modified={info.LastWriteTimeUtc.Ticks}.");
+        }
+    }
+
+    private static int ReadOrientation(
+        NetVips.Image image)
+    {
+        try
+        {
+            if (!image.Contains("orientation"))
+            {
+                return 1;
+            }
+
+            var value = Convert.ToInt32(
+                image.Get("orientation"),
+                CultureInfo.InvariantCulture);
+
+            return value is >= 1 and <= 8
+                ? value
+                : 1;
+        }
+        catch (Exception exception)
+            when (exception is VipsException
+                  or InvalidCastException
+                  or FormatException
+                  or OverflowException)
+        {
+            return 1;
         }
     }
 
