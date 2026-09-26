@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 using Lumine.Diagnostics;
 using Lumine.Image;
 using NetVips;
@@ -213,7 +214,8 @@ static async Task<PolicyRun> DecodeOnceAsync(
     var measurement = BenchmarkRecorder.CaptureStart();
     await using var monitor = RuntimeMonitor.Start(tempRoot);
 
-    long checksum = 1469598103934665603L;
+    using var digest = IncrementalHash.CreateHash(
+        HashAlgorithmName.SHA256);
     var decodedRows = 0;
 
     await FullResolutionDecoder.DecodePreparedAsync(
@@ -223,13 +225,7 @@ static async Task<PolicyRun> DecodeOnceAsync(
         {
             decodedRows += stripe.Height;
 
-            if (stripe.RgbaBytes.Length > 0)
-            {
-                checksum ^= stripe.RgbaBytes[0];
-                checksum *= 1099511628211L;
-                checksum ^= stripe.RgbaBytes[^1];
-                checksum *= 1099511628211L;
-            }
+            digest.AppendData(stripe.RgbaBytes);
         },
         accessPolicy: policy,
         cancellationToken: CancellationToken.None);
@@ -259,7 +255,9 @@ static async Task<PolicyRun> DecodeOnceAsync(
             0,
             GC.GetTotalAllocatedBytes(precise: true)
                 - allocatedBefore),
-        checksum);
+        Convert.ToHexString(
+            digest.GetHashAndReset())
+            .ToLowerInvariant());
 }
 
 static async Task<double> MeasureCancellationAsync(
@@ -351,9 +349,8 @@ static void AddCaseMetadata(
     metadata[$"{prefix}.managed_allocated_bytes"] =
         aggregate.AverageAllocatedBytes.ToString(
             CultureInfo.InvariantCulture);
-    metadata[$"{prefix}.checksum"] =
-        aggregate.Checksum.ToString(
-            CultureInfo.InvariantCulture);
+    metadata[$"{prefix}.output_digest_sha256"] =
+        aggregate.OutputDigest;
 }
 
 var output = ReadOption(args, "--output")
@@ -647,11 +644,11 @@ try
 
         if (random.Success
             && sequential.Success
-            && random.Checksum != sequential.Checksum)
+            && random.OutputDigest != sequential.OutputDigest)
         {
             sequential.AddFailure(
                 new InvalidOperationException(
-                    $"{fixture.Name} pixel checksum differs between Random ({random.Checksum}) and Sequential ({sequential.Checksum})."));
+                    $"{fixture.Name} pixel outputDigest differs between Random ({random.OutputDigest}) and Sequential ({sequential.OutputDigest})."));
         }
     }
 
@@ -826,7 +823,7 @@ internal sealed record PolicyRun(
     long PeakTempBytes,
     int PeakTempFiles,
     long AllocatedBytes,
-    long Checksum);
+    string OutputDigest);
 
 internal sealed class CaseAggregate
 {
@@ -893,19 +890,19 @@ internal sealed class CaseAggregate
                 static run =>
                     (double)run.AllocatedBytes);
 
-    public long Checksum =>
+    public string OutputDigest =>
         _runs.Count == 0
-            ? 0
-            : _runs[0].Checksum;
+            ? string.Empty
+            : _runs[0].OutputDigest;
 
     public void Add(PolicyRun run)
     {
         if (_runs.Count > 0
-            && _runs[0].Checksum != run.Checksum)
+            && _runs[0].OutputDigest != run.OutputDigest)
         {
             AddFailure(
                 new InvalidOperationException(
-                    $"Repeated decode checksum changed from {_runs[0].Checksum} to {run.Checksum}."));
+                    $"Repeated decode outputDigest changed from {_runs[0].OutputDigest} to {run.OutputDigest}."));
             return;
         }
 
