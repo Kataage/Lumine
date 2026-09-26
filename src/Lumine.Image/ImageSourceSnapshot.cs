@@ -28,6 +28,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         long fileSize,
         long modifiedAtUtcTicks,
         int orientation,
+        bool hasEmbeddedIcc,
         SourceTechnicalMetadata metadata)
     {
         SourcePath = sourcePath;
@@ -35,6 +36,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         FileSize = fileSize;
         ModifiedAtUtcTicks = modifiedAtUtcTicks;
         Orientation = orientation;
+        HasEmbeddedIcc = hasEmbeddedIcc;
         Metadata = metadata;
     }
 
@@ -45,6 +47,8 @@ public sealed class ImageSourceSnapshot : IDisposable
     public long ModifiedAtUtcTicks { get; }
 
     public int Orientation { get; }
+
+    public bool HasEmbeddedIcc { get; }
 
     public SourceTechnicalMetadata Metadata { get; }
 
@@ -119,6 +123,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 access: Enums.Access.Sequential,
                 failOn: Enums.FailOn.Error);
             var orientation = ReadOrientation(raw);
+            var hasEmbeddedIcc = raw.Contains("icc-profile-data");
             using var oriented = raw.Autorot();
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -147,6 +152,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 info.Length,
                 info.LastWriteTimeUtc.Ticks,
                 orientation,
+                hasEmbeddedIcc,
                 metadata);
         }
         catch
