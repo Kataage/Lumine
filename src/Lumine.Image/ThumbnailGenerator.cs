@@ -215,9 +215,11 @@ internal sealed class ThumbnailGenerator
 
             if (snapshot.BmpInfo is { } bmp)
             {
+                using var bmpStream =
+                    snapshot.OpenStableReadStream();
                 var decoded =
                     BmpFallbackDecoder.DecodeThumbnail(
-                        snapshot.SourceStream,
+                        bmpStream,
                         bmp,
                         profile.MaxWidth,
                         profile.MaxHeight,
