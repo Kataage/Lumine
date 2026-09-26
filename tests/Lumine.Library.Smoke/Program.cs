@@ -236,7 +236,7 @@ try
 
     var sameStat = await repository.GetAssetAsync(library.Id, "b.png")
         ?? throw new InvalidOperationException("b.png was not indexed.");
-    var technicalSha = new string('a', 64);
+    var technicalSha = "sha256:" + new string('a', 64);
     Require(
         await repository.UpdateTechnicalMetadataAsync(
             library.Id,
