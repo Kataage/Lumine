@@ -87,6 +87,23 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<bool> AdvanceSourceRevisionAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.AdvanceSourceRevisionAsync(
+                libraryId,
+                assetId,
+                expectedSourceRevision,
+                expectedFileSize,
+                expectedModifiedAtUtcTicks,
+                token),
+            cancellationToken);
+
     public Task<AssetPage> GetAssetPageAsync(
         long libraryId,
         int limit,
