@@ -164,21 +164,17 @@ public sealed class LibraryDatabase
             4,
             "persist-source-technical-metadata",
             """
-            ALTER TABLE assets
-                ADD COLUMN source_content_sha256 TEXT NULL
-                    CHECK(source_content_sha256 IS NULL OR length(source_content_sha256) = 64);
-
-            ALTER TABLE assets
-                ADD COLUMN raw_width INTEGER NULL
-                    CHECK(raw_width IS NULL OR raw_width > 0);
-
-            ALTER TABLE assets
-                ADD COLUMN raw_height INTEGER NULL
-                    CHECK(raw_height IS NULL OR raw_height > 0);
-
-            ALTER TABLE assets
-                ADD COLUMN has_alpha INTEGER NULL
-                    CHECK(has_alpha IS NULL OR has_alpha IN (0, 1));
+            CREATE TABLE asset_technical_metadata (
+                asset_id INTEGER PRIMARY KEY,
+                source_revision INTEGER NOT NULL CHECK(source_revision > 0),
+                source_content_sha256 TEXT NOT NULL
+                    CHECK(length(source_content_sha256) = 64),
+                raw_width INTEGER NOT NULL CHECK(raw_width > 0),
+                raw_height INTEGER NOT NULL CHECK(raw_height > 0),
+                has_alpha INTEGER NOT NULL CHECK(has_alpha IN (0, 1)),
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
             """)
     ];
 
