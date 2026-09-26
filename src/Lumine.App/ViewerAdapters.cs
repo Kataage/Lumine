@@ -374,6 +374,13 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
 
 internal static class ViewerImageMetadataBridge
 {
+    private const int PersistedMetadataCacheLimit = 8192;
+
+    private static readonly object PersistedMetadataGate = new();
+    private static readonly Dictionary<PersistedMetadataKey, LinkedListNode<PersistedMetadataKey>>
+        PersistedMetadata = [];
+    private static readonly LinkedList<PersistedMetadataKey> PersistedMetadataLru = [];
+
     public static ThumbnailSource CreateThumbnailSource(
         ViewerAsset asset,
         string sourcePath)
@@ -396,10 +403,12 @@ internal static class ViewerImageMetadataBridge
     }
 
     public static ViewerSourceTechnicalMetadata? ToViewerMetadata(
-        SourceTechnicalMetadata? metadata) =>
+        SourceTechnicalMetadata? metadata,
+        long sourceRevision) =>
         metadata is null
             ? null
             : new ViewerSourceTechnicalMetadata(
+                sourceRevision,
                 metadata.Width,
                 metadata.Height,
                 metadata.RawWidth,
@@ -407,6 +416,100 @@ internal static class ViewerImageMetadataBridge
                 metadata.HasAlpha,
                 metadata.Format,
                 metadata.SourceIdentity);
+
+    public static async ValueTask<(ThumbnailResult Result, ViewerAsset Asset)>
+        RequestThumbnailWithRepairAsync(
+            ThumbnailPipeline pipeline,
+            LibraryService? library,
+            long libraryId,
+            ViewerAsset asset,
+            string sourcePath,
+            ThumbnailProfile profile,
+            ThumbnailPriority priority,
+            CancellationToken cancellationToken)
+    {
+        var current = asset;
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var result = await pipeline.RequestAsync(
+                    CreateThumbnailSource(current, sourcePath),
+                    profile,
+                    priority,
+                    cancellationToken).ConfigureAwait(false);
+
+                await PersistAsync(
+                    library,
+                    libraryId,
+                    current,
+                    sourcePath,
+                    result.SourceMetadata,
+                    cancellationToken).ConfigureAwait(false);
+
+                return (result, current);
+            }
+            catch (ImageSourceChangedException)
+                when (library is not null && attempt == 0)
+            {
+                current = await RefreshChangedSourceAsync(
+                    library,
+                    libraryId,
+                    current,
+                    sourcePath,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        throw new ImageSourceChangedException(
+            sourcePath,
+            "Source identity changed repeatedly while retrying thumbnail generation.");
+    }
+
+    public static async Task<(
+        FullResolutionSource Source,
+        FullResolutionInfo Info,
+        ViewerAsset Asset)> ProbeOriginalWithRepairAsync(
+            LibraryService? library,
+            long libraryId,
+            ViewerAsset asset,
+            string sourcePath,
+            CancellationToken cancellationToken)
+    {
+        var current = asset;
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var source = new FullResolutionSource(
+                sourcePath,
+                current.FileSize,
+                current.ModifiedAtUtcTicks,
+                current.SourceIdentity);
+
+            try
+            {
+                var info = await FullResolutionDecoder.ProbeAsync(
+                    source,
+                    cancellationToken).ConfigureAwait(false);
+                return (source, info, current);
+            }
+            catch (FullResolutionSourceChangedException)
+                when (library is not null && attempt == 0)
+            {
+                current = await RefreshChangedSourceAsync(
+                    library,
+                    libraryId,
+                    current,
+                    sourcePath,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        throw new FullResolutionSourceChangedException(
+            sourcePath,
+            "Source identity changed repeatedly while retrying original probe.");
+    }
 
     public static async ValueTask PersistAsync(
         LibraryService? library,
@@ -435,7 +538,21 @@ internal static class ViewerImageMetadataBridge
             && string.Equals(
                 existing.SourceIdentity,
                 metadata.SourceIdentity,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.Ordinal))
+        {
+            RememberPersisted(
+                libraryId,
+                asset,
+                metadata);
+            return;
+        }
+
+        var key = PersistedMetadataKey.From(
+            libraryId,
+            asset,
+            metadata);
+
+        if (IsRemembered(key))
         {
             return;
         }
@@ -462,5 +579,157 @@ internal static class ViewerImageMetadataBridge
                 sourcePath,
                 "Library source revision advanced before technical metadata could be committed.");
         }
+
+        RememberPersisted(key);
+    }
+
+    private static async Task<ViewerAsset> RefreshChangedSourceAsync(
+        LibraryService library,
+        long libraryId,
+        ViewerAsset stale,
+        string sourcePath,
+        CancellationToken cancellationToken)
+    {
+        var current = await library.GetAssetAsync(
+            libraryId,
+            stale.RelativePath,
+            cancellationToken).ConfigureAwait(false);
+
+        if (current is not null
+            && current.SourceRevision != stale.SourceRevision)
+        {
+            return ToViewerAsset(current);
+        }
+
+        var info = new FileInfo(sourcePath);
+        info.Refresh();
+
+        if (!info.Exists)
+        {
+            throw new FileNotFoundException(
+                "Image source disappeared while repairing its source revision.",
+                sourcePath);
+        }
+
+        await library.RefreshAssetSourceAsync(
+            libraryId,
+            stale.RelativePath,
+            info.Length,
+            info.LastWriteTimeUtc.Ticks,
+            cancellationToken).ConfigureAwait(false);
+
+        var refreshed = await library.GetAssetAsync(
+            libraryId,
+            stale.RelativePath,
+            cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "Library source disappeared while refreshing its source revision.");
+
+        if (refreshed.SourceRevision <= stale.SourceRevision)
+        {
+            throw new ImageSourceChangedException(
+                sourcePath,
+                "Source refresh did not advance the persisted source revision.");
+        }
+
+        return ToViewerAsset(refreshed);
+    }
+
+    private static ViewerAsset ToViewerAsset(AssetInfo asset) =>
+        new(
+            asset.Id,
+            asset.SourceRevision,
+            asset.RelativePath,
+            asset.FileName,
+            asset.FileSize,
+            asset.ModifiedAtUtc.UtcDateTime.Ticks,
+            asset.Width,
+            asset.Height,
+            asset.Format,
+            asset.SourceIdentity,
+            asset.RawWidth,
+            asset.RawHeight,
+            asset.HasAlpha);
+
+    private static bool IsRemembered(PersistedMetadataKey key)
+    {
+        lock (PersistedMetadataGate)
+        {
+            if (!PersistedMetadata.TryGetValue(key, out var node))
+            {
+                return false;
+            }
+
+            PersistedMetadataLru.Remove(node);
+            PersistedMetadataLru.AddFirst(node);
+            return true;
+        }
+    }
+
+    private static void RememberPersisted(
+        long libraryId,
+        ViewerAsset asset,
+        SourceTechnicalMetadata metadata) =>
+        RememberPersisted(
+            PersistedMetadataKey.From(
+                libraryId,
+                asset,
+                metadata));
+
+    private static void RememberPersisted(PersistedMetadataKey key)
+    {
+        lock (PersistedMetadataGate)
+        {
+            if (PersistedMetadata.TryGetValue(key, out var existing))
+            {
+                PersistedMetadataLru.Remove(existing);
+                PersistedMetadataLru.AddFirst(existing);
+                return;
+            }
+
+            var node = PersistedMetadataLru.AddFirst(key);
+            PersistedMetadata.Add(key, node);
+
+            while (PersistedMetadata.Count > PersistedMetadataCacheLimit)
+            {
+                var last = PersistedMetadataLru.Last;
+                if (last is null)
+                {
+                    break;
+                }
+
+                PersistedMetadataLru.RemoveLast();
+                PersistedMetadata.Remove(last.Value);
+            }
+        }
+    }
+
+    private readonly record struct PersistedMetadataKey(
+        long LibraryId,
+        long AssetId,
+        long SourceRevision,
+        string SourceIdentity,
+        int Width,
+        int Height,
+        int RawWidth,
+        int RawHeight,
+        bool HasAlpha,
+        string Format)
+    {
+        public static PersistedMetadataKey From(
+            long libraryId,
+            ViewerAsset asset,
+            SourceTechnicalMetadata metadata) =>
+            new(
+                libraryId,
+                asset.Id,
+                asset.SourceRevision,
+                metadata.SourceIdentity,
+                metadata.Width,
+                metadata.Height,
+                metadata.RawWidth,
+                metadata.RawHeight,
+                metadata.HasAlpha,
+                metadata.Format.ToLowerInvariant());
     }
 }
