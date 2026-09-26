@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Reflection;
 using Lumine.Image;
 using NetVips;
@@ -90,6 +91,232 @@ static ThumbnailSource SourceFor(long assetId, long revision, string path)
         path,
         info.Length,
         info.LastWriteTimeUtc.Ticks);
+}
+
+static void WriteBmp24(
+    string path,
+    int width,
+    int height,
+    bool topDown)
+{
+    var rowStride = checked(((width * 3 + 3) / 4) * 4);
+    var pixelOffset = 54;
+    var fileSize = checked(pixelOffset + (rowStride * height));
+    var bytes = new byte[fileSize];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)fileSize));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        checked((uint)pixelOffset));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        40);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        topDown ? -height : height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        24);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(34, 4),
+        checked((uint)(rowStride * height)));
+
+    for (var y = 0; y < height; y++)
+    {
+        var storedY = topDown
+            ? y
+            : height - 1 - y;
+        var row = pixelOffset + (storedY * rowStride);
+
+        for (var x = 0; x < width; x++)
+        {
+            var offset = row + (x * 3);
+            var red = (byte)(20 + (x * 17));
+            var green = (byte)(40 + (y * 23));
+            var blue = (byte)(60 + x + y);
+            bytes[offset] = blue;
+            bytes[offset + 1] = green;
+            bytes[offset + 2] = red;
+        }
+    }
+
+    File.WriteAllBytes(path, bytes);
+}
+
+static void WriteBmp32Rgb(
+    string path,
+    int width,
+    int height)
+{
+    var rowStride = checked(width * 4);
+    var pixelOffset = 54;
+    var fileSize = checked(pixelOffset + (rowStride * height));
+    var bytes = new byte[fileSize];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)fileSize));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        checked((uint)pixelOffset));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        40);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        32);
+
+    for (var y = 0; y < height; y++)
+    {
+        var storedY = height - 1 - y;
+        var row = pixelOffset + (storedY * rowStride);
+
+        for (var x = 0; x < width; x++)
+        {
+            var offset = row + (x * 4);
+            bytes[offset] = (byte)(30 + x);
+            bytes[offset + 1] = (byte)(50 + y);
+            bytes[offset + 2] = (byte)(70 + x + y);
+            bytes[offset + 3] = 0;
+        }
+    }
+
+    File.WriteAllBytes(path, bytes);
+}
+
+static void WriteBmp32BitfieldsAlpha(
+    string path,
+    int width,
+    int height)
+{
+    const int dibSize = 56;
+    var rowStride = checked(width * 4);
+    var pixelOffset = 14 + dibSize;
+    var fileSize = checked(pixelOffset + (rowStride * height));
+    var bytes = new byte[fileSize];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)fileSize));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        checked((uint)pixelOffset));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        dibSize);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        32);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(30, 4),
+        3);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(54, 4),
+        0x00ff0000);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(58, 4),
+        0x0000ff00);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(62, 4),
+        0x000000ff);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(66, 4),
+        0xff000000);
+
+    for (var y = 0; y < height; y++)
+    {
+        var storedY = height - 1 - y;
+        var row = pixelOffset + (storedY * rowStride);
+
+        for (var x = 0; x < width; x++)
+        {
+            var red = (byte)(90 + x);
+            var green = (byte)(110 + y);
+            var blue = (byte)(130 + x + y);
+            var alpha = (byte)(128 + y);
+            var value =
+                ((uint)alpha << 24)
+                | ((uint)red << 16)
+                | ((uint)green << 8)
+                | blue;
+
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                bytes.AsSpan(
+                    row + (x * 4),
+                    4),
+                value);
+        }
+    }
+
+    File.WriteAllBytes(path, bytes);
+}
+
+static void WriteUnsupportedBmp8(string path)
+{
+    const int width = 2;
+    const int height = 2;
+    const int rowStride = 4;
+    const int pixelOffset = 54;
+    var bytes = new byte[
+        pixelOffset + (rowStride * height)];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)bytes.Length));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        pixelOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        40);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        8);
+
+    File.WriteAllBytes(path, bytes);
 }
 
 static void WriteRgb(string path, int width = 320, int height = 200)
@@ -210,6 +437,12 @@ try
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
     var detailCachePath = Path.Combine(sourceRoot, "detail-cache.jpg");
     var sourceChangePath = Path.Combine(sourceRoot, "source-change.jpg");
+    var bmp24BottomUpPath = Path.Combine(sourceRoot, "bmp-24-bottom-up.bmp");
+    var bmp24TopDownPath = Path.Combine(sourceRoot, "bmp-24-top-down.bmp");
+    var bmp32RgbPath = Path.Combine(sourceRoot, "bmp-32-rgb.bmp");
+    var bmp32AlphaPath = Path.Combine(sourceRoot, "bmp-32-alpha.bmp");
+    var bmpDisguisedPath = Path.Combine(sourceRoot, "bmp-disguised.jpg");
+    var bmpUnsupportedPath = Path.Combine(sourceRoot, "bmp-unsupported.bmp");
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
@@ -225,6 +458,12 @@ try
     WriteRgb(cancellationPath, 6000, 6000);
     WriteRgb(detailCachePath, 2200, 1400);
     WriteRgb(sourceChangePath, 320, 200);
+    WriteBmp24(bmp24BottomUpPath, 5, 3, topDown: false);
+    WriteBmp24(bmp24TopDownPath, 5, 3, topDown: true);
+    WriteBmp32Rgb(bmp32RgbPath, 4, 3);
+    WriteBmp32BitfieldsAlpha(bmp32AlphaPath, 4, 3);
+    File.Copy(bmp24BottomUpPath, bmpDisguisedPath);
+    WriteUnsupportedBmp8(bmpUnsupportedPath);
 
     Require(
         FullResolutionDecoder.ProductionAccessPolicy
@@ -283,6 +522,66 @@ try
             $"Actual loader format was not detected for extension-mismatched PNG: {disguisedSnapshot.Metadata.Format}.");
     }
 
+    foreach (var bmpPath in new[]
+             {
+                 bmp24BottomUpPath,
+                 bmp24TopDownPath,
+                 bmp32RgbPath,
+                 bmp32AlphaPath,
+                 bmpDisguisedPath
+             })
+    {
+        var bmpFile = new FileInfo(bmpPath);
+        using var snapshot = await ImageSourceSnapshot.OpenAsync(
+            bmpPath,
+            bmpFile.Length,
+            bmpFile.LastWriteTimeUtc.Ticks);
+
+        Require(
+            snapshot.Metadata.Width is 4 or 5
+            && snapshot.Metadata.Height == 3,
+            $"BMP metadata dimensions were invalid for {Path.GetFileName(bmpPath)}.");
+        Require(
+            string.Equals(
+                snapshot.Metadata.Format,
+                "bmp",
+                StringComparison.Ordinal),
+            $"BMP signature was not recognized for {Path.GetFileName(bmpPath)}.");
+        Require(
+            snapshot.Orientation == 1
+            && !snapshot.HasEmbeddedIcc,
+            "BMP fallback exposed invalid orientation/ICC state.");
+    }
+
+    var bmp32AlphaFile = new FileInfo(
+        bmp32AlphaPath);
+    using (var alphaSnapshot =
+           await ImageSourceSnapshot.OpenAsync(
+               bmp32AlphaPath,
+               bmp32AlphaFile.Length,
+               bmp32AlphaFile.LastWriteTimeUtc.Ticks))
+    {
+        Require(
+            alphaSnapshot.Metadata.HasAlpha,
+            "32-bit BITFIELDS BMP lost its explicit alpha mask.");
+    }
+
+    var unsupportedBmpFile =
+        new FileInfo(bmpUnsupportedPath);
+    try
+    {
+        using var _ =
+            await ImageSourceSnapshot.OpenAsync(
+                bmpUnsupportedPath,
+                unsupportedBmpFile.Length,
+                unsupportedBmpFile.LastWriteTimeUtc.Ticks);
+        throw new InvalidOperationException(
+            "Unsupported 8-bit BMP was accepted.");
+    }
+    catch (InvalidDataException)
+    {
+    }
+
     var cache = new ThumbnailCache(cacheRoot);
     Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
@@ -311,7 +610,12 @@ try
                  pngPath,
                  webpPath,
                  gifPath,
-                 tiffPath
+                 tiffPath,
+                 bmp24BottomUpPath,
+                 bmp24TopDownPath,
+                 bmp32RgbPath,
+                 bmp32AlphaPath,
+                 bmpDisguisedPath
              })
     {
         var source = SourceFor(assetId++, 1, sourcePath);
@@ -724,6 +1028,103 @@ try
 
     await VerifyFullResolutionAsync(corruptSourcePath, 320, 200, "JPEG");
     await VerifyFullResolutionAsync(tiffPath, 320, 200, "TIFF");
+    await VerifyFullResolutionAsync(
+        bmp24BottomUpPath,
+        5,
+        3,
+        "BMP 24-bit bottom-up");
+    await VerifyFullResolutionAsync(
+        bmp24TopDownPath,
+        5,
+        3,
+        "BMP 24-bit top-down");
+    await VerifyFullResolutionAsync(
+        bmp32RgbPath,
+        4,
+        3,
+        "BMP 32-bit BI_RGB");
+    await VerifyFullResolutionAsync(
+        bmp32AlphaPath,
+        4,
+        3,
+        "BMP 32-bit BITFIELDS alpha");
+
+    byte[]? bmpBottomUpFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        new FullResolutionSource(
+            bmp24BottomUpPath,
+            new FileInfo(bmp24BottomUpPath).Length,
+            File.GetLastWriteTimeUtc(
+                bmp24BottomUpPath).Ticks),
+        4L * 1024 * 1024,
+        stripe =>
+            bmpBottomUpFirstStripe ??=
+                stripe.RgbaBytes,
+        stripeHeight: 2);
+    Require(
+        bmpBottomUpFirstStripe is { Length: >= 4 }
+        && bmpBottomUpFirstStripe[0] == 20
+        && bmpBottomUpFirstStripe[1] == 40
+        && bmpBottomUpFirstStripe[2] == 60
+        && bmpBottomUpFirstStripe[3] == 255,
+        "Bottom-up BMP was not normalized to top-down RGBA order.");
+
+    byte[]? bmpTopDownFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        new FullResolutionSource(
+            bmp24TopDownPath,
+            new FileInfo(bmp24TopDownPath).Length,
+            File.GetLastWriteTimeUtc(
+                bmp24TopDownPath).Ticks),
+        4L * 1024 * 1024,
+        stripe =>
+            bmpTopDownFirstStripe ??=
+                stripe.RgbaBytes,
+        stripeHeight: 2);
+    Require(
+        bmpTopDownFirstStripe is { Length: >= 4 }
+        && bmpTopDownFirstStripe[0] == 20
+        && bmpTopDownFirstStripe[1] == 40
+        && bmpTopDownFirstStripe[2] == 60
+        && bmpTopDownFirstStripe[3] == 255,
+        "Top-down BMP was not normalized to top-down RGBA order.");
+
+    byte[]? bmpRgbFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        new FullResolutionSource(
+            bmp32RgbPath,
+            new FileInfo(bmp32RgbPath).Length,
+            File.GetLastWriteTimeUtc(
+                bmp32RgbPath).Ticks),
+        4L * 1024 * 1024,
+        stripe =>
+            bmpRgbFirstStripe ??=
+                stripe.RgbaBytes,
+        stripeHeight: 2);
+    Require(
+        bmpRgbFirstStripe is { Length: >= 4 }
+        && bmpRgbFirstStripe[3] == 255,
+        "32-bit BI_RGB BMP incorrectly treated its reserved byte as alpha.");
+
+    byte[]? bmpAlphaFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        new FullResolutionSource(
+            bmp32AlphaPath,
+            new FileInfo(bmp32AlphaPath).Length,
+            File.GetLastWriteTimeUtc(
+                bmp32AlphaPath).Ticks),
+        4L * 1024 * 1024,
+        stripe =>
+            bmpAlphaFirstStripe ??=
+                stripe.RgbaBytes,
+        stripeHeight: 2);
+    Require(
+        bmpAlphaFirstStripe is { Length: >= 4 }
+        && bmpAlphaFirstStripe[0] == 90
+        && bmpAlphaFirstStripe[1] == 110
+        && bmpAlphaFirstStripe[2] == 130
+        && bmpAlphaFirstStripe[3] == 128,
+        "32-bit BITFIELDS BMP did not preserve explicit alpha.");
 
     var gifFullSource = new FullResolutionSource(
         gifPath,
