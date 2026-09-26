@@ -398,17 +398,12 @@ public sealed class FullResolutionDecoder
             return FullResolutionAccessPolicy.Random;
         }
 
-        return snapshot.Metadata.Format.ToLowerInvariant() switch
-        {
-            "jpeg" => FullResolutionAccessPolicy.Sequential,
-            "png" => FullResolutionAccessPolicy.Sequential,
-            "avif" => FullResolutionAccessPolicy.Sequential,
-            "heif" => FullResolutionAccessPolicy.Sequential,
-            "heic" => FullResolutionAccessPolicy.Sequential,
-            "webp" => FullResolutionAccessPolicy.Random,
-            "tiff" => FullResolutionAccessPolicy.Random,
-            _ => FullResolutionAccessPolicy.Random
-        };
+        return string.Equals(
+                snapshot.Metadata.Format,
+                "png",
+                StringComparison.OrdinalIgnoreCase)
+            ? FullResolutionAccessPolicy.Sequential
+            : FullResolutionAccessPolicy.Random;
     }
 
     private static FullResolutionInfo CreateInfo(
