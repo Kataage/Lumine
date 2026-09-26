@@ -12,7 +12,9 @@ static void Require(bool condition, string message)
 
 static async Task<string> DecodeDigestAsync(
     string path,
-    FullResolutionAccessPolicy accessPolicy)
+    FullResolutionAccessPolicy accessPolicy,
+    FullResolutionAccessPolicy expectedRecommendation,
+    string label)
 {
     var file = new FileInfo(path);
     using var prepared =
@@ -24,8 +26,8 @@ static async Task<string> DecodeDigestAsync(
 
     Require(
         prepared.RecommendedAccessPolicy
-            == FullResolutionAccessPolicy.Sequential,
-        $"NativeAOT PNG recommendation was {prepared.RecommendedAccessPolicy}; expected Sequential.");
+            == expectedRecommendation,
+        $"NativeAOT {label} recommendation was {prepared.RecommendedAccessPolicy}; expected {expectedRecommendation}.");
 
     using var digest = IncrementalHash.CreateHash(
         HashAlgorithmName.SHA256);
@@ -44,11 +46,76 @@ static async Task<string> DecodeDigestAsync(
 
     Require(
         rows == prepared.Info.Height,
-        $"NativeAOT decode returned {rows} rows; expected {prepared.Info.Height}.");
+        $"NativeAOT {label} decode returned {rows} rows; expected {prepared.Info.Height}.");
 
     return Convert.ToHexString(
             digest.GetHashAndReset())
         .ToLowerInvariant();
+}
+
+static void WritePlainPng(string path)
+{
+    using var blank = NetVips.Image.Black(
+        640,
+        480,
+        bands: 4);
+    using var values = blank.NewFromImage(
+        [32, 220, 64, 180]);
+    using var rgba = values.Copy(
+        interpretation: Enums.Interpretation.Srgb);
+
+    rgba.Pngsave(
+        path,
+        keep: Enums.ForeignKeep.None);
+}
+
+static void WriteIccPng(string path)
+{
+    using var blank = NetVips.Image.Black(
+        640,
+        480,
+        bands: 4);
+    using var values = blank.NewFromImage(
+        [32, 220, 64, 180]);
+    using var srgb = values.Copy(
+        interpretation: Enums.Interpretation.Srgb);
+    using var p3 = srgb.IccTransform(
+        "p3",
+        inputProfile: "srgb");
+
+    p3.Pngsave(
+        path,
+        keep: Enums.ForeignKeep.Icc);
+}
+
+static async Task VerifyAdaptiveMatchesAsync(
+    string path,
+    FullResolutionAccessPolicy expectedRecommendation,
+    string label)
+{
+    var adaptiveDigest = await DecodeDigestAsync(
+        path,
+        FullResolutionAccessPolicy.Adaptive,
+        expectedRecommendation,
+        label);
+    var explicitDigest = await DecodeDigestAsync(
+        path,
+        expectedRecommendation,
+        expectedRecommendation,
+        label);
+
+    Require(
+        adaptiveDigest.Length == 64,
+        $"NativeAOT {label} Adaptive decode did not produce a SHA-256 digest.");
+    Require(
+        string.Equals(
+            adaptiveDigest,
+            explicitDigest,
+            StringComparison.Ordinal),
+        $"NativeAOT {label} Adaptive output differs from explicit {expectedRecommendation}: adaptive={adaptiveDigest}, explicit={explicitDigest}.");
+
+    Console.WriteLine(
+        $"NativeAOT {label}: Adaptive->{expectedRecommendation}, digest={adaptiveDigest}");
 }
 
 Require(
@@ -63,49 +130,34 @@ Directory.CreateDirectory(root);
 
 try
 {
-    var path = Path.Combine(root, "icc-alpha.png");
+    var plainPath = Path.Combine(
+        root,
+        "plain-alpha.png");
+    var iccPath = Path.Combine(
+        root,
+        "icc-alpha.png");
 
-    using (var blank = NetVips.Image.Black(
-               640,
-               480,
-               bands: 4))
-    using (var values = blank.NewFromImage(
-               [32, 220, 64, 180]))
-    using (var srgb = values.Copy(
-               interpretation: Enums.Interpretation.Srgb))
-    using (var p3 = srgb.IccTransform(
-               "p3",
-               inputProfile: "srgb"))
-    {
-        p3.Pngsave(
-            path,
-            keep: Enums.ForeignKeep.Icc);
-    }
+    WritePlainPng(plainPath);
+    WriteIccPng(iccPath);
 
-    var adaptiveDigest = await DecodeDigestAsync(
-        path,
-        FullResolutionAccessPolicy.Adaptive);
-    var randomDigest = await DecodeDigestAsync(
-        path,
-        FullResolutionAccessPolicy.Random);
-
-    Require(
-        adaptiveDigest.Length == 64,
-        "NativeAOT Adaptive decode did not produce a SHA-256 digest.");
-    Require(
-        string.Equals(
-            adaptiveDigest,
-            randomDigest,
-            StringComparison.Ordinal),
-        $"NativeAOT Adaptive PNG output differs from Random: adaptive={adaptiveDigest}, random={randomDigest}.");
+    await VerifyAdaptiveMatchesAsync(
+        plainPath,
+        FullResolutionAccessPolicy.Sequential,
+        "plain PNG");
+    await VerifyAdaptiveMatchesAsync(
+        iccPath,
+        FullResolutionAccessPolicy.Random,
+        "ICC PNG");
 
     Console.WriteLine(
-        $"NativeAOT Image smoke passed: policy=Adaptive->Sequential, digest={adaptiveDigest}");
+        "NativeAOT Image smoke passed.");
 }
 finally
 {
     if (Directory.Exists(root))
     {
-        Directory.Delete(root, recursive: true);
+        Directory.Delete(
+            root,
+            recursive: true);
     }
 }
