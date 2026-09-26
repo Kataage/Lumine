@@ -793,7 +793,7 @@ try
         await VerifyFullResolutionAsync(avifPath, 8, 6, "AVIF");
         await VerifyRecommendedAccessPolicyAsync(
             avifPath,
-            FullResolutionAccessPolicy.Sequential,
+            FullResolutionAccessPolicy.Random,
             "AVIF");
     }
 
@@ -810,7 +810,7 @@ try
         await VerifyFullResolutionAsync(heicPath, 8, 6, "HEIC");
         await VerifyRecommendedAccessPolicyAsync(
             heicPath,
-            FullResolutionAccessPolicy.Sequential,
+            FullResolutionAccessPolicy.Random,
             "HEIC");
     }
 
