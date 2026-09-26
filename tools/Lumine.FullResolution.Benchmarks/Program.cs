@@ -372,7 +372,8 @@ static void AddCaseMetadata(
     IDictionary<string, string> metadata,
     string fixture,
     FullResolutionAccessPolicy policy,
-    CaseAggregate aggregate)
+    CaseAggregate aggregate,
+    string? outputDigest)
 {
     var prefix =
         $"case.{fixture}.{policy.ToString().ToLowerInvariant()}";
@@ -411,7 +412,7 @@ static void AddCaseMetadata(
         aggregate.AverageAllocatedBytes.ToString(
             CultureInfo.InvariantCulture);
     metadata[$"{prefix}.output_digest_sha256"] =
-        aggregate.OutputDigest;
+        outputDigest ?? string.Empty;
 }
 
 var output = ReadOption(args, "--output")
@@ -664,6 +665,8 @@ try
     var recorder = new BenchmarkRecorder();
     var aggregates =
         new Dictionary<(string, FullResolutionAccessPolicy), CaseAggregate>();
+    var outputDigests =
+        new Dictionary<(string, FullResolutionAccessPolicy), string>();
 
     foreach (var fixture in fixtures)
     {
@@ -717,13 +720,47 @@ try
             }
         }
 
-        if (random.Success
-            && sequential.Success
-            && random.OutputDigest != sequential.OutputDigest)
+        if (random.Success)
         {
-            sequential.AddFailure(
-                new InvalidOperationException(
-                    $"{fixture.Name} full-output digest differs between Random ({random.OutputDigest}) and Sequential ({sequential.OutputDigest})."));
+            outputDigests[
+                (fixture.Name,
+                 FullResolutionAccessPolicy.Random)] =
+                await ComputeOutputDigestAsync(
+                    fixture,
+                    FullResolutionAccessPolicy.Random);
+        }
+
+        if (sequential.Success)
+        {
+            outputDigests[
+                (fixture.Name,
+                 FullResolutionAccessPolicy.Sequential)] =
+                await ComputeOutputDigestAsync(
+                    fixture,
+                    FullResolutionAccessPolicy.Sequential);
+        }
+
+        if (random.Success
+            && sequential.Success)
+        {
+            var randomDigest =
+                outputDigests[
+                    (fixture.Name,
+                     FullResolutionAccessPolicy.Random)];
+            var sequentialDigest =
+                outputDigests[
+                    (fixture.Name,
+                     FullResolutionAccessPolicy.Sequential)];
+
+            if (!string.Equals(
+                    randomDigest,
+                    sequentialDigest,
+                    StringComparison.Ordinal))
+            {
+                sequential.AddFailure(
+                    new InvalidOperationException(
+                        $"{fixture.Name} full-output SHA-256 differs between Random ({randomDigest}) and Sequential ({sequentialDigest})."));
+            }
         }
     }
 
@@ -821,14 +858,20 @@ try
             FullResolutionAccessPolicy.Random,
             aggregates[
                 (fixture.Name,
-                 FullResolutionAccessPolicy.Random)]);
+                 FullResolutionAccessPolicy.Random)],
+            outputDigests.GetValueOrDefault(
+                (fixture.Name,
+                 FullResolutionAccessPolicy.Random)));
         AddCaseMetadata(
             metadata,
             fixture.Name,
             FullResolutionAccessPolicy.Sequential,
             aggregates[
                 (fixture.Name,
-                 FullResolutionAccessPolicy.Sequential)]);
+                 FullResolutionAccessPolicy.Sequential)],
+            outputDigests.GetValueOrDefault(
+                (fixture.Name,
+                 FullResolutionAccessPolicy.Sequential)));
     }
 
     await recorder.WriteJsonAsync(
