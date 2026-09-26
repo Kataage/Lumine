@@ -1,3 +1,4 @@
+using System.Reflection;
 using Lumine.Image;
 using NetVips;
 
@@ -7,6 +8,34 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static void VerifyUnreadableOrientationIsUnsafe()
+{
+    using var blank = NetVips.Image.Black(
+        8,
+        8,
+        bands: 3);
+    using var invalid = blank.Mutate(
+        image => image.Set(
+            GValue.GIntType,
+            "orientation",
+            9));
+
+    var method = typeof(ImageSourceSnapshot).GetMethod(
+        "ReadOrientation",
+        BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "ImageSourceSnapshot.ReadOrientation was not found.");
+
+    var value = method.Invoke(
+        null,
+        [invalid]);
+
+    Require(
+        value is int orientation
+        && orientation == 0,
+        $"Invalid orientation metadata was trusted as '{value}' instead of unknown/unsafe.");
 }
 
 static byte[] CreateHeifFixture(Enums.ForeignHeifCompression compression)
@@ -201,6 +230,7 @@ try
         FullResolutionDecoder.ProductionAccessPolicy
             == FullResolutionAccessPolicy.Adaptive,
         "Production full-resolution access policy is not Adaptive.");
+    VerifyUnreadableOrientationIsUnsafe();
     await VerifyRecommendedAccessPolicyAsync(
         jpgPath,
         FullResolutionAccessPolicy.Random,
