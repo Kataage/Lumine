@@ -136,6 +136,7 @@ try
 {
     var jpgPath = Path.Combine(sourceRoot, "sample.jpg");
     var pngPath = Path.Combine(sourceRoot, "alpha.png");
+    var disguisedPngPath = Path.Combine(sourceRoot, "png-with-jpg-extension.jpg");
     var webpPath = Path.Combine(sourceRoot, "sample.webp");
     var gifPath = Path.Combine(sourceRoot, "sample.gif");
     var tiffPath = Path.Combine(sourceRoot, "sample.tiff");
@@ -152,6 +153,7 @@ try
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
+    File.Copy(pngPath, disguisedPngPath);
     WriteRgb(webpPath);
     await WriteAnimatedGifAsync(gifPath);
     WriteRgb(tiffPath);
@@ -169,6 +171,20 @@ try
                image => image.Set(GValue.GIntType, "orientation", 6)))
     {
         oriented.WriteToFile(orientedPath);
+    }
+
+    var disguisedInfo = new FileInfo(disguisedPngPath);
+    using (var disguisedSnapshot = await ImageSourceSnapshot.OpenAsync(
+               disguisedPngPath,
+               disguisedInfo.Length,
+               disguisedInfo.LastWriteTimeUtc.Ticks))
+    {
+        Require(
+            string.Equals(
+                disguisedSnapshot.Metadata.Format,
+                "png",
+                StringComparison.Ordinal),
+            $"Actual loader format was not detected for extension-mismatched PNG: {disguisedSnapshot.Metadata.Format}.");
     }
 
     var cache = new ThumbnailCache(cacheRoot);
