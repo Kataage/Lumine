@@ -208,7 +208,12 @@ public sealed class ImageSourceSnapshot : IDisposable
 
             if (normalized.Contains("heif", StringComparison.Ordinal))
             {
-                return "heif";
+                return string.Equals(
+                        Path.GetExtension(path),
+                        ".avif",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? "avif"
+                    : "heif";
             }
 
             if (normalized.Contains("tiff", StringComparison.Ordinal))
