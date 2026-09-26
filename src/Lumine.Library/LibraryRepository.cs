@@ -262,44 +262,81 @@ public sealed class LibraryRepository
     internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
         LoadTrackedSourceIdentitiesAsync(
             long libraryId,
+            IReadOnlyList<string> relativePathKeys,
             CancellationToken cancellationToken = default)
     {
-        await using var connection = await _database.OpenConnectionAsync(
-            cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                a.id,
-                a.source_revision,
-                a.relative_path_key,
-                a.file_size,
-                a.modified_at_utc_ticks,
-                tm.source_identity
-            FROM assets AS a
-            INNER JOIN asset_technical_metadata AS tm
-              ON tm.asset_id = a.id
-             AND tm.source_revision = a.source_revision
-            WHERE a.library_id = $library_id;
-            """;
-        command.Parameters.AddWithValue("$library_id", libraryId);
+        ArgumentNullException.ThrowIfNull(relativePathKeys);
 
+        if (relativePathKeys.Count == 0)
+        {
+            return new Dictionary<string, TrackedSourceIdentity>(
+                StringComparer.Ordinal);
+        }
+
+        var keys = relativePathKeys
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         var result = new Dictionary<string, TrackedSourceIdentity>(
+            keys.Length,
             StringComparer.Ordinal);
 
-        await using var reader = await command.ExecuteReaderAsync(
+        await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
 
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        const int chunkSize = 400;
+        for (var offset = 0; offset < keys.Length; offset += chunkSize)
         {
-            var tracked = new TrackedSourceIdentity(
-                reader.GetInt64(0),
-                reader.GetInt64(1),
-                reader.GetString(2),
-                reader.GetInt64(3),
-                reader.GetInt64(4),
-                reader.GetString(5));
-            result[tracked.RelativePathKey] = tracked;
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Math.Min(
+                chunkSize,
+                keys.Length - offset);
+
+            await using var command = connection.CreateCommand();
+            command.Parameters.AddWithValue("$library_id", libraryId);
+
+            var parameterNames = new string[count];
+            for (var index = 0; index < count; index++)
+            {
+                var parameterName = $"$path_key_{index}";
+                parameterNames[index] = parameterName;
+                command.Parameters.AddWithValue(
+                    parameterName,
+                    keys[offset + index]);
+            }
+
+            command.CommandText =
+                $"""
+                SELECT
+                    a.id,
+                    a.source_revision,
+                    a.relative_path_key,
+                    a.file_size,
+                    a.modified_at_utc_ticks,
+                    tm.source_identity
+                FROM assets AS a
+                INNER JOIN asset_technical_metadata AS tm
+                  ON tm.asset_id = a.id
+                 AND tm.source_revision = a.source_revision
+                WHERE a.library_id = $library_id
+                  AND a.relative_path_key IN (
+                      {string.Join(", ", parameterNames)}
+                  );
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var tracked = new TrackedSourceIdentity(
+                    reader.GetInt64(0),
+                    reader.GetInt64(1),
+                    reader.GetString(2),
+                    reader.GetInt64(3),
+                    reader.GetInt64(4),
+                    reader.GetString(5));
+                result[tracked.RelativePathKey] = tracked;
+            }
         }
 
         return result;
