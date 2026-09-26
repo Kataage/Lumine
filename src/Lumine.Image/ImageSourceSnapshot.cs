@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using Lumine.Core;
 using NetVips;
 
 namespace Lumine.Image;
@@ -10,7 +10,9 @@ public sealed record SourceTechnicalMetadata(
     int RawHeight,
     bool HasAlpha,
     string Format,
-    string ContentSha256)
+    string SourceIdentity,
+    bool UsedFullHash,
+    long BytesHashed)
 {
     public long EstimatedRgbaBytes => checked((long)Width * Height * 4L);
 }
@@ -45,7 +47,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         string sourcePath,
         long expectedFileSize,
         long expectedModifiedAtUtcTicks,
-        string? expectedContentSha256 = null,
+        string? expectedSourceIdentity = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
@@ -56,7 +58,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 sourcePath,
                 expectedFileSize,
                 expectedModifiedAtUtcTicks,
-                expectedContentSha256,
+                expectedSourceIdentity,
                 cancellationToken),
             cancellationToken);
     }
@@ -65,7 +67,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         string sourcePath,
         long expectedFileSize,
         long expectedModifiedAtUtcTicks,
-        string? expectedContentSha256,
+        string? expectedSourceIdentity,
         CancellationToken cancellationToken)
     {
         VipsRuntimePolicy.EnsureConfigured();
@@ -90,35 +92,19 @@ public sealed class ImageSourceSnapshot : IDisposable
                 expectedFileSize,
                 expectedModifiedAtUtcTicks);
 
-            using var incremental = IncrementalHash.CreateHash(
-                HashAlgorithmName.SHA256);
-            var buffer = new byte[128 * 1024];
+            var identity = FileSourceIdentityProbe.Read(
+                guard,
+                cancellationToken);
 
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var read = guard.Read(buffer, 0, buffer.Length);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                incremental.AppendData(buffer, 0, read);
-            }
-
-            var contentSha256 = Convert.ToHexString(
-                    incremental.GetHashAndReset())
-                .ToLowerInvariant();
-
-            if (!string.IsNullOrWhiteSpace(expectedContentSha256)
+            if (!string.IsNullOrWhiteSpace(expectedSourceIdentity)
                 && !string.Equals(
-                    expectedContentSha256,
-                    contentSha256,
-                    StringComparison.OrdinalIgnoreCase))
+                    expectedSourceIdentity,
+                    identity.Value,
+                    StringComparison.Ordinal))
             {
                 throw new ImageSourceChangedException(
                     fullPath,
-                    "Content SHA-256 no longer matches the persisted source identity.");
+                    $"Source identity changed from '{expectedSourceIdentity}' to '{identity.Value}'.");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -144,8 +130,10 @@ public sealed class ImageSourceSnapshot : IDisposable
                 raw.Width,
                 raw.Height,
                 oriented.HasAlpha(),
-                NormalizeFormat(fullPath),
-                contentSha256);
+                DetectActualFormat(raw, fullPath),
+                identity.Value,
+                identity.UsedFullHash,
+                identity.BytesHashed);
 
             return new ImageSourceSnapshot(
                 fullPath,
@@ -185,17 +173,74 @@ public sealed class ImageSourceSnapshot : IDisposable
         }
     }
 
-    private static string NormalizeFormat(string path)
+    private static string DetectActualFormat(
+        NetVips.Image image,
+        string path)
     {
-        var format = Path.GetExtension(path)
+        string? loader = null;
+
+        try
+        {
+            loader = image.Get("vips-loader")?.ToString();
+        }
+        catch (VipsException)
+        {
+        }
+
+        if (!string.IsNullOrWhiteSpace(loader))
+        {
+            var normalized = loader.ToLowerInvariant();
+
+            if (normalized.Contains("jpeg", StringComparison.Ordinal))
+            {
+                return "jpeg";
+            }
+
+            if (normalized.Contains("png", StringComparison.Ordinal))
+            {
+                return "png";
+            }
+
+            if (normalized.Contains("webp", StringComparison.Ordinal))
+            {
+                return "webp";
+            }
+
+            if (normalized.Contains("heif", StringComparison.Ordinal))
+            {
+                return "heif";
+            }
+
+            if (normalized.Contains("tiff", StringComparison.Ordinal))
+            {
+                return "tiff";
+            }
+
+            if (normalized.Contains("gif", StringComparison.Ordinal))
+            {
+                return "gif";
+            }
+
+            if (normalized.Contains("avif", StringComparison.Ordinal))
+            {
+                return "avif";
+            }
+
+            if (normalized.Contains("bmp", StringComparison.Ordinal))
+            {
+                return "bmp";
+            }
+        }
+
+        var extension = Path.GetExtension(path)
             .TrimStart('.')
             .ToLowerInvariant();
 
-        return format switch
+        return extension switch
         {
             "jpg" => "jpeg",
             "tif" => "tiff",
-            _ => format
+            _ => extension
         };
     }
 }
