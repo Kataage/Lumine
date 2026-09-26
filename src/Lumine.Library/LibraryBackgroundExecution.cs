@@ -87,20 +87,26 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
-    public Task<bool> AdvanceSourceRevisionAsync(
+    public Task<int> RefreshAssetSourceAsync(
         long libraryId,
-        long assetId,
-        long expectedSourceRevision,
-        long expectedFileSize,
-        long expectedModifiedAtUtcTicks,
+        string relativePath,
+        long fileSize,
+        long modifiedAtUtcTicks,
         CancellationToken cancellationToken = default) =>
         LibraryBackgroundExecution.RunAsync(
-            token => _repository.AdvanceSourceRevisionAsync(
+            token => _repository.UpsertAssetsAsync(
                 libraryId,
-                assetId,
-                expectedSourceRevision,
-                expectedFileSize,
-                expectedModifiedAtUtcTicks,
+                [
+                    new AssetUpsert(
+                        relativePath,
+                        fileSize,
+                        new DateTimeOffset(
+                            new DateTime(
+                                modifiedAtUtcTicks,
+                                DateTimeKind.Utc)),
+                        Format: LibraryFileTypes.GetFormat(relativePath),
+                        ForceSourceRevision: true)
+                ],
                 token),
             cancellationToken);
 
