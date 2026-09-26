@@ -223,7 +223,7 @@ try
         "JPEG ICC");
     await VerifyRecommendedAccessPolicyAsync(
         p3PngPath,
-        FullResolutionAccessPolicy.Sequential,
+        FullResolutionAccessPolicy.Random,
         "PNG ICC");
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
@@ -671,7 +671,7 @@ try
         && p3PngFirstStripe[1] > 140
         && p3PngFirstStripe[2] < 100
         && p3PngFirstStripe[3] is >= 170 and <= 190,
-        "Full-resolution PNG ICC Sequential path did not preserve sRGB-normalized color and alpha.");
+        "Full-resolution PNG ICC Random fallback did not preserve sRGB-normalized color and alpha.");
 
     var webpFullSource = new FullResolutionSource(
         webpPath,
