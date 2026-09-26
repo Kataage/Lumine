@@ -117,6 +117,13 @@ jobs:
         shell: pwsh
         run: ./build/Test-DetailPerformance.ps1
 
+      - name: Generate full-resolution access-policy benchmark
+        run: dotnet run --project tools/Lumine.FullResolution.Benchmarks/Lumine.FullResolution.Benchmarks.csproj -c Release --no-build -- --output artifacts/benchmarks/full-resolution-access-policy.json
+
+      - name: Enforce full-resolution access-policy benchmark
+        shell: pwsh
+        run: ./build/Test-FullResolutionAccessPolicy.ps1
+
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
 
