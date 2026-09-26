@@ -423,7 +423,7 @@ try
                 identityPath,
                 identityStat.Length,
                 identityStat.LastWriteTimeUtc.Ticks,
-                identityMetadata.ContentSha256),
+                identityMetadata.SourceIdentity),
             32L * 1024 * 1024,
             _ => { });
         throw new InvalidOperationException(
