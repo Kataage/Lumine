@@ -167,6 +167,13 @@ foreach ($entry in $expectedProductionPolicies.GetEnumerator()) {
     }
 }
 
+# A policy selected by production must itself be executable. Candidate
+# failures are tolerated for exploratory comparisons only; they must never
+# be tolerated for the branch Adaptive will actually choose.
+foreach ($entry in $expectedProductionPolicies.GetEnumerator()) {
+    $null = Require-PolicyCase $entry.Key $entry.Value $true
+}
+
 foreach ($optional in @("avif", "heic")) {
     $capability = [bool]::Parse((Get-Metadata "capability.$optional"))
     if ($capability) {
@@ -174,6 +181,8 @@ foreach ($optional in @("avif", "heic")) {
         if ($actual -ne "random") {
             throw "Adaptive production policy for $optional was '$actual'; expected 'random' until #312 validates the HEIF/HEIC production contract."
         }
+
+        $null = Require-PolicyCase $optional "random" $true
     }
 }
 
