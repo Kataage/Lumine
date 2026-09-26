@@ -302,6 +302,27 @@ try
         },
         CancellationToken.None);
 
+    var currentBeforeReplacement = await restartedLibraryService.GetAssetAsync(
+        library.Id,
+        "adapter-source.png")
+        ?? throw new InvalidOperationException(
+            "App smoke asset disappeared after original-load identity repair.");
+
+    asset = new ViewerAsset(
+        currentBeforeReplacement.Id,
+        currentBeforeReplacement.SourceRevision,
+        currentBeforeReplacement.RelativePath,
+        currentBeforeReplacement.FileName,
+        currentBeforeReplacement.FileSize,
+        currentBeforeReplacement.ModifiedAtUtc.UtcDateTime.Ticks,
+        currentBeforeReplacement.Width,
+        currentBeforeReplacement.Height,
+        currentBeforeReplacement.Format,
+        currentBeforeReplacement.SourceIdentity,
+        currentBeforeReplacement.RawWidth,
+        currentBeforeReplacement.RawHeight,
+        currentBeforeReplacement.HasAlpha);
+
     var staleRevision = asset.SourceRevision;
     var staleIdentity = asset.SourceIdentity
         ?? throw new InvalidOperationException(
