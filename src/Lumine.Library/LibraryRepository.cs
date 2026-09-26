@@ -259,49 +259,6 @@ public sealed class LibraryRepository
         return true;
     }
 
-    public async Task<bool> AdvanceSourceRevisionAsync(
-        long libraryId,
-        long assetId,
-        long expectedSourceRevision,
-        long expectedFileSize,
-        long expectedModifiedAtUtcTicks,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(assetId);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(expectedSourceRevision);
-        ArgumentOutOfRangeException.ThrowIfNegative(expectedFileSize);
-
-        await using var connection = await _database.OpenConnectionAsync(
-            cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            UPDATE assets
-            SET source_revision = source_revision + 1,
-                width = NULL,
-                height = NULL,
-                format = NULL,
-                updated_at_utc_ticks = $updated
-            WHERE library_id = $library_id
-              AND id = $asset_id
-              AND source_revision = $source_revision
-              AND file_size = $file_size
-              AND modified_at_utc_ticks = $modified;
-            """;
-        command.Parameters.AddWithValue(
-            "$updated",
-            DateTimeOffset.UtcNow.UtcDateTime.Ticks);
-        command.Parameters.AddWithValue("$library_id", libraryId);
-        command.Parameters.AddWithValue("$asset_id", assetId);
-        command.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
-        command.Parameters.AddWithValue("$file_size", expectedFileSize);
-        command.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
-
-        return await command.ExecuteNonQueryAsync(
-            cancellationToken).ConfigureAwait(false) == 1;
-    }
-
     internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
         LoadTrackedSourceIdentitiesAsync(
             long libraryId,
