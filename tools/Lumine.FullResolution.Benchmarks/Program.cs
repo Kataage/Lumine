@@ -257,6 +257,7 @@ static async Task<PolicyRun> DecodeOnceAsync(
         {
             decodedRows += stripe.Height;
         },
+        stripeHeight: stripeHeight,
         accessPolicy: policy,
         cancellationToken: CancellationToken.None);
 
@@ -289,7 +290,8 @@ static async Task<PolicyRun> DecodeOnceAsync(
 
 static async Task<string> ComputeOutputDigestAsync(
     FixtureSpec fixture,
-    FullResolutionAccessPolicy policy)
+    FullResolutionAccessPolicy policy,
+    int stripeHeight = FullResolutionDecoder.DefaultStripeHeight)
 {
     var source = SourceFor(fixture.Path);
     using var prepared =
@@ -815,6 +817,11 @@ try
                     .PngSequentialThresholdBytes
                     .ToString(
                         CultureInfo.InvariantCulture),
+            ["production_stripe_height"] =
+                FullResolutionDecoder
+                    .DefaultStripeHeight
+                    .ToString(
+                        CultureInfo.InvariantCulture),
             ["capability.avif"] =
                 capabilities.AvifRoundTrip
                     .ToString(
@@ -873,6 +880,21 @@ try
                 (fixture.Name,
                  FullResolutionAccessPolicy.Sequential)));
     }
+
+    const int nonDefaultStripeHeight = 23;
+    metadata["png_large_nondefault_stripe_height"] =
+        nonDefaultStripeHeight.ToString(
+            CultureInfo.InvariantCulture);
+    metadata["png_large_adaptive_nondefault_digest_sha256"] =
+        await ComputeOutputDigestAsync(
+            largeFixture,
+            FullResolutionAccessPolicy.Adaptive,
+            nonDefaultStripeHeight);
+    metadata["png_large_random_nondefault_digest_sha256"] =
+        await ComputeOutputDigestAsync(
+            largeFixture,
+            FullResolutionAccessPolicy.Random,
+            nonDefaultStripeHeight);
 
     await recorder.WriteJsonAsync(
         output,
