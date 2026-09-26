@@ -1,3 +1,5 @@
+using Lumine.Core;
+
 namespace Lumine.Library;
 
 public sealed class LibraryReconciler
@@ -42,6 +44,11 @@ public sealed class LibraryReconciler
             cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Library {libraryId} does not exist.");
+
+        var trackedIdentities =
+            await _repository.LoadTrackedSourceIdentitiesAsync(
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
 
         var generation = await _repository.BeginReconcileGenerationAsync(
             libraryId,
@@ -107,13 +114,45 @@ public sealed class LibraryReconciler
                         current = LibraryPaths.NormalizeRelativePath(
                             Path.GetRelativePath(library.RootPath, entry));
 
+                        var fileSize = info.Length;
+                        var modifiedTicks = info.LastWriteTimeUtc.Ticks;
+                        var pathKey = LibraryPaths.RelativePathKey(current);
+                        var forceSourceRevision = false;
+
+                        if (trackedIdentities.TryGetValue(
+                                pathKey,
+                                out var tracked)
+                            && tracked.FileSize == fileSize
+                            && tracked.ModifiedAtUtcTicks == modifiedTicks)
+                        {
+                            var currentIdentity = FileSourceIdentityProbe.Read(
+                                entry,
+                                cancellationToken);
+
+                            info.Refresh();
+                            fileSize = info.Length;
+                            modifiedTicks = info.LastWriteTimeUtc.Ticks;
+
+                            forceSourceRevision =
+                                tracked.FileSize == fileSize
+                                && tracked.ModifiedAtUtcTicks == modifiedTicks
+                                && !string.Equals(
+                                    tracked.SourceIdentity,
+                                    currentIdentity.Value,
+                                    StringComparison.Ordinal);
+                        }
+
                         batch.Add(
                             new AssetUpsert(
                                 current,
-                                info.Length,
-                                new DateTimeOffset(info.LastWriteTimeUtc),
+                                fileSize,
+                                new DateTimeOffset(
+                                    new DateTime(
+                                        modifiedTicks,
+                                        DateTimeKind.Utc)),
                                 Format: LibraryFileTypes.GetFormat(entry),
-                                ObservationGeneration: generation));
+                                ObservationGeneration: generation,
+                                ForceSourceRevision: forceSourceRevision));
                         discovered++;
 
                         if (batch.Count >= batchSize)
