@@ -25,18 +25,79 @@ public sealed record FullResolutionStripe(
     int RowBytes,
     byte[] RgbaBytes);
 
+public sealed class FullResolutionPreparedSource : IDisposable
+{
+    private ImageSourceSnapshot? _snapshot;
+
+    internal FullResolutionPreparedSource(
+        FullResolutionSource source,
+        ImageSourceSnapshot snapshot,
+        FullResolutionInfo info)
+    {
+        Source = source;
+        _snapshot = snapshot;
+        Info = info;
+    }
+
+    public FullResolutionSource Source { get; }
+
+    public FullResolutionInfo Info { get; }
+
+    internal ImageSourceSnapshot Snapshot =>
+        _snapshot
+        ?? throw new ObjectDisposedException(
+            nameof(FullResolutionPreparedSource));
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref _snapshot, null)?.Dispose();
+}
+
 public sealed class FullResolutionDecoder
 {
     public const int DefaultStripeHeight = 64;
 
-    public static Task<FullResolutionInfo> ProbeAsync(
+    public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
         CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
 
         return Task.Run(
-            () => Probe(source, cancellationToken),
+            () => Prepare(source, cancellationToken),
+            cancellationToken);
+    }
+
+    public static async Task<FullResolutionInfo> ProbeAsync(
+        FullResolutionSource source,
+        CancellationToken cancellationToken = default)
+    {
+        using var prepared = await PrepareAsync(
+            source,
+            cancellationToken).ConfigureAwait(false);
+        return prepared.Info;
+    }
+
+    public static Task DecodePreparedAsync(
+        FullResolutionPreparedSource prepared,
+        long maxDecodedBytes,
+        Action<FullResolutionStripe> consume,
+        int stripeHeight = DefaultStripeHeight,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        ValidateDecodeArguments(
+            maxDecodedBytes,
+            consume,
+            stripeHeight);
+
+        return Task.Run(
+            () => DecodeSnapshot(
+                prepared.Snapshot,
+                prepared.Info,
+                maxDecodedBytes,
+                consume,
+                stripeHeight,
+                cancellationToken),
             cancellationToken);
     }
 
@@ -49,13 +110,10 @@ public sealed class FullResolutionDecoder
         CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDecodedBytes);
-        ArgumentNullException.ThrowIfNull(consume);
-
-        if (stripeHeight is < 8 or > 512)
-        {
-            throw new ArgumentOutOfRangeException(nameof(stripeHeight));
-        }
+        ValidateDecodeArguments(
+            maxDecodedBytes,
+            consume,
+            stripeHeight);
 
         return Task.Run(
             () => Decode(
@@ -68,25 +126,38 @@ public sealed class FullResolutionDecoder
             cancellationToken);
     }
 
-    private static FullResolutionInfo Probe(
+    private static FullResolutionPreparedSource Prepare(
         FullResolutionSource source,
         CancellationToken cancellationToken)
     {
-        using var snapshot = OpenStableSnapshot(
+        var snapshot = OpenStableSnapshot(
             source,
             source.SourceIdentity,
             cancellationToken);
-        var metadata = snapshot.Metadata;
 
-        return new FullResolutionInfo(
-            metadata.Width,
-            metadata.Height,
-            metadata.HasAlpha,
-            metadata.EstimatedRgbaBytes,
-            metadata.SourceIdentity,
-            metadata.RawWidth,
-            metadata.RawHeight,
-            metadata.Format);
+        try
+        {
+            var metadata = snapshot.Metadata;
+            var info = new FullResolutionInfo(
+                metadata.Width,
+                metadata.Height,
+                metadata.HasAlpha,
+                metadata.EstimatedRgbaBytes,
+                metadata.SourceIdentity,
+                metadata.RawWidth,
+                metadata.RawHeight,
+                metadata.Format);
+
+            return new FullResolutionPreparedSource(
+                source,
+                snapshot,
+                info);
+        }
+        catch
+        {
+            snapshot.Dispose();
+            throw;
+        }
     }
 
     private static void Decode(
@@ -97,7 +168,7 @@ public sealed class FullResolutionDecoder
         FullResolutionInfo? expectedInfo,
         CancellationToken cancellationToken)
     {
-        var expectedFingerprint =
+        var expectedIdentity =
             source.SourceIdentity
             ?? expectedInfo?.SourceIdentity;
 
@@ -106,31 +177,54 @@ public sealed class FullResolutionDecoder
             && !string.Equals(
                 source.SourceIdentity,
                 expectedInfo.SourceIdentity,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.Ordinal))
         {
-            throw new ImageSourceChangedException(
+            throw new FullResolutionSourceChangedException(
                 source.SourcePath,
                 "The requested source identity and probed source identity disagree.");
         }
 
         using var snapshot = OpenStableSnapshot(
             source,
-            expectedFingerprint,
+            expectedIdentity,
             cancellationToken);
-        var snapshotMetadata = snapshot.Metadata;
+        var snapshotInfo = CreateInfo(snapshot.Metadata);
 
-        if (expectedInfo is not null
-            && (snapshotMetadata.Width != expectedInfo.Width
-                || snapshotMetadata.Height != expectedInfo.Height
-                || snapshotMetadata.EstimatedRgbaBytes
-                    != expectedInfo.EstimatedRgbaBytes))
+        if (expectedInfo is not null)
         {
-            throw new FullResolutionSourceChangedException(
+            EnsureExpectedInfo(
                 source.SourcePath,
-                $"Probed {expectedInfo.Width}x{expectedInfo.Height} ({expectedInfo.EstimatedRgbaBytes:N0} RGBA bytes) but decode snapshot is {snapshotMetadata.Width}x{snapshotMetadata.Height} ({snapshotMetadata.EstimatedRgbaBytes:N0} RGBA bytes).");
+                expectedInfo,
+                snapshotInfo);
         }
 
+        DecodeSnapshot(
+            snapshot,
+            snapshotInfo,
+            maxDecodedBytes,
+            consume,
+            stripeHeight,
+            cancellationToken);
+    }
+
+    private static void DecodeSnapshot(
+        ImageSourceSnapshot snapshot,
+        FullResolutionInfo info,
+        long maxDecodedBytes,
+        Action<FullResolutionStripe> consume,
+        int stripeHeight,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (info.EstimatedRgbaBytes > maxDecodedBytes)
+        {
+            throw new FullResolutionBudgetExceededException(
+                info.Width,
+                info.Height,
+                info.EstimatedRgbaBytes,
+                maxDecodedBytes);
+        }
 
         using var input = NetVips.Image.NewFromFile(
             snapshot.SourcePath,
@@ -178,14 +272,13 @@ public sealed class FullResolutionDecoder
                     maxDecodedBytes);
             }
 
-            if (pixels.Width != snapshotMetadata.Width
-                || pixels.Height != snapshotMetadata.Height
-                || estimatedBytes
-                    != snapshotMetadata.EstimatedRgbaBytes)
+            if (pixels.Width != info.Width
+                || pixels.Height != info.Height
+                || estimatedBytes != info.EstimatedRgbaBytes)
             {
                 throw new FullResolutionSourceChangedException(
-                    source.SourcePath,
-                    $"Stable snapshot metadata is {snapshotMetadata.Width}x{snapshotMetadata.Height} ({snapshotMetadata.EstimatedRgbaBytes:N0} RGBA bytes) but decode produced {pixels.Width}x{pixels.Height} ({estimatedBytes:N0} RGBA bytes).");
+                    snapshot.SourcePath,
+                    $"Prepared snapshot metadata is {info.Width}x{info.Height} ({info.EstimatedRgbaBytes:N0} RGBA bytes) but decode produced {pixels.Width}x{pixels.Height} ({estimatedBytes:N0} RGBA bytes).");
             }
 
             for (var y = 0; y < pixels.Height; y += stripeHeight)
@@ -247,6 +340,38 @@ public sealed class FullResolutionDecoder
         }
     }
 
+    private static FullResolutionInfo CreateInfo(
+        SourceTechnicalMetadata metadata) =>
+        new(
+            metadata.Width,
+            metadata.Height,
+            metadata.HasAlpha,
+            metadata.EstimatedRgbaBytes,
+            metadata.SourceIdentity,
+            metadata.RawWidth,
+            metadata.RawHeight,
+            metadata.Format);
+
+    private static void EnsureExpectedInfo(
+        string sourcePath,
+        FullResolutionInfo expected,
+        FullResolutionInfo actual)
+    {
+        if (actual.Width != expected.Width
+            || actual.Height != expected.Height
+            || actual.EstimatedRgbaBytes != expected.EstimatedRgbaBytes
+            || (!string.IsNullOrWhiteSpace(expected.SourceIdentity)
+                && !string.Equals(
+                    expected.SourceIdentity,
+                    actual.SourceIdentity,
+                    StringComparison.Ordinal)))
+        {
+            throw new FullResolutionSourceChangedException(
+                sourcePath,
+                $"Expected {expected.Width}x{expected.Height} ({expected.EstimatedRgbaBytes:N0} RGBA bytes, identity={expected.SourceIdentity ?? "<none>"}) but stable decode snapshot is {actual.Width}x{actual.Height} ({actual.EstimatedRgbaBytes:N0} RGBA bytes, identity={actual.SourceIdentity ?? "<none>"}).");
+        }
+    }
+
     private static ImageSourceSnapshot OpenStableSnapshot(
         FullResolutionSource source,
         string? expectedSourceIdentity,
@@ -266,6 +391,20 @@ public sealed class FullResolutionDecoder
             throw new FullResolutionSourceChangedException(
                 source.SourcePath,
                 exception.Message);
+        }
+    }
+
+    private static void ValidateDecodeArguments(
+        long maxDecodedBytes,
+        Action<FullResolutionStripe> consume,
+        int stripeHeight)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDecodedBytes);
+        ArgumentNullException.ThrowIfNull(consume);
+
+        if (stripeHeight is < 8 or > 512)
+        {
+            throw new ArgumentOutOfRangeException(nameof(stripeHeight));
         }
     }
 
