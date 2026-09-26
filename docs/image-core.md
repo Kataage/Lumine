@@ -10,7 +10,7 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - stable asset id
 - Library Core source revision
 - source file size and persisted modified timestamp
-- persisted source content SHA-256
+- persisted source source identity
 - thumbnail profile id/version/dimensions/quality
 
 A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
@@ -70,6 +70,6 @@ The Windows CI benchmark is enforced by `build/Test-ImagePerformance.ps1`. It ga
 
 ## Source technical metadata contract
 
-Image Core owns derivation, not persistence. It returns `SourceTechnicalMetadata` containing oriented dimensions, raw dimensions, alpha, normalized format and content SHA-256. `Lumine.App` is the only layer allowed to bridge that result into Library Core.
+Image Core owns derivation, not persistence. It returns `SourceTechnicalMetadata` containing oriented dimensions, raw dimensions, alpha, normalized format and source identity. `Lumine.App` is the only layer allowed to bridge that result into Library Core.
 
 A persisted source fingerprint is validated on a thumbnail cache miss and on full-resolution decode. This catches replacements that preserve size, mtime and displayed dimensions. Detail preview carries the metadata through Viewer contracts, so selecting a warm preview can show dimensions/format without probing the original. Warm preview uses persisted metadata without touching the original. When the user explicitly requests full resolution, Image Core reopens the source and validates the persisted content fingerprint before the App allocates the full-size bitmap; decode validates the same identity again before emitting pixels. This preserves the #291 stale-allocation safety boundary while keeping ordinary Detail selection source-free.
