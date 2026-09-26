@@ -208,7 +208,8 @@ static void WriteBmp32Rgb(
 static void WriteBmp32BitfieldsAlpha(
     string path,
     int width,
-    int height)
+    int height,
+    uint compression = 3)
 {
     const int dibSize = 56;
     var rowStride = checked(width * 4);
@@ -241,7 +242,7 @@ static void WriteBmp32BitfieldsAlpha(
         32);
     BinaryPrimitives.WriteUInt32LittleEndian(
         bytes.AsSpan(30, 4),
-        3);
+        compression);
     BinaryPrimitives.WriteUInt32LittleEndian(
         bytes.AsSpan(54, 4),
         0x00ff0000);
@@ -279,6 +280,65 @@ static void WriteBmp32BitfieldsAlpha(
                 value);
         }
     }
+
+    File.WriteAllBytes(path, bytes);
+}
+
+static void WriteUnsupportedProfileBmp(
+    string path)
+{
+    const int width = 2;
+    const int height = 2;
+    const int dibSize = 108;
+    const int rowStride = width * 4;
+    const int pixelOffset = 14 + dibSize;
+    var bytes = new byte[
+        pixelOffset + (rowStride * height)];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)bytes.Length));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        pixelOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        dibSize);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        32);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(30, 4),
+        3);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(54, 4),
+        0x00ff0000);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(58, 4),
+        0x0000ff00);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(62, 4),
+        0x000000ff);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(66, 4),
+        0xff000000);
+
+    // PROFILE_EMBEDDED. The managed fallback intentionally rejects this
+    // rather than ignoring color management metadata.
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(70, 4),
+        0x4d424544);
 
     File.WriteAllBytes(path, bytes);
 }
@@ -444,6 +504,8 @@ try
     var bmp24TopDownPath = Path.Combine(sourceRoot, "bmp-24-top-down.bmp");
     var bmp32RgbPath = Path.Combine(sourceRoot, "bmp-32-rgb.bmp");
     var bmp32AlphaPath = Path.Combine(sourceRoot, "bmp-32-alpha.bmp");
+    var bmp32AlphaFieldsPath = Path.Combine(sourceRoot, "bmp-32-alpha-fields.bmp");
+    var bmpUnsupportedProfilePath = Path.Combine(sourceRoot, "bmp-profile.bmp");
     var bmpDisguisedPath = Path.Combine(sourceRoot, "bmp-disguised.jpg");
     var bmpUnsupportedPath = Path.Combine(sourceRoot, "bmp-unsupported.bmp");
 
@@ -465,6 +527,13 @@ try
     WriteBmp24(bmp24TopDownPath, 5, 3, topDown: true);
     WriteBmp32Rgb(bmp32RgbPath, 4, 3);
     WriteBmp32BitfieldsAlpha(bmp32AlphaPath, 4, 3);
+    WriteBmp32BitfieldsAlpha(
+        bmp32AlphaFieldsPath,
+        4,
+        3,
+        compression: 6);
+    WriteUnsupportedProfileBmp(
+        bmpUnsupportedProfilePath);
     File.Copy(bmp24BottomUpPath, bmpDisguisedPath);
     WriteUnsupportedBmp8(bmpUnsupportedPath);
 
@@ -531,6 +600,7 @@ try
                  bmp24TopDownPath,
                  bmp32RgbPath,
                  bmp32AlphaPath,
+                 bmp32AlphaFieldsPath,
                  bmpDisguisedPath
              })
     {
@@ -567,6 +637,22 @@ try
         Require(
             alphaSnapshot.Metadata.HasAlpha,
             "32-bit BITFIELDS BMP lost its explicit alpha mask.");
+    }
+
+    var unsupportedProfileFile =
+        new FileInfo(bmpUnsupportedProfilePath);
+    try
+    {
+        using var _ =
+            await ImageSourceSnapshot.OpenAsync(
+                bmpUnsupportedProfilePath,
+                unsupportedProfileFile.Length,
+                unsupportedProfileFile.LastWriteTimeUtc.Ticks);
+        throw new InvalidOperationException(
+            "BMP with embedded-profile declaration was accepted.");
+    }
+    catch (InvalidDataException)
+    {
     }
 
     var unsupportedBmpFile =
@@ -618,6 +704,7 @@ try
                  bmp24TopDownPath,
                  bmp32RgbPath,
                  bmp32AlphaPath,
+                 bmp32AlphaFieldsPath,
                  bmpDisguisedPath
              })
     {
@@ -1051,6 +1138,11 @@ try
         4,
         3,
         "BMP 32-bit BITFIELDS alpha");
+    await VerifyFullResolutionAsync(
+        bmp32AlphaFieldsPath,
+        4,
+        3,
+        "BMP 32-bit ALPHABITFIELDS alpha");
 
     byte[]? bmpBottomUpFirstStripe = null;
     await FullResolutionDecoder.DecodeAsync(
