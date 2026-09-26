@@ -102,19 +102,55 @@ public static class FileSourceIdentityProbe
 
         if (value.StartsWith("ntfs-usn:", StringComparison.Ordinal))
         {
-            var hex = value.AsSpan("ntfs-usn:".Length);
-            return hex.Length == 16
-                && hex.ToString().All(static character => Uri.IsHexDigit(character));
+            return IsHex(
+                value.AsSpan("ntfs-usn:".Length),
+                16);
         }
 
         if (value.StartsWith("sha256:", StringComparison.Ordinal))
         {
-            var hex = value.AsSpan("sha256:".Length);
-            return hex.Length == 64
-                && hex.ToString().All(static character => Uri.IsHexDigit(character));
+            return IsHex(
+                value.AsSpan("sha256:".Length),
+                64);
         }
 
         return false;
+    }
+
+    public static string Normalize(string value)
+    {
+        if (!IsValid(value))
+        {
+            throw new ArgumentException(
+                "Source identity must be a valid NTFS-USN or SHA-256 identity.",
+                nameof(value));
+        }
+
+        return value.ToLowerInvariant();
+    }
+
+    private static bool IsHex(
+        ReadOnlySpan<char> value,
+        int expectedLength)
+    {
+        if (value.Length != expectedLength)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            var isDigit = character is >= '0' and <= '9';
+            var lower = character | (char)0x20;
+            var isHexLetter = lower is >= 'a' and <= 'f';
+
+            if (!isDigit && !isHexLetter)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool TryReadNtfsUsn(
