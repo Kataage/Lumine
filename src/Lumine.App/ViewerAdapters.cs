@@ -546,6 +546,7 @@ internal static class ViewerImageMetadataBridge
                 StringComparison.Ordinal))
         {
             RememberPersisted(
+                library.DatabasePath,
                 libraryId,
                 asset,
                 metadata);
@@ -553,6 +554,7 @@ internal static class ViewerImageMetadataBridge
         }
 
         var key = PersistedMetadataKey.From(
+            library.DatabasePath,
             libraryId,
             asset,
             metadata);
@@ -673,11 +675,13 @@ internal static class ViewerImageMetadataBridge
     }
 
     private static void RememberPersisted(
+        string databasePath,
         long libraryId,
         ViewerAsset asset,
         SourceTechnicalMetadata metadata) =>
         RememberPersisted(
             PersistedMetadataKey.From(
+                databasePath,
                 libraryId,
                 asset,
                 metadata));
@@ -711,6 +715,7 @@ internal static class ViewerImageMetadataBridge
     }
 
     private readonly record struct PersistedMetadataKey(
+        string DatabasePath,
         long LibraryId,
         long AssetId,
         long SourceRevision,
@@ -723,10 +728,12 @@ internal static class ViewerImageMetadataBridge
         string Format)
     {
         public static PersistedMetadataKey From(
+            string databasePath,
             long libraryId,
             ViewerAsset asset,
             SourceTechnicalMetadata metadata) =>
             new(
+                databasePath,
                 libraryId,
                 asset.Id,
                 asset.SourceRevision,
