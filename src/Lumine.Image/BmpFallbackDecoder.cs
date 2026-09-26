@@ -104,7 +104,7 @@ internal static class BmpFallbackDecoder
         if (dibHeaderSize < MinimumWindowsDibHeaderSize
             || dibHeaderSize > MaximumAcceptedDibHeaderSize)
         {
-            throw new BmpUnsupportedException(
+            throw new InvalidDataException(
                 $"Unsupported BMP DIB header size {dibHeaderSize}. Only Windows BITMAPINFOHEADER/V2/V3/V4/V5 headers are supported.");
         }
 
@@ -141,7 +141,7 @@ internal static class BmpFallbackDecoder
                 && colorSpaceType
                     != LcsWindowsColorSpace)
             {
-                throw new BmpUnsupportedException(
+                throw new InvalidDataException(
                     $"Unsupported BMP color-space/profile type 0x{colorSpaceType:x8}; the managed fallback accepts only sRGB/Windows color space.");
             }
         }
@@ -162,7 +162,7 @@ internal static class BmpFallbackDecoder
 
         if (bitsPerPixel is not (24 or 32))
         {
-            throw new BmpUnsupportedException(
+            throw new InvalidDataException(
                 $"Unsupported BMP bit depth {bitsPerPixel}; Lumine supports 24-bit and 32-bit BMP.");
         }
 
@@ -170,14 +170,14 @@ internal static class BmpFallbackDecoder
             && compression != BiBitfields
             && compression != BiAlphaBitfields)
         {
-            throw new BmpUnsupportedException(
+            throw new InvalidDataException(
                 $"Unsupported BMP compression {compression}; Lumine supports BI_RGB, BI_BITFIELDS and BI_ALPHABITFIELDS.");
         }
 
         if (bitsPerPixel == 24
             && compression != BiRgb)
         {
-            throw new BmpUnsupportedException(
+            throw new InvalidDataException(
                 "24-bit BMP is supported only with BI_RGB.");
         }
 
@@ -198,7 +198,7 @@ internal static class BmpFallbackDecoder
 
         if (rowStride > MaximumSourceRowBytes)
         {
-            throw new BmpUnsupportedException(
+            throw new InvalidDataException(
                 $"BMP source row requires {rowStride:N0} bytes, above the {MaximumSourceRowBytes:N0}-byte safety bound.");
         }
 
@@ -760,11 +760,3 @@ internal static class BmpFallbackDecoder
         byte A);
 }
 
-internal sealed class BmpUnsupportedException
-    : InvalidDataException
-{
-    public BmpUnsupportedException(string message)
-        : base(message)
-    {
-    }
-}
