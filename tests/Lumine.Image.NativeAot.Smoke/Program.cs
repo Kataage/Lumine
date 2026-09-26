@@ -33,9 +33,13 @@ static async Task<string> DecodeDigestAsync(
         HashAlgorithmName.SHA256);
     var rows = 0;
 
+    var budgetBytes = checked(
+        prepared.Info.EstimatedRgbaBytes
+        + 16L * 1024 * 1024);
+
     await FullResolutionDecoder.DecodePreparedAsync(
         prepared,
-        32L * 1024 * 1024,
+        budgetBytes,
         stripe =>
         {
             rows += stripe.Height;
@@ -53,11 +57,14 @@ static async Task<string> DecodeDigestAsync(
         .ToLowerInvariant();
 }
 
-static void WritePlainPng(string path)
+static void WritePlainPng(
+    string path,
+    int width,
+    int height)
 {
     using var blank = NetVips.Image.Black(
-        640,
-        480,
+        width,
+        height,
         bands: 4);
     using var values = blank.NewFromImage(
         [32, 220, 64, 180]);
@@ -137,13 +144,16 @@ try
         root,
         "icc-alpha.png");
 
-    WritePlainPng(plainPath);
+    WritePlainPng(
+        plainPath,
+        5120,
+        5120);
     WriteIccPng(iccPath);
 
     await VerifyAdaptiveMatchesAsync(
         plainPath,
         FullResolutionAccessPolicy.Sequential,
-        "plain PNG");
+        "large plain PNG");
     await VerifyAdaptiveMatchesAsync(
         iccPath,
         FullResolutionAccessPolicy.Random,
