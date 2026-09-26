@@ -254,7 +254,8 @@ public sealed class FullResolutionDecoder
         var resolvedAccessPolicy =
             ResolveAccessPolicy(
                 snapshot,
-                accessPolicy);
+                accessPolicy,
+                stripeHeight);
 
         using var input = NetVips.Image.NewFromFile(
             snapshot.SourcePath,
@@ -378,11 +379,14 @@ public sealed class FullResolutionDecoder
 
     internal static FullResolutionAccessPolicy ResolveAccessPolicy(
         ImageSourceSnapshot snapshot,
-        FullResolutionAccessPolicy requestedPolicy) =>
+        FullResolutionAccessPolicy requestedPolicy,
+        int stripeHeight) =>
         requestedPolicy switch
         {
             FullResolutionAccessPolicy.Adaptive =>
-                RecommendAccessPolicy(snapshot),
+                stripeHeight == DefaultStripeHeight
+                    ? RecommendAccessPolicy(snapshot)
+                    : FullResolutionAccessPolicy.Random,
             FullResolutionAccessPolicy.Random =>
                 FullResolutionAccessPolicy.Random,
             FullResolutionAccessPolicy.Sequential =>
