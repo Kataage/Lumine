@@ -1,3 +1,4 @@
+using System.Reflection;
 using Lumine.Image;
 using NetVips;
 
@@ -7,6 +8,34 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static void VerifyUnreadableOrientationIsUnsafe()
+{
+    using var blank = NetVips.Image.Black(
+        8,
+        8,
+        bands: 3);
+    using var invalid = blank.Mutate(
+        image => image.Set(
+            GValue.GIntType,
+            "orientation",
+            9));
+
+    var method = typeof(ImageSourceSnapshot).GetMethod(
+        "ReadOrientation",
+        BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "ImageSourceSnapshot.ReadOrientation was not found.");
+
+    var value = method.Invoke(
+        null,
+        [invalid]);
+
+    Require(
+        value is int orientation
+        && orientation == 0,
+        $"Invalid orientation metadata was trusted as '{value}' instead of unknown/unsafe.");
 }
 
 static byte[] CreateHeifFixture(Enums.ForeignHeifCompression compression)
@@ -37,6 +66,18 @@ static void WriteP3ProfileJpeg(string path)
     p3.Jpegsave(
         path,
         q: 95,
+        keep: Enums.ForeignKeep.Icc);
+}
+
+static void WriteP3ProfilePng(string path)
+{
+    using var blank = NetVips.Image.Black(256, 192, bands: 4);
+    using var values = blank.NewFromImage([32, 220, 64, 180]);
+    using var srgb = values.Copy(interpretation: Enums.Interpretation.Srgb);
+    using var p3 = srgb.IccTransform("p3", inputProfile: "srgb");
+
+    p3.Pngsave(
+        path,
         keep: Enums.ForeignKeep.Icc);
 }
 
@@ -88,6 +129,24 @@ static void PadToLength(string path, long length)
     }
 
     stream.SetLength(length);
+}
+
+static async Task VerifyRecommendedAccessPolicyAsync(
+    string path,
+    FullResolutionAccessPolicy expected,
+    string label)
+{
+    var file = new FileInfo(path);
+    using var prepared =
+        await FullResolutionDecoder.PrepareAsync(
+            new FullResolutionSource(
+                path,
+                file.Length,
+                file.LastWriteTimeUtc.Ticks));
+
+    Require(
+        prepared.RecommendedAccessPolicy == expected,
+        $"{label} adaptive access policy was {prepared.RecommendedAccessPolicy}; expected {expected}.");
 }
 
 static async Task VerifyFullResolutionAsync(
@@ -147,6 +206,7 @@ try
     var identityReplacementPath = Path.Combine(sourceRoot, "identity-replacement.jpg");
     var concurrentPath = Path.Combine(sourceRoot, "concurrent.jpg");
     var p3Path = Path.Combine(sourceRoot, "profile-p3.jpg");
+    var p3PngPath = Path.Combine(sourceRoot, "profile-p3.png");
     var cancellationPath = Path.Combine(sourceRoot, "cancellation.png");
     var detailCachePath = Path.Combine(sourceRoot, "detail-cache.jpg");
     var sourceChangePath = Path.Combine(sourceRoot, "source-change.jpg");
@@ -161,9 +221,40 @@ try
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
     WriteP3ProfileJpeg(p3Path);
+    WriteP3ProfilePng(p3PngPath);
     WriteRgb(cancellationPath, 6000, 6000);
     WriteRgb(detailCachePath, 2200, 1400);
     WriteRgb(sourceChangePath, 320, 200);
+
+    Require(
+        FullResolutionDecoder.ProductionAccessPolicy
+            == FullResolutionAccessPolicy.Adaptive,
+        "Production full-resolution access policy is not Adaptive.");
+    VerifyUnreadableOrientationIsUnsafe();
+    await VerifyRecommendedAccessPolicyAsync(
+        jpgPath,
+        FullResolutionAccessPolicy.Random,
+        "JPEG");
+    await VerifyRecommendedAccessPolicyAsync(
+        pngPath,
+        FullResolutionAccessPolicy.Random,
+        "small PNG");
+    await VerifyRecommendedAccessPolicyAsync(
+        webpPath,
+        FullResolutionAccessPolicy.Random,
+        "WebP");
+    await VerifyRecommendedAccessPolicyAsync(
+        tiffPath,
+        FullResolutionAccessPolicy.Random,
+        "TIFF");
+    await VerifyRecommendedAccessPolicyAsync(
+        p3Path,
+        FullResolutionAccessPolicy.Random,
+        "JPEG ICC");
+    await VerifyRecommendedAccessPolicyAsync(
+        p3PngPath,
+        FullResolutionAccessPolicy.Random,
+        "PNG ICC");
 
     using (var orientationBlank = NetVips.Image.Black(120, 60, bands: 3))
     using (var baseImage = orientationBlank.Copy(interpretation: Enums.Interpretation.Srgb))
@@ -172,6 +263,11 @@ try
     {
         oriented.WriteToFile(orientedPath);
     }
+
+    await VerifyRecommendedAccessPolicyAsync(
+        orientedPath,
+        FullResolutionAccessPolicy.Random,
+        "EXIF-oriented JPEG");
 
     var disguisedInfo = new FileInfo(disguisedPngPath);
     using (var disguisedSnapshot = await ImageSourceSnapshot.OpenAsync(
@@ -589,6 +685,24 @@ try
         && p3FirstStripe[2] < 50,
         "Full-resolution embedded P3 profile was not normalized to sRGB.");
 
+    var p3PngFullSource = new FullResolutionSource(
+        p3PngPath,
+        new FileInfo(p3PngPath).Length,
+        File.GetLastWriteTimeUtc(p3PngPath).Ticks);
+    byte[]? p3PngFirstStripe = null;
+    await FullResolutionDecoder.DecodeAsync(
+        p3PngFullSource,
+        16L * 1024 * 1024,
+        stripe => p3PngFirstStripe ??= stripe.RgbaBytes,
+        stripeHeight: 23);
+    Require(
+        p3PngFirstStripe is { Length: > 4 }
+        && p3PngFirstStripe[0] < 80
+        && p3PngFirstStripe[1] > 140
+        && p3PngFirstStripe[2] < 100
+        && p3PngFirstStripe[3] is >= 170 and <= 190,
+        "Full-resolution PNG ICC Random fallback did not preserve sRGB-normalized color and alpha.");
+
     var webpFullSource = new FullResolutionSource(
         webpPath,
         new FileInfo(webpPath).Length,
@@ -743,6 +857,10 @@ try
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(avifResult.CachePath), "AVIF capability was reported but AVIF smoke failed.");
         await VerifyFullResolutionAsync(avifPath, 8, 6, "AVIF");
+        await VerifyRecommendedAccessPolicyAsync(
+            avifPath,
+            FullResolutionAccessPolicy.Random,
+            "AVIF");
     }
 
     if (capabilities.HeicRoundTrip)
@@ -756,6 +874,10 @@ try
             ThumbnailProfiles.GridSmall);
         Require(File.Exists(heicResult.CachePath), "HEIC capability was reported but HEIC smoke failed.");
         await VerifyFullResolutionAsync(heicPath, 8, 6, "HEIC");
+        await VerifyRecommendedAccessPolicyAsync(
+            heicPath,
+            FullResolutionAccessPolicy.Random,
+            "HEIC");
     }
 
     var statsBeforePrune = await cache.GetStatsAsync();

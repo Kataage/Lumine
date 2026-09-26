@@ -25,6 +25,13 @@ public sealed record FullResolutionStripe(
     int RowBytes,
     byte[] RgbaBytes);
 
+public enum FullResolutionAccessPolicy
+{
+    Adaptive = 0,
+    Random = 1,
+    Sequential = 2
+}
+
 public sealed class FullResolutionPreparedSource : IDisposable
 {
     private ImageSourceSnapshot? _snapshot;
@@ -32,16 +39,20 @@ public sealed class FullResolutionPreparedSource : IDisposable
     internal FullResolutionPreparedSource(
         FullResolutionSource source,
         ImageSourceSnapshot snapshot,
-        FullResolutionInfo info)
+        FullResolutionInfo info,
+        FullResolutionAccessPolicy recommendedAccessPolicy)
     {
         Source = source;
         _snapshot = snapshot;
         Info = info;
+        RecommendedAccessPolicy = recommendedAccessPolicy;
     }
 
     public FullResolutionSource Source { get; }
 
     public FullResolutionInfo Info { get; }
+
+    public FullResolutionAccessPolicy RecommendedAccessPolicy { get; }
 
     internal ImageSourceSnapshot Snapshot =>
         _snapshot
@@ -55,6 +66,12 @@ public sealed class FullResolutionPreparedSource : IDisposable
 public sealed class FullResolutionDecoder
 {
     public const int DefaultStripeHeight = 64;
+
+    public const FullResolutionAccessPolicy ProductionAccessPolicy =
+        FullResolutionAccessPolicy.Adaptive;
+
+    public static long PngSequentialThresholdBytes =>
+        checked((long)VipsRuntimePolicy.DiscThresholdBytes);
 
     public static Task<FullResolutionPreparedSource> PrepareAsync(
         FullResolutionSource source,
@@ -82,6 +99,7 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight = DefaultStripeHeight,
+        FullResolutionAccessPolicy accessPolicy = ProductionAccessPolicy,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(prepared);
@@ -97,6 +115,7 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes,
                 consume,
                 stripeHeight,
+                accessPolicy,
                 cancellationToken),
             cancellationToken);
     }
@@ -107,6 +126,7 @@ public sealed class FullResolutionDecoder
         Action<FullResolutionStripe> consume,
         int stripeHeight = DefaultStripeHeight,
         FullResolutionInfo? expectedInfo = null,
+        FullResolutionAccessPolicy accessPolicy = ProductionAccessPolicy,
         CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
@@ -122,6 +142,7 @@ public sealed class FullResolutionDecoder
                 consume,
                 stripeHeight,
                 expectedInfo,
+                accessPolicy,
                 cancellationToken),
             cancellationToken);
     }
@@ -151,7 +172,8 @@ public sealed class FullResolutionDecoder
             return new FullResolutionPreparedSource(
                 source,
                 snapshot,
-                info);
+                info,
+                RecommendAccessPolicy(snapshot));
         }
         catch
         {
@@ -166,6 +188,7 @@ public sealed class FullResolutionDecoder
         Action<FullResolutionStripe> consume,
         int stripeHeight,
         FullResolutionInfo? expectedInfo,
+        FullResolutionAccessPolicy accessPolicy,
         CancellationToken cancellationToken)
     {
         var expectedIdentity =
@@ -204,6 +227,7 @@ public sealed class FullResolutionDecoder
             maxDecodedBytes,
             consume,
             stripeHeight,
+            accessPolicy,
             cancellationToken);
     }
 
@@ -213,6 +237,7 @@ public sealed class FullResolutionDecoder
         long maxDecodedBytes,
         Action<FullResolutionStripe> consume,
         int stripeHeight,
+        FullResolutionAccessPolicy accessPolicy,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -226,9 +251,21 @@ public sealed class FullResolutionDecoder
                 maxDecodedBytes);
         }
 
+        var resolvedAccessPolicy =
+            ResolveAccessPolicy(
+                snapshot,
+                accessPolicy,
+                stripeHeight);
+
         using var input = NetVips.Image.NewFromFile(
             snapshot.SourcePath,
-            access: Enums.Access.Random,
+            access: resolvedAccessPolicy switch
+            {
+                FullResolutionAccessPolicy.Random => Enums.Access.Random,
+                FullResolutionAccessPolicy.Sequential => Enums.Access.Sequential,
+                _ => throw new InvalidOperationException(
+                    $"Adaptive full-resolution access policy resolved to unsupported value '{resolvedAccessPolicy}'.")
+            },
             failOn: Enums.FailOn.Error);
         using var oriented = input.Autorot();
 
@@ -338,6 +375,45 @@ public sealed class FullResolutionDecoder
             oriented.Invalidate();
             input.Invalidate();
         }
+    }
+
+    internal static FullResolutionAccessPolicy ResolveAccessPolicy(
+        ImageSourceSnapshot snapshot,
+        FullResolutionAccessPolicy requestedPolicy,
+        int stripeHeight) =>
+        requestedPolicy switch
+        {
+            FullResolutionAccessPolicy.Adaptive =>
+                stripeHeight == DefaultStripeHeight
+                    ? RecommendAccessPolicy(snapshot)
+                    : FullResolutionAccessPolicy.Random,
+            FullResolutionAccessPolicy.Random =>
+                FullResolutionAccessPolicy.Random,
+            FullResolutionAccessPolicy.Sequential =>
+                FullResolutionAccessPolicy.Sequential,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(requestedPolicy),
+                requestedPolicy,
+                "Unknown full-resolution access policy.")
+        };
+
+    private static FullResolutionAccessPolicy RecommendAccessPolicy(
+        ImageSourceSnapshot snapshot)
+    {
+        if (snapshot.Orientation != 1
+            || snapshot.HasEmbeddedIcc)
+        {
+            return FullResolutionAccessPolicy.Random;
+        }
+
+        return string.Equals(
+                   snapshot.Metadata.Format,
+                   "png",
+                   StringComparison.OrdinalIgnoreCase)
+               && snapshot.DecodedSourceBytes
+                   > PngSequentialThresholdBytes
+            ? FullResolutionAccessPolicy.Sequential
+            : FullResolutionAccessPolicy.Random;
     }
 
     private static FullResolutionInfo CreateInfo(

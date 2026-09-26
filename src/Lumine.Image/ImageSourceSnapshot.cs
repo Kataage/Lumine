@@ -1,3 +1,4 @@
+using System.Globalization;
 using Lumine.Core;
 using NetVips;
 
@@ -26,12 +27,18 @@ public sealed class ImageSourceSnapshot : IDisposable
         FileStream guard,
         long fileSize,
         long modifiedAtUtcTicks,
+        int orientation,
+        bool hasEmbeddedIcc,
+        long decodedSourceBytes,
         SourceTechnicalMetadata metadata)
     {
         SourcePath = sourcePath;
         _guard = guard;
         FileSize = fileSize;
         ModifiedAtUtcTicks = modifiedAtUtcTicks;
+        Orientation = orientation;
+        HasEmbeddedIcc = hasEmbeddedIcc;
+        DecodedSourceBytes = decodedSourceBytes;
         Metadata = metadata;
     }
 
@@ -40,6 +47,12 @@ public sealed class ImageSourceSnapshot : IDisposable
     public long FileSize { get; }
 
     public long ModifiedAtUtcTicks { get; }
+
+    public int Orientation { get; }
+
+    public bool HasEmbeddedIcc { get; }
+
+    public long DecodedSourceBytes { get; }
 
     public SourceTechnicalMetadata Metadata { get; }
 
@@ -113,6 +126,9 @@ public sealed class ImageSourceSnapshot : IDisposable
                 fullPath,
                 access: Enums.Access.Sequential,
                 failOn: Enums.FailOn.Error);
+            var orientation = ReadOrientation(raw);
+            var hasEmbeddedIcc = raw.Contains("icc-profile-data");
+            var decodedSourceBytes = EstimateDecodedSourceBytes(raw);
             using var oriented = raw.Autorot();
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -140,6 +156,9 @@ public sealed class ImageSourceSnapshot : IDisposable
                 guard,
                 info.Length,
                 info.LastWriteTimeUtc.Ticks,
+                orientation,
+                hasEmbeddedIcc,
+                decodedSourceBytes,
                 metadata);
         }
         catch
@@ -170,6 +189,62 @@ public sealed class ImageSourceSnapshot : IDisposable
             throw new ImageSourceChangedException(
                 sourcePath,
                 $"Expected size={expectedFileSize:N0}, modified={expectedModifiedAtUtcTicks}, actual size={info.Length:N0}, modified={info.LastWriteTimeUtc.Ticks}.");
+        }
+    }
+
+    private static long EstimateDecodedSourceBytes(
+        NetVips.Image image)
+    {
+        var bytesPerSample = image.Format switch
+        {
+            Enums.BandFormat.Uchar => 1,
+            Enums.BandFormat.Char => 1,
+            Enums.BandFormat.Ushort => 2,
+            Enums.BandFormat.Short => 2,
+            Enums.BandFormat.Uint => 4,
+            Enums.BandFormat.Int => 4,
+            Enums.BandFormat.Float => 4,
+            Enums.BandFormat.Complex => 8,
+            Enums.BandFormat.Double => 8,
+            Enums.BandFormat.Dpcomplex => 16,
+            _ => 1
+        };
+
+        return checked(
+            (long)image.Width
+            * image.Height
+            * image.Bands
+            * bytesPerSample);
+    }
+
+    private static int ReadOrientation(
+        NetVips.Image image)
+    {
+        try
+        {
+            if (!image.Contains("orientation"))
+            {
+                return 1;
+            }
+
+            var value = Convert.ToInt32(
+                image.Get("orientation"),
+                CultureInfo.InvariantCulture);
+
+            return value is >= 1 and <= 8
+                ? value
+                : 0;
+        }
+        catch (Exception exception)
+            when (exception is VipsException
+                  or InvalidCastException
+                  or FormatException
+                  or OverflowException)
+        {
+            // 0 means the source advertised orientation metadata but it could
+            // not be trusted. Adaptive full-resolution policy treats every
+            // non-1 value, including unknown, as Random.
+            return 0;
         }
     }
 

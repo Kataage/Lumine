@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Lumine.Image;
 
 public static class VipsRuntimePolicy
@@ -12,6 +14,15 @@ public static class VipsRuntimePolicy
                 / ThumbnailPipelineOptions.DefaultWorkerCount,
             1,
             4);
+
+    public static ulong DiscThresholdBytes
+    {
+        get
+        {
+            EnsureConfigured();
+            return VipsNative.GetDiscThreshold();
+        }
+    }
 
     private static readonly object ConfigurationGate = new();
     private static int _configured;
@@ -41,5 +52,14 @@ public static class VipsRuntimePolicy
             // Publish configured only after every process-global setting succeeds.
             Volatile.Write(ref _configured, 1);
         }
+    }
+
+    private static class VipsNative
+    {
+        [DllImport(
+            "libvips-42.dll",
+            EntryPoint = "vips_get_disc_threshold",
+            CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong GetDiscThreshold();
     }
 }
