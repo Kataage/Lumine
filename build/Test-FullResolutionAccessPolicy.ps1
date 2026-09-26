@@ -109,12 +109,17 @@ if ($production -ne "adaptive") {
     throw "Production full-resolution access policy must be adaptive after #310 measurement; got '$production'."
 }
 
+$pngThreshold = [long](Get-Metadata "png_sequential_threshold_bytes")
+if ($pngThreshold -ne 100MB) {
+    throw "PNG Sequential threshold changed unexpectedly: $pngThreshold bytes"
+}
+
 $expectedProductionPolicies = @{
     "jpeg" = "random"
     "jpeg-icc" = "random"
     "jpeg-oriented" = "random"
     "jpeg-icc-oriented" = "random"
-    "png-alpha" = "sequential"
+    "png-alpha" = "random"
     "png-icc" = "random"
     "webp" = "random"
     "tiff" = "random"
