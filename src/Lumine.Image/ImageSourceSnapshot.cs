@@ -58,7 +58,15 @@ public sealed class ImageSourceSnapshot : IDisposable
 
     internal BmpSourceInfo? BmpInfo { get; }
 
-    internal Stream SourceStream => _guard;
+    internal FileStream OpenStableReadStream(
+        FileOptions options = FileOptions.RandomAccess) =>
+        new(
+            SourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            options);
 
     public SourceTechnicalMetadata Metadata { get; }
 
@@ -161,8 +169,8 @@ public sealed class ImageSourceSnapshot : IDisposable
                     hasEmbeddedIcc: false,
                     decodedSourceBytes: checked(
                         (long)bmp.RowStride * bmp.Height),
-                    bmp,
-                    bmpMetadata);
+                    bmpInfo: bmp,
+                    metadata: bmpMetadata);
             }
 
             using var raw = NetVips.Image.NewFromFile(
@@ -203,7 +211,7 @@ public sealed class ImageSourceSnapshot : IDisposable
                 hasEmbeddedIcc,
                 decodedSourceBytes,
                 bmpInfo: null,
-                metadata);
+                metadata: metadata);
         }
         catch
         {
