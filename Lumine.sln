@@ -40,6 +40,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Detail.Benchmarks", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.App.Smoke", "tests\Lumine.App.Smoke\Lumine.App.Smoke.csproj", "{AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.FullResolution.Benchmarks", "tools\Lumine.FullResolution.Benchmarks\Lumine.FullResolution.Benchmarks.csproj", "{AFAFAFAF-AFAF-4FAF-8FAF-AFAFAFAFAFAF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lumine.Image.NativeAot.Smoke", "tests\Lumine.Image.NativeAot.Smoke\Lumine.Image.NativeAot.Smoke.csproj", "{B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}"
+EndProject
 Global
   GlobalSection(SolutionConfigurationPlatforms) = preSolution
     Debug|Any CPU = Debug|Any CPU
@@ -122,5 +126,13 @@ Global
     {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
     {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
     {AEAEAEAE-AEAE-4EAE-8EAE-AEAEAEAEAEAE}.Release|Any CPU.Build.0 = Release|Any CPU
+    {AFAFAFAF-AFAF-4FAF-8FAF-AFAFAFAFAFAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {AFAFAFAF-AFAF-4FAF-8FAF-AFAFAFAFAFAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {AFAFAFAF-AFAF-4FAF-8FAF-AFAFAFAFAFAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {AFAFAFAF-AFAF-4FAF-8FAF-AFAFAFAFAFAF}.Release|Any CPU.Build.0 = Release|Any CPU
+    {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+    {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+    {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+    {B0B0B0B0-B0B0-40B0-80B0-B0B0B0B0B0B0}.Release|Any CPU.Build.0 = Release|Any CPU
   EndGlobalSection
 EndGlobal

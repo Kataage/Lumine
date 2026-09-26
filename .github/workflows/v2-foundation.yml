@@ -117,6 +117,13 @@ jobs:
         shell: pwsh
         run: ./build/Test-DetailPerformance.ps1
 
+      - name: Generate full-resolution access-policy benchmark
+        run: dotnet run --project tools/Lumine.FullResolution.Benchmarks/Lumine.FullResolution.Benchmarks.csproj -c Release --no-build -- --output artifacts/benchmarks/full-resolution-access-policy.json
+
+      - name: Enforce full-resolution access-policy benchmark
+        shell: pwsh
+        run: ./build/Test-FullResolutionAccessPolicy.ps1
+
       - name: Viewer virtualization smoke test
         run: dotnet run --project tests/Lumine.Viewer.Smoke/Lumine.Viewer.Smoke.csproj -c Release --no-build
 
@@ -184,3 +191,31 @@ jobs:
           }
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
+
+      - name: Publish NativeAOT Image runtime smoke
+        run: dotnet publish tests/Lumine.Image.NativeAot.Smoke/Lumine.Image.NativeAot.Smoke.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot-image-smoke
+
+      - name: Run NativeAOT Image runtime smoke
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "artifacts/native-aot-image-smoke/Lumine.Image.NativeAot.Smoke.exe"
+          if (-not (Test-Path $exe)) {
+            throw "NativeAOT Image smoke executable was not produced: $exe"
+          }
+
+          # Fresh process 1: prove Lumine follows a non-default libvips threshold.
+          $env:VIPS_DISC_THRESHOLD = "67108864"
+          $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "67108864"
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          # Fresh process 2: prove the production comparison is strictly '>'
+          # rather than '>=' when decoded bytes exactly equal the threshold.
+          $env:VIPS_DISC_THRESHOLD = "84934656"
+          $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "84934656"
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
