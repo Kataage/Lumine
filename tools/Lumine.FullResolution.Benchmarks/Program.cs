@@ -728,6 +728,16 @@ try
 
     foreach (var fixture in fixtures)
     {
+        using (var prepared =
+               await FullResolutionDecoder.PrepareAsync(
+                   SourceFor(fixture.Path)))
+        {
+            metadata[$"case.{fixture.Name}.production_policy"] =
+                prepared.RecommendedAccessPolicy
+                    .ToString()
+                    .ToLowerInvariant();
+        }
+
         AddCaseMetadata(
             metadata,
             fixture.Name,
