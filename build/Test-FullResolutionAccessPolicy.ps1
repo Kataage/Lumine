@@ -105,8 +105,8 @@ if ($production -ne "adaptive") {
 }
 
 $expectedProductionPolicies = @{
-    "jpeg" = "sequential"
-    "jpeg-icc" = "sequential"
+    "jpeg" = "random"
+    "jpeg-icc" = "random"
     "jpeg-oriented" = "random"
     "jpeg-icc-oriented" = "random"
     "png-alpha" = "sequential"
@@ -126,8 +126,8 @@ foreach ($optional in @("avif", "heic")) {
     $capability = [bool]::Parse((Get-Metadata "capability.$optional"))
     if ($capability) {
         $actual = Get-Metadata "case.$optional.production_policy"
-        if ($actual -ne "sequential") {
-            throw "Adaptive production policy for $optional was '$actual'; expected 'sequential'."
+        if ($actual -ne "random") {
+            throw "Adaptive production policy for $optional was '$actual'; expected 'random' until #312 validates the HEIF/HEIC production contract."
         }
     }
 }
