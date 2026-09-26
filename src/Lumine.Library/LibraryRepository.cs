@@ -177,6 +177,10 @@ public sealed class LibraryRepository
                 nameof(metadata));
         }
 
+        var normalizedIdentity =
+            FileSourceIdentityProbe.Normalize(metadata.SourceIdentity);
+        var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction();
@@ -200,13 +204,13 @@ public sealed class LibraryRepository
                   FROM asset_technical_metadata AS tm
                   WHERE tm.asset_id = assets.id
                     AND tm.source_revision = assets.source_revision
-                    AND lower(tm.source_identity) <> lower($source_identity)
+                    AND tm.source_identity <> $source_identity
               );
             """;
         updateAsset.Parameters.AddWithValue("$width", metadata.Width);
         updateAsset.Parameters.AddWithValue("$height", metadata.Height);
         updateAsset.Parameters.AddWithValue("$format", metadata.Format.Trim());
-        updateAsset.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        updateAsset.Parameters.AddWithValue("$updated", nowTicks);
         updateAsset.Parameters.AddWithValue("$library_id", libraryId);
         updateAsset.Parameters.AddWithValue("$asset_id", assetId);
         updateAsset.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
@@ -214,7 +218,7 @@ public sealed class LibraryRepository
         updateAsset.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
         updateAsset.Parameters.AddWithValue(
             "$source_identity",
-            metadata.SourceIdentity);
+            normalizedIdentity);
 
         if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
         {
@@ -248,11 +252,11 @@ public sealed class LibraryRepository
         upsertMetadata.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
         upsertMetadata.Parameters.AddWithValue(
             "$source_identity",
-            metadata.SourceIdentity);
+            normalizedIdentity);
         upsertMetadata.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
         upsertMetadata.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
         upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
-        upsertMetadata.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        upsertMetadata.Parameters.AddWithValue("$updated", nowTicks);
         await upsertMetadata.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
