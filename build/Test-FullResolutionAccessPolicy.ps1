@@ -100,11 +100,56 @@ if (-not [string]::IsNullOrWhiteSpace($sequentialCancellationText)) {
 }
 
 $production = Get-Metadata "production_policy"
-if ($production -ne "random") {
-    throw "Exploratory #310 benchmark changed production policy before measurement: '$production'."
+if ($production -ne "adaptive") {
+    throw "Production full-resolution access policy must be adaptive after #310 measurement; got '$production'."
 }
 
-Write-Host "Full-resolution access-policy exploratory benchmark passed."
+$expectedProductionPolicies = @{
+    "jpeg" = "sequential"
+    "jpeg-icc" = "sequential"
+    "jpeg-oriented" = "random"
+    "jpeg-icc-oriented" = "random"
+    "png-alpha" = "sequential"
+    "webp" = "random"
+    "tiff" = "random"
+    "png-large-backing" = "sequential"
+}
+
+foreach ($entry in $expectedProductionPolicies.GetEnumerator()) {
+    $actual = Get-Metadata "case.$($entry.Key).production_policy"
+    if ($actual -ne $entry.Value) {
+        throw "Adaptive production policy for $($entry.Key) was '$actual'; expected '$($entry.Value)'."
+    }
+}
+
+foreach ($optional in @("avif", "heic")) {
+    $capability = [bool]::Parse((Get-Metadata "capability.$optional"))
+    if ($capability) {
+        $actual = Get-Metadata "case.$optional.production_policy"
+        if ($actual -ne "sequential") {
+            throw "Adaptive production policy for $optional was '$actual'; expected 'sequential'."
+        }
+    }
+}
+
+$largeRandomTemp = [long](Get-Metadata "case.png-large-backing.random.temp_peak_bytes")
+$largeSequentialTemp = [long](Get-Metadata "case.png-large-backing.sequential.temp_peak_bytes")
+$largeRandomMs = [double](Get-Metadata "case.png-large-backing.random.decode_ms")
+$largeSequentialMs = [double](Get-Metadata "case.png-large-backing.sequential.decode_ms")
+
+if ($largeSequentialTemp -gt 4MB) {
+    throw "Sequential large-PNG decode created unexpected temporary backing: $largeSequentialTemp bytes"
+}
+
+if ($largeRandomTemp -gt 32MB -and $largeSequentialTemp -ge $largeRandomTemp) {
+    throw "Sequential did not eliminate the large-PNG temporary backing observed with Random."
+}
+
+if ($largeSequentialMs -gt ($largeRandomMs * 1.25)) {
+    throw "Sequential large-PNG decode regressed beyond the accepted 25% guard: random=$largeRandomMs ms sequential=$largeSequentialMs ms"
+}
+
+Write-Host "Full-resolution access-policy adaptive benchmark passed."
 foreach ($case in $mandatory) {
     $randomMs = [double](Get-Metadata "case.$case.random.decode_ms")
     $seqOk = [bool]::Parse((Get-Metadata "case.$case.sequential.success"))
