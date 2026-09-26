@@ -191,3 +191,18 @@ jobs:
           }
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
+
+      - name: Publish NativeAOT Image runtime smoke
+        run: dotnet publish tests/Lumine.Image.NativeAot.Smoke/Lumine.Image.NativeAot.Smoke.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot-image-smoke
+
+      - name: Run NativeAOT Image runtime smoke
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "artifacts/native-aot-image-smoke/Lumine.Image.NativeAot.Smoke.exe"
+          if (-not (Test-Path $exe)) {
+            throw "NativeAOT Image smoke executable was not produced: $exe"
+          }
+          & $exe
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
