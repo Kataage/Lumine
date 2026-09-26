@@ -105,7 +105,7 @@ try
 
             foreach (var asset in page.Items)
             {
-                var sha = asset.Id
+                var identity = "sha256:" + asset.Id
                     .ToString("x", CultureInfo.InvariantCulture)
                     .PadLeft(64, '0');
 
@@ -122,7 +122,7 @@ try
                         asset.Height ?? 1,
                         false,
                         asset.Format ?? asset.Extension,
-                        sha));
+                        identity));
 
                 if (!stored)
                 {
