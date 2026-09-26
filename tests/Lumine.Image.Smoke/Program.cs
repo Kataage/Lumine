@@ -285,7 +285,8 @@ static void WriteBmp32BitfieldsAlpha(
 }
 
 static void WriteUnsupportedProfileBmp(
-    string path)
+    string path,
+    uint colorSpaceType = 0x4d424544)
 {
     const int width = 2;
     const int height = 2;
@@ -334,11 +335,44 @@ static void WriteUnsupportedProfileBmp(
         bytes.AsSpan(66, 4),
         0xff000000);
 
-    // PROFILE_EMBEDDED. The managed fallback intentionally rejects this
-    // rather than ignoring color management metadata.
     BinaryPrimitives.WriteUInt32LittleEndian(
         bytes.AsSpan(70, 4),
-        0x4d424544);
+        colorSpaceType);
+
+    File.WriteAllBytes(path, bytes);
+}
+
+static void WriteUnsupportedDib64Bmp(
+    string path)
+{
+    const int dibSize = 64;
+    const int pixelOffset = 14 + dibSize;
+    var bytes = new byte[
+        pixelOffset + 8];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)bytes.Length));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        pixelOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        dibSize);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        2);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        24);
 
     File.WriteAllBytes(path, bytes);
 }
@@ -506,6 +540,8 @@ try
     var bmp32AlphaPath = Path.Combine(sourceRoot, "bmp-32-alpha.bmp");
     var bmp32AlphaFieldsPath = Path.Combine(sourceRoot, "bmp-32-alpha-fields.bmp");
     var bmpUnsupportedProfilePath = Path.Combine(sourceRoot, "bmp-profile.bmp");
+    var bmpCalibratedProfilePath = Path.Combine(sourceRoot, "bmp-calibrated.bmp");
+    var bmpUnsupportedDib64Path = Path.Combine(sourceRoot, "bmp-dib64.bmp");
     var bmpDisguisedPath = Path.Combine(sourceRoot, "bmp-disguised.jpg");
     var bmpUnsupportedPath = Path.Combine(sourceRoot, "bmp-unsupported.bmp");
 
@@ -534,6 +570,11 @@ try
         compression: 6);
     WriteUnsupportedProfileBmp(
         bmpUnsupportedProfilePath);
+    WriteUnsupportedProfileBmp(
+        bmpCalibratedProfilePath,
+        colorSpaceType: 0);
+    WriteUnsupportedDib64Bmp(
+        bmpUnsupportedDib64Path);
     File.Copy(bmp24BottomUpPath, bmpDisguisedPath);
     WriteUnsupportedBmp8(bmpUnsupportedPath);
 
@@ -650,6 +691,38 @@ try
                 unsupportedProfileFile.LastWriteTimeUtc.Ticks);
         throw new InvalidOperationException(
             "BMP with embedded-profile declaration was accepted.");
+    }
+    catch (InvalidDataException)
+    {
+    }
+
+    var calibratedProfileFile =
+        new FileInfo(bmpCalibratedProfilePath);
+    try
+    {
+        using var _ =
+            await ImageSourceSnapshot.OpenAsync(
+                bmpCalibratedProfilePath,
+                calibratedProfileFile.Length,
+                calibratedProfileFile.LastWriteTimeUtc.Ticks);
+        throw new InvalidOperationException(
+            "Calibrated-RGB BMP was accepted without color conversion support.");
+    }
+    catch (InvalidDataException)
+    {
+    }
+
+    var unsupportedDib64File =
+        new FileInfo(bmpUnsupportedDib64Path);
+    try
+    {
+        using var _ =
+            await ImageSourceSnapshot.OpenAsync(
+                bmpUnsupportedDib64Path,
+                unsupportedDib64File.Length,
+                unsupportedDib64File.LastWriteTimeUtc.Ticks);
+        throw new InvalidOperationException(
+            "Unsupported 64-byte/OS2-style BMP DIB header was accepted.");
     }
     catch (InvalidDataException)
     {
