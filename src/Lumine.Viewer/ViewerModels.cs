@@ -20,7 +20,7 @@ public sealed record ViewerAsset(
     int? Width = null,
     int? Height = null,
     string? Format = null,
-    string? SourceContentSha256 = null,
+    string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
     bool? HasAlpha = null)
@@ -32,17 +32,16 @@ public sealed record ViewerAsset(
         && RawHeight is > 0
         && HasAlpha.HasValue
         && !string.IsNullOrWhiteSpace(Format)
-        && SourceContentSha256 is { Length: 64 }
-        && SourceContentSha256.All(
-            static character => Uri.IsHexDigit(character))
+        && Lumine.Core.FileSourceIdentityProbe.IsValid(SourceIdentity)
             ? new ViewerSourceTechnicalMetadata(
+                SourceRevision,
                 Width.Value,
                 Height.Value,
                 RawWidth.Value,
                 RawHeight.Value,
                 HasAlpha.Value,
                 Format!,
-                SourceContentSha256)
+                SourceIdentity!)
             : null;
 }
 
@@ -51,13 +50,14 @@ public sealed record ViewerAssetPage(
     ViewerPageCursor? NextCursor);
 
 public sealed record ViewerSourceTechnicalMetadata(
+    long SourceRevision,
     int Width,
     int Height,
     int RawWidth,
     int RawHeight,
     bool HasAlpha,
     string Format,
-    string ContentSha256)
+    string SourceIdentity)
 {
     public long EstimatedRgbaBytes =>
         checked((long)Width * Height * 4L);
