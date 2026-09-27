@@ -164,6 +164,16 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+
+    public Task<int> RebuildSearchIndexAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.RebuildSearchIndexAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
     public Task<AssetQueryPage> GetAssetPageAsync(
         long libraryId,
         AssetQuery query,
