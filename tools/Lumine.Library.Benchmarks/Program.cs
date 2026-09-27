@@ -216,8 +216,9 @@ try
         var page = await repository.GetAssetPageAsync(
             library.Id,
             new AssetQuery(
-                SearchText: searchFixture.FileName[
-                    6..^searchFixture.Extension.Length]),
+                SearchText:
+                    Path.GetFileNameWithoutExtension(
+                        searchFixture.FileName)[6..]),
             20);
         if (!page.Items.Any(asset => asset.Id == searchAsset.Id))
         {
