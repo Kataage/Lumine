@@ -453,11 +453,21 @@ public sealed partial class LibraryRepository
                             nameof(query));
                     }
 
+                    var trigrams = ExtractTrigrams(term);
                     var parameterName =
                         $"$fts_{parameterOrdinal}";
                     command.Parameters.AddWithValue(
                         parameterName,
-                        QuoteFtsPhrase(term));
+                        string.Join(
+                            " AND ",
+                            trigrams.Select(QuoteFtsPhrase)));
+
+                    var containsParameter =
+                        $"$contains_{parameterOrdinal}";
+                    command.Parameters.AddWithValue(
+                        containsParameter,
+                        term);
+
                     conditions.Add(
                         $"""
                         a.id IN (
@@ -465,6 +475,7 @@ public sealed partial class LibraryRepository
                             FROM asset_search_fts
                             WHERE asset_search_fts MATCH {parameterName}
                         )
+                        AND instr(sd.normalized_text, {containsParameter}) > 0
                         """);
                 }
 
@@ -842,6 +853,22 @@ public sealed partial class LibraryRepository
         }
 
         return false;
+    }
+
+    private static IReadOnlyList<string> ExtractTrigrams(
+        string value)
+    {
+        var result = new HashSet<string>(
+            StringComparer.Ordinal);
+
+        for (var index = 0; index + 2 < value.Length; index++)
+        {
+            result.Add(value.Substring(index, 3));
+        }
+
+        return result
+            .Order(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static IReadOnlyList<string> ExtractCjkBigrams(
