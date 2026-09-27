@@ -232,7 +232,9 @@ public sealed class LibraryDatabase
                 tags_text,
                 content='asset_search_documents',
                 content_rowid='asset_id',
-                tokenize='trigram'
+                tokenize='trigram',
+                detail='none',
+                columnsize=0
             );
 
             CREATE TABLE asset_search_cjk_bigrams (
