@@ -33,6 +33,29 @@ libvips `thumbnail` is used directly from the source filename so format loaders 
 
 JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. HEIF/AVIF is capability-probed at runtime and exercised when both load/save operations are present.
 
+## BMP runtime contract
+
+Issue #311 keeps BMP as an explicitly supported Lumine v2 format without adding ImageMagick, GraphicsMagick, SkiaSharp or another native image stack.
+
+The bundled `NetVips.Native.win-x64` runtime does not guarantee a BMP loader; libvips BMP support normally comes through a libMagick-enabled build. Image Core therefore reports native BMP capability separately from the Lumine fallback capability and uses the Lumine fallback for BMP-signature sources regardless of filename extension.
+
+The fallback is pure managed code and is intentionally narrow:
+
+- explicit Windows DIB header sizes 40 / 52 / 56 / 108 / 124 bytes only
+- 24-bit `BI_RGB`
+- 32-bit `BI_RGB`, with the fourth byte treated as reserved/opaque rather than implicit alpha
+- 32-bit `BI_BITFIELDS` / `BI_ALPHABITFIELDS` with contiguous, non-overlapping channel masks
+- explicit alpha masks
+- both top-down and bottom-up row order
+
+Palette BMP, RLE, 16-bit BMP, OS/2/unknown DIB header sizes, non-contiguous/overlapping masks, embedded/linked/calibrated BMP color profiles and malformed/truncated ranges are rejected rather than silently decoded incorrectly. BMP V4/V5 sources are accepted only when their declared color space is explicitly sRGB or Windows default color space. Source-row allocation is hard-bounded to 16 MiB.
+
+BMP detection is by the actual `BM` file signature, not by extension. The same stable source snapshot and source identity used by the normal Image Core path are retained while the BMP header and pixels are read.
+
+Thumbnail generation does not materialize the original BMP as a full RGBA frame. It reads only the source rows needed for the bounded target size, performs bounded bilinear resampling into the requested thumbnail dimensions, then persists the normal WebP cache entry. Full-resolution Detail decode emits top-to-bottom RGBA stripes directly from the BMP source under the existing decoded-byte budget.
+
+CI covers 24-bit bottom-up, 24-bit top-down, 32-bit `BI_RGB`, 32-bit BITFIELDS alpha, extension mismatch, unsupported bit depth, thumbnail generation, full-resolution pixel ordering and NativeAOT execution. A dedicated high-entropy 4096x3072 BMP benchmark records thumbnail/full-resolution latency, working set, managed allocation, cache size and whether the bundled libvips runtime has a native BMP loader.
+
 
 ## Full-resolution access policy
 

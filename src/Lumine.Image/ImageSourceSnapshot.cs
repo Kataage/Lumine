@@ -30,6 +30,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         int orientation,
         bool hasEmbeddedIcc,
         long decodedSourceBytes,
+        BmpSourceInfo? bmpInfo,
         SourceTechnicalMetadata metadata)
     {
         SourcePath = sourcePath;
@@ -39,6 +40,7 @@ public sealed class ImageSourceSnapshot : IDisposable
         Orientation = orientation;
         HasEmbeddedIcc = hasEmbeddedIcc;
         DecodedSourceBytes = decodedSourceBytes;
+        BmpInfo = bmpInfo;
         Metadata = metadata;
     }
 
@@ -53,6 +55,18 @@ public sealed class ImageSourceSnapshot : IDisposable
     public bool HasEmbeddedIcc { get; }
 
     public long DecodedSourceBytes { get; }
+
+    internal BmpSourceInfo? BmpInfo { get; }
+
+    internal FileStream OpenStableReadStream(
+        FileOptions options = FileOptions.RandomAccess) =>
+        new(
+            SourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            options);
 
     public SourceTechnicalMetadata Metadata { get; }
 
@@ -122,6 +136,43 @@ public sealed class ImageSourceSnapshot : IDisposable
 
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (BmpFallbackDecoder.LooksLikeBmp(guard))
+            {
+                var bmp = BmpFallbackDecoder.Probe(
+                    guard,
+                    cancellationToken);
+
+                info.Refresh();
+                ValidateStat(
+                    fullPath,
+                    info,
+                    expectedFileSize,
+                    expectedModifiedAtUtcTicks);
+
+                var bmpMetadata = new SourceTechnicalMetadata(
+                    bmp.Width,
+                    bmp.Height,
+                    bmp.Width,
+                    bmp.Height,
+                    bmp.HasAlpha,
+                    "bmp",
+                    identity.Value,
+                    identity.UsedFullHash,
+                    identity.BytesHashed);
+
+                return new ImageSourceSnapshot(
+                    fullPath,
+                    guard,
+                    info.Length,
+                    info.LastWriteTimeUtc.Ticks,
+                    orientation: 1,
+                    hasEmbeddedIcc: false,
+                    decodedSourceBytes: checked(
+                        (long)bmp.RowStride * bmp.Height),
+                    bmpInfo: bmp,
+                    metadata: bmpMetadata);
+            }
+
             using var raw = NetVips.Image.NewFromFile(
                 fullPath,
                 access: Enums.Access.Sequential,
@@ -159,7 +210,8 @@ public sealed class ImageSourceSnapshot : IDisposable
                 orientation,
                 hasEmbeddedIcc,
                 decodedSourceBytes,
-                metadata);
+                bmpInfo: null,
+                metadata: metadata);
         }
         catch
         {

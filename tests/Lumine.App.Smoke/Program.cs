@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Headless;
@@ -18,6 +19,59 @@ static void Require(bool condition, string message)
     }
 }
 
+static void WriteBmp24(
+    string path,
+    int width,
+    int height)
+{
+    var rowStride =
+        checked(((width * 3 + 3) / 4) * 4);
+    const int pixelOffset = 54;
+    var bytes = new byte[
+        checked(pixelOffset + (rowStride * height))];
+
+    bytes[0] = (byte)'B';
+    bytes[1] = (byte)'M';
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(2, 4),
+        checked((uint)bytes.Length));
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(10, 4),
+        pixelOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+        bytes.AsSpan(14, 4),
+        40);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(18, 4),
+        width);
+    BinaryPrimitives.WriteInt32LittleEndian(
+        bytes.AsSpan(22, 4),
+        height);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(26, 2),
+        1);
+    BinaryPrimitives.WriteUInt16LittleEndian(
+        bytes.AsSpan(28, 2),
+        24);
+
+    for (var y = 0; y < height; y++)
+    {
+        var storedY = height - 1 - y;
+        var row =
+            pixelOffset + (storedY * rowStride);
+
+        for (var x = 0; x < width; x++)
+        {
+            var offset = row + (x * 3);
+            bytes[offset] = (byte)(56 + x + y);
+            bytes[offset + 1] = (byte)(34 + y);
+            bytes[offset + 2] = (byte)(12 + x);
+        }
+    }
+
+    File.WriteAllBytes(path, bytes);
+}
+
 var root = Path.Combine(
     Path.GetTempPath(),
     $"lumine-app-smoke-{Guid.NewGuid():N}");
@@ -26,6 +80,7 @@ var cacheRoot = Path.Combine(root, "cache");
 var databasePath = Path.Combine(root, "library.db");
 var sourcePath = Path.Combine(libraryRoot, "adapter-source.png");
 var replacementPath = Path.Combine(root, "adapter-replacement.png");
+var bmpPath = Path.Combine(libraryRoot, "adapter-source.bmp");
 
 Directory.CreateDirectory(libraryRoot);
 
@@ -46,6 +101,11 @@ try
     {
         rgba.Pngsave(replacementPath);
     }
+
+    WriteBmp24(
+        bmpPath,
+        7,
+        5);
 
     var sameStatFixtureLength = Math.Max(
         new FileInfo(sourcePath).Length,
@@ -181,6 +241,41 @@ try
         restartedLibraryService,
         library.Id);
 
+    var indexedBmp =
+        await restartedLibraryService.GetAssetAsync(
+            library.Id,
+            "adapter-source.bmp")
+        ?? throw new InvalidOperationException(
+            "App smoke BMP source was not indexed.");
+
+    var bmpAsset = new ViewerAsset(
+        indexedBmp.Id,
+        indexedBmp.SourceRevision,
+        indexedBmp.RelativePath,
+        indexedBmp.FileName,
+        indexedBmp.FileSize,
+        indexedBmp.ModifiedAtUtc.UtcDateTime.Ticks,
+        indexedBmp.Width,
+        indexedBmp.Height,
+        indexedBmp.Format,
+        indexedBmp.SourceIdentity,
+        indexedBmp.RawWidth,
+        indexedBmp.RawHeight,
+        indexedBmp.HasAlpha);
+
+    var bmpPreview =
+        await provider.RequestPreviewAsync(
+            bmpAsset);
+    Require(
+        File.Exists(bmpPreview.CachePath)
+        && bmpPreview.Width == 7
+        && bmpPreview.Height == 5
+        && string.Equals(
+            bmpPreview.SourceMetadata?.Format,
+            "bmp",
+            StringComparison.Ordinal),
+        "Production Detail adapter failed to produce a BMP persistent preview.");
+
     asset = new ViewerAsset(
         persisted.Id,
         persisted.SourceRevision,
@@ -262,6 +357,52 @@ try
                 var disposal = original.BeginDispose();
                 Dispatcher.UIThread.RunJobs();
                 await disposal;
+            }
+
+            var bmpOriginal =
+                await provider.LoadOriginalAsync(
+                    bmpAsset,
+                    1024 * 1024);
+
+            try
+            {
+                Require(
+                    bmpOriginal.Metadata.Width == 7
+                    && bmpOriginal.Metadata.Height == 5
+                    && string.Equals(
+                        bmpOriginal.Metadata.Format,
+                        "bmp",
+                        StringComparison.Ordinal),
+                    "Production Detail adapter returned incorrect BMP metadata.");
+
+                var bmpWritable =
+                    bmpOriginal.Bitmap
+                        as WriteableBitmap
+                    ?? throw new InvalidOperationException(
+                        "Production Detail BMP did not return a WriteableBitmap.");
+
+                using var bmpFramebuffer =
+                    bmpWritable.Lock();
+                var bmpPixel = new byte[4];
+                Marshal.Copy(
+                    bmpFramebuffer.Address,
+                    bmpPixel,
+                    0,
+                    bmpPixel.Length);
+
+                Require(
+                    bmpPixel[0] == 12
+                    && bmpPixel[1] == 34
+                    && bmpPixel[2] == 56
+                    && bmpPixel[3] == 255,
+                    $"Production Detail BMP framebuffer copy corrupted RGBA bytes: {string.Join(",", bmpPixel)}.");
+            }
+            finally
+            {
+                var bmpDisposal =
+                    bmpOriginal.BeginDispose();
+                Dispatcher.UIThread.RunJobs();
+                await bmpDisposal;
             }
 
             try

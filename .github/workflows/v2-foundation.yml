@@ -172,6 +172,13 @@ jobs:
         shell: pwsh
         run: ./build/Test-ImagePerformance.ps1
 
+      - name: Generate BMP fallback benchmark
+        run: dotnet run --project tools/Lumine.Bmp.Benchmarks/Lumine.Bmp.Benchmarks.csproj -c Release --no-build -- --output artifacts/benchmarks/bmp-fallback.json
+
+      - name: Enforce BMP fallback acceptance
+        shell: pwsh
+        run: ./build/Test-BmpFallback.ps1
+
       - name: Upload Core benchmark results
         uses: actions/upload-artifact@v7
         with:
