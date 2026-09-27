@@ -261,6 +261,82 @@ public sealed partial class LibraryRepository
             tags.Select(static tag => tag.Name).ToArray());
     }
 
+    public async Task<int> RebuildSearchIndexAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        await using (var clear = connection.CreateCommand())
+        {
+            clear.Transaction = transaction;
+            clear.CommandText =
+                """
+                DELETE FROM asset_search_documents
+                WHERE library_id = $library_id;
+                """;
+            clear.Parameters.AddWithValue("$library_id", libraryId);
+            await clear.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        int rebuilt;
+        await using (var populate = connection.CreateCommand())
+        {
+            populate.Transaction = transaction;
+            populate.CommandText =
+                """
+                WITH source AS (
+                    SELECT
+                        a.id AS asset_id,
+                        a.library_id AS library_id,
+                        a.file_name AS file_name,
+                        a.relative_path AS relative_path,
+                        COALESCE(um.notes, '') AS notes,
+                        COALESCE((
+                            SELECT group_concat(name, ' ')
+                            FROM (
+                                SELECT t.name AS name
+                                FROM asset_tags AS at
+                                INNER JOIN tags AS t
+                                  ON t.id = at.tag_id
+                                WHERE at.asset_id = a.id
+                                ORDER BY t.name_key ASC
+                            )
+                        ), '') AS tags_text
+                    FROM assets AS a
+                    LEFT JOIN asset_user_metadata AS um
+                      ON um.asset_id = a.id
+                    WHERE a.library_id = $library_id
+                )
+                INSERT INTO asset_search_documents(
+                    asset_id, library_id,
+                    file_name, relative_path,
+                    notes, tags_text, normalized_text)
+                SELECT
+                    asset_id, library_id,
+                    file_name, relative_path,
+                    notes, tags_text,
+                    lower(
+                        file_name || char(31) ||
+                        relative_path || char(31) ||
+                        notes || char(31) ||
+                        tags_text)
+                FROM source;
+                """;
+            populate.Parameters.AddWithValue("$library_id", libraryId);
+            rebuilt = await populate.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        transaction.Commit();
+        return rebuilt;
+    }
+
     public async Task<long> CountAssetsAsync(
         long libraryId,
         AssetQuery query,
