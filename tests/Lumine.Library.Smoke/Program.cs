@@ -398,6 +398,42 @@ try
             StringComparer.OrdinalIgnoreCase),
         "Filename keyset paging was not stably sorted.");
 
+
+    var rebuiltSearchRows =
+        await repository.RebuildSearchIndexAsync(library.Id);
+    Require(
+        rebuiltSearchRows == 3,
+        $"Search index rebuild covered {rebuiltSearchRows} assets; expected 3.");
+
+    var rebuiltJapanese = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SearchText: "猫耳",
+            RequiredTags: ["推し"]),
+        10);
+    Require(
+        rebuiltJapanese.Items.Count == 1
+        && rebuiltJapanese.Items[0].Id == technical.Id,
+        "Search index rebuild did not restore notes/tag search state.");
+
+    using (var cancelledSearch = new CancellationTokenSource())
+    {
+        cancelledSearch.Cancel();
+        try
+        {
+            _ = await repository.GetAssetPageAsync(
+                library.Id,
+                new AssetQuery(SearchText: "reference"),
+                10,
+                cancellationToken: cancelledSearch.Token);
+            throw new InvalidOperationException(
+                "Cancelled search query unexpectedly completed.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     await repository.UpsertAssetsAsync(
         library.Id,
         [
