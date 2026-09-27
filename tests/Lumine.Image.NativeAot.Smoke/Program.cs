@@ -261,11 +261,11 @@ var externalHeicFixturePath = Path.Combine(
     AppContext.BaseDirectory,
     "fixtures",
     "heif",
-    "dsoprea-image4.heic");
+    "libheif-example.heic");
 Require(
     File.Exists(externalHeicFixturePath)
-    && new FileInfo(externalHeicFixturePath).Length == 41_465,
-    "NativeAOT pinned external HEIC fixture is missing or changed.");
+    && new FileInfo(externalHeicFixturePath).Length == 718_114,
+    "NativeAOT pinned official libheif HEIC fixture is missing or changed.");
 
 var root = Path.Combine(
     Path.GetTempPath(),
@@ -350,18 +350,35 @@ try
                 "heif",
                 StringComparison.Ordinal)
             && snapshot.Metadata.Width > 0
-            && snapshot.Metadata.Height > 0
-            && snapshot.Metadata.EstimatedRgbaBytes
-                <= 256L * 1024 * 1024,
-            $"NativeAOT external HEIF {external.Label} probe contract failed.");
+            && snapshot.Metadata.Height > 0,
+            $"NativeAOT external HEIF {external.Label} metadata probe contract failed.");
 
-        Console.WriteLine(
-            $"NativeAOT external HEIF {external.Label}: {snapshot.Metadata.Width}x{snapshot.Metadata.Height}, raw={snapshot.Metadata.RawWidth}x{snapshot.Metadata.RawHeight}, alpha={snapshot.Metadata.HasAlpha}, orientation={snapshot.Orientation}, icc={snapshot.HasEmbeddedIcc}");
+        using var prepared =
+            await FullResolutionDecoder.PrepareAsync(
+                new FullResolutionSource(
+                    external.Path,
+                    file.Length,
+                    file.LastWriteTimeUtc.Ticks));
 
-        await VerifyAdaptiveMatchesAsync(
-            external.Path,
-            FullResolutionAccessPolicy.Random,
-            $"external HEIF {external.Label}");
+        var rows = 0;
+        try
+        {
+            await FullResolutionDecoder.DecodePreparedAsync(
+                prepared,
+                checked(
+                    prepared.Info.EstimatedRgbaBytes
+                    + 16L * 1024 * 1024),
+                stripe => rows += stripe.Height,
+                accessPolicy: FullResolutionAccessPolicy.Random);
+            throw new InvalidOperationException(
+                $"NativeAOT external HEIF {external.Label} unexpectedly decoded without an HEVC decoder.");
+        }
+        catch (VipsException)
+        {
+            Require(
+                rows == 0,
+                $"NativeAOT external HEIF {external.Label} emitted rows before rejection.");
+        }
     }
 
     await using (var heifPipeline =
@@ -381,26 +398,27 @@ try
                  })
         {
             var file = new FileInfo(external.Path);
-            var thumbnail = await heifPipeline.RequestAsync(
-                new ThumbnailSource(
-                    external.Id,
-                    1,
-                    external.Path,
-                    file.Length,
-                    file.LastWriteTimeUtc.Ticks),
-                ThumbnailProfiles.GridSmall);
-
-            Require(
-                File.Exists(thumbnail.CachePath)
-                && thumbnail.Width > 0
-                && thumbnail.Height > 0
-                && string.Equals(
-                    thumbnail.SourceMetadata?.Format,
-                    "heif",
-                    StringComparison.Ordinal),
-                $"NativeAOT external HEIF {external.Label} thumbnail contract failed.");
+            try
+            {
+                _ = await heifPipeline.RequestAsync(
+                    new ThumbnailSource(
+                        external.Id,
+                        1,
+                        external.Path,
+                        file.Length,
+                        file.LastWriteTimeUtc.Ticks),
+                    ThumbnailProfiles.GridSmall);
+                throw new InvalidOperationException(
+                    $"NativeAOT external HEIF {external.Label} unexpectedly generated a thumbnail.");
+            }
+            catch (VipsException)
+            {
+            }
         }
     }
+
+    Console.WriteLine(
+        "NativeAOT external HEIC/HEIF rejection contract passed.");
 
     var bmpFile = new FileInfo(bmpPath);
     using (var bmpPrepared =
