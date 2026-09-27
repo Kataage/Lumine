@@ -192,6 +192,71 @@ try
             ?? throw new InvalidOperationException("Library was not available after database reopen.");
     }
 
+
+    var searchFixture = FixtureGenerator.Create(count - 1);
+    var searchAsset = await repository.GetAssetAsync(
+        library.Id,
+        searchFixture.RelativePath)
+        ?? throw new InvalidOperationException(
+            "Search benchmark target was not found.");
+
+    _ = await repository.SetUserMetadataAsync(
+        library.Id,
+        searchAsset.Id,
+        new AssetUserMetadataUpdate(
+            Rating: 5,
+            Favorite: true,
+            Notes: "猫耳 メイド reference benchmark",
+            StatusLabel: "reviewed",
+            ColorLabel: "blue",
+            Tags: ["推し", "blue sky"]));
+
+    using (recorder.Measure(CoreMetricNames.LibrarySearchAscii))
+    {
+        var page = await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                SearchText: searchFixture.FileName[
+                    6..^searchFixture.Extension.Length]),
+            20);
+        if (!page.Items.Any(asset => asset.Id == searchAsset.Id))
+        {
+            throw new InvalidOperationException(
+                "100k ASCII search benchmark did not find its target.");
+        }
+    }
+
+    using (recorder.Measure(CoreMetricNames.LibrarySearchJapaneseShort))
+    {
+        var page = await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(SearchText: "猫耳"),
+            20);
+        if (page.Items.Count != 1
+            || page.Items[0].Id != searchAsset.Id)
+        {
+            throw new InvalidOperationException(
+                "100k Japanese short search benchmark did not find exactly its target.");
+        }
+    }
+
+    using (recorder.Measure(CoreMetricNames.LibrarySearchTagFilter))
+    {
+        var page = await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                RequiredTags: ["推し"],
+                Favorite: true,
+                MinRating: 5),
+            20);
+        if (page.Items.Count != 1
+            || page.Items[0].Id != searchAsset.Id)
+        {
+            throw new InvalidOperationException(
+                "100k exact-tag/filter benchmark did not find exactly its target.");
+        }
+    }
+
     using (recorder.Measure(CoreMetricNames.LibraryQuery))
     {
         var firstPage = await repository.GetAssetPageAsync(library.Id, 200);
@@ -232,6 +297,8 @@ try
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
+            ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
+            ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
             ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
             ["starting_working_set_bytes"] = startingWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -246,6 +313,7 @@ try
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
+    Console.WriteLine("Search fixtures: ASCII partial / Japanese 2-char / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
     Console.WriteLine($"Ingest retained working set: {retainedWorkingSetBytes / 1048576d:N1} MiB (+{retainedAdditionalWorkingSetBytes / 1048576d:N1} MiB), post-GC heap={postGcHeapSizeBytes / 1048576d:N1} MiB");
     Console.WriteLine($"Database: {databaseBytes:N0} bytes");
