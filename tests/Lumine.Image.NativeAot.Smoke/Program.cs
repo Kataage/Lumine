@@ -252,6 +252,21 @@ var expectedPlainPolicy =
         ? FullResolutionAccessPolicy.Sequential
         : FullResolutionAccessPolicy.Random;
 
+var capabilities = VipsCapabilities.Probe();
+Require(
+    capabilities.HeifLoadOperation,
+    "NativeAOT bundled libvips has no heifload operation.");
+
+var externalHeicFixturePath = Path.Combine(
+    AppContext.BaseDirectory,
+    "fixtures",
+    "heif",
+    "dsoprea-image4.heic");
+Require(
+    File.Exists(externalHeicFixturePath)
+    && new FileInfo(externalHeicFixturePath).Length == 41_465,
+    "NativeAOT pinned external HEIC fixture is missing or changed.");
+
 var root = Path.Combine(
     Path.GetTempPath(),
     $"lumine-native-aot-image-{Guid.NewGuid():N}");
@@ -271,6 +286,22 @@ try
     var bmpCacheRoot = Path.Combine(
         root,
         "bmp-cache");
+    var heifCacheRoot = Path.Combine(
+        root,
+        "heif-cache");
+    var externalHeicPath = Path.Combine(
+        root,
+        "external-real.heic");
+    var externalHeifPath = Path.Combine(
+        root,
+        "external-real.heif");
+
+    File.Copy(
+        externalHeicFixturePath,
+        externalHeicPath);
+    File.Copy(
+        externalHeicFixturePath,
+        externalHeifPath);
 
     WritePlainPng(
         plainPath,
@@ -300,6 +331,76 @@ try
         iccPath,
         FullResolutionAccessPolicy.Random,
         "ICC PNG");
+
+    foreach (var external in new[]
+             {
+                 (Id: 10L, Path: externalHeicPath, Label: ".heic"),
+                 (Id: 11L, Path: externalHeifPath, Label: ".heif")
+             })
+    {
+        var file = new FileInfo(external.Path);
+        using var snapshot = await ImageSourceSnapshot.OpenAsync(
+            external.Path,
+            file.Length,
+            file.LastWriteTimeUtc.Ticks);
+
+        Require(
+            string.Equals(
+                snapshot.Metadata.Format,
+                "heif",
+                StringComparison.Ordinal)
+            && snapshot.Metadata.Width > 0
+            && snapshot.Metadata.Height > 0
+            && snapshot.Metadata.EstimatedRgbaBytes
+                <= 256L * 1024 * 1024,
+            $"NativeAOT external HEIF {external.Label} probe contract failed.");
+
+        Console.WriteLine(
+            $"NativeAOT external HEIF {external.Label}: {snapshot.Metadata.Width}x{snapshot.Metadata.Height}, raw={snapshot.Metadata.RawWidth}x{snapshot.Metadata.RawHeight}, alpha={snapshot.Metadata.HasAlpha}, orientation={snapshot.Orientation}, icc={snapshot.HasEmbeddedIcc}");
+
+        await VerifyAdaptiveMatchesAsync(
+            external.Path,
+            FullResolutionAccessPolicy.Random,
+            $"external HEIF {external.Label}");
+    }
+
+    await using (var heifPipeline =
+                 new ThumbnailPipeline(
+                     new ThumbnailCache(
+                         heifCacheRoot),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 1,
+                         QueueCapacity = 2
+                     }))
+    {
+        foreach (var external in new[]
+                 {
+                     (Id: 10L, Path: externalHeicPath, Label: ".heic"),
+                     (Id: 11L, Path: externalHeifPath, Label: ".heif")
+                 })
+        {
+            var file = new FileInfo(external.Path);
+            var thumbnail = await heifPipeline.RequestAsync(
+                new ThumbnailSource(
+                    external.Id,
+                    1,
+                    external.Path,
+                    file.Length,
+                    file.LastWriteTimeUtc.Ticks),
+                ThumbnailProfiles.GridSmall);
+
+            Require(
+                File.Exists(thumbnail.CachePath)
+                && thumbnail.Width > 0
+                && thumbnail.Height > 0
+                && string.Equals(
+                    thumbnail.SourceMetadata?.Format,
+                    "heif",
+                    StringComparison.Ordinal),
+                $"NativeAOT external HEIF {external.Label} thumbnail contract failed.");
+        }
+    }
 
     var bmpFile = new FileInfo(bmpPath);
     using (var bmpPrepared =

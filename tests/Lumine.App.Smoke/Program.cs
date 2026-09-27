@@ -84,6 +84,11 @@ var bmpPath = Path.Combine(libraryRoot, "adapter-source.bmp");
 
 Directory.CreateDirectory(libraryRoot);
 
+Require(
+    LibraryFileTypes.IsSupportedPath("contract.heic")
+    && LibraryFileTypes.IsSupportedPath("contract.heif"),
+    "Library advertised HEIC/HEIF extensions drifted from the externally gated Image Core contract.");
+
 try
 {
     VipsRuntimePolicy.EnsureConfigured();

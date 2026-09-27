@@ -500,6 +500,58 @@ static async Task VerifyFullResolutionAsync(
         $"{label} full-resolution decode returned {rows} rows; expected {expectedHeight}.");
 }
 
+static async Task VerifyExternalHeifAsync(
+    string path,
+    string label)
+{
+    var file = new FileInfo(path);
+    var source = new FullResolutionSource(
+        path,
+        file.Length,
+        file.LastWriteTimeUtc.Ticks);
+
+    using var snapshot = await ImageSourceSnapshot.OpenAsync(
+        path,
+        file.Length,
+        file.LastWriteTimeUtc.Ticks);
+
+    Require(
+        string.Equals(
+            snapshot.Metadata.Format,
+            "heif",
+            StringComparison.Ordinal),
+        $"{label} external fixture was not detected through the HEIF loader: {snapshot.Metadata.Format}.");
+    Require(
+        snapshot.Metadata.Width > 0
+        && snapshot.Metadata.Height > 0
+        && snapshot.Metadata.EstimatedRgbaBytes
+            <= 256L * 1024 * 1024,
+        $"{label} external fixture reported invalid/unbounded dimensions {snapshot.Metadata.Width}x{snapshot.Metadata.Height}.");
+
+    using var prepared =
+        await FullResolutionDecoder.PrepareAsync(source);
+    Require(
+        prepared.RecommendedAccessPolicy
+            == FullResolutionAccessPolicy.Random,
+        $"{label} HEIF fixture must use conservative Random full-resolution access; got {prepared.RecommendedAccessPolicy}.");
+
+    var rows = 0;
+    await FullResolutionDecoder.DecodePreparedAsync(
+        prepared,
+        checked(
+            prepared.Info.EstimatedRgbaBytes
+            + 16L * 1024 * 1024),
+        stripe => rows += stripe.Height,
+        stripeHeight: 29);
+
+    Require(
+        rows == prepared.Info.Height,
+        $"{label} external HEIF decode returned {rows} rows; expected {prepared.Info.Height}.");
+
+    Console.WriteLine(
+        $"{label}: {snapshot.Metadata.Width}x{snapshot.Metadata.Height}, raw={snapshot.Metadata.RawWidth}x{snapshot.Metadata.RawHeight}, alpha={snapshot.Metadata.HasAlpha}, orientation={snapshot.Orientation}, icc={snapshot.HasEmbeddedIcc}, decoded={snapshot.Metadata.EstimatedRgbaBytes} bytes");
+}
+
 var capabilities = VipsCapabilities.Probe();
 Require(capabilities.JpegLoad, "Bundled libvips has no JPEG loader.");
 Require(capabilities.PngLoad, "Bundled libvips has no PNG loader.");
@@ -509,6 +561,21 @@ Require(capabilities.GifLoad, "Bundled libvips has no GIF loader.");
 Require(
     capabilities.BmpFallbackLoad,
     "Lumine BMP fallback capability is unavailable.");
+Require(
+    capabilities.HeifLoadOperation,
+    "Bundled libvips advertises HEIC/HEIF support in Library Core but has no heifload operation.");
+
+var externalHeicFixturePath = Path.Combine(
+    AppContext.BaseDirectory,
+    "fixtures",
+    "heif",
+    "dsoprea-image4.heic");
+Require(
+    File.Exists(externalHeicFixturePath),
+    $"Pinned external HEIC fixture was not copied to the test output: {externalHeicFixturePath}");
+Require(
+    new FileInfo(externalHeicFixturePath).Length == 41_465,
+    "Pinned external HEIC fixture size changed; update provenance before accepting a new fixture.");
 
 var root = Path.Combine(Path.GetTempPath(), $"lumine-image-smoke-{Guid.NewGuid():N}");
 var sourceRoot = Path.Combine(root, "sources");
@@ -544,6 +611,11 @@ try
     var bmpUnsupportedDib64Path = Path.Combine(sourceRoot, "bmp-dib64.bmp");
     var bmpDisguisedPath = Path.Combine(sourceRoot, "bmp-disguised.jpg");
     var bmpUnsupportedPath = Path.Combine(sourceRoot, "bmp-unsupported.bmp");
+    var externalHeicPath = Path.Combine(sourceRoot, "external-real.heic");
+    var externalHeifPath = Path.Combine(sourceRoot, "external-real.heif");
+
+    File.Copy(externalHeicFixturePath, externalHeicPath);
+    File.Copy(externalHeicFixturePath, externalHeifPath);
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
@@ -764,6 +836,45 @@ try
     Require(pipeline.WorkerCount == 2, "Worker bound was not applied.");
     Require(pipeline.QueueCapacity == 8, "Queue bound was not applied.");
     Require(pipeline.MaxForegroundBurst == 8, "Foreground fairness bound was not applied.");
+
+    await VerifyExternalHeifAsync(
+        externalHeicPath,
+        "external .heic");
+    await VerifyExternalHeifAsync(
+        externalHeifPath,
+        "external .heif alias");
+
+    foreach (var external in new[]
+             {
+                 (Id: 100L, Path: externalHeicPath, Label: ".heic"),
+                 (Id: 101L, Path: externalHeifPath, Label: ".heif")
+             })
+    {
+        var result = await pipeline.RequestAsync(
+            SourceFor(external.Id, 1, external.Path),
+            ThumbnailProfiles.GridSmall);
+
+        Require(
+            !result.CacheHit
+            && File.Exists(result.CachePath)
+            && result.Width > 0
+            && result.Height > 0
+            && result.Width <= ThumbnailProfiles.GridSmall.MaxWidth
+            && result.Height <= ThumbnailProfiles.GridSmall.MaxHeight
+            && string.Equals(
+                result.SourceMetadata?.Format,
+                "heif",
+                StringComparison.Ordinal),
+            $"External HEIF {external.Label} persistent thumbnail contract failed.");
+
+        using var cachedHeif = NetVips.Image.NewFromFile(
+            result.CachePath);
+        Require(
+            cachedHeif.Interpretation
+                == Enums.Interpretation.Srgb,
+            $"External HEIF {external.Label} thumbnail was not normalized to sRGB.");
+        cachedHeif.Invalidate();
+    }
 
     long assetId = 1;
     foreach (var sourcePath in new[]
@@ -1483,7 +1594,7 @@ try
     Require(prune.BytesAfter == 0, "Thumbnail prune did not enforce zero-byte target.");
 
     Console.WriteLine(
-        $"Image smoke: jpeg/png/webp/gif/BMP OK; BMP native={capabilities.BmpNativeLoad}, fallback={capabilities.BmpFallbackLoad}; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
+        $"Image smoke: jpeg/png/webp/gif/BMP/external-HEIC/HEIF OK; BMP native={capabilities.BmpNativeLoad}, fallback={capabilities.BmpFallbackLoad}; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
         $"AVIF={capabilities.AvifRoundTrip}, HEIC={capabilities.HeicRoundTrip}; " +
         $"hits={pipeline.Diagnostics.CacheHits}, generated={pipeline.Diagnostics.Generated}, source-opens={pipeline.Diagnostics.SourceOpens}");
 }
