@@ -85,9 +85,10 @@ var bmpPath = Path.Combine(libraryRoot, "adapter-source.bmp");
 Directory.CreateDirectory(libraryRoot);
 
 Require(
-    LibraryFileTypes.IsSupportedPath("contract.heic")
-    && LibraryFileTypes.IsSupportedPath("contract.heif"),
-    "Library advertised HEIC/HEIF extensions drifted from the externally gated Image Core contract.");
+    !LibraryFileTypes.IsSupportedPath("contract.heic")
+    && !LibraryFileTypes.IsSupportedPath("contract.heif")
+    && LibraryFileTypes.IsSupportedPath("contract.avif"),
+    "Library HEIC/HEIF/AVIF advertised-extension contract drifted from #312.");
 
 try
 {
