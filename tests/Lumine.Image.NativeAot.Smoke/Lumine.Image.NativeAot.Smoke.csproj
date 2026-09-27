@@ -13,8 +13,8 @@
     <ProjectReference Include="../../src/Lumine.Image/Lumine.Image.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="../fixtures/heif/dsoprea-image4.heic"
-          Link="fixtures/heif/dsoprea-image4.heic"
+    <None Include="../fixtures/heif/libheif-example.heic"
+          Link="fixtures/heif/libheif-example.heic"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
