@@ -1,15 +1,15 @@
 # External HEIC fixture
 
-This directory contains a pinned external HEIC fixture used by Lumine v2 Issue #312.
+Issue #312 validates the advertised HEIC/HEIF contract with an externally produced fixture instead of a runtime encoder round-trip.
 
-## dsoprea-image4.heic
+## libheif-example.heic
 
-- Upstream repository: https://github.com/dsoprea/heic-exif-samples
-- Upstream commit: `6bf59bf9c822473817dfb897c45acdcdb53ed9a0`
-- Upstream path: `image4.heic`
-- Upstream Git blob SHA-1: `efd119a0ea5f9c59d225e2f1ba7269bfe1802d0b`
-- Size: 41,465 bytes
-- License: MIT (copied as `dsoprea-heic-exif-samples.LICENSE.txt`)
-- Purpose: prove HEVC/HEIF decode from an externally produced fixture without depending on Lumine/libvips HEVC encoding support.
+- Upstream repository: https://github.com/strukturag/libheif
+- Upstream commit: `5c7b41f3cc097447dd3c700cc9ec7d94fbb59eec`
+- Upstream path: `examples/example.heic`
+- Upstream Git blob SHA-1: `829384037820e545467a4af49aa6414c2b0f2885`
+- Size: 718,114 bytes
+- License: MIT for the libheif examples directory (copied as `libheif-examples.COPYING`)
+- Purpose: external HEVC/HEIF decode regression fixture.
 
-The upstream README describes these files as HEIC samples containing EXIF metadata. The original photographic source attribution was not retained by the upstream author; this fixture is therefore used only as a decoder regression fixture under the upstream repository's MIT distribution terms.
+The pinned NetVips Windows "web" runtime exposes `heifload` but is built without libde265 HEVC decoding. #312 therefore uses this fixture to prove the unsupported HEIC state and prevents Library Core from advertising `.heic` / `.heif` until a separately reviewed decoder/runtime is adopted.
