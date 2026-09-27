@@ -500,6 +500,56 @@ static async Task VerifyFullResolutionAsync(
         $"{label} full-resolution decode returned {rows} rows; expected {expectedHeight}.");
 }
 
+static async Task VerifyExternalHeicRejectedAsync(
+    string path,
+    string label)
+{
+    var file = new FileInfo(path);
+    var source = new FullResolutionSource(
+        path,
+        file.Length,
+        file.LastWriteTimeUtc.Ticks);
+
+    using var snapshot = await ImageSourceSnapshot.OpenAsync(
+        path,
+        file.Length,
+        file.LastWriteTimeUtc.Ticks);
+
+    Require(
+        string.Equals(
+            snapshot.Metadata.Format,
+            "heif",
+            StringComparison.Ordinal)
+        && snapshot.Metadata.Width > 0
+        && snapshot.Metadata.Height > 0,
+        $"{label} external fixture was not recognized as HEIF metadata.");
+
+    using var prepared =
+        await FullResolutionDecoder.PrepareAsync(source);
+    var rows = 0;
+
+    try
+    {
+        await FullResolutionDecoder.DecodePreparedAsync(
+            prepared,
+            checked(
+                prepared.Info.EstimatedRgbaBytes
+                + 16L * 1024 * 1024),
+            stripe => rows += stripe.Height,
+            stripeHeight: 29);
+
+        throw new InvalidOperationException(
+            $"{label} unexpectedly decoded HEVC although the pinned Windows runtime has no HEVC decoder.");
+    }
+    catch (VipsException exception)
+    {
+        Require(
+            rows == 0,
+            $"{label} emitted {rows} rows before the unsupported HEVC decoder failure.");
+        Console.WriteLine(
+            $"{label}: HEIF container recognized ({snapshot.Metadata.Width}x{snapshot.Metadata.Height}) but HEVC decode is unavailable as expected: {exception.Message.Split(Environment.NewLine)[0]}");
+    }
+}
 var capabilities = VipsCapabilities.Probe();
 Require(capabilities.JpegLoad, "Bundled libvips has no JPEG loader.");
 Require(capabilities.PngLoad, "Bundled libvips has no PNG loader.");
@@ -509,6 +559,21 @@ Require(capabilities.GifLoad, "Bundled libvips has no GIF loader.");
 Require(
     capabilities.BmpFallbackLoad,
     "Lumine BMP fallback capability is unavailable.");
+Require(
+    capabilities.HeifLoadOperation,
+    "Bundled libvips unexpectedly lost the HEIF container loader used by the #312 negative contract.");
+
+var externalHeicFixturePath = Path.Combine(
+    AppContext.BaseDirectory,
+    "fixtures",
+    "heif",
+    "libheif-example.heic");
+Require(
+    File.Exists(externalHeicFixturePath),
+    $"Pinned external HEIC fixture was not copied to the test output: {externalHeicFixturePath}");
+Require(
+    new FileInfo(externalHeicFixturePath).Length == 718_114,
+    "Pinned official libheif HEIC fixture size changed; update provenance before accepting a new fixture.");
 
 var root = Path.Combine(Path.GetTempPath(), $"lumine-image-smoke-{Guid.NewGuid():N}");
 var sourceRoot = Path.Combine(root, "sources");
@@ -544,6 +609,11 @@ try
     var bmpUnsupportedDib64Path = Path.Combine(sourceRoot, "bmp-dib64.bmp");
     var bmpDisguisedPath = Path.Combine(sourceRoot, "bmp-disguised.jpg");
     var bmpUnsupportedPath = Path.Combine(sourceRoot, "bmp-unsupported.bmp");
+    var externalHeicPath = Path.Combine(sourceRoot, "external-real.heic");
+    var externalHeifPath = Path.Combine(sourceRoot, "external-real.heif");
+
+    File.Copy(externalHeicFixturePath, externalHeicPath);
+    File.Copy(externalHeicFixturePath, externalHeifPath);
 
     WriteRgb(jpgPath);
     WriteRgbaPng(pngPath);
@@ -764,6 +834,32 @@ try
     Require(pipeline.WorkerCount == 2, "Worker bound was not applied.");
     Require(pipeline.QueueCapacity == 8, "Queue bound was not applied.");
     Require(pipeline.MaxForegroundBurst == 8, "Foreground fairness bound was not applied.");
+
+    await VerifyExternalHeicRejectedAsync(
+        externalHeicPath,
+        "external .heic");
+    await VerifyExternalHeicRejectedAsync(
+        externalHeifPath,
+        "external .heif alias");
+
+    foreach (var external in new[]
+             {
+                 (Id: 100L, Path: externalHeicPath, Label: ".heic"),
+                 (Id: 101L, Path: externalHeifPath, Label: ".heif")
+             })
+    {
+        try
+        {
+            _ = await pipeline.RequestAsync(
+                SourceFor(external.Id, 1, external.Path),
+                ThumbnailProfiles.GridSmall);
+            throw new InvalidOperationException(
+                $"External HEIF {external.Label} unexpectedly generated a thumbnail without an HEVC decoder.");
+        }
+        catch (VipsException)
+        {
+        }
+    }
 
     long assetId = 1;
     foreach (var sourcePath in new[]
@@ -1483,7 +1579,7 @@ try
     Require(prune.BytesAfter == 0, "Thumbnail prune did not enforce zero-byte target.");
 
     Console.WriteLine(
-        $"Image smoke: jpeg/png/webp/gif/BMP OK; BMP native={capabilities.BmpNativeLoad}, fallback={capabilities.BmpFallbackLoad}; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
+        $"Image smoke: jpeg/png/webp/gif/BMP OK; external HEIC/HEIF correctly rejected; BMP native={capabilities.BmpNativeLoad}, fallback={capabilities.BmpFallbackLoad}; HEIF ops load={capabilities.HeifLoadOperation}, save={capabilities.HeifSaveOperation}, " +
         $"AVIF={capabilities.AvifRoundTrip}, HEIC={capabilities.HeicRoundTrip}; " +
         $"hits={pipeline.Diagnostics.CacheHits}, generated={pipeline.Diagnostics.Generated}, source-opens={pipeline.Diagnostics.SourceOpens}");
 }

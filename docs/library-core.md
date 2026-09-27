@@ -13,6 +13,12 @@ Issue #287 establishes the first persistent product subsystem in the greenfield 
 
 The Library project does not render images and does not expose original absolute file paths as a Viewer resource API.
 
+## Image-file admission contract
+
+The initial v2 Core admits these extensions: JPEG/JPG, PNG, WebP, GIF, AVIF, BMP and TIFF/TIF.
+
+HEIC (`.heic`) and generic HEIF (`.heif`) are intentionally excluded after #312 proved that the pinned Windows NetVips "web" runtime has a HEIF container loader but no HEVC pixel decoder. Library admission follows demonstrated Image Core decode capability rather than operation-name detection. AVIF is a separate AV1 path and remains supported.
+
 ## SQLite policy
 
 Each connection enables foreign keys and a finite busy timeout. Initialization establishes:

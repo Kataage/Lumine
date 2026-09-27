@@ -5,7 +5,7 @@ public static class LibraryFileTypes
     private static readonly HashSet<string> SupportedExtensions = new(
         [
             ".jpg", ".jpeg", ".png", ".webp", ".gif",
-            ".avif", ".heif", ".heic", ".bmp", ".tif", ".tiff"
+            ".avif", ".bmp", ".tif", ".tiff"
         ],
         StringComparer.OrdinalIgnoreCase);
 

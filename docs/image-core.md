@@ -31,7 +31,15 @@ Profiles only downscale. They do not enlarge small originals.
 
 libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled. Resampling is performed in linear light and `output_profile=srgb` performs ICC-aware normalization before metadata is stripped from the cached WebP. Alpha is preserved.
 
-JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. HEIF/AVIF is capability-probed at runtime and exercised when both load/save operations are present.
+JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. AVIF remains part of the v2 format contract and is capability-probed in CI.
+
+## HEIC / HEIF runtime contract
+
+Issue #312 tested an externally produced HEVC-compressed HEIC fixture from the libheif project's MIT-licensed examples rather than relying on a Lumine/libvips encoder round-trip. The pinned `NetVips.Native.win-x64 8.18.6` runtime recognizes the HEIF container through `heifload`, but actual pixel decode fails because the Windows "web" build is compiled without the libde265 HEVC decoder.
+
+Therefore Lumine v2 does **not** advertise `.heic` or generic `.heif` as supported formats in the initial Core. `.avif` remains separate and supported by the pinned AV1-capable runtime. Both JIT and NativeAOT smoke tests retain the external HEIC fixture as a negative contract: the container can be probed, but thumbnail/full-resolution HEVC decode must not be treated as available.
+
+Adding HEIC later requires a separate runtime decision covering decoder version/security, distribution size, licensing/patent implications and real-fixture benchmark evidence. A mere `heifload` operation check is not sufficient evidence of HEIC support.
 
 ## BMP runtime contract
 
@@ -64,12 +72,12 @@ Issue #310 measures libvips `Random` and `Sequential` access against Lumine's re
 The production policy is adaptive and deliberately conservative:
 
 - PNG uses `Sequential` only when orientation is known-normal, there is no embedded ICC profile, decoded source size is strictly greater than the active libvips disc threshold, and the decoder is using Lumine's production 64-row stripe height.
-- Smaller PNG, ICC-bearing PNG, PNG requested with a non-production stripe height, JPEG, WebP, TIFF, AVIF/HEIF and unknown formats use `Random`.
+- Smaller PNG, ICC-bearing PNG, PNG requested with a non-production stripe height, JPEG, WebP, TIFF, AVIF and unknown formats use `Random`.
 - Any source with non-normal or unreadable/invalid EXIF orientation uses `Random` regardless of format.
 
 Lumine reads the active threshold from libvips itself via `vips_get_disc_threshold()`, so `VIPS_DISC_THRESHOLD` overrides are honored instead of diverging from a Lumine hardcode. The bundled runtime default is 100 MiB. The comparison is strict `decodedSourceBytes > discThreshold`, matching libvips' own temporary-backing boundary. Lumine calculates source-decoded byte size from raw dimensions, band count and band format rather than compressed file size. Sequential is also restricted to the production 64-row stripe shape: an explicit 23-row stress case demonstrated that otherwise-valid large PNG could trigger `vipspng: out of order read`, so Adaptive falls back to Random for non-default stripe sizes.
 
-The Windows comparison matrix showed why this is necessary. On the high-entropy alpha PNG fixture below the active threshold, Random avoided unnecessary policy risk while Sequential offered no temporary-backing benefit. On the high-entropy large PNG above the threshold, Sequential eliminated the temporary backing used by Random and also reduced latency and working-set growth. ICC-bearing PNG produced an actual `out of order read` under the production stripe stress test, so ICC forces Random. TIFF and EXIF-oriented JPEG also rejected Sequential, and an existing normal-JPEG smoke using 29-row stripes produced the same class of failure. AVIF/HEIF remain Random until the dedicated #312 contract validation is complete.
+The Windows comparison matrix showed why this is necessary. On the high-entropy alpha PNG fixture below the active threshold, Random avoided unnecessary policy risk while Sequential offered no temporary-backing benefit. On the high-entropy large PNG above the threshold, Sequential eliminated the temporary backing used by Random and also reduced latency and working-set growth. ICC-bearing PNG produced an actual `out of order read` under the production stripe stress test, so ICC forces Random. TIFF and EXIF-oriented JPEG also rejected Sequential, and an existing normal-JPEG smoke using 29-row stripes produced the same class of failure. AVIF remains Random. #312 established that HEIC/generic HEIF are not supported by the pinned Windows runtime and are not advertised by Library Core.
 
 CI retains the exploratory Random-vs-Sequential matrix so future libvips/runtime upgrades can be measured without silently changing production behavior. Equivalence is checked by SHA-256 over the complete emitted RGBA stream, not sample pixels. Standard CI verifies the bundled 100 MiB default, while the NativeAOT runtime smoke launches fresh processes with non-default `VIPS_DISC_THRESHOLD` values to verify runtime threshold tracking and the strict `>` boundary. The gate also locks per-fixture adaptive decisions, the high-entropy large-PNG temporary-backing improvement, cancellation behavior, non-default-stripe Random fallback, malformed-orientation safety and ICC-PNG Random fallback.
 

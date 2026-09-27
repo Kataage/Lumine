@@ -7,4 +7,11 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Lumine.Image/Lumine.Image.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="../fixtures/heif/libheif-example.heic"
+          Link="fixtures/heif/libheif-example.heic"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
