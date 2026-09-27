@@ -66,6 +66,86 @@ internal sealed class LibraryViewerPageSource : IViewerPageSource
     }
 }
 
+internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
+{
+    private readonly LibraryService _library;
+    private readonly long _libraryId;
+    private readonly AssetQuery _query;
+
+    public LibraryViewerQueryPageSource(
+        LibraryService library,
+        long libraryId,
+        AssetQuery query,
+        long assetCount)
+    {
+        _library = library
+            ?? throw new ArgumentNullException(nameof(library));
+        _query = query
+            ?? throw new ArgumentNullException(nameof(query));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegative(assetCount);
+
+        if (query.SortOrder != AssetSortOrder.ModifiedNewest)
+        {
+            throw new ArgumentException(
+                "ViewerPageCursor currently represents modified-newest keyset order. Other Library sort orders must use a matching Viewer cursor contract.",
+                nameof(query));
+        }
+
+        _libraryId = libraryId;
+        Count = assetCount;
+    }
+
+    public long Count { get; }
+
+    public async ValueTask<ViewerAssetPage> GetPageAsync(
+        int limit,
+        ViewerPageCursor? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        AssetQueryCursor? libraryCursor = cursor is { } value
+            ? new AssetQueryCursor(
+                AssetSortOrder.ModifiedNewest,
+                value.AssetId,
+                value.ModifiedAtUtcTicks)
+            : null;
+
+        var page = await _library.GetAssetPageAsync(
+            _libraryId,
+            _query,
+            limit,
+            libraryCursor,
+            cancellationToken).ConfigureAwait(false);
+
+        var items = page.Items
+            .Select(static asset => new ViewerAsset(
+                asset.Id,
+                asset.SourceRevision,
+                asset.RelativePath,
+                asset.FileName,
+                asset.FileSize,
+                asset.ModifiedAtUtc.UtcDateTime.Ticks,
+                asset.Width,
+                asset.Height,
+                asset.Format,
+                asset.SourceIdentity,
+                asset.RawWidth,
+                asset.RawHeight,
+                asset.HasAlpha))
+            .ToArray();
+
+        ViewerPageCursor? next = page.NextCursor is { } nextCursor
+            ? new ViewerPageCursor(
+                nextCursor.ModifiedAtUtcTicks
+                    ?? throw new InvalidOperationException(
+                        "Modified-newest Library query cursor did not carry its timestamp."),
+                nextCursor.Id)
+            : null;
+
+        return new ViewerAssetPage(items, next);
+    }
+}
+
 internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
 {
     private readonly ThumbnailPipeline _pipeline;
