@@ -175,6 +175,242 @@ public sealed class LibraryDatabase
                 updated_at_utc_ticks INTEGER NOT NULL,
                 FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
             );
+            """),
+        new(
+            5,
+            "user-metadata-and-local-search",
+            """
+            CREATE TABLE asset_user_metadata (
+                asset_id INTEGER PRIMARY KEY,
+                rating INTEGER NULL CHECK(rating IS NULL OR rating BETWEEN 0 AND 5),
+                favorite INTEGER NOT NULL DEFAULT 0 CHECK(favorite IN (0, 1)),
+                notes TEXT NOT NULL DEFAULT '',
+                status_label TEXT NULL CHECK(status_label IS NULL OR length(status_label) <= 64),
+                color_label TEXT NULL CHECK(color_label IS NULL OR length(color_label) <= 64),
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 128),
+                name_key TEXT NOT NULL CHECK(length(name_key) BETWEEN 1 AND 128),
+                created_at_utc_ticks INTEGER NOT NULL,
+                UNIQUE(library_id, name_key),
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE asset_tags (
+                asset_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                created_at_utc_ticks INTEGER NOT NULL,
+                PRIMARY KEY(asset_id, tag_id),
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_asset_tags_tag_asset
+                ON asset_tags(tag_id, asset_id);
+
+            CREATE TABLE asset_search_documents (
+                asset_id INTEGER PRIMARY KEY,
+                library_id INTEGER NOT NULL,
+                file_name TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                tags_text TEXT NOT NULL DEFAULT '',
+                normalized_text TEXT NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            CREATE VIRTUAL TABLE asset_search_fts USING fts5(
+                file_name,
+                relative_path,
+                notes,
+                tags_text,
+                content='asset_search_documents',
+                content_rowid='asset_id',
+                tokenize='trigram'
+            );
+
+            CREATE TABLE asset_search_cjk_bigrams (
+                library_id INTEGER NOT NULL,
+                token TEXT NOT NULL CHECK(length(token) = 2),
+                asset_id INTEGER NOT NULL,
+                PRIMARY KEY(library_id, token, asset_id),
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_asset_search_cjk_asset
+                ON asset_search_cjk_bigrams(asset_id);
+
+            CREATE TRIGGER asset_search_documents_ai
+            AFTER INSERT ON asset_search_documents
+            BEGIN
+                INSERT INTO asset_search_fts(
+                    rowid, file_name, relative_path, notes, tags_text)
+                VALUES (
+                    NEW.asset_id, NEW.file_name, NEW.relative_path,
+                    NEW.notes, NEW.tags_text);
+            END;
+
+            CREATE TRIGGER asset_search_documents_ad
+            AFTER DELETE ON asset_search_documents
+            BEGIN
+                INSERT INTO asset_search_fts(
+                    asset_search_fts, rowid,
+                    file_name, relative_path, notes, tags_text)
+                VALUES (
+                    'delete', OLD.asset_id,
+                    OLD.file_name, OLD.relative_path,
+                    OLD.notes, OLD.tags_text);
+            END;
+
+            CREATE TRIGGER asset_search_documents_au
+            AFTER UPDATE ON asset_search_documents
+            BEGIN
+                INSERT INTO asset_search_fts(
+                    asset_search_fts, rowid,
+                    file_name, relative_path, notes, tags_text)
+                VALUES (
+                    'delete', OLD.asset_id,
+                    OLD.file_name, OLD.relative_path,
+                    OLD.notes, OLD.tags_text);
+
+                INSERT INTO asset_search_fts(
+                    rowid, file_name, relative_path, notes, tags_text)
+                VALUES (
+                    NEW.asset_id, NEW.file_name, NEW.relative_path,
+                    NEW.notes, NEW.tags_text);
+            END;
+
+            CREATE TRIGGER asset_search_documents_ai_cjk
+            AFTER INSERT ON asset_search_documents
+            WHEN NEW.normalized_text GLOB '*[^ -~]*'
+            BEGIN
+                INSERT OR IGNORE INTO asset_search_cjk_bigrams(
+                    library_id, token, asset_id)
+                SELECT
+                    NEW.library_id,
+                    substr(NEW.normalized_text, position, 2),
+                    NEW.asset_id
+                FROM (
+                    WITH RECURSIVE positions(position) AS (
+                        SELECT 1
+                        UNION ALL
+                        SELECT position + 1
+                        FROM positions
+                        WHERE position + 1 < length(NEW.normalized_text)
+                    )
+                    SELECT position FROM positions
+                )
+                WHERE
+                    (
+                        unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x3040 AND 0x30ff
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x3400 AND 0x4dbf
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x4e00 AND 0x9fff
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0xff66 AND 0xff9f
+                    )
+                    AND
+                    (
+                        unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x3040 AND 0x30ff
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x3400 AND 0x4dbf
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x4e00 AND 0x9fff
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0xff66 AND 0xff9f
+                    );
+            END;
+
+            CREATE TRIGGER asset_search_documents_au_cjk
+            AFTER UPDATE OF normalized_text ON asset_search_documents
+            BEGIN
+                DELETE FROM asset_search_cjk_bigrams
+                WHERE asset_id = NEW.asset_id;
+
+                INSERT OR IGNORE INTO asset_search_cjk_bigrams(
+                    library_id, token, asset_id)
+                SELECT
+                    NEW.library_id,
+                    substr(NEW.normalized_text, position, 2),
+                    NEW.asset_id
+                FROM (
+                    WITH RECURSIVE positions(position) AS (
+                        SELECT 1
+                        UNION ALL
+                        SELECT position + 1
+                        FROM positions
+                        WHERE position + 1 < length(NEW.normalized_text)
+                    )
+                    SELECT position FROM positions
+                )
+                WHERE NEW.normalized_text GLOB '*[^ -~]*'
+                  AND (
+                        unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x3040 AND 0x30ff
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x3400 AND 0x4dbf
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0x4e00 AND 0x9fff
+                        OR unicode(substr(NEW.normalized_text, position, 1))
+                            BETWEEN 0xff66 AND 0xff9f
+                    )
+                  AND (
+                        unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x3040 AND 0x30ff
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x3400 AND 0x4dbf
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0x4e00 AND 0x9fff
+                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
+                            BETWEEN 0xff66 AND 0xff9f
+                    );
+            END;
+
+            CREATE TRIGGER assets_ai_search
+            AFTER INSERT ON assets
+            BEGIN
+                INSERT INTO asset_search_documents(
+                    asset_id, library_id, file_name, relative_path,
+                    notes, tags_text, normalized_text)
+                VALUES(
+                    NEW.id, NEW.library_id,
+                    NEW.file_name, NEW.relative_path,
+                    '', '',
+                    lower(NEW.file_name || char(31) || NEW.relative_path));
+            END;
+
+            CREATE TRIGGER assets_au_search
+            AFTER UPDATE OF file_name, relative_path ON assets
+            BEGIN
+                UPDATE asset_search_documents
+                SET file_name = NEW.file_name,
+                    relative_path = NEW.relative_path,
+                    normalized_text = lower(
+                        NEW.file_name || char(31) ||
+                        NEW.relative_path || char(31) ||
+                        notes || char(31) ||
+                        tags_text)
+                WHERE asset_id = NEW.id;
+            END;
+
+            INSERT INTO asset_search_documents(
+                asset_id, library_id, file_name, relative_path,
+                notes, tags_text, normalized_text)
+            SELECT
+                id, library_id, file_name, relative_path,
+                '', '',
+                lower(file_name || char(31) || relative_path)
+            FROM assets;
             """)
     ];
 
