@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 
 namespace Lumine.Viewer;
@@ -30,6 +31,7 @@ public sealed class DetailViewerControl : UserControl
     private bool _gridEventsAttached;
     private bool _visualAttached;
     private TopLevel? _topLevel;
+    private Compositor? _compositor;
     private readonly object _zoomGate = new();
     private double _requestedZoom = 1;
     private PixelSize _requestedZoomBasis;
@@ -71,6 +73,9 @@ public sealed class DetailViewerControl : UserControl
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top
         };
+
+        _session.SetOriginalReleaseHandler(
+            ReleaseOriginalAfterCompositionAsync);
 
         var surface = new Border
         {
@@ -757,6 +762,10 @@ public sealed class DetailViewerControl : UserControl
         VisualTreeAttachmentEventArgs e)
     {
         _visualAttached = true;
+        _compositor =
+            ElementComposition.GetElementVisual(
+                _image)?.Compositor
+            ?? _compositor;
         AttachSessionEvents();
         AttachTopLevelScaling();
         AttachGridEvents();
@@ -778,6 +787,86 @@ public sealed class DetailViewerControl : UserControl
         if (_session.Snapshot.State != ViewerDetailLoadState.Empty)
         {
             _session.Clear();
+        }
+    }
+
+    private Task ReleaseOriginalAfterCompositionAsync(
+        ViewerOriginalBitmap original)
+    {
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                try
+                {
+                    var bitmap = original.Bitmap;
+
+                    if (ReferenceEquals(
+                            _image.Source,
+                            bitmap))
+                    {
+                        _image.Source = null;
+                    }
+
+                    var compositor =
+                        ElementComposition.GetElementVisual(
+                            _image)?.Compositor
+                        ?? _compositor;
+
+                    Task disposal;
+                    if (compositor is null)
+                    {
+                        // No visual was ever attached, so there is no
+                        // compositor reference to drain.
+                        disposal = original.BeginDispose();
+                    }
+                    else
+                    {
+                        _compositor = compositor;
+
+                        // Setting Image.Source above invalidates the visual.
+                        // The compositor batch fence completes only after the
+                        // resulting composition batch has rendered on the
+                        // render thread, which is the point at which the old
+                        // image can be released safely.
+                        var batch =
+                            compositor
+                                .RequestCompositionBatchCommitAsync();
+
+                        disposal =
+                            original.DisposeAfterAsync(
+                                batch.Rendered);
+                    }
+
+                    _ = CompleteOriginalReleaseAsync(
+                        disposal,
+                        completion);
+                }
+                catch (Exception exception)
+                {
+                    completion.TrySetException(
+                        exception);
+                }
+            },
+            DispatcherPriority.Render);
+
+        return completion.Task;
+    }
+
+    private static async Task CompleteOriginalReleaseAsync(
+        Task disposal,
+        TaskCompletionSource completion)
+    {
+        try
+        {
+            await disposal.ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            completion.TrySetException(exception);
         }
     }
 
