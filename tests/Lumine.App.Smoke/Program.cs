@@ -608,8 +608,7 @@ try
         await CoreViewerRuntime.OpenAsync(
             shellLibraryRoot,
             AppDataPaths.FromRoot(shellDataRoot),
-            CoreResourcePolicy.Resolve(
-                processorCount: 4));
+            Program.ResourcePolicy);
 
     Require(
         shellRuntime.AssetCount == 1,
