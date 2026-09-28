@@ -17,6 +17,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     private Task? _originalLoadTask;
     private long _originalLoadVersion;
     private Task _previousOriginalDisposal = Task.CompletedTask;
+    private Func<ViewerOriginalBitmap, Task>? _originalReleaseHandler;
     private ViewerDetailSnapshot _snapshot =
         new(
             -1,
@@ -81,6 +82,18 @@ public sealed class ViewerDetailSession : IAsyncDisposable
     public event EventHandler<ViewerDetailSnapshot>? StateChanged;
 
     public event EventHandler<long>? SelectedIndexChanged;
+
+    internal void SetOriginalReleaseHandler(
+        Func<ViewerOriginalBitmap, Task> releaseHandler)
+    {
+        ArgumentNullException.ThrowIfNull(releaseHandler);
+
+        lock (_gate)
+        {
+            ThrowIfDisposedLocked();
+            _originalReleaseHandler = releaseHandler;
+        }
+    }
 
     public async Task SelectAsync(
         long index,
@@ -632,8 +645,21 @@ public sealed class ViewerDetailSession : IAsyncDisposable
 
         if (_original is not null)
         {
-            _previousOriginalDisposal = _original.BeginDispose();
+            var original = _original;
             _original = null;
+
+            try
+            {
+                _previousOriginalDisposal =
+                    _originalReleaseHandler is null
+                        ? original.BeginDispose()
+                        : _originalReleaseHandler(original);
+            }
+            catch (Exception exception)
+            {
+                _previousOriginalDisposal =
+                    Task.FromException(exception);
+            }
         }
     }
 
