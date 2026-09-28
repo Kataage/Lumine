@@ -272,6 +272,14 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["gpu.memory"] =
             "not-collected-core-has-no-owned-ai-gpu-runtime";
 
+        foreach (var pair in
+                 Program.ResourcePolicy
+                     .ToDiagnosticMetadata())
+        {
+            _metadata[pair.Key] =
+                pair.Value;
+        }
+
         try
         {
             await RunCoreAsync(window);
@@ -478,6 +486,16 @@ internal sealed class RealLibraryAcceptanceSession
         WriteCacheMetadata(
             "thumbnail.cache_after",
             cacheAfter);
+        _metadata["thumbnail.cache_configured_bytes"] =
+            runtime.ThumbnailCache.ConfiguredByteLimit.ToString(
+                CultureInfo.InvariantCulture);
+
+        if (cacheAfter.TotalBytes
+            > runtime.ThumbnailCache.ConfiguredByteLimit)
+        {
+            throw new InvalidOperationException(
+                $"Persistent thumbnail cache exceeds its configured disk budget: {cacheAfter.TotalBytes:N0} > {runtime.ThumbnailCache.ConfiguredByteLimit:N0} bytes.");
+        }
 
         if (viewer.TileLoadFailures != 0)
         {
