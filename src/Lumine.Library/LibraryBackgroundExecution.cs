@@ -54,6 +54,12 @@ public sealed class LibraryService
             token => _database.InitializeAsync(token),
             cancellationToken);
 
+    public Task CheckpointAsync(
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _database.CheckpointAsync(token),
+            cancellationToken);
+
     public Task<LibraryInfo> RegisterLibraryAsync(
         string name,
         string rootPath,
