@@ -13,6 +13,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _libraryPath;
     private readonly ContentControl _viewerHost;
     private CancellationTokenSource? _openCancellation;
+    private Task _openOperation = Task.CompletedTask;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -89,13 +90,46 @@ public sealed class MainWindow : Window
 
     internal CoreViewerShell? CurrentShell => _shell;
 
-    internal async Task OpenLibraryAsync(
+    internal Task OpenLibraryAsync(
         string libraryRoot,
         AppDataPaths? dataPaths = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
             libraryRoot);
+
+        var operation = OpenLibraryCoreAsync(
+            libraryRoot,
+            dataPaths,
+            cancellationToken);
+        _openOperation = operation;
+        return ObserveOpenOperationAsync(operation);
+    }
+
+    private async Task ObserveOpenOperationAsync(
+        Task operation)
+    {
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    _openOperation,
+                    operation))
+            {
+                _openOperation =
+                    Task.CompletedTask;
+            }
+        }
+    }
+
+    private async Task OpenLibraryCoreAsync(
+        string libraryRoot,
+        AppDataPaths? dataPaths,
+        CancellationToken cancellationToken)
+    {
 
         _openCancellation?.Cancel();
         _openCancellation?.Dispose();
@@ -240,6 +274,14 @@ public sealed class MainWindow : Window
 
         try
         {
+            try
+            {
+                await _openOperation;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
             await DisposeCurrentRuntimeAsync();
 
             await Program.Diagnostics.FlushRequestedAsync(
