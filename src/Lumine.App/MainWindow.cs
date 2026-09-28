@@ -144,11 +144,12 @@ public sealed class MainWindow : Window
         _libraryPath.Text =
             Path.GetFullPath(libraryRoot);
         _status.Text = "Closing current library…";
-        _viewerHost.Content =
-            CreatePlaceholder("Opening library…");
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
+
+        _viewerHost.Content =
+            CreatePlaceholder("Opening library…");
 
         var progress =
             new Progress<CoreViewerOpenProgress>(
