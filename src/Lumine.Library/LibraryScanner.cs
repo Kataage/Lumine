@@ -154,6 +154,13 @@ public sealed class LibraryScanner
             completed,
             cancellationToken).ConfigureAwait(false);
 
+        if (completed)
+        {
+            await _repository.RebuildSearchIndexAsync(
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         progress?.Report(new LibraryScanProgress(discovered, persisted, skipped, current));
         return new LibraryScanResult(
             discovered,
