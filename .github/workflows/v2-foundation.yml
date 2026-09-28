@@ -199,7 +199,7 @@ jobs:
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
 
-      - name: Run NativeAOT product runtime smoke
+      - name: Run NativeAOT product runtime lifecycle smoke
         shell: pwsh
         run: |
           $exe = Join-Path $PWD "artifacts/native-aot/Lumine.App.exe"
@@ -210,9 +210,22 @@ jobs:
           New-Item -ItemType Directory -Force -Path $data | Out-Null
           New-Item -ItemType Directory -Force -Path $library | Out-Null
 
-          & $exe --product-smoke "--data-dir=$data" "--library-dir=$library"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          foreach ($launch in 1..3) {
+            Write-Host "NativeAOT lifecycle launch $launch"
+            & $exe --product-smoke "--data-dir=$data" "--library-dir=$library"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+
+            $marker = Join-Path $data "runtime.unclean"
+            if (Test-Path $marker) {
+              throw "Clean product smoke left recovery marker after launch $launch."
+            }
+
+            $wal = Join-Path $data "library.db-wal"
+            if ((Test-Path $wal) -and ((Get-Item $wal).Length -ne 0)) {
+              throw "Clean product smoke left a non-empty SQLite WAL after launch $launch."
+            }
           }
 
       - name: Publish NativeAOT Image runtime smoke
