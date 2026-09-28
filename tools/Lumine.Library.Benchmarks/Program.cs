@@ -41,6 +41,7 @@ long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
+var searchIndexed = 0;
 
 try
 {
@@ -181,6 +182,18 @@ try
             $"Persisted technical metadata for {metadataPersisted:N0} assets, expected {metadataTarget:N0}.");
     }
 
+    using (recorder.Measure(CoreMetricNames.LibrarySearchIndexRebuild))
+    {
+        searchIndexed = await repository.RebuildSearchIndexAsync(
+            library.Id);
+    }
+
+    if (searchIndexed != count)
+    {
+        throw new InvalidOperationException(
+            $"Search index rebuild covered {searchIndexed:N0} assets, expected {count:N0}.");
+    }
+
     using (recorder.Measure(CoreMetricNames.DatabaseReopen))
     {
         LibraryDatabase.ClearPools();
@@ -298,6 +311,7 @@ try
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
+            ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
             ["database_bytes"] = databaseBytes.ToString(CultureInfo.InvariantCulture),
@@ -314,6 +328,7 @@ try
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
+    Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 2-char / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
     Console.WriteLine($"Ingest retained working set: {retainedWorkingSetBytes / 1048576d:N1} MiB (+{retainedAdditionalWorkingSetBytes / 1048576d:N1} MiB), post-GC heap={postGcHeapSizeBytes / 1048576d:N1} MiB");
