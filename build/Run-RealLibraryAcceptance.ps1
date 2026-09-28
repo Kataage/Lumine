@@ -99,6 +99,31 @@ function Get-MaxMeasurement {
     return ($values | Measure-Object -Maximum).Maximum
 }
 
+function Get-Bottlenecks {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Result
+    )
+
+    return @(
+        $Result.measurements |
+            Where-Object {
+                $_.name -notin @(
+                    "acceptance.long_browse",
+                    "acceptance.idle_settle"
+                )
+            } |
+            Sort-Object -Property durationMs -Descending |
+            Select-Object -First 5 |
+            ForEach-Object {
+                [ordered]@{
+                    name = $_.name
+                    durationMs = [Math]::Round([double]$_.durationMs, 3)
+                }
+            }
+    )
+}
+
 function Invoke-CoreAcceptance {
     param(
         [Parameter(Mandatory = $true)]
@@ -233,6 +258,17 @@ try {
             thumbnailCacheHits = $warmCacheHits
             filesystemBootstrapMode = $warmBootstrap
         }
+        measuredBottlenecks = [ordered]@{
+            cold = @(Get-Bottlenecks -Result $cold)
+            warm = @(Get-Bottlenecks -Result $warm)
+        }
+        knownLimitations = @(
+            "Per-process OS disk-read byte counters are not collected; Core-owned thumbnail source-open and metadata-hash counters are recorded instead.",
+            "Dedicated GPU-memory usage is not collected because the Core acceptance path owns no AI/GPU model runtime; compositor residency remains platform-owned.",
+            "Automated timing/correctness cannot decide subjective visual comfort; the visible run still requires the manual observation checklist."
+        )
+        additionalFixIssues = @()
+        acceptanceDecision = "automated-pass-manual-observation-required"
         warnings = $warnings
         manualObservation = [ordered]@{
             requiredBeforeClosingIssue295 = $true
