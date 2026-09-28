@@ -209,9 +209,43 @@ internal sealed class RealLibraryAcceptanceSession
             return;
         }
 
-        _ = RunAndShutdownAsync(
+        _ = RunAndShutdownObservedAsync(
             window,
             desktop);
+    }
+
+    private async Task RunAndShutdownObservedAsync(
+        MainWindow window,
+        IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        try
+        {
+            await RunAndShutdownAsync(
+                window,
+                desktop);
+        }
+        catch (Exception exception)
+        {
+            Program.Host?.Log.Write(
+                "acceptance",
+                $"Unhandled acceptance failure: {exception}");
+
+            Console.Error.WriteLine(
+                $"Unhandled real-library acceptance failure: {exception}");
+
+            try
+            {
+                if (window.IsVisible)
+                {
+                    window.Close();
+                }
+            }
+            catch
+            {
+            }
+
+            desktop.Shutdown(2);
+        }
     }
 
     private async Task RunAndShutdownAsync(
@@ -477,30 +511,10 @@ internal sealed class RealLibraryAcceptanceSession
 
         grid.ScrollToAsset(target);
 
-        await WaitUntilAsync(
-            () =>
-            {
-                var first =
-                    grid.FirstVisibleAssetIndex
-                    ?? grid.FirstRealizedAssetIndex;
-
-                if (first is null)
-                {
-                    return false;
-                }
-
-                var tolerance =
-                    Math.Max(
-                        1L,
-                        (long)grid.Columns * 3L);
-
-                return Math.Abs(
-                           first.Value - target)
-                       <= tolerance
-                    && grid.Diagnostics.ReadyTiles > 0;
-            },
-            TimeSpan.FromSeconds(30),
-            $"Grid did not settle near asset {target:N0}.");
+        await WaitForScrollTargetAsync(
+            grid,
+            target,
+            TimeSpan.FromSeconds(30));
 
         _recorder.Complete(
             CoreMetricNames.ViewerFastScrollRefresh,
@@ -606,10 +620,10 @@ internal sealed class RealLibraryAcceptanceSession
 
             grid.ScrollToAsset(target);
 
-            await WaitUntilAsync(
-                () => grid.Diagnostics.ReadyTiles > 0,
-                TimeSpan.FromSeconds(30),
-                "Long-browse viewport did not produce ready tiles.");
+            await WaitForScrollTargetAsync(
+                grid,
+                target,
+                TimeSpan.FromSeconds(30));
 
             if ((iteration % 4) == 0)
             {
@@ -628,6 +642,35 @@ internal sealed class RealLibraryAcceptanceSession
             iteration.ToString(
                 CultureInfo.InvariantCulture);
     }
+
+    private static Task WaitForScrollTargetAsync(
+        Lumine.Viewer.ThumbnailViewerControl grid,
+        long target,
+        TimeSpan timeout) =>
+        WaitUntilAsync(
+            () =>
+            {
+                var first =
+                    grid.FirstVisibleAssetIndex
+                    ?? grid.FirstRealizedAssetIndex;
+
+                if (first is null)
+                {
+                    return false;
+                }
+
+                var tolerance =
+                    Math.Max(
+                        1L,
+                        (long)grid.Columns * 3L);
+
+                return Math.Abs(
+                           first.Value - target)
+                       <= tolerance
+                    && grid.Diagnostics.ReadyTiles > 0;
+            },
+            timeout,
+            $"Grid did not settle near asset {target:N0}.");
 
     private static async Task WaitForGridReadyAsync(
         Lumine.Viewer.ThumbnailViewerControl grid,
