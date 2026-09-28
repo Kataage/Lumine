@@ -676,10 +676,19 @@ try
                 shell.DetailViewer.SelectedAssetIndex == 1,
                 "Real App shell did not move to the next asset.");
 
-            await shell.DetailViewer.SelectAsync(0);
+            await shell.DetailViewer.ActualSizeAsync();
+            Dispatcher.UIThread.RunJobs();
             Require(
-                shell.DetailViewer.SelectedAssetIndex == 0,
-                "Real App shell did not move back to the previous asset.");
+                shell.DetailViewer.IsOriginal,
+                "Real App shell did not admit the next original after compositor-safe release.");
+
+            await shell.DetailViewer.SelectAsync(0);
+            await shell.DetailViewer.ActualSizeAsync();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 0
+                && shell.DetailViewer.IsOriginal,
+                "Real App shell did not move back and re-admit an original through the composition release contract.");
 
             window.Close();
             Dispatcher.UIThread.RunJobs();
