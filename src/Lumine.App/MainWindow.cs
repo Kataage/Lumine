@@ -20,7 +20,11 @@ public sealed class MainWindow : Window
     private readonly TextBlock _libraryPath;
     private readonly ContentControl _viewerHost;
     private CancellationTokenSource? _openCancellation;
+    private CancellationTokenSource? _diagnosticsCancellation;
     private Task _openOperation = Task.CompletedTask;
+    private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
+    private Task _diagnosticFlushOperation = Task.CompletedTask;
+    private Window? _diagnosticsWindow;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -365,33 +369,28 @@ public sealed class MainWindow : Window
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e)
     {
-        _diagnostics.IsEnabled = false;
+        if (!_runtimeDiagnosticsOperation.IsCompleted)
+        {
+            return;
+        }
+
+        _diagnosticsCancellation?.Dispose();
+        _diagnosticsCancellation =
+            new CancellationTokenSource();
+
+        var operation =
+            ShowRuntimeDiagnosticsAsync(
+                _diagnosticsCancellation.Token);
+        _runtimeDiagnosticsOperation =
+            operation;
 
         try
         {
-            var diagnostics =
-                await BuildRuntimeDiagnosticsTextAsync();
-
-            var text = new TextBox
-            {
-                Text = diagnostics,
-                IsReadOnly = true,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.NoWrap,
-                Margin = new Thickness(16)
-            };
-
-            var dialog = new Window
-            {
-                Title = "Lumine runtime diagnostics",
-                Width = 820,
-                Height = 620,
-                MinWidth = 640,
-                MinHeight = 420,
-                Content = text
-            };
-
-            await dialog.ShowDialog(this);
+            await operation;
+        }
+        catch (OperationCanceledException)
+            when (_diagnosticsCancellation?.IsCancellationRequested == true)
+        {
         }
         catch (Exception exception)
         {
@@ -400,9 +399,66 @@ public sealed class MainWindow : Window
         }
         finally
         {
+            if (ReferenceEquals(
+                    _runtimeDiagnosticsOperation,
+                    operation))
+            {
+                _runtimeDiagnosticsOperation =
+                    Task.CompletedTask;
+            }
+
+            _diagnosticsCancellation?.Dispose();
+            _diagnosticsCancellation = null;
+
             if (!_closeStarted)
             {
                 _diagnostics.IsEnabled = true;
+            }
+        }
+    }
+
+    private async Task ShowRuntimeDiagnosticsAsync(
+        CancellationToken cancellationToken)
+    {
+        _diagnostics.IsEnabled = false;
+
+        var diagnostics =
+            await BuildRuntimeDiagnosticsTextAsync(
+                cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var text = new TextBox
+        {
+            Text = diagnostics,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            Margin = new Thickness(16)
+        };
+
+        var dialog = new Window
+        {
+            Title = "Lumine runtime diagnostics",
+            Width = 820,
+            Height = 620,
+            MinWidth = 640,
+            MinHeight = 420,
+            Content = text
+        };
+
+        _diagnosticsWindow = dialog;
+
+        try
+        {
+            await dialog.ShowDialog(this);
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    _diagnosticsWindow,
+                    dialog))
+            {
+                _diagnosticsWindow = null;
             }
         }
     }
@@ -412,8 +468,9 @@ public sealed class MainWindow : Window
         EventArgs e)
     {
         Program.Diagnostics.MarkWindowReady();
-        _ = Program.Diagnostics.FlushRequestedAsync(
-            _resourcePolicy.ToDiagnosticMetadata());
+        _diagnosticFlushOperation =
+            Program.Diagnostics.FlushRequestedAsync(
+                _resourcePolicy.ToDiagnosticMetadata());
     }
 
     private async void OnClosing(
@@ -438,11 +495,25 @@ public sealed class MainWindow : Window
         _status.Text = "Closing Lumine…";
 
         _openCancellation?.Cancel();
+        _diagnosticsCancellation?.Cancel();
+        _diagnosticsWindow?.Close();
 
         Exception? shutdownFailure = null;
 
         try
         {
+            try
+            {
+                await _runtimeDiagnosticsOperation;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure = exception;
+            }
+
             try
             {
                 await _openOperation;
@@ -458,6 +529,15 @@ public sealed class MainWindow : Window
             try
             {
                 await DisposeCurrentRuntimeAsync();
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure ??= exception;
+            }
+
+            try
+            {
+                await _diagnosticFlushOperation;
             }
             catch (Exception exception)
             {
@@ -494,6 +574,9 @@ public sealed class MainWindow : Window
         {
             _openCancellation?.Dispose();
             _openCancellation = null;
+            _diagnosticsCancellation?.Dispose();
+            _diagnosticsCancellation = null;
+            _diagnosticsWindow = null;
             _closeCompleted = true;
             Close();
         }
