@@ -179,7 +179,7 @@ public sealed class LibraryReconciler
                 finished,
                 cancellationToken).ConfigureAwait(false);
 
-            await _repository.RebuildSearchIndexAsync(
+            await _repository.RefreshSearchIndexAsync(
                 libraryId,
                 cancellationToken).ConfigureAwait(false);
         }
