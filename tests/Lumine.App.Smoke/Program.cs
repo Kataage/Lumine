@@ -829,6 +829,24 @@ try
             AppDataPaths.FromRoot(
                 repeatedDataRoot);
 
+        if (iteration == 0)
+        {
+            var repeatedSettings =
+                new AppSettingsStore(
+                    repeatedPaths.SettingsPath);
+            await repeatedSettings.SaveAsync(
+                new AppSettingsDocument
+                {
+                    ResourcePolicy =
+                        new ResourcePolicySettings
+                        {
+                            ThumbnailQueueCapacity = 19,
+                            ThumbnailCacheByteLimit =
+                                128L * 1024 * 1024
+                        }
+                });
+        }
+
         Directory.CreateDirectory(
             repeatedLibraryRoot);
         WriteBmp24(
@@ -866,6 +884,14 @@ try
                         window.CurrentRuntime is not null
                         && window.CurrentShell is not null,
                         "MainWindow did not compose the production Core Viewer runtime/shell.");
+
+                    if (iteration == 0)
+                    {
+                        Require(
+                            window.CurrentRuntime!.ThumbnailCache.ConfiguredByteLimit
+                                == 128L * 1024 * 1024,
+                            "Persisted non-default thumbnail cache budget did not reach the real CoreViewerRuntime.");
+                    }
 
                     var diagnostics =
                         await window.BuildRuntimeDiagnosticsTextAsync();
