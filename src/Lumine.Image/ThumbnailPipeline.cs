@@ -154,6 +154,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         }
         catch (Exception exception)
         {
+            _shutdown.Dispose();
+            _queuedItems.Dispose();
+            _queueSlots.Dispose();
             _disposeCompletion.TrySetException(exception);
             throw;
         }
