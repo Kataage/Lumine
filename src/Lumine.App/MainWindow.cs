@@ -511,7 +511,9 @@ public sealed class MainWindow : Window
             }
             catch (Exception exception)
             {
-                shutdownFailure = exception;
+                _host?.Log.Write(
+                    "diagnostics",
+                    $"Runtime diagnostics close-drain failed: {exception.Message}");
             }
 
             try
@@ -541,7 +543,9 @@ public sealed class MainWindow : Window
             }
             catch (Exception exception)
             {
-                shutdownFailure ??= exception;
+                _host?.Log.Write(
+                    "diagnostics",
+                    $"Window-ready diagnostics flush failed: {exception.Message}");
             }
 
             try
@@ -551,7 +555,9 @@ public sealed class MainWindow : Window
             }
             catch (Exception exception)
             {
-                shutdownFailure ??= exception;
+                _host?.Log.Write(
+                    "diagnostics",
+                    $"Shutdown diagnostics flush failed: {exception.Message}");
             }
 
             if (shutdownFailure is null)
