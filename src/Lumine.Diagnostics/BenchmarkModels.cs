@@ -9,6 +9,7 @@ public static class CoreMetricNames
     public const string LibraryQuery = "library.query";
     public const string LibraryKeysetTraversal = "library.keyset_traversal";
     public const string LibraryTechnicalMetadataPersist = "library.technical_metadata_persist";
+    public const string LibrarySearchIndexRebuild = "library.search_index_rebuild";
     public const string LibrarySearchAscii = "library.search_ascii";
     public const string LibrarySearchJapaneseShort = "library.search_japanese_short";
     public const string LibrarySearchTagFilter = "library.search_tag_filter";
