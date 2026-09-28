@@ -178,6 +178,10 @@ public sealed class LibraryReconciler
                 generation,
                 finished,
                 cancellationToken).ConfigureAwait(false);
+
+            await _repository.RebuildSearchIndexAsync(
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
         }
         else
         {
