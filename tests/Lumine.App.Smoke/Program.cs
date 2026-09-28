@@ -601,8 +601,14 @@ try
         Path.Combine(shellLibraryRoot, "viewer-shell.bmp");
     WriteBmp24(
         shellImagePath,
-        width: 11,
-        height: 7);
+        width: 1200,
+        height: 900);
+    WriteBmp24(
+        Path.Combine(
+            shellLibraryRoot,
+            "viewer-shell-second.bmp"),
+        width: 640,
+        height: 480);
 
     var shellRuntime =
         await CoreViewerRuntime.OpenAsync(
@@ -611,8 +617,8 @@ try
             Lumine.App.Program.ResourcePolicy);
 
     Require(
-        shellRuntime.AssetCount == 1,
-        $"Production Core Viewer runtime indexed {shellRuntime.AssetCount} assets; expected 1.");
+        shellRuntime.AssetCount == 2,
+        $"Production Core Viewer runtime indexed {shellRuntime.AssetCount} assets; expected 2.");
 
     await headless.Dispatch(
         async () =>
@@ -631,7 +637,7 @@ try
             Dispatcher.UIThread.RunJobs();
 
             Require(
-                shell.GridViewer.AssetCount == 1,
+                shell.GridViewer.AssetCount == 2,
                 "Real App shell did not expose the runtime asset count.");
 
             await shell.DetailViewer.SelectAsync(0);
@@ -649,10 +655,31 @@ try
                 shell.DetailViewer.IsOriginal,
                 "Real App shell 1:1 path did not promote to the full-resolution original.");
 
+            await shell.DetailViewer.ZoomByAsync(1.25);
+            Require(
+                shell.DetailViewer.Zoom > 1,
+                "Real App shell zoom command did not update the production Detail control.");
+
+            shell.DetailViewer.PanBy(24, 16);
+            Require(
+                shell.DetailViewer.PanOffset.X >= 0
+                && shell.DetailViewer.PanOffset.Y >= 0,
+                "Real App shell pan produced an invalid scroll offset.");
+
             shell.DetailViewer.Fit();
             Require(
                 shell.DetailViewer.SelectedAssetIndex == 0,
                 "Real App shell lost Detail selection during Fit.");
+
+            await shell.DetailViewer.SelectAsync(1);
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 1,
+                "Real App shell did not move to the next asset.");
+
+            await shell.DetailViewer.SelectAsync(0);
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 0,
+                "Real App shell did not move back to the previous asset.");
 
             window.Close();
             Dispatcher.UIThread.RunJobs();
@@ -666,7 +693,7 @@ try
         CancellationToken.None);
 
     Console.WriteLine(
-        "App shell smoke: runtime composition / grid / Detail preview / 1:1 / Fit / shutdown OK");
+        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / shutdown OK");
 
     var mainWindowDataRoot =
         Path.Combine(root, "main-window-data");
