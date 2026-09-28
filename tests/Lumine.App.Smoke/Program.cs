@@ -668,6 +668,54 @@ try
     Console.WriteLine(
         "App shell smoke: runtime composition / grid / Detail preview / 1:1 / Fit / shutdown OK");
 
+    var mainWindowDataRoot =
+        Path.Combine(root, "main-window-data");
+
+    await headless.Dispatch(
+        async () =>
+        {
+            var window = new MainWindow();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            await window.OpenLibraryAsync(
+                shellLibraryRoot,
+                AppDataPaths.FromRoot(
+                    mainWindowDataRoot));
+
+            Require(
+                window.CurrentRuntime is not null
+                && window.CurrentShell is not null,
+                "MainWindow did not compose the production Core Viewer runtime/shell.");
+
+            window.Close();
+
+            for (var attempt = 0;
+                 attempt < 5000
+                 && window.IsVisible;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                !window.IsVisible,
+                "MainWindow did not complete its coordinated close.");
+            Require(
+                window.CurrentRuntime is null
+                && window.CurrentShell is null,
+                "MainWindow returned from close with owned Viewer runtime state still attached.");
+
+            return 0;
+        },
+        CancellationToken.None);
+
+    Console.WriteLine(
+        "MainWindow smoke: real composition / coordinated close ownership OK");
+
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");
 }
