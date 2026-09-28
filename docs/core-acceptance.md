@@ -21,6 +21,8 @@ The published app supports:
 
 This is not a separate mock application. The mode starts the real Avalonia desktop lifetime and real `MainWindow`, then runs the production `CoreViewerRuntime`, `ThumbnailViewerControl`, and `DetailViewerControl` paths.
 
+The representative-library UI path is read-only with respect to source image files.
+
 The scripted UI path covers:
 
 - startup -> real window ready
@@ -35,6 +37,20 @@ The scripted UI path covers:
 - repeated browsing for a configurable duration
 - idle settle
 - coordinated real-window shutdown
+
+The same real Windows process then runs an isolated scratch-library functional phase, outside the representative source library, covering:
+
+- live add
+- modify
+- rename with stable asset identity
+- delete
+- no periodic idle reconciliation
+- app-stopped/offline file creation and restart recovery
+- metadata edit round-trip
+- filename search
+- two-character Japanese search
+- tag/notes/favorite/rating/status/color composed filtering
+- filename sort
 
 The raw result uses the #286 `BenchmarkResult` schema and records hardware/OS/runtime/revision plus resource snapshots.
 
