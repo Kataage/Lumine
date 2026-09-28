@@ -241,20 +241,12 @@ internal sealed class RealLibraryAcceptanceSession
         try
         {
             await RunCoreAsync(window);
-            _metadata["acceptance.automated_result"] =
-                "pass";
         }
         catch (Exception exception)
         {
             exitCode = 2;
             failure = exception;
-            _metadata["acceptance.automated_result"] =
-                "fail";
-            _metadata["acceptance.failure_type"] =
-                exception.GetType().Name;
-            _metadata["acceptance.failure"] =
-                NormalizeMetadataValue(
-                    exception.Message);
+            RecordFailure(exception);
         }
 
         var shutdownStart =
@@ -294,6 +286,27 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["resource.peak_additional_working_set_bytes"] =
             _peak.PeakAdditionalWorkingSetBytes.ToString(
                 CultureInfo.InvariantCulture);
+
+        if (failure is null)
+        {
+            try
+            {
+                await CoreAcceptanceFunctionalScenario.RunAsync(
+                    _recorder,
+                    _metadata);
+            }
+            catch (Exception exception)
+            {
+                exitCode = 2;
+                failure = exception;
+                RecordFailure(exception);
+            }
+        }
+
+        _metadata["acceptance.automated_result"] =
+            failure is null
+                ? "pass"
+                : "fail";
 
         if (failure is not null)
         {
@@ -431,10 +444,6 @@ internal sealed class RealLibraryAcceptanceSession
         WriteCacheMetadata(
             "thumbnail.cache_after",
             cacheAfter);
-
-        await CoreAcceptanceFunctionalScenario.RunAsync(
-            _recorder,
-            _metadata);
 
         if (viewer.TileLoadFailures != 0)
         {
@@ -806,6 +815,16 @@ internal sealed class RealLibraryAcceptanceSession
                     Encoding.UTF8.GetBytes(
                         normalized)))
             .ToLowerInvariant();
+    }
+
+    private void RecordFailure(
+        Exception exception)
+    {
+        _metadata["acceptance.failure_type"] =
+            exception.GetType().Name;
+        _metadata["acceptance.failure"] =
+            NormalizeMetadataValue(
+                exception.Message);
     }
 
     private static string NormalizeMetadataValue(
