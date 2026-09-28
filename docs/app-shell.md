@@ -14,6 +14,12 @@ The root may be overridden with `LUMINE_DATA_DIR` for portable/test scenarios. T
 
 - `library.db`
 - `thumbnails\`
+- `settings.json`
+- `instance.lock`
+- `runtime.unclean`
+- `logs\runtime.log`
+
+#293 owns the settings/single-instance/recovery/log lifecycle for these paths; see `docs/lifecycle.md`.
 
 A selected image library may not contain Lumine's own data directory. This prevents persistent generated WebP thumbnails from recursively entering the indexed source library.
 
