@@ -128,6 +128,67 @@ public sealed class LibraryService
             token => _repository.CountAssetsAsync(libraryId, token),
             cancellationToken);
 
+
+    public Task<AssetUserMetadata?> GetUserMetadataAsync(
+        long libraryId,
+        long assetId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetUserMetadataAsync(
+                libraryId,
+                assetId,
+                token),
+            cancellationToken);
+
+    public Task<AssetUserMetadata> SetUserMetadataAsync(
+        long libraryId,
+        long assetId,
+        AssetUserMetadataUpdate update,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.SetUserMetadataAsync(
+                libraryId,
+                assetId,
+                update,
+                token),
+            cancellationToken);
+
+    public Task<long> CountAssetsAsync(
+        long libraryId,
+        AssetQuery query,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CountAssetsAsync(
+                libraryId,
+                query,
+                token),
+            cancellationToken);
+
+
+    public Task<int> RebuildSearchIndexAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.RebuildSearchIndexAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
+    public Task<AssetQueryPage> GetAssetPageAsync(
+        long libraryId,
+        AssetQuery query,
+        int limit,
+        AssetQueryCursor? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetAssetPageAsync(
+                libraryId,
+                query,
+                limit,
+                cursor,
+                token),
+            cancellationToken);
+
     public Task<LibraryScanResult> ScanAsync(
         long libraryId,
         IProgress<LibraryScanProgress>? progress = null,

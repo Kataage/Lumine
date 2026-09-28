@@ -175,6 +175,111 @@ public sealed class LibraryDatabase
                 updated_at_utc_ticks INTEGER NOT NULL,
                 FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
             );
+            """),
+        new(
+            5,
+            "user-metadata-and-local-search",
+            """
+            CREATE TABLE asset_user_metadata (
+                asset_id INTEGER PRIMARY KEY,
+                rating INTEGER NULL CHECK(rating IS NULL OR rating BETWEEN 0 AND 5),
+                favorite INTEGER NOT NULL DEFAULT 0 CHECK(favorite IN (0, 1)),
+                notes TEXT NOT NULL DEFAULT '',
+                status_label TEXT NULL CHECK(status_label IS NULL OR length(status_label) <= 64),
+                color_label TEXT NULL CHECK(color_label IS NULL OR length(color_label) <= 64),
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 128),
+                name_key TEXT NOT NULL CHECK(length(name_key) BETWEEN 1 AND 128),
+                created_at_utc_ticks INTEGER NOT NULL,
+                UNIQUE(library_id, name_key),
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE asset_tags (
+                asset_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                created_at_utc_ticks INTEGER NOT NULL,
+                PRIMARY KEY(asset_id, tag_id),
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_asset_tags_tag_asset
+                ON asset_tags(tag_id, asset_id);
+
+            -- Search is a rebuildable derived index. Do not duplicate source text
+            -- in a content table and do not put FTS work on the asset ingest path.
+            CREATE VIRTUAL TABLE asset_search_fts USING fts5(
+                file_name,
+                relative_path,
+                notes,
+                tags_text,
+                content='',
+                contentless_delete=1,
+                tokenize='trigram',
+                detail='none'
+            );
+
+            CREATE TABLE asset_search_cjk_bigrams (
+                library_id INTEGER NOT NULL,
+                token TEXT NOT NULL CHECK(length(token) = 2),
+                asset_id INTEGER NOT NULL,
+                PRIMARY KEY(library_id, token, asset_id),
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_asset_search_cjk_asset
+                ON asset_search_cjk_bigrams(asset_id);
+
+            CREATE TABLE asset_search_dirty (
+                asset_id INTEGER PRIMARY KEY,
+                library_id INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX idx_asset_search_dirty_library
+                ON asset_search_dirty(library_id, asset_id);
+
+            CREATE TRIGGER assets_ai_search_dirty
+            AFTER INSERT ON assets
+            BEGIN
+                INSERT INTO asset_search_dirty(asset_id, library_id)
+                VALUES(NEW.id, NEW.library_id)
+                ON CONFLICT(asset_id) DO UPDATE SET
+                    library_id = excluded.library_id;
+            END;
+
+            CREATE TRIGGER assets_au_search_dirty
+            AFTER UPDATE OF file_name, relative_path ON assets
+            WHEN NEW.file_name <> OLD.file_name
+              OR NEW.relative_path <> OLD.relative_path
+            BEGIN
+                INSERT INTO asset_search_dirty(asset_id, library_id)
+                VALUES(NEW.id, NEW.library_id)
+                ON CONFLICT(asset_id) DO UPDATE SET
+                    library_id = excluded.library_id;
+            END;
+
+            CREATE TRIGGER assets_bd_search_cleanup
+            BEFORE DELETE ON assets
+            BEGIN
+                DELETE FROM asset_search_fts
+                WHERE rowid = OLD.id;
+            END;
+
+            -- Existing v1-v4 assets are deliberately marked dirty instead of
+            -- synchronously building an FTS index during schema migration.
+            INSERT INTO asset_search_dirty(asset_id, library_id)
+            SELECT id, library_id
+            FROM assets;
             """)
     ];
 

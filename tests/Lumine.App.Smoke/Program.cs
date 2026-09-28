@@ -148,6 +148,55 @@ try
         ?? throw new InvalidOperationException(
             "App smoke source was not indexed.");
 
+
+    _ = await libraryService.SetUserMetadataAsync(
+        library.Id,
+        indexed.Id,
+        new AssetUserMetadataUpdate(
+            Rating: 5,
+            Favorite: true,
+            Notes: "猫耳 app viewer search",
+            Tags: ["viewer-tag"]));
+
+    var viewerQuery = new AssetQuery(
+        SearchText: "猫耳",
+        RequiredTags: ["viewer-tag"],
+        Favorite: true,
+        MinRating: 5);
+    var viewerQueryCount = await libraryService.CountAssetsAsync(
+        library.Id,
+        viewerQuery);
+    Require(
+        viewerQueryCount == 1,
+        $"App search query expected one Viewer asset, got {viewerQueryCount}.");
+
+    var viewerQuerySource = new LibraryViewerQueryPageSource(
+        libraryService,
+        library.Id,
+        viewerQuery,
+        viewerQueryCount);
+    using (var viewerQueryProvider =
+           new CursorPagedViewerAssetProvider(
+               viewerQuerySource,
+               new ViewerOptions
+               {
+                   MetadataPageSize = 1,
+                   MetadataPageCacheSize = 2,
+                   CursorCheckpointStride = 1,
+                   CursorCheckpointLimit = 4
+               }))
+    {
+        var searchedViewerAsset =
+            await viewerQueryProvider.GetAssetAsync(0);
+        Require(
+            searchedViewerAsset.Id == indexed.Id
+            && string.Equals(
+                searchedViewerAsset.RelativePath,
+                indexed.RelativePath,
+                StringComparison.Ordinal),
+            "Search/filter page source did not preserve Library asset identity through the Viewer paging adapter.");
+    }
+
     var asset = new ViewerAsset(
         indexed.Id,
         indexed.SourceRevision,

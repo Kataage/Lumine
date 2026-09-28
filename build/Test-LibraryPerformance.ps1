@@ -39,6 +39,10 @@ $reopen100 = Get-Metric $hundredK "library.database_reopen"
 $query100 = Get-Metric $hundredK "library.query"
 $keyset100 = Get-Metric $hundredK "library.keyset_traversal"
 $metadataPersist100 = Get-Metric $hundredK "library.technical_metadata_persist"
+$searchRebuild100 = Get-Metric $hundredK "library.search_index_rebuild"
+$searchAscii100 = Get-Metric $hundredK "library.search_ascii"
+$searchJapanese100 = Get-Metric $hundredK "library.search_japanese_short"
+$searchTag100 = Get-Metric $hundredK "library.search_tag_filter"
 
 $peakWorkingSet100 = [long]$hundredK.metadata.peak_working_set_bytes
 $coldPeakWorkingSet100 = [long]$coldHundredK.metadata.peak_working_set_bytes
@@ -74,6 +78,26 @@ if ([int]$hundredK.metadata.technical_metadata_persist_count -ne 10000) {
 
 if ([double]$metadataPersist100.durationMs -gt 8000) {
     throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
+}
+
+if ([int]$hundredK.metadata.search_indexed_asset_count -ne 100000) {
+    throw "100k benchmark did not rebuild the search index for every asset."
+}
+
+if ([double]$searchRebuild100.durationMs -gt 12000) {
+    throw "100k search-index rebuild exceeded 12 seconds: $($searchRebuild100.durationMs) ms"
+}
+
+if ([double]$searchAscii100.durationMs -gt 250) {
+    throw "100k ASCII partial search exceeded 250 ms: $($searchAscii100.durationMs) ms"
+}
+
+if ([double]$searchJapanese100.durationMs -gt 250) {
+    throw "100k Japanese 2-char search exceeded 250 ms: $($searchJapanese100.durationMs) ms"
+}
+
+if ([double]$searchTag100.durationMs -gt 250) {
+    throw "100k exact-tag/filter search exceeded 250 ms: $($searchTag100.durationMs) ms"
 }
 
 # Budgets intentionally include substantial hosted-runner headroom while still
@@ -143,4 +167,8 @@ Write-Host ("100k reopen: {0:N1} ms" -f $reopen100.durationMs)
 Write-Host ("100k first-page query: {0:N1} ms" -f $query100.durationMs)
 Write-Host ("100k keyset traversal: {0:N1} ms" -f $keyset100.durationMs)
 Write-Host ("10k technical metadata persistence: {0:N1} ms" -f $metadataPersist100.durationMs)
+Write-Host ("100k search-index rebuild: {0:N1} ms" -f $searchRebuild100.durationMs)
+Write-Host ("100k ASCII partial search: {0:N1} ms" -f $searchAscii100.durationMs)
+Write-Host ("100k Japanese 2-char search: {0:N1} ms" -f $searchJapanese100.durationMs)
+Write-Host ("100k exact-tag/filter search: {0:N1} ms" -f $searchTag100.durationMs)
 Write-Host ("100k database size: {0:N1} MiB" -f ($databaseBytes100 / 1MB))

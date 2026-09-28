@@ -55,6 +55,52 @@ public sealed record AssetPage(
     IReadOnlyList<AssetInfo> Items,
     AssetCursor? NextCursor);
 
+
+public sealed record AssetUserMetadata(
+    long AssetId,
+    int? Rating,
+    bool Favorite,
+    string Notes,
+    string? StatusLabel,
+    string? ColorLabel,
+    IReadOnlyList<string> Tags);
+
+public sealed record AssetUserMetadataUpdate(
+    int? Rating = null,
+    bool Favorite = false,
+    string Notes = "",
+    string? StatusLabel = null,
+    string? ColorLabel = null,
+    IReadOnlyList<string>? Tags = null);
+
+public enum AssetSortOrder
+{
+    ModifiedNewest = 0,
+    ModifiedOldest = 1,
+    FileNameAscending = 2,
+    FileNameDescending = 3
+}
+
+public sealed record AssetQuery(
+    string? SearchText = null,
+    IReadOnlyList<string>? RequiredTags = null,
+    int? MinRating = null,
+    int? MaxRating = null,
+    bool? Favorite = null,
+    string? StatusLabel = null,
+    string? ColorLabel = null,
+    AssetSortOrder SortOrder = AssetSortOrder.ModifiedNewest);
+
+public sealed record AssetQueryCursor(
+    AssetSortOrder SortOrder,
+    long Id,
+    long? ModifiedAtUtcTicks = null,
+    string? FileName = null);
+
+public sealed record AssetQueryPage(
+    IReadOnlyList<AssetInfo> Items,
+    AssetQueryCursor? NextCursor);
+
 public sealed record AssetUpsert(
     string RelativePath,
     long FileSize,

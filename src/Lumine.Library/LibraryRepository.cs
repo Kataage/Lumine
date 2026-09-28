@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
 
-public sealed class LibraryRepository
+public sealed partial class LibraryRepository
 {
     private readonly LibraryDatabase _database;
 

@@ -135,7 +135,8 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (2, 'harden-library-core-invariants', 2),
             (3, 'incremental-filesystem-sync', 3),
             (4, 'persist-source-technical-metadata', 4),
-            (5, 'future-schema', 5);
+            (5, 'user-metadata-and-local-search', 5),
+            (6, 'future-schema', 6);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -183,7 +184,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 4, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 5, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -265,6 +266,174 @@ try
         && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
 
+
+    var userMetadata = await repository.SetUserMetadataAsync(
+        library.Id,
+        technical.Id,
+        new AssetUserMetadataUpdate(
+            Rating: 4,
+            Favorite: true,
+            Notes: "猫耳 メイド reference note",
+            StatusLabel: "reviewed",
+            ColorLabel: "blue",
+            Tags: ["推し", "blue sky"]));
+
+    Require(
+        userMetadata.Rating == 4
+        && userMetadata.Favorite
+        && userMetadata.Notes.Contains("猫耳", StringComparison.Ordinal)
+        && userMetadata.StatusLabel == "reviewed"
+        && userMetadata.ColorLabel == "blue"
+        && userMetadata.Tags.Count == 2,
+        "User metadata write result was incomplete.");
+
+    var persistedUserMetadata =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "User metadata did not persist.");
+
+    Require(
+        persistedUserMetadata.Rating == 4
+        && persistedUserMetadata.Favorite
+        && persistedUserMetadata.Tags.Contains("推し")
+        && persistedUserMetadata.Tags.Contains("blue sky"),
+        "User metadata did not round-trip.");
+
+    var japaneseShort = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "猫耳"),
+        10);
+    Require(
+        japaneseShort.Items.Count == 1
+        && japaneseShort.Items[0].Id == technical.Id,
+        "Two-character Japanese search did not use the CJK bigram index correctly.");
+
+    var asciiPartial = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "png"),
+        10);
+    Require(
+        asciiPartial.Items.Any(asset => asset.Id == technical.Id),
+        "ASCII filename partial search failed.");
+
+    var pathPartial = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "nested"),
+        10);
+    Require(
+        pathPartial.Items.Count == 1
+        && string.Equals(
+            pathPartial.Items[0].RelativePath,
+            "nested/c.webp",
+            StringComparison.Ordinal),
+        "Relative-path search failed.");
+
+    var mixedSearch = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "猫耳 blue"),
+        10);
+    Require(
+        mixedSearch.Items.Count == 1
+        && mixedSearch.Items[0].Id == technical.Id,
+        "Mixed Japanese/English search failed.");
+
+    var exactTag = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(RequiredTags: ["推し"]),
+        10);
+    Require(
+        exactTag.Items.Count == 1
+        && exactTag.Items[0].Id == technical.Id,
+        "Exact tag filter failed.");
+
+    var composedFilter = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SearchText: "reference",
+            RequiredTags: ["blue sky"],
+            MinRating: 4,
+            Favorite: true,
+            StatusLabel: "reviewed",
+            ColorLabel: "blue"),
+        10);
+    Require(
+        composedFilter.Items.Count == 1
+        && composedFilter.Items[0].Id == technical.Id,
+        "Composed search/filter query failed.");
+
+    Require(
+        await repository.CountAssetsAsync(
+            library.Id,
+            new AssetQuery(
+                SearchText: "猫耳",
+                Favorite: true)) == 1,
+        "Filtered search count disagreed with the page result.");
+
+    var fileNameSortFirst = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SortOrder: AssetSortOrder.FileNameAscending),
+        2);
+    Require(
+        fileNameSortFirst.Items.Count == 2
+        && fileNameSortFirst.NextCursor is not null,
+        "Filename keyset sort did not produce a continuation cursor.");
+
+    var fileNameSortSecond = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SortOrder: AssetSortOrder.FileNameAscending),
+        2,
+        fileNameSortFirst.NextCursor);
+    var sortedNames = fileNameSortFirst.Items
+        .Concat(fileNameSortSecond.Items)
+        .Select(static asset => asset.FileName)
+        .ToArray();
+    Require(
+        sortedNames.SequenceEqual(
+            sortedNames.Order(
+                StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase),
+        "Filename keyset paging was not stably sorted.");
+
+
+    var rebuiltSearchRows =
+        await repository.RebuildSearchIndexAsync(library.Id);
+    Require(
+        rebuiltSearchRows == 3,
+        $"Search index rebuild covered {rebuiltSearchRows} assets; expected 3.");
+
+    var rebuiltJapanese = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            SearchText: "猫耳",
+            RequiredTags: ["推し"]),
+        10);
+    Require(
+        rebuiltJapanese.Items.Count == 1
+        && rebuiltJapanese.Items[0].Id == technical.Id,
+        "Search index rebuild did not restore notes/tag search state.");
+
+    using (var cancelledSearch = new CancellationTokenSource())
+    {
+        cancelledSearch.Cancel();
+        try
+        {
+            _ = await repository.GetAssetPageAsync(
+                library.Id,
+                new AssetQuery(SearchText: "reference"),
+                10,
+                cancellationToken: cancelledSearch.Token);
+            throw new InvalidOperationException(
+                "Cancelled search query unexpectedly completed.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     await repository.UpsertAssetsAsync(
         library.Id,
         [
@@ -289,6 +458,17 @@ try
         && forcedRevision.HasAlpha is null
         && forcedRevision.SourceIdentity is null,
         "Explicit same-stat source change retained stale technical metadata.");
+
+    var userMetadataAfterSourceRevision =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            forcedRevision.Id)
+        ?? throw new InvalidOperationException(
+            "User metadata was incorrectly removed by source revision change.");
+    Require(
+        userMetadataAfterSourceRevision.Favorite
+        && userMetadataAfterSourceRevision.Tags.Contains("推し"),
+        "User metadata changed when only source technical revision advanced.");
     Require(
         !await repository.UpdateTechnicalMetadataAsync(
             library.Id,
@@ -464,7 +644,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 4, "v1 database did not migrate to v4.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 5, "v1 database did not migrate to v5.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
@@ -512,7 +692,7 @@ try
     }
 
     Console.WriteLine(
-        $"Library hardening smoke: {expectedCount:N0} assets, rollback/migration/partial-scan/source-revision/identity OK");
+        $"Library/search smoke: {expectedCount:N0} assets, metadata/FTS/CJK-bigram/filter/keyset/migration/source-revision OK");
 }
 finally
 {
