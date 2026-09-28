@@ -94,6 +94,7 @@ Across the results it requires:
 - thumbnail failures = 0
 - interrupted thumbnail writes = 0
 - filesystem reconcile failures = 0
+- persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
 - warm persistent thumbnail cache hits > 0
 - warm thumbnail-generation source opens = 0
