@@ -24,7 +24,7 @@ public sealed class App : Application
             if (Program.Acceptance is { } acceptance)
             {
                 desktop.ShutdownMode =
-                    ShutdownMode.OnExplicitShutdown;
+                    Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
 
                 window.Opened +=
                     (_, _) =>
