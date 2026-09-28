@@ -336,6 +336,21 @@ public sealed partial class LibraryRepository
         return checked((int)count);
     }
 
+    public async Task<int> RefreshSearchIndexAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+
+        await using var connection = await _database.OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+
+        return await RefreshDirtySearchIndexAsync(
+            connection,
+            libraryId,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<long> CountAssetsAsync(
         long libraryId,
         AssetQuery query,
