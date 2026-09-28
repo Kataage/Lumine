@@ -7,8 +7,27 @@ namespace Lumine.Library;
 public sealed partial class LibraryRepository
 {
     private const int MaxSearchTextLength = 256;
-    private const int MaxNotesLength = 100_000;
+    private const int MaxNotesLength = 16_384;
     private const int MaxTagsPerAsset = 128;
+
+    private const string SearchHaystackSql =
+        """
+        lower(
+            a.file_name || char(31) ||
+            a.relative_path || char(31) ||
+            COALESCE(um.notes, '') || char(31) ||
+            COALESCE((
+                SELECT group_concat(name, ' ')
+                FROM (
+                    SELECT t.name AS name
+                    FROM asset_tags AS at
+                    INNER JOIN tags AS t ON t.id = at.tag_id
+                    WHERE at.asset_id = a.id
+                    ORDER BY t.name_key ASC
+                )
+            ), '')
+        )
+        """;
 
     public async Task<AssetUserMetadata?> GetUserMetadataAsync(
         long libraryId,
@@ -146,7 +165,9 @@ public sealed partial class LibraryRepository
             metadata.Parameters.AddWithValue("$asset_id", assetId);
             metadata.Parameters.AddWithValue(
                 "$rating",
-                update.Rating.HasValue ? update.Rating.Value : DBNull.Value);
+                update.Rating.HasValue
+                    ? update.Rating.Value
+                    : DBNull.Value);
             metadata.Parameters.AddWithValue(
                 "$favorite",
                 update.Favorite ? 1 : 0);
@@ -207,7 +228,8 @@ public sealed partial class LibraryRepository
             assign.Transaction = transaction;
             assign.CommandText =
                 """
-                INSERT INTO asset_tags(asset_id, tag_id, created_at_utc_ticks)
+                INSERT INTO asset_tags(
+                    asset_id, tag_id, created_at_utc_ticks)
                 VALUES($asset_id, $tag_id, $created);
                 """;
             assign.Parameters.AddWithValue("$asset_id", assetId);
@@ -217,37 +239,32 @@ public sealed partial class LibraryRepository
                 .ConfigureAwait(false);
         }
 
-        var tagsText = string.Join(' ', tags.Select(static tag => tag.Name));
-
-        await using (var searchDocument = connection.CreateCommand())
+        await using (var removeOrphanTags = connection.CreateCommand())
         {
-            searchDocument.Transaction = transaction;
-            searchDocument.CommandText =
+            removeOrphanTags.Transaction = transaction;
+            removeOrphanTags.CommandText =
                 """
-                UPDATE asset_search_documents
-                SET notes = $notes,
-                    tags_text = $tags_text,
-                    normalized_text = lower(
-                        file_name || char(31) ||
-                        relative_path || char(31) ||
-                        $notes || char(31) ||
-                        $tags_text)
-                WHERE asset_id = $asset_id
-                  AND library_id = $library_id;
+                DELETE FROM tags
+                WHERE library_id = $library_id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM asset_tags AS at
+                      WHERE at.tag_id = tags.id
+                  );
                 """;
-            searchDocument.Parameters.AddWithValue("$notes", notes);
-            searchDocument.Parameters.AddWithValue("$tags_text", tagsText);
-            searchDocument.Parameters.AddWithValue("$asset_id", assetId);
-            searchDocument.Parameters.AddWithValue("$library_id", libraryId);
-
-            if (await searchDocument.ExecuteNonQueryAsync(cancellationToken)
-                    .ConfigureAwait(false) != 1)
-            {
-                transaction.Rollback();
-                throw new InvalidOperationException(
-                    $"Search document for asset {assetId} is missing.");
-            }
+            removeOrphanTags.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            await removeOrphanTags.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
+
+        await ReindexAssetOnConnectionAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId,
+            cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
 
@@ -266,75 +283,57 @@ public sealed partial class LibraryRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        cancellationToken.ThrowIfCancellationRequested();
 
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction();
 
-        await using (var clear = connection.CreateCommand())
+        var count = await CountLibraryAssetsOnConnectionAsync(
+            connection,
+            transaction,
+            libraryId,
+            cancellationToken).ConfigureAwait(false);
+
+        await DeleteSearchRowsForLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            cancellationToken).ConfigureAwait(false);
+
+        await InsertFtsRowsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId: null,
+            dirtyOnly: false,
+            cancellationToken).ConfigureAwait(false);
+
+        await InsertCjkBigramsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId: null,
+            dirtyOnly: false,
+            cancellationToken).ConfigureAwait(false);
+
+        await using (var clearDirty = connection.CreateCommand())
         {
-            clear.Transaction = transaction;
-            clear.CommandText =
+            clearDirty.Transaction = transaction;
+            clearDirty.CommandText =
                 """
-                DELETE FROM asset_search_documents
+                DELETE FROM asset_search_dirty
                 WHERE library_id = $library_id;
                 """;
-            clear.Parameters.AddWithValue("$library_id", libraryId);
-            await clear.ExecuteNonQueryAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        int rebuilt;
-        await using (var populate = connection.CreateCommand())
-        {
-            populate.Transaction = transaction;
-            populate.CommandText =
-                """
-                WITH source AS (
-                    SELECT
-                        a.id AS asset_id,
-                        a.library_id AS library_id,
-                        a.file_name AS file_name,
-                        a.relative_path AS relative_path,
-                        COALESCE(um.notes, '') AS notes,
-                        COALESCE((
-                            SELECT group_concat(name, ' ')
-                            FROM (
-                                SELECT t.name AS name
-                                FROM asset_tags AS at
-                                INNER JOIN tags AS t
-                                  ON t.id = at.tag_id
-                                WHERE at.asset_id = a.id
-                                ORDER BY t.name_key ASC
-                            )
-                        ), '') AS tags_text
-                    FROM assets AS a
-                    LEFT JOIN asset_user_metadata AS um
-                      ON um.asset_id = a.id
-                    WHERE a.library_id = $library_id
-                )
-                INSERT INTO asset_search_documents(
-                    asset_id, library_id,
-                    file_name, relative_path,
-                    notes, tags_text, normalized_text)
-                SELECT
-                    asset_id, library_id,
-                    file_name, relative_path,
-                    notes, tags_text,
-                    lower(
-                        file_name || char(31) ||
-                        relative_path || char(31) ||
-                        notes || char(31) ||
-                        tags_text)
-                FROM source;
-                """;
-            populate.Parameters.AddWithValue("$library_id", libraryId);
-            rebuilt = await populate.ExecuteNonQueryAsync(cancellationToken)
+            clearDirty.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            await clearDirty.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
 
         transaction.Commit();
-        return rebuilt;
+        return checked((int)count);
     }
 
     public async Task<long> CountAssetsAsync(
@@ -348,8 +347,16 @@ public sealed partial class LibraryRepository
 
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
 
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            await RefreshDirtySearchIndexAsync(
+                connection,
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
         var where = BuildQueryPredicate(
             command,
             libraryId,
@@ -365,8 +372,6 @@ public sealed partial class LibraryRepository
              AND tm.source_revision = a.source_revision
             LEFT JOIN asset_user_metadata AS um
               ON um.asset_id = a.id
-            INNER JOIN asset_search_documents AS sd
-              ON sd.asset_id = a.id
             WHERE {where};
             """;
 
@@ -405,8 +410,16 @@ public sealed partial class LibraryRepository
 
         await using var connection = await _database.OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
 
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            await RefreshDirtySearchIndexAsync(
+                connection,
+                libraryId,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
         var where = BuildQueryPredicate(
             command,
             libraryId,
@@ -430,8 +443,6 @@ public sealed partial class LibraryRepository
              AND tm.source_revision = a.source_revision
             LEFT JOIN asset_user_metadata AS um
               ON um.asset_id = a.id
-            INNER JOIN asset_search_documents AS sd
-              ON sd.asset_id = a.id
             WHERE {where}
             ORDER BY {orderBy}
             LIMIT $limit;
@@ -459,6 +470,390 @@ public sealed partial class LibraryRepository
         return new AssetQueryPage(items, nextCursor);
     }
 
+    private static async Task<long> CountLibraryAssetsOnConnectionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM assets
+            WHERE library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken)
+                .ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
+    }
+
+    private static async Task DeleteSearchRowsForLibraryAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        CancellationToken cancellationToken)
+    {
+        await using (var deleteFts = connection.CreateCommand())
+        {
+            deleteFts.Transaction = transaction;
+            deleteFts.CommandText =
+                """
+                DELETE FROM asset_search_fts
+                WHERE rowid IN (
+                    SELECT id
+                    FROM assets
+                    WHERE library_id = $library_id
+                );
+                """;
+            deleteFts.Parameters.AddWithValue("$library_id", libraryId);
+            await deleteFts.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using var deleteBigrams = connection.CreateCommand();
+        deleteBigrams.Transaction = transaction;
+        deleteBigrams.CommandText =
+            """
+            DELETE FROM asset_search_cjk_bigrams
+            WHERE library_id = $library_id;
+            """;
+        deleteBigrams.Parameters.AddWithValue("$library_id", libraryId);
+        await deleteBigrams.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<int> RefreshDirtySearchIndexAsync(
+        SqliteConnection connection,
+        long libraryId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM asset_search_dirty
+                WHERE library_id = $library_id;
+                """;
+            countCommand.Parameters.AddWithValue("$library_id", libraryId);
+            var dirty = Convert.ToInt32(
+                await countCommand.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+
+            if (dirty == 0)
+            {
+                return 0;
+            }
+        }
+
+        using var transaction = connection.BeginTransaction();
+
+        await using (var deleteFts = connection.CreateCommand())
+        {
+            deleteFts.Transaction = transaction;
+            deleteFts.CommandText =
+                """
+                DELETE FROM asset_search_fts
+                WHERE rowid IN (
+                    SELECT asset_id
+                    FROM asset_search_dirty
+                    WHERE library_id = $library_id
+                );
+                """;
+            deleteFts.Parameters.AddWithValue("$library_id", libraryId);
+            await deleteFts.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using (var deleteBigrams = connection.CreateCommand())
+        {
+            deleteBigrams.Transaction = transaction;
+            deleteBigrams.CommandText =
+                """
+                DELETE FROM asset_search_cjk_bigrams
+                WHERE asset_id IN (
+                    SELECT asset_id
+                    FROM asset_search_dirty
+                    WHERE library_id = $library_id
+                );
+                """;
+            deleteBigrams.Parameters.AddWithValue("$library_id", libraryId);
+            await deleteBigrams.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await InsertFtsRowsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId: null,
+            dirtyOnly: true,
+            cancellationToken).ConfigureAwait(false);
+
+        await InsertCjkBigramsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId: null,
+            dirtyOnly: true,
+            cancellationToken).ConfigureAwait(false);
+
+        int refreshed;
+        await using (var clearDirty = connection.CreateCommand())
+        {
+            clearDirty.Transaction = transaction;
+            clearDirty.CommandText =
+                """
+                DELETE FROM asset_search_dirty
+                WHERE library_id = $library_id;
+                """;
+            clearDirty.Parameters.AddWithValue("$library_id", libraryId);
+            refreshed = await clearDirty.ExecuteNonQueryAsync(
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        transaction.Commit();
+        return refreshed;
+    }
+
+    private static async Task ReindexAssetOnConnectionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        long assetId,
+        CancellationToken cancellationToken)
+    {
+        await using (var deleteFts = connection.CreateCommand())
+        {
+            deleteFts.Transaction = transaction;
+            deleteFts.CommandText =
+                """
+                DELETE FROM asset_search_fts
+                WHERE rowid = $asset_id;
+                """;
+            deleteFts.Parameters.AddWithValue("$asset_id", assetId);
+            await deleteFts.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using (var deleteBigrams = connection.CreateCommand())
+        {
+            deleteBigrams.Transaction = transaction;
+            deleteBigrams.CommandText =
+                """
+                DELETE FROM asset_search_cjk_bigrams
+                WHERE asset_id = $asset_id;
+                """;
+            deleteBigrams.Parameters.AddWithValue("$asset_id", assetId);
+            await deleteBigrams.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await InsertFtsRowsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId,
+            dirtyOnly: false,
+            cancellationToken).ConfigureAwait(false);
+
+        await InsertCjkBigramsAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId,
+            dirtyOnly: false,
+            cancellationToken).ConfigureAwait(false);
+
+        await using var clearDirty = connection.CreateCommand();
+        clearDirty.Transaction = transaction;
+        clearDirty.CommandText =
+            """
+            DELETE FROM asset_search_dirty
+            WHERE asset_id = $asset_id;
+            """;
+        clearDirty.Parameters.AddWithValue("$asset_id", assetId);
+        await clearDirty.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task InsertFtsRowsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        long? assetId,
+        bool dirtyOnly,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO asset_search_fts(
+                rowid, file_name, relative_path, notes, tags_text)
+            SELECT
+                a.id,
+                a.file_name,
+                a.relative_path,
+                COALESCE(um.notes, ''),
+                COALESCE((
+                    SELECT group_concat(name, ' ')
+                    FROM (
+                        SELECT t.name AS name
+                        FROM asset_tags AS at
+                        INNER JOIN tags AS t ON t.id = at.tag_id
+                        WHERE at.asset_id = a.id
+                        ORDER BY t.name_key ASC
+                    )
+                ), '')
+            FROM assets AS a
+            LEFT JOIN asset_user_metadata AS um
+              ON um.asset_id = a.id
+            WHERE a.library_id = $library_id
+              AND ($asset_id IS NULL OR a.id = $asset_id)
+              AND (
+                  $dirty_only = 0
+                  OR EXISTS (
+                      SELECT 1
+                      FROM asset_search_dirty AS d
+                      WHERE d.asset_id = a.id
+                        AND d.library_id = a.library_id
+                  )
+              );
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue(
+            "$asset_id",
+            assetId.HasValue ? assetId.Value : DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$dirty_only",
+            dirtyOnly ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task InsertCjkBigramsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        long? assetId,
+        bool dirtyOnly,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            WITH RECURSIVE source(
+                asset_id,
+                library_id,
+                search_text
+            ) AS (
+                SELECT
+                    a.id,
+                    a.library_id,
+                    a.file_name || char(31) ||
+                    a.relative_path || char(31) ||
+                    COALESCE(um.notes, '') || char(31) ||
+                    COALESCE((
+                        SELECT group_concat(name, ' ')
+                        FROM (
+                            SELECT t.name AS name
+                            FROM asset_tags AS at
+                            INNER JOIN tags AS t ON t.id = at.tag_id
+                            WHERE at.asset_id = a.id
+                            ORDER BY t.name_key ASC
+                        )
+                    ), '')
+                FROM assets AS a
+                LEFT JOIN asset_user_metadata AS um
+                  ON um.asset_id = a.id
+                WHERE a.library_id = $library_id
+                  AND ($asset_id IS NULL OR a.id = $asset_id)
+                  AND (
+                      $dirty_only = 0
+                      OR EXISTS (
+                          SELECT 1
+                          FROM asset_search_dirty AS d
+                          WHERE d.asset_id = a.id
+                            AND d.library_id = a.library_id
+                      )
+                  )
+            ),
+            positions(
+                asset_id,
+                library_id,
+                search_text,
+                position
+            ) AS (
+                SELECT
+                    asset_id,
+                    library_id,
+                    search_text,
+                    1
+                FROM source
+                WHERE length(search_text) >= 2
+                  AND search_text GLOB '*[^ -~]*'
+
+                UNION ALL
+
+                SELECT
+                    asset_id,
+                    library_id,
+                    search_text,
+                    position + 1
+                FROM positions
+                WHERE position + 1 < length(search_text)
+            )
+            INSERT OR IGNORE INTO asset_search_cjk_bigrams(
+                library_id, token, asset_id)
+            SELECT
+                library_id,
+                substr(search_text, position, 2),
+                asset_id
+            FROM positions
+            WHERE
+                (
+                    unicode(substr(search_text, position, 1))
+                        BETWEEN 0x3040 AND 0x30ff
+                    OR unicode(substr(search_text, position, 1))
+                        BETWEEN 0x3400 AND 0x4dbf
+                    OR unicode(substr(search_text, position, 1))
+                        BETWEEN 0x4e00 AND 0x9fff
+                    OR unicode(substr(search_text, position, 1))
+                        BETWEEN 0xff66 AND 0xff9f
+                )
+                AND
+                (
+                    unicode(substr(search_text, position + 1, 1))
+                        BETWEEN 0x3040 AND 0x30ff
+                    OR unicode(substr(search_text, position + 1, 1))
+                        BETWEEN 0x3400 AND 0x4dbf
+                    OR unicode(substr(search_text, position + 1, 1))
+                        BETWEEN 0x4e00 AND 0x9fff
+                    OR unicode(substr(search_text, position + 1, 1))
+                        BETWEEN 0xff66 AND 0xff9f
+                );
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue(
+            "$asset_id",
+            assetId.HasValue ? assetId.Value : DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$dirty_only",
+            dirtyOnly ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private static string BuildQueryPredicate(
         SqliteCommand command,
         long libraryId,
@@ -478,46 +873,21 @@ public sealed partial class LibraryRepository
 
             foreach (var term in terms)
             {
-                if (ContainsCjk(term))
+                if (IsTwoCharacterCjkTerm(term))
                 {
-                    var bigrams = ExtractCjkBigrams(term);
-                    if (bigrams.Count == 0)
-                    {
-                        throw new ArgumentException(
-                            "Japanese/CJK search terms must contain at least two adjacent CJK characters.",
-                            nameof(query));
-                    }
-
-                    var tokenParameters = new string[bigrams.Count];
-                    for (var index = 0; index < bigrams.Count; index++)
-                    {
-                        var parameterName =
-                            $"$cjk_{parameterOrdinal}_{index}";
-                        tokenParameters[index] = parameterName;
-                        command.Parameters.AddWithValue(
-                            parameterName,
-                            bigrams[index]);
-                    }
-
-                    var containsParameter =
-                        $"$contains_{parameterOrdinal}";
+                    var tokenParameter =
+                        $"$cjk_{parameterOrdinal}";
                     command.Parameters.AddWithValue(
-                        containsParameter,
+                        tokenParameter,
                         term);
-
                     conditions.Add(
                         $"""
                         a.id IN (
                             SELECT cb.asset_id
                             FROM asset_search_cjk_bigrams AS cb
                             WHERE cb.library_id = $library_id
-                              AND cb.token IN (
-                                  {string.Join(", ", tokenParameters)}
-                              )
-                            GROUP BY cb.asset_id
-                            HAVING COUNT(DISTINCT cb.token) = {bigrams.Count}
+                              AND cb.token = {tokenParameter}
                         )
-                        AND instr(sd.normalized_text, {containsParameter}) > 0
                         """);
                 }
                 else
@@ -525,7 +895,7 @@ public sealed partial class LibraryRepository
                     if (term.Length < 3)
                     {
                         throw new ArgumentException(
-                            "Non-CJK partial search terms must be at least three characters. Use an exact tag filter for shorter labels.",
+                            "Partial search terms must contain at least three characters unless they are a two-character Japanese/CJK term.",
                             nameof(query));
                     }
 
@@ -536,7 +906,7 @@ public sealed partial class LibraryRepository
                         parameterName,
                         string.Join(
                             " AND ",
-                            trigrams.Select(QuoteFtsPhrase)));
+                            trigrams.Select(QuoteFtsToken)));
 
                     var containsParameter =
                         $"$contains_{parameterOrdinal}";
@@ -551,7 +921,10 @@ public sealed partial class LibraryRepository
                             FROM asset_search_fts
                             WHERE asset_search_fts MATCH {parameterName}
                         )
-                        AND instr(sd.normalized_text, {containsParameter}) > 0
+                        AND instr(
+                            {SearchHaystackSql},
+                            {containsParameter}
+                        ) > 0
                         """);
                 }
 
@@ -560,10 +933,10 @@ public sealed partial class LibraryRepository
         }
 
         var requiredTags = NormalizeTags(query.RequiredTags);
-        if (requiredTags.Count > 0)
+        if (requiredTags.Length > 0)
         {
-            var tagParameters = new string[requiredTags.Count];
-            for (var index = 0; index < requiredTags.Count; index++)
+            var tagParameters = new string[requiredTags.Length];
+            for (var index = 0; index < requiredTags.Length; index++)
             {
                 var parameterName = $"$required_tag_{index}";
                 tagParameters[index] = parameterName;
@@ -584,7 +957,7 @@ public sealed partial class LibraryRepository
                           {string.Join(", ", tagParameters)}
                       )
                     GROUP BY at.asset_id
-                    HAVING COUNT(DISTINCT t.name_key) = {requiredTags.Count}
+                    HAVING COUNT(DISTINCT t.name_key) = {requiredTags.Length}
                 )
                 """);
         }
@@ -616,7 +989,9 @@ public sealed partial class LibraryRepository
         {
             command.Parameters.AddWithValue(
                 "$status_label",
-                query.StatusLabel.Trim());
+                NormalizeOptionalLabel(
+                    query.StatusLabel,
+                    nameof(query.StatusLabel))!);
             conditions.Add(
                 "um.status_label = $status_label COLLATE NOCASE");
         }
@@ -625,7 +1000,9 @@ public sealed partial class LibraryRepository
         {
             command.Parameters.AddWithValue(
                 "$color_label",
-                query.ColorLabel.Trim());
+                NormalizeOptionalLabel(
+                    query.ColorLabel,
+                    nameof(query.ColorLabel))!);
             conditions.Add(
                 "um.color_label = $color_label COLLATE NOCASE");
         }
@@ -718,7 +1095,7 @@ public sealed partial class LibraryRepository
 
                 default:
                     throw new ArgumentOutOfRangeException(
-                        nameof(query.SortOrder));
+                        nameof(query));
             }
         }
 
@@ -839,7 +1216,9 @@ public sealed partial class LibraryRepository
             return null;
         }
 
-        var normalized = value.Trim();
+        var normalized = value
+            .Trim()
+            .Normalize(NormalizationForm.FormKC);
         if (normalized.Length > 64)
         {
             throw new ArgumentException(
@@ -850,12 +1229,12 @@ public sealed partial class LibraryRepository
         return normalized;
     }
 
-    private static IReadOnlyList<NormalizedTag> NormalizeTags(
+    private static NormalizedTag[] NormalizeTags(
         IReadOnlyList<string>? values)
     {
         if (values is null || values.Count == 0)
         {
-            return Array.Empty<NormalizedTag>();
+            return [];
         }
 
         if (values.Count > MaxTagsPerAsset)
@@ -875,8 +1254,9 @@ public sealed partial class LibraryRepository
                 continue;
             }
 
-            var name = value.Trim().Normalize(
-                NormalizationForm.FormKC);
+            var name = value
+                .Trim()
+                .Normalize(NormalizationForm.FormKC);
             if (name.Length is < 1 or > 128)
             {
                 throw new ArgumentException(
@@ -900,16 +1280,17 @@ public sealed partial class LibraryRepository
             .ToArray();
     }
 
-    private static IReadOnlyList<string> SplitSearchTerms(
+    private static string[] SplitSearchTerms(
         string searchText)
     {
         var normalized = searchText
             .Trim()
+            .Normalize(NormalizationForm.FormKC)
             .ToLowerInvariant();
 
         if (normalized.Length == 0)
         {
-            return Array.Empty<string>();
+            return [];
         }
 
         return normalized.Split(
@@ -918,20 +1299,13 @@ public sealed partial class LibraryRepository
                 | StringSplitOptions.TrimEntries);
     }
 
-    private static bool ContainsCjk(string value)
-    {
-        foreach (var character in value)
-        {
-            if (IsCjk(character))
-            {
-                return true;
-            }
-        }
+    private static bool IsTwoCharacterCjkTerm(
+        string value) =>
+        value.Length == 2
+        && IsCjk(value[0])
+        && IsCjk(value[1]);
 
-        return false;
-    }
-
-    private static IReadOnlyList<string> ExtractTrigrams(
+    private static string[] ExtractTrigrams(
         string value)
     {
         var result = new HashSet<string>(
@@ -947,33 +1321,13 @@ public sealed partial class LibraryRepository
             .ToArray();
     }
 
-    private static IReadOnlyList<string> ExtractCjkBigrams(
-        string value)
-    {
-        var result = new HashSet<string>(
-            StringComparer.Ordinal);
-
-        for (var index = 0; index + 1 < value.Length; index++)
-        {
-            if (IsCjk(value[index])
-                && IsCjk(value[index + 1]))
-            {
-                result.Add(value.Substring(index, 2));
-            }
-        }
-
-        return result
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-    }
-
     private static bool IsCjk(char value) =>
         value is >= '\u3040' and <= '\u30ff'
         or >= '\u3400' and <= '\u4dbf'
         or >= '\u4e00' and <= '\u9fff'
         or >= '\uff66' and <= '\uff9f';
 
-    private static string QuoteFtsPhrase(string value) =>
+    private static string QuoteFtsToken(string value) =>
         "\"" + value.Replace(
             "\"",
             "\"\"",
