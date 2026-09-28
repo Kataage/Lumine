@@ -756,27 +756,30 @@ public sealed class LumineV1Importer
             "asset_tags"
         };
 
-        await using var list = source.CreateCommand();
-        list.CommandText =
-            """
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table'
-              AND name NOT LIKE 'sqlite_%'
-            ORDER BY name ASC;
-            """;
-
-        await using var reader = await list.ExecuteReaderAsync(
-            cancellationToken).ConfigureAwait(false);
         var unsupported = new List<string>();
 
-        while (await reader.ReadAsync(cancellationToken)
-            .ConfigureAwait(false))
+        await using (var list = source.CreateCommand())
         {
-            var name = reader.GetString(0);
-            if (!importedTables.Contains(name))
+            list.CommandText =
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name NOT LIKE 'sqlite_%'
+                ORDER BY name ASC;
+                """;
+
+            await using var reader = await list.ExecuteReaderAsync(
+                cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken)
+                .ConfigureAwait(false))
             {
-                unsupported.Add(name);
+                var name = reader.GetString(0);
+                if (!importedTables.Contains(name))
+                {
+                    unsupported.Add(name);
+                }
             }
         }
 
@@ -1283,13 +1286,6 @@ public sealed class LumineV1Importer
                 relativePath)
             .TrimStart('.')
             .ToLowerInvariant();
-        var width = source.Width > 0
-            ? source.Width
-            : (int?)null;
-        var height = source.Height > 0
-            ? source.Height
-            : (int?)null;
-
         await using var command =
             destination.CreateCommand();
         command.Transaction = transaction;
@@ -1320,9 +1316,9 @@ public sealed class LumineV1Importer
                 $file_size,
                 $modified,
                 1,
-                $width,
-                $height,
-                $format,
+                NULL,
+                NULL,
+                NULL,
                 $created,
                 $updated)
             RETURNING id;
@@ -1351,15 +1347,6 @@ public sealed class LumineV1Importer
         command.Parameters.AddWithValue(
             "$modified",
             source.ModifiedAtUtcTicks);
-        command.Parameters.AddWithValue(
-            "$width",
-            (object?)width ?? DBNull.Value);
-        command.Parameters.AddWithValue(
-            "$height",
-            (object?)height ?? DBNull.Value);
-        command.Parameters.AddWithValue(
-            "$format",
-            extension);
         command.Parameters.AddWithValue(
             "$created",
             now);
