@@ -212,6 +212,12 @@ try {
             throw "$mode acceptance recorded $reconcileFailures filesystem reconcile failures."
         }
 
+        $cacheBytes = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.bytes")
+        $cacheLimit = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_configured_bytes")
+        if ($cacheBytes -gt $cacheLimit) {
+            throw "$mode thumbnail cache exceeded its configured disk budget: $cacheBytes > $cacheLimit bytes."
+        }
+
         $maxScroll = Get-MaxMeasurement -Result $result -Name "viewer.fast_scroll_refresh"
         if ($maxScroll -gt $MaxFastScrollMs) {
             throw "$mode fast-scroll refresh exceeded $MaxFastScrollMs ms: $([Math]::Round($maxScroll, 1)) ms."
@@ -249,6 +255,8 @@ try {
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
             thumbnailSourceOpens = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.source_opens")
             thumbnailCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_hits")
+            thumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_after.bytes")
+            thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_configured_bytes")
             filesystemBootstrapMode = (Get-MetadataValue -Result $cold -Key "filesystem.bootstrap_mode")
         }
         warm = [ordered]@{
@@ -256,6 +264,8 @@ try {
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $warm -Key "resource.peak_working_set_bytes")
             thumbnailSourceOpens = $warmSourceOpens
             thumbnailCacheHits = $warmCacheHits
+            thumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.bytes")
+            thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_configured_bytes")
             filesystemBootstrapMode = $warmBootstrap
         }
         measuredBottlenecks = [ordered]@{
