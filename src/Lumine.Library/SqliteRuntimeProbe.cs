@@ -6,7 +6,8 @@ namespace Lumine.Library;
 public readonly record struct SqliteProbeResult(
     string Version,
     long Scalar,
-    bool Fts5TrigramContentlessDelete);
+    bool Fts5TrigramContentlessDelete,
+    string? SearchRuntimeError);
 
 public static class SqliteRuntimeProbe
 {
@@ -29,16 +30,19 @@ public static class SqliteRuntimeProbe
             scalarCommand.ExecuteScalar(),
             CultureInfo.InvariantCulture);
 
-        var searchRuntime = ProbeSearchRuntime(connection);
+        var (supported, error) =
+            ProbeSearchRuntime(connection);
 
         return new SqliteProbeResult(
             version,
             scalar,
-            searchRuntime);
+            supported,
+            error);
     }
 
-    private static bool ProbeSearchRuntime(
-        SqliteConnection connection)
+    private static (bool Supported, string? Error)
+        ProbeSearchRuntime(
+            SqliteConnection connection)
     {
         try
         {
@@ -61,11 +65,13 @@ public static class SqliteRuntimeProbe
                 WHERE rowid = 1;
                 """;
             command.ExecuteNonQuery();
-            return true;
+            return (true, null);
         }
-        catch (SqliteException)
+        catch (SqliteException exception)
         {
-            return false;
+            return (
+                false,
+                $"SQLite {exception.SqliteErrorCode}/{exception.SqliteExtendedErrorCode}: {exception.Message}");
         }
     }
 }
