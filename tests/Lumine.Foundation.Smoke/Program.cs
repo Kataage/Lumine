@@ -14,7 +14,8 @@ if (sqlite.Scalar != 1)
 if (!sqlite.Fts5TrigramContentlessDelete)
 {
     throw new InvalidOperationException(
-        "SQLite runtime lacks the FTS5 trigram/contentless-delete contract required by local search.");
+        "SQLite runtime lacks the FTS5 trigram/contentless-delete contract required by local search. " +
+        (sqlite.SearchRuntimeError ?? "No SQLite error was reported."));
 }
 Console.WriteLine($"SQLite {sqlite.Version}: FTS5 trigram/contentless-delete OK");
 
