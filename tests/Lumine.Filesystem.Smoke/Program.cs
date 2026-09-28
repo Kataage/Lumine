@@ -311,6 +311,80 @@ try
         stoppedState.WatcherStoppedAtUtc is not null,
         "Shutdown did not persist watcher stop checkpoint.");
 
+    var directWatcher =
+        new WindowsDirectoryChangeWatcher(libraryRoot);
+    await directWatcher.StartAsync(_ => { });
+    var watcherDisposeA =
+        directWatcher.DisposeAsync().AsTask();
+    var watcherDisposeB =
+        directWatcher.DisposeAsync().AsTask();
+    await Task.WhenAll(
+        watcherDisposeA,
+        watcherDisposeB);
+    Require(
+        watcherDisposeA.IsCompletedSuccessfully
+        && watcherDisposeB.IsCompletedSuccessfully,
+        "Concurrent watcher DisposeAsync callers did not observe one completed shutdown.");
+
+    var directProcessor = new LibraryChangeProcessor(
+        library.Id,
+        await repository.GetLibraryAsync(library.Id)
+            ?? throw new InvalidOperationException(
+                "Library disappeared before processor shutdown smoke."),
+        repository,
+        new LibraryReconciler(repository));
+    var processorDisposeA =
+        directProcessor.DisposeAsync().AsTask();
+    var processorDisposeB =
+        directProcessor.DisposeAsync().AsTask();
+    await Task.WhenAll(
+        processorDisposeA,
+        processorDisposeB);
+    Require(
+        processorDisposeA.IsCompletedSuccessfully
+        && processorDisposeB.IsCompletedSuccessfully,
+        "Concurrent change-processor DisposeAsync callers did not observe one completed shutdown.");
+
+    using var startupCancellation = new CancellationTokenSource();
+    var concurrentShutdown =
+        await syncService.StartAsync(
+            library.Id,
+            startupCancellation.Token);
+
+    // StartAsync cancellation owns startup only. Cancelling the caller token
+    // after readiness must not terminate the returned sync session.
+    startupCancellation.Cancel();
+    var startupTokenPath =
+        Path.Combine(libraryRoot, "startup-token-survives.jpg");
+    await File.WriteAllBytesAsync(
+        startupTokenPath,
+        [8, 6, 7, 5, 3, 0, 9]);
+
+    _ = await WaitForAsync(
+        () => repository.GetAssetAsync(
+            library.Id,
+            "startup-token-survives.jpg"),
+        static asset => asset.FileSize == 7,
+        "Cancelling the completed StartAsync token incorrectly stopped the sync session.");
+
+    var sessionDisposeA =
+        concurrentShutdown.DisposeAsync().AsTask();
+    var sessionDisposeB =
+        concurrentShutdown.DisposeAsync().AsTask();
+    await Task.WhenAll(
+        sessionDisposeA,
+        sessionDisposeB);
+    Require(
+        sessionDisposeA.IsCompletedSuccessfully
+        && sessionDisposeB.IsCompletedSuccessfully,
+        "Concurrent sync-session DisposeAsync callers did not observe one completed shutdown.");
+
+    var concurrentStoppedState =
+        await repository.GetOrCreateSyncStateAsync(library.Id);
+    Require(
+        concurrentStoppedState.WatcherStoppedAtUtc is not null,
+        "Concurrent sync-session shutdown returned before checkpoint persistence.");
+
     var offlinePath = Path.Combine(libraryRoot, "offline.jpg");
     await File.WriteAllBytesAsync(offlinePath, [5, 4, 3, 2, 1]);
 

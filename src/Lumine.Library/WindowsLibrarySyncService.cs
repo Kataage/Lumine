@@ -15,7 +15,9 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
     private readonly WindowsDirectoryChangeWatcher _watcher;
     private readonly string _rootPath;
     private readonly Task _watcherMonitor;
-    private bool _disposed;
+    private readonly TaskCompletionSource _disposeCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _disposeStarted;
 
     internal WindowsLibrarySyncSession(
         long libraryId,
@@ -46,65 +48,79 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.CompareExchange(
+                ref _disposeStarted,
+                1,
+                0) != 0)
         {
+            await _disposeCompletion.Task.ConfigureAwait(false);
             return;
         }
 
-        _disposed = true;
-
-        // Capture a conservative journal boundary while the watcher is still
-        // active. Events after this USN may also be applied before shutdown;
-        // replaying them next start is idempotent and safer than skipping a gap.
-        var checkpoint = WindowsUsnJournal.Query(_rootPath);
-        Exception? shutdownFailure = null;
-
         try
         {
-            await _watcher.DisposeAsync().ConfigureAwait(false);
+            // Capture a conservative journal boundary while the watcher is still
+            // active. Events after this USN may also be applied before shutdown;
+            // replaying them next start is idempotent and safer than skipping a gap.
+            var checkpoint = WindowsUsnJournal.Query(_rootPath);
+            Exception? shutdownFailure = null;
+
+            try
+            {
+                await _watcher.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure = exception;
+            }
+
+            try
+            {
+                await _processor.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure ??= exception;
+            }
+
+            try
+            {
+                await _watcherMonitor.ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // A monitor failure is itself a shutdown failure. Continue
+                // through checkpoint persistence before surfacing it so the
+                // next startup cannot mistake this session for clean.
+                shutdownFailure ??= exception;
+            }
+
+            var state = await _repository.GetOrCreateSyncStateAsync(
+                _libraryId).ConfigureAwait(false);
+
+            await _repository.UpdateUsnCheckpointAsync(
+                _libraryId,
+                checkpoint.Available ? checkpoint.JournalId : null,
+                checkpoint.Available ? checkpoint.NextUsn : null,
+                state.ReconcileRequired || shutdownFailure is not null,
+                DateTimeOffset.UtcNow,
+                shutdownFailure is not null
+                    ? $"Filesystem synchronization shutdown failed: {shutdownFailure.GetType().Name}."
+                    : checkpoint.Available
+                        ? state.LastError
+                        : checkpoint.UnavailableReason).ConfigureAwait(false);
+
+            if (shutdownFailure is not null)
+            {
+                throw shutdownFailure;
+            }
+
+            _disposeCompletion.TrySetResult();
         }
         catch (Exception exception)
         {
-            shutdownFailure = exception;
-        }
-
-        try
-        {
-            await _processor.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            shutdownFailure ??= exception;
-        }
-
-        try
-        {
-            await _watcherMonitor.ConfigureAwait(false);
-        }
-        catch (Exception exception) when (shutdownFailure is not null)
-        {
-            // Preserve the original shutdown failure below.
-            _ = exception;
-        }
-
-        var state = await _repository.GetOrCreateSyncStateAsync(
-            _libraryId).ConfigureAwait(false);
-
-        await _repository.UpdateUsnCheckpointAsync(
-            _libraryId,
-            checkpoint.Available ? checkpoint.JournalId : null,
-            checkpoint.Available ? checkpoint.NextUsn : null,
-            state.ReconcileRequired || shutdownFailure is not null,
-            DateTimeOffset.UtcNow,
-            shutdownFailure is not null
-                ? $"Filesystem synchronization shutdown failed: {shutdownFailure.GetType().Name}."
-                : checkpoint.Available
-                    ? state.LastError
-                    : checkpoint.UnavailableReason).ConfigureAwait(false);
-
-        if (shutdownFailure is not null)
-        {
-            throw shutdownFailure;
+            _disposeCompletion.TrySetException(exception);
+            throw;
         }
     }
 
@@ -118,13 +134,13 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
             await completed.ConfigureAwait(false);
 
-            if (!_disposed)
+            if (Volatile.Read(ref _disposeStarted) == 0)
             {
                 throw new InvalidOperationException(
                     "Filesystem synchronization worker stopped unexpectedly.");
             }
         }
-        catch (OperationCanceledException) when (_disposed)
+        catch (OperationCanceledException) when (Volatile.Read(ref _disposeStarted) != 0)
         {
         }
         catch (Exception exception)
