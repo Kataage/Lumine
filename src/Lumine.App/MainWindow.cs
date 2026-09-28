@@ -61,21 +61,8 @@ public sealed class MainWindow : Window
                 VerticalAlignment.Stretch
         };
 
-        var empty = new Border
-        {
-            Padding = new Thickness(32),
-            Child = new TextBlock
-            {
-                Text = "Lumine v2 Core Viewer\n\nOpen a folder to index and browse images.",
-                FontSize = 20,
-                TextWrapping = TextWrapping.Wrap,
-                HorizontalAlignment =
-                    HorizontalAlignment.Center,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            }
-        };
-        _viewerHost.Content = empty;
+        _viewerHost.Content = CreatePlaceholder(
+            "Lumine v2 Core Viewer\n\nOpen a folder to index and browse images.");
 
         var layout = new Grid
         {
@@ -122,6 +109,9 @@ public sealed class MainWindow : Window
         _openFolder.IsEnabled = false;
         _libraryPath.Text =
             Path.GetFullPath(libraryRoot);
+        _status.Text = "Closing current library…";
+        _viewerHost.Content =
+            CreatePlaceholder("Opening library…");
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
@@ -170,6 +160,10 @@ public sealed class MainWindow : Window
             _status.Text =
                 $"Unable to open library: {exception.Message}";
             _libraryPath.Text = string.Empty;
+            _viewerHost.Content =
+                CreatePlaceholder(
+                    "The library could not be opened.\n\n"
+                    + exception.Message);
         }
         finally
         {
@@ -264,6 +258,23 @@ public sealed class MainWindow : Window
             Close();
         }
     }
+
+    private static Control CreatePlaceholder(
+        string message) =>
+        new Border
+        {
+            Padding = new Thickness(32),
+            Child = new TextBlock
+            {
+                Text = message,
+                FontSize = 20,
+                TextWrapping = TextWrapping.Wrap,
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            }
+        };
 
     private async Task DisposeCurrentRuntimeAsync()
     {
