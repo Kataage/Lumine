@@ -14,7 +14,10 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     private readonly LibraryReconciler _reconciler;
     private readonly Channel<DirectoryChange> _queue;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly TaskCompletionSource _disposeCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _processorTask;
+    private int _disposeStarted;
 
     private long _eventsObserved;
     private long _eventsApplied;
@@ -76,6 +79,11 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(changes);
 
+        if (Volatile.Read(ref _disposeStarted) != 0)
+        {
+            return;
+        }
+
         foreach (var change in changes)
         {
             Interlocked.Increment(ref _eventsObserved);
@@ -97,7 +105,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             {
                 Interlocked.Increment(ref _queueDepth);
             }
-            else
+            else if (Volatile.Read(ref _disposeStarted) == 0)
             {
                 Interlocked.Exchange(ref _overflowRequested, 1);
                 Interlocked.Increment(ref _overflows);
@@ -107,6 +115,15 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.CompareExchange(
+                ref _disposeStarted,
+                1,
+                0) != 0)
+        {
+            await _disposeCompletion.Task.ConfigureAwait(false);
+            return;
+        }
+
         _queue.Writer.TryComplete();
         var forced = false;
 
@@ -139,11 +156,17 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     "Filesystem event queue did not drain within the shutdown budget; startup reconciliation is required.",
                     CancellationToken.None).ConfigureAwait(false);
             }
+
+            _shutdown.Cancel();
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetResult();
         }
-        finally
+        catch (Exception exception)
         {
             _shutdown.Cancel();
             _shutdown.Dispose();
+            _disposeCompletion.TrySetException(exception);
+            throw;
         }
     }
 
