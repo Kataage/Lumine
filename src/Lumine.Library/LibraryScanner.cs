@@ -156,7 +156,7 @@ public sealed class LibraryScanner
 
         if (completed)
         {
-            await _repository.RebuildSearchIndexAsync(
+            await _repository.RefreshSearchIndexAsync(
                 libraryId,
                 cancellationToken).ConfigureAwait(false);
         }
