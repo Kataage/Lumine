@@ -45,7 +45,7 @@ public static class SqliteRuntimeProbe
             using var command = connection.CreateCommand();
             command.CommandText =
                 """
-                CREATE VIRTUAL TABLE temp.search_probe USING fts5(
+                CREATE VIRTUAL TABLE search_probe USING fts5(
                     value,
                     content='',
                     contentless_delete=1,
