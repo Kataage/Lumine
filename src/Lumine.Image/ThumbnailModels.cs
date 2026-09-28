@@ -1,3 +1,5 @@
+using Lumine.Core;
+
 namespace Lumine.Image;
 
 public enum ThumbnailPriority
@@ -115,11 +117,27 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
 public sealed class ThumbnailPipelineOptions
 {
     public static int DefaultWorkerCount { get; } =
-        Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+        CoreResourcePolicy.Default.ThumbnailWorkerCount;
 
-    public int WorkerCount { get; init; } = DefaultWorkerCount;
+    public int WorkerCount { get; init; } =
+        CoreResourcePolicy.Default.ThumbnailWorkerCount;
 
-    public int QueueCapacity { get; init; } = 256;
+    public int QueueCapacity { get; init; } =
+        CoreResourcePolicy.Default.ThumbnailQueueCapacity;
 
-    public int MaxForegroundBurst { get; init; } = 8;
+    public int MaxForegroundBurst { get; init; } =
+        CoreResourcePolicy.Default.ThumbnailForegroundBurst;
+
+    public static ThumbnailPipelineOptions FromResourcePolicy(
+        CoreResourcePolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        return new ThumbnailPipelineOptions
+        {
+            WorkerCount = policy.ThumbnailWorkerCount,
+            QueueCapacity = policy.ThumbnailQueueCapacity,
+            MaxForegroundBurst = policy.ThumbnailForegroundBurst
+        };
+    }
 }

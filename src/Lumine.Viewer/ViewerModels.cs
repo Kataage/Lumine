@@ -1,3 +1,5 @@
+using Lumine.Core;
+
 namespace Lumine.Viewer;
 
 public enum ViewerThumbnailPriority
@@ -117,9 +119,25 @@ public sealed class ViewerOptions
 
     public int CursorCheckpointLimit { get; init; } = 128;
 
-    public int DecodedBitmapEntryLimit { get; init; } = 96;
+    public int DecodedBitmapEntryLimit { get; init; } =
+        CoreResourcePolicy.Default.DecodedThumbnailEntryLimit;
 
-    public long DecodedBitmapByteLimit { get; init; } = 96L * 1024 * 1024;
+    public long DecodedBitmapByteLimit { get; init; } =
+        CoreResourcePolicy.Default.DecodedThumbnailByteLimit;
+
+    public static ViewerOptions FromResourcePolicy(
+        CoreResourcePolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        return new ViewerOptions
+        {
+            DecodedBitmapEntryLimit =
+                policy.DecodedThumbnailEntryLimit,
+            DecodedBitmapByteLimit =
+                policy.DecodedThumbnailByteLimit
+        };
+    }
 }
 
 public readonly record struct ViewerPagingDiagnostics(
@@ -236,18 +254,35 @@ public interface IViewerDetailProvider
 public sealed class ViewerDetailOptions
 {
     public long PreviewDecodedByteLimit { get; init; } =
-        48L * 1024 * 1024;
+        CoreResourcePolicy.Default.DetailPreviewByteLimit;
 
-    public int PreviewDecodedEntryLimit { get; init; } = 4;
+    public int PreviewDecodedEntryLimit { get; init; } =
+        CoreResourcePolicy.Default.DetailPreviewEntryLimit;
 
     public long OriginalDecodedByteLimit { get; init; } =
-        256L * 1024 * 1024;
+        CoreResourcePolicy.Default.DetailOriginalByteLimit;
 
     public double MinZoom { get; init; } = 0.05;
 
     public double MaxZoom { get; init; } = 16;
 
     public double ZoomStep { get; init; } = 1.25;
+
+    public static ViewerDetailOptions FromResourcePolicy(
+        CoreResourcePolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        return new ViewerDetailOptions
+        {
+            PreviewDecodedByteLimit =
+                policy.DetailPreviewByteLimit,
+            PreviewDecodedEntryLimit =
+                policy.DetailPreviewEntryLimit,
+            OriginalDecodedByteLimit =
+                policy.DetailOriginalByteLimit
+        };
+    }
 }
 
 public sealed record ViewerDetailSnapshot(

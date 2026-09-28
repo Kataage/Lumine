@@ -1,11 +1,16 @@
 using Avalonia;
+using Lumine.Core;
 using Lumine.Diagnostics;
 
 namespace Lumine.App;
 
 internal static class Program
 {
-    internal static DiagnosticsSession Diagnostics { get; } = DiagnosticsSession.Start();
+    internal static CoreResourcePolicy ResourcePolicy { get; } =
+        CoreResourcePolicy.Default;
+
+    internal static DiagnosticsSession Diagnostics { get; } =
+        DiagnosticsSession.Start();
 
     [STAThread]
     public static void Main(string[] args) =>
