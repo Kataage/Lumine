@@ -608,7 +608,7 @@ try
         await CoreViewerRuntime.OpenAsync(
             shellLibraryRoot,
             AppDataPaths.FromRoot(shellDataRoot),
-            Program.ResourcePolicy);
+            Lumine.App.Program.ResourcePolicy);
 
     Require(
         shellRuntime.AssetCount == 1,
