@@ -11,7 +11,12 @@ if (sqlite.Scalar != 1)
 {
     throw new InvalidOperationException($"SQLite smoke query returned {sqlite.Scalar}, expected 1.");
 }
-Console.WriteLine($"SQLite {sqlite.Version}: OK");
+if (!sqlite.Fts5TrigramContentlessDelete)
+{
+    throw new InvalidOperationException(
+        "SQLite runtime lacks the FTS5 trigram/contentless-delete contract required by local search.");
+}
+Console.WriteLine($"SQLite {sqlite.Version}: FTS5 trigram/contentless-delete OK");
 
 var vips = VipsRuntimeProbe.Probe();
 if (!vips.Initialized)
