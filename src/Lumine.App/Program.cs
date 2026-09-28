@@ -13,8 +13,19 @@ internal static class Program
         DiagnosticsSession.Start();
 
     [STAThread]
-    public static void Main(string[] args) =>
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        if (ProductRuntimeSmoke.IsRequested(args))
+        {
+            ProductRuntimeSmoke.RunAsync(args)
+                .GetAwaiter()
+                .GetResult();
+            return;
+        }
+
+        BuildAvaloniaApp()
+            .StartWithClassicDesktopLifetime(args);
+    }
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()

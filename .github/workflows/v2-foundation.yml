@@ -199,6 +199,22 @@ jobs:
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
 
+      - name: Run NativeAOT product runtime smoke
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "artifacts/native-aot/Lumine.App.exe"
+          $root = Join-Path $env:RUNNER_TEMP "lumine-product-runtime-$env:GITHUB_RUN_ID"
+          $data = Join-Path $root "data"
+          $library = Join-Path $root "library"
+
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          New-Item -ItemType Directory -Force -Path $library | Out-Null
+
+          & $exe --product-smoke "--data-dir=$data" "--library-dir=$library"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
       - name: Publish NativeAOT Image runtime smoke
         run: dotnet publish tests/Lumine.Image.NativeAot.Smoke/Lumine.Image.NativeAot.Smoke.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot-image-smoke
 

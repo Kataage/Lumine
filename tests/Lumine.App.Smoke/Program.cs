@@ -591,6 +591,158 @@ try
             StringComparison.Ordinal),
         "Identity repair did not persist the replacement source identity.");
 
+    var shellLibraryRoot =
+        Path.Combine(root, "shell-library");
+    var shellDataRoot =
+        Path.Combine(root, "shell-data");
+    Directory.CreateDirectory(shellLibraryRoot);
+
+    var shellImagePath =
+        Path.Combine(shellLibraryRoot, "viewer-shell.bmp");
+    WriteBmp24(
+        shellImagePath,
+        width: 1200,
+        height: 900);
+    WriteBmp24(
+        Path.Combine(
+            shellLibraryRoot,
+            "viewer-shell-second.bmp"),
+        width: 640,
+        height: 480);
+
+    var shellRuntime =
+        await CoreViewerRuntime.OpenAsync(
+            shellLibraryRoot,
+            AppDataPaths.FromRoot(shellDataRoot),
+            Lumine.App.Program.ResourcePolicy);
+
+    Require(
+        shellRuntime.AssetCount == 2,
+        $"Production Core Viewer runtime indexed {shellRuntime.AssetCount} assets; expected 2.");
+
+    await headless.Dispatch(
+        async () =>
+        {
+            var shell =
+                new CoreViewerShell(shellRuntime);
+            var window =
+                new Avalonia.Controls.Window
+                {
+                    Width = 1100,
+                    Height = 720,
+                    Content = shell
+                };
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.AssetCount == 2,
+                "Real App shell did not expose the runtime asset count.");
+
+            await shell.DetailViewer.SelectAsync(0);
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.DetailViewer.LoadState
+                    == ViewerDetailLoadState.PreviewReady,
+                $"Real App shell Detail preview did not become ready: {shell.DetailViewer.LoadState}.");
+
+            await shell.DetailViewer.ActualSizeAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.DetailViewer.IsOriginal,
+                "Real App shell 1:1 path did not promote to the full-resolution original.");
+
+            await shell.DetailViewer.ZoomByAsync(1.25);
+            Require(
+                shell.DetailViewer.Zoom > 1,
+                "Real App shell zoom command did not update the production Detail control.");
+
+            shell.DetailViewer.PanBy(24, 16);
+            Require(
+                shell.DetailViewer.PanOffset.X >= 0
+                && shell.DetailViewer.PanOffset.Y >= 0,
+                "Real App shell pan produced an invalid scroll offset.");
+
+            shell.DetailViewer.Fit();
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 0,
+                "Real App shell lost Detail selection during Fit.");
+
+            await shell.DetailViewer.SelectAsync(1);
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 1,
+                "Real App shell did not move to the next asset.");
+
+            await shell.DetailViewer.SelectAsync(0);
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 0,
+                "Real App shell did not move back to the previous asset.");
+
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            shell.Detach();
+
+            await shellRuntime.DisposeAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            return 0;
+        },
+        CancellationToken.None);
+
+    Console.WriteLine(
+        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / shutdown OK");
+
+    var mainWindowDataRoot =
+        Path.Combine(root, "main-window-data");
+
+    await headless.Dispatch(
+        async () =>
+        {
+            var window = new MainWindow();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            await window.OpenLibraryAsync(
+                shellLibraryRoot,
+                AppDataPaths.FromRoot(
+                    mainWindowDataRoot));
+
+            Require(
+                window.CurrentRuntime is not null
+                && window.CurrentShell is not null,
+                "MainWindow did not compose the production Core Viewer runtime/shell.");
+
+            window.Close();
+
+            for (var attempt = 0;
+                 attempt < 5000
+                 && window.IsVisible;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                !window.IsVisible,
+                "MainWindow did not complete its coordinated close.");
+            Require(
+                window.CurrentRuntime is null
+                && window.CurrentShell is null,
+                "MainWindow returned from close with owned Viewer runtime state still attached.");
+
+            return 0;
+        },
+        CancellationToken.None);
+
+    Console.WriteLine(
+        "MainWindow smoke: real composition / coordinated close ownership OK");
+
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");
 }
