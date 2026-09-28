@@ -1178,6 +1178,78 @@ try
             "Native cancellation left a temporary cache file behind.");
     }
 
+    var shutdownCacheRoot = Path.Combine(root, "shutdown-cache");
+    var shutdownPipeline = new ThumbnailPipeline(
+        new ThumbnailCache(shutdownCacheRoot),
+        new ThumbnailPipelineOptions
+        {
+            WorkerCount = 1,
+            QueueCapacity = 2,
+            MaxForegroundBurst = 2
+        });
+    var shutdownSource = SourceFor(47, 1, cancellationPath);
+    var shutdownOpensBefore =
+        shutdownPipeline.Diagnostics.SourceOpens;
+    var shutdownRequest = shutdownPipeline.RequestAsync(
+        shutdownSource,
+        ThumbnailProfiles.DetailPreview);
+
+    for (var attempt = 0;
+         attempt < 2000
+         && shutdownPipeline.Diagnostics.SourceOpens
+             == shutdownOpensBefore;
+         attempt++)
+    {
+        await Task.Delay(1);
+    }
+
+    Require(
+        shutdownPipeline.Diagnostics.SourceOpens
+            > shutdownOpensBefore,
+        "Pipeline shutdown smoke never reached active source evaluation.");
+
+    var firstShutdown =
+        shutdownPipeline.DisposeAsync().AsTask();
+    var secondShutdown =
+        shutdownPipeline.DisposeAsync().AsTask();
+
+    await Task.WhenAll(firstShutdown, secondShutdown);
+
+    try
+    {
+        _ = await shutdownRequest;
+        throw new InvalidOperationException(
+            "Active thumbnail request completed after pipeline shutdown.");
+    }
+    catch (ObjectDisposedException)
+    {
+    }
+
+    Require(
+        firstShutdown.IsCompletedSuccessfully
+        && secondShutdown.IsCompletedSuccessfully,
+        "Concurrent ThumbnailPipeline DisposeAsync callers did not observe one completed shutdown.");
+
+    try
+    {
+        _ = await shutdownPipeline.RequestAsync(
+            shutdownSource,
+            ThumbnailProfiles.GridSmall);
+        throw new InvalidOperationException(
+            "Disposed ThumbnailPipeline accepted new work.");
+    }
+    catch (ObjectDisposedException)
+    {
+    }
+
+    Require(
+        !Directory.EnumerateFiles(
+                shutdownCacheRoot,
+                "*.tmp.webp",
+                SearchOption.AllDirectories)
+            .Any(),
+        "Pipeline shutdown left an interrupted temporary thumbnail behind.");
+
     var orientedFullSource = new FullResolutionSource(
         orientedPath,
         new FileInfo(orientedPath).Length,
