@@ -243,6 +243,16 @@ jobs:
             }
           }
 
+      - name: Upload NativeAOT Core acceptance build
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-core-acceptance-win-x64-${{ github.run_id }}
+          path: |
+            artifacts/native-aot/**
+            build/Run-RealLibraryAcceptance.ps1
+            docs/core-acceptance.md
+          if-no-files-found: error
+
       - name: Publish NativeAOT Image runtime smoke
         run: dotnet publish tests/Lumine.Image.NativeAot.Smoke/Lumine.Image.NativeAot.Smoke.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot-image-smoke
 
