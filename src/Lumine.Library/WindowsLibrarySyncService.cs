@@ -87,10 +87,12 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
             {
                 await _watcherMonitor.ConfigureAwait(false);
             }
-            catch (Exception exception) when (shutdownFailure is not null)
+            catch (Exception exception)
             {
-                // Preserve the original shutdown failure below.
-                _ = exception;
+                // A monitor failure is itself a shutdown failure. Continue
+                // through checkpoint persistence before surfacing it so the
+                // next startup cannot mistake this session for clean.
+                shutdownFailure ??= exception;
             }
 
             var state = await _repository.GetOrCreateSyncStateAsync(
