@@ -432,6 +432,10 @@ internal sealed class RealLibraryAcceptanceSession
             "thumbnail.cache_after",
             cacheAfter);
 
+        await CoreAcceptanceFunctionalScenario.RunAsync(
+            _recorder,
+            _metadata);
+
         if (viewer.TileLoadFailures != 0)
         {
             throw new InvalidOperationException(
