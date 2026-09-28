@@ -345,7 +345,9 @@ internal static class Program
             ViewerThumbnailPriority.Foreground,
             secondCancellation.Token).AsTask();
 
-        await Task.Delay(25);
+        await thumbnailProvider.Started.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
         firstCancellation.Cancel();
         secondCancellation.Cancel();
 
@@ -1898,6 +1900,8 @@ internal sealed class DelayedThumbnailProvider(
     string path,
     TimeSpan delay) : IViewerThumbnailProvider
 {
+    private readonly TaskCompletionSource _started =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _cancelled;
     private int _active;
 
@@ -1905,12 +1909,16 @@ internal sealed class DelayedThumbnailProvider(
 
     public int Active => Volatile.Read(ref _active);
 
+    public Task Started => _started.Task;
+
     public async ValueTask<ViewerThumbnail> RequestAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,
         CancellationToken cancellationToken = default)
     {
         Interlocked.Increment(ref _active);
+        _started.TrySetResult();
+
         try
         {
             try
