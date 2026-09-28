@@ -213,7 +213,7 @@ public sealed class LibraryReconciler
         long libraryId,
         string libraryRoot,
         LibraryIngestSession ingest,
-        IReadOnlyList<AssetUpsert> batch,
+        List<AssetUpsert> batch,
         List<LibraryScanFailure> failures,
         CancellationToken cancellationToken)
     {
