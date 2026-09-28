@@ -6,7 +6,7 @@ Issue #332 establishes one effective Core resource policy before the real MainWi
 
 `CoreResourcePolicy` is the resolved runtime policy. `ResourcePolicySettings` is the settings/persistence boundary: optional user/configuration overrides are validated and converted into one immutable effective policy before Image/Viewer runtime objects are created.
 
-The current App uses `Program.ResourcePolicy` as its single effective-policy reference. #293 may later load persisted settings before resolving this value; #309 must consume this same resolved policy when it creates the production Image/Viewer ownership graph.
+The production App loads versioned `settings.json` through `AppHost` before Avalonia/Image runtime creation, resolves one immutable `CoreResourcePolicy`, and exposes that policy through `Program.ResourcePolicy`. The real #309 MainWindow composition consumes the same resolved policy when it creates the Image/Viewer ownership graph. Persisted policy changes are validated on write and take effect on the next process launch so process-global libvips state is never mutated under live workers.
 
 ## Bounded values
 
