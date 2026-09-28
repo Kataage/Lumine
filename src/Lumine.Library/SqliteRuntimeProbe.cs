@@ -54,8 +54,7 @@ public static class SqliteRuntimeProbe
                     content='',
                     contentless_delete=1,
                     tokenize='trigram',
-                    detail='none',
-                    columnsize=0
+                    detail='none'
                 );
 
                 INSERT INTO search_probe(rowid, value)
