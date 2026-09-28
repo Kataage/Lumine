@@ -223,8 +223,7 @@ public sealed class LibraryDatabase
                 content='',
                 contentless_delete=1,
                 tokenize='trigram',
-                detail='none',
-                columnsize=0
+                detail='none'
             );
 
             CREATE TABLE asset_search_cjk_bigrams (
