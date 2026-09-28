@@ -247,6 +247,7 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                     .ConfigureAwait(false);
             }
 
+            LibraryDatabase.ClearPools();
             throw;
         }
     }
@@ -297,7 +298,14 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                 failure ??= exception;
             }
 
-            _assetProvider.Dispose();
+            try
+            {
+                _assetProvider.Dispose();
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
 
             try
             {
@@ -307,6 +315,20 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             catch (Exception exception)
             {
                 failure ??= exception;
+            }
+
+            try
+            {
+                await LibraryService.CheckpointAsync()
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+            finally
+            {
+                LibraryDatabase.ClearPools();
             }
 
             if (failure is not null)

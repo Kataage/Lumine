@@ -12,32 +12,57 @@ internal static class ProductRuntimeSmoke
                 Switch,
                 StringComparison.Ordinal));
 
+    public static AppDataPaths ResolveDataPaths(
+        IReadOnlyList<string> args) =>
+        AppDataPaths.FromRoot(
+            GetRequiredValue(
+                args,
+                "--data-dir="));
+
     public static async Task RunAsync(
         IReadOnlyList<string> args,
+        AppHost host,
         CancellationToken cancellationToken = default)
     {
-        var dataDirectory = GetRequiredValue(
-            args,
-            "--data-dir=");
+        ArgumentNullException.ThrowIfNull(host);
+
         var libraryDirectory = GetRequiredValue(
             args,
             "--library-dir=");
 
-        var dataPaths =
-            AppDataPaths.FromRoot(dataDirectory);
+        for (var iteration = 0;
+             iteration < 2;
+             iteration++)
+        {
+            await using var runtime =
+                await CoreViewerRuntime.OpenAsync(
+                    libraryDirectory,
+                    host.DataPaths,
+                    host.ResourcePolicy,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
-        await using var runtime =
-            await CoreViewerRuntime.OpenAsync(
-                libraryDirectory,
-                dataPaths,
-                Program.ResourcePolicy,
-                cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+            if (runtime.AssetCount < 0)
+            {
+                throw new InvalidOperationException(
+                    "Product runtime returned a negative asset count.");
+            }
 
-        if (runtime.AssetCount < 0)
+            if (runtime.ThumbnailCache.ConfiguredByteLimit
+                != host.ResourcePolicy.ThumbnailCacheByteLimit)
+            {
+                throw new InvalidOperationException(
+                    "Product runtime did not apply the persisted Core resource policy.");
+            }
+        }
+
+        var walPath =
+            host.DataPaths.DatabasePath + "-wal";
+        if (File.Exists(walPath)
+            && new FileInfo(walPath).Length != 0)
         {
             throw new InvalidOperationException(
-                "Product runtime returned a negative asset count.");
+                "Product runtime left a non-empty SQLite WAL after coordinated shutdown.");
         }
     }
 

@@ -92,6 +92,115 @@ Require(
 
 try
 {
+    var lifecyclePaths =
+        AppDataPaths.FromRoot(
+            Path.Combine(root, "lifecycle-host"));
+
+    var settingsStore =
+        new AppSettingsStore(
+            lifecyclePaths.SettingsPath);
+    await settingsStore.SaveAsync(
+        new AppSettingsDocument
+        {
+            ResourcePolicy =
+                new ResourcePolicySettings
+                {
+                    ThumbnailQueueCapacity = 17,
+                    ThumbnailCacheByteLimit =
+                        128L * 1024 * 1024
+                }
+        });
+
+    await using (var lifecycleHost =
+                 await AppHost.StartAsync(
+                     lifecyclePaths))
+    {
+        Require(
+            lifecycleHost.ResourcePolicy.ThumbnailQueueCapacity == 17
+            && lifecycleHost.ResourcePolicy.ThumbnailCacheByteLimit
+                == 128L * 1024 * 1024,
+            "Persisted resource settings were not resolved before runtime startup.");
+        Require(
+            !lifecycleHost.PreviousShutdownWasUnclean,
+            "First lifecycle host incorrectly reported an unclean previous shutdown.");
+
+        AppHost? unexpectedSecondHost = null;
+        try
+        {
+            unexpectedSecondHost =
+                await AppHost.StartAsync(
+                    lifecyclePaths);
+            throw new InvalidOperationException(
+                "Second AppHost acquired the same data-root instance lock.");
+        }
+        catch (AppAlreadyRunningException)
+        {
+        }
+        finally
+        {
+            if (unexpectedSecondHost is not null)
+            {
+                await unexpectedSecondHost.DisposeAsync();
+            }
+        }
+
+        await lifecycleHost.CompleteCleanShutdownAsync();
+    }
+
+    await using (var cleanRestart =
+                 await AppHost.StartAsync(
+                     lifecyclePaths))
+    {
+        Require(
+            !cleanRestart.PreviousShutdownWasUnclean,
+            "Clean lifecycle restart was reported as unclean.");
+        await cleanRestart.CompleteCleanShutdownAsync();
+    }
+
+    var simulatedCrash =
+        await AppHost.StartAsync(
+            lifecyclePaths);
+    await simulatedCrash.DisposeAsync();
+
+    await using (var recovered =
+                 await AppHost.StartAsync(
+                     lifecyclePaths))
+    {
+        Require(
+            recovered.PreviousShutdownWasUnclean,
+            "Unclean-shutdown marker was not detected on restart.");
+        await recovered.CompleteCleanShutdownAsync();
+    }
+
+    Require(
+        !File.Exists(
+            lifecyclePaths.RuntimeMarkerPath),
+        "Clean recovery left the unclean-shutdown marker behind.");
+    Require(
+        File.Exists(
+            lifecyclePaths.RuntimeLogPath),
+        "Bounded runtime event log was not created.");
+
+    var corruptSettingsPaths =
+        AppDataPaths.FromRoot(
+            Path.Combine(root, "corrupt-settings-host"));
+    Directory.CreateDirectory(
+        corruptSettingsPaths.RootPath);
+    await File.WriteAllTextAsync(
+        corruptSettingsPaths.SettingsPath,
+        "{ this is not valid json");
+
+    await using (var degradedSettingsHost =
+                 await AppHost.StartAsync(
+                     corruptSettingsPaths))
+    {
+        Require(
+            !string.IsNullOrWhiteSpace(
+                degradedSettingsHost.SettingsWarning),
+            "Corrupt settings did not degrade to defaults with a diagnostic warning.");
+        await degradedSettingsHost.CompleteCleanShutdownAsync();
+    }
+
     VipsRuntimePolicy.EnsureConfigured();
 
     using (var blank = NetVips.Image.Black(320, 200, bands: 4))
@@ -704,53 +813,169 @@ try
     Console.WriteLine(
         "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / shutdown OK");
 
-    var mainWindowDataRoot =
-        Path.Combine(root, "main-window-data");
+    for (var iteration = 0;
+         iteration < 3;
+         iteration++)
+    {
+        var repeatedLibraryRoot =
+            Path.Combine(
+                root,
+                $"repeated-library-{iteration}");
+        var repeatedDataRoot =
+            Path.Combine(
+                root,
+                $"repeated-data-{iteration}");
+        var repeatedPaths =
+            AppDataPaths.FromRoot(
+                repeatedDataRoot);
 
-    await headless.Dispatch(
-        async () =>
+        if (iteration == 0)
         {
-            var window = new MainWindow();
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
+            var repeatedSettings =
+                new AppSettingsStore(
+                    repeatedPaths.SettingsPath);
+            await repeatedSettings.SaveAsync(
+                new AppSettingsDocument
+                {
+                    ResourcePolicy =
+                        new ResourcePolicySettings
+                        {
+                            ThumbnailQueueCapacity = 19,
+                            ThumbnailCacheByteLimit =
+                                128L * 1024 * 1024
+                        }
+                });
+        }
 
-            await window.OpenLibraryAsync(
-                shellLibraryRoot,
-                AppDataPaths.FromRoot(
-                    mainWindowDataRoot));
+        Directory.CreateDirectory(
+            repeatedLibraryRoot);
+        WriteBmp24(
+            Path.Combine(
+                repeatedLibraryRoot,
+                "first.bmp"),
+            width: 2000,
+            height: 1400);
+        WriteBmp24(
+            Path.Combine(
+                repeatedLibraryRoot,
+                "second.bmp"),
+            width: 1280,
+            height: 900);
 
-            Require(
-                window.CurrentRuntime is not null
-                && window.CurrentShell is not null,
-                "MainWindow did not compose the production Core Viewer runtime/shell.");
+        await using (var appHost =
+                     await AppHost.StartAsync(
+                         repeatedPaths))
+        {
+            await headless.Dispatch(
+                async () =>
+                {
+                    var window =
+                        new MainWindow(
+                            repeatedPaths,
+                            appHost.ResourcePolicy,
+                            appHost);
+                    window.Show();
+                    Dispatcher.UIThread.RunJobs();
 
-            window.Close();
+                    await window.OpenLibraryAsync(
+                        repeatedLibraryRoot);
 
-            for (var attempt = 0;
-                 attempt < 5000
-                 && window.IsVisible;
-                 attempt++)
-            {
-                Dispatcher.UIThread.RunJobs();
-                await Task.Delay(1);
-            }
+                    Require(
+                        window.CurrentRuntime is not null
+                        && window.CurrentShell is not null,
+                        "MainWindow did not compose the production Core Viewer runtime/shell.");
 
-            Dispatcher.UIThread.RunJobs();
+                    if (iteration == 0)
+                    {
+                        Require(
+                            window.CurrentRuntime!.ThumbnailCache.ConfiguredByteLimit
+                                == 128L * 1024 * 1024,
+                            "Persisted non-default thumbnail cache budget did not reach the real CoreViewerRuntime.");
+                    }
 
-            Require(
-                !window.IsVisible,
-                "MainWindow did not complete its coordinated close.");
-            Require(
-                window.CurrentRuntime is null
-                && window.CurrentShell is null,
-                "MainWindow returned from close with owned Viewer runtime state still attached.");
+                    var diagnostics =
+                        await window.BuildRuntimeDiagnosticsTextAsync();
+                    Require(
+                        diagnostics.Contains(
+                            "Effective bounded resource policy:",
+                            StringComparison.Ordinal)
+                        && diagnostics.Contains(
+                            "Thumbnail cache files:",
+                            StringComparison.Ordinal),
+                        "User-visible runtime diagnostics omitted policy/cache state.");
 
-            return 0;
-        },
-        CancellationToken.None);
+                    var detail =
+                        window.CurrentShell!.DetailViewer;
+                    await detail.SelectAsync(0);
+
+                    var originalTask =
+                        detail.ActualSizeAsync();
+                    var nextTask =
+                        detail.SelectAsync(1);
+
+                    window.Close();
+
+                    for (var attempt = 0;
+                         attempt < 10000
+                         && window.IsVisible;
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
+
+                    Dispatcher.UIThread.RunJobs();
+
+                    try
+                    {
+                        await originalTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+
+                    try
+                    {
+                        await nextTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+
+                    Require(
+                        !window.IsVisible,
+                        "MainWindow did not complete its coordinated close.");
+                    Require(
+                        window.CurrentRuntime is null
+                        && window.CurrentShell is null,
+                        "MainWindow returned from close with owned Viewer runtime state still attached.");
+
+                    return 0;
+                },
+                CancellationToken.None);
+
+            await appHost.CompleteCleanShutdownAsync();
+        }
+
+        LibraryDatabase.ClearPools();
+
+        var walPath =
+            repeatedPaths.DatabasePath + "-wal";
+        Require(
+            !File.Exists(walPath)
+            || new FileInfo(walPath).Length == 0,
+            "Repeated MainWindow close left a non-empty SQLite WAL.");
+
+        Directory.Delete(
+            repeatedLibraryRoot,
+            recursive: true);
+        Directory.Delete(
+            repeatedDataRoot,
+            recursive: true);
+    }
 
     Console.WriteLine(
-        "MainWindow smoke: real composition / coordinated close ownership OK");
+        "MainWindow lifecycle smoke: repeated launch/close / rapid original-navigation close / diagnostics / handle release OK");
 
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");

@@ -395,6 +395,40 @@ public sealed class LibraryDatabase
         }
     }
 
+    public async Task CheckpointAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection =
+            await OpenConnectionAsync(
+                cancellationToken).ConfigureAwait(false);
+
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            "PRAGMA wal_checkpoint(TRUNCATE);";
+
+        await using var reader =
+            await command.ExecuteReaderAsync(
+                cancellationToken).ConfigureAwait(false);
+
+        if (!await reader.ReadAsync(
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "SQLite WAL checkpoint returned no status row.");
+        }
+
+        var busy = Convert.ToInt32(
+            reader.GetValue(0),
+            CultureInfo.InvariantCulture);
+
+        if (busy != 0)
+        {
+            throw new InvalidOperationException(
+                $"SQLite WAL checkpoint remained busy ({busy}).");
+        }
+    }
+
     internal async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
     {
         var connectionString = new SqliteConnectionStringBuilder
