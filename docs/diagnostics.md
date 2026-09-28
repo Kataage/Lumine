@@ -46,3 +46,18 @@ dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release
 ```
 
 Performance acceptance numbers belong to the feature issue being measured. They are not hidden inside this common harness.
+
+
+## Hosted-runner memory acceptance
+
+Windows `Environment.WorkingSet` is recorded for every Library benchmark, but it is an OS physical-residency observation rather than an ownership-precise retained-memory counter. The same Lumine commit has produced materially different post-full-GC WorkingSet values on GitHub-hosted Windows runners while the managed heap stayed unchanged.
+
+CI therefore separates memory signals:
+
+- absolute/transient WorkingSet remains a hard catastrophic ceiling;
+- post-full-GC WorkingSet remains diagnostic;
+- post-full-GC managed heap is the deterministic retained-managed-state gate;
+- cumulative managed allocation is separately gated to catch large allocation regressions;
+- Library database size remains independently bounded.
+
+This prevents a single hosted-runner physical-page residency sample from masquerading as a reproducible Lumine memory leak while still failing true unbounded managed retention and catastrophic process-memory growth.
