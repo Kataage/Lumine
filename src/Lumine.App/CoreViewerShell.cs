@@ -19,6 +19,25 @@ internal sealed class CoreViewerShell : UserControl
             runtime.DetailSession);
         _detail.BindGrid(_grid);
 
+        if (runtime.AssetCount == 0)
+        {
+            Content = new Border
+            {
+                Padding = new Avalonia.Thickness(32),
+                Child = new TextBlock
+                {
+                    Text = "No supported images were found in this library.",
+                    FontSize = 18,
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                    HorizontalAlignment =
+                        Avalonia.Layout.HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        Avalonia.Layout.VerticalAlignment.Center
+                }
+            };
+            return;
+        }
+
         var layout = new Grid
         {
             ColumnDefinitions =
