@@ -1002,10 +1002,10 @@ public sealed class LumineV1Importer
         var color = NormalizeOptionalLabel(
             asset.ColorLabel);
 
-        return status is null
-               || status.Length <= MaxLabelLength
-               && (color is null
-                   || color.Length <= MaxLabelLength);
+        return (status is null
+                || status.Length <= MaxLabelLength)
+            && (color is null
+                || color.Length <= MaxLabelLength);
     }
 
     private static bool HasMeaningfulMetadata(
