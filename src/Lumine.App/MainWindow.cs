@@ -272,6 +272,8 @@ public sealed class MainWindow : Window
 
         _openCancellation?.Cancel();
 
+        Exception? shutdownFailure = null;
+
         try
         {
             try
@@ -281,16 +283,35 @@ public sealed class MainWindow : Window
             catch (OperationCanceledException)
             {
             }
+            catch (Exception exception)
+            {
+                shutdownFailure = exception;
+            }
 
-            await DisposeCurrentRuntimeAsync();
+            try
+            {
+                await DisposeCurrentRuntimeAsync();
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure ??= exception;
+            }
 
-            await Program.Diagnostics.FlushRequestedAsync(
-                Program.ResourcePolicy.ToDiagnosticMetadata());
-        }
-        catch (Exception exception)
-        {
-            _status.Text =
-                $"Shutdown error: {exception.Message}";
+            try
+            {
+                await Program.Diagnostics.FlushRequestedAsync(
+                    Program.ResourcePolicy.ToDiagnosticMetadata());
+            }
+            catch (Exception exception)
+            {
+                shutdownFailure ??= exception;
+            }
+
+            if (shutdownFailure is not null)
+            {
+                _status.Text =
+                    $"Shutdown error: {shutdownFailure.Message}";
+            }
         }
         finally
         {
