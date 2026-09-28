@@ -6,6 +6,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Lumine.App;
 using Lumine.Core;
+using Lumine.Diagnostics;
 using Lumine.Image;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -92,6 +93,48 @@ Require(
 
 try
 {
+    var acceptanceParse =
+        RealLibraryAcceptanceOptions.Parse(
+        [
+            "--core-acceptance",
+            $"--library-dir={libraryRoot}",
+            $"--data-dir={Path.Combine(root, "acceptance-parse-data")}",
+            $"--output={Path.Combine(root, "acceptance-parse.json")}",
+            "--mode=smoke",
+            "--min-assets=2",
+            "--browse-seconds=1",
+            "--idle-seconds=1"
+        ]);
+
+    Require(
+        acceptanceParse.MinimumAssets == 2
+        && acceptanceParse.BrowseDuration == TimeSpan.FromSeconds(1)
+        && acceptanceParse.IdleDuration == TimeSpan.FromSeconds(1)
+        && acceptanceParse.Mode == "smoke",
+        "Real-library acceptance CLI options did not parse deterministically.");
+
+    var functionalAcceptanceMetadata =
+        new Dictionary<string, string>(
+            StringComparer.Ordinal);
+    await CoreAcceptanceFunctionalScenario.RunAsync(
+        new BenchmarkRecorder(),
+        functionalAcceptanceMetadata);
+
+    Require(
+        functionalAcceptanceMetadata.TryGetValue(
+            "functional.search_metadata",
+            out var functionalSearch)
+        && functionalSearch == "pass"
+        && functionalAcceptanceMetadata.TryGetValue(
+            "functional.live_changes",
+            out var functionalChanges)
+        && functionalChanges == "pass"
+        && functionalAcceptanceMetadata.TryGetValue(
+            "functional.offline_recovery",
+            out var functionalRecovery)
+        && functionalRecovery == "pass",
+        "Core acceptance isolated filesystem/search scenario did not complete.");
+
     var lifecyclePaths =
         AppDataPaths.FromRoot(
             Path.Combine(root, "lifecycle-host"));
