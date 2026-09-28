@@ -591,6 +591,84 @@ try
             StringComparison.Ordinal),
         "Identity repair did not persist the replacement source identity.");
 
+    var shellLibraryRoot =
+        Path.Combine(root, "shell-library");
+    var shellDataRoot =
+        Path.Combine(root, "shell-data");
+    Directory.CreateDirectory(shellLibraryRoot);
+
+    var shellImagePath =
+        Path.Combine(shellLibraryRoot, "viewer-shell.bmp");
+    WriteBmp24(
+        shellImagePath,
+        width: 11,
+        height: 7);
+
+    var shellRuntime =
+        await CoreViewerRuntime.OpenAsync(
+            shellLibraryRoot,
+            AppDataPaths.FromRoot(shellDataRoot),
+            CoreResourcePolicy.Resolve(
+                processorCount: 4));
+
+    Require(
+        shellRuntime.AssetCount == 1,
+        $"Production Core Viewer runtime indexed {shellRuntime.AssetCount} assets; expected 1.");
+
+    await headless.Dispatch(
+        async () =>
+        {
+            var shell =
+                new CoreViewerShell(shellRuntime);
+            var window =
+                new Avalonia.Controls.Window
+                {
+                    Width = 1100,
+                    Height = 720,
+                    Content = shell
+                };
+
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.AssetCount == 1,
+                "Real App shell did not expose the runtime asset count.");
+
+            await shell.DetailViewer.SelectAsync(0);
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.DetailViewer.LoadState
+                    == ViewerDetailLoadState.PreviewReady,
+                $"Real App shell Detail preview did not become ready: {shell.DetailViewer.LoadState}.");
+
+            await shell.DetailViewer.ActualSizeAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.DetailViewer.IsOriginal,
+                "Real App shell 1:1 path did not promote to the full-resolution original.");
+
+            shell.DetailViewer.Fit();
+            Require(
+                shell.DetailViewer.SelectedAssetIndex == 0,
+                "Real App shell lost Detail selection during Fit.");
+
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            shell.Detach();
+
+            await shellRuntime.DisposeAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            return 0;
+        },
+        CancellationToken.None);
+
+    Console.WriteLine(
+        "App shell smoke: runtime composition / grid / Detail preview / 1:1 / Fit / shutdown OK");
+
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");
 }
