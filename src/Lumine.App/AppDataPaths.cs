@@ -3,7 +3,12 @@ namespace Lumine.App;
 internal sealed record AppDataPaths(
     string RootPath,
     string DatabasePath,
-    string ThumbnailCachePath)
+    string ThumbnailCachePath,
+    string SettingsPath,
+    string RuntimeMarkerPath,
+    string InstanceLockPath,
+    string LogsPath,
+    string RuntimeLogPath)
 {
     public static AppDataPaths ResolveDefault()
     {
@@ -27,9 +32,16 @@ internal sealed record AppDataPaths(
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
         var root = Path.GetFullPath(rootPath);
+        var logs = Path.Combine(root, "logs");
+
         return new AppDataPaths(
             root,
             Path.Combine(root, "library.db"),
-            Path.Combine(root, "thumbnails"));
+            Path.Combine(root, "thumbnails"),
+            Path.Combine(root, "settings.json"),
+            Path.Combine(root, "runtime.unclean"),
+            Path.Combine(root, "instance.lock"),
+            logs,
+            Path.Combine(logs, "runtime.log"));
     }
 }
