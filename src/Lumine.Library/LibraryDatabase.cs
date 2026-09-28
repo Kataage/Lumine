@@ -213,25 +213,15 @@ public sealed class LibraryDatabase
             CREATE INDEX idx_asset_tags_tag_asset
                 ON asset_tags(tag_id, asset_id);
 
-            CREATE TABLE asset_search_documents (
-                asset_id INTEGER PRIMARY KEY,
-                library_id INTEGER NOT NULL,
-                file_name TEXT NOT NULL,
-                relative_path TEXT NOT NULL,
-                notes TEXT NOT NULL DEFAULT '',
-                tags_text TEXT NOT NULL DEFAULT '',
-                normalized_text TEXT NOT NULL,
-                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
-                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
-            );
-
+            -- Search is a rebuildable derived index. Do not duplicate source text
+            -- in a content table and do not put FTS work on the asset ingest path.
             CREATE VIRTUAL TABLE asset_search_fts USING fts5(
                 file_name,
                 relative_path,
                 notes,
                 tags_text,
-                content='asset_search_documents',
-                content_rowid='asset_id',
+                content='',
+                contentless_delete=1,
                 tokenize='trigram',
                 detail='none',
                 columnsize=0
@@ -249,169 +239,47 @@ public sealed class LibraryDatabase
             CREATE INDEX idx_asset_search_cjk_asset
                 ON asset_search_cjk_bigrams(asset_id);
 
-            CREATE TRIGGER asset_search_documents_ai
-            AFTER INSERT ON asset_search_documents
-            BEGIN
-                INSERT INTO asset_search_fts(
-                    rowid, file_name, relative_path, notes, tags_text)
-                VALUES (
-                    NEW.asset_id, NEW.file_name, NEW.relative_path,
-                    NEW.notes, NEW.tags_text);
-            END;
+            CREATE TABLE asset_search_dirty (
+                asset_id INTEGER PRIMARY KEY,
+                library_id INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
 
-            CREATE TRIGGER asset_search_documents_ad
-            AFTER DELETE ON asset_search_documents
-            BEGIN
-                INSERT INTO asset_search_fts(
-                    asset_search_fts, rowid,
-                    file_name, relative_path, notes, tags_text)
-                VALUES (
-                    'delete', OLD.asset_id,
-                    OLD.file_name, OLD.relative_path,
-                    OLD.notes, OLD.tags_text);
-            END;
+            CREATE INDEX idx_asset_search_dirty_library
+                ON asset_search_dirty(library_id, asset_id);
 
-            CREATE TRIGGER asset_search_documents_au
-            AFTER UPDATE ON asset_search_documents
-            BEGIN
-                INSERT INTO asset_search_fts(
-                    asset_search_fts, rowid,
-                    file_name, relative_path, notes, tags_text)
-                VALUES (
-                    'delete', OLD.asset_id,
-                    OLD.file_name, OLD.relative_path,
-                    OLD.notes, OLD.tags_text);
-
-                INSERT INTO asset_search_fts(
-                    rowid, file_name, relative_path, notes, tags_text)
-                VALUES (
-                    NEW.asset_id, NEW.file_name, NEW.relative_path,
-                    NEW.notes, NEW.tags_text);
-            END;
-
-            CREATE TRIGGER asset_search_documents_ai_cjk
-            AFTER INSERT ON asset_search_documents
-            WHEN NEW.normalized_text GLOB '*[^ -~]*'
-            BEGIN
-                INSERT OR IGNORE INTO asset_search_cjk_bigrams(
-                    library_id, token, asset_id)
-                SELECT
-                    NEW.library_id,
-                    substr(NEW.normalized_text, position, 2),
-                    NEW.asset_id
-                FROM (
-                    WITH RECURSIVE positions(position) AS (
-                        SELECT 1
-                        UNION ALL
-                        SELECT position + 1
-                        FROM positions
-                        WHERE position + 1 < length(NEW.normalized_text)
-                    )
-                    SELECT position FROM positions
-                )
-                WHERE
-                    (
-                        unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x3040 AND 0x30ff
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x3400 AND 0x4dbf
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x4e00 AND 0x9fff
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0xff66 AND 0xff9f
-                    )
-                    AND
-                    (
-                        unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x3040 AND 0x30ff
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x3400 AND 0x4dbf
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x4e00 AND 0x9fff
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0xff66 AND 0xff9f
-                    );
-            END;
-
-            CREATE TRIGGER asset_search_documents_au_cjk
-            AFTER UPDATE OF normalized_text ON asset_search_documents
-            BEGIN
-                DELETE FROM asset_search_cjk_bigrams
-                WHERE asset_id = NEW.asset_id;
-
-                INSERT OR IGNORE INTO asset_search_cjk_bigrams(
-                    library_id, token, asset_id)
-                SELECT
-                    NEW.library_id,
-                    substr(NEW.normalized_text, position, 2),
-                    NEW.asset_id
-                FROM (
-                    WITH RECURSIVE positions(position) AS (
-                        SELECT 1
-                        UNION ALL
-                        SELECT position + 1
-                        FROM positions
-                        WHERE position + 1 < length(NEW.normalized_text)
-                    )
-                    SELECT position FROM positions
-                )
-                WHERE NEW.normalized_text GLOB '*[^ -~]*'
-                  AND (
-                        unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x3040 AND 0x30ff
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x3400 AND 0x4dbf
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0x4e00 AND 0x9fff
-                        OR unicode(substr(NEW.normalized_text, position, 1))
-                            BETWEEN 0xff66 AND 0xff9f
-                    )
-                  AND (
-                        unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x3040 AND 0x30ff
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x3400 AND 0x4dbf
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0x4e00 AND 0x9fff
-                        OR unicode(substr(NEW.normalized_text, position + 1, 1))
-                            BETWEEN 0xff66 AND 0xff9f
-                    );
-            END;
-
-            CREATE TRIGGER assets_ai_search
+            CREATE TRIGGER assets_ai_search_dirty
             AFTER INSERT ON assets
             BEGIN
-                INSERT INTO asset_search_documents(
-                    asset_id, library_id, file_name, relative_path,
-                    notes, tags_text, normalized_text)
-                VALUES(
-                    NEW.id, NEW.library_id,
-                    NEW.file_name, NEW.relative_path,
-                    '', '',
-                    lower(NEW.file_name || char(31) || NEW.relative_path));
+                INSERT INTO asset_search_dirty(asset_id, library_id)
+                VALUES(NEW.id, NEW.library_id)
+                ON CONFLICT(asset_id) DO UPDATE SET
+                    library_id = excluded.library_id;
             END;
 
-            CREATE TRIGGER assets_au_search
+            CREATE TRIGGER assets_au_search_dirty
             AFTER UPDATE OF file_name, relative_path ON assets
+            WHEN NEW.file_name <> OLD.file_name
+              OR NEW.relative_path <> OLD.relative_path
             BEGIN
-                UPDATE asset_search_documents
-                SET file_name = NEW.file_name,
-                    relative_path = NEW.relative_path,
-                    normalized_text = lower(
-                        NEW.file_name || char(31) ||
-                        NEW.relative_path || char(31) ||
-                        notes || char(31) ||
-                        tags_text)
-                WHERE asset_id = NEW.id;
+                INSERT INTO asset_search_dirty(asset_id, library_id)
+                VALUES(NEW.id, NEW.library_id)
+                ON CONFLICT(asset_id) DO UPDATE SET
+                    library_id = excluded.library_id;
             END;
 
-            INSERT INTO asset_search_documents(
-                asset_id, library_id, file_name, relative_path,
-                notes, tags_text, normalized_text)
-            SELECT
-                id, library_id, file_name, relative_path,
-                '', '',
-                lower(file_name || char(31) || relative_path)
+            CREATE TRIGGER assets_bd_search_cleanup
+            BEFORE DELETE ON assets
+            BEGIN
+                DELETE FROM asset_search_fts
+                WHERE rowid = OLD.id;
+            END;
+
+            -- Existing v1-v4 assets are deliberately marked dirty instead of
+            -- synchronously building an FTS index during schema migration.
+            INSERT INTO asset_search_dirty(asset_id, library_id)
+            SELECT id, library_id
             FROM assets;
             """)
     ];
