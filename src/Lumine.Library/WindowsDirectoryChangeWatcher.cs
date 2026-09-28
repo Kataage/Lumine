@@ -344,6 +344,14 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
     {
         lock (_lifecycleGate)
         {
+            if (_disposed)
+            {
+                _ready.TrySetException(
+                    new ObjectDisposedException(
+                        nameof(WindowsDirectoryChangeWatcher)));
+                return;
+            }
+
             _startupComplete = true;
             _ready.TrySetResult();
         }
