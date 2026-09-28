@@ -94,6 +94,9 @@ jobs:
       - name: Library Core smoke test
         run: dotnet run --project tests/Lumine.Library.Smoke/Lumine.Library.Smoke.csproj -c Release --no-build
 
+      - name: Lumine v1 import smoke test
+        run: dotnet run --project tests/Lumine.V1Import.Smoke/Lumine.V1Import.Smoke.csproj -c Release --no-build
+
       - name: Image Core smoke test
         run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
 
