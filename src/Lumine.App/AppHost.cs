@@ -61,7 +61,6 @@ internal sealed class AppHost : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(dataPaths);
 
         Directory.CreateDirectory(dataPaths.RootPath);
-        Directory.CreateDirectory(dataPaths.LogsPath);
 
         var instanceLock =
             AcquireInstanceLock(
