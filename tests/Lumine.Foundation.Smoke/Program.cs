@@ -6,6 +6,48 @@ using Lumine.Viewer;
 Console.WriteLine($"{FoundationInfo.ProductName} architecture v{FoundationInfo.ArchitectureVersion}");
 Console.WriteLine(FoundationInfo.RuntimeDescription);
 
+var resourcePolicy = CoreResourcePolicy.Resolve(
+    new ResourcePolicySettings
+    {
+        ThumbnailWorkerCount = 2,
+        ThumbnailQueueCapacity = 64,
+        ThumbnailForegroundBurst = 4,
+        DecodedThumbnailEntryLimit = 48,
+        DecodedThumbnailByteLimit = 64L * 1024 * 1024,
+        DetailPreviewEntryLimit = 3,
+        DetailPreviewByteLimit = 32L * 1024 * 1024,
+        DetailOriginalByteLimit = 192L * 1024 * 1024,
+        ThumbnailCacheByteLimit = 2L * 1024 * 1024 * 1024,
+        VipsTrackedMemoryLimitBytes = 48L * 1024 * 1024
+    },
+    processorCount: 8);
+
+if (resourcePolicy.ThumbnailWorkerCount != 2
+    || resourcePolicy.ThumbnailQueueCapacity != 64
+    || resourcePolicy.DecodedThumbnailEntryLimit != 48
+    || resourcePolicy.DetailOriginalByteLimit != 192L * 1024 * 1024
+    || resourcePolicy.VipsConcurrency != 4)
+{
+    throw new InvalidOperationException(
+        "Core resource policy did not resolve the expected bounded values.");
+}
+
+try
+{
+    _ = CoreResourcePolicy.Resolve(
+        new ResourcePolicySettings
+        {
+            ThumbnailWorkerCount =
+                CoreResourcePolicy.MaxThumbnailWorkerCount + 1
+        },
+        processorCount: 8);
+    throw new InvalidOperationException(
+        "Out-of-range resource policy was accepted.");
+}
+catch (ArgumentOutOfRangeException)
+{
+}
+
 var sqlite = SqliteRuntimeProbe.Probe();
 if (sqlite.Scalar != 1)
 {

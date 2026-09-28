@@ -26,21 +26,38 @@ public sealed class DiagnosticsSession
         Recorder.Complete(CoreMetricNames.StartupWindowReady, _startupStart);
     }
 
-    public Task FlushRequestedAsync(CancellationToken cancellationToken = default)
+    public Task FlushRequestedAsync(
+        CancellationToken cancellationToken = default) =>
+        FlushRequestedAsync(
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            cancellationToken);
+
+    public Task FlushRequestedAsync(
+        IReadOnlyDictionary<string, string> metadata,
+        CancellationToken cancellationToken = default)
     {
-        var outputPath = Environment.GetEnvironmentVariable("LUMINE_DIAGNOSTICS_OUTPUT");
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        var outputPath = Environment.GetEnvironmentVariable(
+            "LUMINE_DIAGNOSTICS_OUTPUT");
         if (string.IsNullOrWhiteSpace(outputPath))
         {
             return Task.CompletedTask;
         }
 
+        var effectiveMetadata = metadata.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value,
+            StringComparer.Ordinal);
+        effectiveMetadata["kind"] = "app-session";
+        effectiveMetadata["window_ready"] =
+            Volatile.Read(ref _windowReady) == 0
+                ? "false"
+                : "true";
+
         return Recorder.WriteJsonAsync(
             outputPath,
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["kind"] = "app-session",
-                ["window_ready"] = Volatile.Read(ref _windowReady) == 0 ? "false" : "true"
-            },
+            effectiveMetadata,
             cancellationToken);
     }
 }

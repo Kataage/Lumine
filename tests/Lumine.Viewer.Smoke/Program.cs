@@ -7,6 +7,7 @@ using Avalonia.Platform;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Lumine.Core;
 using Lumine.Viewer;
 
 namespace Lumine.Viewer.Smoke;
@@ -28,6 +29,7 @@ internal static class Program
 
         try
         {
+            VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
             await VerifyViewerSessionShutdownAsync(thumbnailPath);
@@ -71,6 +73,38 @@ internal static class Program
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static void VerifyResourcePolicyMapping()
+    {
+        var policy = CoreResourcePolicy.Resolve(
+            new ResourcePolicySettings
+            {
+                DecodedThumbnailEntryLimit = 40,
+                DecodedThumbnailByteLimit = 72L * 1024 * 1024,
+                DetailPreviewEntryLimit = 3,
+                DetailPreviewByteLimit = 36L * 1024 * 1024,
+                DetailOriginalByteLimit = 320L * 1024 * 1024
+            },
+            processorCount: 8);
+
+        var viewer = ViewerOptions.FromResourcePolicy(policy);
+        var detail = ViewerDetailOptions.FromResourcePolicy(policy);
+
+        Require(
+            viewer.DecodedBitmapEntryLimit
+                == policy.DecodedThumbnailEntryLimit
+            && viewer.DecodedBitmapByteLimit
+                == policy.DecodedThumbnailByteLimit,
+            "Viewer resource options drifted from the Core policy.");
+        Require(
+            detail.PreviewDecodedEntryLimit
+                == policy.DetailPreviewEntryLimit
+            && detail.PreviewDecodedByteLimit
+                == policy.DetailPreviewByteLimit
+            && detail.OriginalDecodedByteLimit
+                == policy.DetailOriginalByteLimit,
+            "Detail resource options drifted from the Core policy.");
     }
 
     private static async Task VerifyCursorPagingAsync()

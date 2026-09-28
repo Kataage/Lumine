@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Lumine.Core;
 using NetVips;
 
 namespace Lumine.Image;
@@ -14,17 +15,26 @@ public sealed class ThumbnailCache
 
     private readonly string _rootPath;
 
-    public ThumbnailCache(string rootPath)
+    public ThumbnailCache(
+        string rootPath,
+        CoreResourcePolicy? resourcePolicy = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
 
-        VipsRuntimePolicy.EnsureConfigured();
+        ResourcePolicy =
+            resourcePolicy ?? CoreResourcePolicy.Default;
+        VipsRuntimePolicy.EnsureConfigured(resourcePolicy);
 
         _rootPath = Path.GetFullPath(rootPath);
         Directory.CreateDirectory(_rootPath);
     }
 
     public string RootPath => _rootPath;
+
+    public CoreResourcePolicy ResourcePolicy { get; }
+
+    public long ConfiguredByteLimit =>
+        ResourcePolicy.ThumbnailCacheByteLimit;
 
     public static string GetCacheKey(ThumbnailSource source, ThumbnailProfile profile)
     {
@@ -147,6 +157,10 @@ public sealed class ThumbnailCache
         Task.Run(
             () => CleanupInterruptedWrites(cancellationToken),
             cancellationToken);
+
+    public Task<ThumbnailPruneResult> PruneToConfiguredLimitAsync(
+        CancellationToken cancellationToken = default) =>
+        PruneAsync(ConfiguredByteLimit, cancellationToken);
 
     public Task<ThumbnailPruneResult> PruneAsync(
         long maxBytes,

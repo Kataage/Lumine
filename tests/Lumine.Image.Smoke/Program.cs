@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Reflection;
+using Lumine.Core;
 using Lumine.Image;
 using NetVips;
 
@@ -814,26 +815,68 @@ try
     {
     }
 
-    var cache = new ThumbnailCache(cacheRoot);
+    var imagePolicy = CoreResourcePolicy.Default;
+    var cache = new ThumbnailCache(
+        cacheRoot,
+        imagePolicy);
+    Require(
+        cache.ConfiguredByteLimit
+            == imagePolicy.ThumbnailCacheByteLimit,
+        "Thumbnail cache did not retain the effective Core disk budget.");
     Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
     Require(
-        NetVips.NetVips.Concurrency == VipsRuntimePolicy.ThumbnailVipsConcurrency,
+        NetVips.NetVips.Concurrency
+            == imagePolicy.VipsConcurrency
+        && NetVips.NetVips.Concurrency
+            == VipsRuntimePolicy.ThumbnailVipsConcurrency,
         "libvips concurrency does not match Image Core resource policy.");
     Require(
-        NetVips.Cache.MaxMem <= VipsRuntimePolicy.ThumbnailTrackedMemoryLimitBytes,
-        "libvips tracked-memory cache exceeds Image Core policy.");
+        NetVips.Cache.MaxMem
+            == checked((ulong)imagePolicy.VipsTrackedMemoryLimitBytes)
+        && NetVips.Cache.MaxMem
+            == VipsRuntimePolicy.ThumbnailTrackedMemoryLimitBytes,
+        "libvips tracked-memory cache does not match Image Core policy.");
+
+    var pipelineOptions =
+        ThumbnailPipelineOptions.FromResourcePolicy(imagePolicy);
     await using var pipeline = new ThumbnailPipeline(
         cache,
-        new ThumbnailPipelineOptions
-        {
-            WorkerCount = 2,
-            QueueCapacity = 8
-        });
+        pipelineOptions);
 
-    Require(pipeline.WorkerCount == 2, "Worker bound was not applied.");
-    Require(pipeline.QueueCapacity == 8, "Queue bound was not applied.");
-    Require(pipeline.MaxForegroundBurst == 8, "Foreground fairness bound was not applied.");
+    Require(
+        pipeline.WorkerCount == imagePolicy.ThumbnailWorkerCount,
+        "Worker bound was not mapped from the Core policy.");
+    Require(
+        pipeline.QueueCapacity == imagePolicy.ThumbnailQueueCapacity,
+        "Queue bound was not mapped from the Core policy.");
+    Require(
+        pipeline.MaxForegroundBurst
+            == imagePolicy.ThumbnailForegroundBurst,
+        "Foreground fairness bound was not mapped from the Core policy.");
+
+    var conflictingVipsPolicy = CoreResourcePolicy.Resolve(
+        new ResourcePolicySettings
+        {
+            VipsTrackedMemoryLimitBytes =
+                imagePolicy.VipsTrackedMemoryLimitBytes
+                + (4L * 1024 * 1024)
+        },
+        processorCount: imagePolicy.ProcessorCount);
+    var conflictingPolicyRejected = false;
+    try
+    {
+        VipsRuntimePolicy.EnsureConfigured(
+            conflictingVipsPolicy);
+    }
+    catch (InvalidOperationException)
+    {
+        conflictingPolicyRejected = true;
+    }
+
+    Require(
+        conflictingPolicyRejected,
+        "Conflicting libvips process-global policy was silently accepted.");
 
     await VerifyExternalHeicRejectedAsync(
         externalHeicPath,

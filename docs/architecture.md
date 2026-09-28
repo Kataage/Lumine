@@ -32,6 +32,8 @@ No thumbnail cache, high-volume viewer, filesystem watcher, USN recovery, v1 mig
 
 ## Resource rules
 
+The effective bounded runtime values are resolved once through `CoreResourcePolicy`; see [resource-policy.md](resource-policy.md). Production App composition must map Image/Viewer options from that policy rather than independently inventing limits.
+
 1. Large library size must not imply large UI-object count.
 2. Originals are not the steady-state source for grid thumbnails.
 3. Memory and GPU caches must be bounded.

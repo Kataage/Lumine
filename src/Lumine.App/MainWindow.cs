@@ -65,6 +65,7 @@ public sealed class MainWindow : Window
     private void OnOpened(object? sender, EventArgs e)
     {
         Program.Diagnostics.MarkWindowReady();
-        _ = Program.Diagnostics.FlushRequestedAsync();
+        _ = Program.Diagnostics.FlushRequestedAsync(
+            Program.ResourcePolicy.ToDiagnosticMetadata());
     }
 }
