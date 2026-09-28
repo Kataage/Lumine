@@ -280,6 +280,40 @@ public sealed class LibraryDatabase
             INSERT INTO asset_search_dirty(asset_id, library_id)
             SELECT id, library_id
             FROM assets;
+            """),
+        new(
+            6,
+            "v1-import-provenance",
+            """
+            CREATE TABLE compatibility_imports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_kind TEXT NOT NULL
+                    CHECK(length(source_kind) BETWEEN 1 AND 64),
+                source_schema_version INTEGER NOT NULL
+                    CHECK(source_schema_version > 0),
+                source_fingerprint_sha256 TEXT NOT NULL
+                    CHECK(length(source_fingerprint_sha256) = 64),
+                source_bytes INTEGER NOT NULL
+                    CHECK(source_bytes >= 0),
+                imported_at_utc_ticks INTEGER NOT NULL,
+                libraries_imported INTEGER NOT NULL
+                    CHECK(libraries_imported >= 0),
+                libraries_matched INTEGER NOT NULL
+                    CHECK(libraries_matched >= 0),
+                assets_imported INTEGER NOT NULL
+                    CHECK(assets_imported >= 0),
+                assets_matched INTEGER NOT NULL
+                    CHECK(assets_matched >= 0),
+                metadata_imported INTEGER NOT NULL
+                    CHECK(metadata_imported >= 0),
+                metadata_conflicts INTEGER NOT NULL
+                    CHECK(metadata_conflicts >= 0),
+                tag_assignments_imported INTEGER NOT NULL
+                    CHECK(tag_assignments_imported >= 0),
+                diagnostic_count INTEGER NOT NULL
+                    CHECK(diagnostic_count >= 0),
+                UNIQUE(source_kind, source_fingerprint_sha256)
+            );
             """)
     ];
 
