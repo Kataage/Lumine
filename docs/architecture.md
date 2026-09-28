@@ -2,7 +2,7 @@
 
 ## Decision
 
-Lumine v2 is a greenfield codebase. The legacy application is not a source dependency and is not incrementally ported into v2. Old branches remain useful as product history, regression evidence, benchmark input and migration reference.
+Lumine v2 is a greenfield codebase. The legacy application is not a source dependency and is not incrementally ported into v2. Old branches remain useful only as product history, regression evidence and benchmark/requirements input. Lumine v2 does not preserve v1 database/schema/user-data compatibility and does not carry a v1 migration requirement.
 
 ## Initial architecture
 
@@ -63,7 +63,7 @@ The greenfield source tree follows one integration line:
 - Pull requests from issue branches target `develop`.
 - `master` contains release-ready code only. Development work does not target `master` directly.
 - Version tags and GitHub Releases are created from `master`.
-- `legacy/develop-v1` preserves the former v1 development line. The historical `v2` branch is retained only as migration history and is not a development base.
+- `legacy/develop-v1` preserves the former v1 development line as history only. The historical `v2` branch is also history only and is not a development or compatibility base.
 
 ## Repository enforcement
 
