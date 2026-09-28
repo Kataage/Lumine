@@ -9,6 +9,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly SemaphoreSlim _queuedItems = new(0);
     private readonly SemaphoreSlim _queueSlots;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly TaskCompletionSource _disposeCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task[] _workers;
     private bool _disposed;
 
@@ -96,49 +98,64 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        List<WorkItem> abandoned;
+        List<WorkItem>? abandoned = null;
+        var ownsShutdown = false;
 
         lock (_queueGate)
         {
-            if (_disposed)
+            if (!_disposed)
             {
-                return;
-            }
+                _disposed = true;
+                ownsShutdown = true;
+                abandoned = new List<WorkItem>(
+                    _foreground.Count + _background.Count);
 
-            _disposed = true;
-            abandoned = new List<WorkItem>(_foreground.Count + _background.Count);
+                while (_foreground.TryDequeue(out var foreground))
+                {
+                    abandoned.Add(foreground);
+                }
 
-            while (_foreground.TryDequeue(out var foreground))
-            {
-                abandoned.Add(foreground);
-            }
-
-            while (_background.TryDequeue(out var background))
-            {
-                abandoned.Add(background);
+                while (_background.TryDequeue(out var background))
+                {
+                    abandoned.Add(background);
+                }
             }
         }
 
-        foreach (var item in abandoned)
+        if (!ownsShutdown)
         {
-            _queueSlots.Release();
-            item.Completion.TrySetCanceled();
+            await _disposeCompletion.Task.ConfigureAwait(false);
+            return;
         }
-
-        _shutdown.Cancel();
 
         try
         {
-            await Task.WhenAll(_workers).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
-        {
-        }
-        finally
-        {
+            _shutdown.Cancel();
+
+            foreach (var item in abandoned!)
+            {
+                _queueSlots.Release();
+                item.Completion.TrySetException(
+                    new ObjectDisposedException(nameof(ThumbnailPipeline)));
+            }
+
+            try
+            {
+                await Task.WhenAll(_workers).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+            {
+            }
+
             _shutdown.Dispose();
             _queuedItems.Dispose();
             _queueSlots.Dispose();
+            _disposeCompletion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            _disposeCompletion.TrySetException(exception);
+            throw;
         }
     }
 
@@ -185,10 +202,15 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
             try
             {
+                using var activeCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(
+                        item.CancellationToken,
+                        _shutdown.Token);
+
                 var result = _generator.GetOrCreate(
                     item.Source,
                     item.Profile,
-                    item.CancellationToken);
+                    activeCancellation.Token);
 
                 item.Completion.TrySetResult(result);
             }
@@ -196,6 +218,12 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 when (item.CancellationToken.IsCancellationRequested)
             {
                 item.Completion.TrySetCanceled(item.CancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (_shutdown.IsCancellationRequested)
+            {
+                item.Completion.TrySetException(
+                    new ObjectDisposedException(nameof(ThumbnailPipeline)));
             }
             catch (Exception exception)
             {
