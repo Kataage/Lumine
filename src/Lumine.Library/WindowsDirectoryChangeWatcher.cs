@@ -25,10 +25,15 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
     private const uint NotifyChangeCreation = 0x00000040;
 
     private readonly string _rootPath;
+    private readonly object _lifecycleGate = new();
     private readonly CancellationTokenSource _shutdown = new();
-    private Task? _watchTask;
     private readonly TaskCompletionSource _ready =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _disposeCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private Task? _watchTask;
+    private bool _startupComplete;
+    private bool _disposed;
 
     public WindowsDirectoryChangeWatcher(string rootPath)
     {
@@ -42,58 +47,104 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(publish);
 
-        if (_watchTask is not null)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_lifecycleGate)
         {
-            throw new InvalidOperationException("Watcher has already been started.");
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_watchTask is not null)
+            {
+                throw new InvalidOperationException(
+                    "Watcher has already been started.");
+            }
+
+            _watchTask = Task.Factory.StartNew(
+                () =>
+                {
+                    try
+                    {
+                        RunLoop(publish, _shutdown.Token);
+                    }
+                    catch (Exception exception)
+                    {
+                        _ready.TrySetException(exception);
+                        throw;
+                    }
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
         }
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            _shutdown.Token);
-
-        _watchTask = Task.Factory.StartNew(
-            () =>
-            {
-                try
-                {
-                    RunLoop(publish, linked.Token);
-                }
-                catch (Exception exception)
-                {
-                    _ready.TrySetException(exception);
-                    throw;
-                }
-                finally
-                {
-                    linked.Dispose();
-                }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+        // The caller token owns startup only. Once readiness is observed,
+        // the returned watcher/session lifetime is owned exclusively by
+        // DisposeAsync rather than by a token the caller may later reuse.
+        using var startupCancellation = cancellationToken.Register(
+            static state =>
+                ((WindowsDirectoryChangeWatcher)state!).CancelStartup(),
+            this);
 
         await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public Task Completion =>
-        _watchTask ?? Task.CompletedTask;
+    public Task Completion
+    {
+        get
+        {
+            lock (_lifecycleGate)
+            {
+                return _watchTask ?? Task.CompletedTask;
+            }
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
-        _shutdown.Cancel();
+        Task? watchTask;
+        var ownsShutdown = false;
 
-        if (_watchTask is not null)
+        lock (_lifecycleGate)
         {
-            try
+            if (!_disposed)
             {
-                await _watchTask.ConfigureAwait(false);
+                _disposed = true;
+                ownsShutdown = true;
             }
-            catch (OperationCanceledException)
-            {
-            }
+
+            watchTask = _watchTask;
         }
 
-        _shutdown.Dispose();
+        if (!ownsShutdown)
+        {
+            await _disposeCompletion.Task.ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            _shutdown.Cancel();
+
+            if (watchTask is not null)
+            {
+                try
+                {
+                    await watchTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            _shutdown.Dispose();
+            _disposeCompletion.TrySetException(exception);
+            throw;
+        }
     }
 
     internal static List<DirectoryChange> ParseBuffer(
@@ -276,6 +327,28 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
         return result;
     }
 
+    private void CancelStartup()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_startupComplete || _disposed)
+            {
+                return;
+            }
+
+            _shutdown.Cancel();
+        }
+    }
+
+    private void MarkStartupReady()
+    {
+        lock (_lifecycleGate)
+        {
+            _startupComplete = true;
+            _ready.TrySetResult();
+        }
+    }
+
     private void RunLoop(
         Action<IReadOnlyList<DirectoryChange>> publish,
         CancellationToken cancellationToken)
@@ -349,8 +422,10 @@ public sealed class WindowsDirectoryChangeWatcher : IAsyncDisposable
                 }
 
                 // StartAsync is not considered ready until the first native
-                // subtree read has actually been armed.
-                _ready.TrySetResult();
+                // subtree read has actually been armed. Publish readiness
+                // under the lifecycle lock so a caller-token cancellation
+                // cannot race across the startup/session ownership boundary.
+                MarkStartupReady();
 
                 int wait;
                 while (true)
