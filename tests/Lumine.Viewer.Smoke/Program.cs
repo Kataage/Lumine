@@ -47,6 +47,8 @@ internal static class Program
                         thumbnailPath);
                     await VerifyDetailSessionShutdownAsync(
                         thumbnailPath);
+                    await VerifyOriginalReleaseFenceBlocksAdmissionAsync(
+                        thumbnailPath);
                     await VerifyDetailSelectionCallerCancellationAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionAsync(thumbnailPath);
                     await VerifyUnknownMetadataPromotionReversalAsync(thumbnailPath);
@@ -1171,6 +1173,71 @@ internal static class Program
             detailSession.Snapshot.State == ViewerDetailLoadState.Empty
             && detailSession.Snapshot.Bitmap is null,
             "Detaching Detail did not release the selected bitmap lifetime.");
+    }
+
+    private static async Task VerifyOriginalReleaseFenceBlocksAdmissionAsync(
+        string previewPath)
+    {
+        var provider = new DelayedDetailProvider(
+            previewPath,
+            TimeSpan.Zero);
+        await using var session = new ViewerDetailSession(
+            new DirectFixtureAssetProvider(2),
+            provider,
+            new ViewerDetailOptions
+            {
+                PreviewDecodedEntryLimit = 2,
+                PreviewDecodedByteLimit = 4L * 1024 * 1024,
+                OriginalDecodedByteLimit = 8L * 1024 * 1024
+            });
+
+        var releaseFence =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseObserved =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        session.SetOriginalReleaseHandler(
+            original =>
+            {
+                releaseObserved.TrySetResult();
+                return original.DisposeAfterAsync(
+                    releaseFence.Task);
+            });
+
+        await session.SelectAsync(0);
+        await session.EnsureOriginalAsync();
+
+        Require(
+            provider.OriginalRequests == 1
+            && session.Snapshot.IsOriginal,
+            "Release-fence test did not establish the first original.");
+
+        await session.SelectAsync(1);
+        await releaseObserved.Task.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        var secondOriginal =
+            session.EnsureOriginalAsync();
+
+        Require(
+            !secondOriginal.IsCompleted,
+            "Second original admission ignored the pending visual release fence.");
+        Require(
+            provider.OriginalRequests == 1,
+            "Second original provider load started before the prior visual release fence completed.");
+
+        releaseFence.TrySetResult();
+
+        await secondOriginal.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        Require(
+            provider.OriginalRequests == 2
+            && session.Snapshot.IsOriginal
+            && session.Snapshot.SelectedIndex == 1,
+            "Second original did not proceed after the visual release fence completed.");
     }
 
     private static async Task VerifyDetailSessionShutdownAsync(

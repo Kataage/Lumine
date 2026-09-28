@@ -70,7 +70,21 @@ Window close is coordinated:
 
 Repeated/concurrent subsystem disposal follows each subsystem's shared-completion contract.
 
-The compositor-safe release of a previous full-resolution original is intentionally tracked separately by #331, now that #309 provides the real visual path on which that contract can be proven.
+## Full-resolution composition release
+
+Displayed full-resolution originals are not disposed merely because a later Dispatcher turn has run.
+
+`DetailViewerControl` owns the visual release boundary:
+
+1. remove the prior bitmap from `Image.Source`
+2. use the actual `Compositor` associated with that Image visual
+3. request a composition batch commit
+4. await `CompositionBatch.Rendered`
+5. dispose the prior platform bitmap on the UI thread
+
+`ViewerDetailSession` keeps the previous disposal task and does not admit another full-resolution original until that release fence completes. Originals that were never published to a visual can still use immediate UI-thread disposal.
+
+This is the #331 contract and is exercised both by deterministic Viewer smoke coverage and by the production App shell across original-bearing selection changes.
 
 ## Acceptance
 

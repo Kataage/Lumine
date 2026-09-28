@@ -208,34 +208,43 @@ public sealed class ViewerOriginalBitmap : IDisposable, IAsyncDisposable
     public ValueTask DisposeAsync() =>
         new(BeginDispose());
 
-    public Task BeginDispose()
+    public Task BeginDispose() =>
+        DisposeAfterAsync(Task.CompletedTask);
+
+    public Task DisposeAfterAsync(Task releaseFence)
     {
+        ArgumentNullException.ThrowIfNull(releaseFence);
+
         var bitmap = Interlocked.Exchange(ref _bitmap, null);
         if (bitmap is null)
         {
             return _disposed.Task;
         }
 
-        // Avalonia composition can retain the previous Image.Source until the
-        // next render commit. Dispose on a later UI turn, and expose completion
-        // so the Detail session can prevent a second giant original from being
-        // admitted while the previous platform bitmap is still resident.
-        Avalonia.Threading.Dispatcher.UIThread.Post(
-            () =>
-            {
-                try
-                {
-                    bitmap.Dispose();
-                    _disposed.TrySetResult();
-                }
-                catch (Exception exception)
-                {
-                    _disposed.TrySetException(exception);
-                }
-            },
-            Avalonia.Threading.DispatcherPriority.Background);
+        _ = DisposeAfterFenceCoreAsync(
+            bitmap,
+            releaseFence);
 
         return _disposed.Task;
+    }
+
+    private async Task DisposeAfterFenceCoreAsync(
+        Avalonia.Media.Imaging.Bitmap bitmap,
+        Task releaseFence)
+    {
+        try
+        {
+            await releaseFence.ConfigureAwait(false);
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                bitmap.Dispose);
+
+            _disposed.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            _disposed.TrySetException(exception);
+        }
     }
 }
 
