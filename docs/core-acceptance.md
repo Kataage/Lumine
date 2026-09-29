@@ -127,13 +127,17 @@ A warm filesystem bootstrap other than `UsnDelta` is reported as a warning rathe
 
 If `Lumine.App.exe` terminates with a non-zero native process exit code, the wrapper writes `<mode>-crash-diagnostics.txt` beside the acceptance outputs. The diagnostic includes the requested app revision, Windows composition mode, GPU/driver information, recent Windows Application Error / WER events for `Lumine.App.exe`, and the Lumine runtime log when available.
 
-For Windows compositor A/B diagnosis, the same NativeAOT build can be run with:
+For Windows compositor / renderer A/B diagnosis, the same NativeAOT build can be run with:
 
 ```powershell
+# Keep GPU rendering but bypass WinUI/DirectComposition.
 powershell.exe -ExecutionPolicy Bypass -File .\Run-RealLibraryAcceptance.ps1 -Exe ".\Lumine.App.exe" -Library "D:\path\to\library" -OutputDirectory ".\acceptance-redirection" -Win32CompositionMode RedirectionSurface
+
+# Keep the default composition order but force software rendering.
+powershell.exe -ExecutionPolicy Bypass -File .\Run-RealLibraryAcceptance.ps1 -Exe ".\Lumine.App.exe" -Library "D:\path\to\library" -OutputDirectory ".\acceptance-software" -Win32RenderingMode Software
 ```
 
-`Default` keeps Avalonia's normal Windows backend order. `RedirectionSurface` is diagnostic only until physical evidence justifies changing the product default.
+`Default` keeps Avalonia's normal Windows backend order. `RedirectionSurface` and `Software` are diagnostic overrides until physical evidence justifies changing a product default.
 
 ## Output
 
