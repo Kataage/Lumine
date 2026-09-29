@@ -252,7 +252,47 @@ function Invoke-CoreAcceptance {
     $processExitCode = Invoke-AcceptanceProcess -Arguments $acceptanceArgs
 
     if ($processExitCode -ne 0) {
-        throw "Lumine.App acceptance process failed in $Mode mode with exit code $processExitCode."
+        $failureDetails = @()
+
+        if (Test-Path -LiteralPath $ResultPath) {
+            try {
+                $failedResult =
+                    Get-Content -LiteralPath $ResultPath -Raw |
+                        ConvertFrom-Json
+
+                $failureType =
+                    Get-MetadataValue -Result $failedResult -Key "acceptance.failure_type"
+                $failureMessage =
+                    Get-MetadataValue -Result $failedResult -Key "acceptance.failure"
+                $shutdownFailure =
+                    Get-MetadataValue -Result $failedResult -Key "shutdown.failure"
+
+                if (-not [string]::IsNullOrWhiteSpace($failureType)) {
+                    $failureDetails += "type=$failureType"
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($failureMessage)) {
+                    $failureDetails += "failure=$failureMessage"
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($shutdownFailure)) {
+                    $failureDetails += "shutdown=$shutdownFailure"
+                }
+            }
+            catch {
+                $failureDetails += "result-json-read-error=$($_.Exception.Message)"
+            }
+        }
+
+        $detailSuffix =
+            if ($failureDetails.Count -gt 0) {
+                " Details: " + ($failureDetails -join " | ")
+            }
+            else {
+                ""
+            }
+
+        throw "Lumine.App acceptance process failed in $Mode mode with exit code $processExitCode.$detailSuffix"
     }
 
     if (-not (Test-Path -LiteralPath $ResultPath)) {
