@@ -5,8 +5,14 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedRevision,
 
-    [ValidateRange(2, 10)]
-    [int]$Repeat = 3
+    [ValidateRange(1, 10)]
+    [int]$Repeat = 3,
+
+    [ValidateSet("Default", "RedirectionSurface")]
+    [string]$Win32CompositionMode = "Default",
+
+    [ValidateSet("Default", "Software")]
+    [string]$Win32RenderingMode = "Default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,8 +86,8 @@ foreach ($iteration in 1..$Repeat) {
     Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
 
     try {
-        Write-Host "=== NativeAOT real-library wrapper iteration $iteration / $Repeat ==="
-        & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+        Write-Host "=== NativeAOT real-library wrapper iteration $iteration / $Repeat (composition=$Win32CompositionMode, rendering=$Win32RenderingMode) ==="
+        & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000 -Win32CompositionMode $Win32CompositionMode -Win32RenderingMode $Win32RenderingMode
     }
     catch {
         foreach ($name in @("cold.json", "warm.json")) {
@@ -90,6 +96,13 @@ foreach ($iteration in 1..$Repeat) {
                 Write-Host "=== wrapper smoke diagnostic: iteration $iteration / $name ==="
                 Get-Content -LiteralPath $path -Raw | Write-Host
             }
+        }
+
+        $crashDiagnostics =
+            Get-ChildItem -LiteralPath $output -Filter "*-crash-diagnostics.txt" -File -ErrorAction SilentlyContinue
+        foreach ($crashDiagnostic in $crashDiagnostics) {
+            Write-Host "=== wrapper smoke native crash diagnostic: iteration $iteration / $($crashDiagnostic.Name) ==="
+            Get-Content -LiteralPath $crashDiagnostic.FullName -Raw | Write-Host
         }
 
         $runtimeLogs =
@@ -127,6 +140,6 @@ foreach ($iteration in 1..$Repeat) {
     $lastSummary = $summary
 }
 
-Write-Host "Real-library acceptance wrapper integration smoke passed $Repeat consecutive iteration(s)."
+Write-Host "Real-library acceptance wrapper integration smoke passed $Repeat consecutive iteration(s) using composition=$Win32CompositionMode, rendering=$Win32RenderingMode."
 Write-Host "Revision: $($lastSummary.appRevision)"
 Write-Host "Assets  : $($lastSummary.assetCount)"

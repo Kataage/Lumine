@@ -53,6 +53,10 @@ internal static class Program
                     .GetResult();
             Host = host;
 
+            host.Log.Write(
+                "render",
+                $"Win32 composition override: {GetWin32CompositionOverrideName()}; rendering override: {GetWin32RenderingOverrideName()}.");
+
             Volatile.Write(
                 ref _windowShutdownDrained,
                 0);
@@ -144,7 +148,75 @@ internal static class Program
             1);
     }
 
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
-            .UsePlatformDetect();
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder =
+            AppBuilder.Configure<App>()
+                .UsePlatformDetect();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return builder;
+        }
+
+        var compositionMode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_COMPOSITION_MODE");
+        var renderingMode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_RENDERING_MODE");
+
+        var options = new Win32PlatformOptions();
+        var overridden = false;
+
+        if (string.Equals(
+                compositionMode,
+                "RedirectionSurface",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            options.CompositionMode =
+            [
+                Win32CompositionMode.RedirectionSurface
+            ];
+            overridden = true;
+        }
+
+        if (string.Equals(
+                renderingMode,
+                "Software",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            options.RenderingMode =
+            [
+                Win32RenderingMode.Software
+            ];
+            overridden = true;
+        }
+
+        return overridden
+            ? builder.With(options)
+            : builder;
+    }
+
+    private static string GetWin32CompositionOverrideName()
+    {
+        var mode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_COMPOSITION_MODE");
+
+        return string.IsNullOrWhiteSpace(mode)
+            ? "Default"
+            : mode;
+    }
+
+    private static string GetWin32RenderingOverrideName()
+    {
+        var mode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_RENDERING_MODE");
+
+        return string.IsNullOrWhiteSpace(mode)
+            ? "Default"
+            : mode;
+    }
 }
