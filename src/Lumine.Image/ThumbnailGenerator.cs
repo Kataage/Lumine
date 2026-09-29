@@ -299,6 +299,7 @@ internal sealed class ThumbnailGenerator
             return result;
         }
         catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
         {
             TryDelete(temporaryPath);
             throw;
