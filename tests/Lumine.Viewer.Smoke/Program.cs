@@ -751,6 +751,36 @@ internal static class Program
             viewer.SelectedAssetIndex == 99_999,
             "Viewer selection did not reach final 100k asset.");
 
+        viewer.ScrollToAsset(99_999);
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+
+            if (viewer.FirstVisibleAssetIndex is { } firstVisible
+                && viewer.LastVisibleAssetIndex is { } lastVisible
+                && firstVisible <= 99_999
+                && lastVisible >= 99_999
+                && viewer.IsAssetReady(99_999))
+            {
+                break;
+            }
+
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.FirstVisibleAssetIndex is { } finalFirst
+            && viewer.LastVisibleAssetIndex is { } finalLast
+            && finalFirst <= 99_999
+            && finalLast >= 99_999
+            && viewer.IsAssetReady(99_999),
+            "ScrollIntoView did not make the final asset visible and ready.");
+
+        Require(
+            99_999 - viewer.FirstVisibleAssetIndex!.Value
+                > (long)viewer.Columns * 3,
+            "Final-asset smoke no longer exercises a viewport where the target is more than three rows after the first visible asset.");
+
         var columnsBeforeDpi = viewer.Columns;
         var selectedBeforeDpi = viewer.SelectedAssetIndex;
         window.SetRenderScaling(2.0);
