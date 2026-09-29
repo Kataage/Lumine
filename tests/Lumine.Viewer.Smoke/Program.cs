@@ -806,6 +806,15 @@ internal static class Program
             "Restoring DPI scaling changed DIP-based Viewer column count.");
 
         window.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        await viewer.DrainBitmapReleasesAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Require(
+            viewer.Diagnostics.AttachedTiles == 0
+            && viewer.Diagnostics.ReadyTiles == 0,
+            "Viewer close did not detach all thumbnail tiles before visual-release drain completed.");
     }
 
     private static async Task VerifyDetailViewerAsync(string previewPath)
