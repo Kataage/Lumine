@@ -475,6 +475,8 @@ internal sealed class RealLibraryAcceptanceSession
             grid.Diagnostics;
         var image =
             runtime.ThumbnailPipelineDiagnostics;
+        var maintenance =
+            runtime.ThumbnailCacheMaintenanceDiagnostics;
         var sync =
             runtime.SyncSession.Diagnostics;
         var cacheAfter =
@@ -482,6 +484,7 @@ internal sealed class RealLibraryAcceptanceSession
 
         WriteViewerMetadata(viewer);
         WriteImageMetadata(image);
+        WriteMaintenanceMetadata(maintenance);
         WriteSyncMetadata(sync);
         WriteCacheMetadata(
             "thumbnail.cache_after",
@@ -822,6 +825,49 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["thumbnail.metadata_bytes_hashed"] =
             diagnostics.MetadataBytesHashed.ToString(
                 CultureInfo.InvariantCulture);
+    }
+
+    private void WriteMaintenanceMetadata(
+        ThumbnailCacheMaintenanceDiagnosticsSnapshot diagnostics)
+    {
+        _metadata["thumbnail.maintenance_runs_scheduled"] =
+            diagnostics.RunsScheduled.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_runs_started"] =
+            diagnostics.RunsStarted.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_runs_completed"] =
+            diagnostics.RunsCompleted.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_runs_cancelled"] =
+            diagnostics.RunsCancelled.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_runs_failed"] =
+            diagnostics.RunsFailed.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_foreground_preemptions"] =
+            diagnostics.ForegroundPreemptions.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_files_deleted"] =
+            diagnostics.FilesDeleted.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_bytes_deleted"] =
+            diagnostics.BytesDeleted.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_interrupted_writes_deleted"] =
+            diagnostics.InterruptedWritesDeleted.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.maintenance_last_bytes_after"] =
+            diagnostics.LastBytesAfter.ToString(
+                CultureInfo.InvariantCulture);
+
+        if (!string.IsNullOrWhiteSpace(
+                diagnostics.LastError))
+        {
+            _metadata["thumbnail.maintenance_last_error"] =
+                NormalizeMetadataValue(
+                    diagnostics.LastError);
+        }
     }
 
     private void WriteSyncMetadata(
