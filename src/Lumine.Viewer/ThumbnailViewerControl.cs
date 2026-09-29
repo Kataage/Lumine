@@ -87,6 +87,20 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    public bool IsAssetReady(long index)
+    {
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            return false;
+        }
+
+        return this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .Any(tile =>
+                tile.Index == index
+                && tile.IsReady);
+    }
+
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
@@ -485,6 +499,10 @@ public sealed class ThumbnailViewerControl : UserControl
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
         }
+
+        public long Index => _index;
+
+        public bool IsReady => _isReady;
 
         public bool IsSelected { get; private set; }
 
