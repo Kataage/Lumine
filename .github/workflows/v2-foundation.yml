@@ -270,9 +270,12 @@ jobs:
       - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
         shell: powershell
         run: |
-          $root = Join-Path $env:RUNNER_TEMP "Lumine 受入 wrapper"
-          $app = Join-Path $root "アプリ build"
-          $library = Join-Path $root "画像 library"
+          $jpAcceptance = ([string][char]0x53D7) + ([string][char]0x5165)
+          $jpApp = ([string][char]0x30A2) + ([string][char]0x30D7) + ([string][char]0x30EA)
+          $jpImages = ([string][char]0x753B) + ([string][char]0x50CF)
+          $root = Join-Path $env:RUNNER_TEMP ("Lumine " + $jpAcceptance + " wrapper")
+          $app = Join-Path $root ($jpApp + " build")
+          $library = Join-Path $root ($jpImages + " library")
           $output = Join-Path $root "acceptance result"
 
           Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
