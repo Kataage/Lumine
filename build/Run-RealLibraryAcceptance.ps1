@@ -41,6 +41,16 @@ $summaryPath = Join-Path $outputRoot "summary.json"
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
+foreach ($staleOutput in @(
+    $coldResultPath,
+    $warmResultPath,
+    $summaryPath
+)) {
+    if (Test-Path -LiteralPath $staleOutput) {
+        Remove-Item -LiteralPath $staleOutput -Force
+    }
+}
+
 if (Test-Path -LiteralPath $dataRoot) {
     Remove-Item -LiteralPath $dataRoot -Recurse -Force
 }
@@ -249,6 +259,10 @@ function Invoke-CoreAcceptance {
         "--idle-seconds=$IdleSeconds"
     )
 
+    if (Test-Path -LiteralPath $ResultPath) {
+        Remove-Item -LiteralPath $ResultPath -Force
+    }
+
     $processExitCode = Invoke-AcceptanceProcess -Arguments $acceptanceArgs
 
     if ($processExitCode -ne 0) {
@@ -309,7 +323,17 @@ function Invoke-CoreAcceptance {
         throw "Clean $Mode acceptance left a non-empty SQLite WAL."
     }
 
-    return (Get-Content -LiteralPath $ResultPath -Raw | ConvertFrom-Json)
+    $result =
+        Get-Content -LiteralPath $ResultPath -Raw |
+            ConvertFrom-Json
+
+    $reportedMode =
+        Get-MetadataValue -Result $result -Key "acceptance.mode"
+    if ($reportedMode -ne $Mode) {
+        throw "Acceptance result mode mismatch: expected '$Mode', got '$reportedMode'."
+    }
+
+    return $result
 }
 
 try {
