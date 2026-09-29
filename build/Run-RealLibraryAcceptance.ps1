@@ -52,7 +52,12 @@ foreach ($staleOutput in @(
 }
 
 if (Test-Path -LiteralPath $dataRoot) {
-    Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    }
+    catch {
+        throw "Unable to reset acceptance data root '$dataRoot'. Close any running Lumine.App process that may still own instance.lock, then retry. $($_.Exception.Message)"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
