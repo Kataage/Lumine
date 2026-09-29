@@ -72,7 +72,13 @@ Defaults:
 - idle observation: 10 seconds per run
 - fast-scroll gate: 1,500 ms, matching the existing Viewer acceptance gate
 
-The wrapper deletes only its isolated acceptance data root before the cold run. It does not delete or modify image files in the supplied representative library.
+The wrapper deletes its isolated acceptance data root and any prior `cold.json`, `warm.json`, and `summary.json` before the cold run. It does not delete or modify image files in the supplied representative library.
+
+The representative library must remain stable for the full cold+warm sequence. Cold and warm asset counts are required to match.
+
+The acceptance data/results directory must not overlap the representative source library. The wrapper rejects overlapping paths before creating or deleting any output.
+
+Before launch, the wrapper resolves the exact build revision from `revision.txt` next to `Lumine.App.exe` (or from an explicit `-Revision`). Unknown or malformed revisions are rejected.
 
 It then launches:
 
@@ -82,7 +88,11 @@ It then launches:
 After each process exits, the wrapper requires:
 
 - acceptance process exit code 0
-- raw JSON present
+- raw JSON present and reporting the requested cold/warm mode
+- raw schema version = 1
+- raw build revision exactly matches the packaged/explicit revision
+- hardware ID matches the wrapper invocation
+- process and OS architecture are X64
 - `runtime.unclean` absent
 - SQLite WAL absent or empty
 - post-shutdown thumbnail cache bytes <= the configured disk budget
@@ -91,6 +101,9 @@ After each process exits, the wrapper requires:
 Across the results it requires:
 
 - automated result = pass
+- cold and warm refer to the same representative-library path
+- cold and warm asset counts are identical
+- cold persistent thumbnail cache started empty
 - representative asset count >= configured minimum
 - visible tile failures = 0
 - thumbnail failures = 0
@@ -115,6 +128,9 @@ The output directory contains:
 
 - automated decision
 - hardware ID
+- exact app Git revision
+- explicit acceptance criteria used for the run
+- SHA-256 of the exact `cold.json` and `warm.json` summarized
 - hashed representative-library path instead of the raw private path
 - asset count
 - cold/warm max fast-scroll latency
