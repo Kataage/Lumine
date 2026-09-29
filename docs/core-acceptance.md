@@ -76,6 +76,8 @@ The wrapper deletes its isolated acceptance data root and any prior `cold.json`,
 
 The representative library must remain stable for the full cold+warm sequence. Cold and warm asset counts are required to match.
 
+The acceptance data/results directory must not overlap the representative source library. The wrapper rejects overlapping paths before creating or deleting any output.
+
 Before launch, the wrapper resolves the exact build revision from `revision.txt` next to `Lumine.App.exe` (or from an explicit `-Revision`). Unknown or malformed revisions are rejected.
 
 It then launches:
