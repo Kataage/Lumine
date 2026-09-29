@@ -203,6 +203,14 @@ internal sealed class ThumbnailCacheMaintenance
                     .ConfigureAwait(false);
 
             cancellation.Token.ThrowIfCancellationRequested();
+
+            if (result.BytesAfter
+                > _cache.ConfiguredByteLimit)
+            {
+                throw new InvalidOperationException(
+                    $"Background thumbnail cache maintenance could not converge to its configured disk budget: {result.BytesAfter:N0} > {_cache.ConfiguredByteLimit:N0} bytes.");
+            }
+
             RecordCompleted(result);
 
             lock (_gate)
