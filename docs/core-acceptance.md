@@ -60,16 +60,10 @@ Use the wrapper so cold and warm runs share the same v2 database and persistent 
 
 ```powershell
 # PowerShell 7
-pwsh -File .\build\Run-RealLibraryAcceptance.ps1 \
-  -Exe ".\artifacts\native-aot\Lumine.App.exe" \
-  -Library "D:\path\to\representative-library" \
-  -OutputDirectory "D:\Lumine-acceptance"
+pwsh -File .\build\Run-RealLibraryAcceptance.ps1 -Exe ".\artifacts\native-aot\Lumine.App.exe" -Library "D:\path\to\representative-library" -OutputDirectory "D:\Lumine-acceptance"
 
-# Windows PowerShell 5.1 is also supported
-powershell.exe -ExecutionPolicy Bypass -File .\build\Run-RealLibraryAcceptance.ps1 \
-  -Exe ".\artifacts\native-aot\Lumine.App.exe" \
-  -Library "D:\path\to\representative-library" \
-  -OutputDirectory "D:\Lumine-acceptance"
+# Windows PowerShell 5.1
+powershell.exe -ExecutionPolicy Bypass -File .\build\Run-RealLibraryAcceptance.ps1 -Exe ".\artifacts\native-aot\Lumine.App.exe" -Library "D:\path\to\representative-library" -OutputDirectory "D:\Lumine-acceptance"
 ```
 Defaults:
 
