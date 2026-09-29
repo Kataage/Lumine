@@ -275,7 +275,7 @@ jobs:
 
       - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
         shell: powershell
-        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA
+        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 3
 
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
