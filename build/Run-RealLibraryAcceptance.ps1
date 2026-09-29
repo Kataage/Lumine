@@ -418,9 +418,24 @@ try {
             throw "$mode acceptance indexed only $assetCount assets."
         }
 
+        $requestFailures = [int64](Get-MetadataValue -Result $result -Key "viewer.thumbnail_requests_failed")
+        if ($requestFailures -ne 0) {
+            throw "$mode acceptance recorded $requestFailures Viewer thumbnail request failures."
+        }
+
         $tileFailures = [int64](Get-MetadataValue -Result $result -Key "viewer.tile_load_failures")
         if ($tileFailures -ne 0) {
             throw "$mode acceptance recorded $tileFailures visible tile failures."
+        }
+
+        $inFlightRequests = [int64](Get-MetadataValue -Result $result -Key "viewer.in_flight_thumbnail_requests")
+        if ($inFlightRequests -ne 0) {
+            throw "$mode acceptance did not quiesce Viewer thumbnail requests: $inFlightRequests still in flight."
+        }
+
+        $activeBitmapDecodes = [int64](Get-MetadataValue -Result $result -Key "viewer.active_bitmap_decodes")
+        if ($activeBitmapDecodes -ne 0) {
+            throw "$mode acceptance did not quiesce bitmap decoding: $activeBitmapDecodes decode(s) still active."
         }
 
         $thumbnailFailures = [int64](Get-MetadataValue -Result $result -Key "thumbnail.failed")
@@ -433,9 +448,29 @@ try {
             throw "$mode acceptance left $interruptedWrites interrupted thumbnail writes."
         }
 
+        $maintenanceFailures = [int64](Get-MetadataValue -Result $result -Key "thumbnail.maintenance_runs_failed")
+        if ($maintenanceFailures -ne 0) {
+            throw "$mode acceptance recorded $maintenanceFailures thumbnail cache maintenance failure(s)."
+        }
+
         $reconcileFailures = [int64](Get-MetadataValue -Result $result -Key "filesystem.reconcile_failures")
         if ($reconcileFailures -ne 0) {
             throw "$mode acceptance recorded $reconcileFailures filesystem reconcile failures."
+        }
+
+        $filesystemQueueDepth = [int64](Get-MetadataValue -Result $result -Key "filesystem.queue_depth")
+        if ($filesystemQueueDepth -ne 0) {
+            throw "$mode acceptance left filesystem queue depth at $filesystemQueueDepth after idle settle."
+        }
+
+        $filesystemEventsObserved = [int64](Get-MetadataValue -Result $result -Key "filesystem.events_observed")
+        if ($filesystemEventsObserved -ne 0) {
+            throw "$mode representative library changed during acceptance: $filesystemEventsObserved filesystem event(s) were observed."
+        }
+
+        $runtimeReconciliations = [int64](Get-MetadataValue -Result $result -Key "filesystem.reconciliations")
+        if ($runtimeReconciliations -ne 0) {
+            throw "$mode acceptance performed $runtimeReconciliations runtime filesystem reconciliation(s) during a stable representative-library run."
         }
 
         $cacheBytes = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.bytes")
@@ -514,6 +549,15 @@ try {
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_configured_bytes")
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = (Get-MetadataValue -Result $cold -Key "filesystem.bootstrap_mode")
+            quiescentHealth = [ordered]@{
+                viewerThumbnailRequestFailures = [int64](Get-MetadataValue -Result $cold -Key "viewer.thumbnail_requests_failed")
+                viewerInFlightThumbnailRequests = [int64](Get-MetadataValue -Result $cold -Key "viewer.in_flight_thumbnail_requests")
+                viewerActiveBitmapDecodes = [int64](Get-MetadataValue -Result $cold -Key "viewer.active_bitmap_decodes")
+                thumbnailMaintenanceFailures = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.maintenance_runs_failed")
+                filesystemEventsObserved = [int64](Get-MetadataValue -Result $cold -Key "filesystem.events_observed")
+                filesystemReconciliations = [int64](Get-MetadataValue -Result $cold -Key "filesystem.reconciliations")
+                filesystemQueueDepth = [int64](Get-MetadataValue -Result $cold -Key "filesystem.queue_depth")
+            }
         }
         warm = [ordered]@{
             maxFastScrollMs = [Math]::Round($warmMaxScroll, 3)
@@ -525,6 +569,15 @@ try {
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_configured_bytes")
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = $warmBootstrap
+            quiescentHealth = [ordered]@{
+                viewerThumbnailRequestFailures = [int64](Get-MetadataValue -Result $warm -Key "viewer.thumbnail_requests_failed")
+                viewerInFlightThumbnailRequests = [int64](Get-MetadataValue -Result $warm -Key "viewer.in_flight_thumbnail_requests")
+                viewerActiveBitmapDecodes = [int64](Get-MetadataValue -Result $warm -Key "viewer.active_bitmap_decodes")
+                thumbnailMaintenanceFailures = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.maintenance_runs_failed")
+                filesystemEventsObserved = [int64](Get-MetadataValue -Result $warm -Key "filesystem.events_observed")
+                filesystemReconciliations = [int64](Get-MetadataValue -Result $warm -Key "filesystem.reconciliations")
+                filesystemQueueDepth = [int64](Get-MetadataValue -Result $warm -Key "filesystem.queue_depth")
+            }
         }
         measuredBottlenecks = [ordered]@{
             cold = @(Get-Bottlenecks -Result $cold)
