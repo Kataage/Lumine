@@ -23,7 +23,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-if (-not $IsWindows) {
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw "Real-library Core acceptance requires Windows."
 }
 
