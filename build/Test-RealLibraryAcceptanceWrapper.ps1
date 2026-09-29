@@ -37,7 +37,7 @@ Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $app, $library, $output | Out-Null
 Copy-Item -Path (Join-Path $nativeAotRoot "*") -Destination $app -Recurse -Force
 
-$png = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+$png = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAU0lEQVR4nO3PQQ3AIADAQEAJ0pCKtIngcVnSU9DOfe74s6UDXjWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaB9KRwBoCNJGWoAAAAASUVORK5CYII=")
 foreach ($index in 0..127) {
     [IO.File]::WriteAllBytes((Join-Path $library ("fixture-{0:D4}.png" -f $index)), $png)
 }
@@ -69,7 +69,20 @@ Set-Content -LiteralPath (Join-Path $output "cold.json") -Value '{"stale":true}'
 Set-Content -LiteralPath (Join-Path $output "warm.json") -Value '{"stale":true}' -Encoding ascii
 Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
 
-& $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+try {
+    & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+}
+catch {
+    foreach ($name in @("cold.json", "warm.json")) {
+        $path = Join-Path $output $name
+        if (Test-Path -LiteralPath $path) {
+            Write-Host "=== wrapper smoke diagnostic: $name ==="
+            Get-Content -LiteralPath $path -Raw | Write-Host
+        }
+    }
+
+    throw
+}
 
 $summary = Get-Content -LiteralPath (Join-Path $output "summary.json") -Raw | ConvertFrom-Json
 
