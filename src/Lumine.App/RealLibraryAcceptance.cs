@@ -528,10 +528,52 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Persistent thumbnail cache exceeds its configured disk budget: {cacheAfter.TotalBytes:N0} > {runtime.ThumbnailCache.ConfiguredByteLimit:N0} bytes.");
         }
 
+        if (viewer.ThumbnailRequestsFailed != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer reported {viewer.ThumbnailRequestsFailed} thumbnail request failure(s).");
+        }
+
         if (viewer.TileLoadFailures != 0)
         {
             throw new InvalidOperationException(
                 $"Viewer reported {viewer.TileLoadFailures} visible tile load failures: {viewer.LastTileLoadError}");
+        }
+
+        if (viewer.InFlightThumbnailRequests != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer still had {viewer.InFlightThumbnailRequests} in-flight thumbnail request(s) after idle settle.");
+        }
+
+        if (viewer.ActiveBitmapDecodes != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer still had {viewer.ActiveBitmapDecodes} active bitmap decode(s) after idle settle.");
+        }
+
+        if (maintenance.RunsFailed != 0)
+        {
+            throw new InvalidOperationException(
+                $"Thumbnail cache maintenance reported {maintenance.RunsFailed} failure(s): {maintenance.LastError}");
+        }
+
+        if (sync.QueueDepth != 0)
+        {
+            throw new InvalidOperationException(
+                $"Filesystem synchronization queue did not settle: depth={sync.QueueDepth}.");
+        }
+
+        if (sync.EventsObserved != 0)
+        {
+            throw new InvalidOperationException(
+                $"Representative library changed during acceptance: observed {sync.EventsObserved} filesystem event(s). Re-run while the source library is stable.");
+        }
+
+        if (sync.Reconciliations != 0)
+        {
+            throw new InvalidOperationException(
+                $"Filesystem synchronization performed {sync.Reconciliations} runtime reconciliation(s) during the stable representative-library run.");
         }
 
         if (viewer.DecodedBitmapEntries
@@ -798,6 +840,12 @@ internal sealed class RealLibraryAcceptanceSession
                 CultureInfo.InvariantCulture);
         _metadata["viewer.thumbnail_requests_failed"] =
             diagnostics.ThumbnailRequestsFailed.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.in_flight_thumbnail_requests"] =
+            diagnostics.InFlightThumbnailRequests.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.active_bitmap_decodes"] =
+            diagnostics.ActiveBitmapDecodes.ToString(
                 CultureInfo.InvariantCulture);
         _metadata["viewer.tile_load_failures"] =
             diagnostics.TileLoadFailures.ToString(
