@@ -74,6 +74,10 @@ internal static class Program
                     BuildAvaloniaApp()
                         .StartWithClassicDesktopLifetime(args);
 
+                host.Log.Write(
+                    "shutdown",
+                    "Avalonia desktop lifetime returned to managed Program.Main.");
+
                 if (desktopExitCode != 0)
                 {
                     Environment.ExitCode =
@@ -90,6 +94,9 @@ internal static class Program
                 host.CompleteCleanShutdownAsync()
                     .GetAwaiter()
                     .GetResult();
+                host.Log.Write(
+                    "shutdown",
+                    "Clean shutdown commit completed.");
             }
             else
             {
@@ -111,13 +118,22 @@ internal static class Program
 
             if (host is not null)
             {
+                host.Log.Write(
+                    "shutdown",
+                    "Disposing AppHost.");
                 host.DisposeAsync()
                     .AsTask()
                     .GetAwaiter()
                     .GetResult();
+                host.Log.Write(
+                    "shutdown",
+                    "AppHost disposed.");
             }
 
             LibraryDatabase.ClearPools();
+            host?.Log.Write(
+                "shutdown",
+                "Managed Program.Main teardown completed after database pool clear.");
         }
     }
 
