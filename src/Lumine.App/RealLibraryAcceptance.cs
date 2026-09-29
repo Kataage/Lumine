@@ -552,10 +552,22 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Viewer still had {viewer.ActiveBitmapDecodes} active bitmap decode(s) after the idle-settle window.");
         }
 
+        if (image.Failed != 0)
+        {
+            throw new InvalidOperationException(
+                $"Thumbnail generation recorded {image.Failed} failure(s) during acceptance.");
+        }
+
         if (maintenance.RunsFailed != 0)
         {
             throw new InvalidOperationException(
                 $"Thumbnail cache maintenance recorded {maintenance.RunsFailed} failure(s): {maintenance.LastError}");
+        }
+
+        if (sync.ReconcileFailures != 0)
+        {
+            throw new InvalidOperationException(
+                $"Filesystem synchronization recorded {sync.ReconcileFailures} reconciliation failure(s).");
         }
 
         if (sync.QueueDepth != 0)
