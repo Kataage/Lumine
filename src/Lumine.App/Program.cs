@@ -11,6 +11,8 @@ internal static class Program
 
     internal static AppHost? Host { get; private set; }
 
+    internal static RealLibraryAcceptanceSession? Acceptance { get; private set; }
+
     internal static CoreResourcePolicy ResourcePolicy =>
         Host?.ResourcePolicy
         ?? CoreResourcePolicy.Default;
@@ -25,10 +27,25 @@ internal static class Program
 
         try
         {
+            var productSmokeRequested =
+                ProductRuntimeSmoke.IsRequested(args);
+            var acceptance =
+                RealLibraryAcceptanceSession.TryCreate(args);
+
+            if (productSmokeRequested
+                && acceptance is not null)
+            {
+                throw new ArgumentException(
+                    "Product smoke and real-library acceptance modes are mutually exclusive.");
+            }
+
+            Acceptance = acceptance;
+
             var dataPaths =
-                ProductRuntimeSmoke.IsRequested(args)
+                productSmokeRequested
                     ? ProductRuntimeSmoke.ResolveDataPaths(args)
-                    : AppDataPaths.ResolveDefault();
+                    : acceptance?.DataPaths
+                      ?? AppDataPaths.ResolveDefault();
 
             host =
                 AppHost.StartAsync(dataPaths)
@@ -42,7 +59,7 @@ internal static class Program
 
             var cleanShutdown = false;
 
-            if (ProductRuntimeSmoke.IsRequested(args))
+            if (productSmokeRequested)
             {
                 ProductRuntimeSmoke.RunAsync(
                         args,
@@ -53,8 +70,15 @@ internal static class Program
             }
             else
             {
-                BuildAvaloniaApp()
-                    .StartWithClassicDesktopLifetime(args);
+                var desktopExitCode =
+                    BuildAvaloniaApp()
+                        .StartWithClassicDesktopLifetime(args);
+
+                if (desktopExitCode != 0)
+                {
+                    Environment.ExitCode =
+                        desktopExitCode;
+                }
 
                 cleanShutdown =
                     Volatile.Read(
@@ -82,6 +106,7 @@ internal static class Program
         }
         finally
         {
+            Acceptance = null;
             Host = null;
 
             if (host is not null)

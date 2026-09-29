@@ -468,6 +468,7 @@ public sealed class MainWindow : Window
         EventArgs e)
     {
         Program.Diagnostics.MarkWindowReady();
+        Program.Acceptance?.MarkWindowReady();
         _diagnosticFlushOperation =
             Program.Diagnostics.FlushRequestedAsync(
                 _resourcePolicy.ToDiagnosticMetadata());

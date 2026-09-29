@@ -82,6 +82,21 @@ jobs:
         shell: pwsh
         run: ./build/Verify-Architecture.ps1
 
+      - name: Validate real-library acceptance wrapper syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
       - name: Build release
         run: dotnet build Lumine.sln -c Release --no-restore
 
@@ -227,6 +242,16 @@ jobs:
               throw "Clean product smoke left a non-empty SQLite WAL after launch $launch."
             }
           }
+
+      - name: Upload NativeAOT Core acceptance build
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-core-acceptance-win-x64-${{ github.run_id }}
+          path: |
+            artifacts/native-aot/**
+            build/Run-RealLibraryAcceptance.ps1
+            docs/core-acceptance.md
+          if-no-files-found: error
 
       - name: Publish NativeAOT Image runtime smoke
         run: dotnet publish tests/Lumine.Image.NativeAot.Smoke/Lumine.Image.NativeAot.Smoke.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot-image-smoke
