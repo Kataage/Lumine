@@ -67,6 +67,10 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
     internal ThumbnailDiagnosticsSnapshot ThumbnailPipelineDiagnostics =>
         _thumbnailPipeline.Diagnostics;
 
+    internal ThumbnailCacheMaintenanceDiagnosticsSnapshot
+        ThumbnailCacheMaintenanceDiagnostics =>
+        _thumbnailPipeline.MaintenanceDiagnostics;
+
     public ViewerSession ViewerSession { get; }
 
     public ViewerDetailSession DetailSession { get; }
