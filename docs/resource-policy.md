@@ -34,9 +34,22 @@ The production App must resolve its policy before creating the first `ThumbnailC
 
 ## Persistent cache budget
 
-`ThumbnailCache.ConfiguredByteLimit` carries the effective disk budget and `PruneToConfiguredLimitAsync` applies it during explicit/background maintenance.
+`ThumbnailCache.ConfiguredByteLimit` carries the effective disk budget and `PruneToConfiguredLimitAsync` applies it during owned maintenance.
 
 Cache construction does **not** recursively scan or prune the cache. This preserves the warm-start rule that startup must not perform an unconditional full cache walk.
+
+`ThumbnailPipeline` owns the production maintenance lifecycle:
+
+- the first Viewer request makes one maintenance pass eligible, but only after the request path becomes quiet;
+- newly generated thumbnails mark maintenance pending again;
+- maintenance runs only while the thumbnail queue/workers are idle;
+- any new thumbnail request cancels an active/pending maintenance pass before entering cache generation/read work;
+- foreground cancellations are recorded separately so field diagnostics can prove that Viewer work preempted maintenance;
+- maintenance is event-driven, not a periodic idle full-cache scan;
+- pipeline shutdown first stops background maintenance and workers, then performs stale temporary-write recovery and one final prune to `ConfiguredByteLimit`;
+- clean shutdown fails rather than silently claiming success if the persistent cache cannot converge to the configured bound.
+
+This gives the disk budget real production ownership without putting a recursive cache walk on the warm-start critical path.
 
 ## Option mapping
 
@@ -54,3 +67,5 @@ Tests may still construct smaller explicit option values for deterministic fixtu
 `CoreResourcePolicy.ToDiagnosticMetadata()` exposes the effective values without introducing a Core -> Diagnostics dependency. The App includes this metadata in the existing app-session diagnostic JSON.
 
 This makes the actual worker/memory/cache/libvips budgets visible in field reports and real-library acceptance results.
+
+Runtime diagnostics also expose thumbnail-cache maintenance runs, cancellations, foreground preemptions, deleted files/bytes, and the last maintenance error. #295 raw acceptance output carries the same maintenance evidence alongside measured cache bytes and the configured disk limit.
