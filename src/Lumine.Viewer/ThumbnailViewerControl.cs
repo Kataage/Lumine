@@ -4,6 +4,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -13,6 +14,11 @@ public sealed class ThumbnailViewerControl : UserControl
 {
     private readonly ViewerSession _session;
     private readonly ListBox _rows;
+    private readonly object _bitmapReleaseGate = new();
+    private readonly HashSet<Task> _pendingBitmapReleases = [];
+    private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
+    private Exception? _bitmapReleaseFailure;
+    private Compositor? _compositor;
     private int _columns = 1;
     private long _selectedIndex = -1;
 
@@ -32,6 +38,7 @@ public sealed class ThumbnailViewerControl : UserControl
         Content = _rows;
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
+        AttachedToVisualTree += OnAttachedToVisualTree;
 
         RebuildRows();
     }
@@ -148,6 +155,124 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         _rows.ScrollIntoView(checked((int)(index / _columns)));
+    }
+
+    public async Task DrainBitmapReleasesAsync()
+    {
+        while (true)
+        {
+            Task[] pending;
+
+            lock (_bitmapReleaseGate)
+            {
+                if (_bitmapReleaseFailure is not null)
+                {
+                    throw new InvalidOperationException(
+                        "A thumbnail composition release failed.",
+                        _bitmapReleaseFailure);
+                }
+
+                if (_pendingBitmapReleases.Count == 0)
+                {
+                    return;
+                }
+
+                pending = [.. _pendingBitmapReleases];
+            }
+
+            await Task.WhenAll(pending).ConfigureAwait(false);
+        }
+    }
+
+    private void OnAttachedToVisualTree(
+        object? sender,
+        VisualTreeAttachmentEventArgs e)
+    {
+        _compositor =
+            ElementComposition.GetElementVisual(this)?.Compositor
+            ?? _compositor;
+    }
+
+    private void ReleaseBitmapLeaseAfterComposition(
+        DecodedBitmapLease lease)
+    {
+        var compositor = _compositor;
+        if (compositor is null)
+        {
+            lease.Dispose();
+            return;
+        }
+
+        Task release;
+        try
+        {
+            var batch =
+                compositor.RequestCompositionBatchCommitAsync();
+            release =
+                DisposeBitmapLeaseAfterAsync(
+                    lease,
+                    batch.Rendered);
+        }
+        catch (Exception exception)
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+                _unfencedBitmapLeases.Add(lease);
+            }
+
+            return;
+        }
+
+        lock (_bitmapReleaseGate)
+        {
+            _pendingBitmapReleases.Add(release);
+        }
+
+        _ = ObserveBitmapReleaseAsync(release);
+    }
+
+    private async Task ObserveBitmapReleaseAsync(Task release)
+    {
+        try
+        {
+            await release.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+            }
+        }
+        finally
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _pendingBitmapReleases.Remove(release);
+            }
+        }
+    }
+
+    private async Task DisposeBitmapLeaseAfterAsync(
+        DecodedBitmapLease lease,
+        Task compositionRendered)
+    {
+        try
+        {
+            await compositionRendered.ConfigureAwait(false);
+            lease.Dispose();
+        }
+        catch (Exception exception)
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+                _unfencedBitmapLeases.Add(lease);
+            }
+
+            throw;
+        }
     }
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
@@ -557,9 +682,21 @@ public sealed class ThumbnailViewerControl : UserControl
                 _session.NotifyTileNotReady();
             }
 
-            _image.Source = null;
-            _bitmapLease?.Dispose();
-            _bitmapLease = null;
+            ReplaceBitmapLease(null);
+        }
+
+        private void ReplaceBitmapLease(
+            DecodedBitmapLease? next)
+        {
+            var previous = _bitmapLease;
+            _bitmapLease = next;
+            _image.Source = next?.Bitmap;
+
+            if (previous is not null)
+            {
+                _owner.ReleaseBitmapLeaseAfterComposition(
+                    previous);
+            }
         }
 
         private async Task LoadAsync(CancellationToken cancellationToken)
@@ -583,10 +720,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    _bitmapLease?.Dispose();
-                    _bitmapLease = lease;
+                    var next = lease;
                     lease = null;
-                    _image.Source = _bitmapLease.Bitmap;
+                    ReplaceBitmapLease(next);
                     _label.Text = asset.DisplayName;
 
                     if (!_isReady)

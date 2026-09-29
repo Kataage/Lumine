@@ -844,7 +844,7 @@ try
 
             window.Close();
             Dispatcher.UIThread.RunJobs();
-            shell.Detach();
+            await shell.DetachAsync();
 
             await shellRuntime.DisposeAsync();
             Dispatcher.UIThread.RunJobs();

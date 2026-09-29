@@ -653,7 +653,8 @@ public sealed class MainWindow : Window
         if (shell is not null)
         {
             _viewerHost.Content = null;
-            shell.Detach();
+            await shell.DetachAsync()
+                .ConfigureAwait(true);
         }
 
         if (runtime is not null)
