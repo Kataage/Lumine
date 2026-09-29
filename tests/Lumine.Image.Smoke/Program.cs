@@ -935,6 +935,9 @@ try
                  (Id: 101L, Path: externalHeifPath, Label: ".heif")
              })
     {
+        var failuresBefore =
+            pipeline.Diagnostics.Failed;
+
         try
         {
             _ = await pipeline.RequestAsync(
@@ -946,6 +949,10 @@ try
         catch (VipsException)
         {
         }
+
+        Require(
+            pipeline.Diagnostics.Failed == failuresBefore + 1,
+            $"Real thumbnail generation failure for external HEIF {external.Label} was not counted exactly once.");
     }
 
     long assetId = 1;
@@ -1232,6 +1239,7 @@ try
     using (var nativeCancelled = new CancellationTokenSource())
     {
         var opensBeforeCancellation = pipeline.Diagnostics.SourceOpens;
+        var failuresBeforeCancellation = pipeline.Diagnostics.Failed;
         var cancellationSource = SourceFor(46, 1, cancellationPath);
         var cancellationTask = pipeline.RequestAsync(
             cancellationSource,
@@ -1259,6 +1267,10 @@ try
         catch (OperationCanceledException)
         {
         }
+
+        Require(
+            pipeline.Diagnostics.Failed == failuresBeforeCancellation,
+            "Expected in-flight cancellation was incorrectly counted as a thumbnail generation failure.");
 
         Require(
             !Directory.EnumerateFiles(cacheRoot, "*.tmp.webp", SearchOption.AllDirectories).Any(),
