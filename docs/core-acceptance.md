@@ -88,6 +88,9 @@ After each process exits, the wrapper requires:
 - acceptance process exit code 0
 - raw JSON present and reporting the requested cold/warm mode
 - raw JSON revision exactly matching the packaged/explicit build revision
+- raw schema version = 1
+- hardware ID matches the wrapper invocation
+- process and OS architecture are both X64
 - `runtime.unclean` absent
 - SQLite WAL absent or empty
 - post-shutdown thumbnail cache bytes <= the configured disk budget
@@ -124,6 +127,8 @@ The output directory contains:
 - automated decision
 - hardware ID
 - exact app Git revision
+- explicit acceptance criteria used for the run (minimum assets, browse/idle duration, fast-scroll threshold)
+- SHA-256 of the exact `cold.json` and `warm.json` summarized
 - hashed representative-library path instead of the raw private path
 - asset count
 - cold/warm max fast-scroll latency
