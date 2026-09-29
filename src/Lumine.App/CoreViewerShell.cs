@@ -67,14 +67,16 @@ internal sealed class CoreViewerShell : UserControl
         _grid.Focus();
     }
 
-    public void Detach()
+    public async Task DetachAsync()
     {
         if (_detached)
         {
+            await _grid.DrainBitmapReleasesAsync();
             return;
         }
 
         _detached = true;
         _detail.UnbindGrid();
+        await _grid.DrainBitmapReleasesAsync();
     }
 }
