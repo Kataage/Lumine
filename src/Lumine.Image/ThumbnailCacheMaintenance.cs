@@ -2,8 +2,14 @@ namespace Lumine.Image;
 
 internal sealed class ThumbnailCacheMaintenance
 {
+    private const long MinimumGrowthBeforeMaintenance =
+        4L * 1024 * 1024;
+    private const long MaximumGrowthBeforeMaintenance =
+        64L * 1024 * 1024;
+
     private readonly ThumbnailCache _cache;
     private readonly TimeSpan _quietPeriod;
+    private readonly long _growthThresholdBytes;
     private readonly object _gate = new();
     private CancellationTokenSource? _backgroundCancellation;
     private Task _backgroundTask = Task.CompletedTask;
@@ -18,6 +24,7 @@ internal sealed class ThumbnailCacheMaintenance
     private long _filesDeleted;
     private long _bytesDeleted;
     private long _interruptedWritesDeleted;
+    private long _generatedBytesSinceMaintenance;
     private long _lastBytesAfter = -1;
     private string? _lastError;
 
@@ -36,6 +43,17 @@ internal sealed class ThumbnailCacheMaintenance
 
         _cache = cache;
         _quietPeriod = quietPeriod;
+
+        var proportionalThreshold =
+            Math.Max(
+                1,
+                cache.ConfiguredByteLimit / 128);
+
+        _growthThresholdBytes =
+            Math.Clamp(
+                proportionalThreshold,
+                MinimumGrowthBeforeMaintenance,
+                MaximumGrowthBeforeMaintenance);
     }
 
     public ThumbnailCacheMaintenanceDiagnosticsSnapshot Diagnostics =>
@@ -94,7 +112,16 @@ internal sealed class ThumbnailCacheMaintenance
 
             if (result is { CacheHit: false })
             {
-                _pending = true;
+                _generatedBytesSinceMaintenance =
+                    SaturatingAdd(
+                        _generatedBytesSinceMaintenance,
+                        result.CacheFileBytes);
+
+                if (_generatedBytesSinceMaintenance
+                    >= _growthThresholdBytes)
+                {
+                    _pending = true;
+                }
             }
 
             if (!_pending
@@ -219,6 +246,7 @@ internal sealed class ThumbnailCacheMaintenance
 
             lock (_gate)
             {
+                _generatedBytesSinceMaintenance = 0;
                 _pending = false;
             }
         }
@@ -250,6 +278,20 @@ internal sealed class ThumbnailCacheMaintenance
 
             cancellation.Dispose();
         }
+    }
+
+    private static long SaturatingAdd(
+        long left,
+        long right)
+    {
+        if (right <= 0)
+        {
+            return left;
+        }
+
+        return left > long.MaxValue - right
+            ? long.MaxValue
+            : left + right;
     }
 
     private void RecordCompleted(
