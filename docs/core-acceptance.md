@@ -72,17 +72,22 @@ Defaults:
 - idle observation: 10 seconds per run
 - fast-scroll gate: 1,500 ms, matching the existing Viewer acceptance gate
 
-The wrapper deletes only its isolated acceptance data root before the cold run. It does not delete or modify image files in the supplied representative library.
+The wrapper deletes its isolated acceptance data root and any prior `cold.json`, `warm.json`, and `summary.json` before the cold run. It does not delete or modify image files in the supplied representative library.
+
+The representative library must remain stable for the full cold+warm sequence. Do not generate, copy, rename, or delete files in that source folder while acceptance is running; cold and warm asset counts must match.
 
 It then launches:
 
 1. cold run with a fresh Lumine data/cache root
 2. warm run against the same Lumine data/cache root
 
+Before launch, the wrapper resolves the exact build revision from `revision.txt` next to `Lumine.App.exe` (or from an explicit `-Revision`) and refuses an unknown/non-commit revision. CI-generated acceptance artifacts include this manifest automatically.
+
 After each process exits, the wrapper requires:
 
 - acceptance process exit code 0
-- raw JSON present
+- raw JSON present and reporting the requested cold/warm mode
+- raw JSON revision exactly matching the packaged/explicit build revision
 - `runtime.unclean` absent
 - SQLite WAL absent or empty
 - post-shutdown thumbnail cache bytes <= the configured disk budget
@@ -91,6 +96,9 @@ After each process exits, the wrapper requires:
 Across the results it requires:
 
 - automated result = pass
+- cold and warm refer to the same representative-library path
+- cold and warm asset counts are identical
+- the cold persistent thumbnail cache started empty
 - representative asset count >= configured minimum
 - visible tile failures = 0
 - thumbnail failures = 0
@@ -115,6 +123,7 @@ The output directory contains:
 
 - automated decision
 - hardware ID
+- exact app Git revision
 - hashed representative-library path instead of the raw private path
 - asset count
 - cold/warm max fast-scroll latency
