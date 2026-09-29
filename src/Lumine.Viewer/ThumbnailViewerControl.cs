@@ -16,6 +16,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly ListBox _rows;
     private readonly object _bitmapReleaseGate = new();
     private readonly HashSet<Task> _pendingBitmapReleases = [];
+    private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
     private Exception? _bitmapReleaseFailure;
     private Compositor? _compositor;
     private int _columns = 1;
@@ -212,10 +213,15 @@ public sealed class ThumbnailViewerControl : UserControl
                     lease,
                     batch.Rendered);
         }
-        catch
+        catch (Exception exception)
         {
-            lease.Dispose();
-            throw;
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+                _unfencedBitmapLeases.Add(lease);
+            }
+
+            return;
         }
 
         lock (_bitmapReleaseGate)
@@ -248,17 +254,24 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
-    private static async Task DisposeBitmapLeaseAfterAsync(
+    private async Task DisposeBitmapLeaseAfterAsync(
         DecodedBitmapLease lease,
         Task compositionRendered)
     {
         try
         {
             await compositionRendered.ConfigureAwait(false);
-        }
-        finally
-        {
             lease.Dispose();
+        }
+        catch (Exception exception)
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+                _unfencedBitmapLeases.Add(lease);
+            }
+
+            throw;
         }
     }
 
