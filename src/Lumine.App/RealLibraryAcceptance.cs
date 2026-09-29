@@ -425,6 +425,10 @@ internal sealed class RealLibraryAcceptanceSession
                 Options.DataPaths);
         }
 
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Representative library open completed.");
+
         var runtime =
             window.CurrentRuntime
             ?? throw new InvalidOperationException(
@@ -466,6 +470,9 @@ internal sealed class RealLibraryAcceptanceSession
         _recorder.Complete(
             CoreMetricNames.ViewerFirstViewportReady,
             viewportStart);
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Initial viewport ready.");
 
         var scrollTargets =
             CreateScrollTargets(
@@ -473,15 +480,30 @@ internal sealed class RealLibraryAcceptanceSession
 
         foreach (var target in scrollTargets)
         {
+            Program.Host?.Log.Write(
+                "acceptance-stage",
+                $"Fast-scroll begin target={target}.");
             await MeasureScrollAsync(
                 grid,
                 target);
+            Program.Host?.Log.Write(
+                "acceptance-stage",
+                $"Fast-scroll completed target={target}.");
         }
 
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Detail exercise begin.");
         await MeasureDetailAsync(
             detail,
             runtime.AssetCount);
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Detail exercise completed.");
 
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Long browse begin.");
         using (_recorder.Measure(
                    "acceptance.long_browse"))
         {
@@ -491,13 +513,22 @@ internal sealed class RealLibraryAcceptanceSession
                 scrollTargets,
                 Options.BrowseDuration);
         }
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Long browse completed.");
 
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Idle settle begin.");
         using (_recorder.Measure(
                    "acceptance.idle_settle"))
         {
             await Task.Delay(
                 Options.IdleDuration);
         }
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Idle settle completed.");
 
         var viewer =
             grid.Diagnostics;
