@@ -85,6 +85,8 @@ After each process exits, the wrapper requires:
 - raw JSON present
 - `runtime.unclean` absent
 - SQLite WAL absent or empty
+- post-shutdown thumbnail cache bytes <= the configured disk budget
+- post-shutdown interrupted thumbnail writes = 0
 
 Across the results it requires:
 
@@ -117,6 +119,7 @@ The output directory contains:
 - asset count
 - cold/warm max fast-scroll latency
 - cold/warm peak working set
+- pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
 - warm source-open/cache-hit evidence
 - filesystem bootstrap mode
 - measured bottlenecks
