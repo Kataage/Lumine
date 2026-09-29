@@ -94,6 +94,50 @@ static ThumbnailSource SourceFor(long assetId, long revision, string path)
         info.LastWriteTimeUtc.Ticks);
 }
 
+static void CreateSizedCacheFile(
+    string path,
+    long length,
+    DateTime lastWriteUtc)
+{
+    Directory.CreateDirectory(
+        Path.GetDirectoryName(path)!);
+
+    using (var stream = new FileStream(
+               path,
+               FileMode.Create,
+               FileAccess.Write,
+               FileShare.Read))
+    {
+        stream.SetLength(length);
+    }
+
+    File.SetLastWriteTimeUtc(
+        path,
+        lastWriteUtc);
+}
+
+static async Task WaitUntilAsync(
+    Func<Task<bool>> predicate,
+    TimeSpan timeout,
+    string failureMessage)
+{
+    var started =
+        System.Diagnostics.Stopwatch.StartNew();
+
+    while (started.Elapsed < timeout)
+    {
+        if (await predicate())
+        {
+            return;
+        }
+
+        await Task.Delay(25);
+    }
+
+    throw new InvalidOperationException(
+        failureMessage);
+}
+
 static void WriteBmp24(
     string path,
     int width,
@@ -1292,6 +1336,176 @@ try
                 SearchOption.AllDirectories)
             .Any(),
         "Pipeline shutdown left an interrupted temporary thumbnail behind.");
+
+    var maintenanceRoot =
+        Path.Combine(
+            root,
+            "maintenance-cache");
+    var maintenancePolicy =
+        CoreResourcePolicy.Resolve(
+            new ResourcePolicySettings
+            {
+                ThumbnailCacheByteLimit =
+                    64L * 1024 * 1024
+            },
+            processorCount:
+                imagePolicy.ProcessorCount);
+    var maintenanceCache =
+        new ThumbnailCache(
+            maintenanceRoot,
+            maintenancePolicy);
+    var oldCacheTime =
+        DateTime.UtcNow
+        - TimeSpan.FromDays(7);
+
+    for (var index = 0; index < 4; index++)
+    {
+        CreateSizedCacheFile(
+            Path.Combine(
+                maintenanceRoot,
+                $"seed-{index:D2}.webp"),
+            20L * 1024 * 1024,
+            oldCacheTime.AddMinutes(index));
+    }
+
+    var maintenancePipeline =
+        new ThumbnailPipeline(
+            maintenanceCache,
+            new ThumbnailPipelineOptions
+            {
+                WorkerCount = 1,
+                QueueCapacity = 4,
+                MaxForegroundBurst = 2,
+                CacheMaintenanceQuietPeriod =
+                    TimeSpan.FromMilliseconds(500)
+            });
+
+    try
+    {
+        var maintenanceSource =
+            SourceFor(
+                4700,
+                1,
+                p3PngPath);
+        var firstMaintenanceRequest =
+            await maintenancePipeline.RequestAsync(
+                maintenanceSource,
+                ThumbnailProfiles.GridSmall);
+
+        Require(
+            firstMaintenanceRequest.SourceMetadata
+                is not null,
+            "Maintenance smoke did not receive source metadata.");
+
+        await Task.Delay(50);
+
+        var beforePreemption =
+            maintenancePipeline
+                .MaintenanceDiagnostics;
+        var preemptionStarted =
+            System.Diagnostics.Stopwatch.StartNew();
+
+        _ = await maintenancePipeline.RequestAsync(
+            maintenanceSource.WithMetadata(
+                firstMaintenanceRequest.SourceMetadata!),
+            ThumbnailProfiles.GridSmall);
+
+        preemptionStarted.Stop();
+
+        var afterPreemption =
+            maintenancePipeline
+                .MaintenanceDiagnostics;
+
+        Require(
+            afterPreemption.ForegroundPreemptions
+                > beforePreemption.ForegroundPreemptions,
+            "Foreground request did not preempt pending cache maintenance.");
+        Require(
+            afterPreemption.RunsCancelled
+                > beforePreemption.RunsCancelled,
+            "Preempted cache maintenance was not observed as cancelled.");
+        Require(
+            preemptionStarted.Elapsed
+                < TimeSpan.FromSeconds(2),
+            "Foreground thumbnail request waited too long for cache maintenance to yield.");
+
+        await WaitUntilAsync(
+            async () =>
+            {
+                var diagnostics =
+                    maintenancePipeline
+                        .MaintenanceDiagnostics;
+                if (diagnostics.RunsCompleted
+                    == 0)
+                {
+                    return false;
+                }
+
+                var stats =
+                    await maintenanceCache
+                        .GetStatsAsync();
+
+                return stats.TotalBytes
+                    <= maintenanceCache
+                        .ConfiguredByteLimit;
+            },
+            TimeSpan.FromSeconds(8),
+            "Background cache maintenance did not converge below the configured disk budget.");
+
+        var backgroundDiagnostics =
+            maintenancePipeline
+                .MaintenanceDiagnostics;
+        Require(
+            backgroundDiagnostics.RunsCompleted
+                > 0
+            && backgroundDiagnostics.FilesDeleted
+                > 0
+            && backgroundDiagnostics.BytesDeleted
+                > 0
+            && backgroundDiagnostics.RunsFailed
+                == 0,
+            "Background cache maintenance diagnostics did not report a clean prune.");
+
+        CreateSizedCacheFile(
+            Path.Combine(
+                maintenanceRoot,
+                "shutdown-overflow.webp"),
+            20L * 1024 * 1024,
+            oldCacheTime.AddDays(-1));
+
+        var beforeShutdownStats =
+            await maintenanceCache
+                .GetStatsAsync();
+        Require(
+            beforeShutdownStats.TotalBytes
+                > maintenanceCache
+                    .ConfiguredByteLimit,
+            "Shutdown cache fixture did not exceed the configured disk budget.");
+    }
+    finally
+    {
+        await maintenancePipeline.DisposeAsync();
+    }
+
+    var afterShutdownStats =
+        await maintenanceCache
+            .GetStatsAsync();
+    var finalMaintenanceDiagnostics =
+        maintenancePipeline
+            .MaintenanceDiagnostics;
+
+    Require(
+        afterShutdownStats.TotalBytes
+            <= maintenanceCache.ConfiguredByteLimit,
+        "Pipeline shutdown did not converge persistent thumbnail cache below its configured disk budget.");
+    Require(
+        finalMaintenanceDiagnostics.RunsCompleted
+            >= 2
+        && finalMaintenanceDiagnostics.RunsFailed
+            == 0
+        && finalMaintenanceDiagnostics.LastBytesAfter
+            <= maintenanceCache.ConfiguredByteLimit,
+        "Final cache-maintenance diagnostics did not report clean shutdown convergence.");
 
     var orientedFullSource = new FullResolutionSource(
         orientedPath,
