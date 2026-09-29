@@ -99,6 +99,27 @@ function Get-MaxMeasurement {
     return ($values | Measure-Object -Maximum).Maximum
 }
 
+function Get-MeasurementAfterWorkingSet {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Result,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $matches = @(
+        $Result.measurements |
+            Where-Object { $_.name -eq $Name }
+    )
+
+    if ($matches.Count -eq 0) {
+        throw "Acceptance result did not contain measurement '$Name'."
+    }
+
+    return [int64]$matches[-1].after.workingSetBytes
+}
+
 function Get-Bottlenecks {
     param(
         [Parameter(Mandatory = $true)]
@@ -265,6 +286,7 @@ try {
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
+            idleWorkingSetBytes = Get-MeasurementAfterWorkingSet -Result $cold -Name "acceptance.idle_settle"
             thumbnailSourceOpens = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.source_opens")
             thumbnailCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_hits")
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_after.bytes")
@@ -275,6 +297,7 @@ try {
         warm = [ordered]@{
             maxFastScrollMs = [Math]::Round($warmMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $warm -Key "resource.peak_working_set_bytes")
+            idleWorkingSetBytes = Get-MeasurementAfterWorkingSet -Result $warm -Name "acceptance.idle_settle"
             thumbnailSourceOpens = $warmSourceOpens
             thumbnailCacheHits = $warmCacheHits
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.bytes")
