@@ -298,6 +298,11 @@ internal sealed class ThumbnailGenerator
             Interlocked.Increment(ref _generated);
             return result;
         }
+        catch (OperationCanceledException)
+        {
+            TryDelete(temporaryPath);
+            throw;
+        }
         catch
         {
             Interlocked.Increment(ref _failed);
