@@ -53,6 +53,10 @@ internal static class Program
                     .GetResult();
             Host = host;
 
+            host.Log.Write(
+                "render",
+                $"Win32 composition override: {GetWin32CompositionOverrideName()}.");
+
             Volatile.Write(
                 ref _windowShutdownDrained,
                 0);
@@ -144,7 +148,47 @@ internal static class Program
             1);
     }
 
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>()
-            .UsePlatformDetect();
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder =
+            AppBuilder.Configure<App>()
+                .UsePlatformDetect();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return builder;
+        }
+
+        var mode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_COMPOSITION_MODE");
+
+        if (string.Equals(
+                mode,
+                "RedirectionSurface",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return builder.With(
+                new Win32PlatformOptions
+                {
+                    CompositionMode =
+                    [
+                        Win32CompositionMode.RedirectionSurface
+                    ]
+                });
+        }
+
+        return builder;
+    }
+
+    private static string GetWin32CompositionOverrideName()
+    {
+        var mode =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_WIN32_COMPOSITION_MODE");
+
+        return string.IsNullOrWhiteSpace(mode)
+            ? "Default"
+            : mode;
+    }
 }
