@@ -103,10 +103,17 @@ Across the results it requires:
 - cold and warm asset counts are identical
 - the cold persistent thumbnail cache started empty
 - representative asset count >= configured minimum
+- Viewer thumbnail request failures = 0
 - visible tile failures = 0
+- in-flight Viewer thumbnail requests = 0 after idle settle
+- active bitmap decodes = 0 after idle settle
 - thumbnail failures = 0
+- thumbnail cache maintenance failures = 0
 - interrupted thumbnail writes = 0
 - filesystem reconcile failures = 0
+- filesystem queue depth = 0 after idle settle
+- representative source filesystem events observed = 0
+- runtime filesystem reconciliations = 0
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
 - warm persistent thumbnail cache hits > 0
@@ -137,6 +144,7 @@ The output directory contains:
 - pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
 - warm source-open/cache-hit evidence
 - filesystem bootstrap mode
+- cold/warm quiescent runtime-health counters
 - measured bottlenecks
 - known limitations
 - any warnings
