@@ -708,7 +708,7 @@ internal sealed class RealLibraryAcceptanceSession
                     && last is not null
                     && target >= first.Value
                     && target <= last.Value
-                    && grid.Diagnostics.ReadyTiles > 0;
+                    && grid.IsAssetReady(target);
             },
             timeout,
             $"Grid did not settle near asset {target:N0}.");
