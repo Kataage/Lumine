@@ -155,7 +155,7 @@ public sealed class ThumbnailViewerControl : UserControl
         _rows.ScrollIntoView(checked((int)(index / _columns)));
     }
 
-    internal async Task DrainBitmapReleasesAsync()
+    public async Task DrainBitmapReleasesAsync()
     {
         while (true)
         {
