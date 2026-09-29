@@ -759,7 +759,8 @@ internal static class Program
             if (viewer.FirstVisibleAssetIndex is { } firstVisible
                 && viewer.LastVisibleAssetIndex is { } lastVisible
                 && firstVisible <= 99_999
-                && lastVisible >= 99_999)
+                && lastVisible >= 99_999
+                && viewer.IsAssetReady(99_999))
             {
                 break;
             }
@@ -771,8 +772,9 @@ internal static class Program
             viewer.FirstVisibleAssetIndex is { } finalFirst
             && viewer.LastVisibleAssetIndex is { } finalLast
             && finalFirst <= 99_999
-            && finalLast >= 99_999,
-            "ScrollIntoView did not make the final asset part of the visible range.");
+            && finalLast >= 99_999
+            && viewer.IsAssetReady(99_999),
+            "ScrollIntoView did not make the final asset visible and ready.");
 
         Require(
             99_999 - viewer.FirstVisibleAssetIndex!.Value
