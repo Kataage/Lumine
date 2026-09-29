@@ -85,31 +85,41 @@ jobs:
       - name: Validate real-library acceptance wrapper syntax
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
-            [ref]$tokens,
-            [ref]$errors) | Out-Null
+          foreach ($script in @(
+            "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Test-RealLibraryAcceptanceWrapper.ps1"
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors) | Out-Null
 
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error "$script : $($_.Message)" }
+              exit 1
+            }
           }
 
       - name: Validate real-library acceptance wrapper syntax on Windows PowerShell 5.1
         shell: powershell
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
-            [ref]$tokens,
-            [ref]$errors) | Out-Null
+          foreach ($script in @(
+            "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Test-RealLibraryAcceptanceWrapper.ps1"
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors) | Out-Null
 
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error "$script : $($_.Message)" }
+              exit 1
+            }
           }
 
       - name: Build release
@@ -265,46 +275,8 @@ jobs:
 
       - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
         shell: powershell
-        run: |
-          $root = Join-Path $env:RUNNER_TEMP "Lumine 受入 wrapper"
-          $app = Join-Path $root "アプリ build"
-          $library = Join-Path $root "画像 library"
-          $output = Join-Path $root "acceptance result"
+        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA
 
-          Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $app, $library, $output | Out-Null
-          Copy-Item -Path "artifacts/native-aot/*" -Destination $app -Recurse -Force
-
-          $png = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-          foreach ($index in 0..127) {
-            [IO.File]::WriteAllBytes((Join-Path $library ("fixture-{0:D4}.png" -f $index)), $png)
-          }
-
-          $sentinel = Join-Path $library "source-sentinel.txt"
-          Set-Content -LiteralPath $sentinel -Value "preserve-source" -NoNewline -Encoding ascii
-          $overlapRejected = $false
-          try {
-            & ".\build\Run-RealLibraryAcceptance.ps1" -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $library -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
-          }
-          catch {
-            if ($_.Exception.Message -notmatch "overlaps representative library|inside representative library") { throw }
-            $overlapRejected = $true
-          }
-
-          if (-not $overlapRejected) { throw "Acceptance wrapper allowed source/output overlap." }
-          if ((Get-Content -LiteralPath $sentinel -Raw) -ne "preserve-source") { throw "Overlap rejection modified the representative source library." }
-
-          Set-Content -LiteralPath (Join-Path $output "cold.json") -Value '{"stale":true}' -Encoding ascii
-          Set-Content -LiteralPath (Join-Path $output "warm.json") -Value '{"stale":true}' -Encoding ascii
-          Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
-
-          & ".\build\Run-RealLibraryAcceptance.ps1" -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
-
-          $summary = Get-Content -LiteralPath (Join-Path $output "summary.json") -Raw | ConvertFrom-Json
-          if ($summary.automatedDecision -ne "pass") { throw "Acceptance wrapper smoke did not produce a passing summary." }
-          if ($summary.appRevision -ne $env:GITHUB_SHA) { throw "Acceptance wrapper smoke lost build provenance: $($summary.appRevision)" }
-          if ($summary.assetCount -ne 128) { throw "Acceptance wrapper smoke indexed $($summary.assetCount) assets instead of 128." }
-          if ($summary.rawResultSha256.cold.Length -ne 64 -or $summary.rawResultSha256.warm.Length -ne 64) { throw "Acceptance wrapper smoke did not bind the summary to raw result hashes." }
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
         with:
