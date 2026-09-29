@@ -39,6 +39,28 @@ $coldResultPath = Join-Path $outputRoot "cold.json"
 $warmResultPath = Join-Path $outputRoot "warm.json"
 $summaryPath = Join-Path $outputRoot "summary.json"
 
+function Normalize-ComparisonPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+
+    while (
+        $full.Length -gt $root.Length
+        -and (
+            $full.EndsWith([IO.Path]::DirectorySeparatorChar.ToString())
+            -or $full.EndsWith([IO.Path]::AltDirectorySeparatorChar.ToString())
+        )
+    ) {
+        $full = $full.Substring(0, $full.Length - 1)
+    }
+
+    return $full
+}
+
 function Test-PathWithinDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -49,11 +71,9 @@ function Test-PathWithinDirectory {
     )
 
     $candidateFull =
-        [IO.Path]::TrimEndingDirectorySeparator(
-            [IO.Path]::GetFullPath($Candidate))
+        Normalize-ComparisonPath -Path $Candidate
     $directoryFull =
-        [IO.Path]::TrimEndingDirectorySeparator(
-            [IO.Path]::GetFullPath($Directory))
+        Normalize-ComparisonPath -Path $Directory
 
     if ($candidateFull.Equals(
             $directoryFull,
@@ -62,9 +82,13 @@ function Test-PathWithinDirectory {
         return $true
     }
 
-    $directoryPrefix =
-        $directoryFull
-        + [IO.Path]::DirectorySeparatorChar
+    $directoryPrefix = $directoryFull
+    if (-not $directoryPrefix.EndsWith(
+            [IO.Path]::DirectorySeparatorChar.ToString()))
+    {
+        $directoryPrefix +=
+            [IO.Path]::DirectorySeparatorChar
+    }
 
     return $candidateFull.StartsWith(
         $directoryPrefix,
