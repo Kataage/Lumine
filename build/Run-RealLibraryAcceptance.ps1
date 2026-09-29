@@ -17,7 +17,10 @@ param(
 
     [string]$HardwareId = $env:COMPUTERNAME,
 
-    [string]$Revision = ""
+    [string]$Revision = "",
+
+    [ValidateSet("Default", "RedirectionSurface")]
+    [string]$Win32CompositionMode = "Default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -153,6 +156,7 @@ New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
 $oldHardware = $env:LUMINE_HARDWARE_ID
 $oldRevision = $env:LUMINE_REVISION
+$oldCompositionMode = $env:LUMINE_WIN32_COMPOSITION_MODE
 
 if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
@@ -177,6 +181,13 @@ if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq "unknown" -or $Rev
 
 $env:LUMINE_HARDWARE_ID = $HardwareId
 $env:LUMINE_REVISION = $Revision
+
+if ($Win32CompositionMode -eq "Default") {
+    $env:LUMINE_WIN32_COMPOSITION_MODE = $null
+}
+else {
+    $env:LUMINE_WIN32_COMPOSITION_MODE = $Win32CompositionMode
+}
 
 function Get-MetadataValue {
     param(
@@ -334,12 +345,114 @@ function Invoke-AcceptanceProcess {
     }
 
     try {
+        $startedAtUtc = $process.StartTime.ToUniversalTime()
+        $processId = $process.Id
         $process.WaitForExit()
-        return $process.ExitCode
+
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            ProcessId = $processId
+            StartedAtUtc = $startedAtUtc
+        }
     }
     finally {
         $process.Dispose()
     }
+}
+
+function Write-CrashDiagnostics {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Mode,
+
+        [Parameter(Mandatory = $true)]
+        [object]$ProcessResult
+    )
+
+    $diagnosticPath =
+        Join-Path $outputRoot "$Mode-crash-diagnostics.txt"
+    $lines =
+        New-Object System.Collections.Generic.List[string]
+
+    $lines.Add("mode=$Mode")
+    $lines.Add("exitCode=$($ProcessResult.ExitCode)")
+    $lines.Add("pid=$($ProcessResult.ProcessId)")
+    $lines.Add("startedAtUtc=$($ProcessResult.StartedAtUtc.ToString('O'))")
+    $lines.Add("revision=$Revision")
+    $lines.Add("win32CompositionMode=$Win32CompositionMode")
+    $lines.Add("os=$([Environment]::OSVersion.VersionString)")
+    $lines.Add("is64BitProcess=$([Environment]::Is64BitProcess)")
+    $lines.Add("is64BitOperatingSystem=$([Environment]::Is64BitOperatingSystem)")
+
+    try {
+        $controllers =
+            Get-CimInstance Win32_VideoController -ErrorAction Stop
+
+        foreach ($controller in @($controllers)) {
+            $lines.Add(
+                "gpu=$($controller.Name) | driver=$($controller.DriverVersion) | status=$($controller.Status)")
+        }
+    }
+    catch {
+        $lines.Add(
+            "gpu-query-error=$($_.Exception.Message)")
+    }
+
+    $eventStart =
+        $ProcessResult.StartedAtUtc.ToLocalTime().AddSeconds(-2)
+    $matchingEvents = @()
+
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try {
+            $matchingEvents = @(
+                Get-WinEvent -FilterHashtable @{
+                    LogName = "Application"
+                    Id = @(1000, 1001)
+                    StartTime = $eventStart
+                } -ErrorAction Stop |
+                    Where-Object {
+                        $_.Message -match "Lumine\.App\.exe"
+                    } |
+                    Select-Object -First 6
+            )
+        }
+        catch {
+            $lines.Add(
+                "event-log-query-error=$($_.Exception.Message)")
+            break
+        }
+
+        if ($matchingEvents.Count -gt 0) {
+            break
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    foreach ($event in $matchingEvents) {
+        $lines.Add("--- Windows Application event ---")
+        $lines.Add("eventId=$($event.Id)")
+        $lines.Add("eventTime=$($event.TimeCreated.ToString('O'))")
+        $lines.Add(
+            ($event.Message -replace "\r?\n", " | "))
+    }
+
+    if ($matchingEvents.Count -eq 0) {
+        $lines.Add("windowsApplicationEvent=not-found")
+    }
+
+    $runtimeLog =
+        Join-Path $dataRoot "runtime.log"
+    if (Test-Path -LiteralPath $runtimeLog) {
+        $lines.Add("--- Lumine runtime.log ---")
+        $lines.Add(
+            (Get-Content -LiteralPath $runtimeLog -Raw))
+    }
+
+    $lines |
+        Set-Content -LiteralPath $diagnosticPath -Encoding UTF8
+
+    return $diagnosticPath
 }
 
 function Invoke-CoreAcceptance {
@@ -371,10 +484,16 @@ function Invoke-CoreAcceptance {
         Remove-Item -LiteralPath $ResultPath -Force
     }
 
-    $processExitCode = Invoke-AcceptanceProcess -Arguments $acceptanceArgs
+    $processResult =
+        Invoke-AcceptanceProcess -Arguments $acceptanceArgs
+    $processExitCode = [int]$processResult.ExitCode
 
     if ($processExitCode -ne 0) {
         $failureDetails = @()
+        $crashDiagnosticPath =
+            Write-CrashDiagnostics -Mode $Mode -ProcessResult $processResult
+        $failureDetails +=
+            "crashDiagnostics=$crashDiagnosticPath"
 
         if (Test-Path -LiteralPath $ResultPath) {
             try {
@@ -620,6 +739,7 @@ try {
         automatedDecision = "pass"
         hardwareId = $HardwareId
         appRevision = $Revision
+        win32CompositionMode = $Win32CompositionMode
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
         acceptanceCriteria = [ordered]@{
@@ -705,4 +825,5 @@ try {
 finally {
     $env:LUMINE_HARDWARE_ID = $oldHardware
     $env:LUMINE_REVISION = $oldRevision
+    $env:LUMINE_WIN32_COMPOSITION_MODE = $oldCompositionMode
 }
