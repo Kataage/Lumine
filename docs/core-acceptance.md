@@ -119,6 +119,7 @@ The output directory contains:
 - asset count
 - cold/warm max fast-scroll latency
 - cold/warm peak working set
+- cold/warm idle working set from the end of the explicit idle-settle measurement
 - pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
 - warm source-open/cache-hit evidence
 - filesystem bootstrap mode
