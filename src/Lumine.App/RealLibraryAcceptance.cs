@@ -534,6 +534,48 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Viewer reported {viewer.TileLoadFailures} visible tile load failures: {viewer.LastTileLoadError}");
         }
 
+        if (viewer.ThumbnailRequestsFailed != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer reported {viewer.ThumbnailRequestsFailed} thumbnail request failure(s) after the idle-settle window.");
+        }
+
+        if (viewer.InFlightThumbnailRequests != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer still had {viewer.InFlightThumbnailRequests} in-flight thumbnail request(s) after the idle-settle window.");
+        }
+
+        if (viewer.ActiveBitmapDecodes != 0)
+        {
+            throw new InvalidOperationException(
+                $"Viewer still had {viewer.ActiveBitmapDecodes} active bitmap decode(s) after the idle-settle window.");
+        }
+
+        if (maintenance.RunsFailed != 0)
+        {
+            throw new InvalidOperationException(
+                $"Thumbnail cache maintenance recorded {maintenance.RunsFailed} failure(s): {maintenance.LastError}");
+        }
+
+        if (sync.QueueDepth != 0)
+        {
+            throw new InvalidOperationException(
+                $"Filesystem synchronization still had queue depth {sync.QueueDepth} after the idle-settle window.");
+        }
+
+        if (sync.EventsObserved != 0)
+        {
+            throw new InvalidOperationException(
+                $"Representative library changed during acceptance; watcher observed {sync.EventsObserved} filesystem event(s).");
+        }
+
+        if (sync.Reconciliations != 0)
+        {
+            throw new InvalidOperationException(
+                $"Runtime filesystem synchronization performed {sync.Reconciliations} reconciliation(s); periodic/overflow full reconciliation is not accepted for the stable representative library.");
+        }
+
         if (viewer.DecodedBitmapEntries
             > runtime.ViewerSession.Options.DecodedBitmapEntryLimit)
         {
@@ -798,6 +840,15 @@ internal sealed class RealLibraryAcceptanceSession
                 CultureInfo.InvariantCulture);
         _metadata["viewer.thumbnail_requests_failed"] =
             diagnostics.ThumbnailRequestsFailed.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.thumbnail_requests_cancelled"] =
+            diagnostics.ThumbnailRequestsCancelled.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.in_flight_thumbnail_requests"] =
+            diagnostics.InFlightThumbnailRequests.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.active_bitmap_decodes"] =
+            diagnostics.ActiveBitmapDecodes.ToString(
                 CultureInfo.InvariantCulture);
         _metadata["viewer.tile_load_failures"] =
             diagnostics.TileLoadFailures.ToString(
