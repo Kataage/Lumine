@@ -219,6 +219,11 @@ jobs:
       - name: Publish NativeAOT
         run: dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot
 
+      - name: Stamp NativeAOT acceptance revision
+        shell: pwsh
+        run: |
+          Set-Content -LiteralPath "artifacts/native-aot/revision.txt" -Value $env:GITHUB_SHA -NoNewline -Encoding ascii
+
       - name: Verify NativeAOT executable
         shell: pwsh
         run: |
@@ -258,6 +263,34 @@ jobs:
             }
           }
 
+      - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "Lumine 受入 wrapper"
+          $app = Join-Path $root "アプリ build"
+          $library = Join-Path $root "画像 library"
+          $output = Join-Path $root "acceptance result"
+
+          Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $app, $library, $output | Out-Null
+          Copy-Item -Path "artifacts/native-aot/*" -Destination $app -Recurse -Force
+
+          $png = [Convert]::FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+          foreach ($index in 0..127) {
+            [IO.File]::WriteAllBytes((Join-Path $library ("fixture-{0:D4}.png" -f $index)), $png)
+          }
+
+          Set-Content -LiteralPath (Join-Path $output "cold.json") -Value '{"stale":true}' -Encoding ascii
+          Set-Content -LiteralPath (Join-Path $output "warm.json") -Value '{"stale":true}' -Encoding ascii
+          Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
+
+          & ".\build\Run-RealLibraryAcceptance.ps1" -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+
+          $summary = Get-Content -LiteralPath (Join-Path $output "summary.json") -Raw | ConvertFrom-Json
+          if ($summary.automatedDecision -ne "pass") { throw "Acceptance wrapper smoke did not produce a passing summary." }
+          if ($summary.appRevision -ne $env:GITHUB_SHA) { throw "Acceptance wrapper smoke lost build provenance: $($summary.appRevision)" }
+          if ($summary.assetCount -ne 128) { throw "Acceptance wrapper smoke indexed $($summary.assetCount) assets instead of 128." }
+          if ($summary.rawResultSha256.cold.Length -ne 64 -or $summary.rawResultSha256.warm.Length -ne 64) { throw "Acceptance wrapper smoke did not bind the summary to raw result hashes." }
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
         with:
