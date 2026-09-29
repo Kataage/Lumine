@@ -145,6 +145,85 @@ function Get-Bottlenecks {
     )
 }
 
+function ConvertTo-ProcessArgument {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    # ProcessStartInfo.Arguments uses the Windows command-line parser on
+    # Windows PowerShell 5.1. Quote according to the CommandLineToArgvW /
+    # CRT rules so paths containing spaces remain one argument.
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes++
+            continue
+        }
+
+        if ($character -eq '"') {
+            if ($backslashes -gt 0) {
+                [void]$builder.Append(('\' * ($backslashes * 2)))
+                $backslashes = 0
+            }
+
+            [void]$builder.Append('\"')
+            continue
+        }
+
+        if ($backslashes -gt 0) {
+            [void]$builder.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+
+        [void]$builder.Append($character)
+    }
+
+    if ($backslashes -gt 0) {
+        [void]$builder.Append(('\' * ($backslashes * 2)))
+    }
+
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Invoke-AcceptanceProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.WorkingDirectory = Split-Path -Parent $exePath
+    $startInfo.Arguments = (
+        $Arguments |
+            ForEach-Object { ConvertTo-ProcessArgument -Value $_ }
+    ) -join ' '
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) {
+        throw "Unable to start Lumine.App acceptance process."
+    }
+
+    try {
+        $process.WaitForExit()
+        return $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function Invoke-CoreAcceptance {
     param(
         [Parameter(Mandatory = $true)]
@@ -170,10 +249,10 @@ function Invoke-CoreAcceptance {
         "--idle-seconds=$IdleSeconds"
     )
 
-    & $exePath @acceptanceArgs
+    $processExitCode = Invoke-AcceptanceProcess -Arguments $acceptanceArgs
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "Lumine.App acceptance process failed in $Mode mode with exit code $LASTEXITCODE."
+    if ($processExitCode -ne 0) {
+        throw "Lumine.App acceptance process failed in $Mode mode with exit code $processExitCode."
     }
 
     if (-not (Test-Path -LiteralPath $ResultPath)) {
