@@ -383,6 +383,30 @@ try {
     $cold = Invoke-CoreAcceptance -Mode "cold" -ResultPath $coldResultPath
     $warm = Invoke-CoreAcceptance -Mode "warm" -ResultPath $warmResultPath
 
+    $coldAssetCount =
+        [int64](Get-MetadataValue -Result $cold -Key "library.asset_count")
+    $warmAssetCount =
+        [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+    if ($coldAssetCount -ne $warmAssetCount) {
+        throw "Representative library changed between cold and warm runs: cold=$coldAssetCount, warm=$warmAssetCount assets. Re-run while the source library is stable."
+    }
+
+    $coldLibraryHash =
+        Get-MetadataValue -Result $cold -Key "library.path_sha256"
+    $warmLibraryHash =
+        Get-MetadataValue -Result $warm -Key "library.path_sha256"
+    if ($coldLibraryHash -ne $warmLibraryHash) {
+        throw "Cold and warm results do not refer to the same representative library path."
+    }
+
+    $coldCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.files")
+    $coldCacheBeforeBytes =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.bytes")
+    if ($coldCacheBeforeFiles -ne 0 -or $coldCacheBeforeBytes -ne 0) {
+        throw "Cold acceptance did not start with an empty persistent thumbnail cache: files=$coldCacheBeforeFiles, bytes=$coldCacheBeforeBytes."
+    }
+
     foreach ($pair in @(
         @{ Name = "cold"; Result = $cold },
         @{ Name = "warm"; Result = $warm }
