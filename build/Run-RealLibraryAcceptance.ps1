@@ -52,7 +52,12 @@ foreach ($staleOutput in @(
 }
 
 if (Test-Path -LiteralPath $dataRoot) {
-    Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    }
+    catch {
+        throw "Unable to reset acceptance data root '$dataRoot'. Close any running Lumine.App process that may still own instance.lock, then retry. $($_.Exception.Message)"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
@@ -64,11 +69,28 @@ if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
 }
 
-$env:LUMINE_HARDWARE_ID = $HardwareId
+if ([string]::IsNullOrWhiteSpace($Revision)) {
+    $revisionManifest =
+        Join-Path (Split-Path -Parent $exePath) "revision.txt"
 
-if (-not [string]::IsNullOrWhiteSpace($Revision)) {
-    $env:LUMINE_REVISION = $Revision
+    if (-not (Test-Path -LiteralPath $revisionManifest)) {
+        throw "Acceptance build revision is unknown. The NativeAOT artifact must contain revision.txt next to Lumine.App.exe, or -Revision must be supplied explicitly."
+    }
+
+    $Revision =
+        (Get-Content -LiteralPath $revisionManifest -Raw).Trim()
 }
+
+if (
+    [string]::IsNullOrWhiteSpace($Revision)
+    -or $Revision -eq "unknown"
+    -or $Revision -notmatch '^[0-9a-fA-F]{7,64}$'
+) {
+    throw "Acceptance build revision '$Revision' is not a valid Git commit revision."
+}
+
+$env:LUMINE_HARDWARE_ID = $HardwareId
+$env:LUMINE_REVISION = $Revision
 
 function Get-MetadataValue {
     param(
@@ -333,12 +355,57 @@ function Invoke-CoreAcceptance {
         throw "Acceptance result mode mismatch: expected '$Mode', got '$reportedMode'."
     }
 
+    if ([int]$result.schemaVersion -ne 1) {
+        throw "Acceptance result schema mismatch: expected 1, got '$($result.schemaVersion)'."
+    }
+
+    $reportedRevision =
+        [string]$result.environment.appRevision
+    if ($reportedRevision -ne $Revision) {
+        throw "Acceptance result revision mismatch: expected '$Revision', got '$reportedRevision'."
+    }
+
+    if ([string]$result.environment.hardwareId -ne $HardwareId) {
+        throw "Acceptance hardware ID mismatch: expected '$HardwareId', got '$($result.environment.hardwareId)'."
+    }
+
+    if (
+        [string]$result.environment.processArchitecture -ne "X64"
+        -or [string]$result.environment.osArchitecture -ne "X64"
+    ) {
+        throw "Acceptance must run as native Windows x64; process='$($result.environment.processArchitecture)', OS='$($result.environment.osArchitecture)'."
+    }
+
     return $result
 }
 
 try {
     $cold = Invoke-CoreAcceptance -Mode "cold" -ResultPath $coldResultPath
     $warm = Invoke-CoreAcceptance -Mode "warm" -ResultPath $warmResultPath
+
+    $coldAssetCount =
+        [int64](Get-MetadataValue -Result $cold -Key "library.asset_count")
+    $warmAssetCount =
+        [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+    if ($coldAssetCount -ne $warmAssetCount) {
+        throw "Representative library changed between cold and warm runs: cold=$coldAssetCount, warm=$warmAssetCount assets. Re-run while the source library is stable."
+    }
+
+    $coldLibraryHash =
+        Get-MetadataValue -Result $cold -Key "library.path_sha256"
+    $warmLibraryHash =
+        Get-MetadataValue -Result $warm -Key "library.path_sha256"
+    if ($coldLibraryHash -ne $warmLibraryHash) {
+        throw "Cold and warm results do not refer to the same representative library path."
+    }
+
+    $coldCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.files")
+    $coldCacheBeforeBytes =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.bytes")
+    if ($coldCacheBeforeFiles -ne 0 -or $coldCacheBeforeBytes -ne 0) {
+        throw "Cold acceptance did not start with an empty persistent thumbnail cache: files=$coldCacheBeforeFiles, bytes=$coldCacheBeforeBytes."
+    }
 
     foreach ($pair in @(
         @{ Name = "cold"; Result = $cold },
@@ -420,12 +487,28 @@ try {
     $coldMaxScroll = Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
     $warmMaxScroll = Get-MaxMeasurement -Result $warm -Name "viewer.fast_scroll_refresh"
 
+    $coldRawSha256 =
+        (Get-FileHash -LiteralPath $coldResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $warmRawSha256 =
+        (Get-FileHash -LiteralPath $warmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
     $summary = [ordered]@{
         schemaVersion = 1
         automatedDecision = "pass"
         hardwareId = $HardwareId
+        appRevision = $Revision
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+        acceptanceCriteria = [ordered]@{
+            minimumAssets = $MinimumAssets
+            browseSecondsPerRun = $BrowseSeconds
+            idleSecondsPerRun = $IdleSeconds
+            maxFastScrollMs = $MaxFastScrollMs
+        }
+        rawResultSha256 = [ordered]@{
+            cold = $coldRawSha256
+            warm = $warmRawSha256
+        }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
