@@ -106,8 +106,15 @@ Across the results it requires:
 - cold persistent thumbnail cache started empty
 - representative asset count >= configured minimum
 - visible tile failures = 0
-- thumbnail failures = 0
+- Viewer thumbnail request failures = 0
+- thumbnail generation failures = 0
+- no in-flight thumbnail request remains after idle settle
+- no active bitmap decode remains after idle settle
+- thumbnail cache maintenance failures = 0
 - interrupted thumbnail writes = 0
+- representative-library filesystem queue depth = 0 after idle settle
+- representative-library watcher observed no source mutation during the run
+- runtime filesystem reconciliations = 0 on the stable representative library
 - filesystem reconcile failures = 0
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
@@ -161,7 +168,7 @@ Do not close #295 from CI or the automated JSON alone.
 
 The common #286 resource snapshots provide process working set, managed heap, total allocations, GC counts, and CPU time around measurements.
 
-The acceptance result also records Core-owned thumbnail cache/pipeline diagnostics and cache bounds.
+The acceptance result also records Core-owned thumbnail cache/pipeline diagnostics and cache bounds. The explicit idle-settle phase is a quiescence gate: background thumbnail/decode work and filesystem queues must drain to zero, and a stable representative source library must not trigger runtime reconciliation.
 
 Two limitations are explicit rather than hidden:
 
