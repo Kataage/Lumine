@@ -358,6 +358,19 @@ function Invoke-CoreAcceptance {
         throw "Acceptance result revision mismatch: expected '$Revision', got '$reportedRevision'."
     }
 
+    if ([int]$result.schemaVersion -ne 1) {
+        throw "Acceptance result schema mismatch: expected 1, got '$($result.schemaVersion)'."
+    }
+
+    if ([string]$result.environment.hardwareId -ne $HardwareId) {
+        throw "Acceptance hardware ID mismatch: expected '$HardwareId', got '$($result.environment.hardwareId)'."
+    }
+
+    if ([string]$result.environment.processArchitecture -ne "X64"
+        -or [string]$result.environment.osArchitecture -ne "X64") {
+        throw "Acceptance must run as native Windows x64; process='$($result.environment.processArchitecture)', OS='$($result.environment.osArchitecture)'."
+    }
+
     return $result
 }
 
@@ -469,6 +482,11 @@ try {
     $coldMaxScroll = Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
     $warmMaxScroll = Get-MaxMeasurement -Result $warm -Name "viewer.fast_scroll_refresh"
 
+    $coldRawSha256 =
+        (Get-FileHash -LiteralPath $coldResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $warmRawSha256 =
+        (Get-FileHash -LiteralPath $warmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
     $summary = [ordered]@{
         schemaVersion = 1
         automatedDecision = "pass"
@@ -476,6 +494,16 @@ try {
         appRevision = $Revision
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+        acceptanceCriteria = [ordered]@{
+            minimumAssets = $MinimumAssets
+            browseSecondsPerRun = $BrowseSeconds
+            idleSecondsPerRun = $IdleSeconds
+            maxFastScrollMs = $MaxFastScrollMs
+        }
+        rawResultSha256 = [ordered]@{
+            cold = $coldRawSha256
+            warm = $warmRawSha256
+        }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
