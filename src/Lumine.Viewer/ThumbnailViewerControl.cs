@@ -71,6 +71,22 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    public long? LastVisibleAssetIndex
+    {
+        get
+        {
+            var lastRow = GetLastVisibleRowIndex();
+            if (lastRow < 0)
+            {
+                return null;
+            }
+
+            return Math.Min(
+                AssetCount - 1,
+                checked(((long)lastRow + 1) * _columns - 1));
+        }
+    }
+
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
@@ -185,6 +201,43 @@ public sealed class ThumbnailViewerControl : UserControl
             if (top < bestTop)
             {
                 bestTop = top;
+                bestIndex = index;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private int GetLastVisibleRowIndex()
+    {
+        var viewportHeight = _rows.Bounds.Height;
+        var bestIndex = -1;
+        var bestBottom = double.NegativeInfinity;
+
+        foreach (var container in _rows.GetRealizedContainers())
+        {
+            var index = _rows.IndexFromContainer(container);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var origin = container.TranslatePoint(default, _rows);
+            if (origin is not { } point)
+            {
+                continue;
+            }
+
+            var top = point.Y;
+            var bottom = top + container.Bounds.Height;
+            if (bottom <= 0 || top >= viewportHeight)
+            {
+                continue;
+            }
+
+            if (bottom > bestBottom)
+            {
+                bestBottom = bottom;
                 bestIndex = index;
             }
         }
