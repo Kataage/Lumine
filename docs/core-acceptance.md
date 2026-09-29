@@ -59,12 +59,12 @@ The raw result uses the #286 `BenchmarkResult` schema and records hardware/OS/ru
 Use the wrapper so cold and warm runs share the same v2 database and persistent thumbnail cache:
 
 ```powershell
-pwsh -File .\build\Run-RealLibraryAcceptance.ps1 \
-  -Exe "C:\path\to\Lumine.App.exe" \
-  -Library "D:\path\to\representative-library" \
-  -OutputDirectory "D:\Lumine-acceptance"
-```
+# PowerShell 7
+pwsh -File .\build\Run-RealLibraryAcceptance.ps1 -Exe ".\artifacts\native-aot\Lumine.App.exe" -Library "D:\path\to\representative-library" -OutputDirectory "D:\Lumine-acceptance"
 
+# Windows PowerShell 5.1
+powershell.exe -ExecutionPolicy Bypass -File .\build\Run-RealLibraryAcceptance.ps1 -Exe ".\artifacts\native-aot\Lumine.App.exe" -Library "D:\path\to\representative-library" -OutputDirectory "D:\Lumine-acceptance"
+```
 Defaults:
 
 - minimum assets: 1,000
@@ -85,6 +85,8 @@ After each process exits, the wrapper requires:
 - raw JSON present
 - `runtime.unclean` absent
 - SQLite WAL absent or empty
+- post-shutdown thumbnail cache bytes <= the configured disk budget
+- post-shutdown interrupted thumbnail writes = 0
 
 Across the results it requires:
 
@@ -117,6 +119,8 @@ The output directory contains:
 - asset count
 - cold/warm max fast-scroll latency
 - cold/warm peak working set
+- cold/warm idle working set from the end of the explicit idle-settle measurement
+- pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
 - warm source-open/cache-hit evidence
 - filesystem bootstrap mode
 - measured bottlenecks

@@ -308,6 +308,34 @@ internal sealed class RealLibraryAcceptanceSession
                 shutdownStart);
             _metadata["shutdown.window_closed"] =
                 "true";
+
+            var postShutdownCache =
+                new ThumbnailCache(
+                    Options.DataPaths.ThumbnailCachePath,
+                    Program.ResourcePolicy);
+            var postShutdownStats =
+                await postShutdownCache.GetStatsAsync();
+
+            WriteCacheMetadata(
+                "thumbnail.cache_post_shutdown",
+                postShutdownStats);
+            _metadata[
+                "thumbnail.cache_post_shutdown.configured_bytes"] =
+                postShutdownCache.ConfiguredByteLimit.ToString(
+                    CultureInfo.InvariantCulture);
+
+            if (postShutdownStats.TotalBytes
+                > postShutdownCache.ConfiguredByteLimit)
+            {
+                throw new InvalidOperationException(
+                    $"Post-shutdown thumbnail cache exceeds its configured disk budget: {postShutdownStats.TotalBytes:N0} > {postShutdownCache.ConfiguredByteLimit:N0} bytes.");
+            }
+
+            if (postShutdownStats.InterruptedWriteCount != 0)
+            {
+                throw new InvalidOperationException(
+                    $"Post-shutdown thumbnail cache still contains {postShutdownStats.InterruptedWriteCount:N0} interrupted write(s).");
+            }
         }
         catch (Exception exception)
         {
