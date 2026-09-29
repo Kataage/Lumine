@@ -5,8 +5,11 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedRevision,
 
-    [ValidateRange(2, 10)]
-    [int]$Repeat = 3
+    [ValidateRange(1, 10)]
+    [int]$Repeat = 3,
+
+    [ValidateSet("Default", "RedirectionSurface")]
+    [string]$Win32CompositionMode = "Default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,8 +83,8 @@ foreach ($iteration in 1..$Repeat) {
     Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
 
     try {
-        Write-Host "=== NativeAOT real-library wrapper iteration $iteration / $Repeat ==="
-        & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+        Write-Host "=== NativeAOT real-library wrapper iteration $iteration / $Repeat ($Win32CompositionMode) ==="
+        & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000 -Win32CompositionMode $Win32CompositionMode
     }
     catch {
         foreach ($name in @("cold.json", "warm.json")) {
@@ -127,6 +130,6 @@ foreach ($iteration in 1..$Repeat) {
     $lastSummary = $summary
 }
 
-Write-Host "Real-library acceptance wrapper integration smoke passed $Repeat consecutive iteration(s)."
+Write-Host "Real-library acceptance wrapper integration smoke passed $Repeat consecutive iteration(s) using $Win32CompositionMode."
 Write-Host "Revision: $($lastSummary.appRevision)"
 Write-Host "Assets  : $($lastSummary.assetCount)"
