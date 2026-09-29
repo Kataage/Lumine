@@ -39,6 +39,95 @@ $coldResultPath = Join-Path $outputRoot "cold.json"
 $warmResultPath = Join-Path $outputRoot "warm.json"
 $summaryPath = Join-Path $outputRoot "summary.json"
 
+function Normalize-ComparisonPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+
+    while ($full.Length -gt $root.Length) {
+        $endsWithSeparator =
+            $full.EndsWith([IO.Path]::DirectorySeparatorChar.ToString()) -or
+            $full.EndsWith([IO.Path]::AltDirectorySeparatorChar.ToString())
+
+        if (-not $endsWithSeparator) {
+            break
+        }
+
+        $full = $full.Substring(0, $full.Length - 1)
+    }
+
+    return $full
+}
+
+function Test-PathWithinDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Candidate,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Directory
+    )
+
+    $candidateFull =
+        Normalize-ComparisonPath -Path $Candidate
+    $directoryFull =
+        Normalize-ComparisonPath -Path $Directory
+
+    if ($candidateFull.Equals(
+            $directoryFull,
+            [StringComparison]::OrdinalIgnoreCase))
+    {
+        return $true
+    }
+
+    $directoryPrefix = $directoryFull
+    if (-not $directoryPrefix.EndsWith(
+            [IO.Path]::DirectorySeparatorChar.ToString()))
+    {
+        $directoryPrefix +=
+            [IO.Path]::DirectorySeparatorChar
+    }
+
+    return $candidateFull.StartsWith(
+        $directoryPrefix,
+        [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-DirectoryOverlap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Left,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Right
+    )
+
+    $leftWithinRight =
+        Test-PathWithinDirectory -Candidate $Left -Directory $Right
+    $rightWithinLeft =
+        Test-PathWithinDirectory -Candidate $Right -Directory $Left
+
+    return $leftWithinRight -or $rightWithinLeft
+}
+
+if (Test-DirectoryOverlap -Left $dataRoot -Right $libraryPath) {
+    throw "Acceptance data root '$dataRoot' overlaps representative library '$libraryPath'. Choose an OutputDirectory outside the source library."
+}
+
+foreach ($resultPath in @(
+    $coldResultPath,
+    $warmResultPath,
+    $summaryPath
+)) {
+    if (Test-PathWithinDirectory -Candidate $resultPath -Directory $libraryPath) {
+        throw "Acceptance result path '$resultPath' is inside representative library '$libraryPath'. Choose an OutputDirectory outside the source library."
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
 foreach ($staleOutput in @(
@@ -52,7 +141,12 @@ foreach ($staleOutput in @(
 }
 
 if (Test-Path -LiteralPath $dataRoot) {
-    Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    }
+    catch {
+        throw "Unable to reset acceptance data root '$dataRoot'. Close any running Lumine.App process that may still own instance.lock, then retry. $($_.Exception.Message)"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
@@ -64,11 +158,25 @@ if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
 }
 
-$env:LUMINE_HARDWARE_ID = $HardwareId
+if ([string]::IsNullOrWhiteSpace($Revision)) {
+    $revisionManifest =
+        Join-Path (Split-Path -Parent $exePath) "revision.txt"
 
-if (-not [string]::IsNullOrWhiteSpace($Revision)) {
-    $env:LUMINE_REVISION = $Revision
+    if (-not (Test-Path -LiteralPath $revisionManifest)) {
+        throw "Acceptance build revision is unknown. The NativeAOT artifact must contain revision.txt next to Lumine.App.exe, or -Revision must be supplied explicitly."
+    }
+
+    $Revision =
+        (Get-Content -LiteralPath $revisionManifest -Raw).Trim()
 }
+
+$revisionPattern = '^[0-9a-fA-F]{7,64}$'
+if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq "unknown" -or $Revision -notmatch $revisionPattern) {
+    throw "Acceptance build revision '$Revision' is not a valid Git commit revision."
+}
+
+$env:LUMINE_HARDWARE_ID = $HardwareId
+$env:LUMINE_REVISION = $Revision
 
 function Get-MetadataValue {
     param(
@@ -333,12 +441,59 @@ function Invoke-CoreAcceptance {
         throw "Acceptance result mode mismatch: expected '$Mode', got '$reportedMode'."
     }
 
+    if ([int]$result.schemaVersion -ne 1) {
+        throw "Acceptance result schema mismatch: expected 1, got '$($result.schemaVersion)'."
+    }
+
+    $reportedRevision =
+        [string]$result.environment.appRevision
+    if ($reportedRevision -ne $Revision) {
+        throw "Acceptance result revision mismatch: expected '$Revision', got '$reportedRevision'."
+    }
+
+    if ([string]$result.environment.hardwareId -ne $HardwareId) {
+        throw "Acceptance hardware ID mismatch: expected '$HardwareId', got '$($result.environment.hardwareId)'."
+    }
+
+    $processArchitecture =
+        [string]$result.environment.processArchitecture
+    $osArchitecture =
+        [string]$result.environment.osArchitecture
+
+    if ($processArchitecture -ne "X64" -or $osArchitecture -ne "X64") {
+        throw "Acceptance must run as native Windows x64; process='$processArchitecture', OS='$osArchitecture'."
+    }
+
     return $result
 }
 
 try {
     $cold = Invoke-CoreAcceptance -Mode "cold" -ResultPath $coldResultPath
     $warm = Invoke-CoreAcceptance -Mode "warm" -ResultPath $warmResultPath
+
+    $coldAssetCount =
+        [int64](Get-MetadataValue -Result $cold -Key "library.asset_count")
+    $warmAssetCount =
+        [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+    if ($coldAssetCount -ne $warmAssetCount) {
+        throw "Representative library changed between cold and warm runs: cold=$coldAssetCount, warm=$warmAssetCount assets. Re-run while the source library is stable."
+    }
+
+    $coldLibraryHash =
+        Get-MetadataValue -Result $cold -Key "library.path_sha256"
+    $warmLibraryHash =
+        Get-MetadataValue -Result $warm -Key "library.path_sha256"
+    if ($coldLibraryHash -ne $warmLibraryHash) {
+        throw "Cold and warm results do not refer to the same representative library path."
+    }
+
+    $coldCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.files")
+    $coldCacheBeforeBytes =
+        [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_before.bytes")
+    if ($coldCacheBeforeFiles -ne 0 -or $coldCacheBeforeBytes -ne 0) {
+        throw "Cold acceptance did not start with an empty persistent thumbnail cache: files=$coldCacheBeforeFiles, bytes=$coldCacheBeforeBytes."
+    }
 
     foreach ($pair in @(
         @{ Name = "cold"; Result = $cold },
@@ -420,12 +575,28 @@ try {
     $coldMaxScroll = Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
     $warmMaxScroll = Get-MaxMeasurement -Result $warm -Name "viewer.fast_scroll_refresh"
 
+    $coldRawSha256 =
+        (Get-FileHash -LiteralPath $coldResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $warmRawSha256 =
+        (Get-FileHash -LiteralPath $warmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
     $summary = [ordered]@{
         schemaVersion = 1
         automatedDecision = "pass"
         hardwareId = $HardwareId
+        appRevision = $Revision
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+        acceptanceCriteria = [ordered]@{
+            minimumAssets = $MinimumAssets
+            browseSecondsPerRun = $BrowseSeconds
+            idleSecondsPerRun = $IdleSeconds
+            maxFastScrollMs = $MaxFastScrollMs
+        }
+        rawResultSha256 = [ordered]@{
+            cold = $coldRawSha256
+            warm = $warmRawSha256
+        }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
