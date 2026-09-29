@@ -1874,6 +1874,11 @@ try
             "HEIC");
     }
 
+    // From this point on the smoke exercises ThumbnailCache maintenance
+    // directly. Drain the production pipeline first so its owned background
+    // maintenance cannot race the explicit prune/recovery assertions below.
+    await pipeline.DisposeAsync();
+
     var statsBeforePrune = await cache.GetStatsAsync();
     Require(statsBeforePrune.FileCount >= 6, "Expected persisted thumbnail cache entries.");
     Require(statsBeforePrune.TotalBytes > 0, "Thumbnail cache accounting returned zero bytes.");
