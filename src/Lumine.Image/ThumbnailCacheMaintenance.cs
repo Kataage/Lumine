@@ -157,14 +157,14 @@ internal sealed class ThumbnailCacheMaintenance
                 await _cache.PruneToConfiguredLimitAsync()
                     .ConfigureAwait(false);
 
-            RecordCompleted(result);
-
             if (result.BytesAfter
                 > _cache.ConfiguredByteLimit)
             {
                 throw new InvalidOperationException(
                     $"Persistent thumbnail cache could not converge to its configured disk budget: {result.BytesAfter:N0} > {_cache.ConfiguredByteLimit:N0} bytes.");
             }
+
+            RecordCompleted(result);
         }
         catch (Exception exception)
         {
