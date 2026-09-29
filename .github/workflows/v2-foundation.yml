@@ -85,31 +85,41 @@ jobs:
       - name: Validate real-library acceptance wrapper syntax
         shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
-            [ref]$tokens,
-            [ref]$errors) | Out-Null
+          foreach ($script in @(
+            "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Test-RealLibraryAcceptanceWrapper.ps1"
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors) | Out-Null
 
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error "$script : $($_.Message)" }
+              exit 1
+            }
           }
 
       - name: Validate real-library acceptance wrapper syntax on Windows PowerShell 5.1
         shell: powershell
         run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
-            [ref]$tokens,
-            [ref]$errors) | Out-Null
+          foreach ($script in @(
+            "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Test-RealLibraryAcceptanceWrapper.ps1"
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script),
+              [ref]$tokens,
+              [ref]$errors) | Out-Null
 
-          if ($errors.Count -ne 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            exit 1
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error "$script : $($_.Message)" }
+              exit 1
+            }
           }
 
       - name: Build release
@@ -219,6 +229,11 @@ jobs:
       - name: Publish NativeAOT
         run: dotnet publish src/Lumine.App/Lumine.App.csproj -c Release -r win-x64 --self-contained true --no-restore -o artifacts/native-aot
 
+      - name: Stamp NativeAOT acceptance revision
+        shell: pwsh
+        run: |
+          Set-Content -LiteralPath "artifacts/native-aot/revision.txt" -Value $env:GITHUB_SHA -NoNewline -Encoding ascii
+
       - name: Verify NativeAOT executable
         shell: pwsh
         run: |
@@ -257,6 +272,10 @@ jobs:
               throw "Clean product smoke left a non-empty SQLite WAL after launch $launch."
             }
           }
+
+      - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
+        shell: powershell
+        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA
 
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
