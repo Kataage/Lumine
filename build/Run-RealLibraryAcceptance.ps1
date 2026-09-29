@@ -486,13 +486,28 @@ try {
 
     $coldMaxScroll = Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
     $warmMaxScroll = Get-MaxMeasurement -Result $warm -Name "viewer.fast_scroll_refresh"
+    $coldRawSha256 =
+        (Get-FileHash -LiteralPath $coldResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $warmRawSha256 =
+        (Get-FileHash -LiteralPath $warmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
     $summary = [ordered]@{
         schemaVersion = 1
         automatedDecision = "pass"
         hardwareId = $HardwareId
+        appRevision = $Revision
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
+        acceptanceCriteria = [ordered]@{
+            minimumAssets = $MinimumAssets
+            browseSecondsPerRun = $BrowseSeconds
+            idleSecondsPerRun = $IdleSeconds
+            maxFastScrollMs = $MaxFastScrollMs
+        }
+        rawResultSha256 = [ordered]@{
+            cold = $coldRawSha256
+            warm = $warmRawSha256
+        }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $cold -Key "resource.peak_working_set_bytes")
