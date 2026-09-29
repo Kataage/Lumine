@@ -280,6 +280,20 @@ jobs:
             [IO.File]::WriteAllBytes((Join-Path $library ("fixture-{0:D4}.png" -f $index)), $png)
           }
 
+          $sentinel = Join-Path $library "source-sentinel.txt"
+          Set-Content -LiteralPath $sentinel -Value "preserve-source" -NoNewline -Encoding ascii
+          $overlapRejected = $false
+          try {
+            & ".\build\Run-RealLibraryAcceptance.ps1" -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $library -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000
+          }
+          catch {
+            if ($_.Exception.Message -notmatch "overlaps representative library|inside representative library") { throw }
+            $overlapRejected = $true
+          }
+
+          if (-not $overlapRejected) { throw "Acceptance wrapper allowed source/output overlap." }
+          if ((Get-Content -LiteralPath $sentinel -Raw) -ne "preserve-source") { throw "Overlap rejection modified the representative source library." }
+
           Set-Content -LiteralPath (Join-Path $output "cold.json") -Value '{"stale":true}' -Encoding ascii
           Set-Content -LiteralPath (Join-Path $output "warm.json") -Value '{"stale":true}' -Encoding ascii
           Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
