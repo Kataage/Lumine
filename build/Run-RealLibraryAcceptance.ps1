@@ -20,7 +20,10 @@ param(
     [string]$Revision = "",
 
     [ValidateSet("Default", "RedirectionSurface")]
-    [string]$Win32CompositionMode = "Default"
+    [string]$Win32CompositionMode = "Default",
+
+    [ValidateSet("Default", "Software")]
+    [string]$Win32RenderingMode = "Default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,6 +160,7 @@ New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 $oldHardware = $env:LUMINE_HARDWARE_ID
 $oldRevision = $env:LUMINE_REVISION
 $oldCompositionMode = $env:LUMINE_WIN32_COMPOSITION_MODE
+$oldRenderingMode = $env:LUMINE_WIN32_RENDERING_MODE
 
 if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
@@ -187,6 +191,13 @@ if ($Win32CompositionMode -eq "Default") {
 }
 else {
     $env:LUMINE_WIN32_COMPOSITION_MODE = $Win32CompositionMode
+}
+
+if ($Win32RenderingMode -eq "Default") {
+    $env:LUMINE_WIN32_RENDERING_MODE = $null
+}
+else {
+    $env:LUMINE_WIN32_RENDERING_MODE = $Win32RenderingMode
 }
 
 function Get-MetadataValue {
@@ -380,6 +391,7 @@ function Write-CrashDiagnostics {
     $lines.Add("startedAtUtc=$($ProcessResult.StartedAtUtc.ToString('O'))")
     $lines.Add("revision=$Revision")
     $lines.Add("win32CompositionMode=$Win32CompositionMode")
+    $lines.Add("win32RenderingMode=$Win32RenderingMode")
     $lines.Add("os=$([Environment]::OSVersion.VersionString)")
     $lines.Add("is64BitProcess=$([Environment]::Is64BitProcess)")
     $lines.Add("is64BitOperatingSystem=$([Environment]::Is64BitOperatingSystem)")
@@ -740,6 +752,7 @@ try {
         hardwareId = $HardwareId
         appRevision = $Revision
         win32CompositionMode = $Win32CompositionMode
+        win32RenderingMode = $Win32RenderingMode
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
         acceptanceCriteria = [ordered]@{
@@ -826,4 +839,5 @@ finally {
     $env:LUMINE_HARDWARE_ID = $oldHardware
     $env:LUMINE_REVISION = $oldRevision
     $env:LUMINE_WIN32_COMPOSITION_MODE = $oldCompositionMode
+    $env:LUMINE_WIN32_RENDERING_MODE = $oldRenderingMode
 }
