@@ -26,9 +26,13 @@ internal sealed class ThumbnailCacheMaintenance
         TimeSpan quietPeriod)
     {
         ArgumentNullException.ThrowIfNull(cache);
-        ArgumentOutOfRangeException.ThrowIfLessThan(
-            quietPeriod,
-            TimeSpan.Zero);
+
+        if (quietPeriod < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quietPeriod),
+                "Maintenance quiet period cannot be negative.");
+        }
 
         _cache = cache;
         _quietPeriod = quietPeriod;
