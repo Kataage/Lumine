@@ -261,7 +261,12 @@ public sealed class ThumbnailViewerControl : UserControl
         try
         {
             await compositionRendered.ConfigureAwait(false);
-            lease.Dispose();
+
+            // CompositionBatch.Rendered may complete synchronously on the
+            // render loop. Avalonia/Skia bitmap disposal belongs on the UI
+            // dispatcher, matching ViewerOriginalBitmap's release contract.
+            await Dispatcher.UIThread.InvokeAsync(
+                lease.Dispose);
         }
         catch (Exception exception)
         {
