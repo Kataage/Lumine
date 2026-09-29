@@ -16,6 +16,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly ListBox _rows;
     private readonly object _bitmapReleaseGate = new();
     private readonly HashSet<Task> _pendingBitmapReleases = [];
+    private Exception? _bitmapReleaseFailure;
     private Compositor? _compositor;
     private int _columns = 1;
     private long _selectedIndex = -1;
@@ -163,6 +164,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
             lock (_bitmapReleaseGate)
             {
+                if (_bitmapReleaseFailure is not null)
+                {
+                    throw new InvalidOperationException(
+                        "A thumbnail composition release failed.",
+                        _bitmapReleaseFailure);
+                }
+
                 if (_pendingBitmapReleases.Count == 0)
                 {
                     return;
@@ -223,6 +231,13 @@ public sealed class ThumbnailViewerControl : UserControl
         try
         {
             await release.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            lock (_bitmapReleaseGate)
+            {
+                _bitmapReleaseFailure ??= exception;
+            }
         }
         finally
         {
