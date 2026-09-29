@@ -521,6 +521,41 @@ try {
             throw "$mode acceptance recorded $thumbnailFailures thumbnail failures."
         }
 
+        $viewerRequestFailures = [int64](Get-MetadataValue -Result $result -Key "viewer.thumbnail_requests_failed")
+        if ($viewerRequestFailures -ne 0) {
+            throw "$mode acceptance recorded $viewerRequestFailures Viewer thumbnail request failure(s)."
+        }
+
+        $inFlightThumbnailRequests = [int64](Get-MetadataValue -Result $result -Key "viewer.in_flight_thumbnail_requests")
+        if ($inFlightThumbnailRequests -ne 0) {
+            throw "$mode acceptance still had $inFlightThumbnailRequests in-flight thumbnail request(s) after idle settle."
+        }
+
+        $activeBitmapDecodes = [int64](Get-MetadataValue -Result $result -Key "viewer.active_bitmap_decodes")
+        if ($activeBitmapDecodes -ne 0) {
+            throw "$mode acceptance still had $activeBitmapDecodes active bitmap decode(s) after idle settle."
+        }
+
+        $maintenanceFailures = [int64](Get-MetadataValue -Result $result -Key "thumbnail.maintenance_runs_failed")
+        if ($maintenanceFailures -ne 0) {
+            throw "$mode acceptance recorded $maintenanceFailures thumbnail cache maintenance failure(s)."
+        }
+
+        $filesystemQueueDepth = [int64](Get-MetadataValue -Result $result -Key "filesystem.queue_depth")
+        if ($filesystemQueueDepth -ne 0) {
+            throw "$mode acceptance still had filesystem queue depth $filesystemQueueDepth after idle settle."
+        }
+
+        $filesystemEventsObserved = [int64](Get-MetadataValue -Result $result -Key "filesystem.events_observed")
+        if ($filesystemEventsObserved -ne 0) {
+            throw "$mode representative source library changed during acceptance; watcher observed $filesystemEventsObserved event(s)."
+        }
+
+        $runtimeReconciliations = [int64](Get-MetadataValue -Result $result -Key "filesystem.reconciliations")
+        if ($runtimeReconciliations -ne 0) {
+            throw "$mode runtime filesystem synchronization performed $runtimeReconciliations reconciliation(s) on the stable representative library."
+        }
+
         $interruptedWrites = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.interrupted_writes")
         if ($interruptedWrites -ne 0) {
             throw "$mode acceptance left $interruptedWrites interrupted thumbnail writes."
