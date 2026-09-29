@@ -83,7 +83,12 @@ if ([string]::IsNullOrWhiteSpace($Revision)) {
 
 if ([string]::IsNullOrWhiteSpace($Revision)
     -or $Revision -eq "unknown"
-    -or $Revision -notmatch '^[0-9a-fA-F]{7,64}
+    -or $Revision -notmatch '^[0-9a-fA-F]{7,64}$') {
+    throw "Acceptance build revision '$Revision' is not a valid Git commit revision."
+}
+
+$env:LUMINE_HARDWARE_ID = $HardwareId
+$env:LUMINE_REVISION = $Revision
 function Get-MetadataValue {
     param(
         [Parameter(Mandatory = $true)]
