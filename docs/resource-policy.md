@@ -40,8 +40,9 @@ Cache construction does **not** recursively scan or prune the cache. This preser
 
 `ThumbnailPipeline` owns the production maintenance lifecycle:
 
-- the first Viewer request makes one maintenance pass eligible, but only after the request path becomes quiet;
-- newly generated thumbnails mark maintenance pending again;
+- the first Viewer request makes one maintenance pass eligible, but only after the request path becomes quiet, so an already-oversized persistent cache can converge without a startup-path scan;
+- after that initial pass, newly generated cache bytes accumulate against a bounded growth hysteresis: 1/128 of the configured cache limit, clamped to 4–64 MiB;
+- maintenance is scheduled again only after that growth threshold is reached;
 - maintenance runs only while the thumbnail queue/workers are idle;
 - any new thumbnail request cancels an active/pending maintenance pass before entering cache generation/read work;
 - foreground cancellations are recorded separately so field diagnostics can prove that Viewer work preempted maintenance;
