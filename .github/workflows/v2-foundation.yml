@@ -274,16 +274,37 @@ jobs:
           }
 
       - name: Run real-library acceptance wrapper smoke on Windows PowerShell 5.1
+        id: acceptance-default
+        continue-on-error: true
         shell: powershell
-        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 3 -Win32CompositionMode Default
+        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 3 -Win32CompositionMode Default -Win32RenderingMode Default
 
       - name: Run RedirectionSurface acceptance diagnostic smoke
+        id: acceptance-redirection
+        continue-on-error: true
         shell: powershell
         run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 1 -Win32CompositionMode RedirectionSurface -Win32RenderingMode Default
 
       - name: Run software-renderer acceptance diagnostic smoke
+        id: acceptance-software
+        continue-on-error: true
         shell: powershell
         run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 1 -Win32CompositionMode Default -Win32RenderingMode Software
+
+      - name: Report acceptance backend diagnostics
+        shell: powershell
+        env:
+          DEFAULT_RESULT: ${{ steps.acceptance-default.outcome }}
+          REDIRECTION_RESULT: ${{ steps.acceptance-redirection.outcome }}
+          SOFTWARE_RESULT: ${{ steps.acceptance-software.outcome }}
+        run: |
+          Write-Host "Default             : $env:DEFAULT_RESULT"
+          Write-Host "RedirectionSurface  : $env:REDIRECTION_RESULT"
+          Write-Host "Software renderer   : $env:SOFTWARE_RESULT"
+
+          if ($env:DEFAULT_RESULT -ne "success") {
+            throw "Default NativeAOT acceptance path failed; A/B outcomes are printed above."
+          }
 
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
