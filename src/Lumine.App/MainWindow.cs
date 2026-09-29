@@ -219,6 +219,23 @@ public sealed class MainWindow : Window
         builder.AppendLine(
             $"Interrupted thumbnail writes: {cacheStats.InterruptedWriteCount.ToString("N0", CultureInfo.InvariantCulture)}");
 
+        var maintenance =
+            runtime.ThumbnailCacheMaintenanceDiagnostics;
+
+        builder.AppendLine(
+            $"Cache maintenance: completed={maintenance.RunsCompleted.ToString("N0", CultureInfo.InvariantCulture)}, cancelled={maintenance.RunsCancelled.ToString("N0", CultureInfo.InvariantCulture)}, failed={maintenance.RunsFailed.ToString("N0", CultureInfo.InvariantCulture)}");
+        builder.AppendLine(
+            $"Cache maintenance deleted: {maintenance.FilesDeleted.ToString("N0", CultureInfo.InvariantCulture)} files / {FormatBytes(maintenance.BytesDeleted)}");
+        builder.AppendLine(
+            $"Cache maintenance foreground preemptions: {maintenance.ForegroundPreemptions.ToString("N0", CultureInfo.InvariantCulture)}");
+
+        if (!string.IsNullOrWhiteSpace(
+                maintenance.LastError))
+        {
+            builder.AppendLine(
+                $"Cache maintenance last error: {maintenance.LastError}");
+        }
+
         return builder.ToString();
     }
 
