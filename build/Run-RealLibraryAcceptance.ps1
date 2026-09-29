@@ -215,7 +215,19 @@ try {
         $cacheBytes = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.bytes")
         $cacheLimit = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_configured_bytes")
         if ($cacheBytes -gt $cacheLimit) {
-            throw "$mode thumbnail cache exceeded its configured disk budget: $cacheBytes > $cacheLimit bytes."
+            throw "$mode thumbnail cache exceeded its configured disk budget before shutdown: $cacheBytes > $cacheLimit bytes."
+        }
+
+        $postShutdownCacheBytes = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_post_shutdown.bytes")
+        $postShutdownCacheLimit = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_post_shutdown.configured_bytes")
+        $postShutdownInterruptedWrites = [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_post_shutdown.interrupted_writes")
+
+        if ($postShutdownCacheBytes -gt $postShutdownCacheLimit) {
+            throw "$mode post-shutdown thumbnail cache exceeded its configured disk budget: $postShutdownCacheBytes > $postShutdownCacheLimit bytes."
+        }
+
+        if ($postShutdownInterruptedWrites -ne 0) {
+            throw "$mode post-shutdown thumbnail cache retained $postShutdownInterruptedWrites interrupted write(s)."
         }
 
         $maxScroll = Get-MaxMeasurement -Result $result -Name "viewer.fast_scroll_refresh"
@@ -257,6 +269,7 @@ try {
             thumbnailCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_hits")
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_configured_bytes")
+            postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = (Get-MetadataValue -Result $cold -Key "filesystem.bootstrap_mode")
         }
         warm = [ordered]@{
@@ -266,6 +279,7 @@ try {
             thumbnailCacheHits = $warmCacheHits
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_configured_bytes")
+            postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = $warmBootstrap
         }
         measuredBottlenecks = [ordered]@{
