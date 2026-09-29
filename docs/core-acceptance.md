@@ -59,12 +59,18 @@ The raw result uses the #286 `BenchmarkResult` schema and records hardware/OS/ru
 Use the wrapper so cold and warm runs share the same v2 database and persistent thumbnail cache:
 
 ```powershell
+# PowerShell 7
 pwsh -File .\build\Run-RealLibraryAcceptance.ps1 \
-  -Exe "C:\path\to\Lumine.App.exe" \
+  -Exe ".\artifacts\native-aot\Lumine.App.exe" \
+  -Library "D:\path\to\representative-library" \
+  -OutputDirectory "D:\Lumine-acceptance"
+
+# Windows PowerShell 5.1 is also supported
+powershell.exe -ExecutionPolicy Bypass -File .\build\Run-RealLibraryAcceptance.ps1 \
+  -Exe ".\artifacts\native-aot\Lumine.App.exe" \
   -Library "D:\path\to\representative-library" \
   -OutputDirectory "D:\Lumine-acceptance"
 ```
-
 Defaults:
 
 - minimum assets: 1,000
