@@ -39,6 +39,69 @@ $coldResultPath = Join-Path $outputRoot "cold.json"
 $warmResultPath = Join-Path $outputRoot "warm.json"
 $summaryPath = Join-Path $outputRoot "summary.json"
 
+function Test-PathWithinDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Candidate,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Directory
+    )
+
+    $candidateFull =
+        [IO.Path]::TrimEndingDirectorySeparator(
+            [IO.Path]::GetFullPath($Candidate))
+    $directoryFull =
+        [IO.Path]::TrimEndingDirectorySeparator(
+            [IO.Path]::GetFullPath($Directory))
+
+    if ($candidateFull.Equals(
+            $directoryFull,
+            [StringComparison]::OrdinalIgnoreCase))
+    {
+        return $true
+    }
+
+    $directoryPrefix =
+        $directoryFull
+        + [IO.Path]::DirectorySeparatorChar
+
+    return $candidateFull.StartsWith(
+        $directoryPrefix,
+        [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-DirectoryOverlap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Left,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Right
+    )
+
+    $leftWithinRight =
+        Test-PathWithinDirectory -Candidate $Left -Directory $Right
+    $rightWithinLeft =
+        Test-PathWithinDirectory -Candidate $Right -Directory $Left
+
+    return $leftWithinRight -or $rightWithinLeft
+}
+
+if (Test-DirectoryOverlap -Left $dataRoot -Right $libraryPath) {
+    throw "Acceptance data root '$dataRoot' overlaps representative library '$libraryPath'. Choose an OutputDirectory outside the source library."
+}
+
+foreach ($resultPath in @(
+    $coldResultPath,
+    $warmResultPath,
+    $summaryPath
+)) {
+    if (Test-PathWithinDirectory -Candidate $resultPath -Directory $libraryPath) {
+        throw "Acceptance result path '$resultPath' is inside representative library '$libraryPath'. Choose an OutputDirectory outside the source library."
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
 foreach ($staleOutput in @(
