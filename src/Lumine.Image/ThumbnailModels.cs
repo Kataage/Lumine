@@ -114,6 +114,19 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long MetadataFastIdentityHits,
     long MetadataFullHashFallbacks);
 
+public readonly record struct ThumbnailCacheMaintenanceDiagnosticsSnapshot(
+    long RunsScheduled,
+    long RunsStarted,
+    long RunsCompleted,
+    long RunsCancelled,
+    long RunsFailed,
+    long ForegroundPreemptions,
+    long FilesDeleted,
+    long BytesDeleted,
+    long InterruptedWritesDeleted,
+    long LastBytesAfter,
+    string? LastError);
+
 public sealed class ThumbnailPipelineOptions
 {
     public static int DefaultWorkerCount { get; } =
@@ -127,6 +140,9 @@ public sealed class ThumbnailPipelineOptions
 
     public int MaxForegroundBurst { get; init; } =
         CoreResourcePolicy.Default.ThumbnailForegroundBurst;
+
+    public TimeSpan CacheMaintenanceQuietPeriod { get; init; } =
+        TimeSpan.FromSeconds(2);
 
     public static ThumbnailPipelineOptions FromResourcePolicy(
         CoreResourcePolicy policy)

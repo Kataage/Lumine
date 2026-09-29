@@ -3,6 +3,7 @@ namespace Lumine.Image;
 public sealed class ThumbnailPipeline : IAsyncDisposable
 {
     private readonly ThumbnailGenerator _generator;
+    private readonly ThumbnailCacheMaintenance _maintenance;
     private readonly object _queueGate = new();
     private readonly Queue<WorkItem> _foreground = new();
     private readonly Queue<WorkItem> _background = new();
@@ -12,6 +13,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly TaskCompletionSource _disposeCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task[] _workers;
+    private int _activeWorkItems;
     private bool _disposed;
 
     public ThumbnailPipeline(
@@ -24,12 +26,21 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.WorkerCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.QueueCapacity);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxForegroundBurst);
+        if (options.CacheMaintenanceQuietPeriod < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options.CacheMaintenanceQuietPeriod),
+                "Cache maintenance quiet period cannot be negative.");
+        }
 
         WorkerCount = options.WorkerCount;
         QueueCapacity = options.QueueCapacity;
         MaxForegroundBurst = options.MaxForegroundBurst;
         _queueSlots = new SemaphoreSlim(options.QueueCapacity, options.QueueCapacity);
         _generator = new ThumbnailGenerator(cache);
+        _maintenance = new ThumbnailCacheMaintenance(
+            cache,
+            options.CacheMaintenanceQuietPeriod);
 
         _workers = Enumerable.Range(0, options.WorkerCount)
             .Select(_ => Task.Run(WorkerLoopAsync))
@@ -45,12 +56,22 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     public ThumbnailDiagnosticsSnapshot Diagnostics =>
         _generator.SnapshotDiagnostics();
 
+    public ThumbnailCacheMaintenanceDiagnosticsSnapshot MaintenanceDiagnostics =>
+        _maintenance.Diagnostics;
+
     public async Task<ThumbnailResult> RequestAsync(
         ThumbnailSource source,
         ThumbnailProfile profile,
         ThumbnailPriority priority = ThumbnailPriority.Foreground,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _maintenance.PauseForRequestAsync(
+            priority == ThumbnailPriority.Foreground)
+            .ConfigureAwait(false);
+
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
@@ -130,6 +151,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         try
         {
+            await _maintenance.StopBackgroundAsync()
+                .ConfigureAwait(false);
+
             _shutdown.Cancel();
 
             foreach (var item in abandoned!)
@@ -146,6 +170,9 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
             {
             }
+
+            await _maintenance.FinalizeAsync()
+                .ConfigureAwait(false);
 
             _shutdown.Dispose();
             _queuedItems.Dispose();
@@ -193,24 +220,29 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 {
                     continue;
                 }
+
+                _activeWorkItems++;
             }
 
             _queueSlots.Release();
 
-            if (item.CancellationToken.IsCancellationRequested)
-            {
-                item.Completion.TrySetCanceled(item.CancellationToken);
-                continue;
-            }
+            ThumbnailResult? result = null;
 
             try
             {
+                if (item.CancellationToken.IsCancellationRequested)
+                {
+                    item.Completion.TrySetCanceled(
+                        item.CancellationToken);
+                    continue;
+                }
+
                 using var activeCancellation =
                     CancellationTokenSource.CreateLinkedTokenSource(
                         item.CancellationToken,
                         _shutdown.Token);
 
-                var result = _generator.GetOrCreate(
+                result = _generator.GetOrCreate(
                     item.Source,
                     item.Profile,
                     activeCancellation.Token);
@@ -232,6 +264,28 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             {
                 item.Completion.TrySetException(exception);
             }
+            finally
+            {
+                lock (_queueGate)
+                {
+                    _activeWorkItems--;
+                }
+
+                _maintenance.NotifyRequestCompleted(
+                    result,
+                    IsIdleForMaintenance);
+            }
+        }
+    }
+
+    private bool IsIdleForMaintenance()
+    {
+        lock (_queueGate)
+        {
+            return !_disposed
+                && _activeWorkItems == 0
+                && _foreground.Count == 0
+                && _background.Count == 0;
         }
     }
 
