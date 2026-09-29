@@ -1382,6 +1382,21 @@ try
 
     try
     {
+        await Task.Delay(650);
+
+        var startupMaintenanceStats =
+            await maintenanceCache
+                .GetStatsAsync();
+        Require(
+            startupMaintenanceStats.TotalBytes
+                > maintenanceCache.ConfiguredByteLimit,
+            "Pipeline construction unexpectedly pruned the persistent cache.");
+        Require(
+            maintenancePipeline
+                .MaintenanceDiagnostics
+                .RunsScheduled == 0,
+            "Pipeline construction scheduled an unconditional warm-start cache scan.");
+
         var maintenanceSource =
             SourceFor(
                 4700,
