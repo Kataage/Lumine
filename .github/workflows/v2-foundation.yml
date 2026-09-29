@@ -97,6 +97,21 @@ jobs:
             exit 1
           }
 
+      - name: Validate real-library acceptance wrapper syntax on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "./build/Run-RealLibraryAcceptance.ps1"),
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
       - name: Build release
         run: dotnet build Lumine.sln -c Release --no-restore
 
