@@ -700,22 +700,14 @@ internal sealed class RealLibraryAcceptanceSession
             () =>
             {
                 var first =
-                    grid.FirstVisibleAssetIndex
-                    ?? grid.FirstRealizedAssetIndex;
+                    grid.FirstVisibleAssetIndex;
+                var last =
+                    grid.LastVisibleAssetIndex;
 
-                if (first is null)
-                {
-                    return false;
-                }
-
-                var tolerance =
-                    Math.Max(
-                        1L,
-                        (long)grid.Columns * 3L);
-
-                return Math.Abs(
-                           first.Value - target)
-                       <= tolerance
+                return first is not null
+                    && last is not null
+                    && target >= first.Value
+                    && target <= last.Value
                     && grid.Diagnostics.ReadyTiles > 0;
             },
             timeout,
