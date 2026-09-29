@@ -48,13 +48,15 @@ function Normalize-ComparisonPath {
     $full = [IO.Path]::GetFullPath($Path)
     $root = [IO.Path]::GetPathRoot($full)
 
-    while (
-        $full.Length -gt $root.Length
-        -and (
-            $full.EndsWith([IO.Path]::DirectorySeparatorChar.ToString())
-            -or $full.EndsWith([IO.Path]::AltDirectorySeparatorChar.ToString())
-        )
-    ) {
+    while ($full.Length -gt $root.Length) {
+        $endsWithSeparator =
+            $full.EndsWith([IO.Path]::DirectorySeparatorChar.ToString()) -or
+            $full.EndsWith([IO.Path]::AltDirectorySeparatorChar.ToString())
+
+        if (-not $endsWithSeparator) {
+            break
+        }
+
         $full = $full.Substring(0, $full.Length - 1)
     }
 
