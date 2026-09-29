@@ -52,7 +52,12 @@ foreach ($staleOutput in @(
 }
 
 if (Test-Path -LiteralPath $dataRoot) {
-    Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $dataRoot -Recurse -Force
+    }
+    catch {
+        throw "Unable to reset acceptance data root '$dataRoot'. Close any running Lumine.App process that may still own instance.lock, then retry. $($_.Exception.Message)"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
@@ -64,11 +69,28 @@ if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
 }
 
-$env:LUMINE_HARDWARE_ID = $HardwareId
+if ([string]::IsNullOrWhiteSpace($Revision)) {
+    $revisionManifest =
+        Join-Path (Split-Path -Parent $exePath) "revision.txt"
 
-if (-not [string]::IsNullOrWhiteSpace($Revision)) {
-    $env:LUMINE_REVISION = $Revision
+    if (-not (Test-Path -LiteralPath $revisionManifest)) {
+        throw "Acceptance build revision is unknown. The NativeAOT artifact must contain revision.txt next to Lumine.App.exe, or -Revision must be supplied explicitly."
+    }
+
+    $Revision =
+        (Get-Content -LiteralPath $revisionManifest -Raw).Trim()
 }
+
+if (
+    [string]::IsNullOrWhiteSpace($Revision)
+    -or $Revision -eq "unknown"
+    -or $Revision -notmatch '^[0-9a-fA-F]{7,64}$'
+) {
+    throw "Acceptance build revision '$Revision' is not a valid Git commit revision."
+}
+
+$env:LUMINE_HARDWARE_ID = $HardwareId
+$env:LUMINE_REVISION = $Revision
 
 function Get-MetadataValue {
     param(
