@@ -355,6 +355,27 @@ function Invoke-CoreAcceptance {
         throw "Acceptance result mode mismatch: expected '$Mode', got '$reportedMode'."
     }
 
+    $reportedRevision =
+        [string]$result.environment.appRevision
+    if ($reportedRevision -ne $Revision) {
+        throw "Acceptance result revision mismatch: expected '$Revision', got '$reportedRevision'."
+    }
+
+    if ([int]$result.schemaVersion -ne 1) {
+        throw "Acceptance result schema mismatch: expected 1, got '$($result.schemaVersion)'."
+    }
+
+    if ([string]$result.environment.hardwareId -ne $HardwareId) {
+        throw "Acceptance hardware ID mismatch: expected '$HardwareId', got '$($result.environment.hardwareId)'."
+    }
+
+    if (
+        [string]$result.environment.processArchitecture -ne "X64"
+        -or [string]$result.environment.osArchitecture -ne "X64"
+    ) {
+        throw "Acceptance must run as native Windows x64; process='$($result.environment.processArchitecture)', OS='$($result.environment.osArchitecture)'."
+    }
+
     return $result
 }
 
