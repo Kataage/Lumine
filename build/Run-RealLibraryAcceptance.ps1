@@ -81,11 +81,8 @@ if ([string]::IsNullOrWhiteSpace($Revision)) {
         (Get-Content -LiteralPath $revisionManifest -Raw).Trim()
 }
 
-if (
-    [string]::IsNullOrWhiteSpace($Revision)
-    -or $Revision -eq "unknown"
-    -or $Revision -notmatch '^[0-9a-fA-F]{7,64}$'
-) {
+$revisionPattern = '^[0-9a-fA-F]{7,64}$'
+if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq "unknown" -or $Revision -notmatch $revisionPattern) {
     throw "Acceptance build revision '$Revision' is not a valid Git commit revision."
 }
 
@@ -369,11 +366,13 @@ function Invoke-CoreAcceptance {
         throw "Acceptance hardware ID mismatch: expected '$HardwareId', got '$($result.environment.hardwareId)'."
     }
 
-    if (
-        [string]$result.environment.processArchitecture -ne "X64"
-        -or [string]$result.environment.osArchitecture -ne "X64"
-    ) {
-        throw "Acceptance must run as native Windows x64; process='$($result.environment.processArchitecture)', OS='$($result.environment.osArchitecture)'."
+    $processArchitecture =
+        [string]$result.environment.processArchitecture
+    $osArchitecture =
+        [string]$result.environment.osArchitecture
+
+    if ($processArchitecture -ne "X64" -or $osArchitecture -ne "X64") {
+        throw "Acceptance must run as native Windows x64; process='$processArchitecture', OS='$osArchitecture'."
     }
 
     return $result
