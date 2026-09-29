@@ -98,6 +98,13 @@ foreach ($iteration in 1..$Repeat) {
             }
         }
 
+        $crashDiagnostics =
+            Get-ChildItem -LiteralPath $output -Filter "*-crash-diagnostics.txt" -File -ErrorAction SilentlyContinue
+        foreach ($crashDiagnostic in $crashDiagnostics) {
+            Write-Host "=== wrapper smoke native crash diagnostic: iteration $iteration / $($crashDiagnostic.Name) ==="
+            Get-Content -LiteralPath $crashDiagnostic.FullName -Raw | Write-Host
+        }
+
         $runtimeLogs =
             Get-ChildItem -LiteralPath $output -Filter "runtime.log" -File -Recurse -ErrorAction SilentlyContinue
         foreach ($runtimeLog in $runtimeLogs) {
