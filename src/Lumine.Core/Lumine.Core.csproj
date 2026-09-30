@@ -3,4 +3,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Lumine.Image.Smoke</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
