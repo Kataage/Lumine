@@ -112,6 +112,8 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long MetadataBytesHashed,
     long MetadataMemoryHits,
     long MetadataFastIdentityHits,
+    long MetadataNtfsUsnIdentityHits,
+    long MetadataWindowsFileIdIdentityHits,
     long MetadataFullHashFallbacks);
 
 public readonly record struct ThumbnailCacheMaintenanceDiagnosticsSnapshot(
