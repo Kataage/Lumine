@@ -84,6 +84,7 @@ It then launches:
 
 1. cold run with a fresh Lumine data/cache root
 2. warm run against the same Lumine data/cache root
+3. only when the first warm run heals a cache hole that is strictly attributable to an intentionally cancelled cold thumbnail request, one additional steady-warm run against the now-populated cache
 
 After each process exits, the wrapper requires:
 
@@ -120,8 +121,11 @@ Across the results it requires:
 - filesystem reconcile failures = 0
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
-- warm persistent thumbnail cache hits > 0
-- warm thumbnail-generation source opens = 0
+- final warm persistent thumbnail cache hits > 0
+- final warm thumbnail cache misses = 0
+- final warm thumbnail-generation source opens = 0
+- if the first warm run reopens originals, the count must be no greater than the cold cancelled-thumbnail count, its miss/open/generation counts must match exactly, the persistent cache file count must grow by the same number (proving a missing entry was filled rather than a corrupt entry regenerated), and a second steady-warm run must prove zero misses and zero source opens
+- a warm source reopen with no corresponding cold cancellation remains an immediate failure
 
 A warm filesystem bootstrap other than `UsnDelta` is reported as a warning rather than silently treated as equivalent. A reconcile fallback can be legitimate when USN replay is unavailable, but it must be reviewed for the actual target volume.
 
@@ -146,7 +150,8 @@ powershell.exe -ExecutionPolicy Bypass -File .\Run-RealLibraryAcceptance.ps1 -Ex
 The output directory contains:
 
 - `cold.json` — raw #286 `BenchmarkResult`
-- `warm.json` — raw #286 `BenchmarkResult`
+- `warm.json` — first warm raw #286 `BenchmarkResult`
+- `warm-steady.json` — emitted only when a bounded cold-cancellation cache hole requires a convergence proof
 - `summary.json` — #295 decision support
 
 `summary.json` contains:
@@ -162,7 +167,8 @@ The output directory contains:
 - cold/warm peak working set
 - cold/warm idle working set from the end of the explicit idle-settle measurement
 - pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
-- warm source-open/cache-hit evidence
+- final warm source-open/cache-miss/cache-hit evidence
+- whether warm convergence was required, including the cold cancellation count and first-warm heal accounting
 - filesystem bootstrap mode
 - measured bottlenecks
 - known limitations

@@ -43,6 +43,7 @@ $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $dataRoot = Join-Path $outputRoot "data"
 $coldResultPath = Join-Path $outputRoot "cold.json"
 $warmResultPath = Join-Path $outputRoot "warm.json"
+$steadyWarmResultPath = Join-Path $outputRoot "warm-steady.json"
 $summaryPath = Join-Path $outputRoot "summary.json"
 
 function Normalize-ComparisonPath {
@@ -127,6 +128,7 @@ if (Test-DirectoryOverlap -Left $dataRoot -Right $libraryPath) {
 foreach ($resultPath in @(
     $coldResultPath,
     $warmResultPath,
+    $steadyWarmResultPath,
     $summaryPath
 )) {
     if (Test-PathWithinDirectory -Candidate $resultPath -Directory $libraryPath) {
@@ -139,6 +141,7 @@ New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 foreach ($staleOutput in @(
     $coldResultPath,
     $warmResultPath,
+    $steadyWarmResultPath,
     $summaryPath
 )) {
     if (Test-Path -LiteralPath $staleOutput) {
@@ -626,10 +629,70 @@ try {
         throw "Cold acceptance did not start with an empty persistent thumbnail cache: files=$coldCacheBeforeFiles, bytes=$coldCacheBeforeBytes."
     }
 
-    foreach ($pair in @(
+    $coldCancelledThumbnailRequests =
+        [int64](Get-MetadataValue -Result $cold -Key "viewer.thumbnail_requests_cancelled")
+    $initialWarmSourceOpens =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.source_opens")
+    $initialWarmCacheMisses =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_misses")
+    $initialWarmGenerated =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.generated")
+    $initialWarmCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_before.files")
+    $initialWarmCacheAfterFiles =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.files")
+    $initialWarmCacheFileGrowth =
+        $initialWarmCacheAfterFiles - $initialWarmCacheBeforeFiles
+
+    $warmConvergenceNeeded = $false
+    $steadyWarm = $null
+
+    if ($initialWarmSourceOpens -gt 0) {
+        if ($coldCancelledThumbnailRequests -le 0) {
+            throw "Warm acceptance reopened $initialWarmSourceOpens original source(s), but Cold recorded no cancelled thumbnail request that could explain an incomplete cache."
+        }
+
+        if ($initialWarmSourceOpens -gt $coldCancelledThumbnailRequests) {
+            throw "Warm acceptance reopened $initialWarmSourceOpens original source(s), exceeding Cold's $coldCancelledThumbnailRequests cancelled thumbnail request(s)."
+        }
+
+        if (($initialWarmCacheMisses -ne $initialWarmSourceOpens) -or
+            ($initialWarmGenerated -ne $initialWarmSourceOpens) -or
+            ($initialWarmCacheFileGrowth -ne $initialWarmSourceOpens))
+        {
+            throw "Warm cache-heal accounting is inconsistent: opens=$initialWarmSourceOpens misses=$initialWarmCacheMisses generated=$initialWarmGenerated cacheFileGrowth=$initialWarmCacheFileGrowth."
+        }
+
+        $warmConvergenceNeeded = $true
+        Write-Host ""
+        Write-Host "Initial Warm healed $initialWarmSourceOpens Cold cancellation cache hole(s); running steady-Warm convergence proof."
+
+        $steadyWarm =
+            Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
+
+        $steadyAssetCount =
+            [int64](Get-MetadataValue -Result $steadyWarm -Key "library.asset_count")
+        if ($steadyAssetCount -ne $coldAssetCount) {
+            throw "Representative library changed before steady-Warm: cold=$coldAssetCount, steady=$steadyAssetCount assets."
+        }
+
+        $steadyLibraryHash =
+            Get-MetadataValue -Result $steadyWarm -Key "library.path_sha256"
+        if ($steadyLibraryHash -ne $coldLibraryHash) {
+            throw "Steady-Warm result does not refer to the same representative library path."
+        }
+    }
+
+    $validationPairs = @(
         @{ Name = "cold"; Result = $cold },
         @{ Name = "warm"; Result = $warm }
-    )) {
+    )
+    if ($null -ne $steadyWarm) {
+        $validationPairs +=
+            @{ Name = "steady-warm"; Result = $steadyWarm }
+    }
+
+    foreach ($pair in $validationPairs) {
         $mode = $pair.Name
         $result = $pair.Result
 
@@ -731,17 +794,30 @@ try {
         }
     }
 
-    $warmSourceOpens = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.source_opens")
-    if ($warmSourceOpens -ne 0) {
-        throw "Warm acceptance reopened original sources for thumbnail generation $warmSourceOpens time(s)."
+    $finalWarm =
+        if ($null -ne $steadyWarm) {
+            $steadyWarm
+        }
+        else {
+            $warm
+        }
+
+    $warmSourceOpens =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.source_opens")
+    $warmCacheMisses =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_misses")
+    if ($warmSourceOpens -ne 0 -or $warmCacheMisses -ne 0) {
+        throw "Final steady-Warm cache did not converge: source opens=$warmSourceOpens, cache misses=$warmCacheMisses."
     }
 
-    $warmCacheHits = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_hits")
+    $warmCacheHits =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_hits")
     if ($warmCacheHits -le 0) {
-        throw "Warm acceptance did not observe persistent thumbnail cache hits."
+        throw "Final steady-Warm acceptance did not observe persistent thumbnail cache hits."
     }
 
-    $warmBootstrap = Get-MetadataValue -Result $warm -Key "filesystem.bootstrap_mode"
+    $warmBootstrap =
+        Get-MetadataValue -Result $finalWarm -Key "filesystem.bootstrap_mode"
     $warnings = @()
 
     if ($warmBootstrap -ne "UsnDelta") {
@@ -749,12 +825,22 @@ try {
     }
 
     $coldMaxScroll = Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
-    $warmMaxScroll = Get-MaxMeasurement -Result $warm -Name "viewer.fast_scroll_refresh"
+    $warmMaxScroll = Get-MaxMeasurement -Result $finalWarm -Name "viewer.fast_scroll_refresh"
 
     $coldRawSha256 =
         (Get-FileHash -LiteralPath $coldResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $warmRawSha256 =
         (Get-FileHash -LiteralPath $warmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $steadyWarmRawSha256 = $null
+    if ($null -ne $steadyWarm) {
+        $steadyWarmRawSha256 =
+            (Get-FileHash -LiteralPath $steadyWarmResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+
+    $steadyWarmRawPath = $null
+    if ($null -ne $steadyWarm) {
+        $steadyWarmRawPath = $steadyWarmResultPath
+    }
 
     $summary = [ordered]@{
         schemaVersion = 1
@@ -774,6 +860,17 @@ try {
         rawResultSha256 = [ordered]@{
             cold = $coldRawSha256
             warm = $warmRawSha256
+            steadyWarm = $steadyWarmRawSha256
+        }
+        warmConvergence = [ordered]@{
+            needed = $warmConvergenceNeeded
+            coldCancelledThumbnailRequests = $coldCancelledThumbnailRequests
+            initialWarmSourceOpens = $initialWarmSourceOpens
+            initialWarmCacheMisses = $initialWarmCacheMisses
+            initialWarmGenerated = $initialWarmGenerated
+            initialWarmCacheFileGrowth = $initialWarmCacheFileGrowth
+            finalWarmSourceOpens = $warmSourceOpens
+            finalWarmCacheMisses = $warmCacheMisses
         }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
@@ -788,18 +885,19 @@ try {
         }
         warm = [ordered]@{
             maxFastScrollMs = [Math]::Round($warmMaxScroll, 3)
-            peakWorkingSetBytes = [int64](Get-MetadataValue -Result $warm -Key "resource.peak_working_set_bytes")
-            idleWorkingSetBytes = Get-MeasurementAfterWorkingSet -Result $warm -Name "acceptance.idle_settle"
+            peakWorkingSetBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "resource.peak_working_set_bytes")
+            idleWorkingSetBytes = Get-MeasurementAfterWorkingSet -Result $finalWarm -Name "acceptance.idle_settle"
             thumbnailSourceOpens = $warmSourceOpens
+            thumbnailCacheMisses = $warmCacheMisses
             thumbnailCacheHits = $warmCacheHits
-            thumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.bytes")
-            thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_configured_bytes")
-            postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_post_shutdown.bytes")
+            thumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_after.bytes")
+            thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_configured_bytes")
+            postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = $warmBootstrap
         }
         measuredBottlenecks = [ordered]@{
             cold = @(Get-Bottlenecks -Result $cold)
-            warm = @(Get-Bottlenecks -Result $warm)
+            warm = @(Get-Bottlenecks -Result $finalWarm)
         }
         knownLimitations = @(
             "Per-process OS disk-read byte counters are not collected; Core-owned thumbnail source-open and metadata-hash counters are recorded instead.",
@@ -822,6 +920,7 @@ try {
         rawResults = [ordered]@{
             cold = $coldResultPath
             warm = $warmResultPath
+            steadyWarm = $steadyWarmRawPath
         }
     }
 
@@ -835,7 +934,9 @@ try {
     Write-Host "Cold max fast-scroll: $($summary.cold.maxFastScrollMs) ms"
     Write-Host "Warm max fast-scroll: $($summary.warm.maxFastScrollMs) ms"
     Write-Host "Warm source opens    : $warmSourceOpens"
+    Write-Host "Warm cache misses    : $warmCacheMisses"
     Write-Host "Warm cache hits      : $warmCacheHits"
+    Write-Host "Warm convergence     : $warmConvergenceNeeded"
     Write-Host "Summary              : $summaryPath"
 
     if ($warnings.Count -gt 0) {
