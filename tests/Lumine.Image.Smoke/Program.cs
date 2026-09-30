@@ -1169,6 +1169,26 @@ try
     var identityMetadata = identitySnapshot.Metadata;
     identitySnapshot.Dispose();
 
+    FileSourceIdentity? fileIdIdentityBefore = null;
+    if (OperatingSystem.IsWindows())
+    {
+        using var identityStream = new FileStream(
+            identityPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        fileIdIdentityBefore =
+            FileSourceIdentityProbe.ReadWindowsFileIdIdentity(
+                identityStream);
+        Require(
+            fileIdIdentityBefore is not null
+            && fileIdIdentityBefore.Kind
+                == FileSourceIdentityKind.WindowsFileId
+            && !fileIdIdentityBefore.UsedFullHash
+            && fileIdIdentityBefore.BytesHashed == 0,
+            "Windows FILE_ID_INFO identity fallback was unavailable or hashed source bytes.");
+    }
+
     var replacementBytes = await File.ReadAllBytesAsync(
         identityReplacementPath);
     await File.WriteAllBytesAsync(
@@ -1184,6 +1204,26 @@ try
         && replacedStat.LastWriteTimeUtc.Ticks
             == identityStat.LastWriteTimeUtc.Ticks,
         "Same-stat replacement fixture did not preserve size/mtime.");
+
+    if (OperatingSystem.IsWindows())
+    {
+        using var replacedStream = new FileStream(
+            identityPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        var fileIdIdentityAfter =
+            FileSourceIdentityProbe.ReadWindowsFileIdIdentity(
+                replacedStream);
+        Require(
+            fileIdIdentityBefore is not null
+            && fileIdIdentityAfter is not null
+            && !string.Equals(
+                fileIdIdentityBefore.Value,
+                fileIdIdentityAfter.Value,
+                StringComparison.Ordinal),
+            "Windows file-id fallback did not detect same-size/mtime source replacement.");
+    }
 
     try
     {
