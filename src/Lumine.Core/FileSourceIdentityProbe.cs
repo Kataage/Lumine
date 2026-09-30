@@ -9,7 +9,8 @@ public sealed record FileSourceIdentity(
     long BytesHashed)
 {
     public bool IsFastIdentity =>
-        Value.StartsWith("ntfs-usn:", StringComparison.Ordinal);
+        Value.StartsWith("ntfs-usn:", StringComparison.Ordinal)
+        || Value.StartsWith("win-fileid:", StringComparison.Ordinal);
 }
 
 public static class FileSourceIdentityProbe
@@ -30,16 +31,25 @@ public static class FileSourceIdentityProbe
         ArgumentNullException.ThrowIfNull(stream);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (OperatingSystem.IsWindows()
-            && TryReadNtfsIdentity(
-                stream.SafeFileHandle,
-                out var usn,
-                out var changeTime))
+        if (OperatingSystem.IsWindows())
         {
-            return new FileSourceIdentity(
-                $"ntfs-usn:{unchecked((ulong)usn):x16}:{unchecked((ulong)changeTime):x16}",
-                false,
-                0);
+            if (TryReadNtfsIdentity(
+                    stream.SafeFileHandle,
+                    out var usn,
+                    out var changeTime))
+            {
+                return new FileSourceIdentity(
+                    $"ntfs-usn:{unchecked((ulong)usn):x16}:{unchecked((ulong)changeTime):x16}",
+                    false,
+                    0);
+            }
+
+            if (TryReadWindowsFileIdIdentity(
+                    stream,
+                    out var windowsIdentity))
+            {
+                return windowsIdentity;
+            }
         }
 
         var originalPosition = stream.Position;
@@ -112,6 +122,23 @@ public static class FileSourceIdentityProbe
                 && IsHex(payload[17..], 16);
         }
 
+        if (value.StartsWith("win-fileid:", StringComparison.Ordinal))
+        {
+            var payload = value.AsSpan("win-fileid:".Length);
+            return payload.Length == 117
+                && payload[16] == ':'
+                && payload[49] == ':'
+                && payload[66] == ':'
+                && payload[83] == ':'
+                && payload[100] == ':'
+                && IsHex(payload[..16], 16)
+                && IsHex(payload.Slice(17, 32), 32)
+                && IsHex(payload.Slice(50, 16), 16)
+                && IsHex(payload.Slice(67, 16), 16)
+                && IsHex(payload.Slice(84, 16), 16)
+                && IsHex(payload.Slice(101, 16), 16);
+        }
+
         if (value.StartsWith("sha256:", StringComparison.Ordinal))
         {
             return IsHex(
@@ -127,7 +154,7 @@ public static class FileSourceIdentityProbe
         if (!IsValid(value))
         {
             throw new ArgumentException(
-                "Source identity must be a valid NTFS-USN or SHA-256 identity.",
+                "Source identity must be a valid NTFS-USN, Windows file-ID, or SHA-256 identity.",
                 nameof(value));
         }
 
@@ -156,6 +183,70 @@ public static class FileSourceIdentityProbe
         }
 
         return true;
+    }
+
+    internal static bool TryReadWindowsFileIdIdentity(
+        FileStream stream,
+        out FileSourceIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        identity = default!;
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        var fileIdBuffer = Marshal.AllocHGlobal(FileIdInfoSize);
+        var basicInfoSize = Marshal.SizeOf<FileBasicInfo>();
+        var basicInfoBuffer = Marshal.AllocHGlobal(basicInfoSize);
+
+        try
+        {
+            if (!GetFileInformationByHandleEx(
+                    stream.SafeFileHandle,
+                    FileIdInfoClass,
+                    fileIdBuffer,
+                    (uint)FileIdInfoSize)
+                || !GetFileInformationByHandleEx(
+                    stream.SafeFileHandle,
+                    FileBasicInfoClass,
+                    basicInfoBuffer,
+                    (uint)basicInfoSize))
+            {
+                return false;
+            }
+
+            var volumeSerial =
+                unchecked((ulong)Marshal.ReadInt64(fileIdBuffer, 0));
+            var fileIdLow =
+                unchecked((ulong)Marshal.ReadInt64(fileIdBuffer, 8));
+            var fileIdHigh =
+                unchecked((ulong)Marshal.ReadInt64(fileIdBuffer, 16));
+            var basicInfo =
+                Marshal.PtrToStructure<FileBasicInfo>(
+                    basicInfoBuffer);
+            var length = stream.Length;
+
+            if ((fileIdLow | fileIdHigh) == 0
+                || basicInfo.LastWriteTime == 0
+                || basicInfo.ChangeTime == 0
+                || length < 0)
+            {
+                return false;
+            }
+
+            identity = new FileSourceIdentity(
+                $"win-fileid:{volumeSerial:x16}:{fileIdLow:x16}{fileIdHigh:x16}:{unchecked((ulong)basicInfo.CreationTime):x16}:{unchecked((ulong)basicInfo.LastWriteTime):x16}:{unchecked((ulong)basicInfo.ChangeTime):x16}:{unchecked((ulong)length):x16}",
+                false,
+                0);
+            return true;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(basicInfoBuffer);
+            Marshal.FreeHGlobal(fileIdBuffer);
+        }
     }
 
     private static bool TryReadNtfsIdentity(
@@ -243,6 +334,8 @@ public static class FileSourceIdentityProbe
     }
 
     private const int FileBasicInfoClass = 0;
+    private const int FileIdInfoClass = 18;
+    private const int FileIdInfoSize = 24;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FileBasicInfo
