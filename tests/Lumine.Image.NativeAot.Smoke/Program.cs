@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using Lumine.Core;
 using Lumine.Image;
 using NetVips;
 
@@ -307,6 +308,25 @@ try
         plainPath,
         plainWidth,
         plainHeight);
+
+    using (var identityStream = new FileStream(
+               plainPath,
+               FileMode.Open,
+               FileAccess.Read,
+               FileShare.Read))
+    {
+        var fileIdIdentity =
+            FileSourceIdentityProbe.ReadWindowsFileIdIdentity(
+                identityStream);
+        Require(
+            fileIdIdentity is not null
+            && fileIdIdentity.Kind
+                == FileSourceIdentityKind.WindowsFileId
+            && !fileIdIdentity.UsedFullHash
+            && fileIdIdentity.BytesHashed == 0,
+            "NativeAOT Windows FILE_ID_INFO identity fallback failed.");
+    }
+
     WriteIccPng(iccPath);
     WriteBmp24(
         bmpPath,
