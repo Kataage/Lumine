@@ -1,6 +1,7 @@
 using Avalonia;
 using Lumine.Core;
 using Lumine.Diagnostics;
+using Lumine.Image;
 using Lumine.Library;
 
 namespace Lumine.App;
@@ -135,6 +136,20 @@ internal static class Program
             }
 
             LibraryDatabase.ClearPools();
+
+            host?.Log.Write(
+                "shutdown",
+                "Draining managed finalizers before libvips shutdown.");
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            VipsRuntimePolicy.ShutdownProcessLifetime();
+
+            host?.Log.Write(
+                "shutdown",
+                "libvips process runtime shut down; module remains pinned until process exit.");
             host?.Log.Write(
                 "shutdown",
                 "Managed Program.Main teardown completed after database pool clear.");
