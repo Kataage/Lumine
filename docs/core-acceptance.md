@@ -124,7 +124,7 @@ Across the results it requires:
 - final warm persistent thumbnail cache hits > 0
 - final warm thumbnail cache misses = 0
 - final warm thumbnail-generation source opens = 0
-- if the first warm run reopens originals, the count must be no greater than the cold cancelled-thumbnail count, its miss/open/generation accounting must match exactly, and a second steady-warm run must prove zero misses and zero source opens
+- if the first warm run reopens originals, the count must be no greater than the cold cancelled-thumbnail count, its miss/open/generation counts must match exactly, the persistent cache file count must grow by the same number (proving a missing entry was filled rather than a corrupt entry regenerated), and a second steady-warm run must prove zero misses and zero source opens
 - a warm source reopen with no corresponding cold cancellation remains an immediate failure
 
 A warm filesystem bootstrap other than `UsnDelta` is reported as a warning rather than silently treated as equivalent. A reconcile fallback can be legitimate when USN replay is unavailable, but it must be reviewed for the actual target volume.
