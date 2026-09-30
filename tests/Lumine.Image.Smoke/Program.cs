@@ -1185,8 +1185,11 @@ try
             && fileIdIdentityBefore.Kind
                 == FileSourceIdentityKind.WindowsFileId
             && !fileIdIdentityBefore.UsedFullHash
-            && fileIdIdentityBefore.BytesHashed == 0,
-            "Windows FILE_ID_INFO identity fallback was unavailable or hashed source bytes.");
+            && fileIdIdentityBefore.BytesHashed == 0
+            && fileIdIdentityBefore.Value.Length <= 80
+            && FileSourceIdentityProbe.IsValid(
+                fileIdIdentityBefore.Value),
+            "Windows FILE_ID_INFO identity fallback was unavailable, invalid, too large for persisted schema, or hashed source bytes.");
     }
 
     var replacementBytes = await File.ReadAllBytesAsync(
