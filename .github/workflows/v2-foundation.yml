@@ -277,7 +277,7 @@ jobs:
         id: acceptance-default
         continue-on-error: true
         shell: powershell
-        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 3 -Win32CompositionMode Default -Win32RenderingMode Default
+        run: ./build/Test-RealLibraryAcceptanceWrapper.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA -Repeat 10 -Win32CompositionMode Default -Win32RenderingMode Default
 
       - name: Run RedirectionSurface acceptance diagnostic smoke
         id: acceptance-redirection
@@ -330,16 +330,22 @@ jobs:
           # Fresh process 1: prove Lumine follows a non-default libvips threshold.
           $env:VIPS_DISC_THRESHOLD = "67108864"
           $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "67108864"
-          & $exe
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          foreach ($launch in 1..3) {
+            Write-Host "NativeAOT Image shutdown launch A/$launch"
+            & $exe
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
           }
 
-          # Fresh process 2: prove the production comparison is strictly '>'
+          # Fresh processes 4-6: prove the production comparison is strictly '>'
           # rather than '>=' when decoded bytes exactly equal the threshold.
           $env:VIPS_DISC_THRESHOLD = "84934656"
           $env:LUMINE_EXPECT_DISC_THRESHOLD_BYTES = "84934656"
-          & $exe
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          foreach ($launch in 1..3) {
+            Write-Host "NativeAOT Image shutdown launch B/$launch"
+            & $exe
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
           }
