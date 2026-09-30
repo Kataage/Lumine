@@ -323,8 +323,11 @@ try
             && fileIdIdentity.Kind
                 == FileSourceIdentityKind.WindowsFileId
             && !fileIdIdentity.UsedFullHash
-            && fileIdIdentity.BytesHashed == 0,
-            "NativeAOT Windows FILE_ID_INFO identity fallback failed.");
+            && fileIdIdentity.BytesHashed == 0
+            && fileIdIdentity.Value.Length <= 80
+            && FileSourceIdentityProbe.IsValid(
+                fileIdIdentity.Value),
+            "NativeAOT Windows FILE_ID_INFO identity fallback failed or exceeded persisted schema bounds.");
     }
 
     WriteIccPng(iccPath);
