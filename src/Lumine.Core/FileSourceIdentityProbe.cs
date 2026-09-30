@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Microsoft.Win32.SafeHandles;
 
 namespace Lumine.Core;
@@ -139,24 +141,9 @@ public static class FileSourceIdentityProbe
                 WindowsFileIdPrefix,
                 StringComparison.Ordinal))
         {
-            // volume serial (16)
-            // : 128-bit file id (32)
-            // : file size (16)
-            // : last-write FILETIME (16)
-            // : change FILETIME (16)
-            var payload =
-                value.AsSpan(WindowsFileIdPrefix.Length);
-
-            return payload.Length == 100
-                && payload[16] == ':'
-                && payload[49] == ':'
-                && payload[66] == ':'
-                && payload[83] == ':'
-                && IsHex(payload[..16], 16)
-                && IsHex(payload.Slice(17, 32), 32)
-                && IsHex(payload.Slice(50, 16), 16)
-                && IsHex(payload.Slice(67, 16), 16)
-                && IsHex(payload.Slice(84, 16), 16);
+            return IsHex(
+                value.AsSpan(WindowsFileIdPrefix.Length),
+                64);
         }
 
         if (value.StartsWith(
@@ -205,8 +192,33 @@ public static class FileSourceIdentityProbe
             return null;
         }
 
+        Span<byte> identityPayload = stackalloc byte[48];
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload[..8],
+            volumeSerial);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload.Slice(8, 8),
+            fileIdLow);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload.Slice(16, 8),
+            fileIdHigh);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload.Slice(24, 8),
+            unchecked((ulong)stream.Length));
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload.Slice(32, 8),
+            unchecked((ulong)lastWriteTime));
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            identityPayload.Slice(40, 8),
+            unchecked((ulong)changeTime));
+
+        Span<byte> digest = stackalloc byte[32];
+        SHA256.HashData(identityPayload, digest);
+
         return new FileSourceIdentity(
-            $"{WindowsFileIdPrefix}{volumeSerial:x16}:{fileIdLow:x16}{fileIdHigh:x16}:{unchecked((ulong)stream.Length):x16}:{unchecked((ulong)lastWriteTime):x16}:{unchecked((ulong)changeTime):x16}",
+            WindowsFileIdPrefix
+                + Convert.ToHexString(digest)
+                    .ToLowerInvariant(),
             false,
             0);
     }
