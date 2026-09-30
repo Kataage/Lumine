@@ -113,6 +113,46 @@ try
         && acceptanceParse.Mode == "smoke",
         "Real-library acceptance CLI options did not parse deterministically.");
 
+    var rawWatcherNoise =
+        new LibrarySyncDiagnostics(
+            EventsObserved: 1,
+            EventsApplied: 0,
+            EventsCoalesced: 0,
+            Overflows: 0,
+            Reconciliations: 0,
+            ReconcileFailures: 0,
+            RenameOperations: 0,
+            Deletes: 0,
+            Upserts: 0,
+            LastApplyLatencyMs: 0,
+            MaxApplyLatencyMs: 0,
+            QueueDepth: 0);
+
+    Require(
+        !RealLibraryAcceptanceSession.HasTrackedSourceMutation(
+            rawWatcherNoise),
+        "Raw watcher notification without tracked mutation incorrectly fails real-library acceptance.");
+    Require(
+        RealLibraryAcceptanceSession.HasTrackedSourceMutation(
+            rawWatcherNoise with
+            {
+                EventsApplied = 1,
+                Upserts = 1
+            })
+        && RealLibraryAcceptanceSession.HasTrackedSourceMutation(
+            rawWatcherNoise with
+            {
+                EventsApplied = 1,
+                Deletes = 1
+            })
+        && RealLibraryAcceptanceSession.HasTrackedSourceMutation(
+            rawWatcherNoise with
+            {
+                EventsApplied = 1,
+                RenameOperations = 1
+            }),
+        "Tracked upsert/delete/rename mutations must remain disqualifying for real-library acceptance.");
+
     var functionalAcceptanceMetadata =
         new Dictionary<string, string>(
             StringComparer.Ordinal);

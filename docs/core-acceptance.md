@@ -113,7 +113,9 @@ Across the results it requires:
 - thumbnail cache maintenance failures = 0
 - interrupted thumbnail writes = 0
 - representative-library filesystem queue depth = 0 after idle settle
-- representative-library watcher observed no source mutation during the run
+- representative-library watcher produced no tracked asset mutation (upsert/delete/tracked rename) during the run
+- raw watcher notifications that are filtered as unsupported/no-op paths remain diagnostic evidence and do not by themselves fail acceptance
+- watcher overflows = 0
 - runtime filesystem reconciliations = 0 on the stable representative library
 - filesystem reconcile failures = 0
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
@@ -184,7 +186,7 @@ Do not close #295 from CI or the automated JSON alone.
 
 The common #286 resource snapshots provide process working set, managed heap, total allocations, GC counts, and CPU time around measurements.
 
-The acceptance result also records Core-owned thumbnail cache/pipeline diagnostics and cache bounds. The explicit idle-settle phase is a quiescence gate: background thumbnail/decode work and filesystem queues must drain to zero, and a stable representative source library must not trigger runtime reconciliation.
+The acceptance result also records Core-owned thumbnail cache/pipeline diagnostics and cache bounds. The explicit idle-settle phase is a quiescence gate: background thumbnail/decode work and filesystem queues must drain to zero, and a stable representative source library must not trigger tracked asset mutations, watcher overflow, or runtime reconciliation. Raw ReadDirectoryChangesW notifications are retained in diagnostics because Windows can report unsupported/no-op paths; only changes that affect Lumine's tracked library state are treated as source mutations.
 
 Two limitations are explicit rather than hidden:
 

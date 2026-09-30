@@ -607,10 +607,16 @@ internal sealed class RealLibraryAcceptanceSession
                 $"Filesystem synchronization still had queue depth {sync.QueueDepth} after the idle-settle window.");
         }
 
-        if (sync.EventsObserved != 0)
+        if (HasTrackedSourceMutation(sync))
         {
             throw new InvalidOperationException(
-                $"Representative library changed during acceptance; watcher observed {sync.EventsObserved} filesystem event(s).");
+                $"Representative tracked library changed during acceptance; watcher observed {sync.EventsObserved} event(s), applied {sync.EventsApplied}, upserts {sync.Upserts}, deletes {sync.Deletes}, tracked renames {sync.RenameOperations}.");
+        }
+
+        if (sync.Overflows != 0)
+        {
+            throw new InvalidOperationException(
+                $"Representative library watcher overflowed {sync.Overflows} time(s); stable-source acceptance cannot prove incremental synchronization correctness.");
         }
 
         if (sync.Reconciliations != 0)
@@ -984,6 +990,12 @@ internal sealed class RealLibraryAcceptanceSession
         }
     }
 
+    internal static bool HasTrackedSourceMutation(
+        Lumine.Library.LibrarySyncDiagnostics diagnostics) =>
+        diagnostics.Upserts != 0
+        || diagnostics.Deletes != 0
+        || diagnostics.RenameOperations != 0;
+
     private void WriteSyncMetadata(
         Lumine.Library.LibrarySyncDiagnostics diagnostics)
     {
@@ -992,6 +1004,21 @@ internal sealed class RealLibraryAcceptanceSession
                 CultureInfo.InvariantCulture);
         _metadata["filesystem.events_applied"] =
             diagnostics.EventsApplied.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["filesystem.events_coalesced"] =
+            diagnostics.EventsCoalesced.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["filesystem.overflows"] =
+            diagnostics.Overflows.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["filesystem.rename_operations"] =
+            diagnostics.RenameOperations.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["filesystem.deletes"] =
+            diagnostics.Deletes.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["filesystem.upserts"] =
+            diagnostics.Upserts.ToString(
                 CultureInfo.InvariantCulture);
         _metadata["filesystem.reconciliations"] =
             diagnostics.Reconciliations.ToString(
