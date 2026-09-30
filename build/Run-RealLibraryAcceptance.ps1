@@ -678,8 +678,18 @@ try {
         }
 
         $filesystemEventsObserved = [int64](Get-MetadataValue -Result $result -Key "filesystem.events_observed")
-        if ($filesystemEventsObserved -ne 0) {
-            throw "$mode representative source library changed during acceptance; watcher observed $filesystemEventsObserved event(s)."
+        $filesystemEventsApplied = [int64](Get-MetadataValue -Result $result -Key "filesystem.events_applied")
+        $filesystemUpserts = [int64](Get-MetadataValue -Result $result -Key "filesystem.upserts")
+        $filesystemDeletes = [int64](Get-MetadataValue -Result $result -Key "filesystem.deletes")
+        $filesystemRenames = [int64](Get-MetadataValue -Result $result -Key "filesystem.rename_operations")
+        $filesystemOverflows = [int64](Get-MetadataValue -Result $result -Key "filesystem.overflows")
+
+        if (($filesystemUpserts -ne 0) -or ($filesystemDeletes -ne 0) -or ($filesystemRenames -ne 0)) {
+            throw "$mode representative tracked source library changed during acceptance; rawEvents=$filesystemEventsObserved applied=$filesystemEventsApplied upserts=$filesystemUpserts deletes=$filesystemDeletes trackedRenames=$filesystemRenames."
+        }
+
+        if ($filesystemOverflows -ne 0) {
+            throw "$mode representative library watcher overflowed $filesystemOverflows time(s); stable-source acceptance cannot prove incremental synchronization correctness."
         }
 
         $runtimeReconciliations = [int64](Get-MetadataValue -Result $result -Key "filesystem.reconciliations")
