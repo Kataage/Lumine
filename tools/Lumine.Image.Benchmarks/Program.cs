@@ -52,6 +52,8 @@ const int metadataProbeFixtureCount = 10_000;
 long metadataProbeFixtureBytes = 0;
 long metadataProbeFixtureBytesHashed = 0;
 var metadataProbeFixtureFastIdentityHits = 0;
+var metadataProbeFixtureNtfsUsnIdentityHits = 0;
+var metadataProbeFixtureWindowsFileIdIdentityHits = 0;
 var metadataProbeFixtureFullHashFallbacks = 0;
 
 try
@@ -204,13 +206,23 @@ try
             metadataProbeFixtureBytes += probeInfo.Length;
             metadataProbeFixtureBytesHashed += snapshot.Metadata.BytesHashed;
 
-            if (snapshot.Metadata.UsedFullHash)
+            switch (FileSourceIdentityProbe.GetKind(
+                        snapshot.Metadata.SourceIdentity))
             {
-                metadataProbeFixtureFullHashFallbacks++;
-            }
-            else
-            {
-                metadataProbeFixtureFastIdentityHits++;
+                case FileSourceIdentityKind.NtfsUsn:
+                    metadataProbeFixtureFastIdentityHits++;
+                    metadataProbeFixtureNtfsUsnIdentityHits++;
+                    break;
+                case FileSourceIdentityKind.WindowsFileId:
+                    metadataProbeFixtureFastIdentityHits++;
+                    metadataProbeFixtureWindowsFileIdIdentityHits++;
+                    break;
+                case FileSourceIdentityKind.Sha256:
+                    metadataProbeFixtureFullHashFallbacks++;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        "Unknown source identity strategy.");
             }
         }
     }
@@ -236,10 +248,14 @@ try
             ["metadata_bytes_hashed"] = diagnostics.MetadataBytesHashed.ToString(CultureInfo.InvariantCulture),
             ["metadata_memory_hits"] = diagnostics.MetadataMemoryHits.ToString(CultureInfo.InvariantCulture),
             ["metadata_fast_identity_hits"] = diagnostics.MetadataFastIdentityHits.ToString(CultureInfo.InvariantCulture),
+            ["metadata_ntfs_usn_identity_hits"] = diagnostics.MetadataNtfsUsnIdentityHits.ToString(CultureInfo.InvariantCulture),
+            ["metadata_windows_fileid_identity_hits"] = diagnostics.MetadataWindowsFileIdIdentityHits.ToString(CultureInfo.InvariantCulture),
             ["metadata_full_hash_fallbacks"] = diagnostics.MetadataFullHashFallbacks.ToString(CultureInfo.InvariantCulture),
             ["metadata_probe_fixture_count"] = metadataProbeFixtureCount.ToString(CultureInfo.InvariantCulture),
             ["metadata_probe_fixture_bytes"] = metadataProbeFixtureBytes.ToString(CultureInfo.InvariantCulture),
             ["metadata_probe_fixture_fast_identity_hits"] = metadataProbeFixtureFastIdentityHits.ToString(CultureInfo.InvariantCulture),
+            ["metadata_probe_fixture_ntfs_usn_identity_hits"] = metadataProbeFixtureNtfsUsnIdentityHits.ToString(CultureInfo.InvariantCulture),
+            ["metadata_probe_fixture_windows_fileid_identity_hits"] = metadataProbeFixtureWindowsFileIdIdentityHits.ToString(CultureInfo.InvariantCulture),
             ["metadata_probe_fixture_full_hash_fallbacks"] = metadataProbeFixtureFullHashFallbacks.ToString(CultureInfo.InvariantCulture),
             ["metadata_probe_fixture_bytes_hashed"] = metadataProbeFixtureBytesHashed.ToString(CultureInfo.InvariantCulture),
             ["cache_files"] = cacheFiles.ToString(CultureInfo.InvariantCulture),
@@ -258,7 +274,7 @@ try
     Console.WriteLine(
         $"Image benchmark: batch={requestCount}, cache files={cacheFiles}, cache bytes={cacheBytes}");
     Console.WriteLine(
-        $"10k distinct metadata probes: fast={metadataProbeFixtureFastIdentityHits}, hash-fallback={metadataProbeFixtureFullHashFallbacks}, logical-bytes={metadataProbeFixtureBytes:N0}, hashed-bytes={metadataProbeFixtureBytesHashed:N0}");
+        $"10k distinct metadata probes: fast={metadataProbeFixtureFastIdentityHits} (usn={metadataProbeFixtureNtfsUsnIdentityHits}, file-id={metadataProbeFixtureWindowsFileIdIdentityHits}), hash-fallback={metadataProbeFixtureFullHashFallbacks}, logical-bytes={metadataProbeFixtureBytes:N0}, hashed-bytes={metadataProbeFixtureBytesHashed:N0}");
     Console.WriteLine($"Result: {Path.GetFullPath(output)}");
 }
 finally
