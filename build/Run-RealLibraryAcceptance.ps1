@@ -637,6 +637,12 @@ try {
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_misses")
     $initialWarmGenerated =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.generated")
+    $initialWarmCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_before.files")
+    $initialWarmCacheAfterFiles =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.files")
+    $initialWarmCacheFileGrowth =
+        $initialWarmCacheAfterFiles - $initialWarmCacheBeforeFiles
 
     $warmConvergenceNeeded = $false
     $steadyWarm = $null
@@ -651,9 +657,10 @@ try {
         }
 
         if (($initialWarmCacheMisses -ne $initialWarmSourceOpens) -or
-            ($initialWarmGenerated -ne $initialWarmSourceOpens))
+            ($initialWarmGenerated -ne $initialWarmSourceOpens) -or
+            ($initialWarmCacheFileGrowth -ne $initialWarmSourceOpens))
         {
-            throw "Warm cache-heal accounting is inconsistent: opens=$initialWarmSourceOpens misses=$initialWarmCacheMisses generated=$initialWarmGenerated."
+            throw "Warm cache-heal accounting is inconsistent: opens=$initialWarmSourceOpens misses=$initialWarmCacheMisses generated=$initialWarmGenerated cacheFileGrowth=$initialWarmCacheFileGrowth."
         }
 
         $warmConvergenceNeeded = $true
@@ -861,6 +868,7 @@ try {
             initialWarmSourceOpens = $initialWarmSourceOpens
             initialWarmCacheMisses = $initialWarmCacheMisses
             initialWarmGenerated = $initialWarmGenerated
+            initialWarmCacheFileGrowth = $initialWarmCacheFileGrowth
             finalWarmSourceOpens = $warmSourceOpens
             finalWarmCacheMisses = $warmCacheMisses
         }
