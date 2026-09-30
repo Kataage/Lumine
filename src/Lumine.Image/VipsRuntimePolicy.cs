@@ -10,6 +10,8 @@ public static class VipsRuntimePolicy
 
     private static readonly object ConfigurationGate = new();
     private static int _configured;
+    private static int _shutdown;
+    private static nint _processLifetimeHandle;
     private static int _configuredConcurrency;
     private static long _configuredTrackedMemoryBytes;
 
@@ -72,6 +74,8 @@ public static class VipsRuntimePolicy
             var policy =
                 resourcePolicy ?? CoreResourcePolicy.Default;
 
+            EnsureProcessLifetimePinned();
+
             // Lumine owns its persistent thumbnail cache. Keeping source/cache file
             // operations alive in libvips' process-global operation cache only adds
             // hidden file handles and makes Windows prune/shutdown less predictable.
@@ -87,6 +91,51 @@ public static class VipsRuntimePolicy
 
             // Publish configured only after every process-global setting succeeds.
             Volatile.Write(ref _configured, 1);
+        }
+    }
+
+    public static void ShutdownProcessLifetime()
+    {
+        lock (ConfigurationGate)
+        {
+            if (_configured == 0
+                || Interlocked.Exchange(ref _shutdown, 1) != 0)
+            {
+                return;
+            }
+
+            // libvips owns internal worker/background threads. Shut those down
+            // explicitly after every Lumine image pipeline/object has been drained.
+            // Keep the extra Windows module reference pinned until process exit:
+            // NativeLibrary.Free is intentionally not called here. This prevents
+            // any late native callback/finalizer from jumping into an unmapped
+            // libvips image while the OS is still tearing the process down.
+            global::NetVips.NetVips.Shutdown();
+        }
+    }
+
+    private static void EnsureProcessLifetimePinned()
+    {
+        if (!OperatingSystem.IsWindows()
+            || _processLifetimeHandle != 0)
+        {
+            return;
+        }
+
+        var localPath =
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "libvips-42.dll");
+
+        _processLifetimeHandle =
+            File.Exists(localPath)
+                ? NativeLibrary.Load(localPath)
+                : NativeLibrary.Load("libvips-42.dll");
+
+        if (_processLifetimeHandle == 0)
+        {
+            throw new DllNotFoundException(
+                "Unable to pin libvips-42.dll for the Lumine process lifetime.");
         }
     }
 

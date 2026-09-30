@@ -482,6 +482,12 @@ try
 }
 finally
 {
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    VipsRuntimePolicy.ShutdownProcessLifetime();
+
     if (Directory.Exists(root))
     {
         Directory.Delete(
