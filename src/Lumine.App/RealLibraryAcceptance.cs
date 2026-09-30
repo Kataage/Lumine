@@ -945,6 +945,18 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["thumbnail.metadata_bytes_hashed"] =
             diagnostics.MetadataBytesHashed.ToString(
                 CultureInfo.InvariantCulture);
+        _metadata["thumbnail.metadata_fast_identity_hits"] =
+            diagnostics.MetadataFastIdentityHits.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.metadata_ntfs_usn_identity_hits"] =
+            diagnostics.MetadataNtfsUsnIdentityHits.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.metadata_windows_fileid_identity_hits"] =
+            diagnostics.MetadataWindowsFileIdIdentityHits.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.metadata_full_hash_fallbacks"] =
+            diagnostics.MetadataFullHashFallbacks.ToString(
+                CultureInfo.InvariantCulture);
     }
 
     private void WriteMaintenanceMetadata(
