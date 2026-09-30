@@ -1,3 +1,4 @@
+using Lumine.Core;
 using NetVips;
 
 namespace Lumine.Image;
@@ -22,6 +23,8 @@ internal sealed class ThumbnailGenerator
     private long _metadataBytesHashed;
     private long _metadataMemoryHits;
     private long _metadataFastIdentityHits;
+    private long _metadataNtfsUsnIdentityHits;
+    private long _metadataWindowsFileIdIdentityHits;
     private long _metadataFullHashFallbacks;
 
     public ThumbnailGenerator(ThumbnailCache cache)
@@ -40,6 +43,8 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _metadataBytesHashed),
             Interlocked.Read(ref _metadataMemoryHits),
             Interlocked.Read(ref _metadataFastIdentityHits),
+            Interlocked.Read(ref _metadataNtfsUsnIdentityHits),
+            Interlocked.Read(ref _metadataWindowsFileIdIdentityHits),
             Interlocked.Read(ref _metadataFullHashFallbacks));
 
     public ThumbnailResult GetOrCreate(
@@ -181,16 +186,34 @@ internal sealed class ThumbnailGenerator
             expectedSourceIdentity,
             cancellationToken);
 
-        if (snapshot.Metadata.UsedFullHash)
+        switch (FileSourceIdentityProbe.GetKind(
+                    snapshot.Metadata.SourceIdentity))
         {
-            Interlocked.Increment(ref _metadataFullHashFallbacks);
-            Interlocked.Add(
-                ref _metadataBytesHashed,
-                snapshot.Metadata.BytesHashed);
-        }
-        else
-        {
-            Interlocked.Increment(ref _metadataFastIdentityHits);
+            case FileSourceIdentityKind.NtfsUsn:
+                Interlocked.Increment(
+                    ref _metadataFastIdentityHits);
+                Interlocked.Increment(
+                    ref _metadataNtfsUsnIdentityHits);
+                break;
+
+            case FileSourceIdentityKind.WindowsFileId:
+                Interlocked.Increment(
+                    ref _metadataFastIdentityHits);
+                Interlocked.Increment(
+                    ref _metadataWindowsFileIdIdentityHits);
+                break;
+
+            case FileSourceIdentityKind.Sha256:
+                Interlocked.Increment(
+                    ref _metadataFullHashFallbacks);
+                Interlocked.Add(
+                    ref _metadataBytesHashed,
+                    snapshot.Metadata.BytesHashed);
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    "Unknown source identity strategy.");
         }
 
         return snapshot;
