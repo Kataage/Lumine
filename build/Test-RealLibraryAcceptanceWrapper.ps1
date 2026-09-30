@@ -83,6 +83,7 @@ foreach ($iteration in 1..$Repeat) {
 
     Set-Content -LiteralPath (Join-Path $output "cold.json") -Value '{"stale":true}' -Encoding ascii
     Set-Content -LiteralPath (Join-Path $output "warm.json") -Value '{"stale":true}' -Encoding ascii
+    Set-Content -LiteralPath (Join-Path $output "warm-steady.json") -Value '{"stale":true}' -Encoding ascii
     Set-Content -LiteralPath (Join-Path $output "summary.json") -Value '{"stale":true}' -Encoding ascii
 
     try {
@@ -90,7 +91,7 @@ foreach ($iteration in 1..$Repeat) {
         & $wrapper -Exe (Join-Path $app "Lumine.App.exe") -Library $library -OutputDirectory $output -MinimumAssets 100 -BrowseSeconds 1 -IdleSeconds 1 -MaxFastScrollMs 30000 -Win32CompositionMode $Win32CompositionMode -Win32RenderingMode $Win32RenderingMode
     }
     catch {
-        foreach ($name in @("cold.json", "warm.json")) {
+        foreach ($name in @("cold.json", "warm.json", "warm-steady.json")) {
             $path = Join-Path $output $name
             if (Test-Path -LiteralPath $path) {
                 Write-Host "=== wrapper smoke diagnostic: iteration $iteration / $name ==="
@@ -135,6 +136,30 @@ foreach ($iteration in 1..$Repeat) {
     $warmHash = [string]$summary.rawResultSha256.warm
     if ($coldHash -notmatch '^[0-9a-f]{64}$' -or $warmHash -notmatch '^[0-9a-f]{64}$') {
         throw "Acceptance wrapper smoke iteration $iteration did not bind the summary to raw result hashes."
+    }
+
+    $steadyPath = Join-Path $output "warm-steady.json"
+    $convergenceNeeded = [bool]$summary.warmConvergence.needed
+    if ($convergenceNeeded) {
+        $steadyHash = [string]$summary.rawResultSha256.steadyWarm
+        if ($steadyHash -notmatch '^[0-9a-f]{64}$' -or -not (Test-Path -LiteralPath $steadyPath)) {
+            throw "Acceptance wrapper smoke iteration $iteration required convergence but did not bind a steady-Warm result."
+        }
+
+        if ([int64]$summary.warmConvergence.finalWarmSourceOpens -ne 0 -or
+            [int64]$summary.warmConvergence.finalWarmCacheMisses -ne 0)
+        {
+            throw "Acceptance wrapper smoke iteration $iteration accepted a non-converged steady-Warm cache."
+        }
+    }
+    else {
+        if (Test-Path -LiteralPath $steadyPath) {
+            throw "Acceptance wrapper smoke iteration $iteration retained a stale steady-Warm output when convergence was not needed."
+        }
+
+        if ($null -ne $summary.rawResultSha256.steadyWarm) {
+            throw "Acceptance wrapper smoke iteration $iteration reported a steady-Warm hash without running convergence."
+        }
     }
 
     $lastSummary = $summary
