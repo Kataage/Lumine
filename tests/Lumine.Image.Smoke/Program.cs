@@ -1161,6 +1161,34 @@ try
     File.SetLastWriteTimeUtc(identityPath, identityTimestamp);
     File.SetLastWriteTimeUtc(identityReplacementPath, identityTimestamp);
 
+    FileSourceIdentity? windowsFileIdBefore = null;
+    if (OperatingSystem.IsWindows())
+    {
+        using var identityHandle = new FileStream(
+            identityPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+
+        Require(
+            FileSourceIdentityProbe.TryReadWindowsFileIdIdentity(
+                identityHandle,
+                out var directWindowsIdentity),
+            "Windows FILE_ID_INFO identity path was unavailable on the Windows smoke runner.");
+        Require(
+            directWindowsIdentity.IsFastIdentity
+            && !directWindowsIdentity.UsedFullHash
+            && directWindowsIdentity.BytesHashed == 0
+            && directWindowsIdentity.Value.StartsWith(
+                "win-fileid:",
+                StringComparison.Ordinal)
+            && FileSourceIdentityProbe.IsValid(
+                directWindowsIdentity.Value),
+            "Windows file-ID identity was not a valid zero-I/O fast identity.");
+
+        windowsFileIdBefore = directWindowsIdentity;
+    }
+
     var identityStat = new FileInfo(identityPath);
     using var identitySnapshot = await ImageSourceSnapshot.OpenAsync(
         identityPath,
@@ -1184,6 +1212,28 @@ try
         && replacedStat.LastWriteTimeUtc.Ticks
             == identityStat.LastWriteTimeUtc.Ticks,
         "Same-stat replacement fixture did not preserve size/mtime.");
+
+    if (OperatingSystem.IsWindows())
+    {
+        using var replacedHandle = new FileStream(
+            identityPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+
+        Require(
+            FileSourceIdentityProbe.TryReadWindowsFileIdIdentity(
+                replacedHandle,
+                out var windowsFileIdAfter),
+            "Windows FILE_ID_INFO identity path disappeared after same-stat replacement.");
+        Require(
+            windowsFileIdBefore is not null
+            && !string.Equals(
+                windowsFileIdBefore.Value,
+                windowsFileIdAfter.Value,
+                StringComparison.Ordinal),
+            "Windows file-ID identity did not detect same-size/mtime replacement.");
+    }
 
     try
     {
