@@ -34,10 +34,14 @@ $metadataProbes = [long]$result.metadata.metadata_probes
 $metadataBytesHashed = [long]$result.metadata.metadata_bytes_hashed
 $metadataMemoryHits = [long]$result.metadata.metadata_memory_hits
 $metadataFastIdentityHits = [long]$result.metadata.metadata_fast_identity_hits
+$metadataNtfsUsnIdentityHits = [long]$result.metadata.metadata_ntfs_usn_identity_hits
+$metadataWindowsFileIdIdentityHits = [long]$result.metadata.metadata_windows_fileid_identity_hits
 $metadataFullHashFallbacks = [long]$result.metadata.metadata_full_hash_fallbacks
 $metadataProbeFixtureCount = [int]$result.metadata.metadata_probe_fixture_count
 $metadataProbeFixtureBytes = [long]$result.metadata.metadata_probe_fixture_bytes
 $metadataProbeFixtureFastIdentityHits = [int]$result.metadata.metadata_probe_fixture_fast_identity_hits
+$metadataProbeFixtureNtfsUsnIdentityHits = [int]$result.metadata.metadata_probe_fixture_ntfs_usn_identity_hits
+$metadataProbeFixtureWindowsFileIdIdentityHits = [int]$result.metadata.metadata_probe_fixture_windows_fileid_identity_hits
 $metadataProbeFixtureFullHashFallbacks = [int]$result.metadata.metadata_probe_fixture_full_hash_fallbacks
 $metadataProbeFixtureBytesHashed = [long]$result.metadata.metadata_probe_fixture_bytes_hashed
 $cacheFiles = [long]$result.metadata.cache_files
@@ -87,6 +91,9 @@ if ($metadataProbes -ne $generated) {
 if (($metadataFastIdentityHits + $metadataFullHashFallbacks) -ne $metadataProbes) {
     throw "Source identity accounting mismatch: probes=$metadataProbes fast=$metadataFastIdentityHits hash=$metadataFullHashFallbacks"
 }
+if (($metadataNtfsUsnIdentityHits + $metadataWindowsFileIdIdentityHits) -ne $metadataFastIdentityHits) {
+    throw "Fast source identity breakdown mismatch: fast=$metadataFastIdentityHits usn=$metadataNtfsUsnIdentityHits fileId=$metadataWindowsFileIdIdentityHits"
+}
 
 if ($metadataFullHashFallbacks -eq 0 -and $metadataBytesHashed -ne 0) {
     throw "Fast source identity path unexpectedly hashed bytes: $metadataBytesHashed"
@@ -106,6 +113,9 @@ if ($metadataProbeFixtureCount -ne 10000 -or $metadataProbeFixtureBytes -le 0) {
 
 if (($metadataProbeFixtureFastIdentityHits + $metadataProbeFixtureFullHashFallbacks) -ne 10000) {
     throw "10k distinct source identity accounting mismatch: fast=$metadataProbeFixtureFastIdentityHits hash=$metadataProbeFixtureFullHashFallbacks"
+}
+if (($metadataProbeFixtureNtfsUsnIdentityHits + $metadataProbeFixtureWindowsFileIdIdentityHits) -ne $metadataProbeFixtureFastIdentityHits) {
+    throw "10k fast identity breakdown mismatch: fast=$metadataProbeFixtureFastIdentityHits usn=$metadataProbeFixtureNtfsUsnIdentityHits fileId=$metadataProbeFixtureWindowsFileIdIdentityHits"
 }
 
 if ($metadataProbeFixtureFullHashFallbacks -eq 0 -and $metadataProbeFixtureBytesHashed -ne 0) {
