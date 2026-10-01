@@ -67,6 +67,12 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
     internal ThumbnailDiagnosticsSnapshot ThumbnailPipelineDiagnostics =>
         _thumbnailPipeline.Diagnostics;
 
+    internal ThumbnailStorageMode ThumbnailStorageMode =>
+        _thumbnailPipeline.StorageMode;
+
+    internal ThumbnailMemoryCacheStats ThumbnailMemoryCacheStats =>
+        _thumbnailPipeline.MemoryCacheStats;
+
     internal ThumbnailCacheMaintenanceDiagnosticsSnapshot
         ThumbnailCacheMaintenanceDiagnostics =>
         _thumbnailPipeline.MaintenanceDiagnostics;
@@ -169,10 +175,14 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                 dataPaths.ThumbnailCachePath,
                 resourcePolicy);
 
+            var thumbnailStorageMode =
+                ResolveThumbnailStorageMode();
+
             pipeline = new ThumbnailPipeline(
                 thumbnailCache,
                 ThumbnailPipelineOptions.FromResourcePolicy(
-                    resourcePolicy));
+                    resourcePolicy,
+                    thumbnailStorageMode));
 
             var viewerOptions =
                 ViewerOptions.FromResourcePolicy(
@@ -350,6 +360,33 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             _disposeCompletion.TrySetException(exception);
             throw;
         }
+    }
+
+    private static ThumbnailStorageMode ResolveThumbnailStorageMode()
+    {
+        var value =
+            Environment.GetEnvironmentVariable(
+                "LUMINE_THUMBNAIL_STORAGE_MODE");
+
+        if (string.IsNullOrWhiteSpace(value)
+            || string.Equals(
+                value,
+                "PersistentDisk",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return ThumbnailStorageMode.PersistentDisk;
+        }
+
+        if (string.Equals(
+                value,
+                "MemoryOnly",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return ThumbnailStorageMode.MemoryOnly;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported LUMINE_THUMBNAIL_STORAGE_MODE '{value}'. Expected PersistentDisk or MemoryOnly.");
     }
 
     private static void GuardAgainstAppDataRecursion(
