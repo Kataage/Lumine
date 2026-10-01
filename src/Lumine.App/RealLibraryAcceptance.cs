@@ -534,6 +534,8 @@ internal sealed class RealLibraryAcceptanceSession
             grid.Diagnostics;
         var image =
             runtime.ThumbnailPipelineDiagnostics;
+        var memoryCache =
+            runtime.ThumbnailMemoryCacheStats;
         var maintenance =
             runtime.ThumbnailCacheMaintenanceDiagnostics;
         var sync =
@@ -543,6 +545,20 @@ internal sealed class RealLibraryAcceptanceSession
 
         WriteViewerMetadata(viewer);
         WriteImageMetadata(image);
+        _metadata["thumbnail.storage_mode"] =
+            runtime.ThumbnailStorageMode.ToString();
+        _metadata["thumbnail.memory_cache_entries"] =
+            memoryCache.EntryCount.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.memory_cache_bytes"] =
+            memoryCache.EncodedBytes.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.memory_cache_limit_bytes"] =
+            memoryCache.ByteLimit.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["thumbnail.memory_cache_hits"] =
+            memoryCache.HitCount.ToString(
+                CultureInfo.InvariantCulture);
         WriteMaintenanceMetadata(maintenance);
         WriteSyncMetadata(sync);
         WriteCacheMetadata(
@@ -557,6 +573,22 @@ internal sealed class RealLibraryAcceptanceSession
         {
             throw new InvalidOperationException(
                 $"Persistent thumbnail cache exceeds its configured disk budget: {cacheAfter.TotalBytes:N0} > {runtime.ThumbnailCache.ConfiguredByteLimit:N0} bytes.");
+        }
+
+        if (memoryCache.EncodedBytes > memoryCache.ByteLimit)
+        {
+            throw new InvalidOperationException(
+                $"Encoded thumbnail memory cache exceeds its configured budget: {memoryCache.EncodedBytes:N0} > {memoryCache.ByteLimit:N0} bytes.");
+        }
+
+        if (runtime.ThumbnailStorageMode
+                == ThumbnailStorageMode.MemoryOnly
+            && (cacheAfter.FileCount != 0
+                || cacheAfter.TotalBytes != 0
+                || cacheAfter.InterruptedWriteCount != 0))
+        {
+            throw new InvalidOperationException(
+                $"Memory-only thumbnail mode wrote persistent cache data: files={cacheAfter.FileCount:N0}, bytes={cacheAfter.TotalBytes:N0}, interrupted={cacheAfter.InterruptedWriteCount:N0}.");
         }
 
         if (viewer.TileLoadFailures != 0)
