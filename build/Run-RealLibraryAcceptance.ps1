@@ -958,6 +958,7 @@ try {
         appRevision = $Revision
         win32CompositionMode = $Win32CompositionMode
         win32RenderingMode = $Win32RenderingMode
+        thumbnailStorageMode = $ThumbnailStorageMode
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
         acceptanceCriteria = [ordered]@{
@@ -993,6 +994,9 @@ try {
             thumbnailCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_hits")
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_configured_bytes")
+            thumbnailMemoryCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_bytes")
+            thumbnailMemoryCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_limit_bytes")
+            thumbnailMemoryCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_hits")
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = (Get-MetadataValue -Result $cold -Key "filesystem.bootstrap_mode")
         }
@@ -1007,6 +1011,9 @@ try {
             thumbnailCacheHits = $warmCacheHits
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_configured_bytes")
+            thumbnailMemoryCacheBytes = $warmMemoryCacheBytes
+            thumbnailMemoryCacheLimitBytes = $warmMemoryCacheLimit
+            thumbnailMemoryCacheHits = $warmMemoryCacheHits
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = $warmBootstrap
         }
@@ -1046,6 +1053,7 @@ try {
     Write-Host ""
     Write-Host "Automated real-library acceptance passed."
     Write-Host "Assets              : $($summary.assetCount)"
+    Write-Host "Thumbnail storage   : $ThumbnailStorageMode"
     Write-Host "Cold max fast-scroll: $($summary.cold.maxFastScrollMs) ms"
     Write-Host "Warm max fast-scroll: $($summary.warm.maxFastScrollMs) ms"
     Write-Host "Warm source opens    : $warmSourceOpens"
