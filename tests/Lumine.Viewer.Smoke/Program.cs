@@ -173,6 +173,36 @@ internal static class Program
             && cache.Diagnostics.EstimatedBytes == 0,
             "Leased bitmap was not released after disposed-cache lease completion.");
 
+        using (var memoryPayloadCache =
+            new DecodedBitmapCache(
+                entryLimit: 2,
+                byteLimit: 16))
+        {
+            var encoded =
+                await File.ReadAllBytesAsync(
+                    sourceThumbnail);
+            var thumbnail =
+                new ViewerThumbnail(
+                    "memory-payload-smoke",
+                    string.Empty,
+                    1,
+                    1,
+                    EncodedBytes: encoded);
+
+            using var lease =
+                await memoryPayloadCache.AcquireAsync(
+                    thumbnail);
+
+            Require(
+                lease.Bitmap.PixelSize.Width == 1
+                && lease.Bitmap.PixelSize.Height == 1,
+                "Decoded bitmap cache could not consume an in-memory thumbnail payload.");
+            Require(
+                memoryPayloadCache.Diagnostics.EntryCount
+                    == 1,
+                "In-memory thumbnail payload was not admitted to the decoded bitmap cache.");
+        }
+
         using (var oversizeCache = new DecodedBitmapCache(
                    entryLimit: 2,
                    byteLimit: 3))
