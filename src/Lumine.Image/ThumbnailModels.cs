@@ -108,6 +108,7 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long Generated,
     long Failed,
     long SourceOpens,
+    long SourceOpenCancellations,
     long MetadataProbes,
     long MetadataBytesHashed,
     long MetadataMemoryHits,
