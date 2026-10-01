@@ -11,7 +11,7 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - Library Core source revision
 - source file size and persisted modified timestamp
 - persisted source identity
-- thumbnail profile id/version/dimensions/quality
+- thumbnail profile id/version/dimensions/quality and linear-light processing mode
 
 A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
 
@@ -21,15 +21,17 @@ Old revisions and pre-#308 cache keys remain harmless orphaned cache entries unt
 
 ## Profiles
 
-- grid-small: 256 x 256, quality 80
-- grid-medium: 512 x 512, quality 82
-- detail-preview: 1600 x 1600, quality 85
+- grid-small: 256 x 256, quality 80, shrink-on-load enabled (non-linear resize)
+- grid-medium: 512 x 512, quality 82, shrink-on-load enabled (non-linear resize)
+- detail-preview: 1600 x 1600, quality 85, linear-light resize
 
-Profiles only downscale. They do not enlarge small originals.
+Profiles only downscale. They do not enlarge small originals. The processing mode is part of the persistent cache key, so grid and Detail outputs with different resize-quality policies cannot alias.
 
 ## Decode and output
 
-libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled. Resampling is performed in linear light and `output_profile=srgb` performs ICC-aware normalization before metadata is stripped from the cached WebP. Alpha is preserved.
+libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled and `output_profile=srgb` keeps ICC-aware sRGB normalization before metadata is stripped from the cached WebP. Alpha is preserved.
+
+Grid thumbnails deliberately do **not** request libvips linear-light shrinking. #383 was introduced after representative physical acceptance showed 1.3–2.7 second Cold grid refreshes while Warm cache refreshes were tens of milliseconds. libvips documents that linear-light thumbnailing disables the fast shrink-on-load optimizations and can make large-image thumbnail generation extremely slow. The larger Detail preview keeps linear-light resizing because it is a quality-oriented selected-image path rather than the high-volume scrolling path.
 
 JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. AVIF remains part of the v2 format contract and is capability-probed in CI.
 
