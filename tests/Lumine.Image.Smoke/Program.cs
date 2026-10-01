@@ -867,6 +867,38 @@ try
         cache.ConfiguredByteLimit
             == imagePolicy.ThumbnailCacheByteLimit,
         "Thumbnail cache did not retain the effective Core disk budget.");
+    Require(
+        !ThumbnailProfiles.GridSmall.LinearLight
+        && !ThumbnailProfiles.GridMedium.LinearLight
+        && ThumbnailProfiles.DetailPreview.LinearLight,
+        "Thumbnail quality profiles lost the grid shrink-on-load / Detail linear-light contract.");
+
+    var cacheModeSource = SourceFor(900, 1, jpgPath);
+    var nonLinearCacheKey = ThumbnailCache.GetCacheKey(
+        cacheModeSource,
+        new ThumbnailProfile(
+            "cache-mode",
+            256,
+            256,
+            80,
+            1,
+            LinearLight: false));
+    var linearCacheKey = ThumbnailCache.GetCacheKey(
+        cacheModeSource,
+        new ThumbnailProfile(
+            "cache-mode",
+            256,
+            256,
+            80,
+            1,
+            LinearLight: true));
+    Require(
+        !string.Equals(
+            nonLinearCacheKey,
+            linearCacheKey,
+            StringComparison.Ordinal),
+        "Thumbnail cache key did not distinguish linear-light processing mode.");
+
     Require(NetVips.Cache.Max == 0, "libvips operation cache was not disabled.");
     Require(NetVips.Cache.MaxFiles == 0, "libvips file operation cache was not disabled.");
     Require(
