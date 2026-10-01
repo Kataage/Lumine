@@ -629,43 +629,55 @@ try {
         throw "Cold acceptance did not start with an empty persistent thumbnail cache: files=$coldCacheBeforeFiles, bytes=$coldCacheBeforeBytes."
     }
 
+    $coldMaxScrollBeforeConvergence =
+        Get-MaxMeasurement -Result $cold -Name "viewer.fast_scroll_refresh"
+    if ($coldMaxScrollBeforeConvergence -gt $MaxFastScrollMs) {
+        throw "cold fast-scroll refresh exceeded $MaxFastScrollMs ms: $([Math]::Round($coldMaxScrollBeforeConvergence, 1)) ms. Warm convergence cannot repair a Cold performance failure."
+    }
+
     $coldCancelledThumbnailRequests =
         [int64](Get-MetadataValue -Result $cold -Key "viewer.thumbnail_requests_cancelled")
     $initialWarmSourceOpens =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.source_opens")
+    $initialWarmSourceOpenCancellations =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.source_open_cancellations")
     $initialWarmCacheMisses =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_misses")
     $initialWarmGenerated =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.generated")
+    $initialWarmFailures =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.failed")
+    $initialWarmMaintenanceDeletes =
+        [int64](Get-MetadataValue -Result $warm -Key "thumbnail.maintenance_files_deleted")
     $initialWarmCacheBeforeFiles =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_before.files")
     $initialWarmCacheAfterFiles =
         [int64](Get-MetadataValue -Result $warm -Key "thumbnail.cache_after.files")
     $initialWarmCacheFileGrowth =
         $initialWarmCacheAfterFiles - $initialWarmCacheBeforeFiles
+    $initialWarmAccountedSourceOpens =
+        $initialWarmGenerated +
+        $initialWarmSourceOpenCancellations +
+        $initialWarmFailures
 
-    $warmConvergenceNeeded = $false
+    if ($initialWarmSourceOpens -ne $initialWarmAccountedSourceOpens) {
+        throw "Warm source-open accounting is inconsistent: opens=$initialWarmSourceOpens generated=$initialWarmGenerated cancelledAfterOpen=$initialWarmSourceOpenCancellations failed=$initialWarmFailures."
+    }
+
+    if ($initialWarmCacheMisses -lt $initialWarmSourceOpens) {
+        throw "Warm cache-miss accounting is inconsistent: misses=$initialWarmCacheMisses sourceOpens=$initialWarmSourceOpens."
+    }
+
+    if ($initialWarmCacheFileGrowth -ne ($initialWarmGenerated - $initialWarmMaintenanceDeletes)) {
+        throw "Warm persistent-cache accounting is inconsistent: generated=$initialWarmGenerated maintenanceDeletes=$initialWarmMaintenanceDeletes cacheFileGrowth=$initialWarmCacheFileGrowth."
+    }
+
+    $warmConvergenceNeeded = $initialWarmGenerated -gt 0
     $steadyWarm = $null
 
-    if ($initialWarmSourceOpens -gt 0) {
-        if ($coldCancelledThumbnailRequests -le 0) {
-            throw "Warm acceptance reopened $initialWarmSourceOpens original source(s), but Cold recorded no cancelled thumbnail request that could explain an incomplete cache."
-        }
-
-        if ($initialWarmSourceOpens -gt $coldCancelledThumbnailRequests) {
-            throw "Warm acceptance reopened $initialWarmSourceOpens original source(s), exceeding Cold's $coldCancelledThumbnailRequests cancelled thumbnail request(s)."
-        }
-
-        if (($initialWarmCacheMisses -ne $initialWarmSourceOpens) -or
-            ($initialWarmGenerated -ne $initialWarmSourceOpens) -or
-            ($initialWarmCacheFileGrowth -ne $initialWarmSourceOpens))
-        {
-            throw "Warm cache-heal accounting is inconsistent: opens=$initialWarmSourceOpens misses=$initialWarmCacheMisses generated=$initialWarmGenerated cacheFileGrowth=$initialWarmCacheFileGrowth."
-        }
-
-        $warmConvergenceNeeded = $true
+    if ($warmConvergenceNeeded) {
         Write-Host ""
-        Write-Host "Initial Warm healed $initialWarmSourceOpens Cold cancellation cache hole(s); running steady-Warm convergence proof."
+        Write-Host "Initial Warm committed $initialWarmGenerated missing thumbnail(s); running steady-Warm convergence proof."
 
         $steadyWarm =
             Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
@@ -804,10 +816,37 @@ try {
 
     $warmSourceOpens =
         [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.source_opens")
+    $warmSourceOpenCancellations =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.source_open_cancellations")
     $warmCacheMisses =
         [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_misses")
-    if ($warmSourceOpens -ne 0 -or $warmCacheMisses -ne 0) {
-        throw "Final steady-Warm cache did not converge: source opens=$warmSourceOpens, cache misses=$warmCacheMisses."
+    $warmGenerated =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.generated")
+    $warmFailures =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.failed")
+    $warmMaintenanceDeletes =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.maintenance_files_deleted")
+    $warmCacheBeforeFiles =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_before.files")
+    $warmCacheAfterFiles =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_after.files")
+    $warmCacheFileGrowth =
+        $warmCacheAfterFiles - $warmCacheBeforeFiles
+
+    if ($warmSourceOpens -ne ($warmGenerated + $warmSourceOpenCancellations + $warmFailures)) {
+        throw "Final warm source-open accounting is inconsistent: opens=$warmSourceOpens generated=$warmGenerated cancelledAfterOpen=$warmSourceOpenCancellations failed=$warmFailures."
+    }
+
+    if ($warmCacheMisses -lt $warmSourceOpens) {
+        throw "Final warm cache-miss accounting is inconsistent: misses=$warmCacheMisses sourceOpens=$warmSourceOpens."
+    }
+
+    if ($warmCacheFileGrowth -ne ($warmGenerated - $warmMaintenanceDeletes)) {
+        throw "Final warm persistent-cache accounting is inconsistent: generated=$warmGenerated maintenanceDeletes=$warmMaintenanceDeletes cacheFileGrowth=$warmCacheFileGrowth."
+    }
+
+    if ($warmGenerated -ne 0 -or $warmCacheFileGrowth -ne 0) {
+        throw "Final steady-Warm cache did not converge: generated=$warmGenerated cacheFileGrowth=$warmCacheFileGrowth sourceOpens=$warmSourceOpens cancelledAfterOpen=$warmSourceOpenCancellations."
     }
 
     $warmCacheHits =
@@ -866,11 +905,15 @@ try {
             needed = $warmConvergenceNeeded
             coldCancelledThumbnailRequests = $coldCancelledThumbnailRequests
             initialWarmSourceOpens = $initialWarmSourceOpens
+            initialWarmSourceOpenCancellations = $initialWarmSourceOpenCancellations
             initialWarmCacheMisses = $initialWarmCacheMisses
             initialWarmGenerated = $initialWarmGenerated
             initialWarmCacheFileGrowth = $initialWarmCacheFileGrowth
             finalWarmSourceOpens = $warmSourceOpens
+            finalWarmSourceOpenCancellations = $warmSourceOpenCancellations
             finalWarmCacheMisses = $warmCacheMisses
+            finalWarmGenerated = $warmGenerated
+            finalWarmCacheFileGrowth = $warmCacheFileGrowth
         }
         cold = [ordered]@{
             maxFastScrollMs = [Math]::Round($coldMaxScroll, 3)
@@ -888,6 +931,8 @@ try {
             peakWorkingSetBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "resource.peak_working_set_bytes")
             idleWorkingSetBytes = Get-MeasurementAfterWorkingSet -Result $finalWarm -Name "acceptance.idle_settle"
             thumbnailSourceOpens = $warmSourceOpens
+            thumbnailSourceOpenCancellations = $warmSourceOpenCancellations
+            thumbnailGenerated = $warmGenerated
             thumbnailCacheMisses = $warmCacheMisses
             thumbnailCacheHits = $warmCacheHits
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_after.bytes")
@@ -934,6 +979,8 @@ try {
     Write-Host "Cold max fast-scroll: $($summary.cold.maxFastScrollMs) ms"
     Write-Host "Warm max fast-scroll: $($summary.warm.maxFastScrollMs) ms"
     Write-Host "Warm source opens    : $warmSourceOpens"
+    Write-Host "Warm cancelled opens : $warmSourceOpenCancellations"
+    Write-Host "Warm generated       : $warmGenerated"
     Write-Host "Warm cache misses    : $warmCacheMisses"
     Write-Host "Warm cache hits      : $warmCacheHits"
     Write-Host "Warm convergence     : $warmConvergenceNeeded"
