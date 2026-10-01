@@ -2014,7 +2014,7 @@ try
             SourceFor(
                 4800,
                 1,
-                jpgPath);
+                pngPath);
         var firstMemory =
             await memoryPipeline.RequestAsync(
                 memorySource,
