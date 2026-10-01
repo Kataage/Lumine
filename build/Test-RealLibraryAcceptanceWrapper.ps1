@@ -146,10 +146,18 @@ foreach ($iteration in 1..$Repeat) {
             throw "Acceptance wrapper smoke iteration $iteration required convergence but did not bind a steady-Warm result."
         }
 
-        if ([int64]$summary.warmConvergence.finalWarmSourceOpens -ne 0 -or
-            [int64]$summary.warmConvergence.finalWarmCacheMisses -ne 0)
+        if ([int64]$summary.warmConvergence.finalWarmGenerated -ne 0 -or
+            [int64]$summary.warmConvergence.finalWarmCacheFileGrowth -ne 0)
         {
             throw "Acceptance wrapper smoke iteration $iteration accepted a non-converged steady-Warm cache."
+        }
+
+        $finalSourceOpens =
+            [int64]$summary.warmConvergence.finalWarmSourceOpens
+        $finalCancelledAfterOpen =
+            [int64]$summary.warmConvergence.finalWarmSourceOpenCancellations
+        if ($finalSourceOpens -ne $finalCancelledAfterOpen) {
+            throw "Acceptance wrapper smoke iteration $iteration lost cancelled-source accounting after convergence: opens=$finalSourceOpens cancelledAfterOpen=$finalCancelledAfterOpen."
         }
     }
     else {
