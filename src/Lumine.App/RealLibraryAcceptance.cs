@@ -939,6 +939,9 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["thumbnail.source_opens"] =
             diagnostics.SourceOpens.ToString(
                 CultureInfo.InvariantCulture);
+        _metadata["thumbnail.source_open_cancellations"] =
+            diagnostics.SourceOpenCancellations.ToString(
+                CultureInfo.InvariantCulture);
         _metadata["thumbnail.metadata_probes"] =
             diagnostics.MetadataProbes.ToString(
                 CultureInfo.InvariantCulture);
