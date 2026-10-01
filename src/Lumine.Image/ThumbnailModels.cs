@@ -13,18 +13,19 @@ public sealed record ThumbnailProfile(
     int MaxWidth,
     int MaxHeight,
     int Quality,
-    int Version);
+    int Version,
+    bool LinearLight = true);
 
 public static class ThumbnailProfiles
 {
     public static ThumbnailProfile GridSmall { get; } =
-        new("grid-small", 256, 256, 80, 1);
+        new("grid-small", 256, 256, 80, 2, LinearLight: false);
 
     public static ThumbnailProfile GridMedium { get; } =
-        new("grid-medium", 512, 512, 82, 1);
+        new("grid-medium", 512, 512, 82, 2, LinearLight: false);
 
     public static ThumbnailProfile DetailPreview { get; } =
-        new("detail-preview", 1600, 1600, 85, 1);
+        new("detail-preview", 1600, 1600, 85, 1, LinearLight: true);
 
     public static IReadOnlyList<ThumbnailProfile> All { get; } =
         [GridSmall, GridMedium, DetailPreview];

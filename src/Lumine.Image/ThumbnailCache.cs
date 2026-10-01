@@ -7,7 +7,7 @@ namespace Lumine.Image;
 
 public sealed class ThumbnailCache
 {
-    public const int GeneratorVersion = 3;
+    public const int GeneratorVersion = 4;
 
     private const int PruneCandidateBatchSize = 4096;
 
@@ -43,7 +43,7 @@ public sealed class ThumbnailCache
 
         var payload = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{GeneratorVersion}|{source.AssetId}|{source.SourceRevision}|{source.FileSize}|{source.ModifiedAtUtcTicks}|{source.SourceIdentity ?? "-"}|{profile.Id}|{profile.Version}|{profile.MaxWidth}|{profile.MaxHeight}|{profile.Quality}");
+            $"{GeneratorVersion}|{source.AssetId}|{source.SourceRevision}|{source.FileSize}|{source.ModifiedAtUtcTicks}|{source.SourceIdentity ?? "-"}|{profile.Id}|{profile.Version}|{profile.MaxWidth}|{profile.MaxHeight}|{profile.Quality}|linear={profile.LinearLight}");
 
         return Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();

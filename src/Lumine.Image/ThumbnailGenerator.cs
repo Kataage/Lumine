@@ -271,7 +271,7 @@ internal sealed class ThumbnailGenerator
                     height: profile.MaxHeight,
                     size: Enums.Size.Down,
                     noRotate: false,
-                    linear: true,
+                    linear: profile.LinearLight,
                     outputProfile: "srgb",
                     failOn: Enums.FailOn.Error);
             }

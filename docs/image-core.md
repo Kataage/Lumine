@@ -11,25 +11,27 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - Library Core source revision
 - source file size and persisted modified timestamp
 - persisted source identity
-- thumbnail profile id/version/dimensions/quality
+- thumbnail profile id/version/dimensions/quality and linear-light processing mode
 
 A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
 
-Issue #308 moves the cache-key contract to generator version 3. The first cold/miss path opens a stable source snapshot and derives a source identity before capturing raw/oriented dimensions, alpha and actual loader format. On Windows/NTFS the primary identity combines the file's current USN from `FSCTL_READ_FILE_USN_DATA` with `FILE_BASIC_INFO.ChangeTime`. If per-file USN data is unavailable, #375 adds a second Windows fast path using `FILE_ID_INFO` plus the same-handle file size, LastWriteTime and ChangeTime. This avoids streaming multi-GB originals through SHA-256 on Windows volumes/providers that support stable file IDs but not per-file USN reads. Only when both Windows handle identities are unavailable does Image Core fall back to a full SHA-256. App composition persists the identity and metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat.
+Issue #308 moved the source-identity cache-key contract to generator version 3. #383 advances the generator to version 4 and binds the profile's linear-light mode into the key, preventing pre-optimization grid outputs from aliasing the new shrink-on-load policy. The first cold/miss path opens a stable source snapshot and derives a source identity before capturing raw/oriented dimensions, alpha and actual loader format. On Windows/NTFS the primary identity combines the file's current USN from `FSCTL_READ_FILE_USN_DATA` with `FILE_BASIC_INFO.ChangeTime`. If per-file USN data is unavailable, #375 adds a second Windows fast path using `FILE_ID_INFO` plus the same-handle file size, LastWriteTime and ChangeTime. This avoids streaming multi-GB originals through SHA-256 on Windows volumes/providers that support stable file IDs but not per-file USN reads. Only when both Windows handle identities are unavailable does Image Core fall back to a full SHA-256. App composition persists the identity and metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat.
 
 Old revisions and pre-#308 cache keys remain harmless orphaned cache entries until bounded pruning removes them.
 
 ## Profiles
 
-- grid-small: 256 x 256, quality 80
-- grid-medium: 512 x 512, quality 82
-- detail-preview: 1600 x 1600, quality 85
+- grid-small: 256 x 256, quality 80, shrink-on-load enabled (non-linear resize)
+- grid-medium: 512 x 512, quality 82, shrink-on-load enabled (non-linear resize)
+- detail-preview: 1600 x 1600, quality 85, linear-light resize
 
-Profiles only downscale. They do not enlarge small originals.
+Profiles only downscale. They do not enlarge small originals. The processing mode is part of the persistent cache key, so grid and Detail outputs with different resize-quality policies cannot alias.
 
 ## Decode and output
 
-libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled. Resampling is performed in linear light and `output_profile=srgb` performs ICC-aware normalization before metadata is stripped from the cached WebP. Alpha is preserved.
+libvips `thumbnail` is used directly from the source filename so format loaders can use shrink-on-load paths. EXIF orientation is enabled and `output_profile=srgb` keeps ICC-aware sRGB normalization before metadata is stripped from the cached WebP. Alpha is preserved.
+
+Grid thumbnails deliberately do **not** request libvips linear-light shrinking. #383 was introduced after representative physical acceptance showed 1.3–2.7 second Cold grid refreshes while Warm cache refreshes were tens of milliseconds. libvips documents that linear-light thumbnailing disables the fast shrink-on-load optimizations and can make large-image thumbnail generation extremely slow. The larger Detail preview keeps linear-light resizing because it is a quality-oriented selected-image path rather than the high-volume scrolling path.
 
 JPEG, PNG, WebP and GIF static preview support are mandatory in the bundled Windows runtime. AVIF remains part of the v2 format contract and is capability-probed in CI.
 
