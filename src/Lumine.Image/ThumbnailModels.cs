@@ -128,7 +128,8 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
 public readonly record struct ThumbnailMemoryCacheStats(
     int EntryCount,
     long EncodedBytes,
-    long ByteLimit);
+    long ByteLimit,
+    long HitCount);
 
 public readonly record struct ThumbnailCacheMaintenanceDiagnosticsSnapshot(
     long RunsScheduled,
