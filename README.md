@@ -13,6 +13,8 @@ Lumine v2 is a greenfield rebuild focused on a fast, low-overhead image-library 
 
 The legacy Go/Wails implementation remains available on historical branches. v2 does not import or reference the legacy production source tree.
 
+v2 is a greenfield **implementation**, not a new product. `release/v1.1.0` remains the baseline for Lumine's product philosophy, user-facing capabilities, information architecture, creative-archive concepts, and brand continuity. See [Product Principles](docs/product-principles.md) and the [v1 -> v2 Product Gap Audit](docs/v1-product-gap-audit.md). AI work remains blocked until the v2 product gate restores those user-facing requirements on top of the accepted Core.
+
 ## Module boundaries
 
 - **Lumine.Core**: dependency-free product/domain contracts.
