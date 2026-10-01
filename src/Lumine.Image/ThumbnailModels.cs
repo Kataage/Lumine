@@ -8,6 +8,12 @@ public enum ThumbnailPriority
     Background = 1
 }
 
+public enum ThumbnailStorageMode
+{
+    PersistentDisk = 0,
+    MemoryOnly = 1
+}
+
 public sealed record ThumbnailProfile(
     string Id,
     int MaxWidth,
@@ -88,7 +94,8 @@ public sealed record ThumbnailResult(
     int Width,
     int Height,
     long CacheFileBytes,
-    SourceTechnicalMetadata? SourceMetadata = null);
+    SourceTechnicalMetadata? SourceMetadata = null,
+    byte[]? EncodedBytes = null);
 
 public sealed record ThumbnailCacheStats(
     long FileCount,
@@ -117,6 +124,11 @@ public readonly record struct ThumbnailDiagnosticsSnapshot(
     long MetadataNtfsUsnIdentityHits,
     long MetadataWindowsFileIdIdentityHits,
     long MetadataFullHashFallbacks);
+
+public readonly record struct ThumbnailMemoryCacheStats(
+    int EntryCount,
+    long EncodedBytes,
+    long ByteLimit);
 
 public readonly record struct ThumbnailCacheMaintenanceDiagnosticsSnapshot(
     long RunsScheduled,
@@ -148,8 +160,15 @@ public sealed class ThumbnailPipelineOptions
     public TimeSpan CacheMaintenanceQuietPeriod { get; init; } =
         TimeSpan.FromSeconds(2);
 
+    public ThumbnailStorageMode StorageMode { get; init; } =
+        ThumbnailStorageMode.PersistentDisk;
+
+    public long EncodedMemoryByteLimit { get; init; } =
+        CoreResourcePolicy.Default.EncodedThumbnailMemoryByteLimit;
+
     public static ThumbnailPipelineOptions FromResourcePolicy(
-        CoreResourcePolicy policy)
+        CoreResourcePolicy policy,
+        ThumbnailStorageMode storageMode = ThumbnailStorageMode.PersistentDisk)
     {
         ArgumentNullException.ThrowIfNull(policy);
 
@@ -157,7 +176,9 @@ public sealed class ThumbnailPipelineOptions
         {
             WorkerCount = policy.ThumbnailWorkerCount,
             QueueCapacity = policy.ThumbnailQueueCapacity,
-            MaxForegroundBurst = policy.ThumbnailForegroundBurst
+            MaxForegroundBurst = policy.ThumbnailForegroundBurst,
+            StorageMode = storageMode,
+            EncodedMemoryByteLimit = policy.EncodedThumbnailMemoryByteLimit
         };
     }
 }
