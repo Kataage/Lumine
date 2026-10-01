@@ -680,30 +680,47 @@ try {
         throw "Warm cache-miss accounting is inconsistent: misses=$initialWarmCacheMisses sourceOpens=$initialWarmSourceOpens."
     }
 
-    if ($initialWarmCacheFileGrowth -ne ($initialWarmGenerated - $initialWarmMaintenanceDeletes)) {
-        throw "Warm persistent-cache accounting is inconsistent: generated=$initialWarmGenerated maintenanceDeletes=$initialWarmMaintenanceDeletes cacheFileGrowth=$initialWarmCacheFileGrowth."
-    }
-
-    $warmConvergenceNeeded = $initialWarmGenerated -gt 0
     $steadyWarm = $null
+    $warmConvergenceNeeded = $false
 
-    if ($warmConvergenceNeeded) {
-        Write-Host ""
-        Write-Host "Initial Warm committed $initialWarmGenerated missing thumbnail(s); running steady-Warm convergence proof."
-
-        $steadyWarm =
-            Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
-
-        $steadyAssetCount =
-            [int64](Get-MetadataValue -Result $steadyWarm -Key "library.asset_count")
-        if ($steadyAssetCount -ne $coldAssetCount) {
-            throw "Representative library changed before steady-Warm: cold=$coldAssetCount, steady=$steadyAssetCount assets."
+    if ($ThumbnailStorageMode -eq "PersistentDisk") {
+        if ($initialWarmCacheFileGrowth -ne ($initialWarmGenerated - $initialWarmMaintenanceDeletes)) {
+            throw "Warm persistent-cache accounting is inconsistent: generated=$initialWarmGenerated maintenanceDeletes=$initialWarmMaintenanceDeletes cacheFileGrowth=$initialWarmCacheFileGrowth."
         }
 
-        $steadyLibraryHash =
-            Get-MetadataValue -Result $steadyWarm -Key "library.path_sha256"
-        if ($steadyLibraryHash -ne $coldLibraryHash) {
-            throw "Steady-Warm result does not refer to the same representative library path."
+        $warmConvergenceNeeded = $initialWarmGenerated -gt 0
+
+        if ($warmConvergenceNeeded) {
+            Write-Host ""
+            Write-Host "Initial Warm committed $initialWarmGenerated missing thumbnail(s); running steady-Warm convergence proof."
+
+            $steadyWarm =
+                Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
+
+            $steadyAssetCount =
+                [int64](Get-MetadataValue -Result $steadyWarm -Key "library.asset_count")
+            if ($steadyAssetCount -ne $coldAssetCount) {
+                throw "Representative library changed before steady-Warm: cold=$coldAssetCount, steady=$steadyAssetCount assets."
+            }
+
+            $steadyLibraryHash =
+                Get-MetadataValue -Result $steadyWarm -Key "library.path_sha256"
+            if ($steadyLibraryHash -ne $coldLibraryHash) {
+                throw "Steady-Warm result does not refer to the same representative library path."
+            }
+        }
+    }
+    else {
+        if ($initialWarmCacheBeforeFiles -ne 0 -or $initialWarmCacheAfterFiles -ne 0 -or $initialWarmCacheFileGrowth -ne 0) {
+            throw "Memory-only acceptance wrote persistent thumbnail cache files during Warm: before=$initialWarmCacheBeforeFiles after=$initialWarmCacheAfterFiles growth=$initialWarmCacheFileGrowth."
+        }
+
+        $initialWarmMemoryBytes =
+            [int64](Get-MetadataValue -Result $warm -Key "thumbnail.memory_cache_bytes")
+        $initialWarmMemoryLimit =
+            [int64](Get-MetadataValue -Result $warm -Key "thumbnail.memory_cache_limit_bytes")
+        if ($initialWarmMemoryBytes -lt 0 -or $initialWarmMemoryBytes -gt $initialWarmMemoryLimit) {
+            throw "Memory-only encoded thumbnail cache escaped its bound: bytes=$initialWarmMemoryBytes limit=$initialWarmMemoryLimit."
         }
     }
 
