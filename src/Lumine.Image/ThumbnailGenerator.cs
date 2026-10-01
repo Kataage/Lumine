@@ -321,14 +321,10 @@ internal sealed class ThumbnailGenerator
                 byte[] encoded;
                 try
                 {
-                    encoded = thumbnail.WriteToBuffer(
-                        ".webp",
-                        new VOption
-                        {
-                            { "Q", profile.Quality },
-                            { "smart_subsample", true },
-                            { "keep", Enums.ForeignKeep.None }
-                        });
+                    encoded = thumbnail.WebpsaveBuffer(
+                        q: profile.Quality,
+                        smartSubsample: true,
+                        keep: Enums.ForeignKeep.None);
                 }
                 catch (VipsException)
                     when (cancellationToken.IsCancellationRequested)
