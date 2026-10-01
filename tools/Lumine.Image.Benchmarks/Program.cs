@@ -36,6 +36,7 @@ var root = Path.Combine(
     $"lumine-image-benchmark-{Guid.NewGuid():N}");
 var sourcePath = Path.Combine(root, "source.jpg");
 var cacheRoot = Path.Combine(root, "cache");
+var memoryCacheRoot = Path.Combine(root, "memory-cache");
 var probeRoot = Path.Combine(root, "metadata-probes");
 var probeTemplatePath = Path.Combine(root, "probe-template.jpg");
 Directory.CreateDirectory(root);
@@ -48,6 +49,14 @@ long batchPeakWorkingSetBytes = 0;
 long batchPeakAdditionalWorkingSetBytes = 0;
 long cacheBytes = 0;
 long cacheFiles = 0;
+long memoryBatchPeakWorkingSetBytes = 0;
+long memoryBatchPeakAdditionalWorkingSetBytes = 0;
+long memoryCacheHits = 0;
+long memoryCacheEntries = 0;
+long memoryCacheBytes = 0;
+long memoryCacheByteLimit = 0;
+long memoryPersistentFiles = 0;
+long memoryPersistentBytes = 0;
 const int metadataProbeFixtureCount = 10_000;
 long metadataProbeFixtureBytes = 0;
 long metadataProbeFixtureBytesHashed = 0;
@@ -153,6 +162,119 @@ try
     batchPeakWorkingSetBytes = batchPeak.PeakWorkingSetBytes;
     batchPeakAdditionalWorkingSetBytes =
         batchPeak.PeakAdditionalWorkingSetBytes;
+
+    var memoryBackingCache =
+        new ThumbnailCache(memoryCacheRoot);
+    await using (var memoryPipeline =
+        new ThumbnailPipeline(
+            memoryBackingCache,
+            new ThumbnailPipelineOptions
+            {
+                WorkerCount =
+                    ThumbnailPipelineOptions.DefaultWorkerCount,
+                QueueCapacity = 64,
+                StorageMode =
+                    ThumbnailStorageMode.MemoryOnly,
+                EncodedMemoryByteLimit =
+                    256L * 1024 * 1024
+            }))
+    {
+        var memorySource =
+            new ThumbnailSource(
+                200_000,
+                1,
+                sourcePath,
+                info.Length,
+                info.LastWriteTimeUtc.Ticks);
+
+        ThumbnailResult memoryFirst;
+        using (recorder.Measure(
+                   "image.thumbnail_memory_generate"))
+        {
+            memoryFirst =
+                await memoryPipeline.RequestAsync(
+                    memorySource,
+                    ThumbnailProfiles.GridMedium);
+        }
+
+        var memoryMetadata =
+            memoryFirst.SourceMetadata
+            ?? throw new InvalidOperationException(
+                "Memory-only cold generation did not return source metadata.");
+
+        using (recorder.Measure(
+                   "image.thumbnail_memory_cache_hit"))
+        {
+            for (var index = 0;
+                 index < 1000;
+                 index++)
+            {
+                var hit =
+                    await memoryPipeline.RequestAsync(
+                        memorySource.WithMetadata(
+                            memoryMetadata),
+                        ThumbnailProfiles.GridMedium);
+
+                if (!hit.CacheHit
+                    || hit.EncodedBytes
+                        is not { Length: > 0 })
+                {
+                    throw new InvalidOperationException(
+                        "Memory-only warm benchmark unexpectedly missed encoded memory cache.");
+                }
+            }
+        }
+
+        var memoryBatchPeak =
+            PeakWorkingSetMonitor.Start();
+        using (recorder.Measure(
+                   "image.thumbnail_memory_batch_generate"))
+        {
+            var tasks =
+                new Task<ThumbnailResult>[requestCount];
+
+            for (var index = 0;
+                 index < requestCount;
+                 index++)
+            {
+                var request =
+                    new ThumbnailSource(
+                        210_000 + index,
+                        1,
+                        sourcePath,
+                        info.Length,
+                        info.LastWriteTimeUtc.Ticks);
+
+                tasks[index] =
+                    memoryPipeline.RequestAsync(
+                        request,
+                        ThumbnailProfiles.GridSmall,
+                        index < 8
+                            ? ThumbnailPriority.Foreground
+                            : ThumbnailPriority.Background);
+            }
+
+            await Task.WhenAll(tasks);
+        }
+
+        await memoryBatchPeak.DisposeAsync();
+        memoryBatchPeakWorkingSetBytes =
+            memoryBatchPeak.PeakWorkingSetBytes;
+        memoryBatchPeakAdditionalWorkingSetBytes =
+            memoryBatchPeak.PeakAdditionalWorkingSetBytes;
+
+        var memoryStats =
+            memoryPipeline.MemoryCacheStats;
+        memoryCacheHits = memoryStats.HitCount;
+        memoryCacheEntries = memoryStats.EntryCount;
+        memoryCacheBytes = memoryStats.EncodedBytes;
+        memoryCacheByteLimit = memoryStats.ByteLimit;
+
+        var diskStats =
+            await memoryBackingCache.GetStatsAsync();
+        memoryPersistentFiles = diskStats.FileCount;
+        memoryPersistentBytes = diskStats.TotalBytes;
+    }
 
     // Build 10,000 distinct image files outside the measured section. The
     // benchmark then measures real per-file open/header/identity overhead
@@ -260,6 +382,14 @@ try
             ["metadata_probe_fixture_bytes_hashed"] = metadataProbeFixtureBytesHashed.ToString(CultureInfo.InvariantCulture),
             ["cache_files"] = cacheFiles.ToString(CultureInfo.InvariantCulture),
             ["cache_bytes"] = cacheBytes.ToString(CultureInfo.InvariantCulture),
+            ["memory_cache_hits"] = memoryCacheHits.ToString(CultureInfo.InvariantCulture),
+            ["memory_cache_entries"] = memoryCacheEntries.ToString(CultureInfo.InvariantCulture),
+            ["memory_cache_bytes"] = memoryCacheBytes.ToString(CultureInfo.InvariantCulture),
+            ["memory_cache_byte_limit"] = memoryCacheByteLimit.ToString(CultureInfo.InvariantCulture),
+            ["memory_persistent_files"] = memoryPersistentFiles.ToString(CultureInfo.InvariantCulture),
+            ["memory_persistent_bytes"] = memoryPersistentBytes.ToString(CultureInfo.InvariantCulture),
+            ["memory_batch_peak_working_set_bytes"] = memoryBatchPeakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
+            ["memory_batch_peak_additional_working_set_bytes"] = memoryBatchPeakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_working_set_bytes"] = peakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["peak_additional_working_set_bytes"] = peakAdditionalWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
             ["batch_peak_working_set_bytes"] = batchPeakWorkingSetBytes.ToString(CultureInfo.InvariantCulture),
@@ -273,6 +403,8 @@ try
 
     Console.WriteLine(
         $"Image benchmark: batch={requestCount}, cache files={cacheFiles}, cache bytes={cacheBytes}");
+    Console.WriteLine(
+        $"Memory-only benchmark: entries={memoryCacheEntries}, encoded bytes={memoryCacheBytes}, hits={memoryCacheHits}, persisted files={memoryPersistentFiles}");
     Console.WriteLine(
         $"10k distinct metadata probes: fast={metadataProbeFixtureFastIdentityHits} (usn={metadataProbeFixtureNtfsUsnIdentityHits}, file-id={metadataProbeFixtureWindowsFileIdIdentityHits}), hash-fallback={metadataProbeFixtureFullHashFallbacks}, logical-bytes={metadataProbeFixtureBytes:N0}, hashed-bytes={metadataProbeFixtureBytesHashed:N0}");
     Console.WriteLine($"Result: {Path.GetFullPath(output)}");
