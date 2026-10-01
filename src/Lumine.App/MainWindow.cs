@@ -219,6 +219,13 @@ public sealed class MainWindow : Window
         builder.AppendLine(
             $"Interrupted thumbnail writes: {cacheStats.InterruptedWriteCount.ToString("N0", CultureInfo.InvariantCulture)}");
 
+        var memoryCache =
+            runtime.ThumbnailMemoryCacheStats;
+        builder.AppendLine(
+            $"Thumbnail storage mode: {runtime.ThumbnailStorageMode}");
+        builder.AppendLine(
+            $"Encoded thumbnail memory cache: {memoryCache.EntryCount.ToString("N0", CultureInfo.InvariantCulture)} entries / {FormatBytes(memoryCache.EncodedBytes)} of {FormatBytes(memoryCache.ByteLimit)}; hits={memoryCache.HitCount.ToString("N0", CultureInfo.InvariantCulture)}");
+
         var maintenance =
             runtime.ThumbnailCacheMaintenanceDiagnostics;
 
