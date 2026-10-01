@@ -143,25 +143,20 @@ public sealed class ViewerSession : IAsyncDisposable
 
             if (_inFlight.TryGetValue(asset.Id, out var existing))
             {
-                if (existing.Priority == ViewerThumbnailPriority.Background
-                    && priority == ViewerThumbnailPriority.Foreground)
-                {
-                    existing.Cancel();
-                    _inFlight.Remove(asset.Id);
-                    Interlocked.Increment(
-                        ref _thumbnailRequestsCancelled);
-                }
-                else
-                {
-                    existing.Waiters++;
-                    Interlocked.Increment(
-                        ref _thumbnailRequestsCoalesced);
-                    request = existing;
-                    return AwaitSharedAsync(
-                        asset.Id,
-                        request,
-                        cancellationToken);
-                }
+                // Reuse work already in flight for this asset even when a
+                // background prefetch becomes visible. Cancelling and
+                // restarting the same source decode discards useful native
+                // work and increases cold-scroll latency. If the background
+                // waiter later disappears, the foreground waiter keeps the
+                // shared request alive.
+                existing.Waiters++;
+                Interlocked.Increment(
+                    ref _thumbnailRequestsCoalesced);
+                request = existing;
+                return AwaitSharedAsync(
+                    asset.Id,
+                    request,
+                    cancellationToken);
             }
 
             var requestCancellation =
@@ -172,7 +167,6 @@ public sealed class ViewerSession : IAsyncDisposable
                 priority,
                 requestCancellation.Token);
             request = new InFlightRequest(
-                priority,
                 requestCancellation,
                 task)
             {
@@ -330,8 +324,9 @@ public sealed class ViewerSession : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // A background request may be intentionally cancelled when the
-            // same asset becomes visible and is re-issued at foreground priority.
+            // Background prefetch is disposable when its row detaches or the
+            // session shuts down. A foreground waiter for the same asset is
+            // coalesced onto the shared request and keeps it alive.
         }
         catch
         {
@@ -507,13 +502,10 @@ public sealed class ViewerSession : IAsyncDisposable
     }
 
     private sealed class InFlightRequest(
-        ViewerThumbnailPriority priority,
         CancellationTokenSource cancellation,
         Task<ViewerThumbnail> task)
     {
         private int _cancellationDisposed;
-
-        public ViewerThumbnailPriority Priority { get; } = priority;
 
         public Task<ViewerThumbnail> Task { get; } = task;
 
