@@ -171,7 +171,7 @@ public sealed class ViewerDetailSession : IAsyncDisposable
                     asset,
                     preview.SourceMetadata);
                 var lease = await PreviewBitmapCache.AcquireAsync(
-                    preview.CachePath,
+                    preview,
                     operation.Token).ConfigureAwait(false);
 
                 var publishPreview = false;
