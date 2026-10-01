@@ -31,6 +31,7 @@ internal static class Program
         {
             VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
+            await VerifyBackgroundForegroundCoalescingAsync(thumbnailPath);
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
             await VerifyViewerSessionShutdownAsync(thumbnailPath);
 
@@ -314,6 +315,63 @@ internal static class Program
         Require(
             cache.Diagnostics.ActiveDecodes == 0,
             "DecodedBitmapCache.DisposeAsync returned before active decode drained.");
+    }
+
+    private static async Task VerifyBackgroundForegroundCoalescingAsync(
+        string thumbnailPath)
+    {
+        var assetProvider = new DirectFixtureAssetProvider(100);
+        var thumbnailProvider = new DelayedThumbnailProvider(
+            thumbnailPath,
+            TimeSpan.FromMilliseconds(120));
+
+        await using var session = new ViewerSession(
+            assetProvider,
+            thumbnailProvider,
+            new ViewerOptions
+            {
+                DecodedBitmapEntryLimit = 8,
+                DecodedBitmapByteLimit = 8 * 1024 * 1024,
+                PrefetchRows = 0
+            });
+
+        var asset = await session.GetAssetAsync(7);
+        var background = session.GetThumbnailAsync(
+            asset,
+            ViewerThumbnailPriority.Background).AsTask();
+
+        await thumbnailProvider.Started.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        var foreground = session.GetThumbnailAsync(
+            asset,
+            ViewerThumbnailPriority.Foreground).AsTask();
+
+        var results = await Task.WhenAll(
+            background,
+            foreground);
+
+        Require(
+            string.Equals(
+                results[0].CacheKey,
+                results[1].CacheKey,
+                StringComparison.Ordinal),
+            "Background-to-foreground coalescing returned different thumbnail work.");
+        Require(
+            session.Diagnostics.ThumbnailRequests == 1,
+            "Foreground visibility restarted an existing background thumbnail request.");
+        Require(
+            session.Diagnostics.ThumbnailRequestsCoalesced >= 1,
+            "Background-to-foreground coalescing diagnostic was not recorded.");
+        Require(
+            session.Diagnostics.ThumbnailRequestsCancelled == 0,
+            "Background-to-foreground promotion cancelled useful in-flight work.");
+        Require(
+            thumbnailProvider.Cancelled == 0,
+            "Thumbnail provider observed cancellation during background-to-foreground reuse.");
+        Require(
+            thumbnailProvider.Active == 0,
+            "Background-to-foreground coalesced request did not drain.");
     }
 
     private static async Task VerifyRequestCoalescingAndCancellationAsync(
