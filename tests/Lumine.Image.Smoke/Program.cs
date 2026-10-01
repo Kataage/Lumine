@@ -1313,6 +1313,15 @@ try
         {
         }
 
+        for (var attempt = 0;
+             attempt < 2000
+             && pipeline.Diagnostics.SourceOpenCancellations
+                == sourceOpenCancellationsBefore;
+             attempt++)
+        {
+            await Task.Delay(1);
+        }
+
         Require(
             pipeline.Diagnostics.Failed == failuresBeforeCancellation,
             "Expected in-flight cancellation was incorrectly counted as a thumbnail generation failure.");
