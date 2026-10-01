@@ -23,7 +23,10 @@ param(
     [string]$Win32CompositionMode = "Default",
 
     [ValidateSet("Default", "Software")]
-    [string]$Win32RenderingMode = "Default"
+    [string]$Win32RenderingMode = "Default",
+
+    [ValidateSet("PersistentDisk", "MemoryOnly")]
+    [string]$ThumbnailStorageMode = "PersistentDisk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -164,6 +167,7 @@ $oldHardware = $env:LUMINE_HARDWARE_ID
 $oldRevision = $env:LUMINE_REVISION
 $oldCompositionMode = $env:LUMINE_WIN32_COMPOSITION_MODE
 $oldRenderingMode = $env:LUMINE_WIN32_RENDERING_MODE
+$oldThumbnailStorageMode = $env:LUMINE_THUMBNAIL_STORAGE_MODE
 
 if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
@@ -188,6 +192,7 @@ if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq "unknown" -or $Rev
 
 $env:LUMINE_HARDWARE_ID = $HardwareId
 $env:LUMINE_REVISION = $Revision
+$env:LUMINE_THUMBNAIL_STORAGE_MODE = $ThumbnailStorageMode
 
 if ($Win32CompositionMode -eq "Default") {
     $env:LUMINE_WIN32_COMPOSITION_MODE = $null
@@ -395,6 +400,7 @@ function Write-CrashDiagnostics {
     $lines.Add("revision=$Revision")
     $lines.Add("win32CompositionMode=$Win32CompositionMode")
     $lines.Add("win32RenderingMode=$Win32RenderingMode")
+    $lines.Add("thumbnailStorageMode=$ThumbnailStorageMode")
     $lines.Add("os=$([Environment]::OSVersion.VersionString)")
     $lines.Add("is64BitProcess=$([Environment]::Is64BitProcess)")
     $lines.Add("is64BitOperatingSystem=$([Environment]::Is64BitOperatingSystem)")
@@ -596,6 +602,12 @@ function Invoke-CoreAcceptance {
 
     if ($processArchitecture -ne "X64" -or $osArchitecture -ne "X64") {
         throw "Acceptance must run as native Windows x64; process='$processArchitecture', OS='$osArchitecture'."
+    }
+
+    $reportedThumbnailStorageMode =
+        Get-MetadataValue -Result $result -Key "thumbnail.storage_mode"
+    if ($reportedThumbnailStorageMode -ne $ThumbnailStorageMode) {
+        throw "Acceptance thumbnail storage mode mismatch: expected '$ThumbnailStorageMode', got '$reportedThumbnailStorageMode'."
     }
 
     return $result
@@ -998,4 +1010,5 @@ finally {
     $env:LUMINE_REVISION = $oldRevision
     $env:LUMINE_WIN32_COMPOSITION_MODE = $oldCompositionMode
     $env:LUMINE_WIN32_RENDERING_MODE = $oldRenderingMode
+    $env:LUMINE_THUMBNAIL_STORAGE_MODE = $oldThumbnailStorageMode
 }
