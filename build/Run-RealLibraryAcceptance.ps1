@@ -829,6 +829,25 @@ try {
             throw "$mode post-shutdown thumbnail cache retained $postShutdownInterruptedWrites interrupted write(s)."
         }
 
+        $memoryCacheBytes =
+            [int64](Get-MetadataValue -Result $result -Key "thumbnail.memory_cache_bytes")
+        $memoryCacheLimit =
+            [int64](Get-MetadataValue -Result $result -Key "thumbnail.memory_cache_limit_bytes")
+        if ($memoryCacheBytes -lt 0 -or $memoryCacheBytes -gt $memoryCacheLimit) {
+            throw "$mode encoded thumbnail memory cache escaped its configured bound: $memoryCacheBytes > $memoryCacheLimit bytes."
+        }
+
+        if ($ThumbnailStorageMode -eq "MemoryOnly") {
+            $cacheFiles =
+                [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.files")
+            $postShutdownCacheFiles =
+                [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_post_shutdown.files")
+
+            if ($cacheFiles -ne 0 -or $cacheBytes -ne 0 -or $postShutdownCacheFiles -ne 0 -or $postShutdownCacheBytes -ne 0) {
+                throw "$mode memory-only policy persisted thumbnail data: runtimeFiles=$cacheFiles runtimeBytes=$cacheBytes postShutdownFiles=$postShutdownCacheFiles postShutdownBytes=$postShutdownCacheBytes."
+            }
+        }
+
         $maxScroll = Get-MaxMeasurement -Result $result -Name "viewer.fast_scroll_refresh"
         if ($maxScroll -gt $MaxFastScrollMs) {
             throw "$mode fast-scroll refresh exceeded $MaxFastScrollMs ms: $([Math]::Round($maxScroll, 1)) ms."
@@ -870,18 +889,40 @@ try {
         throw "Final warm cache-miss accounting is inconsistent: misses=$warmCacheMisses sourceOpens=$warmSourceOpens."
     }
 
-    if ($warmCacheFileGrowth -ne ($warmGenerated - $warmMaintenanceDeletes)) {
-        throw "Final warm persistent-cache accounting is inconsistent: generated=$warmGenerated maintenanceDeletes=$warmMaintenanceDeletes cacheFileGrowth=$warmCacheFileGrowth."
-    }
-
-    if ($warmGenerated -ne 0 -or $warmCacheFileGrowth -ne 0) {
-        throw "Final steady-Warm cache did not converge: generated=$warmGenerated cacheFileGrowth=$warmCacheFileGrowth sourceOpens=$warmSourceOpens cancelledAfterOpen=$warmSourceOpenCancellations."
-    }
-
     $warmCacheHits =
         [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_hits")
-    if ($warmCacheHits -le 0) {
-        throw "Final steady-Warm acceptance did not observe persistent thumbnail cache hits."
+    $warmMemoryCacheHits =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_hits")
+    $warmMemoryCacheBytes =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_bytes")
+    $warmMemoryCacheLimit =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_limit_bytes")
+
+    if ($ThumbnailStorageMode -eq "PersistentDisk") {
+        if ($warmCacheFileGrowth -ne ($warmGenerated - $warmMaintenanceDeletes)) {
+            throw "Final warm persistent-cache accounting is inconsistent: generated=$warmGenerated maintenanceDeletes=$warmMaintenanceDeletes cacheFileGrowth=$warmCacheFileGrowth."
+        }
+
+        if ($warmGenerated -ne 0 -or $warmCacheFileGrowth -ne 0) {
+            throw "Final steady-Warm cache did not converge: generated=$warmGenerated cacheFileGrowth=$warmCacheFileGrowth sourceOpens=$warmSourceOpens cancelledAfterOpen=$warmSourceOpenCancellations."
+        }
+
+        if ($warmCacheHits -le 0) {
+            throw "Final steady-Warm acceptance did not observe persistent thumbnail cache hits."
+        }
+    }
+    else {
+        if ($warmCacheBeforeFiles -ne 0 -or $warmCacheAfterFiles -ne 0 -or $warmCacheFileGrowth -ne 0) {
+            throw "Final memory-only run persisted thumbnail cache files: before=$warmCacheBeforeFiles after=$warmCacheAfterFiles growth=$warmCacheFileGrowth."
+        }
+
+        if ($warmMemoryCacheBytes -lt 0 -or $warmMemoryCacheBytes -gt $warmMemoryCacheLimit) {
+            throw "Final memory-only encoded cache escaped its bound: bytes=$warmMemoryCacheBytes limit=$warmMemoryCacheLimit."
+        }
+
+        if ($warmGenerated -le 0 -and $warmMemoryCacheHits -le 0) {
+            throw "Final memory-only run exercised neither thumbnail generation nor in-process memory-cache reuse."
+        }
     }
 
     $warmBootstrap =
