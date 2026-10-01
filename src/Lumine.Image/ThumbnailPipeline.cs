@@ -3,7 +3,7 @@ namespace Lumine.Image;
 public sealed class ThumbnailPipeline : IAsyncDisposable
 {
     private readonly ThumbnailGenerator _generator;
-    private readonly ThumbnailCacheMaintenance _maintenance;
+    private readonly ThumbnailCacheMaintenance? _maintenance;
     private readonly object _queueGate = new();
     private readonly Queue<WorkItem> _foreground = new();
     private readonly Queue<WorkItem> _background = new();
@@ -32,15 +32,24 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 nameof(options.CacheMaintenanceQuietPeriod),
                 "Cache maintenance quiet period cannot be negative.");
         }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            options.EncodedMemoryByteLimit);
 
         WorkerCount = options.WorkerCount;
         QueueCapacity = options.QueueCapacity;
         MaxForegroundBurst = options.MaxForegroundBurst;
+        StorageMode = options.StorageMode;
+        EncodedMemoryByteLimit = options.EncodedMemoryByteLimit;
         _queueSlots = new SemaphoreSlim(options.QueueCapacity, options.QueueCapacity);
-        _generator = new ThumbnailGenerator(cache);
-        _maintenance = new ThumbnailCacheMaintenance(
+        _generator = new ThumbnailGenerator(
             cache,
-            options.CacheMaintenanceQuietPeriod);
+            options.StorageMode,
+            options.EncodedMemoryByteLimit);
+        _maintenance = options.StorageMode == ThumbnailStorageMode.PersistentDisk
+            ? new ThumbnailCacheMaintenance(
+                cache,
+                options.CacheMaintenanceQuietPeriod)
+            : null;
 
         _workers = Enumerable.Range(0, options.WorkerCount)
             .Select(_ => Task.Run(WorkerLoopAsync))
@@ -53,11 +62,18 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
     public int MaxForegroundBurst { get; }
 
+    public ThumbnailStorageMode StorageMode { get; }
+
+    public long EncodedMemoryByteLimit { get; }
+
+    public ThumbnailMemoryCacheStats MemoryCacheStats =>
+        _generator.MemoryCacheStats;
+
     public ThumbnailDiagnosticsSnapshot Diagnostics =>
         _generator.SnapshotDiagnostics();
 
     public ThumbnailCacheMaintenanceDiagnosticsSnapshot MaintenanceDiagnostics =>
-        _maintenance.Diagnostics;
+        _maintenance?.Diagnostics ?? default;
 
     public async Task<ThumbnailResult> RequestAsync(
         ThumbnailSource source,
@@ -68,9 +84,12 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-        await _maintenance.PauseForRequestAsync(
-            priority == ThumbnailPriority.Foreground)
-            .ConfigureAwait(false);
+        if (_maintenance is not null)
+        {
+            await _maintenance.PauseForRequestAsync(
+                priority == ThumbnailPriority.Foreground)
+                .ConfigureAwait(false);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
@@ -151,8 +170,11 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         try
         {
-            await _maintenance.StopBackgroundAsync()
-                .ConfigureAwait(false);
+            if (_maintenance is not null)
+            {
+                await _maintenance.StopBackgroundAsync()
+                    .ConfigureAwait(false);
+            }
 
             _shutdown.Cancel();
 
@@ -171,8 +193,11 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             {
             }
 
-            await _maintenance.FinalizeAsync()
-                .ConfigureAwait(false);
+            if (_maintenance is not null)
+            {
+                await _maintenance.FinalizeAsync()
+                    .ConfigureAwait(false);
+            }
 
             _shutdown.Dispose();
             _queuedItems.Dispose();
@@ -271,7 +296,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                     _activeWorkItems--;
                 }
 
-                _maintenance.NotifyRequestCompleted(
+                _maintenance?.NotifyRequestCompleted(
                     result,
                     IsIdleForMaintenance);
             }
