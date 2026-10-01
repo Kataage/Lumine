@@ -19,6 +19,7 @@ internal sealed class ThumbnailGenerator
     private long _generated;
     private long _failed;
     private long _sourceOpens;
+    private long _sourceOpenCancellations;
     private long _metadataProbes;
     private long _metadataBytesHashed;
     private long _metadataMemoryHits;
@@ -39,6 +40,7 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _generated),
             Interlocked.Read(ref _failed),
             Interlocked.Read(ref _sourceOpens),
+            Interlocked.Read(ref _sourceOpenCancellations),
             Interlocked.Read(ref _metadataProbes),
             Interlocked.Read(ref _metadataBytesHashed),
             Interlocked.Read(ref _metadataMemoryHits),
@@ -230,11 +232,13 @@ internal sealed class ThumbnailGenerator
         var temporaryPath = _cache.CreateTemporaryPath(cacheKey);
         NetVips.Image? bmpMemory = null;
         NetVips.Image? thumbnail = null;
+        var sourceOpened = false;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _sourceOpens);
+            sourceOpened = true;
 
             if (snapshot.BmpInfo is { } bmp)
             {
@@ -324,6 +328,12 @@ internal sealed class ThumbnailGenerator
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
+            if (sourceOpened)
+            {
+                Interlocked.Increment(
+                    ref _sourceOpenCancellations);
+            }
+
             TryDelete(temporaryPath);
             throw;
         }

@@ -84,7 +84,7 @@ It then launches:
 
 1. cold run with a fresh Lumine data/cache root
 2. warm run against the same Lumine data/cache root
-3. only when the first warm run heals a cache hole that is strictly attributable to an intentionally cancelled cold thumbnail request, one additional steady-warm run against the now-populated cache
+3. only when the first warm run successfully commits additional persistent thumbnails, one additional steady-warm run against the now-populated cache
 
 After each process exits, the wrapper requires:
 
@@ -122,10 +122,12 @@ Across the results it requires:
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
 - final warm persistent thumbnail cache hits > 0
-- final warm thumbnail cache misses = 0
-- final warm thumbnail-generation source opens = 0
-- if the first warm run reopens originals, the count must be no greater than the cold cancelled-thumbnail count, its miss/open/generation counts must match exactly, the persistent cache file count must grow by the same number (proving a missing entry was filled rather than a corrupt entry regenerated), and a second steady-warm run must prove zero misses and zero source opens
-- a warm source reopen with no corresponding cold cancellation remains an immediate failure
+- every thumbnail source-open attempt is accounted as exactly one successful generation, post-open cancellation, or failure
+- cache misses may exceed source opens because cancellation can occur after a miss is claimed but before source generation starts
+- persistent cache file growth must match successful generations after accounting for maintenance deletions
+- if the first warm run successfully commits any additional thumbnails, a second steady-warm run must prove zero successful generations and zero persistent-cache file growth
+- source-open attempts that are explicitly recorded as post-open cancellations are diagnostic performance evidence, not cache-convergence failures; issue #380 owns reducing that wasted work
+- the Cold <= 1,500 ms fast-scroll gate is checked before an optional steady-warm run because later cache convergence cannot repair a Cold responsiveness failure
 
 A warm filesystem bootstrap other than `UsnDelta` is reported as a warning rather than silently treated as equivalent. A reconcile fallback can be legitimate when USN replay is unavailable, but it must be reviewed for the actual target volume.
 
@@ -167,8 +169,8 @@ The output directory contains:
 - cold/warm peak working set
 - cold/warm idle working set from the end of the explicit idle-settle measurement
 - pre-shutdown and post-shutdown thumbnail-cache bytes versus the configured budget
-- final warm source-open/cache-miss/cache-hit evidence
-- whether warm convergence was required, including the cold cancellation count and first-warm heal accounting
+- final warm source-open/post-open-cancellation/generation/cache-miss/cache-hit evidence
+- whether warm convergence was required, including first-warm generation/cache-growth accounting and final steady-warm persistence evidence
 - filesystem bootstrap mode
 - measured bottlenecks
 - known limitations

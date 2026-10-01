@@ -1282,6 +1282,8 @@ try
     using (var nativeCancelled = new CancellationTokenSource())
     {
         var opensBeforeCancellation = pipeline.Diagnostics.SourceOpens;
+        var sourceOpenCancellationsBefore =
+            pipeline.Diagnostics.SourceOpenCancellations;
         var failuresBeforeCancellation = pipeline.Diagnostics.Failed;
         var cancellationSource = SourceFor(46, 1, cancellationPath);
         var cancellationTask = pipeline.RequestAsync(
@@ -1311,9 +1313,22 @@ try
         {
         }
 
+        for (var attempt = 0;
+             attempt < 2000
+             && pipeline.Diagnostics.SourceOpenCancellations
+                == sourceOpenCancellationsBefore;
+             attempt++)
+        {
+            await Task.Delay(1);
+        }
+
         Require(
             pipeline.Diagnostics.Failed == failuresBeforeCancellation,
             "Expected in-flight cancellation was incorrectly counted as a thumbnail generation failure.");
+        Require(
+            pipeline.Diagnostics.SourceOpenCancellations
+                == sourceOpenCancellationsBefore + 1,
+            "In-flight cancellation after source evaluation was not accounted separately.");
 
         Require(
             !Directory.EnumerateFiles(cacheRoot, "*.tmp.webp", SearchOption.AllDirectories).Any(),
