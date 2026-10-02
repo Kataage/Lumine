@@ -114,8 +114,14 @@ public sealed class DetailViewerControl : UserControl
         _scroll = new ScrollViewer
         {
             Content = surface,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            HorizontalContentAlignment =
+                HorizontalAlignment.Center,
+            VerticalContentAlignment =
+                VerticalAlignment.Center,
+            HorizontalScrollBarVisibility =
+                ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility =
+                ScrollBarVisibility.Auto
         };
 
         _metadata = new TextBlock
@@ -375,7 +381,9 @@ public sealed class DetailViewerControl : UserControl
         _fitMode = true;
         SetZoom(zoom);
         SynchronizeRequestedZoomIfIdle(zoom);
-        _scroll.Offset = default;
+        Dispatcher.UIThread.Post(
+            CenterViewport,
+            DispatcherPriority.Render);
     }
 
     public async Task ActualSizeAsync(
@@ -586,6 +594,30 @@ public sealed class DetailViewerControl : UserControl
             $"{Math.Round(zoom * 100):N0}%";
     }
 
+    private void CenterViewport()
+    {
+        var extent =
+            _scroll.Extent;
+        var viewport =
+            _scroll.Viewport;
+
+        var horizontal =
+            Math.Max(
+                0,
+                (extent.Width - viewport.Width)
+                / 2);
+        var vertical =
+            Math.Max(
+                0,
+                (extent.Height - viewport.Height)
+                / 2);
+
+        _scroll.Offset =
+            new Vector(
+                horizontal,
+                vertical);
+    }
+
     internal static Size CalculateDisplaySize(
         PixelSize sourceSize,
         double zoom,
@@ -776,7 +808,9 @@ public sealed class DetailViewerControl : UserControl
         }
 
         _fitMode = true;
-        _scroll.Offset = default;
+        Dispatcher.UIThread.Post(
+            CenterViewport,
+            DispatcherPriority.Render);
     }
 
     private static bool ShouldUseOriginal(
