@@ -36,13 +36,17 @@ The palette is derived from the v1 dark workspace contract (`frontend/src/index.
 ```text
 MainWindow
 ├─ compact Lumine navigation rail
-└─ workspace
-   ├─ product header / primary actions / current status
-   ├─ current library path
-   └─ image surface
+├─ adaptive navigation pane
+├─ workspace
+│  ├─ browse command bar (search / sort / filter / view / density)
+│  ├─ contextual selection bar (only while multi-selecting)
+│  ├─ virtualized image grid or list
+│  └─ contextual inspector (side panel on wide windows, overlay on compact windows)
+└─ root lightbox
+   └─ edge-to-edge image viewer with overlay controls
 ```
 
-The current Image/Viewer runtime remains unchanged. #389 only changes presentation and composition around that proven path.
+The image surface remains dominant. Navigation and the inspector adapt before they can starve the image canvas. The focused viewer is mounted at the MainWindow root rather than inside the browse workspace, so it can use the full client area.
 
 ## Product states
 
@@ -71,9 +75,15 @@ This issue deliberately does **not** implement the data behavior owned by later 
 
 The v1 `appicon.png` is copied as an Avalonia resource and is shown in the shell and Window icon. A Windows ICO generated from the same 256px PNG is set as `ApplicationIcon`, so the published executable, Window chrome and in-product brand use the same source artwork.
 
-## Performance rule
+## Performance and scale rule
 
-The design shell must not introduce image decoding, library enumeration or extra Viewer data work. The existing native Viewer remains the only image surface; shell state changes are lightweight Avalonia controls around it.
+The shell must not put image decoding or unbounded collection work on the UI thread.
+
+- image grid/list rendering remains virtualized;
+- Folder / Tag / Publication navigation uses recyclable list containers;
+- Select-All and large Shift selections are represented as compact ranges rather than one object per selected asset;
+- bulk actions resolve selected asset IDs in pages instead of materializing full ViewerAsset objects unnecessarily;
+- navigation, inspector and lightbox composition remain lightweight Avalonia controls around the Viewer runtime.
 
 
 ## Interaction-first UX rule (real-user acceptance correction)
@@ -122,6 +132,16 @@ The v2 interaction model should remain consistent with current desktop guidance:
 - Fluent toolbar: commands supporting the main task should be available where they are needed; familiar icons may replace button text.
 - Tooltips: supplemental only. Essential task information must remain visible in the UI.
 - Common image-management applications (Eagle, Lightroom, digiKam): grid-to-viewer transition, previous/next, Fit/100%, zoom level, zoom in/out and pan are direct viewer affordances rather than hidden documentation.
+
+## Visual and accessibility contract
+
+- ordinary product text uses the Lumine type ramp; normal captions do not shrink below 12 DIP;
+- semantic warning/destructive text must retain normal-text contrast against product surfaces;
+- icon-only controls require an accessibility name, and implemented keyboard shortcuts are exposed through accelerator metadata;
+- high-risk geometry is regression-tested at the minimum supported window size and at 125%, 150% and 200% scaling;
+- thumbnail action icons must stay centered inside consistent button bounds;
+- focused images must start centered in the full-client lightbox;
+- secondary commands use contextual flyouts/menus rather than permanently expanding primary image chrome.
 
 ## Acceptance implication
 
