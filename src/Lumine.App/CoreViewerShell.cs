@@ -701,19 +701,25 @@ internal sealed class CoreViewerShell : UserControl
                 ? $"{selection.Count:N0}件"
                 : string.Empty;
         _bulkStatus.Text = string.Empty;
-        _selectionMetadataSummary.Text =
+        const int detailedSummaryLimit = 256;
+        var canSummarize =
             isBulk
+            && selection.Count <= detailedSummaryLimit;
+        _selectionMetadataSummary.Text =
+            canSummarize
                 ? "整理情報を確認中…"
-                : string.Empty;
+                : isBulk
+                    ? "複数選択"
+                    : string.Empty;
 
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation =
-            isBulk
+            canSummarize
                 ? new CancellationTokenSource()
                 : null;
 
-        if (isBulk)
+        if (canSummarize)
         {
             try
             {
