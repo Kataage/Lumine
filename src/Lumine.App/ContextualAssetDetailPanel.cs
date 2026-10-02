@@ -85,7 +85,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         CoreViewerRuntime runtime,
         Func<Task> closeRequested,
         Func<Task> focusedViewRequested,
-        Func<Task>? metadataChanged = null)
+        Func<Task>? metadataChanged = null,
+        Func<Task>? createWorkRequested = null,
+        Func<Task>? createGroupRequested = null,
+        Func<Task>? createPublicationRequested = null)
     {
         _runtime = runtime
             ?? throw new ArgumentNullException(nameof(runtime));
@@ -164,7 +167,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _saveStatus = new TextBlock
         {
             Foreground = LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -240,7 +243,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = "詳細",
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.Bold,
-                FontSize = 13,
+                FontSize = LumineDesign.BodyFontSize,
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
@@ -326,6 +329,95 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             {
                 Spacing = 8
             };
+
+        if (createWorkRequested is not null
+            || createGroupRequested is not null
+            || createPublicationRequested is not null)
+        {
+            Button CreateCreativeAction(
+                string label,
+                Func<Task> action)
+            {
+                var button =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = label
+                        });
+                button.Click +=
+                    async (_, _) =>
+                    {
+                        button.IsEnabled = false;
+                        try
+                        {
+                            await action();
+                        }
+                        catch (Exception exception)
+                        {
+                            _saveStatus.Text =
+                                $"操作を完了できませんでした: {exception.Message}";
+                        }
+                        finally
+                        {
+                            button.IsEnabled = true;
+                        }
+                    };
+                return button;
+            }
+
+            var creationPanel =
+                new StackPanel
+                {
+                    Width = 220,
+                    Spacing = 6,
+                    Margin = new Thickness(4)
+                };
+            if (createWorkRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "Workを作成",
+                        createWorkRequested));
+            }
+
+            if (createGroupRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "生成グループを作成",
+                        createGroupRequested));
+            }
+
+            if (createPublicationRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "公開記録を作成",
+                        createPublicationRequested));
+            }
+
+            creative.Children.Add(
+                LumineDesign.ConfigureSecondaryButton(
+                    new DropDownButton
+                    {
+                        Content = "新規作成",
+                        Flyout =
+                            new Flyout
+                            {
+                                Content =
+                                    new Border
+                                    {
+                                        Background =
+                                            LumineDesign.SurfaceRaised,
+                                        Padding =
+                                            new Thickness(10),
+                                        Child =
+                                            creationPanel
+                                    }
+                            }
+                    }));
+        }
+
         AddSection(creative, "Work", _works);
         AddSection(creative, "Generation Group", _groups);
         AddSection(creative, "Lineage", _relations);
