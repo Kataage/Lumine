@@ -20,6 +20,7 @@ public sealed class MainWindow : Window
     private readonly Button _openFolder;
     private readonly Button _diagnostics;
     private readonly TextBlock _status;
+    private readonly Border _statusSurface;
     private readonly TextBlock _libraryPath;
     private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
@@ -170,51 +171,32 @@ public sealed class MainWindow : Window
             FontSize = 10.5
         };
 
-        var heading =
-            new StackPanel
-            {
-                Spacing = 2,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        heading.Children.Add(_sectionTitle);
-        heading.Children.Add(_status);
-
-        var actions =
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        // Library creation and diagnostics belong to their navigation
-        // destinations. Keep the image workspace header free of unrelated
-        // global actions.
-
-        var headerGrid =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
-                MinHeight = LumineDesign.HeaderHeight
-            };
-        heading.Margin =
-            new Thickness(16, 8, 12, 8);
-        headerGrid.Children.Add(heading);
-        Grid.SetColumn(actions, 1);
-        actions.Margin =
-            new Thickness(8, 8, 14, 8);
-        headerGrid.Children.Add(actions);
-
-        var header =
+        _statusSurface =
             new Border
             {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
+                Background =
+                    LumineDesign.SurfaceRaised,
+                BorderBrush =
+                    LumineDesign.Border,
                 BorderThickness =
                     new Thickness(0, 0, 0, 1),
-                Child = headerGrid
+                Padding =
+                    new Thickness(12, 7),
+                IsVisible =
+                    !string.IsNullOrWhiteSpace(
+                        _status.Text),
+                Child = _status
+            };
+        _status.PropertyChanged +=
+            (_, args) =>
+            {
+                if (args.Property
+                    == TextBlock.TextProperty)
+                {
+                    _statusSurface.IsVisible =
+                        !string.IsNullOrWhiteSpace(
+                            _status.Text);
+                }
             };
 
         _viewerHost = new ContentControl
@@ -241,19 +223,14 @@ public sealed class MainWindow : Window
         {
             Background = LumineDesign.Background,
             RowDefinitions =
-                new RowDefinitions("Auto,Auto,Auto,*")
+                new RowDefinitions("Auto,Auto,*")
         };
-        workspace.Children.Add(header);
+        workspace.Children.Add(_statusSurface);
 
         Grid.SetRow(_browseHost, 1);
         workspace.Children.Add(_browseHost);
 
-        Grid.SetRow(_libraryPath, 2);
-        _libraryPath.Margin =
-            new Thickness(16, 6, 16, 6);
-        workspace.Children.Add(_libraryPath);
-
-        Grid.SetRow(_viewerHost, 3);
+        Grid.SetRow(_viewerHost, 2);
         workspace.Children.Add(_viewerHost);
 
         _navigationRailHost =
@@ -1193,8 +1170,7 @@ public sealed class MainWindow : Window
                       scopes);
         _status.Foreground =
             LumineDesign.MutedForeground;
-        _status.Text =
-            $"{runtime.AssetCount:N0} 件 · {runtime.Library.Name}";
+        _status.Text = string.Empty;
     }
 
     private async Task ShowDiagnosticsFromNavigationAsync()
