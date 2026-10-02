@@ -447,6 +447,10 @@ public sealed class MainWindow : Window
             Array.Empty<LibraryFolderInfo>();
         IReadOnlyList<LibraryTagInfo> tags =
             Array.Empty<LibraryTagInfo>();
+        var facets =
+            new LibraryBrowseFacets(
+                Array.Empty<string>(),
+                Array.Empty<string>());
 
         var runtime = _runtime;
         if (runtime is not null)
@@ -459,12 +463,20 @@ public sealed class MainWindow : Window
                 await _navigationLibraryService.ListTagsAsync(
                     runtime.Library.Id,
                     cancellationToken: cancellationToken);
+            facets =
+                await _navigationLibraryService.GetBrowseFacetsAsync(
+                    runtime.Library.Id,
+                    cancellationToken);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         _libraries = libraries;
         _folders = folders;
         _tags = tags;
+        _browseFacets = facets;
+        _browseControls?.UpdateFacetData(
+            _tags,
+            _browseFacets);
         RenderNavigationDestination();
     }
 
@@ -495,7 +507,7 @@ public sealed class MainWindow : Window
                             "フォルダー")
                         : ProductNavigationViews.CreateFolders(
                             _folders,
-                            _folderScope,
+                            _browseFilterState.FolderPath,
                             ApplyFolderScopeAsync),
                 "タグ" =>
                     _runtime is null
@@ -503,7 +515,7 @@ public sealed class MainWindow : Window
                             "タグ")
                         : ProductNavigationViews.CreateTags(
                             _tags,
-                            _tagScope,
+                            _browseFilterState.Tag,
                             ApplyTagScopeAsync),
                 "公開履歴" =>
                     ProductNavigationViews.CreatePublicationEntry(),
@@ -629,8 +641,15 @@ public sealed class MainWindow : Window
         string status)
     {
         await DisposeCurrentRuntimeAsync();
-        _folderScope = null;
-        _tagScope = null;
+
+        _browseControls?.DisposeTransientWork();
+        _browseControls = null;
+        _browseHost.Content = null;
+        _browseHost.IsVisible = false;
+        _browseFilterState =
+            new BrowseFilterState(
+                SortOrder:
+                    _browsePreferences.SortOrder);
         _libraryPath.Text = string.Empty;
         _productShellState = "Welcome";
         _status.Foreground =
@@ -640,30 +659,136 @@ public sealed class MainWindow : Window
             CreateWelcomeState(recovered: false);
         _folders = Array.Empty<LibraryFolderInfo>();
         _tags = Array.Empty<LibraryTagInfo>();
+        _browseFacets =
+            new LibraryBrowseFacets(
+                Array.Empty<string>(),
+                Array.Empty<string>());
         RenderNavigationDestination();
     }
 
-    private async Task ApplyFolderScopeAsync(
+    private Task ApplyFolderScopeAsync(
         string? folderPath)
     {
-        _folderScope =
-            string.IsNullOrWhiteSpace(folderPath)
-                ? null
-                : folderPath;
-        await ApplyNavigationQueryAsync();
+        if (_browseControls is not null)
+        {
+            return _browseControls.SetFolderScopeAsync(
+                folderPath);
+        }
+
+        _browseFilterState =
+            _browseFilterState with
+            {
+                FolderPath =
+                    string.IsNullOrWhiteSpace(folderPath)
+                        ? null
+                        : folderPath
+            };
+        return ApplyBrowseQueryAsync();
     }
 
-    private async Task ApplyTagScopeAsync(
+    private Task ApplyTagScopeAsync(
         string? tag)
     {
-        _tagScope =
-            string.IsNullOrWhiteSpace(tag)
-                ? null
-                : tag;
-        await ApplyNavigationQueryAsync();
+        if (_browseControls is not null)
+        {
+            return _browseControls.SetTagScopeAsync(
+                tag);
+        }
+
+        _browseFilterState =
+            _browseFilterState with
+            {
+                Tag =
+                    string.IsNullOrWhiteSpace(tag)
+                        ? null
+                        : tag
+            };
+        return ApplyBrowseQueryAsync();
     }
 
-    private async Task ApplyNavigationQueryAsync()
+    private async Task OnBrowseFiltersChangedAsync(
+        BrowseFilterState state)
+    {
+        _browseFilterState =
+            state
+            ?? throw new ArgumentNullException(nameof(state));
+
+        await ApplyBrowseQueryAsync();
+        RenderNavigationDestination();
+    }
+
+    private async Task OnBrowsePreferencesChangedAsync(
+        BrowsePreferences preferences)
+    {
+        _browsePreferences =
+            preferences
+            ?? throw new ArgumentNullException(nameof(preferences));
+
+        _shell?.SetBrowseLayout(
+            _browsePreferences);
+
+        if (_host is not null)
+        {
+            try
+            {
+                await _host.SaveBrowsePreferencesAsync(
+                    _browsePreferences);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException)
+            {
+                _host.Log.Write(
+                    "settings",
+                    $"Browse preference save failed: {exception.Message}");
+                _status.Foreground =
+                    LumineDesign.Warning;
+                _status.Text =
+                    "表示設定を保存できませんでした。現在の表示には反映されています。";
+            }
+        }
+    }
+
+    private AssetQuery? BuildBrowseQuery()
+    {
+        var state =
+            _browseFilterState;
+
+        if (!state.HasFilters
+            && state.SortOrder
+                == AssetSortOrder.ModifiedNewest)
+        {
+            return null;
+        }
+
+        return new AssetQuery(
+            SearchText:
+                string.IsNullOrWhiteSpace(
+                    state.SearchText)
+                    ? null
+                    : state.SearchText,
+            RequiredTags:
+                string.IsNullOrWhiteSpace(
+                    state.Tag)
+                    ? null
+                    : [state.Tag],
+            MinRating:
+                state.MinRating,
+            Favorite:
+                state.FavoriteOnly
+                    ? true
+                    : null,
+            StatusLabel:
+                state.StatusLabel,
+            ColorLabel:
+                state.ColorLabel,
+            SortOrder:
+                state.SortOrder,
+            FolderPathPrefix:
+                state.FolderPath);
+    }
+
+    private async Task ApplyBrowseQueryAsync()
     {
         var runtime = _runtime;
         if (runtime is null)
@@ -683,26 +808,17 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             LumineDesign.CreateProductState(
                 "表示を更新しています",
-                "選択した範囲の画像を準備しています。");
-
-        AssetQuery? query =
-            _folderScope is null
-            && _tagScope is null
-                ? null
-                : new AssetQuery(
-                    RequiredTags:
-                        _tagScope is null
-                            ? null
-                            : [_tagScope],
-                    FolderPathPrefix:
-                        _folderScope);
+                "検索・並び順・フィルターを反映しています。");
 
         try
         {
-            await runtime.ApplyQueryAsync(query);
+            await runtime.ApplyQueryAsync(
+                BuildBrowseQuery());
 
             var nextShell =
-                new CoreViewerShell(runtime);
+                new CoreViewerShell(
+                    runtime,
+                    _browsePreferences);
             _shell = nextShell;
             _viewerHost.Content = nextShell;
             _productShellState =
@@ -719,7 +835,9 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             var restored =
-                new CoreViewerShell(runtime);
+                new CoreViewerShell(
+                    runtime,
+                    _browsePreferences);
             _shell = restored;
             _viewerHost.Content = restored;
             _productShellState =
@@ -729,7 +847,7 @@ public sealed class MainWindow : Window
             _status.Foreground =
                 LumineDesign.Warning;
             _status.Text =
-                $"表示範囲を変更できませんでした: {exception.Message}";
+                $"検索・フィルターを適用できませんでした: {exception.Message}";
 
             if (runtime.AssetCount > 0)
             {
@@ -737,7 +855,24 @@ public sealed class MainWindow : Window
             }
         }
 
-        RenderNavigationDestination();
+        UpdateScopeDisplay();
+    }
+
+    private void EnsureBrowseControls()
+    {
+        _browseControls?.DisposeTransientWork();
+
+        _browseControls =
+            new BrowseWorkspaceControls(
+                _browseFilterState,
+                _browsePreferences,
+                _tags,
+                _browseFacets,
+                OnBrowseFiltersChangedAsync,
+                OnBrowsePreferencesChangedAsync);
+        _browseHost.Content =
+            _browseControls;
+        _browseHost.IsVisible = true;
     }
 
     private void UpdateScopeDisplay()
@@ -751,16 +886,18 @@ public sealed class MainWindow : Window
 
         var scopes =
             new List<string>();
-        if (_folderScope is not null)
+        if (_browseFilterState.FolderPath
+            is { } folder)
         {
             scopes.Add(
-                $"フォルダー: {_folderScope}");
+                $"フォルダー: {folder}");
         }
 
-        if (_tagScope is not null)
+        if (_browseFilterState.Tag
+            is { } tag)
         {
             scopes.Add(
-                $"タグ: {_tagScope}");
+                $"タグ: {tag}");
         }
 
         _libraryPath.Text =
