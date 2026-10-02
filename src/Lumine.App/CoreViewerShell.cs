@@ -23,8 +23,6 @@ internal sealed class CoreViewerShell : UserControl
     private readonly ContextualAssetDetailPanel _contextDetail;
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
-    private readonly Button _detailToggle;
-    private readonly Button _focusButton;
     private CancellationTokenSource? _selectionSummaryCancellation;
     private bool _detached;
 
@@ -76,45 +74,6 @@ internal sealed class CoreViewerShell : UserControl
                 IsVisible = false,
                 Child = _contextDetail
             };
-
-        _detailToggle =
-            LumineDesign.ConfigureIconButton(
-                new Button
-                {
-                    Content =
-                        LumineDesign.CreateStrokeIcon(
-                            LumineDesign.InfoIconPath,
-                            18),
-                    IsEnabled = false
-                },
-                "詳細");
-        _detailToggle.Click +=
-            async (_, _) =>
-            {
-                if (_contextSurface.IsVisible)
-                {
-                    HideContextDetail();
-                }
-                else
-                {
-                    await ShowContextDetailAsync();
-                }
-            };
-
-        _focusButton =
-            LumineDesign.ConfigureIconButton(
-                new Button
-                {
-                    Content =
-                        LumineDesign.CreateStrokeIcon(
-                            LumineDesign.ViewIconPath,
-                            18),
-                    IsEnabled = false
-                },
-                "画像を表示");
-        _focusButton.Click +=
-            async (_, _) =>
-                await OpenFocusedViewAsync();
 
         var focusedClose =
             LumineDesign.ConfigureIconButton(
@@ -197,6 +156,7 @@ internal sealed class CoreViewerShell : UserControl
 
         _grid.SelectionChanged += OnSelectionChanged;
         _grid.AssetInvoked += OnAssetInvoked;
+        _grid.AssetDetailRequested += OnAssetDetailRequested;
         KeyDown += OnShellKeyDown;
         Focusable = true;
 
@@ -378,20 +338,31 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
+    private async void OnAssetDetailRequested(
+        object? sender,
+        long index)
+    {
+        try
+        {
+            if (_grid.SelectedAssetIndex != index)
+            {
+                _grid.SelectAsset(
+                    index,
+                    scrollIntoView: false);
+            }
+
+            _contextSurface.IsVisible = true;
+            await LoadContextDetailAsync(index);
+        }
+        catch (Exception exception)
+        {
+            _bulkStatus.Text =
+                $"詳細を表示できませんでした: {exception.Message}";
+        }
+    }
+
     private Border CreateSelectionBar()
     {
-        // Keep the default single-selection state quiet: opening the image
-        // and its inspector are the only primary actions. Bulk organization
-        // appears only when multiple assets are selected.
-        var primaryActions =
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 4
-            };
-        primaryActions.Children.Add(_focusButton);
-        primaryActions.Children.Add(_detailToggle);
-
         var actions = _bulkActions;
 
         actions.Children.Add(
@@ -553,7 +524,7 @@ internal sealed class CoreViewerShell : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*,Auto"),
+                    new ColumnDefinitions("Auto,*"),
                 Margin = new Thickness(10, 7)
             };
         top.Children.Add(_selectionCount);
@@ -571,9 +542,6 @@ internal sealed class CoreViewerShell : UserControl
             _bulkStatus);
         Grid.SetColumn(middle, 1);
         top.Children.Add(middle);
-
-        Grid.SetColumn(primaryActions, 2);
-        top.Children.Add(primaryActions);
 
         var root =
             new StackPanel
@@ -628,10 +596,10 @@ internal sealed class CoreViewerShell : UserControl
         object? sender,
         ViewerSelectionSnapshot selection)
     {
-        _selectionBar.IsVisible =
-            selection.Count > 0;
         var isBulk =
             selection.Count > 1;
+        _selectionBar.IsVisible =
+            isBulk;
         _bulkActions.IsVisible = isBulk;
         _selectionCount.IsVisible = isBulk;
         _selectionMetadataSummary.IsVisible = isBulk;
@@ -672,10 +640,6 @@ internal sealed class CoreViewerShell : UserControl
 
         var hasPrimary =
             selection.PrimaryIndex >= 0;
-        _detailToggle.IsEnabled =
-            hasPrimary;
-        _focusButton.IsEnabled =
-            hasPrimary;
 
         if (!hasPrimary)
         {
@@ -1336,6 +1300,7 @@ internal sealed class CoreViewerShell : UserControl
         _detached = true;
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
+        _grid.AssetDetailRequested -= OnAssetDetailRequested;
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation = null;
