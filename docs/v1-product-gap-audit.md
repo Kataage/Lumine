@@ -59,7 +59,7 @@ Therefore #295 is treated as the **technical Core gate**, while #385 is the **pr
 | Publication | ordered publication snapshot and platform metadata | absent | REIMPLEMENT |
 | Creative organizer | multi-select grouping/linking | absent | REIMPLEMENT |
 | Source file ownership | local file stays source | preserved | KEEP | remain invariant |
-| Thumbnail philosophy | no persistent display-thumbnail files; bounded memory ImageBitmap LRU | persistent WebP cache is normal grid source | RECONSIDER | benchmark/ADR; v1 philosophy is default product constraint |
+| Thumbnail philosophy | no persistent display-thumbnail files; bounded memory ImageBitmap LRU | #388 adds bounded MemoryOnly WebP LRU and retains PersistentDisk opt-in | KEEP + REIMPLEMENT | ADR 0001: MemoryOnly product default; PersistentDisk explicit acceleration only |
 | Decode scheduling | priority-limited memory decode, queued priority promotion | v2 has bounded foreground/background thumbnail pipeline | KEEP concept | reuse stronger v2 arbitration |
 | Background sync | v1 periodically called sync; known weakness | v2 event-driven watcher/USN/reconcile fallback | KEEP v2 | do not regress to periodic full scan |
 | Portable/local | local app data / portable-local storage | v2 AppDataPaths foundation exists | REIMPLEMENT product UX | clear portable behavior/settings |
@@ -137,7 +137,7 @@ Reintroduce the v1 creative-domain concepts after the basic shell/metadata workf
 
 Do not require AI inference to create Works, Generation Groups, Relations or Publications.
 
-## 5. Thumbnail/cache decision to make before product Viewer implementation is final
+## 5. Thumbnail/cache decision — resolved by #388 / ADR 0001
 
 ### v1 baseline
 
@@ -162,31 +162,15 @@ v2:
 
 ### decision
 
-Do not delete the proven v2 path before measurement.
+Representative 3,651-asset physical A/D testing proved MemoryOnly remains within the 1,500 ms fast-scroll target while writing zero display-thumbnail files. PersistentDisk is faster after restart, but that advantage is not required to meet the accepted product envelope.
 
-Benchmark these policies with the same representative library and acceptance tooling:
+Decision:
+- MemoryOnly is the product default.
+- PersistentDisk remains explicit opt-in acceleration.
+- Hybrid disk assistance is not added without future evidence that MemoryOnly fails a supported workload.
+- Existing persistent-thumbnail data is disposable and retired when MemoryOnly becomes effective.
 
-A. **memory-only** — v1 product philosophy implemented with libvips/native v2 scheduling.  
-B. **memory-first hybrid** — no normal persistent thumbnail library; bounded disposable disk assistance only for demonstrably heavy cases.  
-C. **opt-in persistent cache** — memory-first by default, persistent acceleration explicitly user-enabled.  
-D. **current persistent cache** — performance control/baseline.
-
-Measure:
-- startup,
-- first viewport,
-- fast-scroll,
-- direction reversal,
-- warm revisit,
-- source reads,
-- total bytes read,
-- CPU,
-- peak RAM,
-- disk growth,
-- cache cleanup,
-- portable behavior,
-- image quality.
-
-Product constraint: A/B/C are preferred if they can preserve practical v2 responsiveness. D requires an explicit product-owner decision because it changes a stated v1 product philosophy.
+See `docs/adr/0001-thumbnail-storage-policy.md`.
 
 ## 6. Work order
 
