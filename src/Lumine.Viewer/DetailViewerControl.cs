@@ -297,7 +297,7 @@ public sealed class DetailViewerControl : UserControl
         ApplySnapshot(_session.Snapshot);
     }
 
-    private static Control CreateViewerIcon(
+    private static Avalonia.Controls.Shapes.Path CreateViewerIcon(
         string pathData,
         double size) =>
         new Avalonia.Controls.Shapes.Path
