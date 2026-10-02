@@ -140,6 +140,30 @@ internal static class Program
         Require(middle.Id == 50_001, "Middle cursor-paged asset mismatch.");
         Require(back.Id == 11, "Backward cursor-paged lookup mismatch.");
 
+        var batchIds =
+            await provider.GetAssetIdsAsync(
+                new long[]
+                {
+                    0,
+                    1,
+                    255,
+                    256,
+                    50_000,
+                    99_999
+                });
+        Require(
+            batchIds.SequenceEqual(
+                new long[]
+                {
+                    1,
+                    2,
+                    256,
+                    257,
+                    50_001,
+                    100_000
+                }),
+            "Cursor-paged batch selection ID resolution lost result order or page boundaries.");
+
         var diagnostics = provider.Diagnostics;
         Require(diagnostics.CachedPages <= 8, "Metadata page cache exceeded hard limit.");
         Require(diagnostics.CursorCheckpoints <= 32, "Cursor checkpoint cache exceeded hard limit.");
@@ -696,6 +720,19 @@ internal static class Program
             "100k viewer attached an unbounded tile count.");
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
+
+        viewer.SelectAll();
+        Require(
+            viewer.SelectedAssetCount == 100_000
+            && viewer.SelectionRangeCount == 1
+            && viewer.SelectedAssetIndices[0] == 0
+            && viewer.SelectedAssetIndices[99_999] == 99_999,
+            "100k Select-All was materialized instead of remaining one compact selection range.");
+        viewer.ClearSelection();
+        Require(
+            viewer.SelectedAssetCount == 0
+            && viewer.SelectionRangeCount == 0,
+            "Clearing a compact Select-All did not release selection ranges.");
 
         var firstTile = viewer.GetVisualDescendants()
             .OfType<Border>()
