@@ -1067,8 +1067,40 @@ try
                     window.Show();
                     Dispatcher.UIThread.RunJobs();
 
+                    Require(
+                        string.Equals(
+                            window.Title,
+                            "Lumine",
+                            StringComparison.Ordinal)
+                        && window.Icon is not null,
+                        "MainWindow did not expose Lumine product branding in native Window chrome.");
+                    Require(
+                        MainWindow.ProductNavigationLabels.SequenceEqual(
+                        [
+                            "ライブラリ",
+                            "フォルダー",
+                            "タグ",
+                            "公開履歴",
+                            "設定"
+                        ])
+                        && LumineDesign.NavigationWidth < 100,
+                        "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "Welcome",
+                            StringComparison.Ordinal),
+                        $"Fresh MainWindow did not start in the branded Welcome state: {window.ProductShellState}.");
+
                     await window.OpenLibraryAsync(
                         repeatedLibraryRoot);
+
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "Workspace",
+                            StringComparison.Ordinal),
+                        $"MainWindow did not transition from Welcome to Workspace after opening a populated library: {window.ProductShellState}.");
 
                     Require(
                         window.CurrentRuntime is not null
@@ -1171,7 +1203,7 @@ try
     }
 
     Console.WriteLine(
-        "MainWindow lifecycle smoke: repeated launch/close / rapid original-navigation close / diagnostics / handle release OK");
+        "MainWindow lifecycle smoke: branded shell / Welcome-to-Workspace / repeated launch-close / rapid original-navigation close / diagnostics / handle release OK");
 
     Console.WriteLine(
         "App Detail adapter smoke: persistent preview / production full-resolution framebuffer copy / budget guard OK");
