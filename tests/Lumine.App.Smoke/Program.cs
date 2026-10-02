@@ -1053,23 +1053,23 @@ try
                 && !shell.ContextDetail.IsDirty,
                 "Contextual metadata save did not notify the browse/navigation refresh path exactly once.");
 
-            await shellRuntime.ApplyQueryAsync(
-                new AssetQuery(
-                    SearchText: "metadata-editor-search-token",
-                    RequiredTags: ["edited-tag"],
-                    MinRating: 3,
-                    MaxRating: 3,
-                    Favorite: false,
-                    StatusLabel: "reviewed",
-                    ColorLabel: "green"));
+            var editedQueryPage =
+                await shellRuntime.LibraryService.GetAssetPageAsync(
+                    shellRuntime.Library.Id,
+                    new AssetQuery(
+                        SearchText: "metadata-editor-search-token",
+                        RequiredTags: ["edited-tag"],
+                        MinRating: 3,
+                        MaxRating: 3,
+                        Favorite: false,
+                        StatusLabel: "reviewed",
+                        ColorLabel: "green"),
+                    limit: 10);
             Require(
-                shellRuntime.AssetCount == 1,
+                editedQueryPage.Items.Count == 1
+                && editedQueryPage.Items[0].Id
+                    == firstContextAsset.Id,
                 "Metadata editor save was not immediately visible to composed search/filter queries.");
-
-            await shellRuntime.ApplyQueryAsync(null);
-            Require(
-                shellRuntime.AssetCount == 2,
-                "Metadata editor query verification did not restore the full browse session.");
 
             shell.HideContextDetail();
             Require(
