@@ -230,8 +230,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
-                Margin = new Thickness(14, 12, 10, 8)
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing = 6,
+                Margin = new Thickness(14, 10, 10, 8)
             };
         header.Children.Add(
             new TextBlock
@@ -243,43 +244,30 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
-        Grid.SetColumn(close, 1);
+        Grid.SetColumn(_focused, 1);
+        header.Children.Add(_focused);
+        Grid.SetColumn(close, 2);
         header.Children.Add(close);
 
         var body =
             new StackPanel
             {
-                Spacing = 11,
+                Spacing = 12,
                 Margin = new Thickness(14, 4, 14, 18)
             };
 
         body.Children.Add(_title);
         body.Children.Add(_summary);
-        body.Children.Add(_focused);
-
-        AddSection(body, "場所", _path);
-        AddSection(body, "技術情報", _technical);
-
-        var creative =
-            new StackPanel
-            {
-                Spacing = 8
-            };
-        AddSection(creative, "Work", _works);
-        AddSection(creative, "Generation Group", _groups);
-        AddSection(creative, "Lineage", _relations);
-        AddSection(creative, "Publication", _publications);
-        AddSection(body, "制作コンテキスト", creative);
 
         var editor =
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("74,*"),
+                    new ColumnDefinitions("72,*"),
                 RowDefinitions =
                     new RowDefinitions(
                         "Auto,Auto,Auto,Auto,Auto,Auto"),
-                RowSpacing = 6
+                RowSpacing = 7
             };
         AddEditorRow(
             editor,
@@ -333,17 +321,19 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         saveRow.Children.Add(_save);
         body.Children.Add(saveRow);
 
-        body.Children.Add(
-            new TextBlock
+        var creative =
+            new StackPanel
             {
-                Text =
-                    "状態: 未整理 / 確認済み / 候補 / 公開済み。変更は保存またはCtrl+Sで確定します。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = 9.5,
-                TextWrapping =
-                    TextWrapping.Wrap
-            });
+                Spacing = 8
+            };
+        AddSection(creative, "Work", _works);
+        AddSection(creative, "Generation Group", _groups);
+        AddSection(creative, "Lineage", _relations);
+        AddSection(creative, "Publication", _publications);
+        AddSection(body, "制作コンテキスト", creative);
+
+        AddSection(body, "場所", _path);
+        AddSection(body, "技術情報", _technical);
 
         var scroll =
             new ScrollViewer
