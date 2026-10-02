@@ -207,6 +207,9 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public event EventHandler<long>? AssetDetailRequested;
 
+    public event EventHandler<ViewerAssetContextRequestedEventArgs>?
+        AssetContextRequested;
+
     public bool IsAssetSelected(long index) =>
         _selection.Contains(index);
 
@@ -1194,6 +1197,30 @@ public sealed class ThumbnailViewerControl : UserControl
 
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
+            if (e.GetCurrentPoint(this).Properties.PointerUpdateKind
+                == PointerUpdateKind.RightButtonPressed)
+            {
+                if (!_owner.IsAssetSelected(_index))
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false,
+                        ViewerSelectionMode.Replace);
+                }
+                else
+                {
+                    _owner.Focus();
+                }
+
+                _owner.AssetContextRequested?.Invoke(
+                    _owner,
+                    new ViewerAssetContextRequestedEventArgs(
+                        _index,
+                        this));
+                e.Handled = true;
+                return;
+            }
+
             if (e.Source is Button
                 || (e.Source as Visual)
                     ?.FindAncestorOfType<Button>() is not null)
@@ -1500,6 +1527,18 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    public sealed class ViewerAssetContextRequestedEventArgs(
+        long index,
+        Control anchor)
+        : EventArgs
+    {
+        public long Index { get; } = index;
+
+        public Control Anchor { get; } =
+            anchor
+            ?? throw new ArgumentNullException(nameof(anchor));
+    }
+
     private sealed class TileCaptionOverlay : Control
     {
         private static readonly IBrush CaptionGradient =
