@@ -77,14 +77,16 @@ internal sealed class CoreViewerShell : UserControl
             };
 
         _detailToggle =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "詳細",
-                    MinHeight = 30,
-                    Padding = new Thickness(10, 5),
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.InfoIconPath,
+                            18),
                     IsEnabled = false
-                });
+                },
+                "詳細");
         _detailToggle.Click +=
             async (_, _) =>
             {
@@ -99,26 +101,31 @@ internal sealed class CoreViewerShell : UserControl
             };
 
         _focusButton =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "集中表示",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5),
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.ViewIconPath,
+                            18),
                     IsEnabled = false
-                });
+                },
+                "画像を表示");
         _focusButton.Click +=
             async (_, _) =>
                 await OpenFocusedViewAsync();
 
         var focusedClose =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "一覧へ戻る  Esc",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5)
-                });
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.BackIconPath,
+                            19,
+                            Brushes.White)
+                },
+                "一覧へ戻る (Esc)");
         focusedClose.Click +=
             (_, _) =>
                 CloseFocusedView();
@@ -128,25 +135,11 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Background = Brushes.Black,
                 ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*,Auto"),
+                    new ColumnDefinitions("Auto,*"),
                 Margin = new Thickness(8, 6)
             };
         focusedHeader.Children.Add(
             focusedClose);
-        var focusedHint =
-            new TextBlock
-            {
-                Text = "← → 画像移動 · Ctrl+0 全体表示 · Ctrl+1 1:1 · Ctrl+ホイール ズーム · ドラッグ パン",
-                Foreground = Brushes.LightGray,
-                FontSize = 10,
-                VerticalAlignment =
-                    VerticalAlignment.Center,
-                HorizontalAlignment =
-                    HorizontalAlignment.Center
-            };
-        Grid.SetColumn(focusedHint, 1);
-        focusedHeader.Children.Add(
-            focusedHint);
 
         var focusedLayout =
             new Grid
@@ -218,46 +211,6 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _grid
             };
 
-        var browseActionContent =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto")
-            };
-        browseActionContent.Children.Add(
-            new TextBlock
-            {
-                Text =
-                    "画像を選択すると詳細表示・集中表示を利用できます。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = 10,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            });
-        Grid.SetColumn(_detailToggle, 1);
-        _detailToggle.Margin =
-            new Thickness(4, 0);
-        browseActionContent.Children.Add(
-            _detailToggle);
-        Grid.SetColumn(_focusButton, 2);
-        _focusButton.Margin =
-            new Thickness(4, 0);
-        browseActionContent.Children.Add(
-            _focusButton);
-
-        var browseActions =
-            new Border
-            {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(0, 0, 0, 1),
-                Padding =
-                    new Thickness(10, 6),
-                Child = browseActionContent
-            };
-
         var browseViewer =
             new Grid
             {
@@ -276,14 +229,11 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Background = LumineDesign.Background,
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,*")
+                    new RowDefinitions("Auto,*")
             };
         browseLayout.Children.Add(
             _selectionBar);
-        Grid.SetRow(browseActions, 1);
-        browseLayout.Children.Add(
-            browseActions);
-        Grid.SetRow(browseViewer, 2);
+        Grid.SetRow(browseViewer, 1);
         browseLayout.Children.Add(
             browseViewer);
 
@@ -416,7 +366,7 @@ internal sealed class CoreViewerShell : UserControl
         catch (Exception exception)
         {
             _bulkStatus.Text =
-                $"集中表示を開けませんでした: {exception.Message}";
+                $"画像を表示できませんでした: {exception.Message}";
         }
     }
 
@@ -427,6 +377,14 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Orientation = Orientation.Horizontal
             };
+
+        // Primary image actions are visual and appear exactly when selection
+        // makes them relevant. Keyboard shortcuts remain accelerators rather
+        // than the only way to discover these capabilities.
+        _focusButton.Margin = new Thickness(3);
+        _detailToggle.Margin = new Thickness(3);
+        actions.Children.Add(_focusButton);
+        actions.Children.Add(_detailToggle);
 
         actions.Children.Add(
             CreateBulkButton(
