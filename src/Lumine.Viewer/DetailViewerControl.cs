@@ -11,12 +11,6 @@ namespace Lumine.Viewer;
 
 public sealed class DetailViewerControl : UserControl
 {
-    private static readonly IBrush StageBackground =
-        new SolidColorBrush(Color.Parse("#09090B"));
-    private static readonly IBrush ViewerControlBackground =
-        new SolidColorBrush(Color.FromArgb(205, 24, 24, 27));
-    private static readonly IBrush ViewerControlBorder =
-        new SolidColorBrush(Color.Parse("#3F3F46"));
     private readonly ViewerDetailSession _session;
     private readonly ScrollViewer _scroll;
     private readonly Image _image;
@@ -28,7 +22,10 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _actual;
     private readonly Button _zoomOut;
     private readonly Button _zoomIn;
+    private readonly Button _fullScreen;
     private readonly TextBlock _zoomText;
+    private readonly Border _toolbarHost;
+    private readonly DispatcherTimer _chromeTimer;
     private double _zoom = 1;
     private bool _fitMode = true;
     private bool _dragging;
@@ -79,15 +76,22 @@ public sealed class DetailViewerControl : UserControl
                     "M12 5v14 M5 12h14",
                     15),
                 "拡大");
-        _fit = CreateViewerButton("全体", "全体を表示");
-        _actual = CreateViewerButton("1:1", "100%表示");
+        _fit = CreateViewerButton("全体", "全体を表示", "viewer.fit");
+        _actual = CreateViewerButton("1:1", "100%表示", "viewer.actual-size");
+        _fullScreen =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5",
+                    16),
+                "全画面表示 (F11)",
+                "viewer.fullscreen");
 
         _zoomText = new TextBlock
         {
             Text = "100%",
             MinWidth = 52,
-            Foreground = Brushes.White,
-            FontSize = 11,
+            Foreground = ViewerVisualTokens.Foreground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -104,11 +108,12 @@ public sealed class DetailViewerControl : UserControl
         toolbar.Children.Add(_zoomIn);
         toolbar.Children.Add(_fit);
         toolbar.Children.Add(_actual);
+        toolbar.Children.Add(_fullScreen);
 
         _status = new TextBlock
         {
-            Foreground = Brushes.LightGray,
-            FontSize = 10,
+            Foreground = ViewerVisualTokens.MutedForeground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0),
             IsVisible = false
@@ -127,7 +132,7 @@ public sealed class DetailViewerControl : UserControl
 
         var surface = new Border
         {
-            Background = StageBackground,
+            Background = ViewerVisualTokens.Stage,
             Child = _image
         };
 
@@ -146,8 +151,8 @@ public sealed class DetailViewerControl : UserControl
 
         _metadata = new TextBlock
         {
-            Foreground = Brushes.LightGray,
-            FontSize = 10,
+            Foreground = ViewerVisualTokens.MutedForeground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Margin = new Thickness(10, 4, 10, 8)
@@ -155,7 +160,7 @@ public sealed class DetailViewerControl : UserControl
 
         var stage = new Grid
         {
-            Background = StageBackground
+            Background = ViewerVisualTokens.Stage
         };
         stage.Children.Add(_scroll);
 
@@ -185,11 +190,11 @@ public sealed class DetailViewerControl : UserControl
         _next.Margin = new Thickness(14, 0);
         stage.Children.Add(_next);
 
-        var toolbarHost =
+        _toolbarHost =
             new Border
             {
-                Background = ViewerControlBackground,
-                BorderBrush = ViewerControlBorder,
+                Background = ViewerVisualTokens.Overlay,
+                BorderBrush = ViewerVisualTokens.Border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(4),
@@ -200,7 +205,39 @@ public sealed class DetailViewerControl : UserControl
                     VerticalAlignment.Top,
                 Child = toolbar
             };
-        stage.Children.Add(toolbarHost);
+        stage.Children.Add(_toolbarHost);
+
+        _chromeTimer =
+            new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2.4)
+            };
+        _chromeTimer.Tick +=
+            (_, _) => FadeChrome();
+
+        stage.PointerEntered +=
+            (_, _) => RevealChrome();
+        stage.PointerMoved +=
+            (_, _) => RevealChrome();
+
+        foreach (var control in new Control[]
+                 {
+                     _previous,
+                     _next,
+                     _zoomOut,
+                     _zoomIn,
+                     _fit,
+                     _actual,
+                     _fullScreen
+                 })
+        {
+            control.GotFocus +=
+                (_, _) => RevealChrome();
+            control.PointerEntered +=
+                (_, _) => RevealChrome();
+        }
+
+        RevealChrome();
 
         Content = stage;
 
@@ -216,6 +253,11 @@ public sealed class DetailViewerControl : UserControl
                     _session.Options.ZoomStep);
         _fit.Click += (_, _) => Fit();
         _actual.Click += async (_, _) => await ActualSizeAsync();
+        _fullScreen.Click +=
+            (_, _) =>
+                FullScreenToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
 
         _scroll.SizeChanged += (_, _) =>
         {
@@ -244,7 +286,7 @@ public sealed class DetailViewerControl : UserControl
         new Avalonia.Controls.Shapes.Path
         {
             Data = Geometry.Parse(pathData),
-            Stroke = Brushes.White,
+            Stroke = ViewerVisualTokens.Foreground,
             StrokeThickness = 1.9,
             Stretch = Stretch.Uniform,
             Width = size,
@@ -257,7 +299,8 @@ public sealed class DetailViewerControl : UserControl
 
     private static Button CreateViewerButton(
         object content,
-        string tooltip)
+        string tooltip,
+        string? automationId = null)
     {
         var button =
             new Button
@@ -267,9 +310,9 @@ public sealed class DetailViewerControl : UserControl
                 MinHeight = 32,
                 Padding = new Thickness(9, 5),
                 CornerRadius = new CornerRadius(7),
-                Background = ViewerControlBackground,
-                Foreground = Brushes.White,
-                BorderBrush = ViewerControlBorder,
+                Background = ViewerVisualTokens.Overlay,
+                Foreground = ViewerVisualTokens.Foreground,
+                BorderBrush = ViewerVisualTokens.Border,
                 BorderThickness = new Thickness(1),
                 HorizontalContentAlignment =
                     HorizontalAlignment.Center,
@@ -277,6 +320,10 @@ public sealed class DetailViewerControl : UserControl
                     VerticalAlignment.Center
             };
         ToolTip.SetTip(button, tooltip);
+        ViewerVisualTokens.Name(
+            button,
+            tooltip,
+            automationId);
         return button;
     }
 
@@ -293,6 +340,8 @@ public sealed class DetailViewerControl : UserControl
     public string MetadataText => _metadata.Text ?? string.Empty;
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
+
+    public event EventHandler? FullScreenToggleRequested;
 
     public Task SelectAsync(
         long index,
@@ -1048,6 +1097,7 @@ public sealed class DetailViewerControl : UserControl
 
     public void PrepareForDetach()
     {
+        _chromeTimer.Stop();
         _visualAttached = false;
         _image.Source = null;
         DetachGridEvents();
@@ -1395,6 +1445,30 @@ public sealed class DetailViewerControl : UserControl
         e.Handled = true;
     }
 
+    private void RevealChrome()
+    {
+        _toolbarHost.Opacity = 1;
+        _previous.Opacity = 1;
+        _next.Opacity = 1;
+        _chromeTimer.Stop();
+        _chromeTimer.Start();
+    }
+
+    private void FadeChrome()
+    {
+        _chromeTimer.Stop();
+
+        if (_dragging)
+        {
+            RevealChrome();
+            return;
+        }
+
+        _toolbarHost.Opacity = 0.34;
+        _previous.Opacity = 0.22;
+        _next.Opacity = 0.22;
+    }
+
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!_dragging)
@@ -1427,6 +1501,12 @@ public sealed class DetailViewerControl : UserControl
             case Key.D1:
             case Key.NumPad1:
                 await ActualSizeAsync();
+                e.Handled = true;
+                break;
+            case Key.F11:
+                FullScreenToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
                 e.Handled = true;
                 break;
         }
