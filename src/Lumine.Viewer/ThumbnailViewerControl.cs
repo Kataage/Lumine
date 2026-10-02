@@ -994,8 +994,8 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly long _index;
         private readonly ViewerLayoutMode _layoutMode;
         private readonly Image _image;
-        private readonly TextBlock _label;
-        private readonly TextBlock _fileSize;
+        private readonly TextBlock? _label;
+        private readonly TileCaptionOverlay? _captionOverlay;
         private readonly Grid? _gridLayers;
         private readonly Grid? _listPanel;
         private Control? _actionOverlay;
@@ -1035,45 +1035,6 @@ public sealed class ThumbnailViewerControl : UserControl
                     255,
                     255,
                     255));
-        private static readonly IBrush CaptionGradient =
-            new LinearGradientBrush
-            {
-                StartPoint =
-                    new RelativePoint(
-                        0,
-                        0,
-                        RelativeUnit.Relative),
-                EndPoint =
-                    new RelativePoint(
-                        0,
-                        1,
-                        RelativeUnit.Relative),
-                GradientStops =
-                [
-                    new GradientStop(
-                        Color.FromArgb(
-                            0,
-                            0,
-                            0,
-                            0),
-                        0),
-                    new GradientStop(
-                        Color.FromArgb(
-                            70,
-                            0,
-                            0,
-                            0),
-                        0.35),
-                    new GradientStop(
-                        Color.FromArgb(
-                            220,
-                            0,
-                            0,
-                            0),
-                        1)
-                ]
-            };
-
         public ViewerTileControl(
             ThumbnailViewerControl owner,
             ViewerSession session,
@@ -1110,26 +1071,25 @@ public sealed class ThumbnailViewerControl : UserControl
                 VerticalAlignment = VerticalAlignment.Stretch
             };
 
-            _label = new TextBlock
+            if (layoutMode == ViewerLayoutMode.List)
             {
-                Text = " ",
-                MaxLines = 1,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                FontSize =
-                    layoutMode == ViewerLayoutMode.Grid
-                        ? 10.5
-                        : 11.5,
-                FontWeight = FontWeight.Medium,
-                Foreground = Brushes.White
-            };
-
-            _fileSize = new TextBlock
+                _label = new TextBlock
+                {
+                    Text = " ",
+                    MaxLines = 1,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontSize = 11.5,
+                    FontWeight = FontWeight.Medium,
+                    Foreground = Brushes.White
+                };
+                _captionOverlay = null;
+            }
+            else
             {
-                Text = string.Empty,
-                MaxLines = 1,
-                FontSize = 9.5,
-                Foreground = MutedWhite
-            };
+                _label = null;
+                _captionOverlay =
+                    new TileCaptionOverlay(tileWidth);
+            }
 
             if (layoutMode == ViewerLayoutMode.List)
             {
@@ -1153,8 +1113,8 @@ public sealed class ThumbnailViewerControl : UserControl
                 _gridLayers = null;
                 panel.Children.Add(_image);
 
-                Grid.SetColumn(_label, 1);
-                _label.VerticalAlignment =
+                Grid.SetColumn(_label!, 1);
+                _label!.VerticalAlignment =
                     VerticalAlignment.Center;
                 panel.Children.Add(_label);
 
@@ -1166,28 +1126,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 _gridLayers = layers;
                 layers.Children.Add(_image);
 
-                var caption =
-                    new StackPanel
-                    {
-                        Spacing = 1,
-                        VerticalAlignment =
-                            VerticalAlignment.Bottom
-                    };
-                caption.Children.Add(_label);
-                caption.Children.Add(_fileSize);
-
-                var gradient =
-                    new Border
-                    {
-                        Height = 74,
-                        Padding =
-                            new Thickness(9, 0, 9, 8),
-                        VerticalAlignment =
-                            VerticalAlignment.Bottom,
-                        Background = CaptionGradient,
-                        Child = caption
-                    };
-                layers.Children.Add(gradient);
+                layers.Children.Add(_captionOverlay!);
                 Child = layers;
                 _listPanel = null;
             }
@@ -1514,9 +1453,16 @@ public sealed class ThumbnailViewerControl : UserControl
                     var next = lease;
                     lease = null;
                     ReplaceBitmapLease(next);
-                    _label.Text = asset.DisplayName;
-                    _fileSize.Text =
-                        FormatFileSize(asset.FileSize);
+                    if (_label is not null)
+                    {
+                        _label.Text = asset.DisplayName;
+                    }
+                    else
+                    {
+                        _captionOverlay!.SetText(
+                            asset.DisplayName,
+                            FormatFileSize(asset.FileSize));
+                    }
 
                     if (!_isReady)
                     {
@@ -1531,7 +1477,18 @@ public sealed class ThumbnailViewerControl : UserControl
             catch (Exception exception)
             {
                 _session.NotifyTileLoadFailed(exception);
-                await Dispatcher.UIThread.InvokeAsync(() => _label.Text = "!");
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        if (_label is not null)
+                        {
+                            _label.Text = "!";
+                        }
+                        else
+                        {
+                            _captionOverlay!.SetText("!", string.Empty);
+                        }
+                    });
             }
             finally
             {
@@ -1539,6 +1496,165 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    private sealed class TileCaptionOverlay : Control
+    {
+        private static readonly IBrush CaptionGradient =
+            new LinearGradientBrush
+            {
+                StartPoint =
+                    new RelativePoint(
+                        0,
+                        0,
+                        RelativeUnit.Relative),
+                EndPoint =
+                    new RelativePoint(
+                        0,
+                        1,
+                        RelativeUnit.Relative),
+                GradientStops =
+                [
+                    new GradientStop(
+                        Color.FromArgb(
+                            0,
+                            0,
+                            0,
+                            0),
+                        0),
+                    new GradientStop(
+                        Color.FromArgb(
+                            70,
+                            0,
+                            0,
+                            0),
+                        0.35),
+                    new GradientStop(
+                        Color.FromArgb(
+                            220,
+                            0,
+                            0,
+                            0),
+                        1)
+                ]
+            };
+
+        private static readonly IBrush MutedText =
+            new SolidColorBrush(
+                Color.FromArgb(
+                    170,
+                    255,
+                    255,
+                    255));
+
+        private readonly double _maxTextWidth;
+        private FormattedText? _name;
+        private FormattedText? _size;
+
+        public TileCaptionOverlay(double tileWidth)
+        {
+            _maxTextWidth =
+                Math.Max(1, tileWidth - 18);
+            IsHitTestVisible = false;
+        }
+
+        public void SetText(
+            string name,
+            string size)
+        {
+            _name =
+                CreateText(
+                    name,
+                    10.5,
+                    Brushes.White,
+                    FontWeight.Medium);
+            _size =
+                string.IsNullOrEmpty(size)
+                    ? null
+                    : CreateText(
+                        size,
+                        9.5,
+                        MutedText,
+                        FontWeight.Normal);
+            InvalidateVisual();
+        }
+
+        private FormattedText CreateText(
+            string text,
+            double fontSize,
+            IBrush foreground,
+            FontWeight weight)
+        {
+            var formatted =
+                new FormattedText(
+                    text,
+                    System.Globalization.CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight,
+                    Typeface.Default,
+                    fontSize,
+                    foreground)
+                {
+                    MaxTextWidth = _maxTextWidth,
+                    MaxLineCount = 1,
+                    Trimming = TextTrimming.CharacterEllipsis
+                };
+            formatted.SetFontWeight(weight);
+            return formatted;
+        }
+
+        public override void Render(
+            DrawingContext context)
+        {
+            base.Render(context);
+
+            var height =
+                Math.Min(74, Bounds.Height);
+            var top =
+                Math.Max(0, Bounds.Height - height);
+            context.DrawRectangle(
+                CaptionGradient,
+                null,
+                new Rect(
+                    0,
+                    top,
+                    Bounds.Width,
+                    height));
+
+            if (_name is null)
+            {
+                return;
+            }
+
+            const double bottom = 8;
+            const double lineGap = 1;
+            var sizeHeight =
+                _size?.Height
+                ?? 0;
+            var nameY =
+                Math.Max(
+                    top,
+                    Bounds.Height
+                    - bottom
+                    - sizeHeight
+                    - (sizeHeight > 0 ? lineGap : 0)
+                    - _name.Height);
+            context.DrawText(
+                _name,
+                new Point(9, nameY));
+
+            if (_size is not null)
+            {
+                var sizeY =
+                    Math.Max(
+                        top,
+                        Bounds.Height
+                        - bottom
+                        - _size.Height);
+                context.DrawText(
+                    _size,
+                    new Point(9, sizeY));
+            }
+        }
+    }
+
     private static string FormatFileSize(long bytes)
     {
         const double kib = 1024;
