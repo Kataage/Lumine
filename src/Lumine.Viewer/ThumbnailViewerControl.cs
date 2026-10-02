@@ -27,7 +27,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly HashSet<Task> _pendingTileLoads = [];
     private Compositor? _compositor;
     private int _columns = 1;
-    private readonly SortedSet<long> _selectedIndices = [];
+    private readonly ViewerRangeSelection _selection = new();
     private long _selectedIndex = -1;
     private long _selectionAnchor = -1;
     private ViewerLayoutMode _layoutMode;
@@ -81,10 +81,10 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public long SelectedAssetIndex => _selectedIndex;
 
-    public int SelectedAssetCount => _selectedIndices.Count;
+    public int SelectedAssetCount => _selection.Count;
 
     public IReadOnlyList<long> SelectedAssetIndices =>
-        _selectedIndices.ToArray();
+        _selection.AsReadOnlyList();
 
     public int Columns => _columns;
 
@@ -205,7 +205,7 @@ public sealed class ThumbnailViewerControl : UserControl
     public event EventHandler<long>? AssetDetailRequested;
 
     public bool IsAssetSelected(long index) =>
-        _selectedIndices.Contains(index);
+        _selection.Contains(index);
 
     public void SelectAsset(
         long index,
@@ -230,34 +230,22 @@ public sealed class ThumbnailViewerControl : UserControl
         switch (mode)
         {
             case ViewerSelectionMode.Replace:
-                if (_selectedIndices.Count != 1
-                    || !_selectedIndices.Contains(index))
-                {
-                    _selectedIndices.Clear();
-                    _selectedIndices.Add(index);
-                    changed = true;
-                }
-
+                changed =
+                    _selection.SetSingle(index);
                 _selectionAnchor = index;
                 _selectedIndex = index;
                 break;
 
             case ViewerSelectionMode.Toggle:
-                if (_selectedIndices.Remove(index))
-                {
-                    changed = true;
-                    _selectedIndex =
-                        _selectedIndices.Count == 0
+                var selectedAfterToggle =
+                    _selection.Toggle(index);
+                changed = true;
+                _selectedIndex =
+                    selectedAfterToggle
+                        ? index
+                        : _selection.IsEmpty
                             ? -1
-                            : _selectedIndices.Max;
-                }
-                else
-                {
-                    _selectedIndices.Add(index);
-                    changed = true;
-                    _selectedIndex = index;
-                }
-
+                            : _selection.Max;
                 _selectionAnchor = index;
                 break;
 
@@ -271,22 +259,10 @@ public sealed class ThumbnailViewerControl : UserControl
                 var start = Math.Min(anchor, index);
                 var end = Math.Max(anchor, index);
 
-                if (_selectedIndices.Count
-                        != checked((int)(end - start + 1))
-                    || _selectedIndices.Min != start
-                    || _selectedIndices.Max != end)
-                {
-                    _selectedIndices.Clear();
-                    for (var current = start;
-                         current <= end;
-                         current++)
-                    {
-                        _selectedIndices.Add(current);
-                    }
-
-                    changed = true;
-                }
-
+                changed =
+                    _selection.SetRange(
+                        start,
+                        end);
                 _selectedIndex = index;
                 if (_selectionAnchor < 0)
                 {
@@ -325,13 +301,8 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
-        _selectedIndices.Clear();
-        for (long index = 0;
-             index < AssetCount;
-             index++)
-        {
-            _selectedIndices.Add(index);
-        }
+        _selection.SelectAll(
+            AssetCount);
 
         _selectedIndex =
             _selectedIndex >= 0
@@ -350,13 +321,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public void ClearSelection()
     {
-        if (_selectedIndices.Count == 0
+        if (_selection.IsEmpty
             && _selectedIndex < 0)
         {
             return;
         }
 
-        _selectedIndices.Clear();
+        _selection.Clear();
         _selectedIndex = -1;
         _selectionAnchor = -1;
         SelectedAssetIndexChanged?.Invoke(
@@ -369,7 +340,7 @@ public sealed class ThumbnailViewerControl : UserControl
         SelectionChanged?.Invoke(
             this,
             new ViewerSelectionSnapshot(
-                _selectedIndices.ToArray(),
+                _selection.AsReadOnlyList(),
                 _selectedIndex,
                 _selectionAnchor));
 
