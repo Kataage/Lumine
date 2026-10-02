@@ -291,6 +291,145 @@ public sealed class LibraryDatabase
 
             CREATE INDEX idx_libraries_enabled_updated
                 ON libraries(is_enabled DESC, updated_at_utc_ticks DESC, id ASC);
+            """),
+        new(
+            7,
+            "creative-archive-domain",
+            """
+            CREATE TABLE works (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 256),
+                description TEXT NOT NULL DEFAULT '',
+                cover_asset_id INTEGER NULL,
+                created_at_utc_ticks INTEGER NOT NULL,
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                FOREIGN KEY(cover_asset_id) REFERENCES assets(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE work_assets (
+                work_id INTEGER NOT NULL,
+                asset_id INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+                role TEXT NOT NULL DEFAULT 'member'
+                    CHECK(length(role) BETWEEN 1 AND 64),
+                PRIMARY KEY(work_id, asset_id),
+                UNIQUE(work_id, sort_order),
+                FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_work_assets_asset
+                ON work_assets(asset_id, work_id);
+
+            CREATE TABLE generation_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                work_id INTEGER NULL,
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 256),
+                prompt TEXT NOT NULL DEFAULT '',
+                negative_prompt TEXT NOT NULL DEFAULT '',
+                model_name TEXT NOT NULL DEFAULT '',
+                sampler TEXT NOT NULL DEFAULT '',
+                scheduler TEXT NOT NULL DEFAULT '',
+                steps INTEGER NOT NULL DEFAULT 0 CHECK(steps >= 0),
+                cfg_scale REAL NOT NULL DEFAULT 0 CHECK(cfg_scale >= 0),
+                workflow_json TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                created_at_utc_ticks INTEGER NOT NULL,
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX idx_generation_groups_library_updated
+                ON generation_groups(library_id, updated_at_utc_ticks DESC, id DESC);
+
+            CREATE INDEX idx_generation_groups_work
+                ON generation_groups(work_id, id);
+
+            CREATE TABLE generation_group_assets (
+                generation_group_id INTEGER NOT NULL,
+                asset_id INTEGER NOT NULL,
+                sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+                is_primary INTEGER NOT NULL DEFAULT 0
+                    CHECK(is_primary IN (0, 1)),
+                PRIMARY KEY(generation_group_id, asset_id),
+                UNIQUE(generation_group_id, sort_order),
+                FOREIGN KEY(generation_group_id)
+                    REFERENCES generation_groups(id) ON DELETE CASCADE,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_generation_group_assets_asset
+                ON generation_group_assets(asset_id, generation_group_id);
+
+            CREATE TABLE asset_relations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                parent_asset_id INTEGER NOT NULL,
+                child_asset_id INTEGER NOT NULL,
+                relation_type TEXT NOT NULL
+                    CHECK(length(relation_type) BETWEEN 1 AND 64),
+                note TEXT NOT NULL DEFAULT '',
+                created_at_utc_ticks INTEGER NOT NULL,
+                CHECK(parent_asset_id <> child_asset_id),
+                UNIQUE(parent_asset_id, child_asset_id, relation_type),
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                FOREIGN KEY(parent_asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+                FOREIGN KEY(child_asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX idx_asset_relations_parent
+                ON asset_relations(parent_asset_id, created_at_utc_ticks DESC);
+
+            CREATE INDEX idx_asset_relations_child
+                ON asset_relations(child_asset_id, created_at_utc_ticks DESC);
+
+            CREATE TABLE publications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                work_id INTEGER NULL,
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                tags_snapshot TEXT NOT NULL DEFAULT '',
+                destination TEXT NOT NULL
+                    CHECK(length(destination) BETWEEN 1 AND 128),
+                account TEXT NOT NULL DEFAULT '',
+                published_at_utc_ticks INTEGER NOT NULL,
+                external_id TEXT NOT NULL DEFAULT '',
+                external_url TEXT NOT NULL DEFAULT '',
+                platform_metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at_utc_ticks INTEGER NOT NULL,
+                updated_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX idx_publications_library_published
+                ON publications(
+                    library_id,
+                    published_at_utc_ticks DESC,
+                    id DESC);
+
+            CREATE INDEX idx_publications_work
+                ON publications(work_id, published_at_utc_ticks DESC);
+
+            CREATE TABLE publication_assets (
+                publication_id INTEGER NOT NULL,
+                asset_id INTEGER NULL,
+                sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+                file_name_snapshot TEXT NOT NULL,
+                relative_path_snapshot TEXT NOT NULL,
+                PRIMARY KEY(publication_id, sort_order),
+                FOREIGN KEY(publication_id)
+                    REFERENCES publications(id) ON DELETE CASCADE,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE SET NULL
+            ) WITHOUT ROWID;
+
+            CREATE INDEX idx_publication_assets_asset
+                ON publication_assets(asset_id, publication_id);
             """)
     ];
 
