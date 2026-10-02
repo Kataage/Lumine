@@ -788,6 +788,17 @@ try
     await headless.Dispatch(
         async () =>
         {
+            var fatalStartup =
+                App.CreateStartupFailureWindow(
+                    "bootstrap smoke failure");
+            Require(
+                fatalStartup.Title.Contains(
+                    "起動エラー",
+                    StringComparison.Ordinal)
+                && fatalStartup.Content is not null,
+                "Fatal/bootstrap failure did not render a Lumine product-state window.");
+            fatalStartup.Close();
+
             var original = await provider.LoadOriginalAsync(
                 asset,
                 8L * 1024 * 1024);
