@@ -20,6 +20,7 @@ public sealed class MainWindow : Window
     private readonly Button _diagnostics;
     private readonly TextBlock _status;
     private readonly TextBlock _libraryPath;
+    private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
@@ -31,6 +32,7 @@ public sealed class MainWindow : Window
     private CoreViewerShell? _shell;
     private bool _closeStarted;
     private bool _closeCompleted;
+    private string _productShellState = "Welcome";
 
     public MainWindow()
         : this(
@@ -58,75 +60,156 @@ public sealed class MainWindow : Window
             ?? Program.ThumbnailStorageMode;
         _host = host;
 
-        Title = "Lumine v2";
+        Title = "Lumine";
+        Icon = LumineDesign.CreateWindowIcon();
         Width = 1440;
         Height = 900;
         MinWidth = 900;
         MinHeight = 600;
+        Background = LumineDesign.Background;
+        Foreground = LumineDesign.Foreground;
+        FontFamily = LumineDesign.UiFont;
 
-        _openFolder = new Button
-        {
-            Content = "Open library folder…"
-        };
+        _openFolder =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "画像フォルダーを追加"
+                });
         _openFolder.Click += OnOpenFolderClicked;
 
-        _diagnostics = new Button
-        {
-            Content = "Runtime diagnostics…"
-        };
+        _diagnostics =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "診断情報"
+                });
         _diagnostics.Click += OnDiagnosticsClicked;
+
+        var recovered =
+            _host?.PreviousShutdownWasUnclean == true;
+        _productShellState =
+            recovered
+                ? "Recovery"
+                : "Welcome";
+
+        _sectionTitle = new TextBlock
+        {
+            Text = "ライブラリ",
+            FontSize = 15,
+            FontWeight = FontWeight.Bold,
+            Foreground = LumineDesign.Foreground,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         _status = new TextBlock
         {
-            Text = _host?.PreviousShutdownWasUnclean == true
-                ? "Recovered from an unclean previous shutdown. Choose an image library folder to begin."
-                : "Choose an image library folder to begin.",
+            Text = recovered
+                ? "前回の終了を検出しました。安全な状態から復旧しています。"
+                : "画像を見る準備ができています。",
+            FontSize = 11,
+            Foreground = recovered
+                ? LumineDesign.Warning
+                : LumineDesign.MutedForeground,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center
         };
 
         _libraryPath = new TextBlock
         {
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.72
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = LumineDesign.MutedForeground,
+            FontSize = 10.5
         };
 
-        var toolbar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 12,
-            Margin = new Thickness(16, 12)
-        };
-        toolbar.Children.Add(_openFolder);
-        toolbar.Children.Add(_diagnostics);
-        toolbar.Children.Add(_status);
+        var heading =
+            new StackPanel
+            {
+                Spacing = 2,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        heading.Children.Add(_sectionTitle);
+        heading.Children.Add(_status);
+
+        var actions =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        actions.Children.Add(_diagnostics);
+        actions.Children.Add(_openFolder);
+
+        var headerGrid =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                MinHeight = LumineDesign.HeaderHeight
+            };
+        heading.Margin =
+            new Thickness(16, 8, 12, 8);
+        headerGrid.Children.Add(heading);
+        Grid.SetColumn(actions, 1);
+        actions.Margin =
+            new Thickness(8, 8, 14, 8);
+        headerGrid.Children.Add(actions);
+
+        var header =
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(0, 0, 0, 1),
+                Child = headerGrid
+            };
 
         _viewerHost = new ContentControl
         {
+            Background = LumineDesign.Background,
             HorizontalContentAlignment =
                 HorizontalAlignment.Stretch,
             VerticalContentAlignment =
                 VerticalAlignment.Stretch
         };
 
-        _viewerHost.Content = CreatePlaceholder(
-            "Lumine v2 Core Viewer\n\nOpen a folder to index and browse images.");
+        _viewerHost.Content =
+            CreateWelcomeState(recovered);
 
-        var layout = new Grid
+        var workspace = new Grid
         {
+            Background = LumineDesign.Background,
             RowDefinitions =
                 new RowDefinitions("Auto,Auto,*")
         };
-        layout.Children.Add(toolbar);
+        workspace.Children.Add(header);
 
         Grid.SetRow(_libraryPath, 1);
         _libraryPath.Margin =
-            new Thickness(16, 0, 16, 8);
-        layout.Children.Add(_libraryPath);
+            new Thickness(16, 6, 16, 6);
+        workspace.Children.Add(_libraryPath);
 
         Grid.SetRow(_viewerHost, 2);
-        layout.Children.Add(_viewerHost);
+        workspace.Children.Add(_viewerHost);
 
-        Content = layout;
+        var appShell = new Grid
+        {
+            Background = LumineDesign.Background,
+            ColumnDefinitions =
+                new ColumnDefinitions(
+                    $"{LumineDesign.NavigationWidth},*")
+        };
+        appShell.Children.Add(
+            LumineDesign.CreateNavigationRail());
+        Grid.SetColumn(workspace, 1);
+        appShell.Children.Add(workspace);
+
+        Content = appShell;
 
         Opened += OnOpened;
         Closing += OnClosing;
@@ -137,6 +220,12 @@ public sealed class MainWindow : Window
 
     internal CoreViewerShell? CurrentShell =>
         _shell;
+
+    internal string ProductShellState =>
+        _productShellState;
+
+    internal static IReadOnlyList<string> ProductNavigationLabels =>
+        LumineDesign.NavigationLabels;
 
     internal Task OpenLibraryAsync(
         string libraryRoot,
@@ -289,13 +378,19 @@ public sealed class MainWindow : Window
         _openFolder.IsEnabled = false;
         _libraryPath.Text =
             Path.GetFullPath(libraryRoot);
-        _status.Text = "Closing current library…";
+        _productShellState = "Loading";
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            "ライブラリを準備しています…";
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
 
         _viewerHost.Content =
-            CreatePlaceholder("Opening library…");
+            LumineDesign.CreateProductState(
+                "ライブラリを開いています",
+                "画像を確認し、表示の準備をしています。");
 
         var progress =
             new Progress<CoreViewerOpenProgress>(
@@ -323,8 +418,12 @@ public sealed class MainWindow : Window
             runtime = null;
 
             _viewerHost.Content = shell;
+            _productShellState =
+                _runtime.AssetCount == 0
+                    ? "EmptyLibrary"
+                    : "Workspace";
             _status.Text =
-                $"{_runtime.AssetCount:N0} assets · {_runtime.Library.Name}";
+                $"{_runtime.AssetCount:N0} 件 · {_runtime.Library.Name}";
 
             _host?.Log.Write(
                 "library",
@@ -337,8 +436,11 @@ public sealed class MainWindow : Window
         {
             if (!_closeStarted)
             {
+                _productShellState = "Welcome";
                 _status.Text =
-                    "Library opening cancelled.";
+                    "ライブラリの読み込みをキャンセルしました。";
+                _viewerHost.Content =
+                    CreateWelcomeState(recovered: false);
             }
         }
         catch (Exception exception)
@@ -347,12 +449,16 @@ public sealed class MainWindow : Window
                 "library",
                 $"Open failed: {exception.Message}");
 
+            _productShellState = "Error";
+            _status.Foreground =
+                LumineDesign.Danger;
             _status.Text =
-                $"Unable to open library: {exception.Message}";
+                "ライブラリを開けませんでした。";
             _libraryPath.Text = string.Empty;
             _viewerHost.Content =
-                CreatePlaceholder(
-                    "The library could not be opened.\n\n"
+                LumineDesign.CreateProductState(
+                    "ライブラリを開けませんでした",
+                    "元画像は変更していません。フォルダーの状態を確認して、もう一度追加してください。\n\n"
                     + exception.Message);
         }
         finally
@@ -377,7 +483,7 @@ public sealed class MainWindow : Window
             await StorageProvider.OpenFolderPickerAsync(
                 new FolderPickerOpenOptions
                 {
-                    Title = "Open Lumine image library",
+                    Title = "Lumine に画像フォルダーを追加",
                     AllowMultiple = false
                 });
 
@@ -390,7 +496,7 @@ public sealed class MainWindow : Window
         if (string.IsNullOrWhiteSpace(path))
         {
             _status.Text =
-                "The selected folder is not a local filesystem path.";
+                "ローカルの画像フォルダーを選択してください。";
             return;
         }
 
@@ -427,7 +533,7 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             _status.Text =
-                $"Unable to read runtime diagnostics: {exception.Message}";
+                $"診断情報を読み込めませんでした: {exception.Message}";
         }
         finally
         {
@@ -470,7 +576,11 @@ public sealed class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = "Lumine runtime diagnostics",
+            Title = "Lumine 診断情報",
+            Icon = LumineDesign.CreateWindowIcon(),
+            Background = LumineDesign.Background,
+            Foreground = LumineDesign.Foreground,
+            FontFamily = LumineDesign.UiFont,
             Width = 820,
             Height = 620,
             MinWidth = 640,
@@ -525,7 +635,7 @@ public sealed class MainWindow : Window
         _closeStarted = true;
         _openFolder.IsEnabled = false;
         _diagnostics.IsEnabled = false;
-        _status.Text = "Closing Lumine…";
+        _status.Text = "Lumine を終了しています…";
 
         _openCancellation?.Cancel();
         _diagnosticsCancellation?.Cancel();
@@ -640,22 +750,28 @@ public sealed class MainWindow : Window
         };
     }
 
-    private static Control CreatePlaceholder(
-        string message) =>
-        new Border
-        {
-            Padding = new Thickness(32),
-            Child = new TextBlock
-            {
-                Text = message,
-                FontSize = 20,
-                TextWrapping = TextWrapping.Wrap,
-                HorizontalAlignment =
-                    HorizontalAlignment.Center,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            }
-        };
+    private Control CreateWelcomeState(
+        bool recovered)
+    {
+        var action =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "画像フォルダーを追加"
+                });
+        action.Click += OnOpenFolderClicked;
+
+        var description =
+            recovered
+                ? "前回の終了状態から復旧しました。画像そのものには変更を加えず、ライブラリを開くまで待機しています。"
+                : "最初に画像フォルダーを追加してください。画像そのものをコピーせず、通常閲覧では表示用サムネイルもディスクへ保存しません。";
+
+        return LumineDesign.CreateProductState(
+            "Lumine",
+            description,
+            action,
+            showBrand: true);
+    }
 
     private async Task DisposeCurrentRuntimeAsync()
     {
