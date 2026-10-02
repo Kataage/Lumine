@@ -240,7 +240,7 @@ internal static class ProductSettingsView
                 new CheckBox
                 {
                     Content =
-                        "表示用サムネイルをディスクへ永続保存する",
+                        "表示用サムネイルを次回起動後も再利用する",
                     IsChecked =
                         snapshot.PersistedThumbnailStorageMode
                         == ThumbnailStorageMode.PersistentDisk
@@ -303,7 +303,7 @@ internal static class ProductSettingsView
             new TextBlock
             {
                 Text =
-                    $"現在のディスクcache: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
+                    $"現在のディスクキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize
@@ -314,7 +314,7 @@ internal static class ProductSettingsView
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "表示用cacheを削除"
+                    Content = "表示用キャッシュを削除"
                 });
         content.Children.Add(clear);
 
@@ -336,7 +336,7 @@ internal static class ProductSettingsView
                 {
                     await saveThumbnailMode(requested);
                     status.Text =
-                        "cache方式を保存しました。次回起動から有効です。";
+                        "キャッシュ方式を保存しました。次回起動から有効です。";
                 }
                 catch (Exception exception)
                 {
@@ -396,7 +396,7 @@ internal static class ProductSettingsView
                 {
                     await clearCache();
                     status.Text =
-                        "表示用キャッシュを削除しました。元画像・タグ・評価・Publication等のユーザーデータは変更していません。";
+                        "表示用キャッシュを削除しました。元画像・タグ・評価・公開履歴などのユーザーデータは変更していません。";
                 }
                 catch (Exception exception)
                 {
@@ -420,44 +420,73 @@ internal static class ProductSettingsView
         content.Children.Add(
             CreateSectionHeader(
                 "保存場所",
-                "Lumineが所有するデータの場所です。元画像はライブラリとして参照するだけで、ここへコピーしません。"));
+                "元画像は移動・コピーせず、そのままライブラリとして参照します。"));
 
         content.Children.Add(
             CreateKeyValue(
-                "モード",
-                snapshot.DataPaths.DescribeLocation()));
-        content.Children.Add(
-            CreateKeyValue(
-                "Lumineデータ",
-                snapshot.DataPaths.RootPath));
-        content.Children.Add(
-            CreateKeyValue(
-                "ユーザーメタデータDB",
-                snapshot.DataPaths.DatabasePath));
-        content.Children.Add(
-            CreateKeyValue(
-                "設定",
-                snapshot.DataPaths.SettingsPath));
-        content.Children.Add(
-            CreateKeyValue(
-                "一時キャッシュ",
-                snapshot.DataPaths.ThumbnailCachePath));
-        content.Children.Add(
-            CreateKeyValue(
-                "ログ",
-                snapshot.DataPaths.LogsPath));
+                "Lumineのデータ",
+                snapshot.DataPaths.IsPortable
+                    ? "アプリと一緒に持ち運べる場所へ保存"
+                    : "このPCのユーザー領域へ保存"));
 
         content.Children.Add(
             new TextBlock
             {
                 Text =
                     snapshot.DataPaths.IsPortable
-                        ? "ポータブルモードでは、これらはすべてLumine.exe配下の data フォルダー内に収まります。フォルダーごと移動できます。"
-                        : "ポータブル起動は --portable、LUMINE_PORTABLE=1、またはLumine.exeと同じ場所の portable.flag で有効にできます。",
+                        ? "Lumine本体のフォルダーごと移動できます。"
+                        : "通常利用では保存先の詳細を意識する必要はありません。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
+            });
+
+        var details =
+            CreateCardStack();
+        details.Children.Add(
+            CreateKeyValue(
+                "データ",
+                snapshot.DataPaths.RootPath));
+        details.Children.Add(
+            CreateKeyValue(
+                "メタデータ",
+                snapshot.DataPaths.DatabasePath));
+        details.Children.Add(
+            CreateKeyValue(
+                "設定",
+                snapshot.DataPaths.SettingsPath));
+        details.Children.Add(
+            CreateKeyValue(
+                "一時キャッシュ",
+                snapshot.DataPaths.ThumbnailCachePath));
+        details.Children.Add(
+            CreateKeyValue(
+                "ログ",
+                snapshot.DataPaths.LogsPath));
+
+        if (!snapshot.DataPaths.IsPortable)
+        {
+            details.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        "ポータブル利用が必要な場合は、起動オプションまたは portable.flag で切り替えられます。",
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize = LumineDesign.CaptionFontSize,
+                    TextWrapping = TextWrapping.Wrap
+                });
+        }
+
+        content.Children.Add(
+            new Expander
+            {
+                Header = "詳細な保存場所",
+                IsExpanded = false,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                Content = details
             });
 
         return CreateCard(content);
