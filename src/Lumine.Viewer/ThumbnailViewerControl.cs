@@ -1575,7 +1575,7 @@ public sealed class ThumbnailViewerControl : UserControl
         public TileCaptionOverlay(double tileWidth)
         {
             _maxTextWidth =
-                Math.Max(1, tileWidth - 18);
+                Math.Max(1, tileWidth - 16);
             IsHitTestVisible = false;
         }
 
@@ -1661,7 +1661,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     - _name.Height);
             context.DrawText(
                 _name,
-                new Point(9, nameY));
+                new Point(8, nameY));
 
             if (_size is not null)
             {
@@ -1673,7 +1673,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         - _size.Height);
                 context.DrawText(
                     _size,
-                    new Point(9, sizeY));
+                    new Point(8, sizeY));
             }
         }
     }
