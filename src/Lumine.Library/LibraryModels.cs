@@ -85,6 +85,20 @@ public sealed record AssetUserMetadataPatch(
     IReadOnlyList<string>? AddTags = null,
     bool ClearTags = false);
 
+public sealed record AssetUserMetadataSelectionSummary(
+    int SelectionCount,
+    bool RatingMixed,
+    int? Rating,
+    bool FavoriteMixed,
+    bool Favorite,
+    bool StatusLabelMixed,
+    string? StatusLabel,
+    bool ColorLabelMixed,
+    string? ColorLabel,
+    bool NotesMixed,
+    bool TagsMixed,
+    IReadOnlyList<string> CommonTags);
+
 public enum AssetSortOrder
 {
     ModifiedNewest = 0,
