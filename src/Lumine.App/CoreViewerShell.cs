@@ -744,7 +744,9 @@ internal sealed class CoreViewerShell : UserControl
                     return Task.CompletedTask;
                 });
 
-        _bulkActions.Spacing = 6;
+        organize.Margin = new Thickness(3, 0);
+        creative.Margin = new Thickness(3, 0);
+        clear.Margin = new Thickness(3, 0);
         _bulkActions.Children.Add(organize);
         _bulkActions.Children.Add(creative);
         _bulkActions.Children.Add(clear);
@@ -799,7 +801,7 @@ internal sealed class CoreViewerShell : UserControl
                     Content = label,
                     MinHeight = 28,
                     Padding = new Thickness(8, 4),
-                    FontSize = 10,
+                    FontSize = LumineDesign.CaptionFontSize,
                     Margin = new Thickness(3)
                 });
         button.Click +=
