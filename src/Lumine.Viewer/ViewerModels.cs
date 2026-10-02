@@ -10,7 +10,8 @@ public enum ViewerThumbnailPriority
 
 public readonly record struct ViewerPageCursor(
     long ModifiedAtUtcTicks,
-    long AssetId);
+    long AssetId,
+    string? FileName = null);
 
 public sealed record ViewerAsset(
     long Id,
