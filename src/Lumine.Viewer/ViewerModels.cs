@@ -124,9 +124,9 @@ public interface IViewerThumbnailProvider
 
 public sealed class ViewerOptions
 {
-    public double TileWidth { get; init; } = 184;
+    public double TileWidth { get; init; } = 180;
 
-    public double TileHeight { get; init; } = 184;
+    public double TileHeight { get; init; } = 180;
 
     public double TileSpacing { get; init; } = 8;
 
