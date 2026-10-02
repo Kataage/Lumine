@@ -16,6 +16,7 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Func<Task>? _afterBulkMutation;
     private readonly Action<string>? _entryRequested;
     private readonly Border _selectionBar;
+    private readonly WrapPanel _bulkActions;
     private readonly TextBlock _selectionCount;
     private readonly TextBlock _selectionMetadataSummary;
     private readonly TextBlock _bulkStatus;
@@ -159,6 +160,13 @@ internal sealed class CoreViewerShell : UserControl
                 Background = Brushes.Black,
                 IsVisible = false,
                 Child = focusedLayout
+            };
+
+        _bulkActions =
+            new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                IsVisible = false
             };
 
         _selectionCount =
@@ -372,19 +380,19 @@ internal sealed class CoreViewerShell : UserControl
 
     private Border CreateSelectionBar()
     {
-        var actions =
-            new WrapPanel
+        // Keep the default single-selection state quiet: opening the image
+        // and its inspector are the only primary actions. Bulk organization
+        // appears only when multiple assets are selected.
+        var primaryActions =
+            new StackPanel
             {
-                Orientation = Orientation.Horizontal
+                Orientation = Orientation.Horizontal,
+                Spacing = 4
             };
+        primaryActions.Children.Add(_focusButton);
+        primaryActions.Children.Add(_detailToggle);
 
-        // Primary image actions are visual and appear exactly when selection
-        // makes them relevant. Keyboard shortcuts remain accelerators rather
-        // than the only way to discover these capabilities.
-        _focusButton.Margin = new Thickness(3);
-        _detailToggle.Margin = new Thickness(3);
-        actions.Children.Add(_focusButton);
-        actions.Children.Add(_detailToggle);
+        var actions = _bulkActions;
 
         actions.Children.Add(
             CreateBulkButton(
@@ -564,16 +572,8 @@ internal sealed class CoreViewerShell : UserControl
         Grid.SetColumn(middle, 1);
         top.Children.Add(middle);
 
-        var hint =
-            new TextBlock
-            {
-                Text = "Ctrl: 追加/解除 · Shift: 範囲 · Ctrl+A: すべて",
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = 9.5,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-        Grid.SetColumn(hint, 2);
-        top.Children.Add(hint);
+        Grid.SetColumn(primaryActions, 2);
+        top.Children.Add(primaryActions);
 
         var root =
             new StackPanel
@@ -581,7 +581,7 @@ internal sealed class CoreViewerShell : UserControl
                 Spacing = 2
             };
         root.Children.Add(top);
-        root.Children.Add(actions);
+        root.Children.Add(_bulkActions);
 
         return new Border
         {
@@ -630,24 +630,29 @@ internal sealed class CoreViewerShell : UserControl
     {
         _selectionBar.IsVisible =
             selection.Count > 0;
+        var isBulk =
+            selection.Count > 1;
+        _bulkActions.IsVisible = isBulk;
+        _selectionCount.IsVisible = isBulk;
+        _selectionMetadataSummary.IsVisible = isBulk;
         _selectionCount.Text =
-            selection.Count == 1
-                ? "1件を選択"
-                : $"{selection.Count:N0}件を選択";
+            isBulk
+                ? $"{selection.Count:N0}件"
+                : string.Empty;
         _bulkStatus.Text = string.Empty;
         _selectionMetadataSummary.Text =
-            selection.Count > 0
+            isBulk
                 ? "整理情報を確認中…"
                 : string.Empty;
 
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation =
-            selection.Count > 0
+            isBulk
                 ? new CancellationTokenSource()
                 : null;
 
-        if (selection.Count > 0)
+        if (isBulk)
         {
             try
             {
