@@ -519,15 +519,11 @@ internal static class ProductNavigationViews
     {
         var stack = CreateListStack();
 
-        stack.Children.Add(
-            CreateHint(
-                "公開した時点のtitle / body / tags / destination / ordered imagesをsnapshotとして保持します。ローカルのタグやノートを後で変更しても、この履歴は変わりません。"));
-
         if (publications.Count == 0)
         {
             stack.Children.Add(
                 CreateHint(
-                    "公開履歴はまだありません。画像を選択し、上部のPublicationから記録できます。"));
+                    "公開履歴はまだありません。"));
             return CreateScroll(stack);
         }
 
