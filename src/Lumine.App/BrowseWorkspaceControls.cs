@@ -29,6 +29,10 @@ internal sealed record BrowseFilterState(
         || !string.IsNullOrWhiteSpace(ColorLabel);
 }
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "Search debounce lifetime is explicitly cancelled on library replacement and window shutdown.")]
 internal sealed class BrowseWorkspaceControls : UserControl
 {
     private readonly Func<BrowseFilterState, Task> _filtersChanged;
@@ -67,7 +71,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         _search = new TextBox
         {
-            Watermark = "ファイル名・パス・ノート・タグを検索…",
+            PlaceholderText = "ファイル名・パス・ノート・タグを検索…",
             MinWidth = 260,
             Text = State.SearchText
         };
