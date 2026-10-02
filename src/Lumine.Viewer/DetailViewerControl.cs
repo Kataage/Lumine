@@ -339,6 +339,39 @@ public sealed class DetailViewerControl : UserControl
 
     public string MetadataText => _metadata.Text ?? string.Empty;
 
+
+    internal Rect ImageBoundsInControlForSmoke
+    {
+        get
+        {
+            var origin =
+                _image.TranslatePoint(
+                    new Point(0, 0),
+                    this)
+                ?? throw new InvalidOperationException(
+                    "Unable to map detail image bounds.");
+            return new Rect(
+                origin,
+                _image.Bounds.Size);
+        }
+    }
+
+    internal Rect ViewportBoundsInControlForSmoke
+    {
+        get
+        {
+            var origin =
+                _scroll.TranslatePoint(
+                    new Point(0, 0),
+                    this)
+                ?? throw new InvalidOperationException(
+                    "Unable to map detail viewport bounds.");
+            return new Rect(
+                origin,
+                _scroll.Bounds.Size);
+        }
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler? FullScreenToggleRequested;
