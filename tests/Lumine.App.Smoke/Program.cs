@@ -1804,6 +1804,36 @@ try
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
+                    var detailImageBounds =
+                        window.CurrentShell.DetailViewer
+                            .ImageBoundsInControlForSmoke;
+                    var detailViewportBounds =
+                        window.CurrentShell.DetailViewer
+                            .ViewportBoundsInControlForSmoke;
+                    var detailImageCenterX =
+                        detailImageBounds.X
+                        + (detailImageBounds.Width / 2);
+                    var detailImageCenterY =
+                        detailImageBounds.Y
+                        + (detailImageBounds.Height / 2);
+                    var detailViewportCenterX =
+                        detailViewportBounds.X
+                        + (detailViewportBounds.Width / 2);
+                    var detailViewportCenterY =
+                        detailViewportBounds.Y
+                        + (detailViewportBounds.Height / 2);
+
+                    Require(
+                        detailImageBounds.Width > 0
+                        && detailImageBounds.Height > 0
+                        && Math.Abs(
+                            detailImageCenterX
+                            - detailViewportCenterX) <= 1.5
+                        && Math.Abs(
+                            detailImageCenterY
+                            - detailViewportCenterY) <= 1.5,
+                        "Focused image did not start visually centered in the viewer viewport.");
+
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
                     window.SetRenderScaling(1.0);
