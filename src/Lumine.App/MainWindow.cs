@@ -31,6 +31,7 @@ public sealed class MainWindow : Window
     private readonly ContentControl _navigationContent;
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
+    private CancellationTokenSource? _navigationCancellation;
     private Task _openOperation = Task.CompletedTask;
     private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
     private Task _diagnosticFlushOperation = Task.CompletedTask;
@@ -339,6 +340,457 @@ public sealed class MainWindow : Window
 
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
+
+    private void OnNavigationRequested(
+        string destination)
+    {
+        if (_closeStarted)
+        {
+            return;
+        }
+
+        _navigationDestination = destination;
+        _navigationPane.IsVisible = true;
+        _navigationTitle.Text = destination;
+        _navigationRailHost.Content =
+            LumineDesign.CreateNavigationRail(
+                destination,
+                OnNavigationRequested);
+        RenderNavigationDestination();
+        StartNavigationRefresh();
+    }
+
+    private void StartNavigationRefresh()
+    {
+        _navigationCancellation?.Cancel();
+        _navigationCancellation?.Dispose();
+        _navigationCancellation =
+            new CancellationTokenSource();
+
+        var operation =
+            RefreshNavigationAsync(
+                _navigationCancellation.Token);
+        _navigationOperation = operation;
+        _ = ObserveNavigationOperationAsync(operation);
+    }
+
+    private async Task ObserveNavigationOperationAsync(
+        Task operation)
+    {
+        try
+        {
+            await operation;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (!_closeStarted)
+            {
+                _status.Foreground =
+                    LumineDesign.Warning;
+                _status.Text =
+                    $"ナビゲーションを更新できませんでした: {exception.Message}";
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    _navigationOperation,
+                    operation))
+            {
+                _navigationOperation =
+                    Task.CompletedTask;
+            }
+        }
+    }
+
+    private async Task RefreshNavigationAsync(
+        CancellationToken cancellationToken)
+    {
+        await _navigationInitialization
+            .WaitAsync(cancellationToken);
+
+        var libraries =
+            await _navigationLibraryService.ListLibrariesAsync(
+                includeDisabled: true,
+                cancellationToken);
+
+        IReadOnlyList<LibraryFolderInfo> folders =
+            Array.Empty<LibraryFolderInfo>();
+        IReadOnlyList<LibraryTagInfo> tags =
+            Array.Empty<LibraryTagInfo>();
+
+        var runtime = _runtime;
+        if (runtime is not null)
+        {
+            folders =
+                await _navigationLibraryService.ListFoldersAsync(
+                    runtime.Library.Id,
+                    cancellationToken);
+            tags =
+                await _navigationLibraryService.ListTagsAsync(
+                    runtime.Library.Id,
+                    cancellationToken: cancellationToken);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        _libraries = libraries;
+        _folders = folders;
+        _tags = tags;
+        RenderNavigationDestination();
+    }
+
+    private void RenderNavigationDestination()
+    {
+        if (_navigationContent is null)
+        {
+            return;
+        }
+
+        _navigationTitle.Text =
+            _navigationDestination;
+
+        _navigationContent.Content =
+            _navigationDestination switch
+            {
+                "ライブラリ" =>
+                    ProductNavigationViews.CreateLibraries(
+                        _libraries,
+                        _runtime?.Library.Id,
+                        ChooseAndOpenLibraryAsync,
+                        OpenCatalogLibraryAsync,
+                        ToggleLibraryEnabledAsync,
+                        RemoveLibraryAsync),
+                "フォルダー" =>
+                    _runtime is null
+                        ? ProductNavigationViews.CreateNoLibrary(
+                            "フォルダー")
+                        : ProductNavigationViews.CreateFolders(
+                            _folders,
+                            _folderScope,
+                            ApplyFolderScopeAsync),
+                "タグ" =>
+                    _runtime is null
+                        ? ProductNavigationViews.CreateNoLibrary(
+                            "タグ")
+                        : ProductNavigationViews.CreateTags(
+                            _tags,
+                            _tagScope,
+                            ApplyTagScopeAsync),
+                "公開履歴" =>
+                    ProductNavigationViews.CreatePublicationEntry(),
+                "設定" =>
+                    ProductNavigationViews.CreateSettingsEntry(
+                        ShowDiagnosticsFromNavigationAsync),
+                _ =>
+                    ProductNavigationViews.CreateNoLibrary(
+                        _navigationDestination)
+            };
+    }
+
+    private async Task ChooseAndOpenLibraryAsync()
+    {
+        var folders =
+            await StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions
+                {
+                    Title = "Lumine に画像フォルダーを追加",
+                    AllowMultiple = false
+                });
+
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        var path = folders[0].Path.LocalPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "ローカルの画像フォルダーを選択してください。";
+            return;
+        }
+
+        await OpenLibraryAsync(path);
+    }
+
+    private Task OpenCatalogLibraryAsync(
+        LibraryCatalogItem library)
+    {
+        if (!library.IsEnabled)
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "無効なライブラリです。先に有効化してください。";
+            return Task.CompletedTask;
+        }
+
+        if (!Directory.Exists(library.RootPath))
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "ライブラリのフォルダーが見つかりません。";
+            return Task.CompletedTask;
+        }
+
+        return OpenLibraryAsync(
+            library.RootPath);
+    }
+
+    private async Task ToggleLibraryEnabledAsync(
+        LibraryCatalogItem library)
+    {
+        await _navigationInitialization;
+
+        if (library.IsEnabled
+            && _runtime?.Library.Id == library.Id)
+        {
+            await CloseActiveLibraryAsync(
+                "ライブラリを無効化しました。");
+        }
+
+        var changed =
+            await _navigationLibraryService.SetLibraryEnabledAsync(
+                library.Id,
+                !library.IsEnabled);
+
+        if (!changed)
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "ライブラリの状態を変更できませんでした。";
+        }
+
+        StartNavigationRefresh();
+    }
+
+    private async Task RemoveLibraryAsync(
+        LibraryCatalogItem library)
+    {
+        await _navigationInitialization;
+
+        if (_runtime?.Library.Id == library.Id)
+        {
+            await CloseActiveLibraryAsync(
+                "ライブラリの登録を解除しました。");
+        }
+
+        var removed =
+            await _navigationLibraryService
+                .RemoveLibraryRegistrationAsync(
+                    library.Id);
+
+        _status.Foreground =
+            removed
+                ? LumineDesign.MutedForeground
+                : LumineDesign.Warning;
+        _status.Text =
+            removed
+                ? "Lumineの登録情報を削除しました。元画像は変更していません。"
+                : "ライブラリの登録を解除できませんでした。";
+
+        StartNavigationRefresh();
+    }
+
+    private async Task CloseActiveLibraryAsync(
+        string status)
+    {
+        await DisposeCurrentRuntimeAsync();
+        _folderScope = null;
+        _tagScope = null;
+        _libraryPath.Text = string.Empty;
+        _productShellState = "Welcome";
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text = status;
+        _viewerHost.Content =
+            CreateWelcomeState(recovered: false);
+        _folders = Array.Empty<LibraryFolderInfo>();
+        _tags = Array.Empty<LibraryTagInfo>();
+        RenderNavigationDestination();
+    }
+
+    private async Task ApplyFolderScopeAsync(
+        string? folderPath)
+    {
+        _folderScope =
+            string.IsNullOrWhiteSpace(folderPath)
+                ? null
+                : folderPath;
+        await ApplyNavigationQueryAsync();
+    }
+
+    private async Task ApplyTagScopeAsync(
+        string? tag)
+    {
+        _tagScope =
+            string.IsNullOrWhiteSpace(tag)
+                ? null
+                : tag;
+        await ApplyNavigationQueryAsync();
+    }
+
+    private async Task ApplyNavigationQueryAsync()
+    {
+        var runtime = _runtime;
+        if (runtime is null)
+        {
+            return;
+        }
+
+        var previousShell = _shell;
+        if (previousShell is not null)
+        {
+            _viewerHost.Content = null;
+            _shell = null;
+            await previousShell.DetachAsync();
+        }
+
+        _productShellState = "Loading";
+        _viewerHost.Content =
+            LumineDesign.CreateProductState(
+                "表示を更新しています",
+                "選択した範囲の画像を準備しています。");
+
+        AssetQuery? query =
+            _folderScope is null
+            && _tagScope is null
+                ? null
+                : new AssetQuery(
+                    RequiredTags:
+                        _tagScope is null
+                            ? null
+                            : [_tagScope],
+                    FolderPathPrefix:
+                        _folderScope);
+
+        try
+        {
+            await runtime.ApplyQueryAsync(query);
+
+            var nextShell =
+                new CoreViewerShell(runtime);
+            _shell = nextShell;
+            _viewerHost.Content = nextShell;
+            _productShellState =
+                runtime.AssetCount == 0
+                    ? "EmptyLibrary"
+                    : "Workspace";
+            UpdateScopeDisplay();
+
+            if (runtime.AssetCount > 0)
+            {
+                nextShell.SelectInitialAsset();
+            }
+        }
+        catch (Exception exception)
+        {
+            var restored =
+                new CoreViewerShell(runtime);
+            _shell = restored;
+            _viewerHost.Content = restored;
+            _productShellState =
+                runtime.AssetCount == 0
+                    ? "EmptyLibrary"
+                    : "Workspace";
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                $"表示範囲を変更できませんでした: {exception.Message}";
+
+            if (runtime.AssetCount > 0)
+            {
+                restored.SelectInitialAsset();
+            }
+        }
+
+        RenderNavigationDestination();
+    }
+
+    private void UpdateScopeDisplay()
+    {
+        var runtime = _runtime;
+        if (runtime is null)
+        {
+            _libraryPath.Text = string.Empty;
+            return;
+        }
+
+        var scopes =
+            new List<string>();
+        if (_folderScope is not null)
+        {
+            scopes.Add(
+                $"フォルダー: {_folderScope}");
+        }
+
+        if (_tagScope is not null)
+        {
+            scopes.Add(
+                $"タグ: {_tagScope}");
+        }
+
+        _libraryPath.Text =
+            scopes.Count == 0
+                ? runtime.LibraryRoot
+                : runtime.LibraryRoot
+                  + "  ·  "
+                  + string.Join(
+                      "  ·  ",
+                      scopes);
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            $"{runtime.AssetCount:N0} 件 · {runtime.Library.Name}";
+    }
+
+    private async Task ShowDiagnosticsFromNavigationAsync()
+    {
+        if (!_runtimeDiagnosticsOperation.IsCompleted)
+        {
+            return;
+        }
+
+        _diagnosticsCancellation?.Dispose();
+        _diagnosticsCancellation =
+            new CancellationTokenSource();
+
+        var operation =
+            ShowRuntimeDiagnosticsAsync(
+                _diagnosticsCancellation.Token);
+        _runtimeDiagnosticsOperation =
+            operation;
+
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    _runtimeDiagnosticsOperation,
+                    operation))
+            {
+                _runtimeDiagnosticsOperation =
+                    Task.CompletedTask;
+            }
+
+            _diagnosticsCancellation?.Dispose();
+            _diagnosticsCancellation = null;
+
+            if (!_closeStarted)
+            {
+                _diagnostics.IsEnabled = true;
+            }
+        }
+    }
 
     internal Task OpenLibraryAsync(
         string libraryRoot,
