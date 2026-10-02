@@ -11,12 +11,24 @@ internal sealed class CoreViewerShell : UserControl
     private readonly DetailViewerControl _detail;
     private bool _detached;
 
-    public CoreViewerShell(CoreViewerRuntime runtime)
+    public CoreViewerShell(
+        CoreViewerRuntime runtime,
+        BrowsePreferences? preferences = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
 
+        preferences ??=
+            new BrowsePreferences(
+                BrowseViewMode.Grid,
+                1,
+                Lumine.Library.AssetSortOrder.ModifiedNewest);
+
         _grid = new ThumbnailViewerControl(
-            runtime.ViewerSession);
+            runtime.ViewerSession,
+            preferences.ViewMode == BrowseViewMode.List
+                ? ViewerLayoutMode.List
+                : ViewerLayoutMode.Grid,
+            preferences.Density);
         _detail = new DetailViewerControl(
             runtime.DetailSession);
         _detail.BindGrid(_grid);
@@ -68,6 +80,18 @@ internal sealed class CoreViewerShell : UserControl
     internal ThumbnailViewerControl GridViewer => _grid;
 
     internal DetailViewerControl DetailViewer => _detail;
+
+    public void SetBrowseLayout(
+        BrowsePreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+
+        _grid.SetLayout(
+            preferences.ViewMode == BrowseViewMode.List
+                ? ViewerLayoutMode.List
+                : ViewerLayoutMode.Grid,
+            preferences.Density);
+    }
 
     public void SelectInitialAsset()
     {
