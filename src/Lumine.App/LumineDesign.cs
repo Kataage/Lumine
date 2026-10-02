@@ -12,19 +12,25 @@ internal static class LumineDesign
     public static readonly Color BackgroundColor =
         Color.Parse("#09090B");
     public static readonly Color SurfaceColor =
-        Color.Parse("#0F0F12");
+        Color.Parse("#0D0D10");
     public static readonly Color SurfaceRaisedColor =
-        Color.Parse("#151519");
+        Color.Parse("#151518");
+    public static readonly Color ControlSurfaceColor =
+        Color.Parse("#1C1C20");
+    public static readonly Color ControlHoverColor =
+        Color.Parse("#242429");
     public static readonly Color BorderColor =
-        Color.Parse("#2B2B31");
+        Color.Parse("#29292F");
+    public static readonly Color BorderStrongColor =
+        Color.Parse("#3F3F46");
     public static readonly Color ForegroundColor =
         Color.Parse("#FAFAFA");
     public static readonly Color MutedForegroundColor =
         Color.Parse("#A1A1AA");
     public static readonly Color AccentColor =
-        Color.Parse("#E4E4E7");
+        Color.Parse("#FAFAFA");
     public static readonly Color AccentMutedColor =
-        Color.Parse("#25252B");
+        Color.Parse("#222227");
     public static readonly Color DangerColor =
         Color.Parse("#991B1B");
     public static readonly Color WarningColor =
@@ -38,8 +44,17 @@ internal static class LumineDesign
         new SolidColorBrush(SurfaceColor);
     public static readonly IBrush SurfaceRaised =
         new SolidColorBrush(SurfaceRaisedColor);
+    public static readonly IBrush ControlSurface =
+        new SolidColorBrush(ControlSurfaceColor);
+    public static readonly IBrush ControlHover =
+        new SolidColorBrush(ControlHoverColor);
     public static readonly IBrush Border =
         new SolidColorBrush(BorderColor);
+    public static readonly IBrush BorderStrong =
+        new SolidColorBrush(BorderStrongColor);
+    public static readonly IBrush ModalScrim =
+        new SolidColorBrush(
+            Color.FromArgb(190, 0, 0, 0));
     public static readonly IBrush Foreground =
         new SolidColorBrush(ForegroundColor);
     public static readonly IBrush MutedForeground =
@@ -165,6 +180,45 @@ internal static class LumineDesign
         button.BorderBrush = Border;
         button.BorderThickness = new Thickness(1);
         return button;
+    }
+
+    public static TextBox ConfigureTextBox(
+        TextBox textBox)
+    {
+        ArgumentNullException.ThrowIfNull(textBox);
+
+        textBox.MinHeight = CompactControlHeight;
+        textBox.Background = ControlSurface;
+        textBox.Foreground = Foreground;
+        textBox.BorderBrush = Border;
+        textBox.BorderThickness = new Thickness(1);
+        textBox.Padding = new Thickness(10, 6);
+        return textBox;
+    }
+
+    public static ComboBox ConfigureComboBox(
+        ComboBox comboBox)
+    {
+        ArgumentNullException.ThrowIfNull(comboBox);
+
+        comboBox.MinHeight = CompactControlHeight;
+        comboBox.Background = ControlSurface;
+        comboBox.Foreground = Foreground;
+        comboBox.BorderBrush = Border;
+        comboBox.BorderThickness = new Thickness(1);
+        comboBox.Padding = new Thickness(9, 5);
+        return comboBox;
+    }
+
+    public static CheckBox ConfigureCheckBox(
+        CheckBox checkBox)
+    {
+        ArgumentNullException.ThrowIfNull(checkBox);
+
+        checkBox.Foreground = Foreground;
+        checkBox.VerticalAlignment =
+            VerticalAlignment.Center;
+        return checkBox;
     }
 
     public static Control CreateStrokeIcon(
