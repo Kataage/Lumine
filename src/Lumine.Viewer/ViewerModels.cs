@@ -36,7 +36,8 @@ public readonly record struct ViewerPageCursor(
     long? CreatedAtUtcTicks = null,
     long? FileSize = null,
     int? Rating = null,
-    string? StatusLabel = null);
+    string? StatusLabel = null,
+    long? Position = null);
 
 public sealed record ViewerAsset(
     long Id,
