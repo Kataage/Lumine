@@ -741,11 +741,75 @@ internal static class Program
                     && Math.Abs(border.Height - 190) < 0.1)
             ?? throw new InvalidOperationException("No realized thumbnail tile was available for mouse selection.");
 
+        var actionGeometry =
+            viewer.GetRealizedTileActionGeometryForSmoke(0);
+        Require(
+            actionGeometry.Count == 2,
+            "Thumbnail hover overlay did not expose the expected two primary icon actions.");
+
+        foreach (var geometry in actionGeometry)
+        {
+            Require(
+                geometry.ButtonBounds.Left >= 0
+                && geometry.ButtonBounds.Top >= 0
+                && geometry.ButtonBounds.Right <= 160
+                && geometry.ButtonBounds.Bottom <= 190,
+                "Thumbnail action button escaped the tile bounds.");
+
+            var buttonCenterX =
+                geometry.ButtonBounds.X
+                + (geometry.ButtonBounds.Width / 2);
+            var buttonCenterY =
+                geometry.ButtonBounds.Y
+                + (geometry.ButtonBounds.Height / 2);
+            var iconCenterX =
+                geometry.IconBounds.X
+                + (geometry.IconBounds.Width / 2);
+            var iconCenterY =
+                geometry.IconBounds.Y
+                + (geometry.IconBounds.Height / 2);
+
+            Require(
+                Math.Abs(
+                    buttonCenterX
+                    - iconCenterX) <= 1
+                && Math.Abs(
+                    buttonCenterY
+                    - iconCenterY) <= 1,
+                "Thumbnail overlay icon is not visually centered inside its button.");
+        }
+
+        Require(
+            Math.Abs(
+                actionGeometry[0].ButtonBounds.Width
+                - actionGeometry[1].ButtonBounds.Width) < 0.1
+            && Math.Abs(
+                actionGeometry[0].ButtonBounds.Height
+                - actionGeometry[1].ButtonBounds.Height) < 0.1
+            && Math.Abs(
+                actionGeometry[0].ButtonBounds.Y
+                - actionGeometry[1].ButtonBounds.Y) < 0.1,
+            "Thumbnail action buttons do not share a consistent size/alignment.");
+
         var tileCenter = new Point(
             firstTile.Bounds.Width / 2,
             firstTile.Bounds.Height / 2);
         var windowPoint = firstTile.TranslatePoint(tileCenter, window)
             ?? throw new InvalidOperationException("Unable to map thumbnail tile to window coordinates.");
+
+        ViewerAssetContextRequestedEventArgs? contextRequest = null;
+        viewer.AssetContextRequested +=
+            (_, request) =>
+                contextRequest = request;
+        window.MouseDown(windowPoint, MouseButton.Right);
+        window.MouseUp(windowPoint, MouseButton.Right);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            contextRequest is not null
+            && contextRequest.Index == 0
+            && viewer.SelectedAssetCount == 1
+            && viewer.SelectedAssetIndex == 0,
+            "Right-click did not preserve the clicked thumbnail as the context action target.");
 
         window.MouseDown(windowPoint, MouseButton.Left);
         window.MouseUp(windowPoint, MouseButton.Left);
