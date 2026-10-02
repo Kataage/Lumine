@@ -550,22 +550,20 @@ internal sealed class CoreViewerShell : UserControl
 
         actions.Children.Add(
             CreateBulkButton(
-                "Publication",
-                () =>
-                {
-                    _entryRequested?.Invoke(
-                        "publication");
-                    return Task.CompletedTask;
-                }));
+                "Work",
+                ShowCreateWorkDialogAsync));
         actions.Children.Add(
             CreateBulkButton(
-                "Work / Group",
-                () =>
-                {
-                    _entryRequested?.Invoke(
-                        "creative");
-                    return Task.CompletedTask;
-                }));
+                "Generation Group",
+                ShowCreateGenerationGroupDialogAsync));
+        actions.Children.Add(
+            CreateBulkButton(
+                "Lineage",
+                ShowCreateRelationDialogAsync));
+        actions.Children.Add(
+            CreateBulkButton(
+                "Publication",
+                ShowCreatePublicationDialogAsync));
 
         var delete =
             CreateBulkButton(
@@ -866,6 +864,268 @@ internal sealed class CoreViewerShell : UserControl
         if (_afterBulkMutation is not null)
         {
             await _afterBulkMutation();
+        }
+    }
+
+    internal async Task<WorkInfo?> CreateWorkFromSelectionAsync(
+        CreativeWorkDialogResult input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return null;
+        }
+
+        var created =
+            await _runtime.LibraryService.CreateWorkAsync(
+                _runtime.Library.Id,
+                new WorkCreate(
+                    input.Title,
+                    input.Description,
+                    assets.Select(
+                            static asset => asset.Id)
+                        .ToArray()));
+        _bulkStatus.Text =
+            $"Work「{created.Title}」を作成しました。";
+        return created;
+    }
+
+    internal async Task<GenerationGroupInfo?>
+        CreateGenerationGroupFromSelectionAsync(
+            CreativeGroupDialogResult input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return null;
+        }
+
+        var created =
+            await _runtime.LibraryService
+                .CreateGenerationGroupAsync(
+                    _runtime.Library.Id,
+                    new GenerationGroupCreate(
+                        input.Name,
+                        assets.Select(
+                                static asset => asset.Id)
+                            .ToArray(),
+                        WorkId: input.WorkId,
+                        Prompt: input.Prompt,
+                        NegativePrompt:
+                            input.NegativePrompt,
+                        ModelName: input.ModelName,
+                        Sampler: input.Sampler,
+                        Scheduler: input.Scheduler,
+                        Steps: input.Steps,
+                        CfgScale: input.CfgScale,
+                        WorkflowJson:
+                            input.WorkflowJson,
+                        Notes: input.Notes));
+        _bulkStatus.Text =
+            $"Generation Group「{created.Name}」を作成しました。";
+        return created;
+    }
+
+    internal async Task<AssetRelationInfo?>
+        CreateRelationFromSelectionAsync(
+            CreativeRelationDialogResult input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count != 2)
+        {
+            _bulkStatus.Text =
+                "Lineageは2枚を選択して作成してください。";
+            return null;
+        }
+
+        var parent =
+            input.ReverseDirection
+                ? assets[1]
+                : assets[0];
+        var child =
+            input.ReverseDirection
+                ? assets[0]
+                : assets[1];
+
+        var created =
+            await _runtime.LibraryService
+                .CreateAssetRelationAsync(
+                    _runtime.Library.Id,
+                    new AssetRelationCreate(
+                        parent.Id,
+                        child.Id,
+                        input.RelationType,
+                        input.Note));
+        _bulkStatus.Text =
+            $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
+        return created;
+    }
+
+    internal async Task<PublicationInfo?>
+        CreatePublicationFromSelectionAsync(
+            CreativePublicationDialogResult input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return null;
+        }
+
+        var created =
+            await _runtime.LibraryService
+                .CreatePublicationAsync(
+                    _runtime.Library.Id,
+                    new PublicationCreate(
+                        assets.Select(
+                                static asset => asset.Id)
+                            .ToArray(),
+                        input.Destination,
+                        input.PublishedAtUtc,
+                        WorkId: input.WorkId,
+                        Title: input.Title,
+                        Body: input.Body,
+                        TagsSnapshot: input.Tags,
+                        Account: input.Account,
+                        ExternalId: input.ExternalId,
+                        ExternalUrl: input.ExternalUrl,
+                        PlatformMetadataJson:
+                            input.PlatformMetadataJson));
+        _bulkStatus.Text =
+            $"Publicationを{created.Destination}の履歴へ保存しました。";
+        _entryRequested?.Invoke(
+            "publication");
+        return created;
+    }
+
+    private async Task ShowCreateWorkDialogAsync()
+    {
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var input =
+            await CreativeArchiveDialogs.ShowWorkAsync(
+                owner,
+                assets);
+        if (input is not null)
+        {
+            await CreateWorkFromSelectionAsync(
+                input);
+        }
+    }
+
+    private async Task ShowCreateGenerationGroupDialogAsync()
+    {
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var works =
+            await _runtime.LibraryService.ListWorksAsync(
+                _runtime.Library.Id);
+        var input =
+            await CreativeArchiveDialogs
+                .ShowGenerationGroupAsync(
+                    owner,
+                    assets,
+                    works);
+        if (input is not null)
+        {
+            await CreateGenerationGroupFromSelectionAsync(
+                input);
+        }
+    }
+
+    private async Task ShowCreateRelationDialogAsync()
+    {
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count != 2)
+        {
+            _bulkStatus.Text =
+                "Lineageは2枚を選択してください。";
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var input =
+            await CreativeArchiveDialogs.ShowRelationAsync(
+                owner,
+                assets);
+        if (input is not null)
+        {
+            await CreateRelationFromSelectionAsync(
+                input);
+        }
+    }
+
+    private async Task ShowCreatePublicationDialogAsync()
+    {
+        var assets =
+            await ResolveSelectedAssetsAsync();
+        if (assets.Count == 0)
+        {
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var works =
+            await _runtime.LibraryService.ListWorksAsync(
+                _runtime.Library.Id);
+        var input =
+            await CreativeArchiveDialogs
+                .ShowPublicationAsync(
+                    owner,
+                    assets,
+                    works);
+        if (input is not null)
+        {
+            await CreatePublicationFromSelectionAsync(
+                input);
         }
     }
 
