@@ -423,6 +423,9 @@ public sealed class DetailViewerControl : UserControl
         _fitMode = false;
         SetZoom(1);
         SynchronizeRequestedZoom(1);
+        Dispatcher.UIThread.Post(
+            CenterViewport,
+            DispatcherPriority.Render);
     }
 
     public void PanBy(double horizontal, double vertical)
@@ -544,9 +547,17 @@ public sealed class DetailViewerControl : UserControl
                 _session.Options.MaxZoom);
         }
 
+        var wasFit =
+            _fitMode;
         _fitMode = false;
         SetZoom(committedTarget);
         SynchronizeRequestedZoom(committedTarget);
+        if (wasFit)
+        {
+            Dispatcher.UIThread.Post(
+                CenterViewport,
+                DispatcherPriority.Render);
+        }
     }
 
     private async Task MoveAsync(long delta)
