@@ -676,7 +676,8 @@ public sealed class MainWindow : Window
                         ChooseAndOpenLibraryAsync,
                         OpenCatalogLibraryAsync,
                         ToggleLibraryEnabledAsync,
-                        RemoveLibraryAsync),
+                        RemoveLibraryAsync,
+                        ReportNavigationError),
                 "フォルダー" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -684,7 +685,8 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreateFolders(
                             _folders,
                             _browseFilterState.FolderPath,
-                            ApplyFolderScopeAsync),
+                            ApplyFolderScopeAsync,
+                            ReportNavigationError),
                 "タグ" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -692,7 +694,8 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreateTags(
                             _tags,
                             _browseFilterState.Tag,
-                            ApplyTagScopeAsync),
+                            ApplyTagScopeAsync,
+                            ReportNavigationError),
                 "公開履歴" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -711,6 +714,14 @@ public sealed class MainWindow : Window
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
             };
+    }
+
+    private void ReportNavigationError(
+        string message)
+    {
+        _status.Foreground =
+            LumineDesign.Warning;
+        _status.Text = message;
     }
 
     private async Task ChooseAndOpenLibraryAsync()
