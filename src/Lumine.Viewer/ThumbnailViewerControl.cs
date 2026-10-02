@@ -34,6 +34,9 @@ public sealed class ThumbnailViewerControl : UserControl
     private int _densityLevel;
     private double _viewportWidth = 1;
 
+    private const double GridOuterPadding = 12;
+    private const double GridCornerRadius = 10;
+
     public ThumbnailViewerControl(
         ViewerSession session,
         ViewerLayoutMode layoutMode = ViewerLayoutMode.Grid,
@@ -60,7 +63,10 @@ public sealed class ThumbnailViewerControl : UserControl
         _rows = new ListBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            SelectionMode = SelectionMode.Single
+            SelectionMode = SelectionMode.Single,
+            Padding = new Thickness(GridOuterPadding),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
         };
 
         Content = _rows;
@@ -195,6 +201,8 @@ public sealed class ThumbnailViewerControl : UserControl
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
 
     public event EventHandler<long>? AssetInvoked;
+
+    public event EventHandler<long>? AssetDetailRequested;
 
     public bool IsAssetSelected(long index) =>
         _selectedIndices.Contains(index);
@@ -589,22 +597,32 @@ public sealed class ThumbnailViewerControl : UserControl
             return 1;
         }
 
+        var availableWidth =
+            Math.Max(
+                1,
+                width - (GridOuterPadding * 2));
+        var tileWidth =
+            GetTileWidth();
         var cellWidth =
-            GetTileWidth()
+            tileWidth
             + _session.Options.TileSpacing;
         return Math.Max(
             1,
-            (int)Math.Floor(width / cellWidth));
+            (int)Math.Floor(
+                (availableWidth + _session.Options.TileSpacing)
+                / cellWidth));
     }
 
     private double GetTileWidth() =>
         _layoutMode == ViewerLayoutMode.List
-            ? Math.Max(320, _viewportWidth - 20)
+            ? Math.Max(
+                320,
+                _viewportWidth - (GridOuterPadding * 2))
             : _densityLevel switch
             {
-                0 => 140,
+                0 => 120,
                 1 => _session.Options.TileWidth,
-                2 => 232,
+                2 => 260,
                 _ => throw new ArgumentOutOfRangeException()
             };
 
@@ -612,18 +630,12 @@ public sealed class ThumbnailViewerControl : UserControl
         _layoutMode == ViewerLayoutMode.List
             ? _densityLevel switch
             {
-                0 => 78,
-                1 => 94,
-                2 => 112,
+                0 => 60,
+                1 => 68,
+                2 => 82,
                 _ => throw new ArgumentOutOfRangeException()
             }
-            : _densityLevel switch
-            {
-                0 => 168,
-                1 => _session.Options.TileHeight,
-                2 => 272,
-                _ => throw new ArgumentOutOfRangeException()
-            };
+            : GetTileWidth();
 
     private long? GetViewportAnchorAssetIndex()
     {
@@ -773,6 +785,16 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        if (_selectedIndex >= 0
+            && e.Key == Key.I)
+        {
+            AssetDetailRequested?.Invoke(
+                this,
+                _selectedIndex);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.A
             && e.KeyModifiers.HasFlag(
                 KeyModifiers.Control))
@@ -866,7 +888,10 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Orientation = Orientation.Horizontal;
             Spacing = session.Options.TileSpacing;
-            Height = tileHeight;
+            Height =
+                layoutMode == ViewerLayoutMode.Grid
+                    ? tileHeight + session.Options.TileSpacing
+                    : tileHeight;
 
             var start = checked(rowIndex * columns);
             for (var column = 0; column < columns; column++)
@@ -961,11 +986,16 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly ThumbnailViewerControl _owner;
         private readonly ViewerSession _session;
         private readonly long _index;
+        private readonly ViewerLayoutMode _layoutMode;
         private readonly Image _image;
         private readonly TextBlock _label;
+        private readonly TextBlock _fileSize;
+        private readonly StackPanel _hoverActions;
+        private readonly Border _selectionBadge;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
         private bool _isReady;
+        private bool _hovered;
 
         public ViewerTileControl(
             ThumbnailViewerControl owner,
@@ -978,17 +1008,29 @@ public sealed class ThumbnailViewerControl : UserControl
             _owner = owner;
             _session = session;
             _index = index;
+            _layoutMode = layoutMode;
 
             Width = tileWidth;
             Height = tileHeight;
-            Padding = new Thickness(4);
+            Padding = new Thickness(0);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
-            CornerRadius = new CornerRadius(4);
+            CornerRadius =
+                new CornerRadius(
+                    layoutMode == ViewerLayoutMode.Grid
+                        ? GridCornerRadius
+                        : 7);
+            ClipToBounds = true;
+            Background =
+                new SolidColorBrush(
+                    Color.Parse("#18181B"));
 
             _image = new Image
             {
-                Stretch = Stretch.Uniform,
+                Stretch =
+                    layoutMode == ViewerLayoutMode.Grid
+                        ? Stretch.UniformToFill
+                        : Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
@@ -997,49 +1039,252 @@ public sealed class ThumbnailViewerControl : UserControl
             {
                 Text = " ",
                 MaxLines = 1,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                FontSize =
+                    layoutMode == ViewerLayoutMode.Grid
+                        ? 10.5
+                        : 11.5,
+                FontWeight = FontWeight.Medium,
+                Foreground = Brushes.White
             };
+
+            _fileSize = new TextBlock
+            {
+                Text = string.Empty,
+                MaxLines = 1,
+                FontSize = 9.5,
+                Foreground =
+                    new SolidColorBrush(
+                        Color.FromArgb(
+                            170,
+                            255,
+                            255,
+                            255))
+            };
+
+            _hoverActions =
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Right,
+                    VerticalAlignment =
+                        VerticalAlignment.Top,
+                    Margin = new Thickness(8),
+                    IsVisible = false
+                };
+
+            var info =
+                CreateOverlayButton(
+                    "ⓘ",
+                    "詳細 (I)");
+            info.Click +=
+                (_, _) =>
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false);
+                    _owner.AssetDetailRequested?.Invoke(
+                        _owner,
+                        _index);
+                };
+            _hoverActions.Children.Add(info);
+
+            var open =
+                CreateOverlayButton(
+                    "⛶",
+                    "大きく表示");
+            open.Click +=
+                (_, _) =>
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false);
+                    _owner.AssetInvoked?.Invoke(
+                        _owner,
+                        _index);
+                };
+            _hoverActions.Children.Add(open);
+
+            _selectionBadge =
+                new Border
+                {
+                    Width = 20,
+                    Height = 20,
+                    CornerRadius = new CornerRadius(10),
+                    Background =
+                        new SolidColorBrush(
+                            Color.Parse("#FAFAFA")),
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    VerticalAlignment =
+                        VerticalAlignment.Top,
+                    Margin = new Thickness(8),
+                    IsVisible = false,
+                    Child =
+                        new TextBlock
+                        {
+                            Text = "✓",
+                            Foreground =
+                                new SolidColorBrush(
+                                    Color.Parse("#09090B")),
+                            FontSize = 11,
+                            FontWeight = FontWeight.Bold,
+                            TextAlignment =
+                                TextAlignment.Center,
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        }
+                };
 
             if (layoutMode == ViewerLayoutMode.List)
             {
                 _image.Width =
-                    Math.Max(56, tileHeight - 16);
+                    Math.Max(48, tileHeight - 10);
                 _image.Height =
-                    Math.Max(56, tileHeight - 16);
+                    Math.Max(48, tileHeight - 10);
+                _image.Margin = new Thickness(4);
+
+                _label.Foreground =
+                    new SolidColorBrush(
+                        Color.Parse("#FAFAFA"));
 
                 var panel = new Grid
                 {
                     ColumnDefinitions =
-                        new ColumnDefinitions("Auto,*"),
+                        new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 10
                 };
                 panel.Children.Add(_image);
+
                 Grid.SetColumn(_label, 1);
                 _label.VerticalAlignment =
                     VerticalAlignment.Center;
-                _label.FontSize = 12;
                 panel.Children.Add(_label);
+
+                Grid.SetColumn(_hoverActions, 2);
+                _hoverActions.VerticalAlignment =
+                    VerticalAlignment.Center;
+                _hoverActions.Margin =
+                    new Thickness(4);
+                panel.Children.Add(_hoverActions);
                 Child = panel;
             }
             else
             {
-                var panel = new Grid
-                {
-                    RowDefinitions =
-                        new RowDefinitions("*,Auto")
-                };
-                panel.Children.Add(_image);
-                Grid.SetRow(_label, 1);
-                panel.Children.Add(_label);
-                Child = panel;
+                var layers = new Grid();
+                layers.Children.Add(_image);
+
+                var gradient =
+                    new Border
+                    {
+                        Height = 74,
+                        VerticalAlignment =
+                            VerticalAlignment.Bottom,
+                        Background =
+                            new LinearGradientBrush
+                            {
+                                StartPoint =
+                                    new RelativePoint(
+                                        0,
+                                        0,
+                                        RelativeUnit.Relative),
+                                EndPoint =
+                                    new RelativePoint(
+                                        0,
+                                        1,
+                                        RelativeUnit.Relative),
+                                GradientStops =
+                                [
+                                    new GradientStop(
+                                        Color.FromArgb(
+                                            0,
+                                            0,
+                                            0,
+                                            0),
+                                        0),
+                                    new GradientStop(
+                                        Color.FromArgb(
+                                            70,
+                                            0,
+                                            0,
+                                            0),
+                                        0.35),
+                                    new GradientStop(
+                                        Color.FromArgb(
+                                            220,
+                                            0,
+                                            0,
+                                            0),
+                                        1)
+                                ]
+                            }
+                    };
+                layers.Children.Add(gradient);
+
+                var caption =
+                    new StackPanel
+                    {
+                        Spacing = 1,
+                        Margin =
+                            new Thickness(9, 0, 9, 8),
+                        VerticalAlignment =
+                            VerticalAlignment.Bottom
+                    };
+                caption.Children.Add(_label);
+                caption.Children.Add(_fileSize);
+                layers.Children.Add(caption);
+
+                layers.Children.Add(_hoverActions);
+                layers.Children.Add(_selectionBadge);
+                Child = layers;
             }
 
             PointerPressed += OnPointerPressed;
+            PointerEntered += OnPointerEntered;
+            PointerExited += OnPointerExited;
             ToolTip.SetTip(
                 this,
                 "ダブルクリックで表示");
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
+        }
+
+        private static Button CreateOverlayButton(
+            string content,
+            string tooltip)
+        {
+            var button =
+                new Button
+                {
+                    Content = content,
+                    Width = 30,
+                    Height = 30,
+                    MinWidth = 30,
+                    MinHeight = 30,
+                    Padding = new Thickness(0),
+                    FontSize = 12,
+                    CornerRadius = new CornerRadius(8),
+                    Background =
+                        new SolidColorBrush(
+                            Color.FromArgb(
+                                190,
+                                0,
+                                0,
+                                0)),
+                    Foreground = Brushes.White,
+                    BorderBrush =
+                        new SolidColorBrush(
+                            Color.FromArgb(
+                                72,
+                                255,
+                                255,
+                                255)),
+                    BorderThickness = new Thickness(1)
+                };
+            ToolTip.SetTip(button, tooltip);
+            return button;
         }
 
         public long Index => _index;
@@ -1063,8 +1308,31 @@ public sealed class ThumbnailViewerControl : UserControl
             CancelLoad();
         }
 
+        private void OnPointerEntered(
+            object? sender,
+            PointerEventArgs e)
+        {
+            _hovered = true;
+            UpdateVisualState();
+        }
+
+        private void OnPointerExited(
+            object? sender,
+            PointerEventArgs e)
+        {
+            _hovered = false;
+            UpdateVisualState();
+        }
+
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
+            if (e.Source is Button
+                || (e.Source as Visual)
+                    ?.FindAncestorOfType<Button>() is not null)
+            {
+                return;
+            }
+
             var mode =
                 e.KeyModifiers.HasFlag(
                     KeyModifiers.Shift)
@@ -1100,9 +1368,24 @@ public sealed class ThumbnailViewerControl : UserControl
             IsSelected =
                 _owner.IsAssetSelected(
                     _index);
-            BorderBrush = IsSelected
-                ? Brushes.DodgerBlue
-                : Brushes.Transparent;
+            UpdateVisualState();
+        }
+
+        private void UpdateVisualState()
+        {
+            BorderBrush =
+                IsSelected
+                    ? new SolidColorBrush(
+                        Color.Parse("#FAFAFA"))
+                    : _hovered
+                        ? new SolidColorBrush(
+                            Color.Parse("#52525B"))
+                        : Brushes.Transparent;
+            _selectionBadge.IsVisible =
+                IsSelected
+                && _layoutMode == ViewerLayoutMode.Grid;
+            _hoverActions.IsVisible =
+                _hovered || IsSelected;
         }
 
         private void StartLoad()
@@ -1168,6 +1451,8 @@ public sealed class ThumbnailViewerControl : UserControl
                     lease = null;
                     ReplaceBitmapLease(next);
                     _label.Text = asset.DisplayName;
+                    _fileSize.Text =
+                        FormatFileSize(asset.FileSize);
 
                     if (!_isReady)
                     {
@@ -1190,4 +1475,23 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    private static string FormatFileSize(long bytes)
+    {
+        const double kib = 1024;
+        const double mib = kib * 1024;
+        const double gib = mib * 1024;
+
+        return bytes switch
+        {
+            >= (long)gib =>
+                $"{bytes / gib:F1} GB",
+            >= (long)mib =>
+                $"{bytes / mib:F1} MB",
+            >= (long)kib =>
+                $"{bytes / kib:F0} KB",
+            _ =>
+                $"{bytes} B"
+        };
+    }
+
 }
