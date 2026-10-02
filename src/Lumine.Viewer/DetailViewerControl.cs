@@ -11,6 +11,12 @@ namespace Lumine.Viewer;
 
 public sealed class DetailViewerControl : UserControl
 {
+    private static readonly IBrush StageBackground =
+        new SolidColorBrush(Color.Parse("#09090B"));
+    private static readonly IBrush ViewerControlBackground =
+        new SolidColorBrush(Color.FromArgb(205, 24, 24, 27));
+    private static readonly IBrush ViewerControlBorder =
+        new SolidColorBrush(Color.Parse("#3F3F46"));
     private readonly ViewerDetailSession _session;
     private readonly ScrollViewer _scroll;
     private readonly Image _image;
@@ -84,7 +90,8 @@ public sealed class DetailViewerControl : UserControl
             Foreground = Brushes.LightGray,
             FontSize = 10,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0)
+            Margin = new Thickness(8, 0),
+            IsVisible = false
         };
         toolbar.Children.Add(_status);
 
@@ -100,7 +107,7 @@ public sealed class DetailViewerControl : UserControl
 
         var surface = new Border
         {
-            Background = Brushes.Black,
+            Background = StageBackground,
             Child = _image
         };
 
@@ -122,7 +129,7 @@ public sealed class DetailViewerControl : UserControl
 
         var stage = new Grid
         {
-            Background = Brushes.Black
+            Background = StageBackground
         };
         stage.Children.Add(_scroll);
 
@@ -152,16 +159,24 @@ public sealed class DetailViewerControl : UserControl
         _next.Margin = new Thickness(14, 0);
         stage.Children.Add(_next);
 
-        var layout = new Grid
-        {
-            Background = Brushes.Black,
-            RowDefinitions = new RowDefinitions("Auto,*")
-        };
-        layout.Children.Add(toolbar);
-        Grid.SetRow(stage, 1);
-        layout.Children.Add(stage);
+        var toolbarHost =
+            new Border
+            {
+                Background = ViewerControlBackground,
+                BorderBrush = ViewerControlBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(4),
+                Margin = new Thickness(10),
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                Child = toolbar
+            };
+        stage.Children.Add(toolbarHost);
 
-        Content = layout;
+        Content = stage;
 
         _previous.Click += async (_, _) => await MoveAsync(-1);
         _next.Click += async (_, _) => await MoveAsync(1);
@@ -209,17 +224,9 @@ public sealed class DetailViewerControl : UserControl
                 MinHeight = 32,
                 Padding = new Thickness(9, 5),
                 CornerRadius = new CornerRadius(7),
-                Background =
-                    new SolidColorBrush(
-                        Color.FromArgb(
-                            205,
-                            24,
-                            24,
-                            27)),
+                Background = ViewerControlBackground,
                 Foreground = Brushes.White,
-                BorderBrush =
-                    new SolidColorBrush(
-                        Color.Parse("#3F3F46")),
+                BorderBrush = ViewerControlBorder,
                 BorderThickness = new Thickness(1)
             };
         ToolTip.SetTip(button, tooltip);
@@ -1057,6 +1064,9 @@ public sealed class DetailViewerControl : UserControl
                       + $" · {snapshot.ErrorMessage}",
             _ => "画像の状態を確認しています…"
         };
+        _status.IsVisible =
+            !string.IsNullOrWhiteSpace(
+                _status.Text);
 
         var metadata = snapshot.Metadata;
         _metadata.Text = snapshot.Asset is null
