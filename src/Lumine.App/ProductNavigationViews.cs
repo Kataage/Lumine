@@ -151,36 +151,55 @@ internal static class ProductNavigationViews
             primaryContent.Children.Add(path);
             primaryContent.Children.Add(detail);
 
-            var primary =
-                new Button
-                {
-                    Content = primaryContent,
-                    HorizontalContentAlignment =
-                        HorizontalAlignment.Stretch,
-                    Background =
-                        isActive
-                            ? LumineDesign.AccentMuted
-                            : LumineDesign.SurfaceRaised,
-                    BorderBrush =
-                        isActive
-                            ? LumineDesign.BorderStrong
-                            : LumineDesign.Border,
-                    BorderThickness =
-                        new Thickness(1),
-                    CornerRadius =
-                        new CornerRadius(9),
-                    Padding =
-                        new Thickness(9, 8),
-                    IsEnabled =
-                        canOpen
-                        || isActive
-                };
-            if (canOpen && !isActive)
+            Control primary;
+            if (isActive)
             {
-                AttachAsync(
-                    primary,
-                    () => openLibrary(library),
-                    reportError);
+                primary =
+                    new Border
+                    {
+                        Child = primaryContent,
+                        Background =
+                            LumineDesign.AccentMuted,
+                        BorderBrush =
+                            LumineDesign.BorderStrong,
+                        BorderThickness =
+                            new Thickness(1),
+                        CornerRadius =
+                            new CornerRadius(9),
+                        Padding =
+                            new Thickness(9, 8)
+                    };
+            }
+            else
+            {
+                var open =
+                    new Button
+                    {
+                        Content = primaryContent,
+                        HorizontalContentAlignment =
+                            HorizontalAlignment.Stretch,
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        BorderBrush =
+                            LumineDesign.Border,
+                        BorderThickness =
+                            new Thickness(1),
+                        CornerRadius =
+                            new CornerRadius(9),
+                        Padding =
+                            new Thickness(9, 8),
+                        IsEnabled = canOpen
+                    };
+
+                if (canOpen)
+                {
+                    AttachAsync(
+                        open,
+                        () => openLibrary(library),
+                        reportError);
+                }
+
+                primary = open;
             }
 
             stack.Children.Add(primary);
