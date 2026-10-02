@@ -1,8 +1,8 @@
 # Lumine v2 real-library Core acceptance
 
-Issue #295 is the final Core gate before any v2 AI product work begins.
+Issue #295 established and passed the technical Core foundation gate. This acceptance harness remains the performance/correctness baseline for subsequent Lumine product work under #385/#397.
 
-CI remains necessary, but CI green alone does not close #295. The final run must use a representative image library on a real Windows x64 machine and the published NativeAOT `Lumine.App.exe`.
+CI remains necessary, but product acceptance still requires representative-library evidence on a real Windows x64 machine using the published NativeAOT `Lumine.App.exe`.
 
 ## What the product acceptance mode does
 
@@ -228,7 +228,7 @@ Automation can measure stalls and catch failures, but the #295 completion criter
 - no periodic whole-library stall appears during the browse/idle window
 - no unresolved P0/P1 Core behavior is observed
 
-Do not close #295 from CI or the automated JSON alone.
+Do not close a later product acceptance gate from CI or automated JSON alone.
 
 ## Resource interpretation
 
