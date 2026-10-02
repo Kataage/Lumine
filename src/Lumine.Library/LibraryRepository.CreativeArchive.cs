@@ -1150,9 +1150,4 @@ public sealed partial class LibraryRepository
         }
     }
 
-    private static DateTimeOffset FromTicks(long ticks) =>
-        new(
-            new DateTime(
-                ticks,
-                DateTimeKind.Utc));
 }
