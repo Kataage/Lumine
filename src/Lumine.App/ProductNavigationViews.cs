@@ -158,11 +158,11 @@ internal static class ProductNavigationViews
                     Background =
                         isActive
                             ? LumineDesign.AccentMuted
-                            : Brushes.Transparent,
+                            : LumineDesign.SurfaceRaised,
                     BorderBrush =
                         isActive
                             ? LumineDesign.BorderStrong
-                            : Brushes.Transparent,
+                            : LumineDesign.Border,
                     BorderThickness =
                         new Thickness(1),
                     CornerRadius =
