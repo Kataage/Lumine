@@ -62,9 +62,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     Content = "×",
                     Width = 34,
                     MinHeight = 30,
-                    Padding = new Thickness(0),
-                    ToolTip = "詳細を閉じる"
+                    Padding = new Thickness(0)
                 });
+        ToolTip.SetTip(
+            close,
+            "詳細を閉じる");
         close.Click +=
             async (_, _) =>
                 await _closeRequested();
