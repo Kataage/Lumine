@@ -1395,16 +1395,20 @@ public sealed class ThumbnailViewerControl : UserControl
                         VerticalAlignment.Top,
                     Margin = new Thickness(8),
                     Child =
-                        new TextBlock
+                        new Avalonia.Controls.Shapes.Path
                         {
-                            Text = "✓",
-                            Foreground =
+                            Data =
+                                Geometry.Parse(
+                                    "M5 12.5l4 4L19 6.5"),
+                            Stroke =
                                 new SolidColorBrush(
                                     Color.Parse("#09090B")),
-                            FontSize = 11,
-                            FontWeight = FontWeight.Bold,
-                            TextAlignment =
-                                TextAlignment.Center,
+                            StrokeThickness = 2.2,
+                            Stretch = Stretch.Uniform,
+                            Width = 11,
+                            Height = 11,
+                            HorizontalAlignment =
+                                HorizontalAlignment.Center,
                             VerticalAlignment =
                                 VerticalAlignment.Center
                         }
