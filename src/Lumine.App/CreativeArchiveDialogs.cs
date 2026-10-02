@@ -373,7 +373,7 @@ internal static class CreativeArchiveDialogs
             {
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping =
                     Avalonia.Media.TextWrapping.Wrap
             };
@@ -529,7 +529,7 @@ internal static class CreativeArchiveDialogs
                     LumineDesign.MutedForeground,
                 TextWrapping =
                     Avalonia.Media.TextWrapping.Wrap,
-                FontSize = 10.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         return stack;
     }
@@ -550,7 +550,7 @@ internal static class CreativeArchiveDialogs
         new()
         {
             Foreground = LumineDesign.Warning,
-            FontSize = 10,
+            FontSize = LumineDesign.CaptionFontSize,
             TextWrapping =
                 Avalonia.Media.TextWrapping.Wrap
         };
@@ -568,7 +568,7 @@ internal static class CreativeArchiveDialogs
                             asset.DisplayName)),
             Foreground =
                 LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             TextWrapping =
                 Avalonia.Media.TextWrapping.Wrap
         };
@@ -603,7 +603,7 @@ internal static class CreativeArchiveDialogs
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         stack.Children.Add(control);
         return stack;
