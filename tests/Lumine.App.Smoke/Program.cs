@@ -1697,9 +1697,37 @@ try
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
 
-                    await window.CurrentShell!
+                    window.Width = 900;
+                    window.Height = 600;
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        window.IsCompactNavigationLayout,
+                        "Minimum-width MainWindow did not switch navigation to compact overlay layout.");
+
+                    window.CurrentShell!.GridViewer.SelectAsset(0);
+                    await window.CurrentShell.ShowContextDetailAsync();
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        window.CurrentShell.IsCompactInspectorLayout
+                        && window.CurrentShell.ContextSurfaceBounds.Width <= 400
+                        && window.CurrentShell.GridViewerBounds.Width >= 500,
+                        "Minimum-width workspace did not preserve an image-dominant canvas with overlay inspector.");
+
+                    await window.CurrentShell
                         .OpenFocusedViewAsync(0);
                     Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        Math.Abs(
+                            window.LightboxBounds.Width
+                            - window.ClientSize.Width) < 1
+                        && Math.Abs(
+                            window.LightboxBounds.Height
+                            - window.ClientSize.Height) < 1,
+                        "Focused lightbox did not cover the complete MainWindow client area.");
+
                     Require(
                         window.IsLightboxVisible
                         && !window.IsWorkspaceInteractionEnabled
