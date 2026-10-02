@@ -137,7 +137,8 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (4, 'persist-source-technical-metadata', 4),
             (5, 'user-metadata-and-local-search', 5),
             (6, 'product-navigation-library-state', 6),
-            (7, 'future-schema', 7);
+            (7, 'creative-archive-domain', 7),
+            (8, 'future-schema', 8);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -187,7 +188,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 6, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 7, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -987,7 +988,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 6, "v1 database did not migrate to v6.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 7, "v1 database did not migrate to v7.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
