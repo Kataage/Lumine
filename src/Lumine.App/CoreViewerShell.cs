@@ -66,7 +66,9 @@ internal sealed class CoreViewerShell : UserControl
         _contextSurface =
             new Border
             {
-                Width = 340,
+                Width = 360,
+                MinWidth = 300,
+                MaxWidth = 420,
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
@@ -114,50 +116,25 @@ internal sealed class CoreViewerShell : UserControl
         var focusedLayout =
             new Grid
             {
-                Background =
-                    new SolidColorBrush(
-                        Color.Parse("#09090B"))
+                Background = LumineDesign.Background
             };
         focusedLayout.Children.Add(_detail);
         focusedLayout.Children.Add(
             focusedHeader);
 
-        var focusedDialog =
-            new Border
-            {
-                Background =
-                    new SolidColorBrush(
-                        Color.Parse("#09090B")),
-                BorderBrush =
-                    LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(14),
-                ClipToBounds = true,
-                Child = focusedLayout
-            };
-
         _focusedSurface =
             new Border
             {
-                Background = LumineDesign.ModalScrim,
-                Padding = new Thickness(12),
+                Background = LumineDesign.Background,
+                Padding = new Thickness(0),
                 IsVisible = false,
                 Focusable = true,
-                Child = focusedDialog
+                ClipToBounds = true,
+                Child = focusedLayout
             };
-        _focusedSurface.PointerPressed +=
-            (_, e) =>
-            {
-                if (ReferenceEquals(
-                        e.Source,
-                        _focusedSurface))
-                {
-                    CloseFocusedView();
-                    e.Handled = true;
-                }
-            };
+        _focusedSurface.SetValue(
+            KeyboardNavigation.TabNavigationProperty,
+            KeyboardNavigationMode.Cycle);
         _focusedSurface.KeyDown +=
             (_, e) =>
             {
@@ -186,7 +163,7 @@ internal sealed class CoreViewerShell : UserControl
             new TextBlock
             {
                 Foreground = LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -194,7 +171,7 @@ internal sealed class CoreViewerShell : UserControl
             new TextBlock
             {
                 Foreground = LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -203,6 +180,8 @@ internal sealed class CoreViewerShell : UserControl
 
         _grid.SelectionChanged += OnSelectionChanged;
         _grid.AssetInvoked += OnAssetInvoked;
+        _detail.FullScreenToggleRequested +=
+            OnFullScreenToggleRequested;
         _grid.AssetDetailRequested += OnAssetDetailRequested;
         KeyDown += OnShellKeyDown;
         Focusable = true;
@@ -238,6 +217,46 @@ internal sealed class CoreViewerShell : UserControl
         Grid.SetColumn(_contextSurface, 1);
         browseViewer.Children.Add(
             _contextSurface);
+
+        void ApplyResponsiveBrowseLayout(double width)
+        {
+            var compact =
+                width <= 1080;
+
+            if (compact)
+            {
+                browseViewer.ColumnDefinitions =
+                    new ColumnDefinitions("*");
+                Grid.SetColumn(_contextSurface, 0);
+                _contextSurface.HorizontalAlignment =
+                    HorizontalAlignment.Right;
+                _contextSurface.Width =
+                    Math.Clamp(
+                        width * 0.44,
+                        300,
+                        400);
+            }
+            else
+            {
+                browseViewer.ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto");
+                Grid.SetColumn(_contextSurface, 1);
+                _contextSurface.HorizontalAlignment =
+                    HorizontalAlignment.Stretch;
+                _contextSurface.Width =
+                    Math.Clamp(
+                        width * 0.28,
+                        320,
+                        400);
+            }
+        }
+
+        SizeChanged +=
+            (_, e) =>
+                ApplyResponsiveBrowseLayout(
+                    e.NewSize.Width);
+        ApplyResponsiveBrowseLayout(
+            Math.Max(1100, Bounds.Width));
 
         var browseLayout =
             new Grid
@@ -340,6 +359,18 @@ internal sealed class CoreViewerShell : UserControl
             _focusedSurface.IsVisible = false;
             throw;
         }
+    }
+
+    private void OnFullScreenToggleRequested(
+        object? sender,
+        EventArgs e)
+    {
+        var owner =
+            TopLevel.GetTopLevel(_focusedSurface)
+            as MainWindow
+            ?? TopLevel.GetTopLevel(this)
+                as MainWindow;
+        owner?.ToggleLightboxFullScreen();
     }
 
     internal void CloseFocusedView()
@@ -1368,6 +1399,8 @@ internal sealed class CoreViewerShell : UserControl
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
         _grid.AssetDetailRequested -= OnAssetDetailRequested;
+        _detail.FullScreenToggleRequested -=
+            OnFullScreenToggleRequested;
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation = null;
