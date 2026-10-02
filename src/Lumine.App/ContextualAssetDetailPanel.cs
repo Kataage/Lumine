@@ -108,46 +108,58 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _relations = CreateValue(wrap: true);
         _publications = CreateValue(wrap: true);
 
-        _ratingEditor = new ComboBox
-        {
-            ItemsSource =
-                new[]
+        _ratingEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
                 {
-                    "未設定",
-                    "★1",
-                    "★2",
-                    "★3",
-                    "★4",
-                    "★5"
-                },
-            MinWidth = 118
-        };
-        _favoriteEditor = new CheckBox
-        {
-            Content = "お気に入り"
-        };
-        _statusEditor = new ComboBox
-        {
-            ItemsSource = StatusLabels,
-            MinWidth = 118
-        };
-        _colorEditor = new ComboBox
-        {
-            ItemsSource = ColorLabels,
-            MinWidth = 118
-        };
-        _tagsEditor = new TextBox
-        {
-            PlaceholderText = "タグをカンマ区切りで入力",
-            TextWrapping = TextWrapping.Wrap
-        };
-        _notesEditor = new TextBox
-        {
-            PlaceholderText = "ノート",
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 92
-        };
+                    ItemsSource =
+                        new[]
+                        {
+                            "未設定",
+                            "★1",
+                            "★2",
+                            "★3",
+                            "★4",
+                            "★5"
+                        },
+                    MinWidth = 118
+                });
+        _favoriteEditor =
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "お気に入り"
+                });
+        _statusEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource = StatusLabels,
+                    MinWidth = 118
+                });
+        _colorEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource = ColorLabels,
+                    MinWidth = 118
+                });
+        _tagsEditor =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "タグ",
+                    TextWrapping = TextWrapping.Wrap
+                });
+        _notesEditor =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "ノート",
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    MinHeight = 92
+                });
 
         _saveStatus = new TextBlock
         {
@@ -186,17 +198,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ResetEditor();
 
         var close =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "×",
-                    Width = 34,
-                    MinHeight = 30,
-                    Padding = new Thickness(0)
-                });
-        ToolTip.SetTip(
-            close,
-            "詳細を閉じる");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.CloseIconPath,
+                            16)
+                },
+                "詳細を閉じる");
         close.Click +=
             async (_, _) =>
                 await _closeRequested();
