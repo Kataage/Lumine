@@ -188,7 +188,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 7, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 8, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
