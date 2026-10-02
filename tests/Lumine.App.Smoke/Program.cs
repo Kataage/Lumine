@@ -1027,6 +1027,11 @@ try
                 shellRuntime.Library.Id,
                 navigationAsset.Id,
                 new AssetUserMetadataUpdate(
+                    Rating: 4,
+                    Favorite: true,
+                    Notes: "browse-search-token",
+                    StatusLabel: "reviewed",
+                    ColorLabel: "blue",
                     Tags: ["navigation-smoke"]));
 
             window.Close();
@@ -1059,11 +1064,109 @@ try
             Dispatcher.UIThread.RunJobs();
             await filteredShell.DetachAsync();
 
+            await shellRuntime.ApplyQueryAsync(
+                new AssetQuery(
+                    SearchText: "browse",
+                    RequiredTags: ["navigation-smoke"],
+                    MinRating: 4,
+                    Favorite: true,
+                    StatusLabel: "reviewed",
+                    ColorLabel: "blue"));
+            Require(
+                shellRuntime.AssetCount == 1,
+                "Composed browse search/filter query did not flow through the Viewer runtime.");
+
+            foreach (var sortOrder in new[]
+                     {
+                         AssetSortOrder.ModifiedNewest,
+                         AssetSortOrder.ModifiedOldest,
+                         AssetSortOrder.FileNameAscending,
+                         AssetSortOrder.FileNameDescending
+                     })
+            {
+                await shellRuntime.ApplyQueryAsync(
+                    new AssetQuery(
+                        SortOrder: sortOrder));
+
+                var firstSorted =
+                    await shellRuntime.ViewerSession
+                        .GetAssetAsync(0);
+                var secondSorted =
+                    await shellRuntime.ViewerSession
+                        .GetAssetAsync(1);
+
+                var sortedCorrectly =
+                    sortOrder switch
+                    {
+                        AssetSortOrder.ModifiedNewest =>
+                            firstSorted.ModifiedAtUtcTicks
+                                >= secondSorted.ModifiedAtUtcTicks,
+                        AssetSortOrder.ModifiedOldest =>
+                            firstSorted.ModifiedAtUtcTicks
+                                <= secondSorted.ModifiedAtUtcTicks,
+                        AssetSortOrder.FileNameAscending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.DisplayName,
+                                secondSorted.DisplayName) <= 0,
+                        AssetSortOrder.FileNameDescending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.DisplayName,
+                                secondSorted.DisplayName) >= 0,
+                        _ => false
+                    };
+
+                Require(
+                    sortedCorrectly,
+                    $"Viewer keyset paging did not honor browse sort {sortOrder}.");
+            }
+
+            var browseLayoutShell =
+                new CoreViewerShell(
+                    shellRuntime,
+                    new BrowsePreferences(
+                        BrowseViewMode.List,
+                        2,
+                        AssetSortOrder.FileNameDescending));
+            var browseLayoutWindow =
+                new Avalonia.Controls.Window
+                {
+                    Width = 900,
+                    Height = 620,
+                    Content = browseLayoutShell
+                };
+            browseLayoutWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                browseLayoutShell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.List
+                && browseLayoutShell.GridViewer.DensityLevel == 2
+                && browseLayoutShell.GridViewer.Columns == 1,
+                "List browse mode did not preserve single-column virtualization.");
+
+            browseLayoutShell.SetBrowseLayout(
+                new BrowsePreferences(
+                    BrowseViewMode.Grid,
+                    0,
+                    AssetSortOrder.FileNameDescending));
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                browseLayoutShell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.Grid
+                && browseLayoutShell.GridViewer.DensityLevel == 0
+                && browseLayoutShell.GridViewer.Columns >= 1,
+                "Density/view-mode switch did not reuse the active Viewer session.");
+
+            browseLayoutWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+            await browseLayoutShell.DetachAsync();
+
             await shellRuntime.ApplyQueryAsync(null);
             Require(
                 shellRuntime.AssetCount == 2
                 && shellRuntime.CurrentQuery is null,
-                "CoreViewerRuntime did not clear the navigation query.");
+                "CoreViewerRuntime did not clear the browse query.");
 
             await shellRuntime.DisposeAsync();
             Dispatcher.UIThread.RunJobs();
@@ -1073,7 +1176,7 @@ try
         CancellationToken.None);
 
     Console.WriteLine(
-        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / navigation requery / shutdown OK");
+        "App shell smoke: runtime composition / browse filters / four-way keyset sort / grid-list density / selection / Detail / shutdown OK");
 
     for (var iteration = 0;
          iteration < 3;
