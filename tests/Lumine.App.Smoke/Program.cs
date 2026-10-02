@@ -207,6 +207,24 @@ try
             !lifecycleHost.PreviousShutdownWasUnclean,
             "First lifecycle host incorrectly reported an unclean previous shutdown.");
 
+        var initialBrowse =
+            BrowsePreferenceResolver.Resolve(
+                lifecycleHost.Settings,
+                out var initialBrowseWarning);
+        Require(
+            initialBrowseWarning is null
+            && initialBrowse.ViewMode == BrowseViewMode.Grid
+            && initialBrowse.Density == 1
+            && initialBrowse.SortOrder
+                == AssetSortOrder.ModifiedNewest,
+            "Fresh browse preferences did not resolve to the product defaults.");
+
+        await lifecycleHost.SaveBrowsePreferencesAsync(
+            new BrowsePreferences(
+                BrowseViewMode.List,
+                2,
+                AssetSortOrder.FileNameDescending));
+
         AppHost? unexpectedSecondHost = null;
         try
         {
@@ -237,6 +255,20 @@ try
         Require(
             !cleanRestart.PreviousShutdownWasUnclean,
             "Clean lifecycle restart was reported as unclean.");
+
+        var restoredBrowse =
+            BrowsePreferenceResolver.Resolve(
+                cleanRestart.Settings,
+                out var restoredBrowseWarning);
+        Require(
+            restoredBrowseWarning is null
+            && restoredBrowse.ViewMode
+                == BrowseViewMode.List
+            && restoredBrowse.Density == 2
+            && restoredBrowse.SortOrder
+                == AssetSortOrder.FileNameDescending,
+            "Browse view/density/sort preferences did not persist across restart.");
+
         await cleanRestart.CompleteCleanShutdownAsync();
     }
 
