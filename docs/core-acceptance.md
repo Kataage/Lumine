@@ -56,7 +56,7 @@ The raw result uses the #286 `BenchmarkResult` schema and records hardware/OS/ru
 
 ## Cold + warm wrapper
 
-Use the wrapper so cold and warm runs share the same v2 database and persistent thumbnail cache:
+Use the wrapper so cold and warm runs share the same v2 database. The default `PersistentDisk` policy also shares its persistent thumbnail cache; `MemoryOnly` deliberately does not persist display thumbnails across processes:
 
 ```powershell
 # PowerShell 7
@@ -71,6 +71,7 @@ Defaults:
 - scripted browse: 60 seconds per run
 - idle observation: 10 seconds per run
 - fast-scroll gate: 1,500 ms, matching the existing Viewer acceptance gate
+- thumbnail storage: `PersistentDisk` by default; pass `-ThumbnailStorageMode MemoryOnly` to exercise the v1-style no-persistent-thumbnail policy
 
 The wrapper deletes its isolated acceptance data root and any prior `cold.json`, `warm.json`, and `summary.json` before the cold run. It does not delete or modify image files in the supplied representative library.
 
@@ -84,7 +85,9 @@ It then launches:
 
 1. cold run with a fresh Lumine data/cache root
 2. warm run against the same Lumine data/cache root
-3. only when the first warm run successfully commits additional persistent thumbnails, one additional steady-warm run against the now-populated cache
+3. for `PersistentDisk` only, when the first warm run successfully commits additional persistent thumbnails, one additional steady-warm run against the now-populated cache
+
+For `MemoryOnly`, each process starts without display-thumbnail persistence by design. The wrapper therefore does not manufacture a cross-process steady-warm convergence requirement. Instead it requires zero persistent thumbnail files/bytes, bounded encoded-thumbnail memory, and otherwise runs the same real Viewer interaction sequence and correctness gates.
 
 After each process exits, the wrapper requires:
 
@@ -121,7 +124,8 @@ Across the results it requires:
 - filesystem reconcile failures = 0
 - persistent thumbnail cache bytes <= the effective configured disk-cache limit
 - max scripted fast-scroll refresh <= configured gate
-- final warm persistent thumbnail cache hits > 0
+- for `PersistentDisk`, final warm persistent thumbnail cache hits > 0
+- for `MemoryOnly`, persistent thumbnail file/byte counts remain zero before and after shutdown, and encoded-thumbnail memory stays within its configured bound
 - every thumbnail source-open attempt is accounted as exactly one successful generation, post-open cancellation, or failure
 - cache misses may exceed source opens because cancellation can occur after a miss is claimed but before source generation starts
 - persistent cache file growth must match successful generations after accounting for maintenance deletions
@@ -130,6 +134,42 @@ Across the results it requires:
 - the Cold <= 1,500 ms fast-scroll gate is checked before an optional steady-warm run because later cache convergence cannot repair a Cold responsiveness failure
 
 A warm filesystem bootstrap other than `UsnDelta` is reported as a warning rather than silently treated as equivalent. A reconcile fallback can be legitimate when USN replay is unavailable, but it must be reviewed for the actual target volume.
+
+## Thumbnail storage policy comparison (#388)
+
+Use the shipped comparison runner when deciding between the current persistent-display-thumbnail behavior and the v1-style memory-only philosophy:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\build\Compare-ThumbnailStoragePolicies.ps1 `
+  -Exe ".\artifacts\native-aot\Lumine.App.exe" `
+  -Library "D:\path\to\representative-library" `
+  -OutputDirectory "D:\Lumine-thumbnail-policy-comparison"
+```
+
+The runner executes two isolated acceptance sequences against the same executable, hardware and representative source library:
+
+1. `PersistentDisk`
+2. `MemoryOnly`
+
+It writes `comparison.json` and keeps the full raw results beneath `persistent-disk\` and `memory-only\`. The comparison records:
+
+- first viewport latency
+- every scripted fast-scroll latency
+- the direction-reversal tail
+- whether each run meets the normal 1,500 ms target
+- measured process CPU time across the acceptance measurements
+- peak working set
+- thumbnail source opens and post-open cancellations
+- generated/hit counts
+- encoded-memory usage
+- persistent thumbnail files/bytes
+- metadata hash bytes
+
+The comparison runner uses a permissive collection ceiling (30,000 ms by default) so a slower policy can still finish and produce evidence. `TargetMaxFastScrollMs` remains 1,500 ms by default and is reported independently as the product-performance target. The comparison run is evidence collection; the chosen policy must still pass the normal acceptance wrapper at its real gate before #295 can close.
+
+`PersistentDisk` Warm and `MemoryOnly` Warm do not mean the same cache state. PersistentDisk measures cross-process display-thumbnail reuse. MemoryOnly intentionally begins each process without persisted display thumbnails and measures a fresh bounded in-process memory-cache lifecycle on a warm library database. The runner records this distinction rather than treating the two semantics as equivalent.
+
+Image Core smoke also requires the two storage policies to produce byte-identical WebP output for the same source/profile. Therefore storage-policy comparison does not trade image quality for cache behavior.
 
 ## Native crash diagnostics
 
