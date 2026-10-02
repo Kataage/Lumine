@@ -1,8 +1,17 @@
 # Lumine Image Core
 
-Issue #288 establishes the persistent thumbnail pipeline used by the normal high-volume viewer.
+Issue #288 established the v2 thumbnail pipeline. #388 and ADR 0001 restore Lumine's v1 product philosophy by making bounded `MemoryOnly` display-thumbnail storage the product default while retaining `PersistentDisk` as an explicit opt-in acceleration mode.
 
-## Cache contract
+## Storage policy
+
+- `MemoryOnly` (default): generated WebP display thumbnails live only in a bounded encoded-memory LRU and are passed directly to Viewer decoding. Ordinary browsing writes no display-thumbnail files.
+- `PersistentDisk` (opt-in): the same WebP bytes are committed to the bounded persistent cache and can be reused across processes.
+
+Both modes use the same generator, profiles, source-identity rules, priority/cancellation pipeline and Viewer decoded-bitmap bounds. CI proves byte-identical WebP output for the same source/profile.
+
+See `docs/adr/0001-thumbnail-storage-policy.md` for representative physical evidence and the product decision.
+
+## Cache/key contract
 
 The thumbnail key is independent of the original absolute path. It is derived from:
 
@@ -13,11 +22,11 @@ The thumbnail key is independent of the original absolute path. It is derived fr
 - persisted source identity
 - thumbnail profile id/version/dimensions/quality and linear-light processing mode
 
-A valid cache hit with persisted technical metadata opens only the cached WebP file. It does not stat, hash, open or decode the original. The original path is needed only for a first metadata derivation, cache miss or corrupt-cache recovery.
+A valid storage hit with persisted technical metadata does not reopen or hash the original. In `PersistentDisk`, the encoded WebP comes from the cache file. In `MemoryOnly`, it comes from the bounded in-process encoded cache. The original path is needed only for a first metadata derivation, storage miss or corrupt-cache recovery.
 
 Issue #308 moved the source-identity cache-key contract to generator version 3. #383 advances the generator to version 4 and binds the profile's linear-light mode into the key, preventing pre-optimization grid outputs from aliasing the new shrink-on-load policy. The first cold/miss path opens a stable source snapshot and derives a source identity before capturing raw/oriented dimensions, alpha and actual loader format. On Windows/NTFS the primary identity combines the file's current USN from `FSCTL_READ_FILE_USN_DATA` with `FILE_BASIC_INFO.ChangeTime`. If per-file USN data is unavailable, #375 adds a second Windows fast path using `FILE_ID_INFO` plus the same-handle file size, LastWriteTime and ChangeTime. This avoids streaming multi-GB originals through SHA-256 on Windows volumes/providers that support stable file IDs but not per-file USN reads. Only when both Windows handle identities are unavailable does Image Core fall back to a full SHA-256. App composition persists the identity and metadata against the exact Library asset id/source_revision/file stat. Subsequent warm hits reuse the DB metadata and content-bound key without touching the source. While a Viewer page still holds a pre-enrichment DTO, Image Core also keeps a bounded 4,096-entry in-process metadata LRU keyed by asset/source_revision/stat.
 
-Old revisions and pre-#308 cache keys remain harmless orphaned cache entries until bounded pruning removes them.
+Old revisions and pre-#308 persistent cache keys remain harmless disposable data. Under the MemoryOnly product default, an existing v2 persistent-thumbnail directory is retired before Viewer startup and removed best-effort; PersistentDisk opt-in continues bounded pruning.
 
 ## Profiles
 
@@ -62,7 +71,7 @@ Palette BMP, RLE, 16-bit BMP, OS/2/unknown DIB header sizes, non-contiguous/over
 
 BMP detection is by the actual `BM` file signature, not by extension. The same stable source snapshot and source identity used by the normal Image Core path are retained while the BMP header and pixels are read.
 
-Thumbnail generation does not materialize the original BMP as a full RGBA frame. It reads only the source rows needed for the bounded target size, performs bounded bilinear resampling into the requested thumbnail dimensions, then persists the normal WebP cache entry. Full-resolution Detail decode emits top-to-bottom RGBA stripes directly from the BMP source under the existing decoded-byte budget.
+Thumbnail generation does not materialize the original BMP as a full RGBA frame. It reads only the source rows needed for the bounded target size, performs bounded bilinear resampling into the requested thumbnail dimensions, then emits the normal WebP thumbnail payload. MemoryOnly retains it in bounded memory; PersistentDisk may commit the identical bytes to disk. Full-resolution Detail decode emits top-to-bottom RGBA stripes directly from the BMP source under the existing decoded-byte budget.
 
 CI covers 24-bit bottom-up, 24-bit top-down, 32-bit `BI_RGB`, 32-bit BITFIELDS alpha, extension mismatch, unsupported bit depth, thumbnail generation, full-resolution pixel ordering and NativeAOT execution. A dedicated high-entropy 4096x3072 BMP benchmark records thumbnail/full-resolution latency, working set, managed allocation, cache size and whether the bundled libvips runtime has a native BMP loader.
 
