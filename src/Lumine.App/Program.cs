@@ -18,6 +18,10 @@ internal static class Program
         Host?.ResourcePolicy
         ?? CoreResourcePolicy.Default;
 
+    internal static ThumbnailStorageMode ThumbnailStorageMode =>
+        Host?.ThumbnailStorageMode
+        ?? ThumbnailStorageMode.MemoryOnly;
+
     internal static DiagnosticsSession Diagnostics { get; } =
         DiagnosticsSession.Start();
 
