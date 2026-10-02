@@ -175,6 +175,78 @@ try
         && functionalRecovery == "pass",
         "Core acceptance isolated filesystem/search scenario did not complete.");
 
+    var originalDataDir =
+        Environment.GetEnvironmentVariable(
+            "LUMINE_DATA_DIR");
+    var originalPortable =
+        Environment.GetEnvironmentVariable(
+            "LUMINE_PORTABLE");
+    try
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_DATA_DIR",
+            null);
+        Environment.SetEnvironmentVariable(
+            "LUMINE_PORTABLE",
+            null);
+
+        var explicitPortable =
+            AppDataPaths.Resolve(
+                ["--portable"]);
+        Require(
+            explicitPortable.IsPortable
+            && explicitPortable.LocationKind
+                == AppDataLocationKind.Portable
+            && Path.GetFileName(
+                explicitPortable.RootPath)
+                == "data"
+            && Path.GetDirectoryName(
+                explicitPortable.SettingsPath)
+                == explicitPortable.RootPath
+            && Path.GetDirectoryName(
+                explicitPortable.DatabasePath)
+                == explicitPortable.RootPath,
+            "--portable did not resolve to a self-contained executable-local data root.");
+
+        Environment.SetEnvironmentVariable(
+            "LUMINE_PORTABLE",
+            "1");
+        var environmentPortable =
+            AppDataPaths.Resolve(
+                Array.Empty<string>());
+        Require(
+            environmentPortable.IsPortable
+            && environmentPortable.RootPath
+                == explicitPortable.RootPath,
+            "LUMINE_PORTABLE=1 did not resolve the portable data root.");
+
+        var customRoot =
+            Path.Combine(
+                root,
+                "custom-data-location");
+        Environment.SetEnvironmentVariable(
+            "LUMINE_DATA_DIR",
+            customRoot);
+        var custom =
+            AppDataPaths.Resolve(
+                Array.Empty<string>());
+        Require(
+            custom.LocationKind
+                == AppDataLocationKind.Custom
+            && custom.RootPath
+                == Path.GetFullPath(customRoot),
+            "LUMINE_DATA_DIR did not retain explicit custom data-location precedence.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_DATA_DIR",
+            originalDataDir);
+        Environment.SetEnvironmentVariable(
+            "LUMINE_PORTABLE",
+            originalPortable);
+    }
+
     var lifecyclePaths =
         AppDataPaths.FromRoot(
             Path.Combine(root, "lifecycle-host"));
@@ -225,6 +297,14 @@ try
                 2,
                 AssetSortOrder.FileNameDescending));
 
+        await lifecycleHost.SaveSettingsAsync(
+            (lifecycleHost.Settings.ResourcePolicy
+                ?? new ResourcePolicySettings()) with
+            {
+                EncodedThumbnailMemoryByteLimit =
+                    512L * 1024 * 1024
+            });
+
         AppHost? unexpectedSecondHost = null;
         try
         {
@@ -268,6 +348,12 @@ try
             && restoredBrowse.SortOrder
                 == AssetSortOrder.FileNameDescending,
             "Browse view/density/sort preferences did not persist across restart.");
+
+        Require(
+            cleanRestart.ResourcePolicy
+                .EncodedThumbnailMemoryByteLimit
+                == 512L * 1024 * 1024,
+            "User-facing encoded thumbnail memory budget did not persist across restart.");
 
         await cleanRestart.CompleteCleanShutdownAsync();
     }
@@ -1425,6 +1511,12 @@ try
         var repeatedPaths =
             AppDataPaths.FromRoot(
                 repeatedDataRoot);
+        var repeatedEmptyLibraryRoot =
+            Path.Combine(
+                root,
+                $"repeated-empty-library-{iteration}");
+        Directory.CreateDirectory(
+            repeatedEmptyLibraryRoot);
 
         if (iteration == 0)
         {
@@ -1439,7 +1531,9 @@ try
                         {
                             ThumbnailQueueCapacity = 19,
                             ThumbnailCacheByteLimit =
-                                128L * 1024 * 1024
+                                128L * 1024 * 1024,
+                            EncodedThumbnailMemoryByteLimit =
+                                512L * 1024 * 1024
                         }
                 });
         }
@@ -1513,6 +1607,129 @@ try
                         window.CurrentRuntime is not null
                         && window.CurrentShell is not null,
                         "MainWindow did not compose the production Core Viewer runtime/shell.");
+
+                    window.NavigateForSmoke(
+                        "設定");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.NavigationContentForSmoke
+                            is ScrollViewer
+                        && window.SettingsSnapshot.DataPaths.RootPath
+                            == repeatedPaths.RootPath
+                        && window.SettingsSnapshot.PersistedThumbnailStorageMode
+                            == ThumbnailStorageMode.MemoryOnly
+                        && window.SettingsSnapshot.EncodedThumbnailMemoryByteLimit
+                            == (iteration == 0
+                                ? 512L * 1024 * 1024
+                                : appHost.ResourcePolicy
+                                    .EncodedThumbnailMemoryByteLimit),
+                        "Product Settings did not expose viewer/cache/storage state without diagnostics.");
+
+                    await window.ApplyBrowseFilterForSmokeAsync(
+                        new BrowseFilterState(
+                            SearchText:
+                                "__lumine_no_match_smoke__"));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "NoMatch",
+                            StringComparison.Ordinal)
+                        && window.CurrentRuntime is not null
+                        && window.CurrentShell is null,
+                        "Filtered zero-result workspace did not transition to the distinct NoMatch product state.");
+
+                    await window.ApplyBrowseFilterForSmokeAsync(
+                        new BrowseFilterState(
+                            SortOrder:
+                                window.SettingsSnapshot
+                                    .ViewerDefaults
+                                    .SortOrder));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "Workspace",
+                            StringComparison.Ordinal)
+                        && window.CurrentShell is not null,
+                        "Clearing the no-match filter did not restore the Workspace state.");
+
+                    await window.OpenLibraryAsync(
+                        repeatedEmptyLibraryRoot);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "EmptyLibrary",
+                            StringComparison.Ordinal)
+                        && window.CurrentRuntime is not null
+                        && window.CurrentShell is null,
+                        "Truly empty library did not use the EmptyLibrary product state.");
+
+                    await window.OpenLibraryAsync(
+                        repeatedLibraryRoot);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "Workspace",
+                            StringComparison.Ordinal)
+                        && window.CurrentShell is not null,
+                        "Reopening a populated library after EmptyLibrary did not restore Workspace.");
+
+                    var cacheSafetyAsset =
+                        await window.CurrentRuntime!
+                            .ViewerSession
+                            .GetAssetAsync(0);
+                    await window.CurrentRuntime
+                        .LibraryService
+                        .SetUserMetadataAsync(
+                            window.CurrentRuntime.Library.Id,
+                            cacheSafetyAsset.Id,
+                            new AssetUserMetadataUpdate(
+                                Notes:
+                                    "cache-prune-safety",
+                                Tags:
+                                    ["cache-prune-safety"]));
+                    var disposableCacheDirectory =
+                        Path.Combine(
+                            repeatedPaths.ThumbnailCachePath,
+                            "aa",
+                            "bb");
+                    Directory.CreateDirectory(
+                        disposableCacheDirectory);
+                    var disposableCacheFile =
+                        Path.Combine(
+                            disposableCacheDirectory,
+                            "settings-smoke.webp");
+                    await File.WriteAllBytesAsync(
+                        disposableCacheFile,
+                        [1, 2, 3, 4]);
+
+                    var cachePrune =
+                        await window.PruneThumbnailCacheForSmokeAsync();
+                    var metadataAfterCachePrune =
+                        await window.CurrentRuntime
+                            .LibraryService
+                            .GetUserMetadataAsync(
+                                window.CurrentRuntime.Library.Id,
+                                cacheSafetyAsset.Id);
+                    Require(
+                        cachePrune.FilesDeleted >= 1
+                        && !File.Exists(
+                            disposableCacheFile)
+                        && File.Exists(
+                            Path.Combine(
+                                repeatedLibraryRoot,
+                                "first.bmp"))
+                        && File.Exists(
+                            repeatedPaths.DatabasePath)
+                        && metadataAfterCachePrune is not null
+                        && metadataAfterCachePrune.Notes
+                            == "cache-prune-safety"
+                        && metadataAfterCachePrune.Tags.Contains(
+                            "cache-prune-safety"),
+                        "Display-cache deletion touched an original image or user-owned metadata.");
 
                     if (iteration == 0)
                     {
@@ -1615,6 +1832,9 @@ try
         }
         Directory.Delete(
             repeatedDataRoot,
+            recursive: true);
+        Directory.Delete(
+            repeatedEmptyLibraryRoot,
             recursive: true);
     }
 
