@@ -119,8 +119,8 @@ internal sealed class AppHost : IAsyncDisposable
                         settings.ResourcePolicy);
             }
 
-            var thumbnailStorageMode =
-                ThumbnailStoragePreference.Resolve(
+            var persistedThumbnailStorageMode =
+                ThumbnailStoragePreference.ResolvePersisted(
                     settings,
                     out var thumbnailWarning);
             if (!string.IsNullOrWhiteSpace(
@@ -135,8 +135,12 @@ internal sealed class AppHost : IAsyncDisposable
             {
                 ThumbnailStorageMode =
                     ThumbnailStoragePreference.Serialize(
-                        thumbnailStorageMode)
+                        persistedThumbnailStorageMode)
             };
+
+            var thumbnailStorageMode =
+                ThumbnailStoragePreference.ResolveEffective(
+                    persistedThumbnailStorageMode);
 
             var retiredThumbnailCleanup =
                 thumbnailStorageMode
