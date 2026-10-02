@@ -1107,7 +1107,7 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             LumineDesign.CreateProductState(
                 "表示を更新しています",
-                "検索・並び順・フィルターを反映しています。");
+                string.Empty);
 
         try
         {
@@ -1436,7 +1436,7 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             LumineDesign.CreateProductState(
                 "ライブラリを開いています",
-                "画像を確認し、表示の準備をしています。");
+                string.Empty);
 
         var progress =
             new Progress<CoreViewerOpenProgress>(
@@ -1817,8 +1817,8 @@ public sealed class MainWindow : Window
         add.Click += OnOpenFolderClicked;
 
         return LumineDesign.CreateProductState(
-            "ライブラリに画像がありません",
-            "このライブラリには、Lumineで管理できる画像がまだありません。元フォルダーへ画像を追加するか、別の画像フォルダーを追加してください。",
+            "画像がありません",
+            string.Empty,
             add);
     }
 
@@ -1844,7 +1844,7 @@ public sealed class MainWindow : Window
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            "検索語・フォルダー・タグ・評価・お気に入り・状態・カラーの条件に一致する画像がありません。",
+            string.Empty,
             clear);
     }
 
@@ -1861,8 +1861,8 @@ public sealed class MainWindow : Window
 
         var description =
             recovered
-                ? "前回の終了状態から復旧しました。画像そのものには変更を加えず、ライブラリを開くまで待機しています。"
-                : "最初に画像フォルダーを追加してください。画像そのものをコピーせず、通常閲覧では表示用サムネイルもディスクへ保存しません。";
+                ? "前回の状態から復旧しました。"
+                : string.Empty;
 
         return LumineDesign.CreateProductState(
             "Lumine",
