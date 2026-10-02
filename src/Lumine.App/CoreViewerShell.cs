@@ -889,6 +889,7 @@ internal sealed class CoreViewerShell : UserControl
                         .ToArray()));
         _bulkStatus.Text =
             $"Work「{created.Title}」を作成しました。";
+        await RefreshContextAfterCreativeMutationAsync();
         return created;
     }
 
@@ -927,6 +928,7 @@ internal sealed class CoreViewerShell : UserControl
                         Notes: input.Notes));
         _bulkStatus.Text =
             $"Generation Group「{created.Name}」を作成しました。";
+        await RefreshContextAfterCreativeMutationAsync();
         return created;
     }
 
@@ -964,6 +966,7 @@ internal sealed class CoreViewerShell : UserControl
                         input.Note));
         _bulkStatus.Text =
             $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
+        await RefreshContextAfterCreativeMutationAsync();
         return created;
     }
 
@@ -1000,9 +1003,22 @@ internal sealed class CoreViewerShell : UserControl
                             input.PlatformMetadataJson));
         _bulkStatus.Text =
             $"Publicationを{created.Destination}の履歴へ保存しました。";
+        await RefreshContextAfterCreativeMutationAsync();
         _entryRequested?.Invoke(
             "publication");
         return created;
+    }
+
+    private async Task RefreshContextAfterCreativeMutationAsync()
+    {
+        if (!_contextSurface.IsVisible
+            || _grid.SelectedAssetIndex < 0)
+        {
+            return;
+        }
+
+        await LoadContextDetailAsync(
+            _grid.SelectedAssetIndex);
     }
 
     private async Task ShowCreateWorkDialogAsync()
