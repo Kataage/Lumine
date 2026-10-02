@@ -322,7 +322,7 @@ internal sealed class CoreViewerShell : UserControl
         {
             var image =
                 _detail.GetVisualDescendants()
-                    .OfType<Image>()
+                    .OfType<Avalonia.Controls.Image>()
                     .FirstOrDefault()
                 ?? throw new InvalidOperationException(
                     "Focused viewer image visual is unavailable.");
