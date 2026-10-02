@@ -69,12 +69,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _preferencesChanged = preferencesChanged
             ?? throw new ArgumentNullException(nameof(preferencesChanged));
 
-        _search = new TextBox
-        {
-            PlaceholderText = "検索",
-            MinWidth = 260,
-            Text = State.SearchText
-        };
+        _search =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "検索",
+                    MinWidth = 260,
+                    Text = State.SearchText
+                });
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
@@ -87,38 +89,49 @@ internal sealed class BrowseWorkspaceControls : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        _sort = new ComboBox
-        {
-            MinWidth = 150,
-            ItemsSource = BrowseSortChoice.All
-        };
+        _sort =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = BrowseSortChoice.All
+                });
 
-        _rating = new ComboBox
-        {
-            MinWidth = 112,
-            ItemsSource = RatingChoice.All
-        };
+        _rating =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 112,
+                    ItemsSource = RatingChoice.All
+                });
 
-        _status = new ComboBox
-        {
-            MinWidth = 122
-        };
+        _status =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 122
+                });
 
-        _tag = new ComboBox
-        {
-            MinWidth = 122
-        };
+        _tag =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 122
+                });
 
-        _favorite = new CheckBox
-        {
-            Content = "お気に入り",
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        _favorite =
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "お気に入り"
+                });
 
-        _color = new ComboBox
-        {
-            MinWidth = 112
-        };
+        _color =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 112
+                });
 
         _grid = LumineDesign.ConfigureIconButton(
             new Button
@@ -234,7 +247,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
                     new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(10, 7),
+                Padding = new Thickness(10, 6),
                 Child = root
             };
 
