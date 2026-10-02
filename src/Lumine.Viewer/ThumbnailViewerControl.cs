@@ -210,6 +210,13 @@ public sealed class ThumbnailViewerControl : UserControl
         return tile?.Focus() == true;
     }
 
+
+    public Control? GetAssetFocusTarget(long index) =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .FirstOrDefault(
+                item => item.Index == index);
+
     public bool IsAssetFocused(long index) =>
         this.GetVisualDescendants()
             .OfType<ViewerTileControl>()
