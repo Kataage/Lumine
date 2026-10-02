@@ -797,7 +797,8 @@ internal static class Program
         var windowPoint = firstTile.TranslatePoint(tileCenter, window)
             ?? throw new InvalidOperationException("Unable to map thumbnail tile to window coordinates.");
 
-        ViewerAssetContextRequestedEventArgs? contextRequest = null;
+        ThumbnailViewerControl.ViewerAssetContextRequestedEventArgs?
+            contextRequest = null;
         viewer.AssetContextRequested +=
             (_, request) =>
                 contextRequest = request;
