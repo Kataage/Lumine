@@ -200,19 +200,23 @@ public sealed class ThumbnailViewerControl : UserControl
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
 
-    internal Control? GetRealizedAssetFocusTarget(
-        long index) =>
-        this.GetVisualDescendants()
-            .OfType<ViewerTileControl>()
-            .FirstOrDefault(
-                tile => tile.Index == index);
+    public bool FocusAsset(long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index);
+        return tile?.Focus() == true;
+    }
 
-    internal long? FocusedRealizedAssetIndex =>
+    public bool IsAssetFocused(long index) =>
         this.GetVisualDescendants()
             .OfType<ViewerTileControl>()
-            .FirstOrDefault(
-                static tile => tile.IsFocused)
-            ?.Index;
+            .Any(
+                tile =>
+                    tile.Index == index
+                    && tile.IsFocused);
 
 
     internal IReadOnlyList<ViewerTileActionGeometry>
