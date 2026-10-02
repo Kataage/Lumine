@@ -40,6 +40,7 @@ public sealed partial class LibraryRepository
             ON CONFLICT(root_path_key) DO UPDATE SET
                 name = excluded.name,
                 root_path = excluded.root_path,
+                is_enabled = 1,
                 updated_at_utc_ticks = excluded.updated_at_utc_ticks
             RETURNING
                 id, name, root_path,
