@@ -126,7 +126,7 @@ public sealed class ViewerOptions
 {
     public double TileWidth { get; init; } = 184;
 
-    public double TileHeight { get; init; } = 216;
+    public double TileHeight { get; init; } = 184;
 
     public double TileSpacing { get; init; } = 8;
 
