@@ -396,6 +396,160 @@ public sealed partial class LibraryRepository
             CultureInfo.InvariantCulture);
     }
 
+    public async Task<IReadOnlyList<long>> GetOrderedAssetIdsAsync(
+        long libraryId,
+        AssetQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentNullException.ThrowIfNull(query);
+        ValidateQuery(query);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            await RefreshDirtySearchIndexAsync(
+                connection,
+                libraryId,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        var where =
+            BuildQueryPredicate(
+                command,
+                libraryId,
+                query,
+                cursor: null);
+        var orderBy =
+            GetOrderBy(query.SortOrder);
+
+        command.CommandText =
+            $"""
+            SELECT a.id
+            FROM assets AS a
+            LEFT JOIN asset_user_metadata AS um
+              ON um.asset_id = a.id
+            WHERE {where}
+            ORDER BY {orderBy};
+            """;
+
+        var ids = new List<long>();
+        await using var reader =
+            await command.ExecuteReaderAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(
+                   cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            ids.Add(reader.GetInt64(0));
+        }
+
+        return ids;
+    }
+
+    public async Task<IReadOnlyList<AssetInfo>> GetAssetsByIdsAsync(
+        long libraryId,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentNullException.ThrowIfNull(assetIds);
+
+        if (assetIds.Count == 0)
+        {
+            return Array.Empty<AssetInfo>();
+        }
+
+        if (assetIds.Count > 1000)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(assetIds),
+                "Asset page may not exceed 1,000 IDs.");
+        }
+
+        await using var connection =
+            await _database.OpenConnectionAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+
+        var parameters =
+            new string[assetIds.Count];
+        for (var index = 0; index < assetIds.Count; index++)
+        {
+            var name = $"$asset_id_{index}";
+            parameters[index] = name;
+            command.Parameters.AddWithValue(
+                name,
+                assetIds[index]);
+        }
+
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        command.CommandText =
+            $"""
+            SELECT
+                a.id, a.library_id, a.folder_id,
+                a.relative_path, a.file_name, a.extension,
+                a.file_size, a.modified_at_utc_ticks,
+                a.source_revision,
+                a.width, a.height, a.format,
+                tm.source_identity,
+                tm.raw_width, tm.raw_height, tm.has_alpha,
+                a.created_at_utc_ticks,
+                um.rating,
+                COALESCE(um.favorite, 0),
+                um.status_label,
+                um.color_label
+            FROM assets AS a
+            LEFT JOIN asset_technical_metadata AS tm
+              ON tm.asset_id = a.id
+             AND tm.source_revision = a.source_revision
+            LEFT JOIN asset_user_metadata AS um
+              ON um.asset_id = a.id
+            WHERE a.library_id = $library_id
+              AND a.id IN (${string.Join(", ", parameters)});
+            """;
+
+        var byId =
+            new Dictionary<long, AssetInfo>(
+                assetIds.Count);
+        await using var reader =
+            await command.ExecuteReaderAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(
+                   cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            var asset = ReadBrowseAsset(reader);
+            byId[asset.Id] = asset;
+        }
+
+        var ordered =
+            new List<AssetInfo>(assetIds.Count);
+        foreach (var id in assetIds)
+        {
+            if (!byId.TryGetValue(id, out var asset))
+            {
+                throw new InvalidOperationException(
+                    $"Browse snapshot asset {id} disappeared while paging.");
+            }
+
+            ordered.Add(asset);
+        }
+
+        return ordered;
+    }
+
     public async Task<AssetQueryPage> GetAssetPageAsync(
         long libraryId,
         AssetQuery query,
