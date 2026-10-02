@@ -130,12 +130,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         };
         _tagsEditor = new TextBox
         {
-            Watermark = "タグをカンマ区切りで入力",
+            PlaceholderText = "タグをカンマ区切りで入力",
             TextWrapping = TextWrapping.Wrap
         };
         _notesEditor = new TextBox
         {
-            Watermark = "ノート",
+            PlaceholderText = "ノート",
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 92
