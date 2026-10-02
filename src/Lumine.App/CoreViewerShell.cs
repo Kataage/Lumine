@@ -922,8 +922,8 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        var assets =
-            await ResolveSelectedAssetsAsync(
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync(
                 cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -931,9 +931,7 @@ internal sealed class CoreViewerShell : UserControl
             await _runtime.LibraryService
                 .GetUserMetadataSelectionSummaryAsync(
                     _runtime.Library.Id,
-                    assets.Select(
-                            static asset => asset.Id)
-                        .ToArray(),
+                    assetIds,
                     cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1008,12 +1006,19 @@ internal sealed class CoreViewerShell : UserControl
         return assets;
     }
 
+    private ValueTask<IReadOnlyList<long>>
+        ResolveSelectedAssetIdsAsync(
+            CancellationToken cancellationToken = default) =>
+        _runtime.ViewerSession.GetAssetIdsAsync(
+            _grid.SelectedAssetIndices,
+            cancellationToken);
+
     private async Task ApplyPatchAsync(
         AssetUserMetadataPatch patch)
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync();
+        if (assetIds.Count == 0)
         {
             return;
         }
@@ -1024,9 +1029,7 @@ internal sealed class CoreViewerShell : UserControl
         var updated =
             await _runtime.LibraryService.PatchUserMetadataAsync(
                 _runtime.Library.Id,
-                assets.Select(
-                        static asset => asset.Id)
-                    .ToArray(),
+                assetIds,
                 patch);
 
         _bulkStatus.Text =
@@ -1042,9 +1045,9 @@ internal sealed class CoreViewerShell : UserControl
         CreativeWorkDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync();
+        if (assetIds.Count == 0)
         {
             return null;
         }
@@ -1055,9 +1058,7 @@ internal sealed class CoreViewerShell : UserControl
                 new WorkCreate(
                     input.Title,
                     input.Description,
-                    assets.Select(
-                            static asset => asset.Id)
-                        .ToArray()));
+                    assetIds));
         _bulkStatus.Text =
             $"Work「{created.Title}」を作成しました。";
         await RefreshContextAfterCreativeMutationAsync();
@@ -1069,9 +1070,9 @@ internal sealed class CoreViewerShell : UserControl
             CreativeGroupDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync();
+        if (assetIds.Count == 0)
         {
             return null;
         }
@@ -1082,9 +1083,7 @@ internal sealed class CoreViewerShell : UserControl
                     _runtime.Library.Id,
                     new GenerationGroupCreate(
                         input.Name,
-                        assets.Select(
-                                static asset => asset.Id)
-                            .ToArray(),
+                        assetIds,
                         WorkId: input.WorkId,
                         Prompt: input.Prompt,
                         NegativePrompt:
@@ -1146,9 +1145,9 @@ internal sealed class CoreViewerShell : UserControl
             CreativePublicationDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync();
+        if (assetIds.Count == 0)
         {
             return null;
         }
@@ -1158,9 +1157,7 @@ internal sealed class CoreViewerShell : UserControl
                 .CreatePublicationAsync(
                     _runtime.Library.Id,
                     new PublicationCreate(
-                        assets.Select(
-                                static asset => asset.Id)
-                            .ToArray(),
+                        assetIds,
                         input.Destination,
                         input.PublishedAtUtc,
                         WorkId: input.WorkId,
@@ -1462,6 +1459,13 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        if (e.Key == Key.F)
+        {
+            e.Handled = true;
+            await ToggleFavoriteAsync();
+            return;
+        }
+
         AssetUserMetadataPatch? patch =
             e.Key switch
             {
@@ -1489,10 +1493,6 @@ internal sealed class CoreViewerShell : UserControl
                     new AssetUserMetadataPatch(
                         SetRating: true,
                         Rating: 5),
-                Key.F =>
-                    new AssetUserMetadataPatch(
-                        SetFavorite: true,
-                        Favorite: true),
                 _ => null
             };
 
@@ -1508,6 +1508,34 @@ internal sealed class CoreViewerShell : UserControl
             e.Handled = true;
             await DeleteSelectedSourcesAsync();
         }
+    }
+
+    private async Task ToggleFavoriteAsync()
+    {
+        var primaryIndex =
+            _grid.SelectedAssetIndex;
+        if (primaryIndex < 0)
+        {
+            return;
+        }
+
+        var asset =
+            await _runtime.ViewerSession.GetAssetAsync(
+                primaryIndex);
+        var metadata =
+            await _runtime.LibraryService
+                .GetUserMetadataAsync(
+                    _runtime.Library.Id,
+                    asset.Id);
+
+        var current =
+            metadata?.Favorite
+            ?? asset.Favorite;
+
+        await ApplyPatchAsync(
+            new AssetUserMetadataPatch(
+                SetFavorite: true,
+                Favorite: !current));
     }
 
     public void SetBrowseLayout(
