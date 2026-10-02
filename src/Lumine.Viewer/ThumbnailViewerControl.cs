@@ -1503,44 +1503,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private sealed class TileCaptionOverlay : Control
     {
         private static readonly IBrush CaptionGradient =
-            new LinearGradientBrush
-            {
-                StartPoint =
-                    new RelativePoint(
-                        0,
-                        0,
-                        RelativeUnit.Relative),
-                EndPoint =
-                    new RelativePoint(
-                        0,
-                        1,
-                        RelativeUnit.Relative),
-                GradientStops =
-                [
-                    new GradientStop(
-                        Color.FromArgb(
-                            0,
-                            0,
-                            0,
-                            0),
-                        0),
-                    new GradientStop(
-                        Color.FromArgb(
-                            70,
-                            0,
-                            0,
-                            0),
-                        0.35),
-                    new GradientStop(
-                        Color.FromArgb(
-                            220,
-                            0,
-                            0,
-                            0),
-                        1)
-                ]
-            };
-
+            ViewerVisualTokens.CaptionGradient;
         private static readonly IBrush MutedText =
             ViewerVisualTokens.MutedForeground;
         private static readonly IBrush BadgeBackground =
