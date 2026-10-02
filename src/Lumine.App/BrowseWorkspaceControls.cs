@@ -773,7 +773,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                         MinHeight = 26,
                         Padding =
                             new Thickness(8, 3),
-                        FontSize = 10,
+                        FontSize = LumineDesign.CaptionFontSize,
                         Margin =
                             new Thickness(3)
                     });
@@ -918,17 +918,41 @@ internal sealed class BrowseWorkspaceControls : UserControl
         public static IReadOnlyList<BrowseSortChoice> All { get; } =
         [
             new(
-                "更新日 ↓",
+                "更新日 新しい順",
                 AssetSortOrder.ModifiedNewest),
             new(
-                "更新日 ↑",
+                "更新日 古い順",
                 AssetSortOrder.ModifiedOldest),
+            new(
+                "作成日 新しい順",
+                AssetSortOrder.CreatedNewest),
+            new(
+                "作成日 古い順",
+                AssetSortOrder.CreatedOldest),
             new(
                 "ファイル名 A→Z",
                 AssetSortOrder.FileNameAscending),
             new(
                 "ファイル名 Z→A",
-                AssetSortOrder.FileNameDescending)
+                AssetSortOrder.FileNameDescending),
+            new(
+                "サイズ 大きい順",
+                AssetSortOrder.FileSizeLargest),
+            new(
+                "サイズ 小さい順",
+                AssetSortOrder.FileSizeSmallest),
+            new(
+                "評価 高い順",
+                AssetSortOrder.RatingHighest),
+            new(
+                "評価 低い順",
+                AssetSortOrder.RatingLowest),
+            new(
+                "状態 A→Z",
+                AssetSortOrder.StatusAscending),
+            new(
+                "状態 Z→A",
+                AssetSortOrder.StatusDescending)
         ];
 
         public override string ToString() =>
