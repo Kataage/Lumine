@@ -18,6 +18,13 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly HashSet<Task> _pendingBitmapReleases = [];
     private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
     private Exception? _bitmapReleaseFailure;
+
+    // Tile decode tasks extend beyond ViewerSession.GetThumbnailAsync:
+    // they also acquire/decode Avalonia bitmaps. Dynamic Grid/List rebuilds
+    // can detach a tile while that final stage is still completing, so shell
+    // shutdown must drain these tasks as well as composition-fenced leases.
+    private readonly object _tileLoadGate = new();
+    private readonly HashSet<Task> _pendingTileLoads = [];
     private Compositor? _compositor;
     private int _columns = 1;
     private long _selectedIndex = -1;
@@ -218,7 +225,8 @@ public sealed class ThumbnailViewerControl : UserControl
     {
         while (true)
         {
-            Task[] pending;
+            Task[] releases;
+            Task[] loads;
 
             lock (_bitmapReleaseGate)
             {
@@ -229,15 +237,74 @@ public sealed class ThumbnailViewerControl : UserControl
                         _bitmapReleaseFailure);
                 }
 
-                if (_pendingBitmapReleases.Count == 0)
-                {
-                    return;
-                }
-
-                pending = [.. _pendingBitmapReleases];
+                releases = [.. _pendingBitmapReleases];
             }
 
-            await Task.WhenAll(pending).ConfigureAwait(false);
+            lock (_tileLoadGate)
+            {
+                loads = [.. _pendingTileLoads];
+            }
+
+            if (releases.Length == 0
+                && loads.Length == 0)
+            {
+                // A tile completion can schedule a composition-fenced release
+                // while the first snapshots are being taken. Recheck both
+                // sets before declaring the Viewer surface drained.
+                lock (_bitmapReleaseGate)
+                {
+                    if (_pendingBitmapReleases.Count != 0)
+                    {
+                        continue;
+                    }
+                }
+
+                lock (_tileLoadGate)
+                {
+                    if (_pendingTileLoads.Count == 0)
+                    {
+                        return;
+                    }
+                }
+
+                continue;
+            }
+
+            await Task.WhenAll(
+                    releases.Concat(loads))
+                .ConfigureAwait(false);
+        }
+    }
+
+    private void TrackTileLoad(Task load)
+    {
+        ArgumentNullException.ThrowIfNull(load);
+
+        lock (_tileLoadGate)
+        {
+            _pendingTileLoads.Add(load);
+        }
+
+        _ = ObserveTileLoadAsync(load);
+    }
+
+    private async Task ObserveTileLoadAsync(Task load)
+    {
+        try
+        {
+            await load.ConfigureAwait(false);
+        }
+        catch
+        {
+            // LoadAsync reports expected tile failures through ViewerSession.
+            // The observer owns lifecycle bookkeeping only.
+        }
+        finally
+        {
+            lock (_tileLoadGate)
+            {
+                _pendingTileLoads.Remove(load);
+            }
         }
     }
 
@@ -820,7 +887,9 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             CancelLoad();
             _loadCancellation = new CancellationTokenSource();
-            _ = LoadAsync(_loadCancellation.Token);
+            var load =
+                LoadAsync(_loadCancellation.Token);
+            _owner.TrackTileLoad(load);
         }
 
         private void CancelLoad()
