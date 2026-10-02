@@ -59,6 +59,7 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryTagInfo>();
     private IReadOnlyList<PublicationInfo> _publications =
         Array.Empty<PublicationInfo>();
+    private ProductSettingsSnapshot _settingsSnapshot;
 
     public MainWindow()
         : this(
@@ -94,6 +95,12 @@ public sealed class MainWindow : Window
             new BrowseFilterState(
                 SortOrder:
                     _browsePreferences.SortOrder);
+        _settingsSnapshot =
+            CreateSettingsSnapshot(
+                new ThumbnailCacheStats(
+                    0,
+                    0,
+                    0));
         _navigationLibraryService =
             new LibraryService(
                 _defaultDataPaths.DatabasePath);
@@ -478,7 +485,14 @@ public sealed class MainWindow : Window
                     cancellationToken);
         }
 
+        var cacheStats =
+            await GetThumbnailCacheStatsAsync(
+                cancellationToken);
+
         cancellationToken.ThrowIfCancellationRequested();
+        _settingsSnapshot =
+            CreateSettingsSnapshot(
+                cacheStats);
         _libraries = libraries;
         _folders = folders;
         _tags = tags;
@@ -534,7 +548,12 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreatePublicationEntry(
                             _publications),
                 "設定" =>
-                    ProductNavigationViews.CreateSettingsEntry(
+                    ProductSettingsView.Create(
+                        _settingsSnapshot,
+                        SaveViewerDefaultsFromSettingsAsync,
+                        SaveThumbnailModeFromSettingsAsync,
+                        SaveMemoryBudgetFromSettingsAsync,
+                        ClearThumbnailCacheFromSettingsAsync,
                         ShowDiagnosticsFromNavigationAsync),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
@@ -762,6 +781,176 @@ public sealed class MainWindow : Window
                     "表示設定を保存できませんでした。現在の表示には反映されています。";
             }
         }
+    }
+
+    private async Task SaveViewerDefaultsFromSettingsAsync(
+        BrowsePreferences preferences)
+    {
+        await OnBrowsePreferencesChangedAsync(
+            preferences);
+
+        _browseFilterState =
+            _browseFilterState with
+            {
+                SortOrder =
+                    preferences.SortOrder
+            };
+
+        if (_runtime is not null)
+        {
+            await ApplyBrowseQueryAsync();
+            EnsureBrowseControls();
+        }
+
+        StartNavigationRefresh();
+    }
+
+    private async Task SaveThumbnailModeFromSettingsAsync(
+        ThumbnailStorageMode mode)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        if (mode == ThumbnailStorageMode.PersistentDisk
+            && _settingsSnapshot.PersistedThumbnailStorageMode
+                != ThumbnailStorageMode.PersistentDisk)
+        {
+            var confirmed =
+                await ProductDialogs.ConfirmAsync(
+                    this,
+                    "永続サムネイルcacheを有効にしますか？",
+                    "表示用サムネイルをLumineのデータフォルダーへ保存します。初回表示後の再利用は速くなりますが、ディスク使用量が増えます。",
+                    "元画像やユーザーメタデータはcacheとは別に管理されます。cacheはいつでも安全に削除できます。",
+                    confirmLabel: "有効にする");
+            if (!confirmed)
+            {
+                StartNavigationRefresh();
+                return;
+            }
+        }
+
+        await _host.SaveThumbnailStorageModeAsync(
+            mode);
+        StartNavigationRefresh();
+    }
+
+    private async Task SaveMemoryBudgetFromSettingsAsync(
+        long bytes)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        var current =
+            _host.Settings.ResourcePolicy
+            ?? new ResourcePolicySettings();
+        var next =
+            current with
+            {
+                EncodedThumbnailMemoryByteLimit =
+                    bytes
+            };
+
+        await _host.SaveSettingsAsync(
+            next);
+        StartNavigationRefresh();
+    }
+
+    private async Task ClearThumbnailCacheFromSettingsAsync()
+    {
+        var confirmed =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "表示用cacheを削除しますか？",
+                "Lumineが生成した表示用サムネイルだけを削除します。",
+                "元画像、ライブラリ登録、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineage、Publicationは削除しません。",
+                confirmLabel: "cacheを削除");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ThumbnailPruneResult result;
+        if (_runtime is not null)
+        {
+            result =
+                await _runtime.ThumbnailCache.PruneAsync(
+                    0);
+        }
+        else
+        {
+            var cache =
+                new ThumbnailCache(
+                    _defaultDataPaths.ThumbnailCachePath,
+                    _resourcePolicy);
+            result =
+                await cache.PruneAsync(
+                    0);
+        }
+
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            result.FilesDeleted == 0
+                ? "削除する表示用cacheはありませんでした。"
+                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用cacheを削除しました。";
+
+        StartNavigationRefresh();
+    }
+
+    private async Task<ThumbnailCacheStats>
+        GetThumbnailCacheStatsAsync(
+            CancellationToken cancellationToken)
+    {
+        if (_runtime is not null)
+        {
+            return await _runtime.ThumbnailCache
+                .GetStatsAsync(
+                    cancellationToken);
+        }
+
+        var cache =
+            new ThumbnailCache(
+                _defaultDataPaths.ThumbnailCachePath,
+                _resourcePolicy);
+        return await cache.GetStatsAsync(
+            cancellationToken);
+    }
+
+    private ProductSettingsSnapshot CreateSettingsSnapshot(
+        ThumbnailCacheStats cacheStats)
+    {
+        var persistedMode =
+            _host is null
+                ? ThumbnailStorageMode.MemoryOnly
+                : ThumbnailStoragePreference
+                    .ResolvePersisted(
+                        _host.Settings,
+                        out _);
+        var memoryLimit =
+            _host?.Settings.ResourcePolicy
+                ?.EncodedThumbnailMemoryByteLimit
+            ?? _resourcePolicy
+                .EncodedThumbnailMemoryByteLimit;
+
+        return new ProductSettingsSnapshot(
+            _browsePreferences,
+            persistedMode,
+            _host?.ThumbnailStorageMode
+                ?? _thumbnailStorageMode,
+            memoryLimit,
+            _defaultDataPaths,
+            cacheStats,
+            _host?.SettingsWarning,
+            !string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    ThumbnailStoragePreference
+                        .EnvironmentVariable)));
     }
 
     private AssetQuery? BuildBrowseQuery()
