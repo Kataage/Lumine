@@ -75,7 +75,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
             MinWidth = 260,
             Text = State.SearchText
         };
-        _search.TextChanged += OnSearchTextChanged;
 
         _searchHint = new TextBlock
         {
@@ -90,39 +89,33 @@ internal sealed class BrowseWorkspaceControls : UserControl
             MinWidth = 150,
             ItemsSource = BrowseSortChoice.All
         };
-        _sort.SelectionChanged += OnSortChanged;
 
         _rating = new ComboBox
         {
             MinWidth = 112,
             ItemsSource = RatingChoice.All
         };
-        _rating.SelectionChanged += OnRatingChanged;
 
         _status = new ComboBox
         {
             MinWidth = 122
         };
-        _status.SelectionChanged += OnStatusChanged;
 
         _tag = new ComboBox
         {
             MinWidth = 122
         };
-        _tag.SelectionChanged += OnTagChanged;
 
         _favorite = new CheckBox
         {
             Content = "お気に入り",
             VerticalAlignment = VerticalAlignment.Center
         };
-        _favorite.Click += OnFavoriteChanged;
 
         _color = new ComboBox
         {
             MinWidth = 112
         };
-        _color.SelectionChanged += OnColorChanged;
 
         _grid = LumineDesign.ConfigureSecondaryButton(
             new Button
@@ -130,10 +123,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Content = "Grid",
                 Padding = new Thickness(10, 5)
             });
-        _grid.Click +=
-            async (_, _) =>
-                await SetViewModeAsync(
-                    BrowseViewMode.Grid);
 
         _list = LumineDesign.ConfigureSecondaryButton(
             new Button
@@ -141,10 +130,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Content = "List",
                 Padding = new Thickness(10, 5)
             });
-        _list.Click +=
-            async (_, _) =>
-                await SetViewModeAsync(
-                    BrowseViewMode.List);
 
         _density = new Slider
         {
@@ -156,30 +141,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
             Value = Preferences.Density,
             VerticalAlignment = VerticalAlignment.Center
         };
-        _density.PropertyChanged +=
-            async (_, args) =>
-            {
-                if (_suppressEvents
-                    || args.Property
-                        != RangeBase.ValueProperty)
-                {
-                    return;
-                }
-
-                var density =
-                    (int)Math.Round(_density.Value);
-                if (density == Preferences.Density)
-                {
-                    return;
-                }
-
-                Preferences =
-                    Preferences with
-                    {
-                        Density = density
-                    };
-                await PublishPreferencesAsync();
-            };
 
         _chips = new WrapPanel
         {
@@ -264,6 +225,55 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         UpdateFacetData(tags, facets);
         SynchronizeControls();
+        AttachHandlers();
+    }
+
+    private void AttachHandlers()
+    {
+        _search.TextChanged += OnSearchTextChanged;
+        _sort.SelectionChanged += OnSortChanged;
+        _rating.SelectionChanged += OnRatingChanged;
+        _status.SelectionChanged += OnStatusChanged;
+        _tag.SelectionChanged += OnTagChanged;
+        _favorite.Click += OnFavoriteChanged;
+        _color.SelectionChanged += OnColorChanged;
+
+        _grid.Click +=
+            async (_, _) =>
+                await SetViewModeAsync(
+                    BrowseViewMode.Grid);
+        _list.Click +=
+            async (_, _) =>
+                await SetViewModeAsync(
+                    BrowseViewMode.List);
+
+        _density.PropertyChanged += OnDensityChanged;
+    }
+
+    private async void OnDensityChanged(
+        object? sender,
+        AvaloniaPropertyChangedEventArgs args)
+    {
+        if (_suppressEvents
+            || args.Property
+                != RangeBase.ValueProperty)
+        {
+            return;
+        }
+
+        var density =
+            (int)Math.Round(_density.Value);
+        if (density == Preferences.Density)
+        {
+            return;
+        }
+
+        Preferences =
+            Preferences with
+            {
+                Density = density
+            };
+        await PublishPreferencesAsync();
     }
 
     public BrowseFilterState State { get; private set; }
