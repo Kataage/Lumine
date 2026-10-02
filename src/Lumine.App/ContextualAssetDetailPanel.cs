@@ -392,6 +392,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal string NotesText =>
         _notesEditor.Text ?? string.Empty;
 
+    internal string WorksText =>
+        _works.Text ?? string.Empty;
+
+    internal string GroupsText =>
+        _groups.Text ?? string.Empty;
+
+    internal string RelationsText =>
+        _relations.Text ?? string.Empty;
+
+    internal string PublicationsText =>
+        _publications.Text ?? string.Empty;
+
     internal bool IsDirty => _dirty;
 
     public async Task ShowAssetAsync(
