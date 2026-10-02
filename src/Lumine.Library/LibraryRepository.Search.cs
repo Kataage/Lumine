@@ -847,7 +847,7 @@ public sealed partial class LibraryRepository
             }
         }
 
-        await using var command = connection.CreateCommand() = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
