@@ -14,6 +14,8 @@ internal static class Program
 
     internal static RealLibraryAcceptanceSession? Acceptance { get; private set; }
 
+    internal static string? StartupFailureMessage { get; private set; }
+
     internal static CoreResourcePolicy ResourcePolicy =>
         Host?.ResourcePolicy
         ?? CoreResourcePolicy.Default;
@@ -29,10 +31,11 @@ internal static class Program
     public static void Main(string[] args)
     {
         AppHost? host = null;
+        var productSmokeRequested = false;
 
         try
         {
-            var productSmokeRequested =
+            productSmokeRequested =
                 ProductRuntimeSmoke.IsRequested(args);
             var acceptance =
                 RealLibraryAcceptanceSession.TryCreate(args);
@@ -50,7 +53,7 @@ internal static class Program
                 productSmokeRequested
                     ? ProductRuntimeSmoke.ResolveDataPaths(args)
                     : acceptance?.DataPaths
-                      ?? AppDataPaths.ResolveDefault();
+                      ?? AppDataPaths.Resolve(args);
 
             host =
                 AppHost.StartAsync(dataPaths)
@@ -117,8 +120,27 @@ internal static class Program
         catch (AppAlreadyRunningException exception)
         {
             Environment.ExitCode = 3;
-            Console.Error.WriteLine(
-                exception.Message);
+            if (productSmokeRequested)
+            {
+                Console.Error.WriteLine(
+                    exception.Message);
+            }
+            else
+            {
+                ShowStartupFailure(
+                    "Lumineはすでに起動しています。\n\n"
+                    + "同じデータ保存先を使うLumineを複数同時には起動できません。");
+            }
+        }
+        catch (Exception exception)
+            when (!productSmokeRequested)
+        {
+            Environment.ExitCode = 1;
+            ShowStartupFailure(
+                "Lumineを起動できませんでした。\n\n"
+                + "アプリのデータ保存先や権限を確認して、もう一度起動してください。"
+                + "\n\n詳細: "
+                + exception.Message);
         }
         finally
         {
@@ -157,6 +179,28 @@ internal static class Program
             host?.Log.Write(
                 "shutdown",
                 "Managed Program.Main teardown completed after database pool clear.");
+        }
+    }
+
+    private static void ShowStartupFailure(
+        string message)
+    {
+        StartupFailureMessage = message;
+        try
+        {
+            BuildAvaloniaApp()
+                .StartWithClassicDesktopLifetime(
+                    ["--startup-failure"]);
+        }
+        catch (Exception dialogFailure)
+        {
+            Console.Error.WriteLine(message);
+            Console.Error.WriteLine(
+                dialogFailure.Message);
+        }
+        finally
+        {
+            StartupFailureMessage = null;
         }
     }
 
