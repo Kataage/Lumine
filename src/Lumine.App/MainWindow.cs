@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Lumine.Core;
 using Lumine.Image;
+using Lumine.Library;
 
 namespace Lumine.App;
 
@@ -22,17 +23,33 @@ public sealed class MainWindow : Window
     private readonly TextBlock _libraryPath;
     private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
+    private readonly LibraryService _navigationLibraryService;
+    private readonly Task _navigationInitialization;
+    private readonly ContentControl _navigationRailHost;
+    private readonly Border _navigationPane;
+    private readonly TextBlock _navigationTitle;
+    private readonly ContentControl _navigationContent;
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
     private Task _openOperation = Task.CompletedTask;
     private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
     private Task _diagnosticFlushOperation = Task.CompletedTask;
+    private Task _navigationOperation = Task.CompletedTask;
     private Window? _diagnosticsWindow;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
     private bool _closeCompleted;
     private string _productShellState = "Welcome";
+    private string _navigationDestination = "ライブラリ";
+    private string? _folderScope;
+    private string? _tagScope;
+    private IReadOnlyList<LibraryCatalogItem> _libraries =
+        Array.Empty<LibraryCatalogItem>();
+    private IReadOnlyList<LibraryFolderInfo> _folders =
+        Array.Empty<LibraryFolderInfo>();
+    private IReadOnlyList<LibraryTagInfo> _tags =
+        Array.Empty<LibraryTagInfo>();
 
     public MainWindow()
         : this(
@@ -59,6 +76,11 @@ public sealed class MainWindow : Window
             host?.ThumbnailStorageMode
             ?? Program.ThumbnailStorageMode;
         _host = host;
+        _navigationLibraryService =
+            new LibraryService(
+                _defaultDataPaths.DatabasePath);
+        _navigationInitialization =
+            _navigationLibraryService.InitializeAsync();
 
         Title = "Lumine";
         Icon = LumineDesign.CreateWindowIcon();
@@ -197,19 +219,108 @@ public sealed class MainWindow : Window
         Grid.SetRow(_viewerHost, 2);
         workspace.Children.Add(_viewerHost);
 
+        _navigationRailHost =
+            new ContentControl
+            {
+                Width = LumineDesign.NavigationWidth,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
+        _navigationRailHost.Content =
+            LumineDesign.CreateNavigationRail(
+                _navigationDestination,
+                OnNavigationRequested);
+
+        _navigationTitle =
+            new TextBlock
+            {
+                Text = _navigationDestination,
+                Foreground = LumineDesign.Foreground,
+                FontSize = 13,
+                FontWeight = FontWeight.Bold,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+
+        var collapseNavigation =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "‹",
+                    Width = 34,
+                    Padding = new Thickness(0),
+                    ToolTip.TipProperty = "ナビゲーションを閉じる"
+                });
+        collapseNavigation.Click +=
+            (_, _) =>
+                _navigationPane.IsVisible = false;
+
+        var navigationHeader =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                Margin = new Thickness(12, 10, 8, 8)
+            };
+        navigationHeader.Children.Add(
+            _navigationTitle);
+        Grid.SetColumn(collapseNavigation, 1);
+        navigationHeader.Children.Add(
+            collapseNavigation);
+
+        _navigationContent =
+            new ContentControl
+            {
+                Margin = new Thickness(10, 0, 10, 10),
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
+
+        var navigationLayout =
+            new Grid
+            {
+                RowDefinitions =
+                    new RowDefinitions("Auto,*")
+            };
+        navigationLayout.Children.Add(
+            navigationHeader);
+        Grid.SetRow(_navigationContent, 1);
+        navigationLayout.Children.Add(
+            _navigationContent);
+
+        _navigationPane =
+            new Border
+            {
+                Width = 280,
+                Background = LumineDesign.Surface,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(0, 0, 1, 0),
+                Child = navigationLayout
+            };
+
         var appShell = new Grid
         {
             Background = LumineDesign.Background,
             ColumnDefinitions =
                 new ColumnDefinitions(
-                    $"{LumineDesign.NavigationWidth},*")
+                    $"{LumineDesign.NavigationWidth},Auto,*")
         };
         appShell.Children.Add(
-            LumineDesign.CreateNavigationRail());
-        Grid.SetColumn(workspace, 1);
+            _navigationRailHost);
+        Grid.SetColumn(_navigationPane, 1);
+        appShell.Children.Add(
+            _navigationPane);
+        Grid.SetColumn(workspace, 2);
         appShell.Children.Add(workspace);
 
         Content = appShell;
+
+        RenderNavigationDestination();
 
         Opened += OnOpened;
         Closing += OnClosing;
