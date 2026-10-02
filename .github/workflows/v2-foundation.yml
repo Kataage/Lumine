@@ -87,6 +87,7 @@ jobs:
         run: |
           foreach ($script in @(
             "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1"
           )) {
             $tokens = $null
@@ -107,6 +108,7 @@ jobs:
         run: |
           foreach ($script in @(
             "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1"
           )) {
             $tokens = $null
@@ -313,6 +315,7 @@ jobs:
           path: |
             artifacts/native-aot/**
             build/Run-RealLibraryAcceptance.ps1
+            build/Compare-ThumbnailStoragePolicies.ps1
             docs/core-acceptance.md
           if-no-files-found: error
 

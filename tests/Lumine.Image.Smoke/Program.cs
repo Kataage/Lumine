@@ -2030,6 +2030,16 @@ try
                 is not null,
             "Memory-only first thumbnail did not return an encoded in-memory payload.");
 
+        var persistentAlphaBytes =
+            await File.ReadAllBytesAsync(
+                alphaResult.CachePath);
+        Require(
+            firstMemory.EncodedBytes!
+                .AsSpan()
+                .SequenceEqual(
+                    persistentAlphaBytes),
+            "Memory-only and PersistentDisk storage policies produced different encoded pixels for the same source/profile.");
+
         var secondMemory =
             await memoryPipeline.RequestAsync(
                 memorySource.WithMetadata(
