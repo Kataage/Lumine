@@ -280,6 +280,17 @@ public sealed class LibraryDatabase
             INSERT INTO asset_search_dirty(asset_id, library_id)
             SELECT id, library_id
             FROM assets;
+            """),
+        new(
+            6,
+            "product-navigation-library-state",
+            """
+            ALTER TABLE libraries
+                ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1
+                    CHECK(is_enabled IN (0, 1));
+
+            CREATE INDEX idx_libraries_enabled_updated
+                ON libraries(is_enabled DESC, updated_at_utc_ticks DESC, id ASC);
             """)
     ];
 

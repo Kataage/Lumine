@@ -22,7 +22,8 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
 {
     private readonly WindowsLibrarySyncSession _syncSession;
     private readonly ThumbnailPipeline _thumbnailPipeline;
-    private readonly CursorPagedViewerAssetProvider _assetProvider;
+    private CursorPagedViewerAssetProvider _assetProvider;
+    private readonly SemaphoreSlim _queryGate = new(1, 1);
     private readonly TaskCompletionSource _disposeCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposeStarted;
@@ -56,7 +57,7 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
 
     public LibraryInfo Library { get; }
 
-    public long AssetCount { get; }
+    public long AssetCount { get; private set; }
 
     public LibraryService LibraryService { get; }
 
@@ -77,9 +78,11 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         ThumbnailCacheMaintenanceDiagnostics =>
         _thumbnailPipeline.MaintenanceDiagnostics;
 
-    public ViewerSession ViewerSession { get; }
+    public ViewerSession ViewerSession { get; private set; }
 
-    public ViewerDetailSession DetailSession { get; }
+    public ViewerDetailSession DetailSession { get; private set; }
+
+    public AssetQuery? CurrentQuery { get; private set; }
 
     public static async Task<CoreViewerRuntime> OpenAsync(
         string libraryRoot,
@@ -88,7 +91,8 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         IProgress<CoreViewerOpenProgress>? progress = null,
         CancellationToken cancellationToken = default,
         ThumbnailStorageMode thumbnailStorageMode =
-            ThumbnailStorageMode.MemoryOnly)
+            ThumbnailStorageMode.MemoryOnly,
+        AssetQuery? initialQuery = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
         ArgumentNullException.ThrowIfNull(dataPaths);
@@ -164,9 +168,14 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             var assetCount =
-                await libraryService.CountAssetsAsync(
-                    library.Id,
-                    cancellationToken).ConfigureAwait(false);
+                initialQuery is null
+                    ? await libraryService.CountAssetsAsync(
+                        library.Id,
+                        cancellationToken).ConfigureAwait(false)
+                    : await libraryService.CountAssetsAsync(
+                        library.Id,
+                        initialQuery,
+                        cancellationToken).ConfigureAwait(false);
 
             progress?.Report(
                 new CoreViewerOpenProgress(
@@ -186,10 +195,17 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             var viewerOptions =
                 ViewerOptions.FromResourcePolicy(
                     resourcePolicy);
-            var pageSource = new LibraryViewerPageSource(
-                libraryService,
-                library.Id,
-                assetCount);
+            IViewerPageSource pageSource =
+                initialQuery is null
+                    ? new LibraryViewerPageSource(
+                        libraryService,
+                        library.Id,
+                        assetCount)
+                    : new LibraryViewerQueryPageSource(
+                        libraryService,
+                        library.Id,
+                        initialQuery,
+                        assetCount);
             assetProvider =
                 new CursorPagedViewerAssetProvider(
                     pageSource,
@@ -223,17 +239,20 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                     CoreViewerOpenStage.Ready,
                     $"{assetCount:N0} assets ready"));
 
-            return new CoreViewerRuntime(
-                normalizedRoot,
-                library,
-                assetCount,
-                libraryService,
-                syncSession,
-                thumbnailCache,
-                pipeline,
-                assetProvider,
-                viewerSession,
-                detailSession);
+            var runtime =
+                new CoreViewerRuntime(
+                    normalizedRoot,
+                    library,
+                    assetCount,
+                    libraryService,
+                    syncSession,
+                    thumbnailCache,
+                    pipeline,
+                    assetProvider,
+                    viewerSession,
+                    detailSession);
+            runtime.CurrentQuery = initialQuery;
+            return runtime;
         }
         catch
         {
@@ -268,6 +287,96 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         }
     }
 
+    public async Task ApplyQueryAsync(
+        AssetQuery? query,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _queryGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            ObjectDisposedException.ThrowIf(
+                Volatile.Read(ref _disposeStarted) != 0,
+                this);
+
+            var nextCount =
+                query is null
+                    ? await LibraryService.CountAssetsAsync(
+                        Library.Id,
+                        cancellationToken).ConfigureAwait(false)
+                    : await LibraryService.CountAssetsAsync(
+                        Library.Id,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
+
+            // Keep the already-resolved Viewer options. Query changes must
+            // replace only paging/session state, never product resource policy.
+            var viewerOptions = ViewerSession.Options;
+
+            IViewerPageSource pageSource =
+                query is null
+                    ? new LibraryViewerPageSource(
+                        LibraryService,
+                        Library.Id,
+                        nextCount)
+                    : new LibraryViewerQueryPageSource(
+                        LibraryService,
+                        Library.Id,
+                        query,
+                        nextCount);
+
+            var nextProvider =
+                new CursorPagedViewerAssetProvider(
+                    pageSource,
+                    viewerOptions);
+            var thumbnailProvider =
+                new ImageViewerThumbnailProvider(
+                    _thumbnailPipeline,
+                    LibraryRoot,
+                    LibraryService,
+                    Library.Id);
+            var detailProvider =
+                new ImageViewerDetailProvider(
+                    _thumbnailPipeline,
+                    LibraryRoot,
+                    LibraryService,
+                    Library.Id);
+            var nextViewer =
+                new ViewerSession(
+                    nextProvider,
+                    thumbnailProvider,
+                    viewerOptions);
+            var nextDetail =
+                new ViewerDetailSession(
+                    nextProvider,
+                    detailProvider,
+                    DetailSession.Options);
+
+            var previousProvider = _assetProvider;
+            var previousViewer = ViewerSession;
+            var previousDetail = DetailSession;
+
+            _assetProvider = nextProvider;
+            ViewerSession = nextViewer;
+            DetailSession = nextDetail;
+            AssetCount = nextCount;
+            CurrentQuery = query;
+
+            await previousDetail.DisposeAsync()
+                .ConfigureAwait(false);
+            await previousViewer.DisposeAsync()
+                .ConfigureAwait(false);
+            previousProvider.Dispose();
+        }
+        finally
+        {
+            _queryGate.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(
@@ -279,6 +388,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                 .ConfigureAwait(false);
             return;
         }
+
+        await _queryGate.WaitAsync()
+            .ConfigureAwait(false);
 
         Exception? failure = null;
 
@@ -358,6 +470,10 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         {
             _disposeCompletion.TrySetException(exception);
             throw;
+        }
+        finally
+        {
+            _queryGate.Release();
         }
     }
 

@@ -68,6 +68,64 @@ public sealed class LibraryService
             token => _repository.RegisterLibraryAsync(name, rootPath, token),
             cancellationToken);
 
+    public Task<LibraryInfo?> GetLibraryAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetLibraryAsync(libraryId, token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<LibraryCatalogItem>> ListLibrariesAsync(
+        bool includeDisabled = true,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListLibrariesAsync(
+                includeDisabled,
+                token),
+            cancellationToken);
+
+    public Task<bool> SetLibraryEnabledAsync(
+        long libraryId,
+        bool isEnabled,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.SetLibraryEnabledAsync(
+                libraryId,
+                isEnabled,
+                token),
+            cancellationToken);
+
+    public Task<bool> RemoveLibraryRegistrationAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.RemoveLibraryRegistrationAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<LibraryFolderInfo>> ListFoldersAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListFoldersAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<LibraryTagInfo>> ListTagsAsync(
+        long libraryId,
+        string? searchText = null,
+        int limit = 512,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListTagsAsync(
+                libraryId,
+                searchText,
+                limit,
+                token),
+            cancellationToken);
+
     public Task<AssetInfo?> GetAssetAsync(
         long libraryId,
         string relativePath,

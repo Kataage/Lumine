@@ -989,9 +989,49 @@ try
                 && shell.DetailViewer.IsOriginal,
                 "Real App shell did not move back and re-admit an original through the composition release contract.");
 
+            var navigationAsset =
+                await shellRuntime.ViewerSession.GetAssetAsync(0);
+            await shellRuntime.LibraryService.SetUserMetadataAsync(
+                shellRuntime.Library.Id,
+                navigationAsset.Id,
+                new AssetUserMetadataUpdate(
+                    Tags: ["navigation-smoke"]));
+
             window.Close();
             Dispatcher.UIThread.RunJobs();
             await shell.DetachAsync();
+
+            await shellRuntime.ApplyQueryAsync(
+                new AssetQuery(
+                    RequiredTags: ["navigation-smoke"]));
+            Require(
+                shellRuntime.AssetCount == 1
+                && shellRuntime.CurrentQuery?.RequiredTags is { Count: 1 },
+                "CoreViewerRuntime did not apply the navigation tag query in place.");
+
+            var filteredShell =
+                new CoreViewerShell(shellRuntime);
+            var filteredWindow =
+                new Avalonia.Controls.Window
+                {
+                    Width = 900,
+                    Height = 620,
+                    Content = filteredShell
+                };
+            filteredWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                filteredShell.GridViewer.AssetCount == 1,
+                "Filtered App shell did not bind the replacement Viewer sessions.");
+            filteredWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+            await filteredShell.DetachAsync();
+
+            await shellRuntime.ApplyQueryAsync(null);
+            Require(
+                shellRuntime.AssetCount == 2
+                && shellRuntime.CurrentQuery is null,
+                "CoreViewerRuntime did not clear the navigation query.");
 
             await shellRuntime.DisposeAsync();
             Dispatcher.UIThread.RunJobs();
@@ -1001,7 +1041,7 @@ try
         CancellationToken.None);
 
     Console.WriteLine(
-        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / shutdown OK");
+        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / navigation requery / shutdown OK");
 
     for (var iteration = 0;
          iteration < 3;

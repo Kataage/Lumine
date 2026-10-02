@@ -89,7 +89,8 @@ public sealed record AssetQuery(
     bool? Favorite = null,
     string? StatusLabel = null,
     string? ColorLabel = null,
-    AssetSortOrder SortOrder = AssetSortOrder.ModifiedNewest);
+    AssetSortOrder SortOrder = AssetSortOrder.ModifiedNewest,
+    string? FolderPathPrefix = null);
 
 public sealed record AssetQueryCursor(
     AssetSortOrder SortOrder,

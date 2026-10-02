@@ -136,8 +136,18 @@ internal static class LumineDesign
         return button;
     }
 
-    public static Border CreateNavigationRail()
+    public static Border CreateNavigationRail() =>
+        CreateNavigationRail(
+            "ライブラリ",
+            static _ => { });
+
+    public static Border CreateNavigationRail(
+        string selectedLabel,
+        Action<string> navigate)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(selectedLabel);
+        ArgumentNullException.ThrowIfNull(navigate);
+
         var stack =
             new StackPanel
             {
@@ -149,25 +159,13 @@ internal static class LumineDesign
             var selected =
                 string.Equals(
                     label,
-                    "ライブラリ",
+                    selectedLabel,
                     StringComparison.Ordinal);
 
-            stack.Children.Add(
-                new Border
+            var button =
+                new Button
                 {
-                    MinHeight = 46,
-                    CornerRadius = new CornerRadius(9),
-                    Background =
-                        selected
-                            ? AccentMuted
-                            : Brushes.Transparent,
-                    BorderBrush =
-                        selected
-                            ? Border
-                            : Brushes.Transparent,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(6, 7),
-                    Child =
+                    Content =
                         new TextBlock
                         {
                             Text = label,
@@ -184,8 +182,25 @@ internal static class LumineDesign
                                 TextAlignment.Center,
                             TextWrapping =
                                 TextWrapping.Wrap
-                        }
-                });
+                        },
+                    MinHeight = 46,
+                    CornerRadius = new CornerRadius(9),
+                    Background =
+                        selected
+                            ? AccentMuted
+                            : Brushes.Transparent,
+                    BorderBrush =
+                        selected
+                            ? Border
+                            : Brushes.Transparent,
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(6, 7),
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Stretch
+                };
+            button.Click +=
+                (_, _) => navigate(label);
+            stack.Children.Add(button);
         }
 
         var content =

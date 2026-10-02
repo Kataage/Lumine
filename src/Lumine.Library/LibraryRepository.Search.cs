@@ -947,6 +947,41 @@ public sealed partial class LibraryRepository
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(query.FolderPathPrefix))
+        {
+            var folderPath =
+                query.FolderPathPrefix!
+                    .Replace('\\', '/')
+                    .Trim('/');
+
+            if (folderPath.Length == 0
+                || folderPath
+                    .Split(
+                        '/',
+                        StringSplitOptions.RemoveEmptyEntries)
+                    .Any(static segment =>
+                        segment is "." or ".."))
+            {
+                throw new ArgumentException(
+                    "Folder scope must be a normalized relative folder path.",
+                    nameof(query));
+            }
+
+            var folderKey =
+                LibraryPaths.FolderPathKey(folderPath);
+            var escapedFolderKey =
+                folderKey
+                    .Replace("\\", "\\\\", StringComparison.Ordinal)
+                    .Replace("%", "\\%", StringComparison.Ordinal)
+                    .Replace("_", "\\_", StringComparison.Ordinal);
+
+            command.Parameters.AddWithValue(
+                "$folder_prefix",
+                escapedFolderKey + "/%");
+            conditions.Add(
+                "a.relative_path_key LIKE $folder_prefix ESCAPE '\\'");
+        }
+
         var requiredTags = NormalizeTags(query.RequiredTags);
         if (requiredTags.Length > 0)
         {
@@ -1220,6 +1255,26 @@ public sealed partial class LibraryRepository
             query.ColorLabel,
             nameof(query.ColorLabel));
         _ = NormalizeTags(query.RequiredTags);
+
+        if (!string.IsNullOrWhiteSpace(query.FolderPathPrefix))
+        {
+            var folderPath =
+                query.FolderPathPrefix!
+                    .Replace('\\', '/')
+                    .Trim('/');
+            if (folderPath.Length == 0
+                || folderPath
+                    .Split(
+                        '/',
+                        StringSplitOptions.RemoveEmptyEntries)
+                    .Any(static segment =>
+                        segment is "." or ".."))
+            {
+                throw new ArgumentException(
+                    "Folder scope must be a normalized relative folder path.",
+                    nameof(query));
+            }
+        }
     }
 
     private static string? NormalizeOptionalLabel(
