@@ -373,6 +373,23 @@ public sealed class MainWindow : Window
     internal string ProductShellState =>
         _productShellState;
 
+    internal ProductSettingsSnapshot SettingsSnapshot =>
+        _settingsSnapshot;
+
+    internal Control? NavigationContentForSmoke =>
+        _navigationContent.Content
+            as Control;
+
+    internal Task ApplyBrowseFilterForSmokeAsync(
+        BrowseFilterState state) =>
+        OnBrowseFiltersChangedAsync(
+            state);
+
+    internal void NavigateForSmoke(
+        string destination) =>
+        OnNavigationRequested(
+            destination);
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
