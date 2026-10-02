@@ -24,24 +24,11 @@ internal static class ThumbnailStoragePreference
     public const string EnvironmentVariable =
         "LUMINE_THUMBNAIL_STORAGE_MODE";
 
-    public static ThumbnailStorageMode Resolve(
+    public static ThumbnailStorageMode ResolvePersisted(
         AppSettingsDocument settings,
         out string? warning)
     {
         ArgumentNullException.ThrowIfNull(settings);
-
-        var environmentValue =
-            Environment.GetEnvironmentVariable(
-                EnvironmentVariable);
-
-        if (!string.IsNullOrWhiteSpace(
-                environmentValue))
-        {
-            warning = null;
-            return ParseOrThrow(
-                environmentValue,
-                "environment override");
-        }
 
         if (Enum.TryParse<ThumbnailStorageMode>(
                 settings.ThumbnailStorageMode,
@@ -56,6 +43,32 @@ internal static class ThumbnailStoragePreference
         warning =
             $"Unsupported persisted thumbnail storage mode '{settings.ThumbnailStorageMode}'; MemoryOnly was used.";
         return ThumbnailStorageMode.MemoryOnly;
+    }
+
+    public static ThumbnailStorageMode ResolveEffective(
+        ThumbnailStorageMode persistedMode)
+    {
+        if (!Enum.IsDefined(persistedMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(persistedMode),
+                persistedMode,
+                "Unsupported persisted thumbnail storage mode.");
+        }
+
+        var environmentValue =
+            Environment.GetEnvironmentVariable(
+                EnvironmentVariable);
+
+        if (string.IsNullOrWhiteSpace(
+                environmentValue))
+        {
+            return persistedMode;
+        }
+
+        return ParseOrThrow(
+            environmentValue,
+            "environment override");
     }
 
     public static string Serialize(
