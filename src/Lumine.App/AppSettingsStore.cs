@@ -188,13 +188,21 @@ internal sealed class AppSettingsStore
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        var persistedThumbnailStorageMode =
+            ThumbnailStoragePreference.ResolvePersisted(
+                settings,
+                out _);
+
         var normalized = settings with
         {
             SchemaVersion =
                 AppSettingsDocument.CurrentSchemaVersion,
             ResourcePolicy =
                 settings.ResourcePolicy
-                ?? new ResourcePolicySettings()
+                ?? new ResourcePolicySettings(),
+            ThumbnailStorageMode =
+                ThumbnailStoragePreference.Serialize(
+                    persistedThumbnailStorageMode)
         };
 
         var directory = Path.GetDirectoryName(_path);
