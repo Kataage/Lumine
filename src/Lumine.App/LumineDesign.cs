@@ -311,7 +311,8 @@ internal static class LumineDesign
                 new TextBlock
                 {
                     Text = item.Label,
-                    FontSize = 9,
+                    Width = 40,
+                    FontSize = 8,
                     FontWeight =
                         selected
                             ? FontWeight.SemiBold
@@ -321,7 +322,9 @@ internal static class LumineDesign
                             ? Foreground
                             : MutedForeground,
                     TextAlignment = TextAlignment.Center,
-                    TextWrapping = TextWrapping.NoWrap
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming =
+                        TextTrimming.CharacterEllipsis
                 });
 
             var button =
