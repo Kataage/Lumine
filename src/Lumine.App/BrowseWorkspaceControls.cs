@@ -112,7 +112,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             Content = "お気に入り",
             VerticalAlignment = VerticalAlignment.Center
         };
-        _favorite.IsCheckedChanged += OnFavoriteChanged;
+        _favorite.Click += OnFavoriteChanged;
 
         _color = new ComboBox
         {
