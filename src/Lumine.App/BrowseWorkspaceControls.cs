@@ -153,7 +153,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         _chips = new WrapPanel
         {
-            Orientation = Orientation.Horizontal
+            Orientation = Orientation.Horizontal,
+            IsVisible = State.HasFilters
         };
 
         var primaryRow = new Grid
@@ -220,7 +221,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         var root = new StackPanel
         {
-            Spacing = 7
+            Spacing = 5
         };
         root.Children.Add(primaryRow);
         root.Children.Add(filterRow);
@@ -233,7 +234,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
                     new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(12, 8),
+                Padding = new Thickness(10, 7),
                 Child = root
             };
 
@@ -667,6 +668,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private void RenderChips()
     {
         _chips.Children.Clear();
+        _chips.IsVisible = State.HasFilters;
 
         AddChip(
             "検索",
