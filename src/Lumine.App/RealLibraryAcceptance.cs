@@ -670,6 +670,23 @@ internal sealed class RealLibraryAcceptanceSession
             throw new InvalidOperationException(
                 "Decoded thumbnail cache exceeded its configured byte bound.");
         }
+
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Product workflow acceptance begin.");
+
+        using (_recorder.Measure(
+                   "acceptance.product_workflows"))
+        {
+            await ProductAcceptanceFunctionalScenario.RunAsync(
+                window,
+                Options.DataPaths,
+                _metadata);
+        }
+
+        Program.Host?.Log.Write(
+            "acceptance-stage",
+            "Product workflow acceptance completed.");
     }
 
     private async Task MeasureScrollAsync(

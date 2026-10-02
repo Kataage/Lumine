@@ -741,6 +741,26 @@ try {
             throw "$mode automated acceptance did not report pass."
         }
 
+        if ((Get-MetadataValue -Result $result -Key "product.automated_result") -ne "pass") {
+            throw "$mode product workflow acceptance did not report pass."
+        }
+
+        foreach ($productGate in @(
+            "product.identity",
+            "product.navigation",
+            "product.browse",
+            "product.organization",
+            "product.viewer",
+            "product.creative_archive",
+            "product.states",
+            "product.settings_portable",
+            "product.search_metadata_roundtrip"
+        )) {
+            if ((Get-MetadataValue -Result $result -Key $productGate) -ne "pass") {
+                throw "$mode product gate '$productGate' did not report pass."
+            }
+        }
+
         $assetCount = [int64](Get-MetadataValue -Result $result -Key "library.asset_count")
         if ($assetCount -lt $MinimumAssets) {
             throw "$mode acceptance indexed only $assetCount assets."
@@ -966,6 +986,18 @@ try {
             browseSecondsPerRun = $BrowseSeconds
             idleSecondsPerRun = $IdleSeconds
             maxFastScrollMs = $MaxFastScrollMs
+        }
+        productAutomated = [ordered]@{
+            result = (Get-MetadataValue -Result $finalWarm -Key "product.automated_result")
+            identity = (Get-MetadataValue -Result $finalWarm -Key "product.identity")
+            navigation = (Get-MetadataValue -Result $finalWarm -Key "product.navigation")
+            browse = (Get-MetadataValue -Result $finalWarm -Key "product.browse")
+            organization = (Get-MetadataValue -Result $finalWarm -Key "product.organization")
+            viewer = (Get-MetadataValue -Result $finalWarm -Key "product.viewer")
+            creativeArchive = (Get-MetadataValue -Result $finalWarm -Key "product.creative_archive")
+            productStates = (Get-MetadataValue -Result $finalWarm -Key "product.states")
+            settingsPortable = (Get-MetadataValue -Result $finalWarm -Key "product.settings_portable")
+            searchMetadataRoundTrip = (Get-MetadataValue -Result $finalWarm -Key "product.search_metadata_roundtrip")
         }
         rawResultSha256 = [ordered]@{
             cold = $coldRawSha256

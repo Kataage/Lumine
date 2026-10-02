@@ -87,6 +87,7 @@ jobs:
         run: |
           foreach ($script in @(
             "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Run-ProductAcceptance.ps1",
             "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1"
           )) {
@@ -108,6 +109,7 @@ jobs:
         run: |
           foreach ($script in @(
             "./build/Run-RealLibraryAcceptance.ps1",
+            "./build/Run-ProductAcceptance.ps1",
             "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1"
           )) {
@@ -317,6 +319,19 @@ jobs:
             build/Run-RealLibraryAcceptance.ps1
             build/Compare-ThumbnailStoragePolicies.ps1
             docs/core-acceptance.md
+          if-no-files-found: error
+
+      - name: Upload NativeAOT Product acceptance build
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-product-acceptance-win-x64-${{ github.run_id }}
+          path: |
+            artifacts/native-aot/**
+            build/Run-ProductAcceptance.ps1
+            build/Run-RealLibraryAcceptance.ps1
+            docs/product-acceptance.md
+            docs/core-acceptance.md
+            docs/product-settings-portable.md
           if-no-files-found: error
 
       - name: Publish NativeAOT Image runtime smoke
