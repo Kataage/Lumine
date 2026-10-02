@@ -26,7 +26,7 @@ param(
     [string]$Win32RenderingMode = "Default",
 
     [ValidateSet("PersistentDisk", "MemoryOnly")]
-    [string]$ThumbnailStorageMode = "PersistentDisk"
+    [string]$ThumbnailStorageMode = "MemoryOnly"
 )
 
 $ErrorActionPreference = "Stop"
