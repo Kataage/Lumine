@@ -20,7 +20,7 @@ internal static class Program
 
     internal static ThumbnailStorageMode ThumbnailStorageMode =>
         Host?.ThumbnailStorageMode
-        ?? ThumbnailStorageMode.MemoryOnly;
+        ?? Lumine.Image.ThumbnailStorageMode.MemoryOnly;
 
     internal static DiagnosticsSession Diagnostics { get; } =
         DiagnosticsSession.Start();
