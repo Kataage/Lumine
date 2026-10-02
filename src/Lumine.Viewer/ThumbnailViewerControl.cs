@@ -996,9 +996,10 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly Image _image;
         private readonly TextBlock _label;
         private readonly TextBlock _fileSize;
-        private readonly ContentControl _actionHost;
-        private readonly ContentControl _selectionBadgeHost;
         private readonly Grid? _gridLayers;
+        private readonly Grid? _listPanel;
+        private Control? _actionOverlay;
+        private Control? _selectionBadge;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
         private bool _isReady;
@@ -1130,28 +1131,6 @@ public sealed class ThumbnailViewerControl : UserControl
                 Foreground = MutedWhite
             };
 
-            _actionHost =
-                new ContentControl
-                {
-                    HorizontalAlignment =
-                        HorizontalAlignment.Right,
-                    VerticalAlignment =
-                        VerticalAlignment.Top,
-                    Margin = new Thickness(8),
-                    IsVisible = false
-                };
-
-            _selectionBadgeHost =
-                new ContentControl
-                {
-                    HorizontalAlignment =
-                        HorizontalAlignment.Left,
-                    VerticalAlignment =
-                        VerticalAlignment.Top,
-                    Margin = new Thickness(8),
-                    IsVisible = false
-                };
-
             if (layoutMode == ViewerLayoutMode.List)
             {
                 _image.Width =
@@ -1170,6 +1149,8 @@ public sealed class ThumbnailViewerControl : UserControl
                         new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 10
                 };
+                _listPanel = panel;
+                _gridLayers = null;
                 panel.Children.Add(_image);
 
                 Grid.SetColumn(_label, 1);
@@ -1177,14 +1158,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     VerticalAlignment.Center;
                 panel.Children.Add(_label);
 
-                Grid.SetColumn(_actionHost, 2);
-                _actionHost.VerticalAlignment =
-                    VerticalAlignment.Center;
-                _actionHost.Margin =
-                    new Thickness(4);
-                panel.Children.Add(_actionHost);
                 Child = panel;
-                _gridLayers = null;
             }
             else
             {
@@ -1192,40 +1166,35 @@ public sealed class ThumbnailViewerControl : UserControl
                 _gridLayers = layers;
                 layers.Children.Add(_image);
 
+                var caption =
+                    new StackPanel
+                    {
+                        Spacing = 1
+                    };
+                caption.Children.Add(_label);
+                caption.Children.Add(_fileSize);
+
                 var gradient =
                     new Border
                     {
                         Height = 74,
-                        VerticalAlignment =
-                            VerticalAlignment.Bottom,
-                        Background = CaptionGradient
-                    };
-                layers.Children.Add(gradient);
-
-                var caption =
-                    new StackPanel
-                    {
-                        Spacing = 1,
-                        Margin =
+                        Padding =
                             new Thickness(9, 0, 9, 8),
                         VerticalAlignment =
-                            VerticalAlignment.Bottom
+                            VerticalAlignment.Bottom,
+                        VerticalContentAlignment =
+                            VerticalAlignment.Bottom,
+                        Background = CaptionGradient,
+                        Child = caption
                     };
-                caption.Children.Add(_label);
-                caption.Children.Add(_fileSize);
-                layers.Children.Add(caption);
-
-                layers.Children.Add(_actionHost);
-                layers.Children.Add(_selectionBadgeHost);
+                layers.Children.Add(gradient);
                 Child = layers;
+                _listPanel = null;
             }
 
             PointerPressed += OnPointerPressed;
             PointerEntered += OnPointerEntered;
             PointerExited += OnPointerExited;
-            ToolTip.SetTip(
-                this,
-                "ダブルクリックで表示");
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
         }
@@ -1351,11 +1320,14 @@ public sealed class ThumbnailViewerControl : UserControl
                 _hovered || IsSelected;
             if (showActions)
             {
-                EnsureActionContent();
+                EnsureActionOverlay();
             }
 
-            _actionHost.IsVisible =
-                showActions;
+            if (_actionOverlay is not null)
+            {
+                _actionOverlay.IsVisible =
+                    showActions;
+            }
 
             var showBadge =
                 IsSelected
@@ -1365,13 +1337,16 @@ public sealed class ThumbnailViewerControl : UserControl
                 EnsureSelectionBadge();
             }
 
-            _selectionBadgeHost.IsVisible =
-                showBadge;
+            if (_selectionBadge is not null)
+            {
+                _selectionBadge.IsVisible =
+                    showBadge;
+            }
         }
 
-        private void EnsureActionContent()
+        private void EnsureActionOverlay()
         {
-            if (_actionHost.Content is not null)
+            if (_actionOverlay is not null)
             {
                 return;
             }
@@ -1380,7 +1355,17 @@ public sealed class ThumbnailViewerControl : UserControl
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Spacing = 4
+                    Spacing = 4,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Right,
+                    VerticalAlignment =
+                        _layoutMode == ViewerLayoutMode.Grid
+                            ? VerticalAlignment.Top
+                            : VerticalAlignment.Center,
+                    Margin =
+                        _layoutMode == ViewerLayoutMode.Grid
+                            ? new Thickness(8)
+                            : new Thickness(4)
                 };
 
             var info =
@@ -1415,23 +1400,38 @@ public sealed class ThumbnailViewerControl : UserControl
                 };
             actions.Children.Add(open);
 
-            _actionHost.Content = actions;
+            _actionOverlay = actions;
+
+            if (_layoutMode == ViewerLayoutMode.Grid)
+            {
+                _gridLayers!.Children.Add(actions);
+            }
+            else
+            {
+                Grid.SetColumn(actions, 2);
+                _listPanel!.Children.Add(actions);
+            }
         }
 
         private void EnsureSelectionBadge()
         {
-            if (_selectionBadgeHost.Content is not null)
+            if (_selectionBadge is not null)
             {
                 return;
             }
 
-            _selectionBadgeHost.Content =
+            var badge =
                 new Border
                 {
                     Width = 20,
                     Height = 20,
                     CornerRadius = new CornerRadius(10),
                     Background = SelectedBorder,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    VerticalAlignment =
+                        VerticalAlignment.Top,
+                    Margin = new Thickness(8),
                     Child =
                         new TextBlock
                         {
@@ -1447,6 +1447,9 @@ public sealed class ThumbnailViewerControl : UserControl
                                 VerticalAlignment.Center
                         }
                 };
+
+            _selectionBadge = badge;
+            _gridLayers!.Children.Add(badge);
         }
 
         private void StartLoad()
