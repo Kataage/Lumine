@@ -115,8 +115,8 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
                                 value.FileName
                                 ?? throw new InvalidOperationException(
                                     "Viewer filename cursor did not carry its key.")),
-                    _ => throw new ArgumentOutOfRangeException(
-                        nameof(_query))
+                    _ => throw new InvalidOperationException(
+                        "Unsupported Library browse sort order.")
                 }
                 : null;
 
@@ -163,8 +163,8 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
                             nextCursor.FileName
                                 ?? throw new InvalidOperationException(
                                     "Filename Library query cursor did not carry its key.")),
-                    _ => throw new ArgumentOutOfRangeException(
-                        nameof(_query))
+                    _ => throw new InvalidOperationException(
+                        "Unsupported Library browse sort order.")
                 }
                 : null;
 
