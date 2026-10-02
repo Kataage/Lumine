@@ -1169,7 +1169,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 var caption =
                     new StackPanel
                     {
-                        Spacing = 1
+                        Spacing = 1,
+                        VerticalAlignment =
+                            VerticalAlignment.Bottom
                     };
                 caption.Children.Add(_label);
                 caption.Children.Add(_fileSize);
@@ -1181,8 +1183,6 @@ public sealed class ThumbnailViewerControl : UserControl
                         Padding =
                             new Thickness(9, 0, 9, 8),
                         VerticalAlignment =
-                            VerticalAlignment.Bottom,
-                        VerticalContentAlignment =
                             VerticalAlignment.Bottom,
                         Background = CaptionGradient,
                         Child = caption
