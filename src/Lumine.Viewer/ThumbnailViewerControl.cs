@@ -1138,25 +1138,48 @@ public sealed class ThumbnailViewerControl : UserControl
             DetachedFromVisualTree += OnDetached;
         }
 
+        private const string InfoOverlayIconPath =
+            "M12 21a9 9 0 100-18 9 9 0 000 18z M12 10.5v6 M12 7.5h.01";
+        private const string ExpandOverlayIconPath =
+            "M8.25 3.75h-4.5v4.5 M15.75 3.75h4.5v4.5 M8.25 20.25h-4.5v-4.5 M15.75 20.25h4.5v-4.5";
+
         private static Button CreateOverlayButton(
-            string content,
+            string pathData,
             string tooltip)
         {
+            var icon =
+                new Avalonia.Controls.Shapes.Path
+                {
+                    Data = Geometry.Parse(pathData),
+                    Stroke = Brushes.White,
+                    StrokeThickness = 1.8,
+                    Stretch = Stretch.Uniform,
+                    Width = 15,
+                    Height = 15,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+
             var button =
                 new Button
                 {
-                    Content = content,
+                    Content = icon,
                     Width = 30,
                     Height = 30,
                     MinWidth = 30,
                     MinHeight = 30,
                     Padding = new Thickness(0),
-                    FontSize = 12,
                     CornerRadius = new CornerRadius(8),
                     Background = OverlayBackground,
                     Foreground = Brushes.White,
                     BorderBrush = OverlayBorder,
-                    BorderThickness = new Thickness(1)
+                    BorderThickness = new Thickness(1),
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center,
+                    VerticalContentAlignment =
+                        VerticalAlignment.Center
                 };
             ToolTip.SetTip(button, tooltip);
             return button;
@@ -1303,13 +1326,13 @@ public sealed class ThumbnailViewerControl : UserControl
                             : VerticalAlignment.Center,
                     Margin =
                         _layoutMode == ViewerLayoutMode.Grid
-                            ? new Thickness(8)
+                            ? new Thickness(0, 8, 8, 0)
                             : new Thickness(4)
                 };
 
             var info =
                 CreateOverlayButton(
-                    "ⓘ",
+                    InfoOverlayIconPath,
                     "詳細 (I)");
             info.Click +=
                 (_, _) =>
@@ -1325,7 +1348,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
             var open =
                 CreateOverlayButton(
-                    "⛶",
+                    ExpandOverlayIconPath,
                     "大きく表示");
             open.Click +=
                 (_, _) =>
