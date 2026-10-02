@@ -441,12 +441,14 @@ public sealed class MainWindow : Window
         LumineDesign.NavigationLabels;
 
     internal void ShowLightbox(
-        Control content)
+        Control content,
+        IInputElement? restoreFocusTarget = null)
     {
         ArgumentNullException.ThrowIfNull(content);
 
         _lightboxRestoreFocus =
-            FocusManager?.GetFocusedElement();
+            restoreFocusTarget
+            ?? FocusManager?.GetFocusedElement();
         _appShell.IsEnabled = false;
         _lightboxHost.Content = content;
         _lightboxHost.IsVisible = true;
