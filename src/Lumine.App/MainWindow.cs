@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Lumine.Core;
+using Lumine.Image;
 
 namespace Lumine.App;
 
@@ -13,6 +14,7 @@ public sealed class MainWindow : Window
 {
     private readonly AppDataPaths _defaultDataPaths;
     private readonly CoreResourcePolicy _resourcePolicy;
+    private readonly ThumbnailStorageMode _thumbnailStorageMode;
     private readonly AppHost? _host;
     private readonly Button _openFolder;
     private readonly Button _diagnostics;
@@ -51,6 +53,9 @@ public sealed class MainWindow : Window
 
         _defaultDataPaths = defaultDataPaths;
         _resourcePolicy = resourcePolicy;
+        _thumbnailStorageMode =
+            host?.ThumbnailStorageMode
+            ?? Program.ThumbnailStorageMode;
         _host = host;
 
         Title = "Lumine v2";
@@ -165,6 +170,8 @@ public sealed class MainWindow : Window
             $"Settings: {_defaultDataPaths.SettingsPath}");
         builder.AppendLine(
             $"Runtime log: {_defaultDataPaths.RuntimeLogPath}");
+        builder.AppendLine(
+            $"Configured thumbnail storage: {_thumbnailStorageMode}");
 
         if (_host is not null)
         {
@@ -303,7 +310,8 @@ public sealed class MainWindow : Window
                 dataPaths ?? _defaultDataPaths,
                 _resourcePolicy,
                 progress,
-                operationToken);
+                operationToken,
+                _thumbnailStorageMode);
 
             operationToken.ThrowIfCancellationRequested();
 

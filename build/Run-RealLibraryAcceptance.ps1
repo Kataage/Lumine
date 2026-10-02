@@ -26,7 +26,7 @@ param(
     [string]$Win32RenderingMode = "Default",
 
     [ValidateSet("PersistentDisk", "MemoryOnly")]
-    [string]$ThumbnailStorageMode = "PersistentDisk"
+    [string]$ThumbnailStorageMode = "MemoryOnly"
 )
 
 $ErrorActionPreference = "Stop"
@@ -1030,7 +1030,7 @@ try {
         acceptanceDecision = "automated-pass-manual-observation-required"
         warnings = $warnings
         manualObservation = [ordered]@{
-            requiredBeforeClosingIssue295 = $true
+            requiredBeforeProductAcceptance = $true
             check = @(
                 "Initial grid appears without an unpleasant stall.",
                 "Continuous scroll and direction reversal remain visually responsive.",
@@ -1069,7 +1069,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "Observe the visible Lumine windows during the run. #295 remains open until the manual usability observations in summary.json are confirmed."
+    Write-Host "Observe the visible Lumine windows during the run. Manual usability observations remain required for the current product acceptance gate."
 }
 finally {
     $env:LUMINE_HARDWARE_ID = $oldHardware

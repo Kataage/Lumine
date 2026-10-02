@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lumine.Core;
+using Lumine.Image;
 
 namespace Lumine.App;
 
@@ -13,6 +14,93 @@ internal sealed record AppSettingsDocument
 
     public ResourcePolicySettings? ResourcePolicy { get; init; } =
         new();
+
+    public string ThumbnailStorageMode { get; init; } =
+        nameof(Lumine.Image.ThumbnailStorageMode.MemoryOnly);
+}
+
+internal static class ThumbnailStoragePreference
+{
+    public const string EnvironmentVariable =
+        "LUMINE_THUMBNAIL_STORAGE_MODE";
+
+    public static ThumbnailStorageMode ResolvePersisted(
+        AppSettingsDocument settings,
+        out string? warning)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (Enum.TryParse<ThumbnailStorageMode>(
+                settings.ThumbnailStorageMode,
+                ignoreCase: true,
+                out var persisted)
+            && Enum.IsDefined(persisted))
+        {
+            warning = null;
+            return persisted;
+        }
+
+        warning =
+            $"Unsupported persisted thumbnail storage mode '{settings.ThumbnailStorageMode}'; MemoryOnly was used.";
+        return ThumbnailStorageMode.MemoryOnly;
+    }
+
+    public static ThumbnailStorageMode ResolveEffective(
+        ThumbnailStorageMode persistedMode)
+    {
+        if (!Enum.IsDefined(persistedMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(persistedMode),
+                persistedMode,
+                "Unsupported persisted thumbnail storage mode.");
+        }
+
+        var environmentValue =
+            Environment.GetEnvironmentVariable(
+                EnvironmentVariable);
+
+        if (string.IsNullOrWhiteSpace(
+                environmentValue))
+        {
+            return persistedMode;
+        }
+
+        return ParseOrThrow(
+            environmentValue,
+            "environment override");
+    }
+
+    public static string Serialize(
+        ThumbnailStorageMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                mode,
+                "Unsupported thumbnail storage mode.");
+        }
+
+        return mode.ToString();
+    }
+
+    private static ThumbnailStorageMode ParseOrThrow(
+        string value,
+        string source)
+    {
+        if (Enum.TryParse<ThumbnailStorageMode>(
+                value,
+                ignoreCase: true,
+                out var mode)
+            && Enum.IsDefined(mode))
+        {
+            return mode;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported thumbnail storage mode '{value}' from {source}. Expected MemoryOnly or PersistentDisk.");
+    }
 }
 
 internal sealed record AppSettingsLoadResult(
@@ -100,13 +188,21 @@ internal sealed class AppSettingsStore
     {
         ArgumentNullException.ThrowIfNull(settings);
 
+        var persistedThumbnailStorageMode =
+            ThumbnailStoragePreference.ResolvePersisted(
+                settings,
+                out _);
+
         var normalized = settings with
         {
             SchemaVersion =
                 AppSettingsDocument.CurrentSchemaVersion,
             ResourcePolicy =
                 settings.ResourcePolicy
-                ?? new ResourcePolicySettings()
+                ?? new ResourcePolicySettings(),
+            ThumbnailStorageMode =
+                ThumbnailStoragePreference.Serialize(
+                    persistedThumbnailStorageMode)
         };
 
         var directory = Path.GetDirectoryName(_path);

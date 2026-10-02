@@ -18,7 +18,8 @@ The policy owns:
 - decoded grid-thumbnail entry and byte budgets
 - Detail preview entry and byte budgets
 - Detail original decoded-byte budget
-- persistent thumbnail disk-cache budget
+- encoded thumbnail memory-cache budget
+- persistent thumbnail disk-cache budget for explicit PersistentDisk mode
 - libvips tracked-memory budget
 - effective libvips concurrency derived from processor count and thumbnail worker count
 
@@ -32,9 +33,11 @@ A later explicit attempt to configure different libvips values fails instead of 
 
 The production App must resolve its policy before creating the first `ThumbnailCache`.
 
-## Persistent cache budget
+## Thumbnail storage budgets
 
-`ThumbnailCache.ConfiguredByteLimit` carries the effective disk budget and `PruneToConfiguredLimitAsync` applies it during owned maintenance.
+ADR 0001 makes `MemoryOnly` the product default. `CoreResourcePolicy.EncodedThumbnailMemoryByteLimit` bounds the encoded WebP LRU used by that mode; the default is 256 MiB.
+
+`ThumbnailCache.ConfiguredByteLimit` remains the effective disk budget only when `PersistentDisk` is explicitly selected, and `PruneToConfiguredLimitAsync` applies it during owned maintenance.
 
 Cache construction does **not** recursively scan or prune the cache. This preserves the warm-start rule that startup must not perform an unconditional full cache walk.
 
@@ -50,7 +53,7 @@ Cache construction does **not** recursively scan or prune the cache. This preser
 - pipeline shutdown first stops background maintenance and workers, then performs stale temporary-write recovery and one final prune to `ConfiguredByteLimit`;
 - clean shutdown fails rather than silently claiming success if the persistent cache cannot converge to the configured bound.
 
-This gives the disk budget real production ownership without putting a recursive cache walk on the warm-start critical path.
+This gives the optional disk budget real production ownership without putting a recursive cache walk on the warm-start critical path. MemoryOnly schedules no persistent-cache maintenance.
 
 ## Option mapping
 

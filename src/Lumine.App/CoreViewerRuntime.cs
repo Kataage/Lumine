@@ -86,7 +86,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         AppDataPaths dataPaths,
         CoreResourcePolicy resourcePolicy,
         IProgress<CoreViewerOpenProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ThumbnailStorageMode thumbnailStorageMode =
+            ThumbnailStorageMode.MemoryOnly)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
         ArgumentNullException.ThrowIfNull(dataPaths);
@@ -174,9 +176,6 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             var thumbnailCache = new ThumbnailCache(
                 dataPaths.ThumbnailCachePath,
                 resourcePolicy);
-
-            var thumbnailStorageMode =
-                ResolveThumbnailStorageMode();
 
             pipeline = new ThumbnailPipeline(
                 thumbnailCache,
@@ -360,33 +359,6 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             _disposeCompletion.TrySetException(exception);
             throw;
         }
-    }
-
-    private static ThumbnailStorageMode ResolveThumbnailStorageMode()
-    {
-        var value =
-            Environment.GetEnvironmentVariable(
-                "LUMINE_THUMBNAIL_STORAGE_MODE");
-
-        if (string.IsNullOrWhiteSpace(value)
-            || string.Equals(
-                value,
-                "PersistentDisk",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return ThumbnailStorageMode.PersistentDisk;
-        }
-
-        if (string.Equals(
-                value,
-                "MemoryOnly",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return ThumbnailStorageMode.MemoryOnly;
-        }
-
-        throw new InvalidOperationException(
-            $"Unsupported LUMINE_THUMBNAIL_STORAGE_MODE '{value}'. Expected PersistentDisk or MemoryOnly.");
     }
 
     private static void GuardAgainstAppDataRecursion(
