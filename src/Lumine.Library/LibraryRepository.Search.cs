@@ -768,7 +768,86 @@ public sealed partial class LibraryRepository
         bool dirtyOnly,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        // Avoid constructing the recursive bigram CTE for libraries that
+        // contain only ASCII search text. The previous implementation built
+        // the complete search haystack for every asset even when the CTE
+        // ultimately produced zero CJK rows, which regressed 100k rebuilds
+        // after the browse indexes increased the database working set.
+        await using (var detect = connection.CreateCommand())
+        {
+            detect.Transaction = transaction;
+            detect.CommandText =
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM assets AS a
+                    LEFT JOIN asset_user_metadata AS um
+                      ON um.asset_id = a.id
+                    WHERE a.library_id = $library_id
+                      AND ($asset_id IS NULL OR a.id = $asset_id)
+                      AND (
+                          $dirty_only = 0
+                          OR EXISTS (
+                              SELECT 1
+                              FROM asset_search_dirty AS d
+                              WHERE d.asset_id = a.id
+                                AND d.library_id = a.library_id
+                          )
+                      )
+                      AND (
+                          a.file_name GLOB '*[^ -~]*'
+                          OR a.relative_path GLOB '*[^ -~]*'
+                          OR COALESCE(um.notes, '') GLOB '*[^ -~]*'
+                      )
+                    LIMIT 1
+                )
+                OR EXISTS(
+                    SELECT 1
+                    FROM asset_tags AS at
+                    INNER JOIN tags AS t
+                      ON t.id = at.tag_id
+                    INNER JOIN assets AS a
+                      ON a.id = at.asset_id
+                    WHERE a.library_id = $library_id
+                      AND ($asset_id IS NULL OR a.id = $asset_id)
+                      AND (
+                          $dirty_only = 0
+                          OR EXISTS (
+                              SELECT 1
+                              FROM asset_search_dirty AS d
+                              WHERE d.asset_id = a.id
+                                AND d.library_id = a.library_id
+                          )
+                      )
+                      AND t.name GLOB '*[^ -~]*'
+                    LIMIT 1
+                );
+                """;
+            detect.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            detect.Parameters.AddWithValue(
+                "$asset_id",
+                assetId.HasValue
+                    ? assetId.Value
+                    : DBNull.Value);
+            detect.Parameters.AddWithValue(
+                "$dirty_only",
+                dirtyOnly ? 1 : 0);
+
+            var hasNonAscii =
+                Convert.ToInt64(
+                    await detect.ExecuteScalarAsync(
+                        cancellationToken)
+                        .ConfigureAwait(false),
+                    CultureInfo.InvariantCulture) != 0;
+            if (!hasNonAscii)
+            {
+                return;
+            }
+        }
+
+        await using var command = connection.CreateCommand() = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
