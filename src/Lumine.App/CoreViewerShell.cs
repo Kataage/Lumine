@@ -25,6 +25,7 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
     private CancellationTokenSource? _selectionSummaryCancellation;
+    private bool _compactInspectorLayout;
     private bool _detached;
 
     public CoreViewerShell(
@@ -219,10 +220,10 @@ internal sealed class CoreViewerShell : UserControl
 
         void ApplyResponsiveBrowseLayout(double width)
         {
-            var compact =
+            _compactInspectorLayout =
                 width <= 1080;
 
-            if (compact)
+            if (_compactInspectorLayout)
             {
                 browseViewer.ColumnDefinitions =
                     new ColumnDefinitions("*");
@@ -296,6 +297,16 @@ internal sealed class CoreViewerShell : UserControl
 
     internal bool IsBulkSelectionBarVisible =>
         _selectionBar.IsVisible;
+
+
+    internal bool IsCompactInspectorLayout =>
+        _compactInspectorLayout;
+
+    internal Rect ContextSurfaceBounds =>
+        _contextSurface.Bounds;
+
+    internal Rect GridViewerBounds =>
+        _grid.Bounds;
 
     internal async Task ShowContextDetailAsync()
     {
