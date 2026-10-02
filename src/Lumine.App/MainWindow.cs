@@ -179,11 +179,20 @@ public sealed class MainWindow : Window
                 Background =
                     LumineDesign.SurfaceRaised,
                 BorderBrush =
-                    LumineDesign.Border,
+                    LumineDesign.BorderStrong,
                 BorderThickness =
-                    new Thickness(0, 0, 0, 1),
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(8),
                 Padding =
                     new Thickness(12, 7),
+                Margin =
+                    new Thickness(12),
+                MaxWidth = 720,
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
                 IsVisible =
                     !string.IsNullOrWhiteSpace(
                         _status.Text),
@@ -221,19 +230,30 @@ public sealed class MainWindow : Window
                     HorizontalAlignment.Stretch
             };
 
-        var workspace = new Grid
-        {
-            Background = LumineDesign.Background,
-            RowDefinitions =
-                new RowDefinitions("Auto,Auto,*")
-        };
-        workspace.Children.Add(_statusSurface);
+        var workspaceContent =
+            new Grid
+            {
+                Background =
+                    LumineDesign.Background,
+                RowDefinitions =
+                    new RowDefinitions("Auto,*")
+            };
+        workspaceContent.Children.Add(
+            _browseHost);
+        Grid.SetRow(_viewerHost, 1);
+        workspaceContent.Children.Add(
+            _viewerHost);
 
-        Grid.SetRow(_browseHost, 1);
-        workspace.Children.Add(_browseHost);
-
-        Grid.SetRow(_viewerHost, 2);
-        workspace.Children.Add(_viewerHost);
+        var workspace =
+            new Grid
+            {
+                Background =
+                    LumineDesign.Background
+            };
+        workspace.Children.Add(
+            workspaceContent);
+        workspace.Children.Add(
+            _statusSurface);
 
         _navigationRailHost =
             new ContentControl
