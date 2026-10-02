@@ -161,6 +161,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
             IsSnapToTickEnabled = true,
             Width = 92,
             Value = Preferences.Density,
+            Foreground = LumineDesign.Focus,
+            Background = LumineDesign.ControlSurface,
             VerticalAlignment = VerticalAlignment.Center
         };
 
