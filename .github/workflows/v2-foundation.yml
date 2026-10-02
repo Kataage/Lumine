@@ -315,6 +315,7 @@ jobs:
           path: |
             artifacts/native-aot/**
             build/Run-RealLibraryAcceptance.ps1
+            build/Compare-ThumbnailStoragePolicies.ps1
             docs/core-acceptance.md
           if-no-files-found: error
 
