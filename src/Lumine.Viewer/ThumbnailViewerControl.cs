@@ -199,6 +199,22 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
+
+    internal IReadOnlyList<ViewerTileActionGeometry>
+        GetRealizedTileActionGeometryForSmoke(
+            long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.GetActionGeometryForSmoke();
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
@@ -1372,6 +1388,56 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
 
+        public IReadOnlyList<ViewerTileActionGeometry>
+            GetActionGeometryForSmoke()
+        {
+            EnsureActionOverlay();
+            _actionOverlay!.IsVisible = true;
+            UpdateLayout();
+
+            var result =
+                new List<ViewerTileActionGeometry>();
+            foreach (var button in _actionOverlay
+                         .GetVisualDescendants()
+                         .OfType<Button>())
+            {
+                var buttonOrigin =
+                    button.TranslatePoint(
+                        new Point(0, 0),
+                        this)
+                    ?? throw new InvalidOperationException(
+                        "Unable to translate overlay button bounds.");
+                var buttonRect =
+                    new Rect(
+                        buttonOrigin,
+                        button.Bounds.Size);
+
+                var icon =
+                    button.GetVisualDescendants()
+                        .OfType<Avalonia.Controls.Shapes.Path>()
+                        .FirstOrDefault();
+                if (icon is null)
+                {
+                    continue;
+                }
+
+                var iconOrigin =
+                    icon.TranslatePoint(
+                        new Point(0, 0),
+                        this)
+                    ?? throw new InvalidOperationException(
+                        "Unable to translate overlay icon bounds.");
+                result.Add(
+                    new ViewerTileActionGeometry(
+                        buttonRect,
+                        new Rect(
+                            iconOrigin,
+                            icon.Bounds.Size)));
+            }
+
+            return result;
+        }
+
         private void EnsureSelectionBadge()
         {
             if (_selectionBadge is not null)
@@ -1527,6 +1593,10 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal readonly record struct ViewerTileActionGeometry(
+        Rect ButtonBounds,
+        Rect IconBounds);
+
     public sealed class ViewerAssetContextRequestedEventArgs(
         long index,
         Control anchor)
