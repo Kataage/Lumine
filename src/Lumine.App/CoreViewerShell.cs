@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Lumine.Viewer;
 
 namespace Lumine.App;
@@ -19,35 +21,46 @@ internal sealed class CoreViewerShell : UserControl
             runtime.DetailSession);
         _detail.BindGrid(_grid);
 
+        Background = LumineDesign.Background;
+
         if (runtime.AssetCount == 0)
         {
-            Content = new Border
-            {
-                Padding = new Avalonia.Thickness(32),
-                Child = new TextBlock
-                {
-                    Text = "No supported images were found in this library.",
-                    FontSize = 18,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                    HorizontalAlignment =
-                        Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalAlignment =
-                        Avalonia.Layout.VerticalAlignment.Center
-                }
-            };
+            Content =
+                LumineDesign.CreateProductState(
+                    "画像がありません",
+                    "このフォルダーには、Lumineで表示できる画像が見つかりませんでした。");
             return;
         }
 
+        var gridSurface =
+            new Border
+            {
+                Background = LumineDesign.Background,
+                Padding = new Thickness(0),
+                Child = _grid
+            };
+
+        var detailSurface =
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1, 0, 0, 0),
+                Child = _detail
+            };
+
         var layout = new Grid
         {
+            Background = LumineDesign.Background,
             ColumnDefinitions =
-                new ColumnDefinitions("2*,3*")
+                new ColumnDefinitions("3*,2*")
         };
 
-        layout.Children.Add(_grid);
+        layout.Children.Add(gridSurface);
 
-        Grid.SetColumn(_detail, 1);
-        layout.Children.Add(_detail);
+        Grid.SetColumn(detailSurface, 1);
+        layout.Children.Add(detailSurface);
 
         Content = layout;
     }
