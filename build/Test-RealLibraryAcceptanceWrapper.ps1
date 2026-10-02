@@ -124,6 +124,26 @@ foreach ($iteration in 1..$Repeat) {
         throw "Acceptance wrapper smoke iteration $iteration did not produce a passing summary."
     }
 
+    if ($summary.productAutomated.result -ne "pass") {
+        throw "Acceptance wrapper smoke iteration $iteration did not pass NativeAOT product workflows."
+    }
+
+    foreach ($gate in @(
+        "identity",
+        "navigation",
+        "browse",
+        "organization",
+        "viewer",
+        "creativeArchive",
+        "productStates",
+        "settingsPortable",
+        "searchMetadataRoundTrip"
+    )) {
+        if ([string]$summary.productAutomated.$gate -ne "pass") {
+            throw "Acceptance wrapper smoke iteration $iteration failed product gate '$gate'."
+        }
+    }
+
     if ($summary.thumbnailStorageMode -ne "MemoryOnly") {
         throw "Acceptance wrapper smoke iteration $iteration did not exercise the product-default MemoryOnly thumbnail policy: $($summary.thumbnailStorageMode)"
     }
@@ -183,6 +203,50 @@ foreach ($iteration in 1..$Repeat) {
     $lastSummary = $summary
 }
 
+$productWrapper =
+    Join-Path $PSScriptRoot "Run-ProductAcceptance.ps1"
+
+if (-not (Test-Path -LiteralPath $productWrapper)) {
+    throw "Missing product acceptance wrapper: $productWrapper"
+}
+
+& $productWrapper `
+    -Exe (Join-Path $app "Lumine.App.exe") `
+    -Library $library `
+    -OutputDirectory $output `
+    -MinimumAssets 100 `
+    -BrowseSeconds 1 `
+    -IdleSeconds 1 `
+    -MaxFastScrollMs 30000 `
+    -UseExistingAutomatedResults
+
+$productSummaryPath =
+    Join-Path $output "product-summary.json"
+$productChecklistPath =
+    Join-Path $output "MANUAL-CHECKLIST.md"
+
+if (-not (Test-Path -LiteralPath $productSummaryPath) -or
+    -not (Test-Path -LiteralPath $productChecklistPath))
+{
+    throw "Product acceptance wrapper smoke did not write its final evidence files."
+}
+
+$productSummary =
+    Get-Content -LiteralPath $productSummaryPath -Raw |
+        ConvertFrom-Json
+
+if ($productSummary.automatedDecision -ne "pass" -or
+    $productSummary.manualDecision -ne "pending" -or
+    $productSummary.combinedDecision -ne "automated-pass-manual-review-required")
+{
+    throw "Product acceptance wrapper smoke produced an invalid decision state."
+}
+
+if ($productSummary.appRevision -ne $ExpectedRevision) {
+    throw "Product acceptance wrapper smoke lost build provenance."
+}
+
 Write-Host "Real-library acceptance wrapper integration smoke passed $Repeat consecutive iteration(s) using composition=$Win32CompositionMode, rendering=$Win32RenderingMode."
 Write-Host "Revision: $($lastSummary.appRevision)"
 Write-Host "Assets  : $($lastSummary.assetCount)"
+Write-Host "Product : automated pass / manual review pending"
