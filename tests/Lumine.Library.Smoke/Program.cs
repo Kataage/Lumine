@@ -304,6 +304,7 @@ try
         && persistedUserMetadata.Tags.Contains("blue sky"),
         "User metadata did not round-trip.");
 
+
     var catalog =
         await repository.ListLibrariesAsync();
     Require(
@@ -368,6 +369,7 @@ try
         && browseFacets.ColorLabels.SequenceEqual(
             ["blue"]),
         "Browse status/color facets did not reflect persisted user metadata.");
+
 
     Require(
         await repository.SetLibraryEnabledAsync(
@@ -635,6 +637,66 @@ try
         await repository.GetAssetAsync(library.Id, "rollback/valid-00.jpg") is null,
         "A row written before SQL failure survived rollback.");
 
+    var firstMetadata =
+        await repository.SetUserMetadataAsync(
+            library.Id,
+            first.Id,
+            new AssetUserMetadataUpdate(
+                Rating: 2,
+                Favorite: false,
+                Notes: "preserve-me",
+                StatusLabel: "unsorted",
+                ColorLabel: "red",
+                Tags: ["existing"]));
+
+    Require(
+        await repository.PatchUserMetadataAsync(
+            library.Id,
+            [first.Id, technical.Id],
+            new AssetUserMetadataPatch(
+                SetRating: true,
+                Rating: 5,
+                SetFavorite: true,
+                Favorite: true,
+                SetStatusLabel: true,
+                StatusLabel: "candidate",
+                AddTags: ["bulk-tag"])) == 2,
+        "Bulk metadata patch did not report both selected assets.");
+
+    var patchedFirst =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            first.Id)
+        ?? throw new InvalidOperationException(
+            "Bulk-patched first asset metadata disappeared.");
+    var patchedTechnical =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "Bulk-patched technical asset metadata disappeared.");
+
+    Require(
+        patchedFirst.Rating == 5
+        && patchedFirst.Favorite
+        && patchedFirst.StatusLabel == "candidate"
+        && patchedFirst.ColorLabel == "red"
+        && patchedFirst.Notes == "preserve-me"
+        && patchedFirst.Tags.Contains("existing")
+        && patchedFirst.Tags.Contains("bulk-tag"),
+        "Bulk patch overwrote unspecified metadata on the first asset.");
+
+    Require(
+        patchedTechnical.Rating == 5
+        && patchedTechnical.Favorite
+        && patchedTechnical.StatusLabel == "candidate"
+        && patchedTechnical.ColorLabel == "blue"
+        && patchedTechnical.Notes.Contains("猫耳", StringComparison.Ordinal)
+        && patchedTechnical.Tags.Contains("推し")
+        && patchedTechnical.Tags.Contains("bulk-tag"),
+        "Bulk patch overwrote unspecified metadata on the existing tagged asset.");
+
+
     Require(await repository.RemoveAssetAsync(library.Id, "a.jpg"), "Asset removal failed.");
     await repository.UpsertAssetsAsync(
         library.Id,
@@ -798,6 +860,8 @@ try
     catch (LibrarySchemaException)
     {
     }
+
+
 
     Console.WriteLine(
         $"Library/search smoke: {expectedCount:N0} assets, metadata/FTS/CJK-bigram/filter/keyset/migration/source-revision OK");

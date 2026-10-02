@@ -226,6 +226,30 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<int> PatchUserMetadataAsync(
+        long libraryId,
+        IReadOnlyList<long> assetIds,
+        AssetUserMetadataPatch patch,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.PatchUserMetadataAsync(
+                libraryId,
+                assetIds,
+                patch,
+                token),
+            cancellationToken);
+
+    public Task<int> RemoveAssetsAsync(
+        long libraryId,
+        IReadOnlyList<string> relativePaths,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.RemoveAssetsAsync(
+                libraryId,
+                relativePaths,
+                token),
+            cancellationToken);
+
     public Task<long> CountAssetsAsync(
         long libraryId,
         AssetQuery query,

@@ -788,6 +788,50 @@ public sealed class MainWindow : Window
                 state.FolderPath);
     }
 
+    private CoreViewerShell CreateCoreViewerShell(
+        CoreViewerRuntime runtime) =>
+        new(
+            runtime,
+            _browsePreferences,
+            RefreshAfterBulkMutationAsync,
+            OnBulkEntryRequested);
+
+    private async Task RefreshAfterBulkMutationAsync()
+    {
+        await ApplyBrowseQueryAsync();
+        StartNavigationRefresh();
+    }
+
+    private void OnBulkEntryRequested(
+        string destination)
+    {
+        if (string.Equals(
+                destination,
+                "publication",
+                StringComparison.Ordinal))
+        {
+            OnNavigationRequested(
+                "公開履歴");
+            _status.Foreground =
+                LumineDesign.MutedForeground;
+            _status.Text =
+                "選択画像のPublication作成入口です。#395でスナップショット編集へ接続します。";
+            return;
+        }
+
+        if (string.Equals(
+                destination,
+                "creative",
+                StringComparison.Ordinal))
+        {
+            _navigationPane.IsVisible = true;
+            _status.Foreground =
+                LumineDesign.MutedForeground;
+            _status.Text =
+                "選択画像からWork / Generation Groupを作成する入口です。#395でcreative archiveへ接続します。";
+        }
+    }
+
     private async Task ApplyBrowseQueryAsync()
     {
         var runtime = _runtime;
@@ -816,9 +860,7 @@ public sealed class MainWindow : Window
                 BuildBrowseQuery());
 
             var nextShell =
-                new CoreViewerShell(
-                    runtime,
-                    _browsePreferences);
+                CreateCoreViewerShell(runtime);
             _shell = nextShell;
             _viewerHost.Content = nextShell;
             _productShellState =
@@ -835,9 +877,7 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             var restored =
-                new CoreViewerShell(
-                    runtime,
-                    _browsePreferences);
+                CreateCoreViewerShell(runtime);
             _shell = restored;
             _viewerHost.Content = restored;
             _productShellState =
@@ -1152,9 +1192,7 @@ public sealed class MainWindow : Window
             operationToken.ThrowIfCancellationRequested();
 
             var shell =
-                new CoreViewerShell(
-                    runtime,
-                    _browsePreferences);
+                CreateCoreViewerShell(runtime);
 
             _runtime = runtime;
             _shell = shell;

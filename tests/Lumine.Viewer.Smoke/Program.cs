@@ -759,6 +759,33 @@ internal static class Program
             viewer.SelectedRealizedTileCount == 1,
             "Viewer selection was not rendered on exactly one realized tile.");
 
+        viewer.SelectAsset(
+            2,
+            scrollIntoView: false,
+            ViewerSelectionMode.Toggle);
+        Require(
+            viewer.SelectedAssetCount == 2
+            && viewer.SelectedAssetIndices.SequenceEqual([0L, 2L]),
+            "Ctrl-style toggle selection did not preserve the existing selection.");
+
+        viewer.SelectAsset(
+            5,
+            scrollIntoView: false,
+            ViewerSelectionMode.Range);
+        Require(
+            viewer.SelectedAssetCount == 4
+            && viewer.SelectedAssetIndices.SequenceEqual([2L, 3L, 4L, 5L])
+            && viewer.SelectedAssetIndex == 5,
+            "Shift-style range selection did not follow the current query order/anchor.");
+
+        viewer.ClearSelection();
+        Require(
+            viewer.SelectedAssetCount == 0
+            && viewer.SelectedAssetIndex == -1,
+            "Viewer did not clear multi-selection state.");
+
+        viewer.SelectAsset(0);
+
         RaiseKey(viewer, Key.Right);
         Require(viewer.SelectedAssetIndex == 1, "Right-arrow navigation failed.");
 
