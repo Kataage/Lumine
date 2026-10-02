@@ -250,12 +250,11 @@ public sealed class MainWindow : Window
                 {
                     Content = "‹",
                     Width = 34,
-                    Padding = new Thickness(0),
-                    ToolTip.TipProperty = "ナビゲーションを閉じる"
+                    Padding = new Thickness(0)
                 });
-        collapseNavigation.Click +=
-            (_, _) =>
-                _navigationPane.IsVisible = false;
+        ToolTip.SetTip(
+            collapseNavigation,
+            "ナビゲーションを閉じる");
 
         var navigationHeader =
             new Grid
@@ -302,6 +301,9 @@ public sealed class MainWindow : Window
                     new Thickness(0, 0, 1, 0),
                 Child = navigationLayout
             };
+        collapseNavigation.Click +=
+            (_, _) =>
+                _navigationPane.IsVisible = false;
 
         var appShell = new Grid
         {
