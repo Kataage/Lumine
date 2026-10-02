@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -449,17 +450,35 @@ internal sealed class CoreViewerShell : UserControl
             as MainWindow
             ?? TopLevel.GetTopLevel(this)
                 as MainWindow;
-        owner?.HideLightbox(
-            _focusedSurface);
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
 
-        if (returnIndex >= 0
-            && !_grid.FocusAsset(returnIndex))
+        if (returnIndex >= 0)
         {
-            _grid.Focus();
+            _grid.ScrollToAsset(returnIndex);
         }
+
+        owner?.HideLightbox(
+            _focusedSurface);
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (_detached)
+                {
+                    return;
+                }
+
+                if (returnIndex >= 0
+                    && _grid.FocusAsset(returnIndex))
+                {
+                    return;
+                }
+
+                _grid.Focus();
+            },
+            DispatcherPriority.Input);
     }
 
     private async Task LoadContextDetailAsync(
