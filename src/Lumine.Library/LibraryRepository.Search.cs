@@ -516,7 +516,7 @@ public sealed partial class LibraryRepository
             LEFT JOIN asset_user_metadata AS um
               ON um.asset_id = a.id
             WHERE a.library_id = $library_id
-              AND a.id IN (${string.Join(", ", parameters)});
+              AND a.id IN ({string.Join(", ", parameters)});
             """;
 
         var byId =
