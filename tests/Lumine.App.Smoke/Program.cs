@@ -1813,6 +1813,10 @@ try
                         && window.IsWorkspaceInteractionEnabled
                         && !window.CurrentShell.IsFocusedViewVisible,
                         "Closing the focused image viewer did not release modality and restore workspace interaction.");
+                    Require(
+                        window.CurrentShell.GridViewer
+                            .FocusedRealizedAssetIndex == 0,
+                        "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
 
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
