@@ -27,6 +27,9 @@ internal sealed class ViewerRangeSelection
 
     public bool IsEmpty => _ranges.Count == 0;
 
+    internal int RangeCount =>
+        _ranges.Count;
+
     public long Min =>
         _ranges.Count == 0
             ? throw new InvalidOperationException("Selection is empty.")
