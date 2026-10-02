@@ -112,7 +112,13 @@ internal sealed class AppHost : IAsyncDisposable
                     new AppSettingsDocument
                     {
                         ThumbnailStorageMode =
-                            settings.ThumbnailStorageMode
+                            settings.ThumbnailStorageMode,
+                        BrowseViewMode =
+                            settings.BrowseViewMode,
+                        BrowseDensity =
+                            settings.BrowseDensity,
+                        BrowseSortOrder =
+                            settings.BrowseSortOrder
                     };
                 resourcePolicy =
                     CoreResourcePolicy.Resolve(
