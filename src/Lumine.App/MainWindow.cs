@@ -904,23 +904,8 @@ public sealed class MainWindow : Window
             return;
         }
 
-        ThumbnailPruneResult result;
-        if (_runtime is not null)
-        {
-            result =
-                await _runtime.ThumbnailCache.PruneAsync(
-                    0);
-        }
-        else
-        {
-            var cache =
-                new ThumbnailCache(
-                    _defaultDataPaths.ThumbnailCachePath,
-                    _resourcePolicy);
-            result =
-                await cache.PruneAsync(
-                    0);
-        }
+        var result =
+            await PruneThumbnailCacheAsync();
 
         _status.Foreground =
             LumineDesign.MutedForeground;
@@ -930,6 +915,27 @@ public sealed class MainWindow : Window
                 : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用cacheを削除しました。";
 
         StartNavigationRefresh();
+    }
+
+    internal Task<ThumbnailPruneResult>
+        PruneThumbnailCacheForSmokeAsync() =>
+        PruneThumbnailCacheAsync();
+
+    private async Task<ThumbnailPruneResult>
+        PruneThumbnailCacheAsync()
+    {
+        if (_runtime is not null)
+        {
+            return await _runtime.ThumbnailCache.PruneAsync(
+                0);
+        }
+
+        var cache =
+            new ThumbnailCache(
+                _defaultDataPaths.ThumbnailCachePath,
+                _resourcePolicy);
+        return await cache.PruneAsync(
+            0);
     }
 
     private async Task<ThumbnailCacheStats>
