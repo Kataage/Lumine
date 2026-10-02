@@ -25,6 +25,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
+    private readonly ContentControl _lightboxHost;
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
@@ -334,7 +335,25 @@ public sealed class MainWindow : Window
         Grid.SetColumn(workspace, 2);
         appShell.Children.Add(workspace);
 
-        Content = appShell;
+        _lightboxHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
+
+        var rootLayer =
+            new Grid
+            {
+                Background = LumineDesign.Background
+            };
+        rootLayer.Children.Add(appShell);
+        rootLayer.Children.Add(_lightboxHost);
+
+        Content = rootLayer;
 
         RenderNavigationDestination();
 
@@ -370,6 +389,33 @@ public sealed class MainWindow : Window
 
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
+
+    internal void ShowLightbox(
+        Control content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        _lightboxHost.Content = content;
+        _lightboxHost.IsVisible = true;
+    }
+
+    internal void HideLightbox(
+        Control? content = null)
+    {
+        if (content is not null
+            && !ReferenceEquals(
+                _lightboxHost.Content,
+                content))
+        {
+            return;
+        }
+
+        _lightboxHost.Content = null;
+        _lightboxHost.IsVisible = false;
+    }
+
+    internal bool IsLightboxVisible =>
+        _lightboxHost.IsVisible;
 
     private void OnNavigationRequested(
         string destination)
