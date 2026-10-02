@@ -696,6 +696,26 @@ try
         && patchedTechnical.Tags.Contains("bulk-tag"),
         "Bulk patch overwrote unspecified metadata on the existing tagged asset.");
 
+    var metadataSummary =
+        await repository.GetUserMetadataSelectionSummaryAsync(
+            library.Id,
+            [first.Id, technical.Id]);
+
+    Require(
+        metadataSummary.SelectionCount == 2
+        && !metadataSummary.RatingMixed
+        && metadataSummary.Rating == 5
+        && !metadataSummary.FavoriteMixed
+        && metadataSummary.Favorite
+        && !metadataSummary.StatusLabelMixed
+        && metadataSummary.StatusLabel == "candidate"
+        && metadataSummary.ColorLabelMixed
+        && metadataSummary.ColorLabel is null
+        && metadataSummary.NotesMixed
+        && metadataSummary.TagsMixed
+        && metadataSummary.CommonTags.SequenceEqual(["bulk-tag"]),
+        "Mixed metadata selection summary did not preserve exact common/mixed semantics.");
+
 
     Require(await repository.RemoveAssetAsync(library.Id, "a.jpg"), "Asset removal failed.");
     await repository.UpsertAssetsAsync(
