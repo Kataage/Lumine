@@ -312,19 +312,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                         query,
                         cancellationToken).ConfigureAwait(false);
 
-            var viewerOptions =
-                ViewerOptions.FromResourcePolicy(
-                    ViewerSession.Options is { } currentOptions
-                        ? new CoreResourcePolicy
-                        {
-                            ThumbnailWorkerCount =
-                                currentOptions.ThumbnailWorkerCount
-                        }
-                        : CoreResourcePolicy.Default);
-
             // Keep the already-resolved Viewer options. Query changes must
             // replace only paging/session state, never product resource policy.
-            viewerOptions = ViewerSession.Options;
+            var viewerOptions = ViewerSession.Options;
 
             IViewerPageSource pageSource =
                 query is null
