@@ -255,7 +255,9 @@ internal static class LumineDesign
     public static Button ConfigureIconButton(
         Button button,
         string tooltip,
-        bool primary = false)
+        bool primary = false,
+        string? automationId = null,
+        string? acceleratorKey = null)
     {
         ArgumentNullException.ThrowIfNull(button);
         ArgumentException.ThrowIfNullOrWhiteSpace(tooltip);
@@ -280,6 +282,20 @@ internal static class LumineDesign
                 : new Thickness(1);
         ToolTip.SetTip(button, tooltip);
         AutomationProperties.SetName(button, tooltip);
+        if (!string.IsNullOrWhiteSpace(automationId))
+        {
+            AutomationProperties.SetAutomationId(
+                button,
+                automationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(acceleratorKey))
+        {
+            AutomationProperties.SetAcceleratorKey(
+                button,
+                acceleratorKey);
+        }
+
         return button;
     }
 
