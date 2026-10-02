@@ -394,7 +394,8 @@ public sealed class MainWindow : Window
 
         var progress =
             new Progress<CoreViewerOpenProgress>(
-                update => _status.Text = update.Message);
+                _ => _status.Text =
+                    "ライブラリを準備しています…");
 
         CoreViewerRuntime? runtime = null;
 
