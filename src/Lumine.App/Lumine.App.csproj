@@ -9,11 +9,16 @@
     <TrimMode>full</TrimMode>
     <StripSymbols>true</StripSymbols>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <ApplicationIcon>Assets\appicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\appicon.png" />
   </ItemGroup>
 
   <ItemGroup>
