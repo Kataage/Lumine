@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Globalization;
 using Avalonia.Controls;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -18,10 +17,15 @@ internal static class ProductAcceptanceFunctionalScenario
         ArgumentNullException.ThrowIfNull(dataPaths);
         ArgumentNullException.ThrowIfNull(metadata);
 
+        // Cold and warm acceptance intentionally share the same product
+        // database. Use a fresh source-library path per process so the
+        // product workflow remains repeatable without colliding with
+        // directed-relation uniqueness from the previous run.
         var scratchRoot =
             Path.Combine(
                 dataPaths.RootPath,
-                "product-acceptance-scratch");
+                "product-acceptance-scratch",
+                Guid.NewGuid().ToString("N"));
         var libraryRoot =
             Path.Combine(
                 scratchRoot,
