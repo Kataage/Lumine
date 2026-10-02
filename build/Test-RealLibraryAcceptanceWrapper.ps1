@@ -124,6 +124,16 @@ foreach ($iteration in 1..$Repeat) {
         throw "Acceptance wrapper smoke iteration $iteration did not produce a passing summary."
     }
 
+    if ($summary.thumbnailStorageMode -ne "MemoryOnly") {
+        throw "Acceptance wrapper smoke iteration $iteration did not exercise the product-default MemoryOnly thumbnail policy: $($summary.thumbnailStorageMode)"
+    }
+
+    if ([int64]$summary.cold.thumbnailCacheBytes -ne 0 -or
+        [int64]$summary.warm.thumbnailCacheBytes -ne 0)
+    {
+        throw "Acceptance wrapper smoke iteration $iteration persisted display thumbnails under the MemoryOnly product default."
+    }
+
     if ($summary.appRevision -ne $ExpectedRevision) {
         throw "Acceptance wrapper smoke iteration $iteration lost build provenance: $($summary.appRevision)"
     }
