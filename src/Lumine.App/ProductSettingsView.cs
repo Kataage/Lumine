@@ -99,48 +99,51 @@ internal static class ProductSettingsView
                 "新しくライブラリを開いたときの既定表示です。現在のライブラリにもすぐ反映します。"));
 
         var view =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "グリッド",
-                        "リスト"
-                    },
-                SelectedIndex =
-                    snapshot.ViewerDefaults.ViewMode
-                        == BrowseViewMode.Grid
-                            ? 0
-                            : 1
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "グリッド",
+                            "リスト"
+                        },
+                    SelectedIndex =
+                        snapshot.ViewerDefaults.ViewMode
+                            == BrowseViewMode.Grid
+                                ? 0
+                                : 1
+                });
         var density =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "コンパクト",
-                        "標準",
-                        "ゆったり"
-                    },
-                SelectedIndex =
-                    snapshot.ViewerDefaults.Density
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "コンパクト",
+                            "標準",
+                            "ゆったり"
+                        },
+                    SelectedIndex =
+                        snapshot.ViewerDefaults.Density
+                });
         var sort =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "更新日時: 新しい順",
-                        "更新日時: 古い順",
-                        "ファイル名: A → Z",
-                        "ファイル名: Z → A"
-                    },
-                SelectedIndex =
-                    SortIndex(
-                        snapshot.ViewerDefaults.SortOrder)
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "更新日時: 新しい順",
+                            "更新日時: 古い順",
+                            "ファイル名: A → Z",
+                            "ファイル名: Z → A"
+                        },
+                    SelectedIndex =
+                        SortIndex(
+                            snapshot.ViewerDefaults.SortOrder)
+                });
         var status = CreateStatusText();
 
         content.Children.Add(
@@ -227,14 +230,15 @@ internal static class ProductSettingsView
                 "通常閲覧はMemoryOnlyが既定です。元画像はLumineへコピーせず、永続サムネイルも作りません。"));
 
         var persistent =
-            new CheckBox
-            {
-                Content =
-                    "表示用サムネイルをディスクへ永続保存する",
-                IsChecked =
-                    snapshot.PersistedThumbnailStorageMode
-                    == ThumbnailStorageMode.PersistentDisk
-            };
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content =
+                        "表示用サムネイルをディスクへ永続保存する",
+                    IsChecked =
+                        snapshot.PersistedThumbnailStorageMode
+                        == ThumbnailStorageMode.PersistentDisk
+                });
         content.Children.Add(persistent);
 
         content.Children.Add(
@@ -260,19 +264,20 @@ internal static class ProductSettingsView
                 .Order()
                 .ToArray();
         var memory =
-            new ComboBox
-            {
-                ItemsSource =
-                    budgets
-                        .Select(
-                            static value =>
-                                FormatBytes(value))
-                        .ToArray(),
-                SelectedIndex =
-                    Array.IndexOf(
-                        budgets,
-                        snapshot.EncodedThumbnailMemoryByteLimit)
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        budgets
+                            .Select(
+                                static value =>
+                                    FormatBytes(value))
+                            .ToArray(),
+                    SelectedIndex =
+                        Array.IndexOf(
+                            budgets,
+                            snapshot.EncodedThumbnailMemoryByteLimit)
+                });
         content.Children.Add(
             CreateField(
                 "メモリ内thumbnail cache上限",
