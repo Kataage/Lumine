@@ -11,12 +11,24 @@ internal sealed class CoreViewerShell : UserControl
     private readonly DetailViewerControl _detail;
     private bool _detached;
 
-    public CoreViewerShell(CoreViewerRuntime runtime)
+    public CoreViewerShell(
+        CoreViewerRuntime runtime,
+        BrowsePreferences? preferences = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
 
+        preferences ??=
+            new BrowsePreferences(
+                BrowseViewMode.Grid,
+                1,
+                Lumine.Library.AssetSortOrder.ModifiedNewest);
+
         _grid = new ThumbnailViewerControl(
-            runtime.ViewerSession);
+            runtime.ViewerSession,
+            preferences.ViewMode == BrowseViewMode.List
+                ? ViewerLayoutMode.List
+                : ViewerLayoutMode.Grid,
+            preferences.Density);
         _detail = new DetailViewerControl(
             runtime.DetailSession);
         _detail.BindGrid(_grid);
@@ -69,6 +81,18 @@ internal sealed class CoreViewerShell : UserControl
 
     internal DetailViewerControl DetailViewer => _detail;
 
+    public void SetBrowseLayout(
+        BrowsePreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+
+        _grid.SetLayout(
+            preferences.ViewMode == BrowseViewMode.List
+                ? ViewerLayoutMode.List
+                : ViewerLayoutMode.Grid,
+            preferences.Density);
+    }
+
     public void SelectInitialAsset()
     {
         if (_grid.AssetCount <= 0)
@@ -90,6 +114,14 @@ internal sealed class CoreViewerShell : UserControl
 
         _detached = true;
         _detail.UnbindGrid();
+        _detail.PrepareForDetach();
+        _grid.PrepareForDetach();
+
+        // Drop the shell-owned visual tree before awaiting compositor/native
+        // drains. The controls retain only the explicit lifecycle objects
+        // that are awaited below and by CoreViewerRuntime.DisposeAsync().
+        Content = null;
+
         await _grid.DrainBitmapReleasesAsync();
     }
 }

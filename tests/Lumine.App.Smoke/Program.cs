@@ -207,6 +207,24 @@ try
             !lifecycleHost.PreviousShutdownWasUnclean,
             "First lifecycle host incorrectly reported an unclean previous shutdown.");
 
+        var initialBrowse =
+            BrowsePreferenceResolver.Resolve(
+                lifecycleHost.Settings,
+                out var initialBrowseWarning);
+        Require(
+            initialBrowseWarning is null
+            && initialBrowse.ViewMode == BrowseViewMode.Grid
+            && initialBrowse.Density == 1
+            && initialBrowse.SortOrder
+                == AssetSortOrder.ModifiedNewest,
+            "Fresh browse preferences did not resolve to the product defaults.");
+
+        await lifecycleHost.SaveBrowsePreferencesAsync(
+            new BrowsePreferences(
+                BrowseViewMode.List,
+                2,
+                AssetSortOrder.FileNameDescending));
+
         AppHost? unexpectedSecondHost = null;
         try
         {
@@ -237,6 +255,20 @@ try
         Require(
             !cleanRestart.PreviousShutdownWasUnclean,
             "Clean lifecycle restart was reported as unclean.");
+
+        var restoredBrowse =
+            BrowsePreferenceResolver.Resolve(
+                cleanRestart.Settings,
+                out var restoredBrowseWarning);
+        Require(
+            restoredBrowseWarning is null
+            && restoredBrowse.ViewMode
+                == BrowseViewMode.List
+            && restoredBrowse.Density == 2
+            && restoredBrowse.SortOrder
+                == AssetSortOrder.FileNameDescending,
+            "Browse view/density/sort preferences did not persist across restart.");
+
         await cleanRestart.CompleteCleanShutdownAsync();
     }
 
@@ -989,12 +1021,45 @@ try
                 && shell.DetailViewer.IsOriginal,
                 "Real App shell did not move back and re-admit an original through the composition release contract.");
 
+            shell.SetBrowseLayout(
+                new BrowsePreferences(
+                    BrowseViewMode.List,
+                    2,
+                    AssetSortOrder.ModifiedNewest));
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.List
+                && shell.GridViewer.DensityLevel == 2
+                && shell.GridViewer.Columns == 1,
+                "List browse mode did not preserve single-column virtualization.");
+
+            shell.SetBrowseLayout(
+                new BrowsePreferences(
+                    BrowseViewMode.Grid,
+                    0,
+                    AssetSortOrder.ModifiedNewest));
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.Grid
+                && shell.GridViewer.DensityLevel == 0
+                && shell.GridViewer.Columns >= 1,
+                "Density/view-mode switch did not reuse the active Viewer session.");
+
             var navigationAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(0);
             await shellRuntime.LibraryService.SetUserMetadataAsync(
                 shellRuntime.Library.Id,
                 navigationAsset.Id,
                 new AssetUserMetadataUpdate(
+                    Rating: 4,
+                    Favorite: true,
+                    Notes: "browse-search-token",
+                    StatusLabel: "reviewed",
+                    ColorLabel: "blue",
                     Tags: ["navigation-smoke"]));
 
             window.Close();
@@ -1009,29 +1074,73 @@ try
                 && shellRuntime.CurrentQuery?.RequiredTags is { Count: 1 },
                 "CoreViewerRuntime did not apply the navigation tag query in place.");
 
-            var filteredShell =
-                new CoreViewerShell(shellRuntime);
-            var filteredWindow =
-                new Avalonia.Controls.Window
-                {
-                    Width = 900,
-                    Height = 620,
-                    Content = filteredShell
-                };
-            filteredWindow.Show();
-            Dispatcher.UIThread.RunJobs();
+            var filteredAsset =
+                await shellRuntime.ViewerSession.GetAssetAsync(0);
             Require(
-                filteredShell.GridViewer.AssetCount == 1,
-                "Filtered App shell did not bind the replacement Viewer sessions.");
-            filteredWindow.Close();
-            Dispatcher.UIThread.RunJobs();
-            await filteredShell.DetachAsync();
+                filteredAsset.Id == navigationAsset.Id,
+                "Filtered Viewer session did not expose the tagged asset.");
+
+            await shellRuntime.ApplyQueryAsync(
+                new AssetQuery(
+                    SearchText: "browse",
+                    RequiredTags: ["navigation-smoke"],
+                    MinRating: 4,
+                    Favorite: true,
+                    StatusLabel: "reviewed",
+                    ColorLabel: "blue"));
+            Require(
+                shellRuntime.AssetCount == 1,
+                "Composed browse search/filter query did not flow through the Viewer runtime.");
+
+            foreach (var sortOrder in new[]
+                     {
+                         AssetSortOrder.ModifiedNewest,
+                         AssetSortOrder.ModifiedOldest,
+                         AssetSortOrder.FileNameAscending,
+                         AssetSortOrder.FileNameDescending
+                     })
+            {
+                await shellRuntime.ApplyQueryAsync(
+                    new AssetQuery(
+                        SortOrder: sortOrder));
+
+                var firstSorted =
+                    await shellRuntime.ViewerSession
+                        .GetAssetAsync(0);
+                var secondSorted =
+                    await shellRuntime.ViewerSession
+                        .GetAssetAsync(1);
+
+                var sortedCorrectly =
+                    sortOrder switch
+                    {
+                        AssetSortOrder.ModifiedNewest =>
+                            firstSorted.ModifiedAtUtcTicks
+                                >= secondSorted.ModifiedAtUtcTicks,
+                        AssetSortOrder.ModifiedOldest =>
+                            firstSorted.ModifiedAtUtcTicks
+                                <= secondSorted.ModifiedAtUtcTicks,
+                        AssetSortOrder.FileNameAscending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.DisplayName,
+                                secondSorted.DisplayName) <= 0,
+                        AssetSortOrder.FileNameDescending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.DisplayName,
+                                secondSorted.DisplayName) >= 0,
+                        _ => false
+                    };
+
+                Require(
+                    sortedCorrectly,
+                    $"Viewer keyset paging did not honor browse sort {sortOrder}.");
+            }
 
             await shellRuntime.ApplyQueryAsync(null);
             Require(
                 shellRuntime.AssetCount == 2
                 && shellRuntime.CurrentQuery is null,
-                "CoreViewerRuntime did not clear the navigation query.");
+                "CoreViewerRuntime did not clear the browse query.");
 
             await shellRuntime.DisposeAsync();
             Dispatcher.UIThread.RunJobs();
@@ -1041,7 +1150,7 @@ try
         CancellationToken.None);
 
     Console.WriteLine(
-        "App shell smoke: runtime composition / grid / selection / 1:1 / zoom / pan / Fit / navigation requery / shutdown OK");
+        "App shell smoke: runtime composition / browse filters / four-way keyset sort / grid-list density / selection / Detail / shutdown OK");
 
     for (var iteration = 0;
          iteration < 3;
@@ -1234,9 +1343,18 @@ try
             || new FileInfo(walPath).Length == 0,
             "Repeated MainWindow close left a non-empty SQLite WAL.");
 
-        Directory.Delete(
-            repeatedLibraryRoot,
-            recursive: true);
+        try
+        {
+            Directory.Delete(
+                repeatedLibraryRoot,
+                recursive: true);
+        }
+        catch (IOException exception)
+        {
+            throw new InvalidOperationException(
+                $"MainWindow lifecycle iteration {iteration} returned before all source handles were released.",
+                exception);
+        }
         Directory.Delete(
             repeatedDataRoot,
             recursive: true);

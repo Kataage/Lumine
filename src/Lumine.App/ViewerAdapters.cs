@@ -85,13 +85,6 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ArgumentOutOfRangeException.ThrowIfNegative(assetCount);
 
-        if (query.SortOrder != AssetSortOrder.ModifiedNewest)
-        {
-            throw new ArgumentException(
-                "ViewerPageCursor currently represents modified-newest keyset order. Other Library sort orders must use a matching Viewer cursor contract.",
-                nameof(query));
-        }
-
         _libraryId = libraryId;
         Count = assetCount;
     }
@@ -103,12 +96,29 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
         ViewerPageCursor? cursor = null,
         CancellationToken cancellationToken = default)
     {
-        AssetQueryCursor? libraryCursor = cursor is { } value
-            ? new AssetQueryCursor(
-                AssetSortOrder.ModifiedNewest,
-                value.AssetId,
-                value.ModifiedAtUtcTicks)
-            : null;
+        AssetQueryCursor? libraryCursor =
+            cursor is { } value
+                ? _query.SortOrder switch
+                {
+                    AssetSortOrder.ModifiedNewest
+                        or AssetSortOrder.ModifiedOldest =>
+                        new AssetQueryCursor(
+                            _query.SortOrder,
+                            value.AssetId,
+                            value.ModifiedAtUtcTicks),
+                    AssetSortOrder.FileNameAscending
+                        or AssetSortOrder.FileNameDescending =>
+                        new AssetQueryCursor(
+                            _query.SortOrder,
+                            value.AssetId,
+                            FileName:
+                                value.FileName
+                                ?? throw new InvalidOperationException(
+                                    "Viewer filename cursor did not carry its key.")),
+                    _ => throw new InvalidOperationException(
+                        "Unsupported Library browse sort order.")
+                }
+                : null;
 
         var page = await _library.GetAssetPageAsync(
             _libraryId,
@@ -134,13 +144,29 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
                 asset.HasAlpha))
             .ToArray();
 
-        ViewerPageCursor? next = page.NextCursor is { } nextCursor
-            ? new ViewerPageCursor(
-                nextCursor.ModifiedAtUtcTicks
-                    ?? throw new InvalidOperationException(
-                        "Modified-newest Library query cursor did not carry its timestamp."),
-                nextCursor.Id)
-            : null;
+        ViewerPageCursor? next =
+            page.NextCursor is { } nextCursor
+                ? _query.SortOrder switch
+                {
+                    AssetSortOrder.ModifiedNewest
+                        or AssetSortOrder.ModifiedOldest =>
+                        new ViewerPageCursor(
+                            nextCursor.ModifiedAtUtcTicks
+                                ?? throw new InvalidOperationException(
+                                    "Modified Library query cursor did not carry its timestamp."),
+                            nextCursor.Id),
+                    AssetSortOrder.FileNameAscending
+                        or AssetSortOrder.FileNameDescending =>
+                        new ViewerPageCursor(
+                            0,
+                            nextCursor.Id,
+                            nextCursor.FileName
+                                ?? throw new InvalidOperationException(
+                                    "Filename Library query cursor did not carry its key.")),
+                    _ => throw new InvalidOperationException(
+                        "Unsupported Library browse sort order.")
+                }
+                : null;
 
         return new ViewerAssetPage(items, next);
     }

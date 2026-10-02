@@ -18,13 +18,39 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly HashSet<Task> _pendingBitmapReleases = [];
     private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
     private Exception? _bitmapReleaseFailure;
+
+    // Tile decode tasks extend beyond ViewerSession.GetThumbnailAsync:
+    // they also acquire/decode Avalonia bitmaps. Dynamic Grid/List rebuilds
+    // can detach a tile while that final stage is still completing, so shell
+    // shutdown must drain these tasks as well as composition-fenced leases.
+    private readonly object _tileLoadGate = new();
+    private readonly HashSet<Task> _pendingTileLoads = [];
     private Compositor? _compositor;
     private int _columns = 1;
     private long _selectedIndex = -1;
+    private ViewerLayoutMode _layoutMode;
+    private int _densityLevel;
+    private double _viewportWidth = 1;
 
-    public ThumbnailViewerControl(ViewerSession session)
+    public ThumbnailViewerControl(
+        ViewerSession session,
+        ViewerLayoutMode layoutMode = ViewerLayoutMode.Grid,
+        int densityLevel = 1)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+
+        if (!Enum.IsDefined(layoutMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(layoutMode));
+        }
+
+        if (densityLevel is < 0 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(densityLevel));
+        }
+
+        _layoutMode = layoutMode;
+        _densityLevel = densityLevel;
 
         Focusable = true;
         ClipToBounds = true;
@@ -48,6 +74,53 @@ public sealed class ThumbnailViewerControl : UserControl
     public long SelectedAssetIndex => _selectedIndex;
 
     public int Columns => _columns;
+
+    public ViewerLayoutMode LayoutMode =>
+        _layoutMode;
+
+    public int DensityLevel =>
+        _densityLevel;
+
+    public void PrepareForDetach()
+    {
+        // Terminal shell teardown must detach realized rows synchronously.
+        // Relying only on visual-tree event delivery leaves a timing window
+        // where tile decode/file work can outlive the owning window.
+        _rows.ItemsSource = null;
+        ClearSelection();
+    }
+
+    public void SetLayout(
+        ViewerLayoutMode layoutMode,
+        int densityLevel)
+    {
+        if (!Enum.IsDefined(layoutMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(layoutMode));
+        }
+
+        if (densityLevel is < 0 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(densityLevel));
+        }
+
+        if (_layoutMode == layoutMode
+            && _densityLevel == densityLevel)
+        {
+            return;
+        }
+
+        var anchor =
+            GetViewportAnchorAssetIndex();
+
+        _layoutMode = layoutMode;
+        _densityLevel = densityLevel;
+        _columns =
+            CalculateColumns(
+                Math.Max(1, _viewportWidth));
+
+        RebuildRows(anchor);
+    }
 
     public int RealizedRowCount => _rows.GetRealizedContainers().Count();
 
@@ -161,7 +234,8 @@ public sealed class ThumbnailViewerControl : UserControl
     {
         while (true)
         {
-            Task[] pending;
+            Task[] releases;
+            Task[] loads;
 
             lock (_bitmapReleaseGate)
             {
@@ -172,15 +246,74 @@ public sealed class ThumbnailViewerControl : UserControl
                         _bitmapReleaseFailure);
                 }
 
-                if (_pendingBitmapReleases.Count == 0)
-                {
-                    return;
-                }
-
-                pending = [.. _pendingBitmapReleases];
+                releases = [.. _pendingBitmapReleases];
             }
 
-            await Task.WhenAll(pending).ConfigureAwait(false);
+            lock (_tileLoadGate)
+            {
+                loads = [.. _pendingTileLoads];
+            }
+
+            if (releases.Length == 0
+                && loads.Length == 0)
+            {
+                // A tile completion can schedule a composition-fenced release
+                // while the first snapshots are being taken. Recheck both
+                // sets before declaring the Viewer surface drained.
+                lock (_bitmapReleaseGate)
+                {
+                    if (_pendingBitmapReleases.Count != 0)
+                    {
+                        continue;
+                    }
+                }
+
+                lock (_tileLoadGate)
+                {
+                    if (_pendingTileLoads.Count == 0)
+                    {
+                        return;
+                    }
+                }
+
+                continue;
+            }
+
+            await Task.WhenAll(
+                    releases.Concat(loads))
+                .ConfigureAwait(false);
+        }
+    }
+
+    private void TrackTileLoad(Task load)
+    {
+        ArgumentNullException.ThrowIfNull(load);
+
+        lock (_tileLoadGate)
+        {
+            _pendingTileLoads.Add(load);
+        }
+
+        _ = ObserveTileLoadAsync(load);
+    }
+
+    private async Task ObserveTileLoadAsync(Task load)
+    {
+        try
+        {
+            await load.ConfigureAwait(false);
+        }
+        catch
+        {
+            // LoadAsync reports expected tile failures through ViewerSession.
+            // The observer owns lifecycle bookkeeping only.
+        }
+        finally
+        {
+            lock (_tileLoadGate)
+            {
+                _pendingTileLoads.Remove(load);
+            }
         }
     }
 
@@ -283,18 +416,69 @@ public sealed class ThumbnailViewerControl : UserControl
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         var width = Math.Max(1, e.NewSize.Width);
-        var cellWidth = _session.Options.TileWidth + _session.Options.TileSpacing;
-        var columns = Math.Max(1, (int)Math.Floor(width / cellWidth));
+        var previousWidth = _viewportWidth;
+        _viewportWidth = width;
 
-        if (columns == _columns)
+        var columns =
+            CalculateColumns(width);
+        var listWidthChanged =
+            _layoutMode == ViewerLayoutMode.List
+            && Math.Abs(previousWidth - width) >= 1;
+
+        if (columns == _columns
+            && !listWidthChanged)
         {
             return;
         }
 
-        var anchorAssetIndex = GetViewportAnchorAssetIndex();
+        var anchorAssetIndex =
+            GetViewportAnchorAssetIndex();
         _columns = columns;
         RebuildRows(anchorAssetIndex);
     }
+
+    private int CalculateColumns(double width)
+    {
+        if (_layoutMode == ViewerLayoutMode.List)
+        {
+            return 1;
+        }
+
+        var cellWidth =
+            GetTileWidth()
+            + _session.Options.TileSpacing;
+        return Math.Max(
+            1,
+            (int)Math.Floor(width / cellWidth));
+    }
+
+    private double GetTileWidth() =>
+        _layoutMode == ViewerLayoutMode.List
+            ? Math.Max(320, _viewportWidth - 20)
+            : _densityLevel switch
+            {
+                0 => 140,
+                1 => _session.Options.TileWidth,
+                2 => 232,
+                _ => throw new ArgumentOutOfRangeException()
+            };
+
+    private double GetTileHeight() =>
+        _layoutMode == ViewerLayoutMode.List
+            ? _densityLevel switch
+            {
+                0 => 78,
+                1 => 94,
+                2 => 112,
+                _ => throw new ArgumentOutOfRangeException()
+            }
+            : _densityLevel switch
+            {
+                0 => 168,
+                1 => _session.Options.TileHeight,
+                2 => 272,
+                _ => throw new ArgumentOutOfRangeException()
+            };
 
     private long? GetViewportAnchorAssetIndex()
     {
@@ -399,12 +583,18 @@ public sealed class ThumbnailViewerControl : UserControl
     private void RebuildRows(long? anchorAssetIndex = null)
     {
         _rows.ItemsSource = new VirtualRowIndexList(AssetCount, _columns);
+        var tileWidth = GetTileWidth();
+        var tileHeight = GetTileHeight();
+
         _rows.ItemTemplate = new FuncDataTemplate<long>(
             (rowIndex, _) => new ViewerRowControl(
                 this,
                 _session,
                 rowIndex,
-                _columns),
+                _columns,
+                _layoutMode,
+                tileWidth,
+                tileHeight),
             supportsRecycling: false);
 
         if (anchorAssetIndex is { } anchor
@@ -479,7 +669,10 @@ public sealed class ThumbnailViewerControl : UserControl
             ThumbnailViewerControl owner,
             ViewerSession session,
             long rowIndex,
-            int columns)
+            int columns,
+            ViewerLayoutMode layoutMode,
+            double tileWidth,
+            double tileHeight)
         {
             _owner = owner;
             _session = session;
@@ -488,7 +681,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Orientation = Orientation.Horizontal;
             Spacing = session.Options.TileSpacing;
-            Height = session.Options.TileHeight;
+            Height = tileHeight;
 
             var start = checked(rowIndex * columns);
             for (var column = 0; column < columns; column++)
@@ -502,7 +695,10 @@ public sealed class ThumbnailViewerControl : UserControl
                 Children.Add(new ViewerTileControl(
                     _owner,
                     session,
-                    index));
+                    index,
+                    layoutMode,
+                    tileWidth,
+                    tileHeight));
             }
 
             AttachedToVisualTree += OnAttached;
@@ -589,14 +785,17 @@ public sealed class ThumbnailViewerControl : UserControl
         public ViewerTileControl(
             ThumbnailViewerControl owner,
             ViewerSession session,
-            long index)
+            long index,
+            ViewerLayoutMode layoutMode,
+            double tileWidth,
+            double tileHeight)
         {
             _owner = owner;
             _session = session;
             _index = index;
 
-            Width = session.Options.TileWidth;
-            Height = session.Options.TileHeight;
+            Width = tileWidth;
+            Height = tileHeight;
             Padding = new Thickness(4);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
@@ -616,14 +815,39 @@ public sealed class ThumbnailViewerControl : UserControl
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
-            var panel = new Grid
+            if (layoutMode == ViewerLayoutMode.List)
             {
-                RowDefinitions = new RowDefinitions("*,Auto")
-            };
-            panel.Children.Add(_image);
-            Grid.SetRow(_label, 1);
-            panel.Children.Add(_label);
-            Child = panel;
+                _image.Width =
+                    Math.Max(56, tileHeight - 16);
+                _image.Height =
+                    Math.Max(56, tileHeight - 16);
+
+                var panel = new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions("Auto,*"),
+                    ColumnSpacing = 10
+                };
+                panel.Children.Add(_image);
+                Grid.SetColumn(_label, 1);
+                _label.VerticalAlignment =
+                    VerticalAlignment.Center;
+                _label.FontSize = 12;
+                panel.Children.Add(_label);
+                Child = panel;
+            }
+            else
+            {
+                var panel = new Grid
+                {
+                    RowDefinitions =
+                        new RowDefinitions("*,Auto")
+                };
+                panel.Children.Add(_image);
+                Grid.SetRow(_label, 1);
+                panel.Children.Add(_label);
+                Child = panel;
+            }
 
             PointerPressed += OnPointerPressed;
             AttachedToVisualTree += OnAttached;
@@ -672,7 +896,9 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             CancelLoad();
             _loadCancellation = new CancellationTokenSource();
-            _ = LoadAsync(_loadCancellation.Token);
+            var load =
+                LoadAsync(_loadCancellation.Token);
+            _owner.TrackTileLoad(load);
         }
 
         private void CancelLoad()

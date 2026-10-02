@@ -773,9 +773,7 @@ public sealed class DetailViewerControl : UserControl
         SynchronizeFromGrid();
     }
 
-    private void OnDetachedFromVisualTree(
-        object? sender,
-        VisualTreeAttachmentEventArgs e)
+    public void PrepareForDetach()
     {
         _visualAttached = false;
         _image.Source = null;
@@ -789,6 +787,11 @@ public sealed class DetailViewerControl : UserControl
             _session.Clear();
         }
     }
+
+    private void OnDetachedFromVisualTree(
+        object? sender,
+        VisualTreeAttachmentEventArgs e) =>
+        PrepareForDetach();
 
     private Task ReleaseOriginalAfterCompositionAsync(
         ViewerOriginalBitmap original)

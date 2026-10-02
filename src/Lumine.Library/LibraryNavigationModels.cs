@@ -20,3 +20,8 @@ public sealed record LibraryTagInfo(
     long Id,
     string Name,
     long AssetCount);
+
+
+public sealed record LibraryBrowseFacets(
+    IReadOnlyList<string> StatusLabels,
+    IReadOnlyList<string> ColorLabels);

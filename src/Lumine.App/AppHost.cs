@@ -112,7 +112,13 @@ internal sealed class AppHost : IAsyncDisposable
                     new AppSettingsDocument
                     {
                         ThumbnailStorageMode =
-                            settings.ThumbnailStorageMode
+                            settings.ThumbnailStorageMode,
+                        BrowseViewMode =
+                            settings.BrowseViewMode,
+                        BrowseDensity =
+                            settings.BrowseDensity,
+                        BrowseSortOrder =
+                            settings.BrowseSortOrder
                     };
                 resourcePolicy =
                     CoreResourcePolicy.Resolve(
@@ -137,6 +143,23 @@ internal sealed class AppHost : IAsyncDisposable
                     ThumbnailStoragePreference.Serialize(
                         persistedThumbnailStorageMode)
             };
+
+            var browsePreferences =
+                BrowsePreferenceResolver.Resolve(
+                    settings,
+                    out var browseWarning);
+            if (!string.IsNullOrWhiteSpace(
+                    browseWarning))
+            {
+                warning = AppendWarning(
+                    warning,
+                    browseWarning);
+            }
+
+            settings =
+                BrowsePreferenceResolver.Apply(
+                    settings,
+                    browsePreferences);
 
             var thumbnailStorageMode =
                 ThumbnailStoragePreference.ResolveEffective(
@@ -238,6 +261,27 @@ internal sealed class AppHost : IAsyncDisposable
         Log.Write(
             "settings",
             $"Thumbnail storage preference saved as {thumbnailStorageMode}; it takes effect on the next launch.");
+    }
+
+    public async Task SaveBrowsePreferencesAsync(
+        BrowsePreferences preferences,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+
+        var next =
+            BrowsePreferenceResolver.Apply(
+                Settings,
+                preferences);
+
+        await _settingsStore.SaveAsync(
+            next,
+            cancellationToken).ConfigureAwait(false);
+
+        Settings = next;
+        Log.Write(
+            "settings",
+            $"Browse preferences saved: view={preferences.ViewMode}, density={preferences.Density}, sort={preferences.SortOrder}.");
     }
 
     public async Task CompleteCleanShutdownAsync(

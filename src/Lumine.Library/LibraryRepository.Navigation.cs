@@ -255,4 +255,70 @@ public sealed partial class LibraryRepository
 
         return items;
     }
+
+    public async Task<LibraryBrowseFacets> GetBrowseFacetsAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        static async Task<IReadOnlyList<string>> ReadValuesAsync(
+            SqliteConnection connection,
+            long libraryId,
+            string column,
+            CancellationToken cancellationToken)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"""
+                SELECT DISTINCT um.{column}
+                FROM asset_user_metadata AS um
+                INNER JOIN assets AS a
+                  ON a.id = um.asset_id
+                WHERE a.library_id = $library_id
+                  AND um.{column} IS NOT NULL
+                  AND trim(um.{column}) <> ''
+                ORDER BY um.{column} COLLATE NOCASE ASC
+                LIMIT 256;
+                """;
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+
+            var values = new List<string>();
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                values.Add(reader.GetString(0));
+            }
+
+            return values;
+        }
+
+        var statuses =
+            await ReadValuesAsync(
+                connection,
+                libraryId,
+                "status_label",
+                cancellationToken)
+                .ConfigureAwait(false);
+        var colors =
+            await ReadValuesAsync(
+                connection,
+                libraryId,
+                "color_label",
+                cancellationToken)
+                .ConfigureAwait(false);
+
+        return new LibraryBrowseFacets(
+            statuses,
+            colors);
+    }
 }
