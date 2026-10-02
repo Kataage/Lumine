@@ -171,7 +171,7 @@ internal static class ProductNavigationViews
                         new Thickness(9, 8),
                     IsEnabled =
                         canOpen
-                        && !isActive
+                        || isActive
                 };
             if (canOpen && !isActive)
             {
