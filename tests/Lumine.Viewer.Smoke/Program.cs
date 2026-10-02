@@ -94,6 +94,13 @@ internal static class Program
         var viewer = ViewerOptions.FromResourcePolicy(policy);
         var detail = ViewerDetailOptions.FromResourcePolicy(policy);
 
+        var productDefaults = new ViewerOptions();
+        Require(
+            Math.Abs(
+                productDefaults.TileWidth
+                - productDefaults.TileHeight) < 0.001,
+            "Default product grid is no longer square.");
+
         Require(
             viewer.DecodedBitmapEntryLimit
                 == policy.DecodedThumbnailEntryLimit
@@ -787,9 +794,18 @@ internal static class Program
         viewer.SelectAsset(0);
 
         long invokedIndex = -1;
+        long detailIndex = -1;
         void OnAssetInvoked(object? _, long index) =>
             invokedIndex = index;
+        void OnAssetDetailRequested(object? _, long index) =>
+            detailIndex = index;
         viewer.AssetInvoked += OnAssetInvoked;
+        viewer.AssetDetailRequested += OnAssetDetailRequested;
+
+        RaiseKey(viewer, Key.I);
+        Require(
+            detailIndex == 0,
+            "I did not request details for the selected image.");
 
         RaiseKey(viewer, Key.Enter);
         Require(
@@ -803,6 +819,7 @@ internal static class Program
             "Space did not invoke the selected image.");
 
         viewer.AssetInvoked -= OnAssetInvoked;
+        viewer.AssetDetailRequested -= OnAssetDetailRequested;
 
         RaiseKey(viewer, Key.Right);
         Require(viewer.SelectedAssetIndex == 1, "Right-arrow navigation failed.");
