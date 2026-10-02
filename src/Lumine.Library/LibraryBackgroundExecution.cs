@@ -299,6 +299,83 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<WorkInfo> CreateWorkAsync(
+        long libraryId,
+        WorkCreate create,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreateWorkAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<GenerationGroupInfo> CreateGenerationGroupAsync(
+        long libraryId,
+        GenerationGroupCreate create,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreateGenerationGroupAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<AssetRelationInfo> CreateAssetRelationAsync(
+        long libraryId,
+        AssetRelationCreate create,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreateAssetRelationAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<PublicationInfo> CreatePublicationAsync(
+        long libraryId,
+        PublicationCreate create,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreatePublicationAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<WorkInfo>> ListWorksAsync(
+        long libraryId,
+        int limit = 100,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListWorksAsync(
+                libraryId,
+                limit,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<PublicationInfo>> ListPublicationsAsync(
+        long libraryId,
+        int limit = 100,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListPublicationsAsync(
+                libraryId,
+                limit,
+                token),
+            cancellationToken);
+
+    public Task<AssetCreativeContext> GetAssetCreativeContextAsync(
+        long libraryId,
+        long assetId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetAssetCreativeContextAsync(
+                libraryId,
+                assetId,
+                token),
+            cancellationToken);
+
     public Task<LibraryScanResult> ScanAsync(
         long libraryId,
         IProgress<LibraryScanProgress>? progress = null,

@@ -137,7 +137,8 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (4, 'persist-source-technical-metadata', 4),
             (5, 'user-metadata-and-local-search', 5),
             (6, 'product-navigation-library-state', 6),
-            (7, 'future-schema', 7);
+            (7, 'creative-archive-domain', 7),
+            (8, 'future-schema', 8);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -187,7 +188,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 6, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 7, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -716,6 +717,115 @@ try
         && metadataSummary.CommonTags.SequenceEqual(["bulk-tag"]),
         "Mixed metadata selection summary did not preserve exact common/mixed semantics.");
 
+    var creativeWork =
+        await repository.CreateWorkAsync(
+            library.Id,
+            new WorkCreate(
+                "Smoke Work",
+                "human-facing creative unit",
+                [first.Id, technical.Id]));
+    Require(
+        creativeWork.Assets.Select(static asset => asset.Id)
+            .SequenceEqual([first.Id, technical.Id]),
+        "Work did not preserve ordered asset membership.");
+
+    var creativeGroup =
+        await repository.CreateGenerationGroupAsync(
+            library.Id,
+            new GenerationGroupCreate(
+                "Smoke Generation",
+                [technical.Id, first.Id],
+                WorkId: creativeWork.Id,
+                Prompt: "blue archive style",
+                NegativePrompt: "low quality",
+                ModelName: "smoke-model",
+                Sampler: "euler",
+                Scheduler: "normal",
+                Steps: 28,
+                CfgScale: 5.5,
+                WorkflowJson: "{\"node\":1}",
+                Notes: "manual group"));
+    Require(
+        creativeGroup.WorkId == creativeWork.Id
+        && creativeGroup.Assets.Select(static asset => asset.Id)
+            .SequenceEqual([technical.Id, first.Id])
+        && creativeGroup.Prompt == "blue archive style"
+        && creativeGroup.Steps == 28
+        && Math.Abs(creativeGroup.CfgScale - 5.5) < 0.001,
+        "Generation Group lost ordered membership or generation context.");
+
+    var relation =
+        await repository.CreateAssetRelationAsync(
+            library.Id,
+            new AssetRelationCreate(
+                first.Id,
+                technical.Id,
+                "img2img",
+                "manual lineage"));
+    Require(
+        relation.Parent.Id == first.Id
+        && relation.Child.Id == technical.Id
+        && relation.RelationType == "img2img",
+        "Directed asset lineage did not preserve direction/type.");
+
+    try
+    {
+        await repository.CreateAssetRelationAsync(
+            library.Id,
+            new AssetRelationCreate(
+                first.Id,
+                first.Id,
+                "edit"));
+        throw new InvalidOperationException(
+            "Self-link lineage unexpectedly succeeded.");
+    }
+    catch (ArgumentException)
+    {
+    }
+
+    var publication =
+        await repository.CreatePublicationAsync(
+            library.Id,
+            new PublicationCreate(
+                [technical.Id, first.Id],
+                "Pixiv",
+                new DateTimeOffset(
+                    2026, 10, 2, 6, 0, 0, TimeSpan.Zero),
+                WorkId: creativeWork.Id,
+                Title: "Published Smoke",
+                Body: "snapshot body",
+                TagsSnapshot: "smoke #archive",
+                Account: "@smoke",
+                ExternalId: "pixiv-123",
+                ExternalUrl: "https://example.invalid/p/123",
+                PlatformMetadataJson:
+                    "{\"ageRestriction\":\"r18\",\"aiGenerated\":true}"));
+    Require(
+        publication.Assets.Count == 2
+        && publication.Assets[0].AssetId == technical.Id
+        && publication.Assets[1].AssetId == first.Id
+        && publication.TagsSnapshot == "smoke #archive"
+        && publication.Destination == "Pixiv",
+        "Publication did not persist its ordered publication snapshot.");
+
+    var creativeContext =
+        await repository.GetAssetCreativeContextAsync(
+            library.Id,
+            technical.Id);
+    Require(
+        creativeContext.Works.Any(
+            work => work.Id == creativeWork.Id)
+        && creativeContext.GenerationGroups.Any(
+            group => group.Id == creativeGroup.Id)
+        && creativeContext.Relations.Any(
+            item =>
+                item.Id == relation.Id
+                && item.Parent.Id == first.Id
+                && item.Child.Id == technical.Id)
+        && creativeContext.Publications.Any(
+            item => item.Id == publication.Id),
+        "Asset creative context did not expose Work/Group/lineage/Publication human context.");
+
 
     Require(await repository.RemoveAssetAsync(library.Id, "a.jpg"), "Asset removal failed.");
     await repository.UpsertAssetsAsync(
@@ -732,6 +842,21 @@ try
         ?? throw new InvalidOperationException("Re-added a.jpg was not found.");
     Require(readded.Id > stableId, "Deleted asset row id was reused.");
     Require(readded.SourceRevision == 1, "Re-added asset did not start a fresh source identity.");
+
+    var publicationAfterSourceReplacement =
+        await repository.GetPublicationAsync(
+            library.Id,
+            publication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication snapshot disappeared after source asset replacement.");
+    Require(
+        publicationAfterSourceReplacement.Assets.Count == 2
+        && publicationAfterSourceReplacement.Assets[1].AssetId is null
+        && publicationAfterSourceReplacement.Assets[1].FileName
+            == first.FileName
+        && publicationAfterSourceReplacement.Assets[1].RelativePath
+            == first.RelativePath,
+        "Publication history did not preserve file/path snapshot after the original asset row was deleted.");
 
     const int fixtureCount = 2500;
     const int batchSize = 250;
@@ -832,6 +957,27 @@ try
         && reopenedMetadata.Tags.Contains("bulk-tag"),
         "User-owned metadata did not survive database reopen.");
 
+    var reopenedPublication =
+        await reopenedRepository.GetPublicationAsync(
+            library.Id,
+            publication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication disappeared after database reopen.");
+    var reopenedCreativeContext =
+        await reopenedRepository.GetAssetCreativeContextAsync(
+            library.Id,
+            technical.Id);
+    Require(
+        reopenedPublication.Title == "Published Smoke"
+        && reopenedPublication.Assets.Count == 2
+        && reopenedCreativeContext.Works.Any(
+            work => work.Id == creativeWork.Id)
+        && reopenedCreativeContext.GenerationGroups.Any(
+            group => group.Id == creativeGroup.Id)
+        && reopenedCreativeContext.Publications.Any(
+            item => item.Id == publication.Id),
+        "Creative archive did not survive database reopen.");
+
     var legacyPath = Path.Combine(tempRoot, "legacy-v1.db");
     await CreateLegacyV1DatabaseAsync(legacyPath);
     var legacyDatabase = new LibraryDatabase(legacyPath);
@@ -842,7 +988,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 6, "v1 database did not migrate to v6.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 7, "v1 database did not migrate to v7.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";

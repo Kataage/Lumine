@@ -406,10 +406,117 @@ internal static class ProductNavigationViews
         return root;
     }
 
-    public static Control CreatePublicationEntry() =>
-        CreatePlaceholder(
-            "公開履歴",
-            "Lumineの制作アーカイブとして公開履歴の入口を維持しています。Publicationの記録・編集は #395 でこの場所へ接続します。");
+    public static Control CreatePublicationEntry(
+        IReadOnlyList<PublicationInfo> publications)
+    {
+        var stack = CreateListStack();
+
+        stack.Children.Add(
+            CreateHint(
+                "公開した時点のtitle / body / tags / destination / ordered imagesをsnapshotとして保持します。ローカルのタグやノートを後で変更しても、この履歴は変わりません。"));
+
+        if (publications.Count == 0)
+        {
+            stack.Children.Add(
+                CreateHint(
+                    "公開履歴はまだありません。画像を選択し、上部のPublicationから記録できます。"));
+            return CreateScroll(stack);
+        }
+
+        foreach (var publication in publications)
+        {
+            var content =
+                new StackPanel
+                {
+                    Spacing = 5
+                };
+            content.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        publication.PublishedAtUtc
+                            .ToLocalTime()
+                            .ToString("yyyy-MM-dd HH:mm")
+                        + $" · {publication.Destination}"
+                        + (string.IsNullOrWhiteSpace(publication.Account)
+                            ? string.Empty
+                            : $" · {publication.Account}"),
+                    Foreground = LumineDesign.MutedForeground,
+                    FontSize = 9.5
+                });
+
+            if (!string.IsNullOrWhiteSpace(publication.Title))
+            {
+                content.Children.Add(
+                    new TextBlock
+                    {
+                        Text = publication.Title,
+                        Foreground = LumineDesign.Foreground,
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 11.5,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+            }
+
+            if (!string.IsNullOrWhiteSpace(publication.Body))
+            {
+                content.Children.Add(
+                    new TextBlock
+                    {
+                        Text = publication.Body,
+                        Foreground = LumineDesign.Foreground,
+                        FontSize = 10,
+                        MaxHeight = 72,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+            }
+
+            if (!string.IsNullOrWhiteSpace(publication.TagsSnapshot))
+            {
+                content.Children.Add(
+                    new TextBlock
+                    {
+                        Text = publication.TagsSnapshot,
+                        Foreground = LumineDesign.Accent,
+                        FontSize = 9.5,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+            }
+
+            content.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        "画像: "
+                        + string.Join(
+                            " → ",
+                            publication.Assets.Select(
+                                static asset => asset.FileName)),
+                    Foreground = LumineDesign.MutedForeground,
+                    FontSize = 9.5,
+                    TextWrapping = TextWrapping.Wrap
+                });
+
+            if (!string.IsNullOrWhiteSpace(publication.ExternalUrl))
+            {
+                content.Children.Add(
+                    new TextBlock
+                    {
+                        Text = publication.ExternalUrl,
+                        Foreground = LumineDesign.MutedForeground,
+                        FontSize = 9,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+            }
+
+            stack.Children.Add(
+                CreateCard(
+                    content,
+                    selected: false));
+        }
+
+        return CreateScroll(stack);
+    }
 
     public static Control CreateSettingsEntry(
         Func<Task> showDiagnostics)

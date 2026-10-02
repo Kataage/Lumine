@@ -1053,6 +1053,145 @@ try
                 && !shell.ContextDetail.IsDirty,
                 "Contextual metadata save did not notify the browse/navigation refresh path exactly once.");
 
+            var secondCreativeAsset =
+                await shellRuntime.ViewerSession.GetAssetAsync(1);
+            shell.GridViewer.SelectAsset(
+                1,
+                scrollIntoView: false,
+                mode: ViewerSelectionMode.Toggle);
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.SelectedAssetCount == 2,
+                "Creative archive smoke did not establish a two-asset selection.");
+
+            var smokeWork =
+                await shell.CreateWorkFromSelectionAsync(
+                    new CreativeWorkDialogResult(
+                        "App Smoke Work",
+                        "creative archive"));
+            Require(
+                smokeWork is not null
+                && smokeWork.Assets.Select(
+                        static asset => asset.Id)
+                    .SequenceEqual(
+                        new[]
+                        {
+                            firstContextAsset.Id,
+                            secondCreativeAsset.Id
+                        }),
+                "App selection organizer did not create an ordered Work.");
+
+            var smokeGroup =
+                await shell.CreateGenerationGroupFromSelectionAsync(
+                    new CreativeGroupDialogResult(
+                        "App Smoke Group",
+                        smokeWork!.Id,
+                        "app-smoke-prompt",
+                        "app-smoke-negative",
+                        "app-smoke-model",
+                        "euler",
+                        "normal",
+                        24,
+                        4.5,
+                        "{\"workflow\":true}",
+                        "manual group"));
+            Require(
+                smokeGroup is not null
+                && smokeGroup.WorkId == smokeWork.Id
+                && smokeGroup.Assets.Count == 2
+                && smokeGroup.Prompt == "app-smoke-prompt",
+                "App selection organizer did not create Generation Group context.");
+
+            var smokeRelation =
+                await shell.CreateRelationFromSelectionAsync(
+                    new CreativeRelationDialogResult(
+                        ReverseDirection: false,
+                        RelationType: "img2img",
+                        Note: "app-smoke-lineage"));
+            Require(
+                smokeRelation is not null
+                && smokeRelation.Parent.Id
+                    == firstContextAsset.Id
+                && smokeRelation.Child.Id
+                    == secondCreativeAsset.Id,
+                "App selection organizer did not preserve explicit lineage direction.");
+
+            var smokePublication =
+                await shell.CreatePublicationFromSelectionAsync(
+                    new CreativePublicationDialogResult(
+                        smokeWork.Id,
+                        "Pixiv",
+                        "@app-smoke",
+                        "App Smoke Publication",
+                        "snapshot body",
+                        "app-smoke #publication",
+                        new DateTimeOffset(
+                            2026,
+                            10,
+                            2,
+                            6,
+                            30,
+                            0,
+                            TimeSpan.Zero),
+                        "external-smoke",
+                        "https://example.invalid/app-smoke",
+                        "{\"ageRestriction\":\"all\",\"aiGenerated\":true}"));
+            Require(
+                smokePublication is not null
+                && smokePublication.Assets.Count == 2
+                && smokePublication.Assets[0].AssetId
+                    == firstContextAsset.Id
+                && smokePublication.Assets[1].AssetId
+                    == secondCreativeAsset.Id,
+                "App selection organizer did not create an ordered Publication snapshot.");
+
+            var creativeContext =
+                await shellRuntime.LibraryService
+                    .GetAssetCreativeContextAsync(
+                        shellRuntime.Library.Id,
+                        secondCreativeAsset.Id);
+            Require(
+                creativeContext.Works.Any(
+                    work => work.Id == smokeWork.Id)
+                && creativeContext.GenerationGroups.Any(
+                    group => group.Id == smokeGroup!.Id)
+                && creativeContext.Relations.Any(
+                    relation => relation.Id == smokeRelation!.Id)
+                && creativeContext.Publications.Any(
+                    publication =>
+                        publication.Id == smokePublication!.Id),
+                "Creative context query did not return all archive concepts for the selected asset.");
+
+            Require(
+                shell.ContextDetail.WorksText.Contains(
+                    "App Smoke Work",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail.GroupsText.Contains(
+                    "App Smoke Group",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail.RelationsText.Contains(
+                    "img2img",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail.PublicationsText.Contains(
+                    "App Smoke Publication",
+                    StringComparison.Ordinal),
+                "Contextual detail did not render human-readable creative archive context.");
+
+            var publicationHistory =
+                await shellRuntime.LibraryService.ListPublicationsAsync(
+                    shellRuntime.Library.Id,
+                    limit: 10);
+            var publicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    publicationHistory);
+            Require(
+                publicationHistory.Count == 1
+                && publicationHistory[0].Id
+                    == smokePublication.Id
+                && publicationView is not null,
+                "Publication navigation did not render persisted publication history.");
+
             var editedQueryPage =
                 await shellRuntime.LibraryService.GetAssetPageAsync(
                     shellRuntime.Library.Id,

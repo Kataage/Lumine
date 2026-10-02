@@ -57,6 +57,8 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryFolderInfo>();
     private IReadOnlyList<LibraryTagInfo> _tags =
         Array.Empty<LibraryTagInfo>();
+    private IReadOnlyList<PublicationInfo> _publications =
+        Array.Empty<PublicationInfo>();
 
     public MainWindow()
         : this(
@@ -447,6 +449,8 @@ public sealed class MainWindow : Window
             Array.Empty<LibraryFolderInfo>();
         IReadOnlyList<LibraryTagInfo> tags =
             Array.Empty<LibraryTagInfo>();
+        IReadOnlyList<PublicationInfo> publications =
+            Array.Empty<PublicationInfo>();
         var facets =
             new LibraryBrowseFacets(
                 Array.Empty<string>(),
@@ -467,12 +471,18 @@ public sealed class MainWindow : Window
                 await _navigationLibraryService.GetBrowseFacetsAsync(
                     runtime.Library.Id,
                     cancellationToken);
+            publications =
+                await _navigationLibraryService.ListPublicationsAsync(
+                    runtime.Library.Id,
+                    limit: 100,
+                    cancellationToken);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         _libraries = libraries;
         _folders = folders;
         _tags = tags;
+        _publications = publications;
         _browseFacets = facets;
         _browseControls?.UpdateFacetData(
             _tags,
@@ -518,7 +528,11 @@ public sealed class MainWindow : Window
                             _browseFilterState.Tag,
                             ApplyTagScopeAsync),
                 "公開履歴" =>
-                    ProductNavigationViews.CreatePublicationEntry(),
+                    _runtime is null
+                        ? ProductNavigationViews.CreateNoLibrary(
+                            "公開履歴")
+                        : ProductNavigationViews.CreatePublicationEntry(
+                            _publications),
                 "設定" =>
                     ProductNavigationViews.CreateSettingsEntry(
                         ShowDiagnosticsFromNavigationAsync),
@@ -659,6 +673,7 @@ public sealed class MainWindow : Window
             CreateWelcomeState(recovered: false);
         _folders = Array.Empty<LibraryFolderInfo>();
         _tags = Array.Empty<LibraryTagInfo>();
+        _publications = Array.Empty<PublicationInfo>();
         _browseFacets =
             new LibraryBrowseFacets(
                 Array.Empty<string>(),
@@ -805,31 +820,21 @@ public sealed class MainWindow : Window
     private void OnBulkEntryRequested(
         string destination)
     {
-        if (string.Equals(
+        if (!string.Equals(
                 destination,
                 "publication",
                 StringComparison.Ordinal))
         {
-            OnNavigationRequested(
-                "公開履歴");
-            _status.Foreground =
-                LumineDesign.MutedForeground;
-            _status.Text =
-                "選択画像のPublication作成入口です。#395でスナップショット編集へ接続します。";
             return;
         }
 
-        if (string.Equals(
-                destination,
-                "creative",
-                StringComparison.Ordinal))
-        {
-            _navigationPane.IsVisible = true;
-            _status.Foreground =
-                LumineDesign.MutedForeground;
-            _status.Text =
-                "選択画像からWork / Generation Groupを作成する入口です。#395でcreative archiveへ接続します。";
-        }
+        OnNavigationRequested(
+            "公開履歴");
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            "Publicationを公開履歴へ保存しました。";
+        StartNavigationRefresh();
     }
 
     private async Task ApplyBrowseQueryAsync()
