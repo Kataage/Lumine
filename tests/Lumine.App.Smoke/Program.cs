@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Lumine.App;
@@ -18,6 +19,36 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+
+static double RelativeLuminance(Color color)
+{
+    static double Channel(byte value)
+    {
+        var normalized = value / 255d;
+        return normalized <= 0.04045
+            ? normalized / 12.92
+            : Math.Pow(
+                (normalized + 0.055) / 1.055,
+                2.4);
+    }
+
+    return
+        (0.2126 * Channel(color.R))
+        + (0.7152 * Channel(color.G))
+        + (0.0722 * Channel(color.B));
+}
+
+static double ContrastRatio(
+    Color foreground,
+    Color background)
+{
+    var first = RelativeLuminance(foreground);
+    var second = RelativeLuminance(background);
+    var lighter = Math.Max(first, second);
+    var darker = Math.Min(first, second);
+    return (lighter + 0.05) / (darker + 0.05);
 }
 
 static void WriteBmp24(
@@ -1606,6 +1637,23 @@ try
                         ])
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
+                    Require(
+                        ContrastRatio(
+                            LumineDesign.DangerColor,
+                            LumineDesign.BackgroundColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.DangerColor,
+                            LumineDesign.SurfaceRaisedColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.WarningColor,
+                            LumineDesign.BackgroundColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.WarningColor,
+                            LumineDesign.SurfaceRaisedColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.BorderStrongColor,
+                            LumineDesign.BackgroundColor) >= 3.0,
+                        "Lumine semantic color tokens regressed below readable text/UI contrast.");
                     Require(
                         string.Equals(
                             window.ProductShellState,
