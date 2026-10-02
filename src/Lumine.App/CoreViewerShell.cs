@@ -352,7 +352,9 @@ internal sealed class CoreViewerShell : UserControl
             TopLevel.GetTopLevel(this)
             as MainWindow;
         owner?.ShowLightbox(
-            _focusedSurface);
+            _focusedSurface,
+            _grid.GetRealizedAssetFocusTarget(index)
+            ?? _grid);
 
         try
         {
