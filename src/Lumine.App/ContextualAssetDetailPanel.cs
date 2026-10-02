@@ -160,11 +160,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "保存  Ctrl+S",
+                    Content = "保存",
                     MinHeight = 30,
                     Padding = new Thickness(12, 5),
                     IsEnabled = false
                 });
+        ToolTip.SetTip(
+            _save,
+            "保存 (Ctrl+S)");
         _save.Click +=
             async (_, _) =>
                 await SaveEditorAsync();
@@ -199,14 +202,16 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 await _closeRequested();
 
         _focused =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "集中表示",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5),
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.ViewIconPath,
+                            18),
                     IsEnabled = false
-                });
+                },
+                "画像を表示");
         _focused.Click +=
             async (_, _) =>
                 await _focusedViewRequested();
