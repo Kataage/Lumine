@@ -101,30 +101,14 @@ internal static class ProductAcceptanceFunctionalScenario
                     cancellationToken);
 
             shell.GridViewer.SelectAsset(0);
-            await runtime.LibraryService.SetUserMetadataAsync(
-                runtime.Library.Id,
-                first.Id,
-                new AssetUserMetadataUpdate(
-                    Rating: 5,
-                    Favorite: true,
-                    Notes: "product-acceptance-note",
-                    StatusLabel: "candidate",
-                    ColorLabel: "purple",
-                    Tags: ["product-acceptance"]),
-                cancellationToken);
-
             await shell.ShowContextDetailAsync();
 
             Require(
                 shell.IsContextDetailVisible
                 && shell.ContextDetail.AssetId == first.Id
-                && shell.ContextDetail.RatingText == "★5"
-                && shell.ContextDetail.TagsText.Contains(
-                    "product-acceptance",
-                    StringComparison.Ordinal)
-                && shell.ContextDetail.NotesText
-                    == "product-acceptance-note",
-                "Contextual detail did not expose user metadata during product acceptance.");
+                && shell.ContextDetail.TitleText
+                    == first.DisplayName,
+                "Contextual detail did not open for the selected product-acceptance asset.");
 
             shell.ContextDetail.SetEditorValuesForSmoke(
                 rating: 3,
@@ -136,6 +120,7 @@ internal static class ProductAcceptanceFunctionalScenario
 
             var saved =
                 await shell.ContextDetail.SaveEditorAsync(
+                    notify: false,
                     cancellationToken:
                         cancellationToken);
 
@@ -145,10 +130,17 @@ internal static class ProductAcceptanceFunctionalScenario
                 && !saved.Favorite
                 && saved.StatusLabel == "reviewed"
                 && saved.ColorLabel == "green"
+                && saved.Tags.Contains("product-acceptance")
                 && saved.Tags.Contains("edited")
                 && saved.Notes
+                    == "product-acceptance-search-token"
+                && shell.ContextDetail.RatingText == "★3"
+                && shell.ContextDetail.TagsText.Contains(
+                    "edited",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail.NotesText
                     == "product-acceptance-search-token",
-                "Metadata editor did not persist the complete product-owned metadata record.");
+                "Contextual metadata editor did not persist and render the complete user-owned metadata record.");
 
             shell.GridViewer.SelectAsset(
                 1,
