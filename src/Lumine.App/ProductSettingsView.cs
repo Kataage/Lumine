@@ -75,8 +75,6 @@ internal static class ProductSettingsView
         root.Children.Add(
             CreateDiagnostics(
                 showDiagnostics));
-        root.Children.Add(
-            CreateFutureAiSection());
 
         return new ScrollViewer
         {
@@ -137,8 +135,16 @@ internal static class ProductSettingsView
                         {
                             "更新日時: 新しい順",
                             "更新日時: 古い順",
+                            "作成日時: 新しい順",
+                            "作成日時: 古い順",
                             "ファイル名: A → Z",
-                            "ファイル名: Z → A"
+                            "ファイル名: Z → A",
+                            "サイズ: 大きい順",
+                            "サイズ: 小さい順",
+                            "評価: 高い順",
+                            "評価: 低い順",
+                            "状態: A → Z",
+                            "状態: Z → A"
                         },
                     SelectedIndex =
                         SortIndex(
@@ -227,7 +233,7 @@ internal static class ProductSettingsView
         content.Children.Add(
             CreateSectionHeader(
                 "画像キャッシュ",
-                "通常閲覧はMemoryOnlyが既定です。元画像はLumineへコピーせず、永続サムネイルも作りません。"));
+                "通常閲覧はメモリのみが既定です。元画像はLumineへコピーしません。"));
 
         var persistent =
             LumineDesign.ConfigureCheckBox(
@@ -247,7 +253,7 @@ internal static class ProductSettingsView
                 Text =
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? $"環境変数による一時上書き中: 実際の動作は {DescribeMode(snapshot.EffectiveThumbnailStorageMode)}。画面の選択は上書き値を保存しません。"
-                        : "変更は次回起動から有効です。MemoryOnlyへ戻すと、旧display-thumbnail cacheは安全に退役・削除されます。",
+                        : "変更は次回起動から有効です。メモリのみに戻すと、不要になった表示用キャッシュは安全に削除されます。",
                 Foreground =
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? LumineDesign.Warning
@@ -280,13 +286,13 @@ internal static class ProductSettingsView
                 });
         content.Children.Add(
             CreateField(
-                "メモリ内thumbnail cache上限",
+                "サムネイル用メモリ上限",
                 memory));
         content.Children.Add(
             new TextBlock
             {
                 Text =
-                    "この上限も次回起動から有効です。大きくすると再decodeを減らせますが、その分RAMを使います。",
+                    "この上限も次回起動から有効です。大きくすると再読み込みを減らせますが、その分RAMを使います。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
@@ -300,7 +306,7 @@ internal static class ProductSettingsView
                     $"現在のディスクcache: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5
+                FontSize = LumineDesign.CaptionFontSize
             };
         content.Children.Add(diskStats);
 
@@ -385,18 +391,18 @@ internal static class ProductSettingsView
                 clear.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
-                status.Text = "cacheを削除しています…";
+                status.Text = "キャッシュを削除しています…";
                 try
                 {
                     await clearCache();
                     status.Text =
-                        "表示用cacheを削除しました。元画像・タグ・評価・Publication等のユーザーデータは変更していません。";
+                        "表示用キャッシュを削除しました。元画像・タグ・評価・Publication等のユーザーデータは変更していません。";
                 }
                 catch (Exception exception)
                 {
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
-                        $"cacheを削除できませんでした: {exception.Message}";
+                        $"キャッシュを削除できませんでした: {exception.Message}";
                 }
                 finally
                 {
@@ -434,7 +440,7 @@ internal static class ProductSettingsView
                 snapshot.DataPaths.SettingsPath));
         content.Children.Add(
             CreateKeyValue(
-                "破棄可能cache",
+                "一時キャッシュ",
                 snapshot.DataPaths.ThumbnailCachePath));
         content.Children.Add(
             CreateKeyValue(
@@ -489,26 +495,6 @@ internal static class ProductSettingsView
         return CreateCard(content);
     }
 
-    private static Control CreateFutureAiSection()
-    {
-        var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "ローカルAI",
-                "AI機能はProduct Acceptance完了後のフェーズで追加します。現在はモデルを読み込まず、画像管理機能だけで完結します。"));
-
-        content.Children.Add(
-            new TextBlock
-            {
-                Text = "現在は無効",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
-                FontWeight = FontWeight.SemiBold
-            });
-        return CreateCard(content);
-    }
-
     private static StackPanel CreateCardStack() =>
         new()
         {
@@ -542,7 +528,7 @@ internal static class ProductSettingsView
                 Text = title,
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 11.5
+                FontSize = LumineDesign.BodyFontSize
             });
         panel.Children.Add(
             new TextBlock
@@ -571,7 +557,7 @@ internal static class ProductSettingsView
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         panel.Children.Add(control);
         return panel;
@@ -617,7 +603,7 @@ internal static class ProductSettingsView
                 Text = title,
                 Foreground = brush,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 10.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         content.Children.Add(
             new TextBlock
@@ -646,8 +632,16 @@ internal static class ProductSettingsView
         {
             AssetSortOrder.ModifiedNewest => 0,
             AssetSortOrder.ModifiedOldest => 1,
-            AssetSortOrder.FileNameAscending => 2,
-            AssetSortOrder.FileNameDescending => 3,
+            AssetSortOrder.CreatedNewest => 2,
+            AssetSortOrder.CreatedOldest => 3,
+            AssetSortOrder.FileNameAscending => 4,
+            AssetSortOrder.FileNameDescending => 5,
+            AssetSortOrder.FileSizeLargest => 6,
+            AssetSortOrder.FileSizeSmallest => 7,
+            AssetSortOrder.RatingHighest => 8,
+            AssetSortOrder.RatingLowest => 9,
+            AssetSortOrder.StatusAscending => 10,
+            AssetSortOrder.StatusDescending => 11,
             _ => 0
         };
 
@@ -656,16 +650,24 @@ internal static class ProductSettingsView
         index switch
         {
             1 => AssetSortOrder.ModifiedOldest,
-            2 => AssetSortOrder.FileNameAscending,
-            3 => AssetSortOrder.FileNameDescending,
+            2 => AssetSortOrder.CreatedNewest,
+            3 => AssetSortOrder.CreatedOldest,
+            4 => AssetSortOrder.FileNameAscending,
+            5 => AssetSortOrder.FileNameDescending,
+            6 => AssetSortOrder.FileSizeLargest,
+            7 => AssetSortOrder.FileSizeSmallest,
+            8 => AssetSortOrder.RatingHighest,
+            9 => AssetSortOrder.RatingLowest,
+            10 => AssetSortOrder.StatusAscending,
+            11 => AssetSortOrder.StatusDescending,
             _ => AssetSortOrder.ModifiedNewest
         };
 
     private static string DescribeMode(
         ThumbnailStorageMode mode) =>
         mode == ThumbnailStorageMode.PersistentDisk
-            ? "PersistentDisk"
-            : "MemoryOnly";
+            ? "再起動後も高速化データを保持"
+            : "メモリのみ";
 
     private static string FormatBytes(
         long bytes)
