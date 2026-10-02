@@ -1436,7 +1436,15 @@ finally
 
     if (Directory.Exists(root))
     {
-        Directory.Delete(root, recursive: true);
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (IOException exception)
+        {
+            Console.Error.WriteLine(
+                $"App smoke root cleanup deferred for primary-error diagnosis: {exception.Message}");
+        }
     }
 }
 
