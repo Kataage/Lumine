@@ -200,6 +200,21 @@ public sealed class ThumbnailViewerControl : UserControl
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
 
+    internal Control? GetRealizedAssetFocusTarget(
+        long index) =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .FirstOrDefault(
+                tile => tile.Index == index);
+
+    internal long? FocusedRealizedAssetIndex =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .FirstOrDefault(
+                static tile => tile.IsFocused)
+            ?.Index;
+
+
     internal IReadOnlyList<ViewerTileActionGeometry>
         GetRealizedTileActionGeometryForSmoke(
             long index)
@@ -1034,6 +1049,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         : 7);
             ClipToBounds = true;
             Background = TileBackground;
+            Focusable = true;
 
             _image = new Image
             {
