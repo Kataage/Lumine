@@ -81,11 +81,20 @@ internal sealed class CoreViewerShell : UserControl
                 {
                     Content =
                         LumineDesign.CreateStrokeIcon(
-                            LumineDesign.BackIconPath,
-                            19,
+                            LumineDesign.CloseIconPath,
+                            18,
                             Brushes.White)
                 },
-                "一覧へ戻る (Esc)");
+                "閉じる (Esc)");
+        focusedClose.Background =
+            new SolidColorBrush(
+                Color.FromArgb(
+                    205,
+                    24,
+                    24,
+                    27));
+        focusedClose.BorderBrush =
+            LumineDesign.BorderStrong;
         focusedClose.Click +=
             (_, _) =>
                 CloseFocusedView();
@@ -94,9 +103,9 @@ internal sealed class CoreViewerShell : UserControl
             new Border
             {
                 Background = Brushes.Transparent,
-                Margin = new Thickness(8, 6),
+                Margin = new Thickness(10),
                 HorizontalAlignment =
-                    HorizontalAlignment.Left,
+                    HorizontalAlignment.Right,
                 VerticalAlignment =
                     VerticalAlignment.Top,
                 Child = focusedClose
@@ -105,18 +114,48 @@ internal sealed class CoreViewerShell : UserControl
         var focusedLayout =
             new Grid
             {
-                Background = Brushes.Black
+                Background =
+                    new SolidColorBrush(
+                        Color.Parse("#09090B"))
             };
         focusedLayout.Children.Add(_detail);
         focusedLayout.Children.Add(
             focusedHeader);
 
+        var focusedDialog =
+            new Border
+            {
+                Background =
+                    new SolidColorBrush(
+                        Color.Parse("#09090B")),
+                BorderBrush =
+                    LumineDesign.BorderStrong,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(14),
+                ClipToBounds = true,
+                Child = focusedLayout
+            };
+
         _focusedSurface =
             new Border
             {
-                Background = Brushes.Black,
+                Background = LumineDesign.ModalScrim,
+                Padding = new Thickness(24),
                 IsVisible = false,
-                Child = focusedLayout
+                Child = focusedDialog
+            };
+        _focusedSurface.PointerPressed +=
+            (_, e) =>
+            {
+                if (ReferenceEquals(
+                        e.Source,
+                        _focusedSurface))
+                {
+                    CloseFocusedView();
+                    e.Handled = true;
+                }
             };
 
         _bulkActions =
