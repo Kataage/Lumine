@@ -93,14 +93,56 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
         }
     }
 
-    public async Task<DecodedBitmapLease> AcquireAsync(
+    public Task<DecodedBitmapLease> AcquireAsync(
         string path,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        cancellationToken.ThrowIfCancellationRequested();
 
-        var fullPath = Path.GetFullPath(path);
+        var key = Path.GetFullPath(path);
+        return AcquireCoreAsync(
+            key,
+            token => _decodeBitmap(key, token),
+            cancellationToken);
+    }
+
+    public Task<DecodedBitmapLease> AcquireAsync(
+        ViewerThumbnail thumbnail,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(thumbnail);
+
+        if (thumbnail.EncodedBytes is { Length: > 0 } encoded)
+        {
+            var key = "memory:" + thumbnail.CacheKey;
+            return AcquireCoreAsync(
+                key,
+                token => DecodeBitmapFromBytes(
+                    encoded,
+                    token),
+                cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                thumbnail.CachePath))
+        {
+            return AcquireAsync(
+                thumbnail.CachePath,
+                cancellationToken);
+        }
+
+        throw new InvalidOperationException(
+            "Thumbnail has neither a cache path nor encoded memory payload.");
+    }
+
+    private async Task<DecodedBitmapLease> AcquireCoreAsync(
+        string key,
+        Func<CancellationToken, Bitmap> decodeBitmap,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(decodeBitmap);
+        cancellationToken.ThrowIfCancellationRequested();
 
         lock (_gate)
         {
@@ -126,13 +168,13 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
                     {
                         ObjectDisposedException.ThrowIf(_disposed, this);
 
-                        if (_entries.TryGetValue(fullPath, out var existing))
+                        if (_entries.TryGetValue(key, out var existing))
                         {
                             existing.Leases++;
                             existing.LastAccess = NextSequence();
                             return new DecodedBitmapLease(
                                 this,
-                                fullPath,
+                                key,
                                 existing.Bitmap);
                         }
                     }
@@ -157,7 +199,8 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
 
                         attempt = await Task.Run(
                             () => TryAcquire(
-                                fullPath,
+                                key,
+                                decodeBitmap,
                                 operationToken),
                             operationToken).ConfigureAwait(false);
                     }
@@ -299,7 +342,8 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
     }
 
     private AcquireAttempt TryAcquire(
-        string fullPath,
+        string key,
+        Func<CancellationToken, Bitmap> decodeBitmap,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -308,21 +352,20 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            if (_entries.TryGetValue(fullPath, out var existing))
+            if (_entries.TryGetValue(key, out var existing))
             {
                 existing.Leases++;
                 existing.LastAccess = NextSequence();
                 return new AcquireAttempt(
                     new DecodedBitmapLease(
                         this,
-                        fullPath,
+                        key,
                         existing.Bitmap),
                     null);
             }
         }
 
-        var bitmap = _decodeBitmap(
-            fullPath,
+        var bitmap = decodeBitmap(
             cancellationToken);
         var admitted = false;
 
@@ -339,14 +382,14 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
 
-                if (_entries.TryGetValue(fullPath, out var raced))
+                if (_entries.TryGetValue(key, out var raced))
                 {
                     raced.Leases++;
                     raced.LastAccess = NextSequence();
                     return new AcquireAttempt(
                         new DecodedBitmapLease(
                             this,
-                            fullPath,
+                            key,
                             raced.Bitmap),
                         null);
                 }
@@ -378,14 +421,14 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
                 {
                     Leases = 1
                 };
-                _entries[fullPath] = entry;
+                _entries[key] = entry;
                 _estimatedBytes += estimatedBytes;
                 admitted = true;
 
                 return new AcquireAttempt(
                     new DecodedBitmapLease(
                         this,
-                        fullPath,
+                        key,
                         bitmap),
                     null);
             }
@@ -433,6 +476,26 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
             _estimatedBytes -= selected.Value.EstimatedBytes;
             selected.Value.Bitmap.Dispose();
         }
+    }
+
+    private static Bitmap DecodeBitmapFromBytes(
+        byte[] encoded,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var stream = new MemoryStream(
+            encoded,
+            writable: false);
+        var bitmap = new Bitmap(stream);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            bitmap.Dispose();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return bitmap;
     }
 
     private static Bitmap DecodeBitmapFromFile(

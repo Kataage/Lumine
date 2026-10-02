@@ -23,7 +23,10 @@ param(
     [string]$Win32CompositionMode = "Default",
 
     [ValidateSet("Default", "Software")]
-    [string]$Win32RenderingMode = "Default"
+    [string]$Win32RenderingMode = "Default",
+
+    [ValidateSet("PersistentDisk", "MemoryOnly")]
+    [string]$ThumbnailStorageMode = "PersistentDisk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -164,6 +167,7 @@ $oldHardware = $env:LUMINE_HARDWARE_ID
 $oldRevision = $env:LUMINE_REVISION
 $oldCompositionMode = $env:LUMINE_WIN32_COMPOSITION_MODE
 $oldRenderingMode = $env:LUMINE_WIN32_RENDERING_MODE
+$oldThumbnailStorageMode = $env:LUMINE_THUMBNAIL_STORAGE_MODE
 
 if ([string]::IsNullOrWhiteSpace($HardwareId)) {
     $HardwareId = $env:COMPUTERNAME
@@ -188,6 +192,7 @@ if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq "unknown" -or $Rev
 
 $env:LUMINE_HARDWARE_ID = $HardwareId
 $env:LUMINE_REVISION = $Revision
+$env:LUMINE_THUMBNAIL_STORAGE_MODE = $ThumbnailStorageMode
 
 if ($Win32CompositionMode -eq "Default") {
     $env:LUMINE_WIN32_COMPOSITION_MODE = $null
@@ -395,6 +400,7 @@ function Write-CrashDiagnostics {
     $lines.Add("revision=$Revision")
     $lines.Add("win32CompositionMode=$Win32CompositionMode")
     $lines.Add("win32RenderingMode=$Win32RenderingMode")
+    $lines.Add("thumbnailStorageMode=$ThumbnailStorageMode")
     $lines.Add("os=$([Environment]::OSVersion.VersionString)")
     $lines.Add("is64BitProcess=$([Environment]::Is64BitProcess)")
     $lines.Add("is64BitOperatingSystem=$([Environment]::Is64BitOperatingSystem)")
@@ -598,6 +604,12 @@ function Invoke-CoreAcceptance {
         throw "Acceptance must run as native Windows x64; process='$processArchitecture', OS='$osArchitecture'."
     }
 
+    $reportedThumbnailStorageMode =
+        Get-MetadataValue -Result $result -Key "thumbnail.storage_mode"
+    if ($reportedThumbnailStorageMode -ne $ThumbnailStorageMode) {
+        throw "Acceptance thumbnail storage mode mismatch: expected '$ThumbnailStorageMode', got '$reportedThumbnailStorageMode'."
+    }
+
     return $result
 }
 
@@ -668,30 +680,47 @@ try {
         throw "Warm cache-miss accounting is inconsistent: misses=$initialWarmCacheMisses sourceOpens=$initialWarmSourceOpens."
     }
 
-    if ($initialWarmCacheFileGrowth -ne ($initialWarmGenerated - $initialWarmMaintenanceDeletes)) {
-        throw "Warm persistent-cache accounting is inconsistent: generated=$initialWarmGenerated maintenanceDeletes=$initialWarmMaintenanceDeletes cacheFileGrowth=$initialWarmCacheFileGrowth."
-    }
-
-    $warmConvergenceNeeded = $initialWarmGenerated -gt 0
     $steadyWarm = $null
+    $warmConvergenceNeeded = $false
 
-    if ($warmConvergenceNeeded) {
-        Write-Host ""
-        Write-Host "Initial Warm committed $initialWarmGenerated missing thumbnail(s); running steady-Warm convergence proof."
-
-        $steadyWarm =
-            Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
-
-        $steadyAssetCount =
-            [int64](Get-MetadataValue -Result $steadyWarm -Key "library.asset_count")
-        if ($steadyAssetCount -ne $coldAssetCount) {
-            throw "Representative library changed before steady-Warm: cold=$coldAssetCount, steady=$steadyAssetCount assets."
+    if ($ThumbnailStorageMode -eq "PersistentDisk") {
+        if ($initialWarmCacheFileGrowth -ne ($initialWarmGenerated - $initialWarmMaintenanceDeletes)) {
+            throw "Warm persistent-cache accounting is inconsistent: generated=$initialWarmGenerated maintenanceDeletes=$initialWarmMaintenanceDeletes cacheFileGrowth=$initialWarmCacheFileGrowth."
         }
 
-        $steadyLibraryHash =
-            Get-MetadataValue -Result $steadyWarm -Key "library.path_sha256"
-        if ($steadyLibraryHash -ne $coldLibraryHash) {
-            throw "Steady-Warm result does not refer to the same representative library path."
+        $warmConvergenceNeeded = $initialWarmGenerated -gt 0
+
+        if ($warmConvergenceNeeded) {
+            Write-Host ""
+            Write-Host "Initial Warm committed $initialWarmGenerated missing thumbnail(s); running steady-Warm convergence proof."
+
+            $steadyWarm =
+                Invoke-CoreAcceptance -Mode "warm" -ResultPath $steadyWarmResultPath
+
+            $steadyAssetCount =
+                [int64](Get-MetadataValue -Result $steadyWarm -Key "library.asset_count")
+            if ($steadyAssetCount -ne $coldAssetCount) {
+                throw "Representative library changed before steady-Warm: cold=$coldAssetCount, steady=$steadyAssetCount assets."
+            }
+
+            $steadyLibraryHash =
+                Get-MetadataValue -Result $steadyWarm -Key "library.path_sha256"
+            if ($steadyLibraryHash -ne $coldLibraryHash) {
+                throw "Steady-Warm result does not refer to the same representative library path."
+            }
+        }
+    }
+    else {
+        if ($initialWarmCacheBeforeFiles -ne 0 -or $initialWarmCacheAfterFiles -ne 0 -or $initialWarmCacheFileGrowth -ne 0) {
+            throw "Memory-only acceptance wrote persistent thumbnail cache files during Warm: before=$initialWarmCacheBeforeFiles after=$initialWarmCacheAfterFiles growth=$initialWarmCacheFileGrowth."
+        }
+
+        $initialWarmMemoryBytes =
+            [int64](Get-MetadataValue -Result $warm -Key "thumbnail.memory_cache_bytes")
+        $initialWarmMemoryLimit =
+            [int64](Get-MetadataValue -Result $warm -Key "thumbnail.memory_cache_limit_bytes")
+        if ($initialWarmMemoryBytes -lt 0 -or $initialWarmMemoryBytes -gt $initialWarmMemoryLimit) {
+            throw "Memory-only encoded thumbnail cache escaped its bound: bytes=$initialWarmMemoryBytes limit=$initialWarmMemoryLimit."
         }
     }
 
@@ -800,6 +829,25 @@ try {
             throw "$mode post-shutdown thumbnail cache retained $postShutdownInterruptedWrites interrupted write(s)."
         }
 
+        $memoryCacheBytes =
+            [int64](Get-MetadataValue -Result $result -Key "thumbnail.memory_cache_bytes")
+        $memoryCacheLimit =
+            [int64](Get-MetadataValue -Result $result -Key "thumbnail.memory_cache_limit_bytes")
+        if ($memoryCacheBytes -lt 0 -or $memoryCacheBytes -gt $memoryCacheLimit) {
+            throw "$mode encoded thumbnail memory cache escaped its configured bound: $memoryCacheBytes > $memoryCacheLimit bytes."
+        }
+
+        if ($ThumbnailStorageMode -eq "MemoryOnly") {
+            $cacheFiles =
+                [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_after.files")
+            $postShutdownCacheFiles =
+                [int64](Get-MetadataValue -Result $result -Key "thumbnail.cache_post_shutdown.files")
+
+            if ($cacheFiles -ne 0 -or $cacheBytes -ne 0 -or $postShutdownCacheFiles -ne 0 -or $postShutdownCacheBytes -ne 0) {
+                throw "$mode memory-only policy persisted thumbnail data: runtimeFiles=$cacheFiles runtimeBytes=$cacheBytes postShutdownFiles=$postShutdownCacheFiles postShutdownBytes=$postShutdownCacheBytes."
+            }
+        }
+
         $maxScroll = Get-MaxMeasurement -Result $result -Name "viewer.fast_scroll_refresh"
         if ($maxScroll -gt $MaxFastScrollMs) {
             throw "$mode fast-scroll refresh exceeded $MaxFastScrollMs ms: $([Math]::Round($maxScroll, 1)) ms."
@@ -841,18 +889,40 @@ try {
         throw "Final warm cache-miss accounting is inconsistent: misses=$warmCacheMisses sourceOpens=$warmSourceOpens."
     }
 
-    if ($warmCacheFileGrowth -ne ($warmGenerated - $warmMaintenanceDeletes)) {
-        throw "Final warm persistent-cache accounting is inconsistent: generated=$warmGenerated maintenanceDeletes=$warmMaintenanceDeletes cacheFileGrowth=$warmCacheFileGrowth."
-    }
-
-    if ($warmGenerated -ne 0 -or $warmCacheFileGrowth -ne 0) {
-        throw "Final steady-Warm cache did not converge: generated=$warmGenerated cacheFileGrowth=$warmCacheFileGrowth sourceOpens=$warmSourceOpens cancelledAfterOpen=$warmSourceOpenCancellations."
-    }
-
     $warmCacheHits =
         [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_hits")
-    if ($warmCacheHits -le 0) {
-        throw "Final steady-Warm acceptance did not observe persistent thumbnail cache hits."
+    $warmMemoryCacheHits =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_hits")
+    $warmMemoryCacheBytes =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_bytes")
+    $warmMemoryCacheLimit =
+        [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.memory_cache_limit_bytes")
+
+    if ($ThumbnailStorageMode -eq "PersistentDisk") {
+        if ($warmCacheFileGrowth -ne ($warmGenerated - $warmMaintenanceDeletes)) {
+            throw "Final warm persistent-cache accounting is inconsistent: generated=$warmGenerated maintenanceDeletes=$warmMaintenanceDeletes cacheFileGrowth=$warmCacheFileGrowth."
+        }
+
+        if ($warmGenerated -ne 0 -or $warmCacheFileGrowth -ne 0) {
+            throw "Final steady-Warm cache did not converge: generated=$warmGenerated cacheFileGrowth=$warmCacheFileGrowth sourceOpens=$warmSourceOpens cancelledAfterOpen=$warmSourceOpenCancellations."
+        }
+
+        if ($warmCacheHits -le 0) {
+            throw "Final steady-Warm acceptance did not observe persistent thumbnail cache hits."
+        }
+    }
+    else {
+        if ($warmCacheBeforeFiles -ne 0 -or $warmCacheAfterFiles -ne 0 -or $warmCacheFileGrowth -ne 0) {
+            throw "Final memory-only run persisted thumbnail cache files: before=$warmCacheBeforeFiles after=$warmCacheAfterFiles growth=$warmCacheFileGrowth."
+        }
+
+        if ($warmMemoryCacheBytes -lt 0 -or $warmMemoryCacheBytes -gt $warmMemoryCacheLimit) {
+            throw "Final memory-only encoded cache escaped its bound: bytes=$warmMemoryCacheBytes limit=$warmMemoryCacheLimit."
+        }
+
+        if ($warmGenerated -le 0 -and $warmMemoryCacheHits -le 0) {
+            throw "Final memory-only run exercised neither thumbnail generation nor in-process memory-cache reuse."
+        }
     }
 
     $warmBootstrap =
@@ -888,6 +958,7 @@ try {
         appRevision = $Revision
         win32CompositionMode = $Win32CompositionMode
         win32RenderingMode = $Win32RenderingMode
+        thumbnailStorageMode = $ThumbnailStorageMode
         libraryPathSha256 = (Get-MetadataValue -Result $warm -Key "library.path_sha256")
         assetCount = [int64](Get-MetadataValue -Result $warm -Key "library.asset_count")
         acceptanceCriteria = [ordered]@{
@@ -923,6 +994,9 @@ try {
             thumbnailCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_hits")
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_configured_bytes")
+            thumbnailMemoryCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_bytes")
+            thumbnailMemoryCacheLimitBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_limit_bytes")
+            thumbnailMemoryCacheHits = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.memory_cache_hits")
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $cold -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = (Get-MetadataValue -Result $cold -Key "filesystem.bootstrap_mode")
         }
@@ -937,6 +1011,9 @@ try {
             thumbnailCacheHits = $warmCacheHits
             thumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_after.bytes")
             thumbnailCacheLimitBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_configured_bytes")
+            thumbnailMemoryCacheBytes = $warmMemoryCacheBytes
+            thumbnailMemoryCacheLimitBytes = $warmMemoryCacheLimit
+            thumbnailMemoryCacheHits = $warmMemoryCacheHits
             postShutdownThumbnailCacheBytes = [int64](Get-MetadataValue -Result $finalWarm -Key "thumbnail.cache_post_shutdown.bytes")
             filesystemBootstrapMode = $warmBootstrap
         }
@@ -976,6 +1053,7 @@ try {
     Write-Host ""
     Write-Host "Automated real-library acceptance passed."
     Write-Host "Assets              : $($summary.assetCount)"
+    Write-Host "Thumbnail storage   : $ThumbnailStorageMode"
     Write-Host "Cold max fast-scroll: $($summary.cold.maxFastScrollMs) ms"
     Write-Host "Warm max fast-scroll: $($summary.warm.maxFastScrollMs) ms"
     Write-Host "Warm source opens    : $warmSourceOpens"
@@ -998,4 +1076,5 @@ finally {
     $env:LUMINE_REVISION = $oldRevision
     $env:LUMINE_WIN32_COMPOSITION_MODE = $oldCompositionMode
     $env:LUMINE_WIN32_RENDERING_MODE = $oldRenderingMode
+    $env:LUMINE_THUMBNAIL_STORAGE_MODE = $oldThumbnailStorageMode
 }

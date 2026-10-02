@@ -70,7 +70,8 @@ public sealed record ViewerThumbnail(
     string CachePath,
     int Width,
     int Height,
-    ViewerSourceTechnicalMetadata? SourceMetadata = null);
+    ViewerSourceTechnicalMetadata? SourceMetadata = null,
+    byte[]? EncodedBytes = null);
 
 public interface IViewerPageSource
 {

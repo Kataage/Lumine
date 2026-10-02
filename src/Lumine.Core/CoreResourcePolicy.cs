@@ -22,6 +22,8 @@ public sealed record ResourcePolicySettings
 
     public long? ThumbnailCacheByteLimit { get; init; }
 
+    public long? EncodedThumbnailMemoryByteLimit { get; init; }
+
     public long? VipsTrackedMemoryLimitBytes { get; init; }
 }
 
@@ -36,6 +38,7 @@ public sealed record CoreResourcePolicy
     public const long MaxDetailPreviewByteLimit = 1024L * 1024 * 1024;
     public const long MaxDetailOriginalByteLimit = 2L * 1024 * 1024 * 1024;
     public const long MaxThumbnailCacheByteLimit = 256L * 1024 * 1024 * 1024;
+    public const long MaxEncodedThumbnailMemoryByteLimit = 2L * 1024 * 1024 * 1024;
     public const long MaxVipsTrackedMemoryLimitBytes = 512L * 1024 * 1024;
 
     private const int DefaultThumbnailQueueCapacity = 256;
@@ -46,6 +49,7 @@ public sealed record CoreResourcePolicy
     private const long DefaultDetailPreviewByteLimit = 48L * 1024 * 1024;
     private const long DefaultDetailOriginalByteLimit = 256L * 1024 * 1024;
     private const long DefaultThumbnailCacheByteLimit = 8L * 1024 * 1024 * 1024;
+    private const long DefaultEncodedThumbnailMemoryByteLimit = 256L * 1024 * 1024;
     private const long DefaultVipsTrackedMemoryLimitBytes = 64L * 1024 * 1024;
 
     private CoreResourcePolicy(
@@ -59,6 +63,7 @@ public sealed record CoreResourcePolicy
         long detailPreviewByteLimit,
         long detailOriginalByteLimit,
         long thumbnailCacheByteLimit,
+        long encodedThumbnailMemoryByteLimit,
         long vipsTrackedMemoryLimitBytes,
         int vipsConcurrency)
     {
@@ -72,6 +77,7 @@ public sealed record CoreResourcePolicy
         DetailPreviewByteLimit = detailPreviewByteLimit;
         DetailOriginalByteLimit = detailOriginalByteLimit;
         ThumbnailCacheByteLimit = thumbnailCacheByteLimit;
+        EncodedThumbnailMemoryByteLimit = encodedThumbnailMemoryByteLimit;
         VipsTrackedMemoryLimitBytes = vipsTrackedMemoryLimitBytes;
         VipsConcurrency = vipsConcurrency;
     }
@@ -97,6 +103,8 @@ public sealed record CoreResourcePolicy
     public long DetailOriginalByteLimit { get; }
 
     public long ThumbnailCacheByteLimit { get; }
+
+    public long EncodedThumbnailMemoryByteLimit { get; }
 
     public long VipsTrackedMemoryLimitBytes { get; }
 
@@ -125,6 +133,8 @@ public sealed record CoreResourcePolicy
                 DetailOriginalByteLimit.ToString(CultureInfo.InvariantCulture),
             ["resource.thumbnail_cache_bytes"] =
                 ThumbnailCacheByteLimit.ToString(CultureInfo.InvariantCulture),
+            ["resource.encoded_thumbnail_memory_bytes"] =
+                EncodedThumbnailMemoryByteLimit.ToString(CultureInfo.InvariantCulture),
             ["resource.vips_tracked_memory_bytes"] =
                 VipsTrackedMemoryLimitBytes.ToString(CultureInfo.InvariantCulture),
             ["resource.vips_concurrency"] =
@@ -203,6 +213,12 @@ public sealed record CoreResourcePolicy
             64L * 1024 * 1024,
             MaxThumbnailCacheByteLimit,
             nameof(settings.ThumbnailCacheByteLimit));
+        var encodedThumbnailMemoryBytes = ResolveLong(
+            settings.EncodedThumbnailMemoryByteLimit,
+            DefaultEncodedThumbnailMemoryByteLimit,
+            16L * 1024 * 1024,
+            MaxEncodedThumbnailMemoryByteLimit,
+            nameof(settings.EncodedThumbnailMemoryByteLimit));
         var vipsTrackedBytes = ResolveLong(
             settings.VipsTrackedMemoryLimitBytes,
             DefaultVipsTrackedMemoryLimitBytes,
@@ -228,6 +244,7 @@ public sealed record CoreResourcePolicy
             previewBytes,
             originalBytes,
             cacheBytes,
+            encodedThumbnailMemoryBytes,
             vipsTrackedBytes,
             vipsConcurrency);
     }

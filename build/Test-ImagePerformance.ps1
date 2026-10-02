@@ -23,6 +23,9 @@ $generate = Get-Metric "image.thumbnail_generate"
 $hits = Get-Metric "image.thumbnail_cache_hit"
 $batch = Get-Metric "image.thumbnail_batch_generate"
 $metadataProbeBatch = Get-Metric "image.source_metadata_probe_batch"
+$memoryGenerate = Get-Metric "image.thumbnail_memory_generate"
+$memoryHitsMetric = Get-Metric "image.thumbnail_memory_cache_hit"
+$memoryBatch = Get-Metric "image.thumbnail_memory_batch_generate"
 
 $requestCount = [int]$result.metadata.batch_request_count
 $workerCount = [int]$result.metadata.worker_count
@@ -46,6 +49,14 @@ $metadataProbeFixtureFullHashFallbacks = [int]$result.metadata.metadata_probe_fi
 $metadataProbeFixtureBytesHashed = [long]$result.metadata.metadata_probe_fixture_bytes_hashed
 $cacheFiles = [long]$result.metadata.cache_files
 $cacheBytes = [long]$result.metadata.cache_bytes
+$memoryCacheHits = [long]$result.metadata.memory_cache_hits
+$memoryCacheEntries = [long]$result.metadata.memory_cache_entries
+$memoryCacheBytes = [long]$result.metadata.memory_cache_bytes
+$memoryCacheByteLimit = [long]$result.metadata.memory_cache_byte_limit
+$memoryPersistentFiles = [long]$result.metadata.memory_persistent_files
+$memoryPersistentBytes = [long]$result.metadata.memory_persistent_bytes
+$memoryBatchPeak = [long]$result.metadata.memory_batch_peak_working_set_bytes
+$memoryBatchPeakAdditional = [long]$result.metadata.memory_batch_peak_additional_working_set_bytes
 $batchPeak = [long]$result.metadata.batch_peak_working_set_bytes
 $batchPeakAdditional = [long]$result.metadata.batch_peak_additional_working_set_bytes
 $vipsOpenFiles = [int]$result.metadata.vips_open_files
@@ -74,6 +85,18 @@ if ([double]$hits.durationMs -gt 2000) {
 
 if ([double]$batch.durationMs -gt 6000) {
     throw "64-request thumbnail batch exceeded 6 s: $($batch.durationMs) ms"
+}
+
+if ([double]$memoryGenerate.durationMs -gt 750) {
+    throw "Memory-only cold thumbnail generation exceeded 750 ms: $($memoryGenerate.durationMs) ms"
+}
+
+if ([double]$memoryHitsMetric.durationMs -gt 2000) {
+    throw "1,000 memory-only encoded cache hits exceeded 2 s: $($memoryHitsMetric.durationMs) ms"
+}
+
+if ([double]$memoryBatch.durationMs -gt 6000) {
+    throw "64-request memory-only thumbnail batch exceeded 6 s: $($memoryBatch.durationMs) ms"
 }
 
 if ($cacheHits -ne 1000) {
@@ -138,12 +161,36 @@ if ($cacheBytes -le 0) {
     throw "Image cache benchmark produced zero persisted bytes."
 }
 
+if ($memoryCacheHits -lt 1000) {
+    throw "Memory-only benchmark did not observe at least 1,000 encoded-cache hits: $memoryCacheHits"
+}
+
+if ($memoryCacheEntries -le 0 -or $memoryCacheBytes -le 0) {
+    throw "Memory-only benchmark produced no bounded encoded thumbnail cache."
+}
+
+if ($memoryCacheBytes -gt $memoryCacheByteLimit) {
+    throw "Memory-only encoded thumbnail cache escaped its bound: $memoryCacheBytes > $memoryCacheByteLimit"
+}
+
+if ($memoryPersistentFiles -ne 0 -or $memoryPersistentBytes -ne 0) {
+    throw "Memory-only benchmark persisted thumbnail files: files=$memoryPersistentFiles bytes=$memoryPersistentBytes"
+}
+
 if ($batchPeak -gt 192MB) {
     throw "Thumbnail batch absolute peak working set exceeded 192 MiB: $batchPeak bytes"
 }
 
 if ($batchPeakAdditional -gt 160MB) {
     throw "Thumbnail batch added more than 160 MiB over process baseline: $batchPeakAdditional bytes"
+}
+
+if ($memoryBatchPeak -gt 512MB) {
+    throw "Memory-only thumbnail batch absolute peak working set exceeded 512 MiB: $memoryBatchPeak bytes"
+}
+
+if ($memoryBatchPeakAdditional -gt 384MB) {
+    throw "Memory-only thumbnail batch added more than 384 MiB over process baseline: $memoryBatchPeakAdditional bytes"
 }
 
 if ($vipsOpenFiles -ne 0) {
@@ -166,6 +213,10 @@ Write-Host "Image performance acceptance passed."
 Write-Host ("Cold generation: {0:N1} ms" -f $generate.durationMs)
 Write-Host ("1,000 cache hits: {0:N1} ms" -f $hits.durationMs)
 Write-Host ("64-request batch: {0:N1} ms" -f $batch.durationMs)
+Write-Host ("Memory-only cold generation: {0:N1} ms" -f $memoryGenerate.durationMs)
+Write-Host ("1,000 memory-only encoded hits: {0:N1} ms" -f $memoryHitsMetric.durationMs)
+Write-Host ("64-request memory-only batch: {0:N1} ms" -f $memoryBatch.durationMs)
+Write-Host ("Memory-only encoded cache: {0:N1} MiB / {1:N1} MiB, entries={2}, hits={3}, disk files={4}" -f ($memoryCacheBytes / 1MB), ($memoryCacheByteLimit / 1MB), $memoryCacheEntries, $memoryCacheHits, $memoryPersistentFiles)
 Write-Host ("10k distinct source metadata probes: {0:N1} ms ({1:N1} MiB logical files, fast={2}, hash-fallback={3}, hashed={4:N1} MiB)" -f $metadataProbeBatch.durationMs, ($metadataProbeFixtureBytes / 1MB), $metadataProbeFixtureFastIdentityHits, $metadataProbeFixtureFullHashFallbacks, ($metadataProbeFixtureBytesHashed / 1MB))
 Write-Host ("Batch peak working set: {0:N1} MiB" -f ($batchPeak / 1MB))
 Write-Host ("Batch incremental peak: {0:N1} MiB" -f ($batchPeakAdditional / 1MB))

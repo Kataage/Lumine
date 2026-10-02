@@ -718,7 +718,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     ViewerThumbnailPriority.Foreground,
                     cancellationToken).ConfigureAwait(false);
                 lease = await _session.BitmapCache.AcquireAsync(
-                    thumbnail.CachePath,
+                    thumbnail,
                     cancellationToken).ConfigureAwait(false);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>

@@ -1991,6 +1991,88 @@ try
             "HEIC");
     }
 
+    var memoryCacheRoot = Path.Combine(
+        root,
+        "memory-only-cache");
+    var memoryBackingCache =
+        new ThumbnailCache(memoryCacheRoot);
+
+    await using (var memoryPipeline =
+        new ThumbnailPipeline(
+            memoryBackingCache,
+            new ThumbnailPipelineOptions
+            {
+                WorkerCount = 1,
+                QueueCapacity = 8,
+                StorageMode =
+                    ThumbnailStorageMode.MemoryOnly,
+                EncodedMemoryByteLimit =
+                    16L * 1024 * 1024
+            }))
+    {
+        var memorySource =
+            SourceFor(
+                4800,
+                1,
+                pngPath);
+        var firstMemory =
+            await memoryPipeline.RequestAsync(
+                memorySource,
+                ThumbnailProfiles.GridSmall);
+
+        Require(
+            !firstMemory.CacheHit
+            && firstMemory.EncodedBytes
+                is { Length: > 0 }
+            && string.IsNullOrEmpty(
+                firstMemory.CachePath)
+            && firstMemory.SourceMetadata
+                is not null,
+            "Memory-only first thumbnail did not return an encoded in-memory payload.");
+
+        var secondMemory =
+            await memoryPipeline.RequestAsync(
+                memorySource.WithMetadata(
+                    firstMemory.SourceMetadata!),
+                ThumbnailProfiles.GridSmall);
+
+        Require(
+            secondMemory.CacheHit
+            && secondMemory.EncodedBytes
+                is { Length: > 0 }
+            && string.IsNullOrEmpty(
+                secondMemory.CachePath),
+            "Memory-only second thumbnail did not reuse the bounded encoded-memory cache.");
+
+        var memoryStats =
+            memoryPipeline.MemoryCacheStats;
+        Require(
+            memoryStats.HitCount >= 1
+            && memoryStats.EntryCount >= 1
+            && memoryStats.EncodedBytes > 0
+            && memoryStats.EncodedBytes
+                <= memoryStats.ByteLimit,
+            "Memory-only encoded thumbnail cache diagnostics escaped their bounds.");
+
+        var memoryDiskStats =
+            await memoryBackingCache.GetStatsAsync();
+        Require(
+            memoryDiskStats.FileCount == 0
+            && memoryDiskStats.TotalBytes == 0
+            && memoryDiskStats.InterruptedWriteCount
+                == 0,
+            "Memory-only thumbnail pipeline wrote persistent cache files.");
+
+        var memoryMaintenance =
+            memoryPipeline.MaintenanceDiagnostics;
+        Require(
+            memoryMaintenance.RunsScheduled == 0
+            && memoryMaintenance.RunsStarted == 0
+            && memoryMaintenance.RunsCompleted
+                == 0,
+            "Memory-only thumbnail pipeline unexpectedly scheduled disk-cache maintenance.");
+    }
+
     // From this point on the smoke exercises ThumbnailCache maintenance
     // directly. Drain the production pipeline first so its owned background
     // maintenance cannot race the explicit prune/recovery assertions below.

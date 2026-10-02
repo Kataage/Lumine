@@ -8,6 +8,14 @@ internal sealed class ThumbnailGenerator
     private const int MetadataMemoryCacheLimit = 4096;
 
     private readonly ThumbnailCache _cache;
+    private readonly ThumbnailStorageMode _storageMode;
+    private readonly long _memoryByteLimit;
+    private readonly object _memoryGate = new();
+    private readonly Dictionary<string, MemoryCacheEntry> _memoryCache =
+        new(StringComparer.Ordinal);
+    private readonly LinkedList<string> _memoryLru = [];
+    private long _memoryCacheBytes;
+    private long _memoryCacheHits;
     private readonly Dictionary<string, KeyGate> _keyGates = new(StringComparer.Ordinal);
     private readonly object _keyGatesLock = new();
     private readonly object _metadataGate = new();
@@ -28,9 +36,30 @@ internal sealed class ThumbnailGenerator
     private long _metadataWindowsFileIdIdentityHits;
     private long _metadataFullHashFallbacks;
 
-    public ThumbnailGenerator(ThumbnailCache cache)
+    public ThumbnailGenerator(
+        ThumbnailCache cache,
+        ThumbnailStorageMode storageMode,
+        long memoryByteLimit)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(memoryByteLimit);
+        _storageMode = storageMode;
+        _memoryByteLimit = memoryByteLimit;
+    }
+
+    public ThumbnailMemoryCacheStats MemoryCacheStats
+    {
+        get
+        {
+            lock (_memoryGate)
+            {
+                return new ThumbnailMemoryCacheStats(
+                    _memoryCache.Count,
+                    _memoryCacheBytes,
+                    _memoryByteLimit,
+                    Interlocked.Read(ref _memoryCacheHits));
+            }
+        }
     }
 
     public ThumbnailDiagnosticsSnapshot SnapshotDiagnostics() =>
@@ -65,7 +94,7 @@ internal sealed class ThumbnailGenerator
         {
             source = source.WithMetadata(persisted);
             var cacheKey = ThumbnailCache.GetCacheKey(source, profile);
-            var cached = _cache.TryOpenValid(cacheKey, cancellationToken);
+            var cached = TryOpenValid(cacheKey, cancellationToken);
             if (cached is not null)
             {
                 Interlocked.Increment(ref _cacheHits);
@@ -89,7 +118,7 @@ internal sealed class ThumbnailGenerator
         var prepared = source.WithMetadata(snapshot.Metadata);
         var preparedKey = ThumbnailCache.GetCacheKey(prepared, profile);
 
-        var preparedCached = _cache.TryOpenValid(
+        var preparedCached = TryOpenValid(
             preparedKey,
             cancellationToken);
         if (preparedCached is not null)
@@ -124,7 +153,7 @@ internal sealed class ThumbnailGenerator
             keyGate.Semaphore.Wait(cancellationToken);
             try
             {
-                var cached = _cache.TryOpenValid(
+                var cached = TryOpenValid(
                     cacheKey,
                     cancellationToken);
                 if (cached is not null)
@@ -229,7 +258,10 @@ internal sealed class ThumbnailGenerator
         ImageSourceSnapshot snapshot,
         CancellationToken cancellationToken)
     {
-        var temporaryPath = _cache.CreateTemporaryPath(cacheKey);
+        var temporaryPath =
+            _storageMode == ThumbnailStorageMode.PersistentDisk
+                ? _cache.CreateTemporaryPath(cacheKey)
+                : string.Empty;
         NetVips.Image? bmpMemory = null;
         NetVips.Image? thumbnail = null;
         var sourceOpened = false;
@@ -284,6 +316,47 @@ internal sealed class ThumbnailGenerator
                         ((NetVips.Image)state!).SetKill(true),
                     thumbnail);
 
+            if (_storageMode == ThumbnailStorageMode.MemoryOnly)
+            {
+                byte[] encoded;
+                try
+                {
+                    encoded = thumbnail.WebpsaveBuffer(
+                        q: profile.Quality,
+                        smartSubsample: true,
+                        keep: Enums.ForeignKeep.None);
+                }
+                catch (VipsException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(
+                        cancellationToken);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var width = thumbnail.Width;
+                var height = thumbnail.Height;
+                StoreMemory(
+                    cacheKey,
+                    encoded,
+                    width,
+                    height);
+
+                var memoryResult = new ThumbnailResult(
+                    cacheKey,
+                    string.Empty,
+                    false,
+                    width,
+                    height,
+                    encoded.LongLength,
+                    metadata,
+                    encoded);
+
+                Interlocked.Increment(ref _generated);
+                return memoryResult;
+            }
+
             try
             {
                 thumbnail.Webpsave(
@@ -309,16 +382,16 @@ internal sealed class ThumbnailGenerator
                 access: Enums.Access.Sequential,
                 failOn: Enums.FailOn.Error);
 
-            var width = persisted.Width;
-            var height = persisted.Height;
+            var persistedWidth = persisted.Width;
+            var persistedHeight = persisted.Height;
             persisted.Invalidate();
 
             var result = new ThumbnailResult(
                 cacheKey,
                 cachePath,
                 false,
-                width,
-                height,
+                persistedWidth,
+                persistedHeight,
                 new FileInfo(cachePath).Length,
                 metadata);
 
@@ -334,19 +407,117 @@ internal sealed class ThumbnailGenerator
                     ref _sourceOpenCancellations);
             }
 
-            TryDelete(temporaryPath);
+            if (!string.IsNullOrEmpty(temporaryPath))
+            {
+                TryDelete(temporaryPath);
+            }
             throw;
         }
         catch
         {
             Interlocked.Increment(ref _failed);
-            TryDelete(temporaryPath);
+            if (!string.IsNullOrEmpty(temporaryPath))
+            {
+                TryDelete(temporaryPath);
+            }
             throw;
         }
         finally
         {
             thumbnail?.Dispose();
             bmpMemory?.Dispose();
+        }
+    }
+
+    private ThumbnailResult? TryOpenValid(
+        string cacheKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_storageMode == ThumbnailStorageMode.PersistentDisk)
+        {
+            return _cache.TryOpenValid(
+                cacheKey,
+                cancellationToken);
+        }
+
+        lock (_memoryGate)
+        {
+            if (!_memoryCache.TryGetValue(
+                    cacheKey,
+                    out var entry))
+            {
+                return null;
+            }
+
+            _memoryLru.Remove(entry.Node);
+            _memoryLru.AddFirst(entry.Node);
+            Interlocked.Increment(ref _memoryCacheHits);
+
+            return new ThumbnailResult(
+                cacheKey,
+                string.Empty,
+                true,
+                entry.Width,
+                entry.Height,
+                entry.Encoded.LongLength,
+                EncodedBytes: entry.Encoded);
+        }
+    }
+
+    private void StoreMemory(
+        string cacheKey,
+        byte[] encoded,
+        int width,
+        int height)
+    {
+        ArgumentNullException.ThrowIfNull(encoded);
+
+        if (encoded.LongLength > _memoryByteLimit)
+        {
+            return;
+        }
+
+        lock (_memoryGate)
+        {
+            if (_memoryCache.TryGetValue(
+                    cacheKey,
+                    out var existing))
+            {
+                _memoryLru.Remove(existing.Node);
+                _memoryCache.Remove(cacheKey);
+                _memoryCacheBytes -=
+                    existing.Encoded.LongLength;
+            }
+
+            while (_memoryCache.Count > 0
+                   && _memoryCacheBytes
+                      + encoded.LongLength
+                      > _memoryByteLimit)
+            {
+                var last =
+                    _memoryLru.Last
+                    ?? throw new InvalidOperationException(
+                        "Thumbnail memory LRU lost its tail node.");
+                var evictedKey = last.Value;
+                var evicted = _memoryCache[evictedKey];
+
+                _memoryLru.RemoveLast();
+                _memoryCache.Remove(evictedKey);
+                _memoryCacheBytes -=
+                    evicted.Encoded.LongLength;
+            }
+
+            var node = _memoryLru.AddFirst(cacheKey);
+            _memoryCache.Add(
+                cacheKey,
+                new MemoryCacheEntry(
+                    encoded,
+                    width,
+                    height,
+                    node));
+            _memoryCacheBytes += encoded.LongLength;
         }
     }
 
@@ -489,6 +660,12 @@ internal sealed class ThumbnailGenerator
 
         public int Users { get; set; }
     }
+
+    private sealed record MemoryCacheEntry(
+        byte[] Encoded,
+        int Width,
+        int Height,
+        LinkedListNode<string> Node);
 
     private static void TryDelete(string path)
     {

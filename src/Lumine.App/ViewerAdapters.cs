@@ -228,7 +228,8 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
             result.Height,
             ViewerImageMetadataBridge.ToViewerMetadata(
                 result.SourceMetadata,
-                effectiveAsset.SourceRevision));
+                effectiveAsset.SourceRevision),
+            result.EncodedBytes);
     }
 }
 
@@ -299,7 +300,8 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
             result.Height,
             ViewerImageMetadataBridge.ToViewerMetadata(
                 result.SourceMetadata,
-                effectiveAsset.SourceRevision));
+                effectiveAsset.SourceRevision),
+            result.EncodedBytes);
     }
 
     public async Task<ViewerOriginalBitmap> LoadOriginalAsync(
