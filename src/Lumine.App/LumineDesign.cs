@@ -103,6 +103,8 @@ internal static class LumineDesign
         "M12 21a9 9 0 100-18 9 9 0 000 18z M12 10.5v6 M12 7.5h.01";
     public const string BackIconPath =
         "M15.75 5.25L9 12l6.75 6.75";
+    public const string CloseIconPath =
+        "M6 6l12 12M18 6L6 18";
     public const string GridIconPath =
         "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     public const string ListIconPath =
