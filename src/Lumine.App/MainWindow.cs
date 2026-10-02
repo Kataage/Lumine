@@ -260,16 +260,15 @@ public sealed class MainWindow : Window
             };
 
         var collapseNavigation =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "‹",
-                    Width = 34,
-                    Padding = new Thickness(0)
-                });
-        ToolTip.SetTip(
-            collapseNavigation,
-            "ナビゲーションを閉じる");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.ChevronLeftIconPath,
+                            16)
+                },
+                "ナビゲーションを閉じる");
 
         var navigationHeader =
             new Grid
