@@ -73,16 +73,6 @@ public sealed class DetailViewerControl : UserControl
             Margin = new Thickness(8, 6),
             HorizontalAlignment = HorizontalAlignment.Center
         };
-        toolbar.Children.Add(_previous);
-        toolbar.Children.Add(_next);
-        toolbar.Children.Add(
-            new Border
-            {
-                Width = 1,
-                Height = 22,
-                Margin = new Thickness(5, 0),
-                Background = new SolidColorBrush(Color.Parse("#3F3F46"))
-            });
         toolbar.Children.Add(_zoomOut);
         toolbar.Children.Add(_zoomText);
         toolbar.Children.Add(_zoomIn);
@@ -130,16 +120,46 @@ public sealed class DetailViewerControl : UserControl
             Margin = new Thickness(10, 4, 10, 8)
         };
 
+        var stage = new Grid
+        {
+            Background = Brushes.Black
+        };
+        stage.Children.Add(_scroll);
+
+        _previous.Width = 44;
+        _previous.Height = 56;
+        _previous.MinWidth = 44;
+        _previous.MinHeight = 56;
+        _previous.FontSize = 28;
+        _previous.Padding = new Thickness(0);
+        _previous.HorizontalAlignment =
+            HorizontalAlignment.Left;
+        _previous.VerticalAlignment =
+            VerticalAlignment.Center;
+        _previous.Margin = new Thickness(14, 0);
+        stage.Children.Add(_previous);
+
+        _next.Width = 44;
+        _next.Height = 56;
+        _next.MinWidth = 44;
+        _next.MinHeight = 56;
+        _next.FontSize = 28;
+        _next.Padding = new Thickness(0);
+        _next.HorizontalAlignment =
+            HorizontalAlignment.Right;
+        _next.VerticalAlignment =
+            VerticalAlignment.Center;
+        _next.Margin = new Thickness(14, 0);
+        stage.Children.Add(_next);
+
         var layout = new Grid
         {
             Background = Brushes.Black,
-            RowDefinitions = new RowDefinitions("Auto,*,Auto")
+            RowDefinitions = new RowDefinitions("Auto,*")
         };
         layout.Children.Add(toolbar);
-        Grid.SetRow(_scroll, 1);
-        layout.Children.Add(_scroll);
-        Grid.SetRow(_metadata, 2);
-        layout.Children.Add(_metadata);
+        Grid.SetRow(stage, 1);
+        layout.Children.Add(stage);
 
         Content = layout;
 
@@ -191,7 +211,11 @@ public sealed class DetailViewerControl : UserControl
                 CornerRadius = new CornerRadius(7),
                 Background =
                     new SolidColorBrush(
-                        Color.Parse("#18181B")),
+                        Color.FromArgb(
+                            205,
+                            24,
+                            24,
+                            27)),
                 Foreground = Brushes.White,
                 BorderBrush =
                     new SolidColorBrush(
