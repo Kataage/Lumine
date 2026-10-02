@@ -89,16 +89,11 @@ internal sealed class CoreViewerShell : UserControl
                         LumineDesign.CreateStrokeIcon(
                             LumineDesign.CloseIconPath,
                             18,
-                            Brushes.White)
+                            LumineDesign.Foreground)
                 },
                 "閉じる (Esc)");
         focusedClose.Background =
-            new SolidColorBrush(
-                Color.FromArgb(
-                    205,
-                    24,
-                    24,
-                    27));
+            LumineDesign.ControlSurface;
         focusedClose.BorderBrush =
             LumineDesign.BorderStrong;
         focusedClose.Click +=
@@ -394,7 +389,6 @@ internal sealed class CoreViewerShell : UserControl
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
-        _grid.Focus();
     }
 
     private async Task LoadContextDetailAsync(
