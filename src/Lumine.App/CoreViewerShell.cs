@@ -91,27 +91,25 @@ internal sealed class CoreViewerShell : UserControl
                 CloseFocusedView();
 
         var focusedHeader =
-            new Grid
+            new Border
             {
-                Background = Brushes.Black,
-                ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*"),
-                Margin = new Thickness(8, 6)
+                Background = Brushes.Transparent,
+                Margin = new Thickness(8, 6),
+                HorizontalAlignment =
+                    HorizontalAlignment.Left,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                Child = focusedClose
             };
-        focusedHeader.Children.Add(
-            focusedClose);
 
         var focusedLayout =
             new Grid
             {
-                Background = Brushes.Black,
-                RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                Background = Brushes.Black
             };
+        focusedLayout.Children.Add(_detail);
         focusedLayout.Children.Add(
             focusedHeader);
-        Grid.SetRow(_detail, 1);
-        focusedLayout.Children.Add(_detail);
 
         _focusedSurface =
             new Border
