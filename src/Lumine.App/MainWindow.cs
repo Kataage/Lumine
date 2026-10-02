@@ -647,6 +647,18 @@ public sealed class MainWindow : Window
     {
         await _navigationInitialization;
 
+        var confirmed =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "ライブラリの登録を解除しますか？",
+                $"「{library.Name}」をLumineのライブラリ一覧から外します。",
+                "元画像ファイルは削除しません。このライブラリに紐づくLumine側の登録情報は解除されます。",
+                confirmLabel: "登録解除");
+        if (!confirmed)
+        {
+            return;
+        }
+
         if (_runtime?.Library.Id == library.Id)
         {
             await CloseActiveLibraryAsync(
@@ -1053,20 +1065,33 @@ public sealed class MainWindow : Window
             await runtime.ApplyQueryAsync(
                 BuildBrowseQuery());
 
-            var nextShell =
-                CreateCoreViewerShell(runtime);
-            _shell = nextShell;
-            _viewerHost.Content = nextShell;
-            _productShellState =
-                runtime.AssetCount == 0
-                    ? "EmptyLibrary"
-                    : "Workspace";
-            UpdateScopeDisplay();
-
-            if (runtime.AssetCount > 0)
+            if (runtime.AssetCount == 0)
             {
+                var totalAssetCount =
+                    await runtime.LibraryService
+                        .CountAssetsAsync(
+                            runtime.Library.Id);
+                _shell = null;
+                _productShellState =
+                    totalAssetCount == 0
+                        ? "EmptyLibrary"
+                        : "NoMatch";
+                _viewerHost.Content =
+                    totalAssetCount == 0
+                        ? CreateEmptyLibraryState()
+                        : CreateNoMatchState();
+            }
+            else
+            {
+                var nextShell =
+                    CreateCoreViewerShell(runtime);
+                _shell = nextShell;
+                _viewerHost.Content = nextShell;
+                _productShellState = "Workspace";
                 nextShell.SelectInitialAsset();
             }
+
+            UpdateScopeDisplay();
         }
         catch (Exception exception)
         {
@@ -1722,6 +1747,48 @@ public sealed class MainWindow : Window
                 $"{bytes / kib:F2} KiB",
             _ => $"{bytes} B"
         };
+    }
+
+    private Control CreateEmptyLibraryState()
+    {
+        var add =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "別の画像フォルダーを追加"
+                });
+        add.Click += OnOpenFolderClicked;
+
+        return LumineDesign.CreateProductState(
+            "ライブラリに画像がありません",
+            "このライブラリには、Lumineで管理できる画像がまだありません。元フォルダーへ画像を追加するか、別の画像フォルダーを追加してください。",
+            add);
+    }
+
+    private Control CreateNoMatchState()
+    {
+        var clear =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "検索・フィルターを解除"
+                });
+        clear.Click +=
+            async (_, _) =>
+            {
+                _browseFilterState =
+                    new BrowseFilterState(
+                        SortOrder:
+                            _browsePreferences.SortOrder);
+                EnsureBrowseControls();
+                await ApplyBrowseQueryAsync();
+                RenderNavigationDestination();
+            };
+
+        return LumineDesign.CreateProductState(
+            "一致する画像がありません",
+            "検索語・フォルダー・タグ・評価・お気に入り・状態・カラーの条件に一致する画像がありません。",
+            clear);
     }
 
     private Control CreateWelcomeState(
