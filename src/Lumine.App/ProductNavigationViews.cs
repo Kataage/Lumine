@@ -275,7 +275,6 @@ internal static class ProductNavigationViews
                             new Thickness(10, -3, 8, 2)
                     });
             }
-            }
         }
 
         return CreateScroll(stack);
