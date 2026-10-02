@@ -144,7 +144,7 @@ internal sealed class AppHost : IAsyncDisposable
 
             var retiredThumbnailCleanup =
                 thumbnailStorageMode
-                    == ThumbnailStorageMode.MemoryOnly
+                    == Lumine.Image.ThumbnailStorageMode.MemoryOnly
                 ? RetirePersistentThumbnailCache(
                     dataPaths.ThumbnailCachePath,
                     log)
