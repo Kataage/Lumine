@@ -966,6 +966,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly ViewerLayoutMode _layoutMode;
         private readonly Image _image;
         private readonly TextBlock? _label;
+        private readonly TextBlock? _listSecondary;
         private readonly TileCaptionOverlay? _captionOverlay;
         private readonly Grid? _gridLayers;
         private readonly Grid? _listPanel;
@@ -977,35 +978,15 @@ public sealed class ThumbnailViewerControl : UserControl
         private bool _hovered;
 
         private static readonly IBrush TileBackground =
-            new SolidColorBrush(
-                Color.Parse("#18181B"));
+            ViewerVisualTokens.Surface;
         private static readonly IBrush SelectedBorder =
-            new SolidColorBrush(
-                Color.Parse("#FAFAFA"));
+            ViewerVisualTokens.Selection;
         private static readonly IBrush HoverBorder =
-            new SolidColorBrush(
-                Color.Parse("#52525B"));
+            ViewerVisualTokens.BorderStrong;
         private static readonly IBrush OverlayBackground =
-            new SolidColorBrush(
-                Color.FromArgb(
-                    190,
-                    0,
-                    0,
-                    0));
+            ViewerVisualTokens.Overlay;
         private static readonly IBrush OverlayBorder =
-            new SolidColorBrush(
-                Color.FromArgb(
-                    72,
-                    255,
-                    255,
-                    255));
-        private static readonly IBrush MutedWhite =
-            new SolidColorBrush(
-                Color.FromArgb(
-                    170,
-                    255,
-                    255,
-                    255));
+            ViewerVisualTokens.BorderStrong;
         public ViewerTileControl(
             ThumbnailViewerControl owner,
             ViewerSession session,
@@ -1049,15 +1030,24 @@ public sealed class ThumbnailViewerControl : UserControl
                     Text = " ",
                     MaxLines = 1,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    FontSize = 11.5,
+                    FontSize = ViewerVisualTokens.BodyFontSize,
                     FontWeight = FontWeight.Medium,
-                    Foreground = Brushes.White
+                    Foreground = ViewerVisualTokens.Foreground
+                };
+                _listSecondary = new TextBlock
+                {
+                    Text = " ",
+                    MaxLines = 1,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontSize = ViewerVisualTokens.CaptionFontSize,
+                    Foreground = ViewerVisualTokens.MutedForeground
                 };
                 _captionOverlay = null;
             }
             else
             {
                 _label = null;
+                _listSecondary = null;
                 _captionOverlay =
                     new TileCaptionOverlay(tileWidth);
             }
@@ -1070,10 +1060,6 @@ public sealed class ThumbnailViewerControl : UserControl
                     Math.Max(48, tileHeight - 10);
                 _image.Margin = new Thickness(4);
 
-                _label.Foreground =
-                    new SolidColorBrush(
-                        Color.Parse("#FAFAFA"));
-
                 var panel = new Grid
                 {
                     ColumnDefinitions =
@@ -1084,10 +1070,17 @@ public sealed class ThumbnailViewerControl : UserControl
                 _gridLayers = null;
                 panel.Children.Add(_image);
 
-                Grid.SetColumn(_label!, 1);
-                _label!.VerticalAlignment =
-                    VerticalAlignment.Center;
-                panel.Children.Add(_label);
+                var text =
+                    new StackPanel
+                    {
+                        Spacing = 3,
+                        VerticalAlignment =
+                            VerticalAlignment.Center
+                    };
+                text.Children.Add(_label!);
+                text.Children.Add(_listSecondary!);
+                Grid.SetColumn(text, 1);
+                panel.Children.Add(text);
 
                 Child = panel;
             }
@@ -1122,7 +1115,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 new Avalonia.Controls.Shapes.Path
                 {
                     Data = Geometry.Parse(pathData),
-                    Stroke = Brushes.White,
+                    Stroke = ViewerVisualTokens.Foreground,
                     StrokeThickness = 1.8,
                     Stretch = Stretch.Uniform,
                     Width = 15,
@@ -1144,7 +1137,7 @@ public sealed class ThumbnailViewerControl : UserControl
                     Padding = new Thickness(0),
                     CornerRadius = new CornerRadius(8),
                     Background = OverlayBackground,
-                    Foreground = Brushes.White,
+                    Foreground = ViewerVisualTokens.Foreground,
                     BorderBrush = OverlayBorder,
                     BorderThickness = new Thickness(1),
                     HorizontalContentAlignment =
@@ -1153,6 +1146,9 @@ public sealed class ThumbnailViewerControl : UserControl
                         VerticalAlignment.Center
                 };
             ToolTip.SetTip(button, tooltip);
+            ViewerVisualTokens.Name(
+                button,
+                tooltip);
             return button;
         }
 
@@ -1250,7 +1246,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         : Brushes.Transparent;
 
             var showActions =
-                _hovered || IsSelected;
+                _hovered;
             if (showActions)
             {
                 EnsureActionOverlay();
@@ -1372,8 +1368,7 @@ public sealed class ThumbnailViewerControl : UserControl
                                 Geometry.Parse(
                                     "M5 12.5l4 4L19 6.5"),
                             Stroke =
-                                new SolidColorBrush(
-                                    Color.Parse("#09090B")),
+                                ViewerVisualTokens.Stage,
                             StrokeThickness = 2.2,
                             Stretch = Stretch.Uniform,
                             Width = 11,
@@ -1454,12 +1449,16 @@ public sealed class ThumbnailViewerControl : UserControl
                     if (_label is not null)
                     {
                         _label.Text = asset.DisplayName;
+                        _listSecondary!.Text =
+                            FormatListSecondary(asset);
                     }
                     else
                     {
                         _captionOverlay!.SetText(
                             asset.DisplayName,
-                            FormatFileSize(asset.FileSize));
+                            FormatFileSize(asset.FileSize),
+                            asset.Rating,
+                            asset.Favorite);
                     }
 
                     if (!_isReady)
@@ -1484,7 +1483,11 @@ public sealed class ThumbnailViewerControl : UserControl
                         }
                         else
                         {
-                            _captionOverlay!.SetText("!", string.Empty);
+                            _captionOverlay!.SetText(
+                                "!",
+                                string.Empty,
+                                rating: null,
+                                favorite: false);
                         }
                     });
             }
@@ -1536,16 +1539,14 @@ public sealed class ThumbnailViewerControl : UserControl
             };
 
         private static readonly IBrush MutedText =
-            new SolidColorBrush(
-                Color.FromArgb(
-                    170,
-                    255,
-                    255,
-                    255));
+            ViewerVisualTokens.MutedForeground;
+        private static readonly IBrush BadgeBackground =
+            ViewerVisualTokens.OverlaySoft;
 
         private readonly double _maxTextWidth;
         private FormattedText? _name;
         private FormattedText? _size;
+        private FormattedText? _organization;
 
         public TileCaptionOverlay(double tileWidth)
         {
@@ -1556,22 +1557,37 @@ public sealed class ThumbnailViewerControl : UserControl
 
         public void SetText(
             string name,
-            string size)
+            string size,
+            int? rating,
+            bool favorite)
         {
             _name =
                 CreateText(
                     name,
-                    10.5,
-                    Brushes.White,
+                    ViewerVisualTokens.CaptionFontSize,
+                    ViewerVisualTokens.Foreground,
                     FontWeight.Medium);
             _size =
                 string.IsNullOrEmpty(size)
                     ? null
                     : CreateText(
                         size,
-                        9.5,
+                        ViewerVisualTokens.CaptionFontSize,
                         MutedText,
                         FontWeight.Normal);
+
+            var organization =
+                FormatOrganizationCue(
+                    rating,
+                    favorite);
+            _organization =
+                string.IsNullOrEmpty(organization)
+                    ? null
+                    : CreateText(
+                        organization,
+                        ViewerVisualTokens.CaptionFontSize,
+                        ViewerVisualTokens.Foreground,
+                        FontWeight.SemiBold);
             InvalidateVisual();
         }
 
@@ -1616,6 +1632,25 @@ public sealed class ThumbnailViewerControl : UserControl
                     Bounds.Width,
                     height));
 
+            if (_organization is not null)
+            {
+                var badgeWidth =
+                    Math.Min(
+                        Bounds.Width - 16,
+                        _organization.Width + 12);
+                context.DrawRectangle(
+                    BadgeBackground,
+                    null,
+                    new Rect(
+                        8,
+                        8,
+                        badgeWidth,
+                        _organization.Height + 8));
+                context.DrawText(
+                    _organization,
+                    new Point(14, 12));
+            }
+
             if (_name is null)
             {
                 return;
@@ -1651,6 +1686,49 @@ public sealed class ThumbnailViewerControl : UserControl
                     new Point(8, sizeY));
             }
         }
+    }
+
+    private static string FormatListSecondary(
+        ViewerAsset asset)
+    {
+        var slash =
+            asset.RelativePath.LastIndexOf('/');
+        var folder =
+            slash > 0
+                ? asset.RelativePath[..slash]
+                : "ルート";
+        var organization =
+            FormatOrganizationCue(
+                asset.Rating,
+                asset.Favorite);
+
+        return string.IsNullOrEmpty(organization)
+            ? $"{folder}  ·  {FormatFileSize(asset.FileSize)}"
+            : $"{folder}  ·  {FormatFileSize(asset.FileSize)}  ·  {organization}";
+    }
+
+    private static string FormatOrganizationCue(
+        int? rating,
+        bool favorite)
+    {
+        var parts = new List<string>(2);
+        if (favorite)
+        {
+            parts.Add("♥");
+        }
+
+        if (rating is > 0)
+        {
+            parts.Add(
+                new string(
+                    '★',
+                    Math.Clamp(
+                        rating.Value,
+                        1,
+                        5)));
+        }
+
+        return string.Join(" ", parts);
     }
 
     private static string FormatFileSize(long bytes)
