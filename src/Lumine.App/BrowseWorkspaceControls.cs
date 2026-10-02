@@ -48,7 +48,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Button _list;
     private readonly Slider _density;
     private readonly WrapPanel _chips;
-    private readonly TextBlock _searchHint;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
 
@@ -80,14 +79,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
-
-        _searchHint = new TextBlock
-        {
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = LumineDesign.CaptionFontSize,
-            IsVisible = false,
-            VerticalAlignment = VerticalAlignment.Center
-        };
 
         _sort =
             LumineDesign.ConfigureComboBox(
@@ -175,14 +166,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
         var primaryRow = new Grid
         {
             ColumnDefinitions =
-                new ColumnDefinitions("*,Auto,Auto,Auto")
+                new ColumnDefinitions("*,Auto,Auto")
         };
         primaryRow.Children.Add(_search);
-
-        Grid.SetColumn(_searchHint, 1);
-        _searchHint.Margin =
-            new Thickness(8, 0);
-        primaryRow.Children.Add(_searchHint);
 
         var mode =
             new StackPanel
@@ -193,7 +179,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             };
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
-        Grid.SetColumn(mode, 2);
+        Grid.SetColumn(mode, 1);
         primaryRow.Children.Add(mode);
 
         var densityPanel =
@@ -217,7 +203,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             densityPanel,
             "サムネイルサイズ");
-        Grid.SetColumn(densityPanel, 3);
+        Grid.SetColumn(densityPanel, 2);
         primaryRow.Children.Add(densityPanel);
 
         var filterRow =
@@ -416,16 +402,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
             _search.Text?.Trim()
             ?? string.Empty;
 
-        if (text.Length > 0
-            && !IsSearchReady(text))
-        {
-            _searchHint.Text =
-                "英数字は3文字以上、日本語/CJKは2文字以上";
-            _searchHint.IsVisible = true;
-            return;
-        }
-
-        _searchHint.IsVisible = false;
         _searchDebounce =
             new CancellationTokenSource();
         var token =
@@ -852,45 +828,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
         group.Children.Add(control);
         panel.Children.Add(group);
     }
-
-    private static bool IsSearchReady(
-        string text)
-    {
-        var terms =
-            text.Split(
-                ' ',
-                StringSplitOptions.RemoveEmptyEntries
-                | StringSplitOptions.TrimEntries);
-
-        if (terms.Length == 0)
-        {
-            return true;
-        }
-
-        foreach (var term in terms)
-        {
-            if (term.Length >= 3)
-            {
-                continue;
-            }
-
-            if (term.Length == 2
-                && term.All(IsCjk))
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsCjk(char value) =>
-        value is >= '\u3040' and <= '\u30ff'
-        or >= '\u3400' and <= '\u4dbf'
-        or >= '\u4e00' and <= '\u9fff'
-        or >= '\uff66' and <= '\uff9f';
 
     private static string? NormalizeChoice(
         object? value)
