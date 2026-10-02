@@ -1093,7 +1093,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 FontWeight =
                     FontWeight.SemiBold
             });
@@ -1113,7 +1113,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 Margin =
                     new Thickness(0, 5, 10, 2)
             };
