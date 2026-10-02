@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -309,6 +310,54 @@ internal sealed class CoreViewerShell : UserControl
     internal Rect GridViewerBounds =>
         _grid.Bounds;
 
+
+    internal (
+        Rect ImageBounds,
+        Rect ViewportBounds)
+        FocusedViewerGeometryForSmoke
+    {
+        get
+        {
+            var image =
+                _detail.GetVisualDescendants()
+                    .OfType<Image>()
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    "Focused viewer image visual is unavailable.");
+            var viewport =
+                _detail.GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    "Focused viewer viewport is unavailable.");
+
+            var imageOrigin =
+                image.TranslatePoint(
+                    new Point(0, 0),
+                    _detail)
+                ?? throw new InvalidOperationException(
+                    "Unable to map focused image bounds.");
+            var viewportOrigin =
+                viewport.TranslatePoint(
+                    new Point(0, 0),
+                    _detail)
+                ?? throw new InvalidOperationException(
+                    "Unable to map focused viewport bounds.");
+
+            return (
+                new Rect(
+                    imageOrigin,
+                    image.Bounds.Size),
+                new Rect(
+                    viewportOrigin,
+                    viewport.Bounds.Size));
+        }
+    }
+
+    internal bool IsAssetFocusedForSmoke(
+        long index) =>
+        _grid.IsAssetFocused(index);
+
     internal async Task ShowContextDetailAsync()
     {
         if (_grid.SelectedAssetIndex < 0)
@@ -352,9 +401,7 @@ internal sealed class CoreViewerShell : UserControl
             TopLevel.GetTopLevel(this)
             as MainWindow;
         owner?.ShowLightbox(
-            _focusedSurface,
-            _grid.GetRealizedAssetFocusTarget(index)
-            ?? _grid);
+            _focusedSurface);
 
         try
         {
@@ -393,6 +440,8 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        var returnIndex =
+            _detail.SelectedAssetIndex;
         var owner =
             TopLevel.GetTopLevel(_focusedSurface)
             as MainWindow
@@ -403,6 +452,12 @@ internal sealed class CoreViewerShell : UserControl
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
+
+        if (returnIndex >= 0
+            && !_grid.FocusAsset(returnIndex))
+        {
+            _grid.Focus();
+        }
     }
 
     private async Task LoadContextDetailAsync(
