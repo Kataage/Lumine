@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -32,9 +33,9 @@ internal static class LumineDesign
     public static readonly Color AccentMutedColor =
         Color.Parse("#222227");
     public static readonly Color DangerColor =
-        Color.Parse("#991B1B");
+        Color.Parse("#F87171");
     public static readonly Color WarningColor =
-        Color.Parse("#A16207");
+        Color.Parse("#FBBF24");
     public static readonly Color FocusColor =
         Color.Parse("#D4D4D8");
 
@@ -73,7 +74,10 @@ internal static class LumineDesign
     public static FontFamily UiFont { get; } =
         new("Yu Gothic UI, Yu Gothic, Meiryo, Segoe UI");
 
-    public const double NavigationWidth = 52;
+    public const double NavigationWidth = 64;
+    public const double BodyFontSize = 14;
+    public const double CaptionFontSize = 12;
+    public const double CompactLabelFontSize = 12;
     public const double HeaderHeight = 56;
     public const double CompactControlHeight = 34;
     public const double ContentGap = 12;
@@ -164,6 +168,7 @@ internal static class LumineDesign
 
         button.MinHeight = CompactControlHeight;
         button.Padding = new Thickness(14, 7);
+        button.FontSize = CaptionFontSize;
         button.CornerRadius = new CornerRadius(8);
         button.Background = Accent;
         button.Foreground =
@@ -180,6 +185,7 @@ internal static class LumineDesign
 
         button.MinHeight = CompactControlHeight;
         button.Padding = new Thickness(12, 7);
+        button.FontSize = CaptionFontSize;
         button.CornerRadius = new CornerRadius(8);
         button.Background = AccentMuted;
         button.Foreground = Foreground;
@@ -194,6 +200,7 @@ internal static class LumineDesign
         ArgumentNullException.ThrowIfNull(textBox);
 
         textBox.MinHeight = CompactControlHeight;
+        textBox.FontSize = BodyFontSize;
         textBox.Background = ControlSurface;
         textBox.Foreground = Foreground;
         textBox.BorderBrush = Border;
@@ -208,6 +215,7 @@ internal static class LumineDesign
         ArgumentNullException.ThrowIfNull(comboBox);
 
         comboBox.MinHeight = CompactControlHeight;
+        comboBox.FontSize = CaptionFontSize;
         comboBox.Background = ControlSurface;
         comboBox.Foreground = Foreground;
         comboBox.BorderBrush = Border;
@@ -221,6 +229,7 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(checkBox);
 
+        checkBox.FontSize = CaptionFontSize;
         checkBox.Foreground = Foreground;
         checkBox.VerticalAlignment =
             VerticalAlignment.Center;
@@ -270,6 +279,7 @@ internal static class LumineDesign
                 ? new Thickness(0)
                 : new Thickness(1);
         ToolTip.SetTip(button, tooltip);
+        AutomationProperties.SetName(button, tooltip);
         return button;
     }
 
@@ -311,8 +321,8 @@ internal static class LumineDesign
                 new TextBlock
                 {
                     Text = item.Label,
-                    Width = 40,
-                    FontSize = 8,
+                    Width = 56,
+                    FontSize = CompactLabelFontSize,
                     FontWeight =
                         selected
                             ? FontWeight.SemiBold
@@ -331,7 +341,7 @@ internal static class LumineDesign
                 new Button
                 {
                     Content = content,
-                    MinHeight = 52,
+                    MinHeight = 58,
                     CornerRadius = new CornerRadius(9),
                     Background =
                         selected
@@ -347,6 +357,7 @@ internal static class LumineDesign
                         HorizontalAlignment.Center
                 };
             ToolTip.SetTip(button, item.Label);
+            AutomationProperties.SetName(button, item.Label);
             button.Click +=
                 (_, _) => navigate(item.Label);
             return button;
@@ -442,7 +453,7 @@ internal static class LumineDesign
                 new TextBlock
                 {
                     Text = description,
-                    FontSize = 11,
+                    FontSize = BodyFontSize,
                     Foreground = MutedForeground,
                     TextAlignment = TextAlignment.Center,
                     TextWrapping = TextWrapping.Wrap,
