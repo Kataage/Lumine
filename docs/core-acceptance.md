@@ -56,7 +56,7 @@ The raw result uses the #286 `BenchmarkResult` schema and records hardware/OS/ru
 
 ## Cold + warm wrapper
 
-Use the wrapper so cold and warm runs share the same v2 database. The default `PersistentDisk` policy also shares its persistent thumbnail cache; `MemoryOnly` deliberately does not persist display thumbnails across processes:
+Use the wrapper so cold and warm runs share the same v2 database. The product default is `MemoryOnly`, which deliberately does not persist display thumbnails across processes. `PersistentDisk` can be selected explicitly for diagnostics/comparison:
 
 ```powershell
 # PowerShell 7
@@ -71,7 +71,7 @@ Defaults:
 - scripted browse: 60 seconds per run
 - idle observation: 10 seconds per run
 - fast-scroll gate: 1,500 ms, matching the existing Viewer acceptance gate
-- thumbnail storage: `PersistentDisk` by default; pass `-ThumbnailStorageMode MemoryOnly` to exercise the v1-style no-persistent-thumbnail policy
+- thumbnail storage: `MemoryOnly` by default; pass `-ThumbnailStorageMode PersistentDisk` only for explicit persistent-cache diagnostics/comparison
 
 The wrapper deletes its isolated acceptance data root and any prior `cold.json`, `warm.json`, and `summary.json` before the cold run. It does not delete or modify image files in the supplied representative library.
 
@@ -165,7 +165,7 @@ It writes `comparison.json` and keeps the full raw results beneath `persistent-d
 - persistent thumbnail files/bytes
 - metadata hash bytes
 
-The comparison runner uses a permissive collection ceiling (30,000 ms by default) so a slower policy can still finish and produce evidence. `TargetMaxFastScrollMs` remains 1,500 ms by default and is reported independently as the product-performance target. The comparison run is evidence collection; the chosen policy must still pass the normal acceptance wrapper at its real gate before #295 can close.
+The comparison runner uses a permissive collection ceiling (30,000 ms by default) so a slower policy can still finish and produce evidence. `TargetMaxFastScrollMs` remains 1,500 ms by default and is reported independently as the product-performance target. The comparison run is evidence collection. #388 used this runner on the 3,651-asset representative library and selected MemoryOnly as the product default; see ADR 0001.
 
 `PersistentDisk` Warm and `MemoryOnly` Warm do not mean the same cache state. PersistentDisk measures cross-process display-thumbnail reuse. MemoryOnly intentionally begins each process without persisted display thumbnails and measures a fresh bounded in-process memory-cache lifecycle on a warm library database. The runner records this distinction rather than treating the two semantics as equivalent.
 
