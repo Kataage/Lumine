@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lumine.Library;
@@ -14,7 +15,8 @@ internal static class ProductNavigationViews
         Func<Task> addLibrary,
         Func<LibraryCatalogItem, Task> openLibrary,
         Func<LibraryCatalogItem, Task> toggleEnabled,
-        Func<LibraryCatalogItem, Task> removeLibrary)
+        Func<LibraryCatalogItem, Task> removeLibrary,
+        Action<string>? reportError = null)
     {
         var stack = CreateListStack();
 
@@ -24,7 +26,7 @@ internal static class ProductNavigationViews
                 {
                     Content = "画像フォルダーを追加"
                 });
-        AttachAsync(add, addLibrary);
+        AttachAsync(add, addLibrary, reportError);
         stack.Children.Add(add);
 
         if (libraries.Count == 0)
@@ -53,7 +55,7 @@ internal static class ProductNavigationViews
                         isActive
                             ? FontWeight.Bold
                             : FontWeight.SemiBold,
-                    FontSize = 11.5,
+                    FontSize = LumineDesign.CaptionFontSize,
                     TextTrimming =
                         TextTrimming.CharacterEllipsis,
                     VerticalAlignment =
@@ -86,7 +88,7 @@ internal static class ProductNavigationViews
                             : string.Empty,
                     Foreground =
                         LumineDesign.MutedForeground,
-                    FontSize = 9,
+                    FontSize = LumineDesign.CaptionFontSize,
                     FontWeight =
                         FontWeight.SemiBold,
                     VerticalAlignment =
@@ -113,7 +115,7 @@ internal static class ProductNavigationViews
                     Text = library.RootPath,
                     Foreground =
                         LumineDesign.MutedForeground,
-                    FontSize = 9,
+                    FontSize = LumineDesign.CaptionFontSize,
                     TextTrimming =
                         TextTrimming.CharacterEllipsis,
                     Margin =
@@ -135,7 +137,7 @@ internal static class ProductNavigationViews
                         rootAvailable
                             ? LumineDesign.MutedForeground
                             : LumineDesign.Warning,
-                    FontSize = 9.5,
+                    FontSize = LumineDesign.CaptionFontSize,
                     Margin =
                         new Thickness(15, 2, 0, 0)
                 };
@@ -177,7 +179,8 @@ internal static class ProductNavigationViews
             {
                 AttachAsync(
                     primary,
-                    () => openLibrary(library));
+                    () => openLibrary(library),
+                    reportError);
             }
 
             stack.Children.Add(primary);
@@ -191,7 +194,7 @@ internal static class ProductNavigationViews
                         Text = library.SyncError,
                         Foreground =
                             LumineDesign.Warning,
-                        FontSize = 9,
+                        FontSize = LumineDesign.CaptionFontSize,
                         TextWrapping =
                             TextWrapping.Wrap,
                         Margin =
@@ -221,14 +224,15 @@ internal static class ProductNavigationViews
                                 library.IsEnabled
                                     ? "無効化"
                                     : "有効化",
-                            FontSize = 9.5,
+                            FontSize = LumineDesign.CaptionFontSize,
                             MinHeight = 28,
                             Padding =
                                 new Thickness(8, 4)
                         });
                 AttachAsync(
                     toggle,
-                    () => toggleEnabled(library));
+                    () => toggleEnabled(library),
+                    reportError);
                 manage.Children.Add(toggle);
 
                 var remove =
@@ -236,7 +240,7 @@ internal static class ProductNavigationViews
                         new Button
                         {
                             Content = "登録解除",
-                            FontSize = 9.5,
+                            FontSize = LumineDesign.CaptionFontSize,
                             MinHeight = 28,
                             Padding =
                                 new Thickness(8, 4)
@@ -245,7 +249,8 @@ internal static class ProductNavigationViews
                     LumineDesign.Danger;
                 AttachAsync(
                     remove,
-                    () => removeLibrary(library));
+                    () => removeLibrary(library),
+                    reportError);
                 manage.Children.Add(remove);
 
                 stack.Children.Add(manage);
@@ -258,7 +263,8 @@ internal static class ProductNavigationViews
     public static Control CreateFolders(
         IReadOnlyList<LibraryFolderInfo> folders,
         string? selectedFolder,
-        Func<string?, Task> selectFolder)
+        Func<string?, Task> selectFolder,
+        Action<string>? reportError = null)
     {
         var stack = CreateListStack();
 
@@ -286,7 +292,8 @@ internal static class ProductNavigationViews
             };
         AttachAsync(
             all,
-            () => selectFolder(null));
+            () => selectFolder(null),
+            reportError);
         stack.Children.Add(all);
 
         if (folders.Count == 0)
@@ -346,7 +353,7 @@ internal static class ProductNavigationViews
                         selected
                             ? LumineDesign.Foreground
                             : LumineDesign.MutedForeground,
-                    FontSize = 11,
+                    FontSize = LumineDesign.CaptionFontSize,
                     TextTrimming =
                         TextTrimming.CharacterEllipsis
                 });
@@ -357,7 +364,7 @@ internal static class ProductNavigationViews
                         folder.DirectAssetCount.ToString("N0"),
                     Foreground =
                         LumineDesign.MutedForeground,
-                    FontSize = 9.5
+                    FontSize = LumineDesign.CaptionFontSize
                 };
             Grid.SetColumn(count, 1);
             row.Children.Add(count);
@@ -366,7 +373,8 @@ internal static class ProductNavigationViews
             AttachAsync(
                 button,
                 () => selectFolder(
-                    folder.RelativePath));
+                    folder.RelativePath),
+                reportError);
             stack.Children.Add(button);
         }
 
@@ -376,7 +384,8 @@ internal static class ProductNavigationViews
     public static Control CreateTags(
         IReadOnlyList<LibraryTagInfo> tags,
         string? selectedTag,
-        Func<string?, Task> selectTag)
+        Func<string?, Task> selectTag,
+        Action<string>? reportError = null)
     {
         var root =
             new Grid
@@ -427,7 +436,8 @@ internal static class ProductNavigationViews
                 };
             AttachAsync(
                 all,
-                () => selectTag(null));
+                () => selectTag(null),
+                reportError);
             list.Children.Add(all);
 
             var visible = tags.Where(
@@ -477,7 +487,7 @@ internal static class ProductNavigationViews
                             selected
                                 ? LumineDesign.Foreground
                                 : LumineDesign.MutedForeground,
-                        FontSize = 11,
+                        FontSize = LumineDesign.CaptionFontSize,
                         TextTrimming =
                             TextTrimming.CharacterEllipsis
                     });
@@ -488,14 +498,15 @@ internal static class ProductNavigationViews
                             tag.AssetCount.ToString("N0"),
                         Foreground =
                             LumineDesign.MutedForeground,
-                        FontSize = 9.5
+                        FontSize = LumineDesign.CaptionFontSize
                     };
                 Grid.SetColumn(assetCount, 1);
                 row.Children.Add(assetCount);
                 button.Content = row;
                 AttachAsync(
                     button,
-                    () => selectTag(tag.Name));
+                    () => selectTag(tag.Name),
+                    reportError);
                 list.Children.Add(button);
             }
 
@@ -546,7 +557,7 @@ internal static class ProductNavigationViews
                             ? string.Empty
                             : $" · {publication.Account}"),
                     Foreground = LumineDesign.MutedForeground,
-                    FontSize = 9.5
+                    FontSize = LumineDesign.CaptionFontSize
                 });
 
             if (!string.IsNullOrWhiteSpace(publication.Title))
@@ -557,7 +568,7 @@ internal static class ProductNavigationViews
                         Text = publication.Title,
                         Foreground = LumineDesign.Foreground,
                         FontWeight = FontWeight.SemiBold,
-                        FontSize = 11.5,
+                        FontSize = LumineDesign.CaptionFontSize,
                         TextWrapping = TextWrapping.Wrap
                     });
             }
@@ -569,7 +580,7 @@ internal static class ProductNavigationViews
                     {
                         Text = publication.Body,
                         Foreground = LumineDesign.Foreground,
-                        FontSize = 10,
+                        FontSize = LumineDesign.CaptionFontSize,
                         MaxHeight = 72,
                         TextWrapping = TextWrapping.Wrap
                     });
@@ -582,7 +593,7 @@ internal static class ProductNavigationViews
                     {
                         Text = publication.TagsSnapshot,
                         Foreground = LumineDesign.Accent,
-                        FontSize = 9.5,
+                        FontSize = LumineDesign.CaptionFontSize,
                         TextWrapping = TextWrapping.Wrap
                     });
             }
@@ -597,7 +608,7 @@ internal static class ProductNavigationViews
                             publication.Assets.Select(
                                 static asset => asset.FileName)),
                     Foreground = LumineDesign.MutedForeground,
-                    FontSize = 9.5,
+                    FontSize = LumineDesign.CaptionFontSize,
                     TextWrapping = TextWrapping.Wrap
                 });
 
@@ -608,7 +619,7 @@ internal static class ProductNavigationViews
                     {
                         Text = publication.ExternalUrl,
                         Foreground = LumineDesign.MutedForeground,
-                        FontSize = 9,
+                        FontSize = LumineDesign.CaptionFontSize,
                         TextWrapping = TextWrapping.Wrap
                     });
             }
@@ -708,7 +719,8 @@ internal static class ProductNavigationViews
 
     private static void AttachAsync(
         Button button,
-        Func<Task> action)
+        Func<Task> action,
+        Action<string>? reportError = null)
     {
         button.Click +=
             async (_, _) =>
@@ -717,6 +729,19 @@ internal static class ProductNavigationViews
                 try
                 {
                     await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    reportError?.Invoke(
+                        "操作を完了できませんでした。"
+                        + (string.IsNullOrWhiteSpace(exception.Message)
+                            ? string.Empty
+                            : $" {exception.Message}"));
                 }
                 finally
                 {
