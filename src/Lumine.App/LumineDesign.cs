@@ -435,16 +435,20 @@ internal static class LumineDesign
                 TextWrapping = TextWrapping.Wrap
             });
 
-        stack.Children.Add(
-            new TextBlock
-            {
-                Text = description,
-                FontSize = 12,
-                Foreground = MutedForeground,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                LineHeight = 19
-            });
+        if (!string.IsNullOrWhiteSpace(
+                description))
+        {
+            stack.Children.Add(
+                new TextBlock
+                {
+                    Text = description,
+                    FontSize = 11,
+                    Foreground = MutedForeground,
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    LineHeight = 18
+                });
+        }
 
         if (action is not null)
         {
