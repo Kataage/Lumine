@@ -1061,7 +1061,7 @@ public sealed partial class LibraryRepository
         }
     }
 
-    private static IReadOnlyList<long> ValidateOrderedAssetIds(
+    private static long[] ValidateOrderedAssetIds(
         IReadOnlyList<long> assetIds,
         string parameterName)
     {
