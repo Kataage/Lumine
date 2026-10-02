@@ -331,7 +331,7 @@ public sealed class MainWindow : Window
         _navigationPane =
             new Border
             {
-                Width = 280,
+                Width = 260,
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
