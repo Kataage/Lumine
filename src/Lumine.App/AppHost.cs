@@ -143,7 +143,9 @@ internal sealed class AppHost : IAsyncDisposable
                     persistedThumbnailStorageMode);
 
             var retiredThumbnailCleanup =
-                thumbnailStorageMode
+                persistedThumbnailStorageMode
+                    == Lumine.Image.ThumbnailStorageMode.MemoryOnly
+                && thumbnailStorageMode
                     == Lumine.Image.ThumbnailStorageMode.MemoryOnly
                 ? RetirePersistentThumbnailCache(
                     dataPaths.ThumbnailCachePath,
@@ -233,7 +235,6 @@ internal sealed class AppHost : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
 
         Settings = next;
-        ThumbnailStorageMode = thumbnailStorageMode;
         Log.Write(
             "settings",
             $"Thumbnail storage preference saved as {thumbnailStorageMode}; it takes effect on the next launch.");
