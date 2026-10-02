@@ -653,29 +653,29 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     private void UpdateViewButtons()
     {
+        var gridSelected =
+            Preferences.ViewMode
+            == BrowseViewMode.Grid;
         _grid.Background =
-            Preferences.ViewMode
-                == BrowseViewMode.Grid
-                ? LumineDesign.Accent
-                : LumineDesign.AccentMuted;
-        _grid.Foreground =
-            Preferences.ViewMode
-                == BrowseViewMode.Grid
-                ? new SolidColorBrush(
-                    LumineDesign.BackgroundColor)
-                : LumineDesign.Foreground;
+            gridSelected
+                ? LumineDesign.AccentMuted
+                : Brushes.Transparent;
+        _grid.BorderBrush =
+            gridSelected
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
 
+        var listSelected =
+            Preferences.ViewMode
+            == BrowseViewMode.List;
         _list.Background =
-            Preferences.ViewMode
-                == BrowseViewMode.List
-                ? LumineDesign.Accent
-                : LumineDesign.AccentMuted;
-        _list.Foreground =
-            Preferences.ViewMode
-                == BrowseViewMode.List
-                ? new SolidColorBrush(
-                    LumineDesign.BackgroundColor)
-                : LumineDesign.Foreground;
+            listSelected
+                ? LumineDesign.AccentMuted
+                : Brushes.Transparent;
+        _list.BorderBrush =
+            listSelected
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
     }
 
     private void RenderChips()
