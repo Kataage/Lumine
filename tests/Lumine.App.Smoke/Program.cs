@@ -284,6 +284,113 @@ try
         await degradedSettingsHost.CompleteCleanShutdownAsync();
     }
 
+    var storagePolicyPaths =
+        AppDataPaths.FromRoot(
+            Path.Combine(root, "thumbnail-storage-policy-host"));
+    Directory.CreateDirectory(
+        storagePolicyPaths.ThumbnailCachePath);
+    var legacyThumbnail =
+        Path.Combine(
+            storagePolicyPaths.ThumbnailCachePath,
+            "legacy.webp");
+    await File.WriteAllBytesAsync(
+        legacyThumbnail,
+        [1, 2, 3, 4]);
+
+    var originalStorageOverride =
+        Environment.GetEnvironmentVariable(
+            ThumbnailStoragePreference.EnvironmentVariable);
+
+    try
+    {
+        Environment.SetEnvironmentVariable(
+            ThumbnailStoragePreference.EnvironmentVariable,
+            null);
+
+        await using (var defaultStorageHost =
+                     await AppHost.StartAsync(
+                         storagePolicyPaths))
+        {
+            Require(
+                defaultStorageHost.ThumbnailStorageMode
+                    == ThumbnailStorageMode.MemoryOnly,
+                "Fresh AppHost did not default to MemoryOnly thumbnail storage.");
+            Require(
+                !File.Exists(legacyThumbnail),
+                "MemoryOnly migration left the active legacy persistent thumbnail file in place.");
+
+            await defaultStorageHost.SaveThumbnailStorageModeAsync(
+                ThumbnailStorageMode.PersistentDisk);
+            await defaultStorageHost.CompleteCleanShutdownAsync();
+        }
+
+        Directory.CreateDirectory(
+            storagePolicyPaths.ThumbnailCachePath);
+        var preservedPersistentThumbnail =
+            Path.Combine(
+                storagePolicyPaths.ThumbnailCachePath,
+                "preserved.webp");
+        await File.WriteAllBytesAsync(
+            preservedPersistentThumbnail,
+            [5, 6, 7, 8]);
+
+        await using (var persistentStorageHost =
+                     await AppHost.StartAsync(
+                         storagePolicyPaths))
+        {
+            Require(
+                persistentStorageHost.ThumbnailStorageMode
+                    == ThumbnailStorageMode.PersistentDisk
+                && File.Exists(
+                    preservedPersistentThumbnail),
+                "Explicit PersistentDisk preference was not restored without deleting its cache.");
+
+            await persistentStorageHost.SaveThumbnailStorageModeAsync(
+                ThumbnailStorageMode.MemoryOnly);
+            await persistentStorageHost.CompleteCleanShutdownAsync();
+        }
+
+        await using (var migratedBackToMemory =
+                     await AppHost.StartAsync(
+                         storagePolicyPaths))
+        {
+            Require(
+                migratedBackToMemory.ThumbnailStorageMode
+                    == ThumbnailStorageMode.MemoryOnly
+                && !File.Exists(
+                    preservedPersistentThumbnail),
+                "Switching back to MemoryOnly did not retire the persistent display-thumbnail cache.");
+
+            await migratedBackToMemory.CompleteCleanShutdownAsync();
+        }
+
+        Environment.SetEnvironmentVariable(
+            ThumbnailStoragePreference.EnvironmentVariable,
+            "PersistentDisk");
+
+        await using (var overriddenStorageHost =
+                     await AppHost.StartAsync(
+                         storagePolicyPaths))
+        {
+            Require(
+                overriddenStorageHost.ThumbnailStorageMode
+                    == ThumbnailStorageMode.PersistentDisk
+                && string.Equals(
+                    overriddenStorageHost.Settings.ThumbnailStorageMode,
+                    nameof(ThumbnailStorageMode.MemoryOnly),
+                    StringComparison.Ordinal),
+                "Environment thumbnail-storage override leaked into the persisted product preference.");
+
+            await overriddenStorageHost.CompleteCleanShutdownAsync();
+        }
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(
+            ThumbnailStoragePreference.EnvironmentVariable,
+            originalStorageOverride);
+    }
+
     VipsRuntimePolicy.EnsureConfigured();
 
     using (var blank = NetVips.Image.Black(320, 200, bands: 4))
@@ -984,8 +1091,14 @@ try
                             StringComparison.Ordinal)
                         && diagnostics.Contains(
                             "Thumbnail cache files:",
+                            StringComparison.Ordinal)
+                        && diagnostics.Contains(
+                            "Configured thumbnail storage: MemoryOnly",
+                            StringComparison.Ordinal)
+                        && diagnostics.Contains(
+                            "Thumbnail storage mode: MemoryOnly",
                             StringComparison.Ordinal),
-                        "User-visible runtime diagnostics omitted policy/cache state.");
+                        "User-visible runtime diagnostics omitted the product-default memory-only policy/cache state.");
 
                     var detail =
                         window.CurrentShell!.DetailViewer;
