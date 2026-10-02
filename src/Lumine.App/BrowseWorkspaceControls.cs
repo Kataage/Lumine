@@ -557,6 +557,17 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private async Task SetStateAsync(
         BrowseFilterState state)
     {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (State == state)
+        {
+            // ComboBox ItemsSource refreshes may emit SelectionChanged even
+            // when the effective browse constraint did not change. Treat
+            // those notifications as initialization/facet-refresh noise
+            // rather than rebuilding the Viewer sessions.
+            return;
+        }
+
         State = state;
         SynchronizeControls();
         await _filtersChanged(State);
