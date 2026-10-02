@@ -59,7 +59,11 @@ internal static class ViewerVisualTokens
     public const double BodyFontSize = 14;
     public const double CaptionFontSize = 12;
 
-    public static void Name(Control control, string accessibleName, string? automationId = null)
+    public static void Name(
+        Control control,
+        string accessibleName,
+        string? automationId = null,
+        string? acceleratorKey = null)
     {
         ArgumentNullException.ThrowIfNull(control);
         ArgumentException.ThrowIfNullOrWhiteSpace(accessibleName);
@@ -68,6 +72,13 @@ internal static class ViewerVisualTokens
         if (!string.IsNullOrWhiteSpace(automationId))
         {
             AutomationProperties.SetAutomationId(control, automationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(acceleratorKey))
+        {
+            AutomationProperties.SetAcceleratorKey(
+                control,
+                acceleratorKey);
         }
     }
 }
