@@ -1260,10 +1260,70 @@ internal static class Program
                 && snapshot.State == ViewerDetailLoadState.PreviewReady);
 
         detail.Fit();
+        Dispatcher.UIThread.RunJobs();
         Require(
             detail.Zoom > 0
             && detail.Zoom <= detailSession.Options.MaxZoom,
             "Detail fit produced an invalid zoom.");
+
+        var viewportBounds =
+            detail.ViewportBoundsInControlForSmoke;
+        var imageBounds =
+            detail.ImageBoundsInControlForSmoke;
+        var imageCenterX =
+            imageBounds.X
+            + (imageBounds.Width / 2);
+        var imageCenterY =
+            imageBounds.Y
+            + (imageBounds.Height / 2);
+        var viewportCenterX =
+            viewportBounds.X
+            + (viewportBounds.Width / 2);
+        var viewportCenterY =
+            viewportBounds.Y
+            + (viewportBounds.Height / 2);
+
+        Require(
+            Math.Abs(
+                imageCenterX
+                - viewportCenterX) <= 1.5
+            && Math.Abs(
+                imageCenterY
+                - viewportCenterY) <= 1.5,
+            "Fit image did not start visually centered in the Viewer viewport.");
+
+        var toolbarBounds =
+            detail.ToolbarBoundsInControlForSmoke;
+        var previousBounds =
+            detail.PreviousBoundsInControlForSmoke;
+        var nextBounds =
+            detail.NextBoundsInControlForSmoke;
+
+        Require(
+            toolbarBounds.Top >= viewportBounds.Top
+            && toolbarBounds.Bottom <= viewportBounds.Top + 96
+            && previousBounds.Left >= viewportBounds.Left
+            && previousBounds.Right <= viewportBounds.Left + 96
+            && nextBounds.Right <= viewportBounds.Right
+            && nextBounds.Left >= viewportBounds.Right - 96,
+            "Viewer chrome escaped its top/edge safe bands and can obstruct the image center.");
+
+        detail.FadeChromeForSmoke();
+        Require(
+            detail.ToolbarOpacityForSmoke < 0.5
+            && detail.PreviousOpacityForSmoke < 0.5
+            && detail.NextOpacityForSmoke < 0.5,
+            "Viewer chrome did not fade after inactivity.");
+
+        detail.RevealChromeForSmoke();
+        Require(
+            Math.Abs(
+                detail.ToolbarOpacityForSmoke - 1) < 0.001
+            && Math.Abs(
+                detail.PreviousOpacityForSmoke - 1) < 0.001
+            && Math.Abs(
+                detail.NextOpacityForSmoke - 1) < 0.001,
+            "Viewer chrome did not fully return after interaction.");
 
         await detailSession.SelectAsync(0);
         await WaitForDetailAsync(
