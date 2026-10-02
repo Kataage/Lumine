@@ -816,6 +816,22 @@ try
         await reopenedRepository.CountAssetsAsync(library.Id) == expectedCount,
         "Reopened database did not expose the existing asset index.");
 
+    var reopenedMetadata =
+        await reopenedRepository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "User metadata disappeared after database reopen.");
+    Require(
+        reopenedMetadata.Rating == 5
+        && reopenedMetadata.Favorite
+        && reopenedMetadata.StatusLabel == "candidate"
+        && reopenedMetadata.ColorLabel == "blue"
+        && reopenedMetadata.Notes.Contains("猫耳", StringComparison.Ordinal)
+        && reopenedMetadata.Tags.Contains("推し")
+        && reopenedMetadata.Tags.Contains("bulk-tag"),
+        "User-owned metadata did not survive database reopen.");
+
     var legacyPath = Path.Combine(tempRoot, "legacy-v1.db");
     await CreateLegacyV1DatabaseAsync(legacyPath);
     var legacyDatabase = new LibraryDatabase(legacyPath);
