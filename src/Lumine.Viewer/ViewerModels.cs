@@ -14,6 +14,21 @@ public enum ViewerLayoutMode
     List = 1
 }
 
+public enum ViewerSelectionMode
+{
+    Replace = 0,
+    Toggle = 1,
+    Range = 2
+}
+
+public sealed record ViewerSelectionSnapshot(
+    IReadOnlyList<long> Indices,
+    long PrimaryIndex,
+    long AnchorIndex)
+{
+    public int Count => Indices.Count;
+}
+
 public readonly record struct ViewerPageCursor(
     long ModifiedAtUtcTicks,
     long AssetId,
