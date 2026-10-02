@@ -1361,6 +1361,7 @@ public sealed class MainWindow : Window
         _diagnostics.IsEnabled = false;
         _status.Text = "Lumine を終了しています…";
 
+        _browseControls?.DisposeTransientWork();
         _openCancellation?.Cancel();
         _diagnosticsCancellation?.Cancel();
         _navigationCancellation?.Cancel();
