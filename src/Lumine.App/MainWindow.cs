@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -39,6 +40,9 @@ public sealed class MainWindow : Window
     private Task _diagnosticFlushOperation = Task.CompletedTask;
     private Task _navigationOperation = Task.CompletedTask;
     private Window? _diagnosticsWindow;
+    private IInputElement? _lightboxRestoreFocus;
+    private WindowState? _lightboxPreviousWindowState;
+    private bool _lightboxFullScreen;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -397,6 +401,8 @@ public sealed class MainWindow : Window
     {
         ArgumentNullException.ThrowIfNull(content);
 
+        _lightboxRestoreFocus =
+            FocusManager?.GetFocusedElement();
         _appShell.IsEnabled = false;
         _lightboxHost.Content = content;
         _lightboxHost.IsVisible = true;
@@ -413,10 +419,65 @@ public sealed class MainWindow : Window
             return;
         }
 
+        ExitLightboxFullScreen();
         _lightboxHost.Content = null;
         _lightboxHost.IsVisible = false;
         _appShell.IsEnabled = true;
+
+        if (_lightboxRestoreFocus is Control restore
+            && restore.IsEffectivelyVisible
+            && restore.IsEnabled)
+        {
+            restore.Focus();
+        }
+        else
+        {
+            _shell?.GridViewer.Focus();
+        }
+
+        _lightboxRestoreFocus = null;
     }
+
+    internal void ToggleLightboxFullScreen()
+    {
+        if (!_lightboxHost.IsVisible)
+        {
+            return;
+        }
+
+        if (_lightboxFullScreen)
+        {
+            ExitLightboxFullScreen();
+            return;
+        }
+
+        _lightboxPreviousWindowState =
+            WindowState;
+        WindowState =
+            WindowState.FullScreen;
+        _lightboxFullScreen = true;
+    }
+
+    private void ExitLightboxFullScreen()
+    {
+        if (!_lightboxFullScreen)
+        {
+            return;
+        }
+
+        var restore =
+            _lightboxPreviousWindowState
+            ?? WindowState.Normal;
+        _lightboxPreviousWindowState = null;
+        _lightboxFullScreen = false;
+        WindowState =
+            restore == WindowState.FullScreen
+                ? WindowState.Normal
+                : restore;
+    }
+
+    internal bool IsLightboxFullScreen =>
+        _lightboxFullScreen;
 
     internal bool IsLightboxVisible =>
         _lightboxHost.IsVisible;
