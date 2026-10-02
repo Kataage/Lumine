@@ -136,7 +136,8 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (3, 'incremental-filesystem-sync', 3),
             (4, 'persist-source-technical-metadata', 4),
             (5, 'user-metadata-and-local-search', 5),
-            (6, 'future-schema', 6);
+            (6, 'product-navigation-library-state', 6),
+            (7, 'future-schema', 7);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -173,8 +174,10 @@ static async Task CreateUntrackedProductDatabaseAsync(string path)
 var tempRoot = Path.Combine(Path.GetTempPath(), $"lumine-library-smoke-{Guid.NewGuid():N}");
 var libraryRoot = Path.Combine(tempRoot, "library");
 var databasePath = Path.Combine(tempRoot, "data", "library.db");
+var secondaryRoot = Path.Combine(tempRoot, "secondary-library");
 
 Directory.CreateDirectory(Path.Combine(libraryRoot, "nested"));
+Directory.CreateDirectory(secondaryRoot);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "a.jpg"), [1, 2, 3]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "b.png"), [4, 5]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "c.webp"), [6]);
@@ -184,7 +187,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 5, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 6, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -300,6 +303,93 @@ try
         && persistedUserMetadata.Tags.Contains("推し")
         && persistedUserMetadata.Tags.Contains("blue sky"),
         "User metadata did not round-trip.");
+
+    var catalog =
+        await repository.ListLibrariesAsync();
+    Require(
+        catalog.Count == 1
+        && catalog[0].Id == library.Id
+        && catalog[0].IsEnabled
+        && catalog[0].AssetCount == 3,
+        "Library catalog did not expose the registered library and asset count.");
+
+    var folders =
+        await repository.ListFoldersAsync(
+            library.Id);
+    Require(
+        folders.Count == 1
+        && string.Equals(
+            folders[0].RelativePath,
+            "nested",
+            StringComparison.Ordinal)
+        && folders[0].Depth == 1
+        && folders[0].DirectAssetCount == 1,
+        "Folder navigation index did not expose the scanned hierarchy.");
+
+    var nestedScope =
+        await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                FolderPathPrefix: "nested"),
+            10);
+    Require(
+        nestedScope.Items.Count == 1
+        && string.Equals(
+            nestedScope.Items[0].RelativePath,
+            "nested/c.webp",
+            StringComparison.Ordinal),
+        "Folder scope query did not restrict assets to the selected hierarchy.");
+
+    var tags =
+        await repository.ListTagsAsync(
+            library.Id);
+    Require(
+        tags.Count == 2
+        && tags.Any(tag =>
+            tag.Name == "推し"
+            && tag.AssetCount == 1),
+        "Tag navigation index did not expose user tags and counts.");
+
+    var searchedTags =
+        await repository.ListTagsAsync(
+            library.Id,
+            "推");
+    Require(
+        searchedTags.Count == 1
+        && searchedTags[0].Name == "推し",
+        "Tag navigation search did not filter locally persisted tags.");
+
+    Require(
+        await repository.SetLibraryEnabledAsync(
+            library.Id,
+            false),
+        "Library disable operation did not update the catalog.");
+    var disabledCatalog =
+        await repository.ListLibrariesAsync();
+    Require(
+        disabledCatalog.Count == 1
+        && !disabledCatalog[0].IsEnabled,
+        "Disabled library state did not persist.");
+
+    library =
+        await repository.RegisterLibraryAsync(
+            "Smoke",
+            libraryRoot);
+    Require(
+        (await repository.ListLibrariesAsync())[0].IsEnabled,
+        "Opening a disabled library did not reactivate its registration.");
+
+    var secondary =
+        await repository.RegisterLibraryAsync(
+            "Secondary",
+            secondaryRoot);
+    Require(
+        await repository.RemoveLibraryRegistrationAsync(
+            secondary.Id)
+        && Directory.Exists(secondaryRoot)
+        && (await repository.GetLibraryAsync(
+            secondary.Id)) is null,
+        "Library registration removal touched originals or left database state behind.");
 
     var japaneseShort = await repository.GetAssetPageAsync(
         library.Id,
