@@ -43,6 +43,7 @@ public sealed class MainWindow : Window
     private IInputElement? _lightboxRestoreFocus;
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
+    private bool _compactNavigationLayout;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -345,10 +346,10 @@ public sealed class MainWindow : Window
 
         void ApplyResponsiveShell(double width)
         {
-            var compact =
+            _compactNavigationLayout =
                 width <= 1040;
 
-            if (compact)
+            if (_compactNavigationLayout)
             {
                 _appShell.ColumnDefinitions =
                     new ColumnDefinitions(
@@ -524,6 +525,16 @@ public sealed class MainWindow : Window
 
     internal bool IsLightboxVisible =>
         _lightboxHost.IsVisible;
+
+
+    internal bool IsCompactNavigationLayout =>
+        _compactNavigationLayout;
+
+    internal Rect NavigationPaneBounds =>
+        _navigationPane.Bounds;
+
+    internal Rect LightboxBounds =>
+        _lightboxHost.Bounds;
 
     internal bool IsWorkspaceInteractionEnabled =>
         _appShell.IsEnabled;
