@@ -461,11 +461,13 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
+        var anchor =
+            CaptureViewportAnchor();
         _fitMode = false;
         SetZoom(1);
         SynchronizeRequestedZoom(1);
         Dispatcher.UIThread.Post(
-            CenterViewport,
+            () => RestoreViewportAnchor(anchor),
             DispatcherPriority.Render);
     }
 
@@ -588,17 +590,16 @@ public sealed class DetailViewerControl : UserControl
                 _session.Options.MaxZoom);
         }
 
-        var wasFit =
-            _fitMode;
+        var anchor =
+            _fitMode
+                ? (0.5, 0.5)
+                : CaptureViewportAnchor();
         _fitMode = false;
         SetZoom(committedTarget);
         SynchronizeRequestedZoom(committedTarget);
-        if (wasFit)
-        {
-            Dispatcher.UIThread.Post(
-                CenterViewport,
-                DispatcherPriority.Render);
-        }
+        Dispatcher.UIThread.Post(
+            () => RestoreViewportAnchor(anchor),
+            DispatcherPriority.Render);
     }
 
     private async Task MoveAsync(long delta)
@@ -668,6 +669,91 @@ public sealed class DetailViewerControl : UserControl
             new Vector(
                 horizontal,
                 vertical);
+    }
+
+    private (double X, double Y) CaptureViewportAnchor()
+    {
+        var viewport =
+            _scroll.Viewport;
+        var width =
+            double.IsFinite(_image.Width)
+                ? _image.Width
+                : _image.Bounds.Width;
+        var height =
+            double.IsFinite(_image.Height)
+                ? _image.Height
+                : _image.Bounds.Height;
+
+        static double Axis(
+            double content,
+            double viewportSize,
+            double offset)
+        {
+            if (content <= 0
+                || content <= viewportSize)
+            {
+                return 0.5;
+            }
+
+            return Math.Clamp(
+                (offset + (viewportSize / 2))
+                / content,
+                0,
+                1);
+        }
+
+        return (
+            Axis(
+                width,
+                viewport.Width,
+                _scroll.Offset.X),
+            Axis(
+                height,
+                viewport.Height,
+                _scroll.Offset.Y));
+    }
+
+    private void RestoreViewportAnchor(
+        (double X, double Y) anchor)
+    {
+        var viewport =
+            _scroll.Viewport;
+        var width =
+            double.IsFinite(_image.Width)
+                ? _image.Width
+                : _image.Bounds.Width;
+        var height =
+            double.IsFinite(_image.Height)
+                ? _image.Height
+                : _image.Bounds.Height;
+
+        static double Axis(
+            double content,
+            double viewportSize,
+            double fraction)
+        {
+            if (content <= viewportSize)
+            {
+                return 0;
+            }
+
+            return Math.Clamp(
+                (content * fraction)
+                - (viewportSize / 2),
+                0,
+                Math.Max(0, content - viewportSize));
+        }
+
+        _scroll.Offset =
+            new Vector(
+                Axis(
+                    width,
+                    viewport.Width,
+                    anchor.X),
+                Axis(
+                    height,
+                    viewport.Height,
+                    anchor.Y));
     }
 
     internal static Size CalculateDisplaySize(
