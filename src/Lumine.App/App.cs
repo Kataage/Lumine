@@ -21,7 +21,16 @@ public sealed class App : Application
         Resources["Lumine.Warning"] = LumineDesign.Warning;
         Resources["Lumine.Danger"] = LumineDesign.Danger;
 
-        Styles.Add(new FluentTheme());
+        var fluentTheme =
+            new FluentTheme();
+        fluentTheme.Palettes[ThemeVariant.Dark] =
+            new ColorPaletteResources
+            {
+                Accent = LumineDesign.FocusColor,
+                RegionColor =
+                    LumineDesign.BackgroundColor
+            };
+        Styles.Add(fluentTheme);
     }
 
     public override void OnFrameworkInitializationCompleted()
