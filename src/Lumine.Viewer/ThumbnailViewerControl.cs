@@ -1043,6 +1043,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Width = tileWidth;
             Height = tileHeight;
+            Focusable = true;
             Padding = new Thickness(0);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
@@ -1245,10 +1246,8 @@ public sealed class ThumbnailViewerControl : UserControl
                         scrollIntoView: false,
                         ViewerSelectionMode.Replace);
                 }
-                else
-                {
-                    _owner.Focus();
-                }
+
+                Focus();
 
                 _owner.AssetContextRequested?.Invoke(
                     _owner,
@@ -1279,6 +1278,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 _index,
                 scrollIntoView: false,
                 mode);
+            Focus();
 
             if (e.ClickCount >= 2
                 && mode == ViewerSelectionMode.Replace)
