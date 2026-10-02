@@ -8,6 +8,12 @@ public enum ViewerThumbnailPriority
     Background = 1
 }
 
+public enum ViewerLayoutMode
+{
+    Grid = 0,
+    List = 1
+}
+
 public readonly record struct ViewerPageCursor(
     long ModifiedAtUtcTicks,
     long AssetId,
