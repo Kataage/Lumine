@@ -734,7 +734,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 5, "v1 database did not migrate to v5.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 6, "v1 database did not migrate to v6.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
@@ -744,6 +744,14 @@ try
         Require(reader.GetInt64(1) == 1, "Migrated asset source revision was not initialized.");
         Require(reader.GetInt32(2) == 640 && reader.GetInt32(3) == 480, "Migration lost technical metadata.");
         Require(reader.GetInt64(4) == 0, "Migrated legacy asset should start outside any reconciliation generation.");
+
+        await using var enabled = legacyConnection.CreateCommand();
+        enabled.CommandText = "SELECT is_enabled FROM libraries WHERE id = 1;";
+        Require(
+            Convert.ToInt32(
+                await enabled.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 1,
+            "Navigation migration did not enable an existing library by default.");
     }
 
     var futurePath = Path.Combine(tempRoot, "future.db");
