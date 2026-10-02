@@ -635,7 +635,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 2 => 82,
                 _ => throw new ArgumentOutOfRangeException()
             }
-            : GetTileWidth();
+            : _densityLevel switch
+            {
+                0 => 120,
+                1 => _session.Options.TileHeight,
+                2 => 260,
+                _ => throw new ArgumentOutOfRangeException()
+            };
 
     private long? GetViewportAnchorAssetIndex()
     {
