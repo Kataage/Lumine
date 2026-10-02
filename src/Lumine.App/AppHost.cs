@@ -123,9 +123,13 @@ internal sealed class AppHost : IAsyncDisposable
                 ThumbnailStoragePreference.Resolve(
                     settings,
                     out var thumbnailWarning);
-            warning = AppendWarning(
-                warning,
-                thumbnailWarning);
+            if (!string.IsNullOrWhiteSpace(
+                    thumbnailWarning))
+            {
+                warning = AppendWarning(
+                    warning,
+                    thumbnailWarning);
+            }
 
             settings = settings with
             {
