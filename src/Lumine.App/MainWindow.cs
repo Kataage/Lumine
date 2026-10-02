@@ -153,7 +153,7 @@ public sealed class MainWindow : Window
         {
             Text = recovered
                 ? "前回の終了を検出しました。安全な状態から復旧しています。"
-                : "画像を見る準備ができています。",
+                : string.Empty,
             FontSize = 11,
             Foreground = recovered
                 ? LumineDesign.Warning
@@ -188,8 +188,9 @@ public sealed class MainWindow : Window
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
-        actions.Children.Add(_diagnostics);
-        actions.Children.Add(_openFolder);
+        // Library creation and diagnostics belong to their navigation
+        // destinations. Keep the image workspace header free of unrelated
+        // global actions.
 
         var headerGrid =
             new Grid
