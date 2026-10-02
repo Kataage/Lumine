@@ -245,10 +245,9 @@ internal sealed class ViewerRangeSelection
             get
             {
                 ArgumentOutOfRangeException.ThrowIfNegative(index);
-                if (index >= Count)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(index));
-                }
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(
+                    index,
+                    Count);
 
                 long offset = index;
                 foreach (var range in _ranges)
