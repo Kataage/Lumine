@@ -126,6 +126,15 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<LibraryBrowseFacets> GetBrowseFacetsAsync(
+        long libraryId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetBrowseFacetsAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
     public Task<AssetInfo?> GetAssetAsync(
         long libraryId,
         string relativePath,
