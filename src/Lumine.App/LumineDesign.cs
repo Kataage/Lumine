@@ -58,7 +58,7 @@ internal static class LumineDesign
     public static FontFamily UiFont { get; } =
         new("Yu Gothic UI, Yu Gothic, Meiryo, Segoe UI");
 
-    public const double NavigationWidth = 64;
+    public const double NavigationWidth = 52;
     public const double HeaderHeight = 56;
     public const double CompactControlHeight = 34;
     public const double ContentGap = 12;
