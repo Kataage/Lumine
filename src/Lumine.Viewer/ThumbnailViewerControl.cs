@@ -1412,7 +1412,7 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
 
-        public IReadOnlyList<ViewerTileActionGeometry>
+        public List<ViewerTileActionGeometry>
             GetActionGeometryForSmoke()
         {
             EnsureActionOverlay();
