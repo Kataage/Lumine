@@ -142,8 +142,9 @@ internal sealed class CoreViewerShell : UserControl
             new Border
             {
                 Background = LumineDesign.ModalScrim,
-                Padding = new Thickness(24),
+                Padding = new Thickness(12),
                 IsVisible = false,
+                Focusable = true,
                 Child = focusedDialog
             };
         _focusedSurface.PointerPressed +=
@@ -152,6 +153,15 @@ internal sealed class CoreViewerShell : UserControl
                 if (ReferenceEquals(
                         e.Source,
                         _focusedSurface))
+                {
+                    CloseFocusedView();
+                    e.Handled = true;
+                }
+            };
+        _focusedSurface.KeyDown +=
+            (_, e) =>
+            {
+                if (e.Key == Key.Escape)
                 {
                     CloseFocusedView();
                     e.Handled = true;
@@ -249,8 +259,6 @@ internal sealed class CoreViewerShell : UserControl
             };
         layers.Children.Add(
             browseLayout);
-        layers.Children.Add(
-            _focusedSurface);
 
         Content = layers;
     }
@@ -310,6 +318,11 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _focusedSurface.IsVisible = true;
+        var owner =
+            TopLevel.GetTopLevel(this)
+            as MainWindow;
+        owner?.ShowLightbox(
+            _focusedSurface);
 
         try
         {
@@ -322,6 +335,8 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch
         {
+            owner?.HideLightbox(
+                _focusedSurface);
             _focusedSurface.IsVisible = false;
             throw;
         }
@@ -334,6 +349,13 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        var owner =
+            TopLevel.GetTopLevel(_focusedSurface)
+            as MainWindow
+            ?? TopLevel.GetTopLevel(this)
+                as MainWindow;
+        owner?.HideLightbox(
+            _focusedSurface);
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
@@ -1338,6 +1360,11 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _detached = true;
+        if (_focusedSurface.IsVisible)
+        {
+            CloseFocusedView();
+        }
+
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
         _grid.AssetDetailRequested -= OnAssetDetailRequested;
