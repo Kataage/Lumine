@@ -27,7 +27,9 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly HashSet<Task> _pendingTileLoads = [];
     private Compositor? _compositor;
     private int _columns = 1;
+    private readonly SortedSet<long> _selectedIndices = [];
     private long _selectedIndex = -1;
+    private long _selectionAnchor = -1;
     private ViewerLayoutMode _layoutMode;
     private int _densityLevel;
     private double _viewportWidth = 1;
@@ -72,6 +74,11 @@ public sealed class ThumbnailViewerControl : UserControl
     public long AssetCount => _session.Count;
 
     public long SelectedAssetIndex => _selectedIndex;
+
+    public int SelectedAssetCount => _selectedIndices.Count;
+
+    public IReadOnlyList<long> SelectedAssetIndices =>
+        _selectedIndices.ToArray();
 
     public int Columns => _columns;
 
@@ -185,40 +192,176 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
-    public void SelectAsset(long index, bool scrollIntoView = true)
+    public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
+
+    public bool IsAssetSelected(long index) =>
+        _selectedIndices.Contains(index);
+
+    public void SelectAsset(
+        long index,
+        bool scrollIntoView = true,
+        ViewerSelectionMode mode = ViewerSelectionMode.Replace)
     {
         if ((ulong)index >= (ulong)AssetCount)
         {
             return;
         }
 
-        Focus();
-
-        if (_selectedIndex == index)
+        if (!Enum.IsDefined(mode))
         {
-            return;
+            throw new ArgumentOutOfRangeException(nameof(mode));
         }
 
-        _selectedIndex = index;
-        SelectedAssetIndexChanged?.Invoke(this, index);
+        Focus();
+
+        var previousPrimary = _selectedIndex;
+        var changed = false;
+
+        switch (mode)
+        {
+            case ViewerSelectionMode.Replace:
+                if (_selectedIndices.Count != 1
+                    || !_selectedIndices.Contains(index))
+                {
+                    _selectedIndices.Clear();
+                    _selectedIndices.Add(index);
+                    changed = true;
+                }
+
+                _selectionAnchor = index;
+                _selectedIndex = index;
+                break;
+
+            case ViewerSelectionMode.Toggle:
+                if (_selectedIndices.Remove(index))
+                {
+                    changed = true;
+                    _selectedIndex =
+                        _selectedIndices.Count == 0
+                            ? -1
+                            : _selectedIndices.Max;
+                }
+                else
+                {
+                    _selectedIndices.Add(index);
+                    changed = true;
+                    _selectedIndex = index;
+                }
+
+                _selectionAnchor = index;
+                break;
+
+            case ViewerSelectionMode.Range:
+                var anchor =
+                    (ulong)_selectionAnchor < (ulong)AssetCount
+                        ? _selectionAnchor
+                        : (ulong)_selectedIndex < (ulong)AssetCount
+                            ? _selectedIndex
+                            : index;
+                var start = Math.Min(anchor, index);
+                var end = Math.Max(anchor, index);
+
+                if (_selectedIndices.Count
+                        != checked((int)(end - start + 1))
+                    || _selectedIndices.Min != start
+                    || _selectedIndices.Max != end)
+                {
+                    _selectedIndices.Clear();
+                    for (var current = start;
+                         current <= end;
+                         current++)
+                    {
+                        _selectedIndices.Add(current);
+                    }
+
+                    changed = true;
+                }
+
+                _selectedIndex = index;
+                if (_selectionAnchor < 0)
+                {
+                    _selectionAnchor = anchor;
+                }
+
+                break;
+        }
+
+        if (previousPrimary != _selectedIndex)
+        {
+            SelectedAssetIndexChanged?.Invoke(
+                this,
+                _selectedIndex);
+        }
+
+        if (changed
+            || previousPrimary != _selectedIndex)
+        {
+            PublishSelectionChanged();
+        }
 
         if (scrollIntoView)
         {
-            var row = checked((int)(index / _columns));
+            var row =
+                checked((int)(index / _columns));
             _rows.ScrollIntoView(row);
         }
     }
 
+    public void SelectAll()
+    {
+        if (AssetCount == 0)
+        {
+            ClearSelection();
+            return;
+        }
+
+        _selectedIndices.Clear();
+        for (long index = 0;
+             index < AssetCount;
+             index++)
+        {
+            _selectedIndices.Add(index);
+        }
+
+        _selectedIndex =
+            _selectedIndex >= 0
+                ? _selectedIndex
+                : 0;
+        _selectionAnchor =
+            _selectionAnchor >= 0
+                ? _selectionAnchor
+                : 0;
+
+        SelectedAssetIndexChanged?.Invoke(
+            this,
+            _selectedIndex);
+        PublishSelectionChanged();
+    }
+
     public void ClearSelection()
     {
-        if (_selectedIndex < 0)
+        if (_selectedIndices.Count == 0
+            && _selectedIndex < 0)
         {
             return;
         }
 
+        _selectedIndices.Clear();
         _selectedIndex = -1;
-        SelectedAssetIndexChanged?.Invoke(this, -1);
+        _selectionAnchor = -1;
+        SelectedAssetIndexChanged?.Invoke(
+            this,
+            -1);
+        PublishSelectionChanged();
     }
+
+    private void PublishSelectionChanged() =>
+        SelectionChanged?.Invoke(
+            this,
+            new ViewerSelectionSnapshot(
+                _selectedIndices.ToArray(),
+                _selectedIndex,
+                _selectionAnchor));
 
     public void ScrollToAsset(long index)
     {
@@ -611,6 +754,22 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape)
+        {
+            ClearSelection();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.A
+            && e.KeyModifiers.HasFlag(
+                KeyModifiers.Control))
+        {
+            SelectAll();
+            e.Handled = true;
+            return;
+        }
+
         if (AssetCount == 0)
         {
             return;
@@ -645,12 +804,26 @@ public sealed class ThumbnailViewerControl : UserControl
             };
         }
 
-        next = Math.Clamp(next, 0, AssetCount - 1);
-        if (next != _selectedIndex)
+        next = Math.Clamp(
+            next,
+            0,
+            AssetCount - 1);
+
+        if (next == _selectedIndex)
         {
-            SelectAsset(next);
-            e.Handled = true;
+            return;
         }
+
+        var mode =
+            e.KeyModifiers.HasFlag(
+                KeyModifiers.Shift)
+                ? ViewerSelectionMode.Range
+                : ViewerSelectionMode.Replace;
+
+        SelectAsset(
+            next,
+            mode: mode);
+        e.Handled = true;
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -862,31 +1035,47 @@ public sealed class ThumbnailViewerControl : UserControl
 
         private void OnAttached(object? sender, VisualTreeAttachmentEventArgs e)
         {
-            _owner.SelectedAssetIndexChanged += OnSelectedAssetChanged;
-            UpdateSelection(_owner.SelectedAssetIndex);
+            _owner.SelectionChanged += OnSelectionChanged;
+            UpdateSelection();
             _session.NotifyTileAttached();
             StartLoad();
         }
 
         private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
         {
-            _owner.SelectedAssetIndexChanged -= OnSelectedAssetChanged;
+            _owner.SelectionChanged -= OnSelectionChanged;
             _session.NotifyTileDetached();
             CancelLoad();
         }
 
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            _owner.SelectAsset(_index, scrollIntoView: false);
+            var mode =
+                e.KeyModifiers.HasFlag(
+                    KeyModifiers.Shift)
+                    ? ViewerSelectionMode.Range
+                    : e.KeyModifiers.HasFlag(
+                        KeyModifiers.Control)
+                        ? ViewerSelectionMode.Toggle
+                        : ViewerSelectionMode.Replace;
+
+            _owner.SelectAsset(
+                _index,
+                scrollIntoView: false,
+                mode);
             e.Handled = true;
         }
 
-        private void OnSelectedAssetChanged(object? sender, long index) =>
-            UpdateSelection(index);
+        private void OnSelectionChanged(
+            object? sender,
+            ViewerSelectionSnapshot selection) =>
+            UpdateSelection();
 
-        private void UpdateSelection(long selectedIndex)
+        private void UpdateSelection()
         {
-            IsSelected = selectedIndex == _index;
+            IsSelected =
+                _owner.IsAssetSelected(
+                    _index);
             BorderBrush = IsSelected
                 ? Brushes.DodgerBlue
                 : Brushes.Transparent;
