@@ -578,7 +578,7 @@ internal static class ProductSettingsView
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9
+                FontSize = LumineDesign.CaptionFontSize
             });
         panel.Children.Add(
             new TextBlock
