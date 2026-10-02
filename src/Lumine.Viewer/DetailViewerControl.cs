@@ -391,6 +391,37 @@ public sealed class DetailViewerControl : UserControl
         }
     }
 
+
+    internal Rect ToolbarBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _toolbarHost,
+            "toolbar");
+
+    internal Rect PreviousBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _previous,
+            "previous button");
+
+    internal Rect NextBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _next,
+            "next button");
+
+    private Rect GetControlBoundsForSmoke(
+        Control control,
+        string label)
+    {
+        var origin =
+            control.TranslatePoint(
+                new Point(0, 0),
+                this)
+            ?? throw new InvalidOperationException(
+                $"Unable to map detail {label} bounds.");
+        return new Rect(
+            origin,
+            control.Bounds.Size);
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler? FullScreenToggleRequested;
