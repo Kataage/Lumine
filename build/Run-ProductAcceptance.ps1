@@ -1,0 +1,347 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Exe,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Library,
+
+    [string]$OutputDirectory =
+        (Join-Path $PWD "artifacts/product-acceptance"),
+
+    [int]$MinimumAssets = 1000,
+
+    [int]$BrowseSeconds = 60,
+
+    [int]$IdleSeconds = 10,
+
+    [double]$MaxFastScrollMs = 1500,
+
+    [string]$HardwareId = $env:COMPUTERNAME,
+
+    [string]$Revision = "",
+
+    [ValidateSet("PersistentDisk", "MemoryOnly")]
+    [string]$ThumbnailStorageMode = "MemoryOnly",
+
+    [switch]$InteractiveReview
+)
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw "Lumine product acceptance requires Windows."
+}
+
+if (-not [Environment]::Is64BitOperatingSystem) {
+    throw "Lumine product acceptance requires Windows x64."
+}
+
+$exePath = (Resolve-Path -LiteralPath $Exe).Path
+$libraryPath = (Resolve-Path -LiteralPath $Library).Path
+$outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
+$coreWrapper =
+    Join-Path $PSScriptRoot "Run-RealLibraryAcceptance.ps1"
+$coreSummaryPath =
+    Join-Path $outputRoot "summary.json"
+$productSummaryPath =
+    Join-Path $outputRoot "product-summary.json"
+$manualChecklistPath =
+    Join-Path $outputRoot "MANUAL-CHECKLIST.md"
+$dataRoot =
+    Join-Path $outputRoot "data"
+
+if (-not (Test-Path -LiteralPath $coreWrapper)) {
+    throw "Missing core acceptance wrapper: $coreWrapper"
+}
+
+New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+
+foreach ($stale in @(
+    $productSummaryPath,
+    $manualChecklistPath
+)) {
+    if (Test-Path -LiteralPath $stale) {
+        Remove-Item -LiteralPath $stale -Force
+    }
+}
+
+$coreArguments = @{
+    Exe = $exePath
+    Library = $libraryPath
+    OutputDirectory = $outputRoot
+    MinimumAssets = $MinimumAssets
+    BrowseSeconds = $BrowseSeconds
+    IdleSeconds = $IdleSeconds
+    MaxFastScrollMs = $MaxFastScrollMs
+    HardwareId = $HardwareId
+    Revision = $Revision
+    ThumbnailStorageMode = $ThumbnailStorageMode
+}
+
+& $coreWrapper @coreArguments
+
+if (-not (Test-Path -LiteralPath $coreSummaryPath)) {
+    throw "Core acceptance did not produce summary.json."
+}
+
+$coreSummary =
+    Get-Content -LiteralPath $coreSummaryPath -Raw |
+        ConvertFrom-Json
+
+if ($coreSummary.automatedDecision -ne "pass") {
+    throw "Core acceptance summary did not report pass."
+}
+
+if ($coreSummary.productAutomated.result -ne "pass") {
+    throw "NativeAOT product workflow acceptance did not report pass."
+}
+
+$productGateNames = @(
+    "identity",
+    "navigation",
+    "browse",
+    "organization",
+    "viewer",
+    "creativeArchive",
+    "productStates",
+    "settingsPortable",
+    "searchMetadataRoundTrip"
+)
+
+foreach ($gateName in $productGateNames) {
+    if ([string]$coreSummary.productAutomated.$gateName -ne "pass") {
+        throw "Product automated gate '$gateName' did not report pass."
+    }
+}
+
+$manualChecks = @(
+    [ordered]@{
+        id = "identity"
+        title = "Lumine identity"
+        prompt = "Does the app clearly look and feel like Lumine, with coherent dark branding and no generic Core/test-shell surface in normal use?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "browse"
+        title = "Browse usability"
+        prompt = "Are Library/Folder/Tag navigation, Grid/List, density, search/sort/filter and fast direction-reversing scroll responsive without disruptive blanking?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "organization"
+        title = "Organization workflow"
+        prompt = "Do single/Ctrl/Shift selection, metadata editing, bulk actions and destructive confirmations feel clear and dependable?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "viewer"
+        title = "Viewer usability"
+        prompt = "Do contextual detail, focused view, previous/next, Fit, zoom, pan and 1:1 feel comfortable in real use?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "creativeArchive"
+        title = "Creative archive"
+        prompt = "Are Work, Generation Group, directed Relation and Publication understandable and usable without AI?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "settingsPortable"
+        title = "Settings and storage"
+        prompt = "Are Settings, MemoryOnly/PersistentDisk explanations, cache deletion and portable/storage behavior understandable and free of surprising side effects?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "productVerdict"
+        title = "Daily-use product verdict"
+        prompt = "Did you observe no unresolved P0/P1 issue, and does normal daily use feel like Lumine rather than a technical prototype?"
+        status = "pending"
+    }
+)
+
+function Write-ManualChecklist {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Checks
+    )
+
+    $lines =
+        New-Object System.Collections.Generic.List[string]
+    $lines.Add("# Lumine v2 Product Acceptance manual checklist")
+    $lines.Add("")
+    $lines.Add("Automated NativeAOT acceptance: PASS")
+    $lines.Add("Revision: $($coreSummary.appRevision)")
+    $lines.Add("Assets: $($coreSummary.assetCount)")
+    $lines.Add("Library path is intentionally not written; summary uses the existing path hash.")
+    $lines.Add("")
+    $lines.Add("Use the same representative library and the same acceptance data root. Do not judge from CI alone.")
+    $lines.Add("")
+
+    foreach ($check in $Checks) {
+        $marker =
+            if ($check.status -eq "pass") {
+                "x"
+            }
+            else {
+                " "
+            }
+
+        $lines.Add(
+            "- [$marker] $($check.title): $($check.prompt) (status: $($check.status))")
+    }
+
+    $lines.Add("")
+    $lines.Add("If any item fails, keep #397 open and record a focused follow-up issue before AI work starts.")
+
+    $lines |
+        Set-Content -LiteralPath $manualChecklistPath -Encoding UTF8
+}
+
+function Ask-PassFail {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt
+    )
+
+    while ($true) {
+        $answer =
+            (Read-Host "$Prompt [y/n]").Trim()
+
+        if ($answer -match '^(y|yes)$') {
+            return "pass"
+        }
+
+        if ($answer -match '^(n|no)$') {
+            return "fail"
+        }
+
+        Write-Host "Please answer y or n."
+    }
+}
+
+if ($InteractiveReview) {
+    Write-Host ""
+    Write-Host "=== Lumine manual product review ==="
+    Write-Host "The automated NativeAOT gate passed."
+    Write-Host "Lumine will now open normally using the acceptance data root."
+    Write-Host "Select the representative library already registered in the Library navigation, exercise the checklist, then close Lumine."
+
+    $startInfo =
+        New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exePath
+    $startInfo.WorkingDirectory =
+        Split-Path -Parent $exePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.EnvironmentVariables["LUMINE_DATA_DIR"] =
+        $dataRoot
+    $startInfo.EnvironmentVariables["LUMINE_THUMBNAIL_STORAGE_MODE"] =
+        $ThumbnailStorageMode
+
+    $process =
+        [System.Diagnostics.Process]::Start($startInfo)
+
+    if ($null -eq $process) {
+        throw "Unable to start Lumine for manual product review."
+    }
+
+    try {
+        $process.WaitForExit()
+
+        if ($process.ExitCode -ne 0) {
+            throw "Manual review Lumine process exited with code $($process.ExitCode)."
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+
+    Write-Host ""
+    Write-Host "Record the real-user observations:"
+
+    foreach ($check in $manualChecks) {
+        $check.status =
+            Ask-PassFail -Prompt $check.prompt
+    }
+}
+
+$manualDecision =
+    if (($manualChecks |
+            Where-Object { $_.status -eq "fail" }).Count -gt 0) {
+        "fail"
+    }
+    elseif (($manualChecks |
+            Where-Object { $_.status -eq "pending" }).Count -gt 0) {
+        "pending"
+    }
+    else {
+        "pass"
+    }
+
+$combinedDecision =
+    if ($manualDecision -eq "pass") {
+        "pass"
+    }
+    elseif ($manualDecision -eq "fail") {
+        "fail"
+    }
+    else {
+        "automated-pass-manual-review-required"
+    }
+
+$coreSummarySha256 =
+    (Get-FileHash -LiteralPath $coreSummaryPath -Algorithm SHA256)
+        .Hash
+        .ToLowerInvariant()
+
+$productSummary = [ordered]@{
+    schemaVersion = 1
+    generatedAtUtc =
+        [DateTimeOffset]::UtcNow.ToString("O")
+    appRevision = $coreSummary.appRevision
+    hardwareId = $coreSummary.hardwareId
+    assetCount = [int64]$coreSummary.assetCount
+    libraryPathSha256 =
+        $coreSummary.libraryPathSha256
+    thumbnailStorageMode =
+        $coreSummary.thumbnailStorageMode
+    coreSummarySha256 =
+        $coreSummarySha256
+    automatedDecision = "pass"
+    productAutomated =
+        $coreSummary.productAutomated
+    manualDecision = $manualDecision
+    combinedDecision = $combinedDecision
+    manualChecks = $manualChecks
+    unresolvedP0P1 =
+        if ($manualDecision -eq "pass") {
+            $false
+        }
+        else {
+            $null
+        }
+    sourcePolicy = [ordered]@{
+        representativeLibraryMutatedByAutomatedRun = $false
+        productMutationScenario =
+            "isolated-acceptance-scratch-library"
+    }
+    coreSummary =
+        $coreSummaryPath
+}
+
+$productSummary |
+    ConvertTo-Json -Depth 8 |
+    Set-Content -LiteralPath $productSummaryPath -Encoding UTF8
+
+Write-ManualChecklist -Checks $manualChecks
+
+Write-Host ""
+Write-Host "Product automated acceptance: PASS"
+Write-Host "Manual review            : $manualDecision"
+Write-Host "Combined decision        : $combinedDecision"
+Write-Host "Product summary          : $productSummaryPath"
+Write-Host "Manual checklist         : $manualChecklistPath"
+
+if ($manualDecision -eq "fail") {
+    throw "Manual Lumine product acceptance reported one or more failures. Keep #397 open."
+}
