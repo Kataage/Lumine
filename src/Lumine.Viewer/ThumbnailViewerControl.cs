@@ -1147,7 +1147,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
         private static Button CreateOverlayButton(
             string pathData,
-            string tooltip)
+            string tooltip,
+            string? acceleratorKey = null)
         {
             var icon =
                 new Avalonia.Controls.Shapes.Path
@@ -1186,7 +1187,8 @@ public sealed class ThumbnailViewerControl : UserControl
             ToolTip.SetTip(button, tooltip);
             ViewerVisualTokens.Name(
                 button,
-                tooltip);
+                tooltip,
+                acceleratorKey: acceleratorKey);
             return button;
         }
 
@@ -1362,7 +1364,8 @@ public sealed class ThumbnailViewerControl : UserControl
             var info =
                 CreateOverlayButton(
                     InfoOverlayIconPath,
-                    "詳細 (I)");
+                    "詳細 (I)",
+                    "I");
             info.Click +=
                 (_, _) =>
                 {
@@ -1378,7 +1381,8 @@ public sealed class ThumbnailViewerControl : UserControl
             var open =
                 CreateOverlayButton(
                     ExpandOverlayIconPath,
-                    "大きく表示");
+                    "大きく表示",
+                    "Enter");
             open.Click +=
                 (_, _) =>
                 {
