@@ -263,14 +263,27 @@ internal static class ProductNavigationViews
         var stack = CreateListStack();
 
         var all =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content =
-                        selectedFolder is null
-                            ? "✓ すべてのフォルダー"
-                            : "すべてのフォルダー"
-                });
+            new Button
+            {
+                Content = "すべての画像",
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Left,
+                Padding = new Thickness(8, 7),
+                Background =
+                    selectedFolder is null
+                        ? LumineDesign.AccentMuted
+                        : Brushes.Transparent,
+                BorderBrush =
+                    selectedFolder is null
+                        ? LumineDesign.BorderStrong
+                        : Brushes.Transparent,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Foreground =
+                    selectedFolder is null
+                        ? LumineDesign.Foreground
+                        : LumineDesign.MutedForeground
+            };
         AttachAsync(
             all,
             () => selectFolder(null));
@@ -313,10 +326,10 @@ internal static class ProductNavigationViews
                             : Brushes.Transparent,
                     BorderBrush =
                         selected
-                            ? LumineDesign.Border
+                            ? LumineDesign.BorderStrong
                             : Brushes.Transparent,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(7)
+                    CornerRadius = new CornerRadius(8)
                 };
 
             var row =
@@ -328,10 +341,7 @@ internal static class ProductNavigationViews
             row.Children.Add(
                 new TextBlock
                 {
-                    Text =
-                        selected
-                            ? $"✓ {leaf}"
-                            : leaf,
+                    Text = leaf,
                     Foreground =
                         selected
                             ? LumineDesign.Foreground
@@ -394,14 +404,27 @@ internal static class ProductNavigationViews
             list.Children.Clear();
 
             var all =
-                LumineDesign.ConfigureSecondaryButton(
-                    new Button
-                    {
-                        Content =
-                            selectedTag is null
-                                ? "✓ すべてのタグ"
-                                : "タグ絞り込みを解除"
-                    });
+                new Button
+                {
+                    Content = "すべてのタグ",
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Left,
+                    Padding = new Thickness(8, 7),
+                    Background =
+                        selectedTag is null
+                            ? LumineDesign.AccentMuted
+                            : Brushes.Transparent,
+                    BorderBrush =
+                        selectedTag is null
+                            ? LumineDesign.BorderStrong
+                            : Brushes.Transparent,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Foreground =
+                        selectedTag is null
+                            ? LumineDesign.Foreground
+                            : LumineDesign.MutedForeground
+                };
             AttachAsync(
                 all,
                 () => selectTag(null));
@@ -435,10 +458,10 @@ internal static class ProductNavigationViews
                                 : Brushes.Transparent,
                         BorderBrush =
                             selected
-                                ? LumineDesign.Border
+                                ? LumineDesign.BorderStrong
                                 : Brushes.Transparent,
                         BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(7)
+                        CornerRadius = new CornerRadius(8)
                     };
                 var row =
                     new Grid
@@ -449,10 +472,7 @@ internal static class ProductNavigationViews
                 row.Children.Add(
                     new TextBlock
                     {
-                        Text =
-                            selected
-                                ? $"✓ {tag.Name}"
-                                : tag.Name,
+                        Text = tag.Name,
                         Foreground =
                             selected
                                 ? LumineDesign.Foreground
