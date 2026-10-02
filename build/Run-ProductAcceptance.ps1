@@ -23,6 +23,8 @@ param(
     [ValidateSet("PersistentDisk", "MemoryOnly")]
     [string]$ThumbnailStorageMode = "MemoryOnly",
 
+    [switch]$UseExistingAutomatedResults,
+
     [switch]$InteractiveReview
 )
 
@@ -79,7 +81,12 @@ $coreArguments = @{
     ThumbnailStorageMode = $ThumbnailStorageMode
 }
 
-& $coreWrapper @coreArguments
+if (-not $UseExistingAutomatedResults) {
+    & $coreWrapper @coreArguments
+}
+else {
+    Write-Host "Using existing automated acceptance results from $outputRoot"
+}
 
 if (-not (Test-Path -LiteralPath $coreSummaryPath)) {
     throw "Core acceptance did not produce summary.json."
