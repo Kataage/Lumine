@@ -55,10 +55,30 @@ public sealed class DetailViewerControl : UserControl
         _observedSelectionVersion = _session.Snapshot.SelectionVersion;
         Focusable = true;
 
-        _previous = CreateViewerButton("‹", "前の画像");
-        _next = CreateViewerButton("›", "次の画像");
-        _zoomOut = CreateViewerButton("−", "縮小");
-        _zoomIn = CreateViewerButton("+", "拡大");
+        _previous =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M15.75 5.25L9 12l6.75 6.75",
+                    18),
+                "前の画像");
+        _next =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M8.25 5.25L15 12l-6.75 6.75",
+                    18),
+                "次の画像");
+        _zoomOut =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M5 12h14",
+                    15),
+                "縮小");
+        _zoomIn =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M12 5v14 M5 12h14",
+                    15),
+                "拡大");
         _fit = CreateViewerButton("全体", "全体を表示");
         _actual = CreateViewerButton("1:1", "100%表示");
 
@@ -218,6 +238,23 @@ public sealed class DetailViewerControl : UserControl
         ApplySnapshot(_session.Snapshot);
     }
 
+    private static Control CreateViewerIcon(
+        string pathData,
+        double size) =>
+        new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(pathData),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.9,
+            Stretch = Stretch.Uniform,
+            Width = size,
+            Height = size,
+            HorizontalAlignment =
+                HorizontalAlignment.Center,
+            VerticalAlignment =
+                VerticalAlignment.Center
+        };
+
     private static Button CreateViewerButton(
         object content,
         string tooltip)
@@ -233,7 +270,11 @@ public sealed class DetailViewerControl : UserControl
                 Background = ViewerControlBackground,
                 Foreground = Brushes.White,
                 BorderBrush = ViewerControlBorder,
-                BorderThickness = new Thickness(1)
+                BorderThickness = new Thickness(1),
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Center,
+                VerticalContentAlignment =
+                    VerticalAlignment.Center
             };
         ToolTip.SetTip(button, tooltip);
         return button;
