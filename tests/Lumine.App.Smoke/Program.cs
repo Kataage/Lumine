@@ -1804,12 +1804,13 @@ try
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
+                    var focusedGeometry =
+                        window.CurrentShell
+                            .FocusedViewerGeometryForSmoke;
                     var detailImageBounds =
-                        window.CurrentShell.DetailViewer
-                            .ImageBoundsInControlForSmoke;
+                        focusedGeometry.ImageBounds;
                     var detailViewportBounds =
-                        window.CurrentShell.DetailViewer
-                            .ViewportBoundsInControlForSmoke;
+                        focusedGeometry.ViewportBounds;
                     var detailImageCenterX =
                         detailImageBounds.X
                         + (detailImageBounds.Width / 2);
@@ -1844,8 +1845,8 @@ try
                         && !window.CurrentShell.IsFocusedViewVisible,
                         "Closing the focused image viewer did not release modality and restore workspace interaction.");
                     Require(
-                        window.CurrentShell.GridViewer
-                            .FocusedRealizedAssetIndex == 0,
+                        window.CurrentShell
+                            .IsAssetFocusedForSmoke(0),
                         "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
 
                     var cacheSafetyAsset =
