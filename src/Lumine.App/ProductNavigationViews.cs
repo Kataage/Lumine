@@ -289,11 +289,12 @@ internal static class ProductNavigationViews
             };
 
         var search =
-            new TextBox
-            {
-                Watermark = "タグを検索…",
-                Margin = new Thickness(0, 0, 0, 8)
-            };
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    Watermark = "タグを検索",
+                    Margin = new Thickness(0, 0, 0, 8)
+                });
         root.Children.Add(search);
 
         var list = CreateListStack();
