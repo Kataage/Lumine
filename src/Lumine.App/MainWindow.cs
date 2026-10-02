@@ -940,6 +940,11 @@ public sealed class MainWindow : Window
         var operationToken =
             _openCancellation.Token;
 
+        await _navigationInitialization
+            .WaitAsync(operationToken);
+
+        _folderScope = null;
+        _tagScope = null;
         _openFolder.IsEnabled = false;
         _libraryPath.Text =
             Path.GetFullPath(libraryRoot);
@@ -988,8 +993,8 @@ public sealed class MainWindow : Window
                 _runtime.AssetCount == 0
                     ? "EmptyLibrary"
                     : "Workspace";
-            _status.Text =
-                $"{_runtime.AssetCount:N0} 件 · {_runtime.Library.Name}";
+            UpdateScopeDisplay();
+            StartNavigationRefresh();
 
             _host?.Log.Write(
                 "library",
@@ -1045,28 +1050,7 @@ public sealed class MainWindow : Window
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var folders =
-            await StorageProvider.OpenFolderPickerAsync(
-                new FolderPickerOpenOptions
-                {
-                    Title = "Lumine に画像フォルダーを追加",
-                    AllowMultiple = false
-                });
-
-        if (folders.Count == 0)
-        {
-            return;
-        }
-
-        var path = folders[0].Path.LocalPath;
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            _status.Text =
-                "ローカルの画像フォルダーを選択してください。";
-            return;
-        }
-
-        await OpenLibraryAsync(path);
+        await ChooseAndOpenLibraryAsync();
     }
 
     private async void OnDiagnosticsClicked(
@@ -1180,6 +1164,7 @@ public sealed class MainWindow : Window
         _diagnosticFlushOperation =
             Program.Diagnostics.FlushRequestedAsync(
                 _resourcePolicy.ToDiagnosticMetadata());
+        StartNavigationRefresh();
     }
 
     private async void OnClosing(
@@ -1205,6 +1190,7 @@ public sealed class MainWindow : Window
 
         _openCancellation?.Cancel();
         _diagnosticsCancellation?.Cancel();
+        _navigationCancellation?.Cancel();
         _diagnosticsWindow?.Close();
 
         Exception? shutdownFailure = null;
@@ -1235,6 +1221,20 @@ public sealed class MainWindow : Window
             catch (Exception exception)
             {
                 shutdownFailure = exception;
+            }
+
+            try
+            {
+                await _navigationOperation;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                _host?.Log.Write(
+                    "navigation",
+                    $"Navigation shutdown drain failed: {exception.Message}");
             }
 
             try
@@ -1291,6 +1291,8 @@ public sealed class MainWindow : Window
             _openCancellation = null;
             _diagnosticsCancellation?.Dispose();
             _diagnosticsCancellation = null;
+            _navigationCancellation?.Dispose();
+            _navigationCancellation = null;
             _diagnosticsWindow = null;
             _closeCompleted = true;
             Close();
