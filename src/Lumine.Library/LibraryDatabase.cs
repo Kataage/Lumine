@@ -430,6 +430,22 @@ public sealed class LibraryDatabase
 
             CREATE INDEX idx_publication_assets_asset
                 ON publication_assets(asset_id, publication_id);
+            """),
+        new(
+            8,
+            "browse-sort-parity-indexes",
+            """
+            CREATE INDEX idx_assets_library_created_id
+                ON assets(library_id, created_at_utc_ticks DESC, id DESC);
+
+            CREATE INDEX idx_assets_library_size_id
+                ON assets(library_id, file_size DESC, id DESC);
+
+            CREATE INDEX idx_asset_user_metadata_rating_asset
+                ON asset_user_metadata(rating DESC, asset_id DESC);
+
+            CREATE INDEX idx_asset_user_metadata_status_asset
+                ON asset_user_metadata(status_label COLLATE NOCASE, asset_id);
             """)
     ];
 
