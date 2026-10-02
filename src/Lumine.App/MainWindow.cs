@@ -23,6 +23,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _libraryPath;
     private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
+    private readonly ContentControl _browseHost;
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
@@ -43,8 +44,13 @@ public sealed class MainWindow : Window
     private bool _closeCompleted;
     private string _productShellState = "Welcome";
     private string _navigationDestination = "ライブラリ";
-    private string? _folderScope;
-    private string? _tagScope;
+    private BrowsePreferences _browsePreferences;
+    private BrowseFilterState _browseFilterState;
+    private BrowseWorkspaceControls? _browseControls;
+    private LibraryBrowseFacets _browseFacets =
+        new(
+            Array.Empty<string>(),
+            Array.Empty<string>());
     private IReadOnlyList<LibraryCatalogItem> _libraries =
         Array.Empty<LibraryCatalogItem>();
     private IReadOnlyList<LibraryFolderInfo> _folders =
@@ -77,6 +83,15 @@ public sealed class MainWindow : Window
             host?.ThumbnailStorageMode
             ?? Program.ThumbnailStorageMode;
         _host = host;
+        _browsePreferences =
+            BrowsePreferenceResolver.Resolve(
+                host?.Settings
+                    ?? new AppSettingsDocument(),
+                out _);
+        _browseFilterState =
+            new BrowseFilterState(
+                SortOrder:
+                    _browsePreferences.SortOrder);
         _navigationLibraryService =
             new LibraryService(
                 _defaultDataPaths.DatabasePath);
@@ -204,20 +219,31 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             CreateWelcomeState(recovered);
 
+        _browseHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch
+            };
+
         var workspace = new Grid
         {
             Background = LumineDesign.Background,
             RowDefinitions =
-                new RowDefinitions("Auto,Auto,*")
+                new RowDefinitions("Auto,Auto,Auto,*")
         };
         workspace.Children.Add(header);
 
-        Grid.SetRow(_libraryPath, 1);
+        Grid.SetRow(_browseHost, 1);
+        workspace.Children.Add(_browseHost);
+
+        Grid.SetRow(_libraryPath, 2);
         _libraryPath.Margin =
             new Thickness(16, 6, 16, 6);
         workspace.Children.Add(_libraryPath);
 
-        Grid.SetRow(_viewerHost, 2);
+        Grid.SetRow(_viewerHost, 3);
         workspace.Children.Add(_viewerHost);
 
         _navigationRailHost =
