@@ -456,7 +456,7 @@ internal static class CreativeArchiveDialogs
                         return null;
                     }
 
-                    var workId =
+                    long? workId =
                         work.SelectedIndex > 0
                         && work.SelectedIndex <= works.Count
                             ? works[work.SelectedIndex - 1].Id
