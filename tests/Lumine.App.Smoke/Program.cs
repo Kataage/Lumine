@@ -1082,6 +1082,11 @@ try
                 "Context/focused surfaces should not consume the initial browse workspace.");
 
             shell.GridViewer.SelectAsset(0);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !shell.IsBulkSelectionBarVisible,
+                "Single selection unexpectedly displaced the browse grid with bulk chrome.");
+
             var firstContextAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(0);
             await shellRuntime.LibraryService.SetUserMetadataAsync(
@@ -1161,6 +1166,10 @@ try
             Require(
                 shell.GridViewer.SelectedAssetCount == 2,
                 "Creative archive smoke did not establish a two-asset selection.");
+
+            Require(
+                shell.IsBulkSelectionBarVisible,
+                "Multi-selection did not expose the contextual bulk action bar.");
 
             var smokeWork =
                 await shell.CreateWorkFromSelectionAsync(
