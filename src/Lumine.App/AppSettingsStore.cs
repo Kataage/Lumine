@@ -19,7 +19,7 @@ internal sealed record AppSettingsDocument
         nameof(Lumine.Image.ThumbnailStorageMode.MemoryOnly);
 
     public string BrowseViewMode { get; init; } =
-        nameof(BrowseViewMode.Grid);
+        "Grid";
 
     public int BrowseDensity { get; init; } = 1;
 
