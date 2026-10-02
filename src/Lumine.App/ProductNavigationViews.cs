@@ -40,6 +40,9 @@ internal static class ProductNavigationViews
                 Directory.Exists(library.RootPath);
             var isActive =
                 activeLibraryId == library.Id;
+            var canOpen =
+                library.IsEnabled
+                && rootAvailable;
 
             var title =
                 new TextBlock
@@ -50,119 +53,203 @@ internal static class ProductNavigationViews
                         isActive
                             ? FontWeight.Bold
                             : FontWeight.SemiBold,
-                    FontSize = 12,
+                    FontSize = 11.5,
                     TextTrimming =
-                        TextTrimming.CharacterEllipsis
+                        TextTrimming.CharacterEllipsis,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
                 };
-            var detail =
+
+            var stateDot =
+                new Border
+                {
+                    Width = 8,
+                    Height = 8,
+                    CornerRadius =
+                        new CornerRadius(4),
+                    Background =
+                        !rootAvailable
+                            ? LumineDesign.Warning
+                            : library.IsEnabled
+                                ? LumineDesign.Focus
+                                : LumineDesign.MutedForeground,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+
+            var activeLabel =
                 new TextBlock
                 {
                     Text =
-                        $"{library.AssetCount:N0} 件 · {DescribeScanState(library.ScanState)}"
-                        + (rootAvailable ? string.Empty : " · オフライン")
-                        + (library.IsEnabled ? string.Empty : " · 無効"),
+                        isActive
+                            ? "表示中"
+                            : string.Empty,
                     Foreground =
-                        rootAvailable
-                            ? LumineDesign.MutedForeground
-                            : LumineDesign.Warning,
-                    FontSize = 10,
-                    TextWrapping = TextWrapping.Wrap
+                        LumineDesign.MutedForeground,
+                    FontSize = 9,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
                 };
+
+            var heading =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions(
+                            "Auto,*,Auto"),
+                    ColumnSpacing = 7
+                };
+            heading.Children.Add(stateDot);
+            Grid.SetColumn(title, 1);
+            heading.Children.Add(title);
+            Grid.SetColumn(activeLabel, 2);
+            heading.Children.Add(activeLabel);
+
             var path =
                 new TextBlock
                 {
                     Text = library.RootPath,
-                    Foreground = LumineDesign.MutedForeground,
-                    FontSize = 9.5,
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize = 9,
                     TextTrimming =
-                        TextTrimming.CharacterEllipsis
+                        TextTrimming.CharacterEllipsis,
+                    Margin =
+                        new Thickness(15, 2, 0, 0)
                 };
 
-            var open =
-                LumineDesign.ConfigureSecondaryButton(
-                    new Button
-                    {
-                        Content =
-                            isActive
-                                ? "表示中"
-                                : "開く",
-                        IsEnabled =
-                            library.IsEnabled
-                            && rootAvailable
-                            && !isActive
-                    });
-            AttachAsync(
-                open,
-                () => openLibrary(library));
-
-            var toggle =
-                new Button
+            var detail =
+                new TextBlock
                 {
-                    Content =
-                        library.IsEnabled
-                            ? "無効化"
-                            : "有効化",
-                    FontSize = 10,
-                    Padding = new Thickness(8, 4)
+                    Text =
+                        $"{library.AssetCount:N0}件 · {DescribeScanState(library.ScanState)}"
+                        + (rootAvailable
+                            ? string.Empty
+                            : " · オフライン")
+                        + (library.IsEnabled
+                            ? string.Empty
+                            : " · 無効"),
+                    Foreground =
+                        rootAvailable
+                            ? LumineDesign.MutedForeground
+                            : LumineDesign.Warning,
+                    FontSize = 9.5,
+                    Margin =
+                        new Thickness(15, 2, 0, 0)
                 };
-            LumineDesign.ConfigureSecondaryButton(toggle);
-            AttachAsync(
-                toggle,
-                () => toggleEnabled(library));
 
-            var remove =
-                new Button
-                {
-                    Content = "登録解除",
-                    FontSize = 10,
-                    Padding = new Thickness(8, 4),
-                    Foreground = LumineDesign.Danger
-                };
-            LumineDesign.ConfigureSecondaryButton(remove);
-            remove.Foreground = LumineDesign.Danger;
-            AttachAsync(
-                remove,
-                () => removeLibrary(library));
-
-            var actions =
+            var primaryContent =
                 new StackPanel
                 {
-                    Orientation =
-                        Orientation.Horizontal,
-                    Spacing = 6
+                    Spacing = 1
                 };
-            actions.Children.Add(open);
-            actions.Children.Add(toggle);
-            actions.Children.Add(remove);
+            primaryContent.Children.Add(heading);
+            primaryContent.Children.Add(path);
+            primaryContent.Children.Add(detail);
 
-            var content =
-                new StackPanel
+            var primary =
+                new Button
                 {
-                    Spacing = 5
+                    Content = primaryContent,
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Stretch,
+                    Background =
+                        isActive
+                            ? LumineDesign.AccentMuted
+                            : Brushes.Transparent,
+                    BorderBrush =
+                        isActive
+                            ? LumineDesign.BorderStrong
+                            : Brushes.Transparent,
+                    BorderThickness =
+                        new Thickness(1),
+                    CornerRadius =
+                        new CornerRadius(9),
+                    Padding =
+                        new Thickness(9, 8),
+                    IsEnabled =
+                        canOpen
+                        && !isActive
                 };
-            content.Children.Add(title);
-            content.Children.Add(detail);
-            content.Children.Add(path);
+            if (canOpen && !isActive)
+            {
+                AttachAsync(
+                    primary,
+                    () => openLibrary(library));
+            }
+
+            stack.Children.Add(primary);
 
             if (!string.IsNullOrWhiteSpace(
                     library.SyncError))
             {
-                content.Children.Add(
+                stack.Children.Add(
                     new TextBlock
                     {
                         Text = library.SyncError,
-                        Foreground = LumineDesign.Warning,
-                        FontSize = 9.5,
-                        TextWrapping = TextWrapping.Wrap
+                        Foreground =
+                            LumineDesign.Warning,
+                        FontSize = 9,
+                        TextWrapping =
+                            TextWrapping.Wrap,
+                        Margin =
+                            new Thickness(10, -3, 8, 2)
                     });
             }
 
-            content.Children.Add(actions);
+            if (isActive
+                || !library.IsEnabled
+                || !rootAvailable)
+            {
+                var manage =
+                    new StackPanel
+                    {
+                        Orientation =
+                            Orientation.Horizontal,
+                        Spacing = 6,
+                        Margin =
+                            new Thickness(8, -2, 8, 4)
+                    };
 
-            stack.Children.Add(
-                CreateCard(
-                    content,
-                    isActive));
+                var toggle =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content =
+                                library.IsEnabled
+                                    ? "無効化"
+                                    : "有効化",
+                            FontSize = 9.5,
+                            MinHeight = 28,
+                            Padding =
+                                new Thickness(8, 4)
+                        });
+                AttachAsync(
+                    toggle,
+                    () => toggleEnabled(library));
+                manage.Children.Add(toggle);
+
+                var remove =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = "登録解除",
+                            FontSize = 9.5,
+                            MinHeight = 28,
+                            Padding =
+                                new Thickness(8, 4)
+                        });
+                remove.Foreground =
+                    LumineDesign.Danger;
+                AttachAsync(
+                    remove,
+                    () => removeLibrary(library));
+                manage.Children.Add(remove);
+
+                stack.Children.Add(manage);
+            }
         }
 
         return CreateScroll(stack);
