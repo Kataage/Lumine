@@ -1697,6 +1697,22 @@ try
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
 
+                    await window.CurrentShell!
+                        .OpenFocusedViewAsync(0);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxVisible
+                        && window.CurrentShell.IsFocusedViewVisible
+                        && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
+                        "Focused image viewer did not mount into the MainWindow-level lightbox layer.");
+
+                    window.CurrentShell.CloseFocusedView();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxVisible
+                        && !window.CurrentShell.IsFocusedViewVisible,
+                        "Closing the focused image viewer did not release the MainWindow-level lightbox layer.");
+
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
                             .ViewerSession
