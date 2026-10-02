@@ -1624,7 +1624,7 @@ try
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         window.NavigationContentForSmoke
-                            is ScrollViewer
+                            is Avalonia.Controls.ScrollViewer
                         && window.SettingsSnapshot.DataPaths.RootPath
                             == repeatedPaths.RootPath
                         && window.SettingsSnapshot.PersistedThumbnailStorageMode
