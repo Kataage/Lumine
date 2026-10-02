@@ -17,6 +17,7 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Action<string>? _entryRequested;
     private readonly Border _selectionBar;
     private readonly WrapPanel _bulkActions;
+    private Button? _lineageAction;
     private readonly TextBlock _selectionCount;
     private readonly TextBlock _selectionMetadataSummary;
     private readonly TextBlock _bulkStatus;
@@ -62,7 +63,10 @@ internal sealed class CoreViewerShell : UserControl
                     return Task.CompletedTask;
                 },
                 OpenFocusedViewAsync,
-                _afterBulkMutation);
+                _afterBulkMutation,
+                ShowCreateWorkDialogAsync,
+                ShowCreateGenerationGroupDialogAsync,
+                ShowCreatePublicationDialogAsync);
         _contextSurface =
             new Border
             {
@@ -456,111 +460,141 @@ internal sealed class CoreViewerShell : UserControl
 
     private Border CreateSelectionBar()
     {
-        var actions = _bulkActions;
-
-        actions.Children.Add(
+        var rating =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource =
+                        new[]
+                        {
+                            "評価なし",
+                            "★1",
+                            "★2",
+                            "★3",
+                            "★4",
+                            "★5"
+                        },
+                    SelectedIndex = 0
+                });
+        var ratingApply =
             CreateBulkButton(
-                "★0",
+                "評価を適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetRating: true,
-                        Rating: null))));
-        for (var rating = 1;
-             rating <= 5;
-             rating++)
-        {
-            var captured = rating;
-            actions.Children.Add(
-                CreateBulkButton(
-                    $"★{captured}",
-                    () => ApplyPatchAsync(
-                        new AssetUserMetadataPatch(
-                            SetRating: true,
-                            Rating: captured))));
-        }
+                        Rating:
+                            rating.SelectedIndex > 0
+                                ? rating.SelectedIndex
+                                : null)));
 
-        actions.Children.Add(
+        var favoriteOn =
             CreateBulkButton(
-                "お気に入り",
+                "お気に入りにする",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetFavorite: true,
-                        Favorite: true))));
-        actions.Children.Add(
+                        Favorite: true)));
+        var favoriteOff =
             CreateBulkButton(
-                "お気に入り解除",
+                "お気に入りを解除",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetFavorite: true,
-                        Favorite: false))));
+                        Favorite: false)));
 
-        var status =
-            new ComboBox
+        var statusLabels =
+            new[]
             {
-                Width = 118,
-                ItemsSource =
-                    new[]
-                    {
-                        "unsorted",
-                        "reviewed",
-                        "candidate",
-                        "published"
-                    },
-                SelectedIndex = 0,
-                Margin = new Thickness(3)
+                "未整理",
+                "確認済み",
+                "候補",
+                "公開済み"
             };
-        actions.Children.Add(status);
-        actions.Children.Add(
+        var statusValues =
+            new[]
+            {
+                "unsorted",
+                "reviewed",
+                "candidate",
+                "published"
+            };
+        var status =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = statusLabels,
+                    SelectedIndex = 0
+                });
+        var statusApply =
             CreateBulkButton(
                 "状態を適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetStatusLabel: true,
                         StatusLabel:
-                            status.SelectedItem as string))));
+                            statusValues[
+                                Math.Max(
+                                    0,
+                                    status.SelectedIndex)])));
 
-        var color =
-            new ComboBox
+        var colorLabels =
+            new[]
             {
-                Width = 104,
-                ItemsSource =
-                    new[]
-                    {
-                        "red",
-                        "orange",
-                        "yellow",
-                        "green",
-                        "blue",
-                        "purple",
-                        "gray"
-                    },
-                SelectedIndex = 4,
-                Margin = new Thickness(3)
+                "赤",
+                "オレンジ",
+                "黄",
+                "緑",
+                "青",
+                "紫",
+                "グレー"
             };
-        actions.Children.Add(color);
-        actions.Children.Add(
+        var colorValues =
+            new[]
+            {
+                "red",
+                "orange",
+                "yellow",
+                "green",
+                "blue",
+                "purple",
+                "gray"
+            };
+        var color =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = colorLabels,
+                    SelectedIndex = 4
+                });
+        var colorApply =
             CreateBulkButton(
-                "色を適用",
+                "カラーを適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetColorLabel: true,
                         ColorLabel:
-                            color.SelectedItem as string))));
+                            colorValues[
+                                Math.Max(
+                                    0,
+                                    color.SelectedIndex)])));
 
         var tag =
-            new TextBox
-            {
-                Width = 128,
-                PlaceholderText = "タグを追加",
-                Margin = new Thickness(3)
-            };
-        actions.Children.Add(tag);
-        actions.Children.Add(
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    MinWidth = 180,
+                    PlaceholderText = "タグ"
+                });
+        var tagAdd =
             CreateBulkButton(
-                "タグ追加",
+                "追加",
                 async () =>
                 {
-                    var value = tag.Text?.Trim();
+                    var value =
+                        tag.Text?.Trim();
                     if (string.IsNullOrWhiteSpace(value))
                     {
                         return;
@@ -570,29 +604,105 @@ internal sealed class CoreViewerShell : UserControl
                         new AssetUserMetadataPatch(
                             AddTags: [value]));
                     tag.Text = string.Empty;
-                }));
-        actions.Children.Add(
+                });
+        var tagClear =
             CreateBulkButton(
-                "タグ全解除",
+                "タグをすべて解除",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
-                        ClearTags: true))));
+                        ClearTags: true)));
 
-        actions.Children.Add(
+        var organizationPanel =
+            new StackPanel
+            {
+                Width = 280,
+                Spacing = 8,
+                Margin = new Thickness(4)
+            };
+        organizationPanel.Children.Add(
+            new TextBlock
+            {
+                Text = "整理",
+                FontSize = LumineDesign.BodyFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = LumineDesign.Foreground
+            });
+        organizationPanel.Children.Add(rating);
+        organizationPanel.Children.Add(ratingApply);
+        organizationPanel.Children.Add(favoriteOn);
+        organizationPanel.Children.Add(favoriteOff);
+        organizationPanel.Children.Add(status);
+        organizationPanel.Children.Add(statusApply);
+        organizationPanel.Children.Add(color);
+        organizationPanel.Children.Add(colorApply);
+
+        var tagRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 6
+            };
+        tagRow.Children.Add(tag);
+        Grid.SetColumn(tagAdd, 1);
+        tagRow.Children.Add(tagAdd);
+        organizationPanel.Children.Add(tagRow);
+        organizationPanel.Children.Add(tagClear);
+
+        var organizationFlyout =
+            new Flyout
+            {
+                Content =
+                    new Border
+                    {
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        Padding = new Thickness(10),
+                        Child = organizationPanel
+                    }
+            };
+
+        var organize =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "整理",
+                    Flyout = organizationFlyout,
+                    MinWidth = 76
+                });
+
+        var creativePanel =
+            new StackPanel
+            {
+                Width = 230,
+                Spacing = 6,
+                Margin = new Thickness(4)
+            };
+        creativePanel.Children.Add(
+            new TextBlock
+            {
+                Text = "制作",
+                FontSize = LumineDesign.BodyFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = LumineDesign.Foreground
+            });
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Work",
+                "Workを作成",
                 ShowCreateWorkDialogAsync));
-        actions.Children.Add(
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Generation Group",
+                "生成グループを作成",
                 ShowCreateGenerationGroupDialogAsync));
-        actions.Children.Add(
+        _lineageAction =
             CreateBulkButton(
-                "Lineage",
-                ShowCreateRelationDialogAsync));
-        actions.Children.Add(
+                "Lineageを作成",
+                ShowCreateRelationDialogAsync);
+        creativePanel.Children.Add(
+            _lineageAction);
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Publication",
+                "公開記録を作成",
                 ShowCreatePublicationDialogAsync));
 
         var delete =
@@ -601,7 +711,29 @@ internal sealed class CoreViewerShell : UserControl
                 DeleteSelectedSourcesAsync);
         delete.Foreground =
             LumineDesign.Danger;
-        actions.Children.Add(delete);
+        creativePanel.Children.Add(delete);
+
+        var creativeFlyout =
+            new Flyout
+            {
+                Content =
+                    new Border
+                    {
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        Padding = new Thickness(10),
+                        Child = creativePanel
+                    }
+            };
+
+        var creative =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "制作",
+                    Flyout = creativeFlyout,
+                    MinWidth = 76
+                });
 
         var clear =
             CreateBulkButton(
@@ -611,38 +743,40 @@ internal sealed class CoreViewerShell : UserControl
                     _grid.ClearSelection();
                     return Task.CompletedTask;
                 });
-        actions.Children.Add(clear);
+
+        _bulkActions.Spacing = 6;
+        _bulkActions.Children.Add(organize);
+        _bulkActions.Children.Add(creative);
+        _bulkActions.Children.Add(clear);
 
         var top =
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*"),
-                Margin = new Thickness(10, 7)
+                    new ColumnDefinitions(
+                        "Auto,*,Auto"),
+                ColumnSpacing = 10,
+                Margin = new Thickness(10, 6)
             };
         top.Children.Add(_selectionCount);
 
-        var middle =
+        var summary =
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 10,
-                Margin = new Thickness(12, 0)
+                VerticalAlignment =
+                    VerticalAlignment.Center
             };
-        middle.Children.Add(
+        summary.Children.Add(
             _selectionMetadataSummary);
-        middle.Children.Add(
+        summary.Children.Add(
             _bulkStatus);
-        Grid.SetColumn(middle, 1);
-        top.Children.Add(middle);
+        Grid.SetColumn(summary, 1);
+        top.Children.Add(summary);
 
-        var root =
-            new StackPanel
-            {
-                Spacing = 2
-            };
-        root.Children.Add(top);
-        root.Children.Add(_bulkActions);
+        Grid.SetColumn(_bulkActions, 2);
+        top.Children.Add(_bulkActions);
 
         return new Border
         {
@@ -650,8 +784,7 @@ internal sealed class CoreViewerShell : UserControl
             BorderBrush = LumineDesign.Border,
             BorderThickness =
                 new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(6, 2, 6, 6),
-            Child = root
+            Child = top
         };
     }
 
@@ -693,6 +826,11 @@ internal sealed class CoreViewerShell : UserControl
             selection.Count > 1;
         _selectionBar.IsVisible =
             isBulk;
+        if (_lineageAction is not null)
+        {
+            _lineageAction.IsEnabled =
+                selection.Count == 2;
+        }
         _bulkActions.IsVisible = isBulk;
         _selectionCount.IsVisible = isBulk;
         _selectionMetadataSummary.IsVisible = isBulk;
