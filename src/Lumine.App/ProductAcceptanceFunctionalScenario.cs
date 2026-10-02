@@ -136,7 +136,8 @@ internal static class ProductAcceptanceFunctionalScenario
 
             var saved =
                 await shell.ContextDetail.SaveEditorAsync(
-                    cancellationToken);
+                    cancellationToken:
+                        cancellationToken);
 
             Require(
                 saved is not null
@@ -363,7 +364,8 @@ internal static class ProductAcceptanceFunctionalScenario
                             StatusLabel: "reviewed",
                             ColorLabel: "green"),
                         limit: 10,
-                        cancellationToken);
+                        cancellationToken:
+                            cancellationToken);
 
             Require(
                 queryResult.Items.Count == 1
