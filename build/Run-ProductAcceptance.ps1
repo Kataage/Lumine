@@ -186,13 +186,10 @@ function Write-ManualChecklist {
     $lines.Add("")
 
     foreach ($check in $Checks) {
-        $marker =
-            if ($check.status -eq "pass") {
-                "x"
-            }
-            else {
-                " "
-            }
+        $marker = " "
+        if ($check.status -eq "pass") {
+            $marker = "x"
+        }
 
         $lines.Add(
             "- [$marker] $($check.title): $($check.prompt) (status: $($check.status))")
@@ -272,34 +269,37 @@ if ($InteractiveReview) {
     }
 }
 
-$manualDecision =
-    if (($manualChecks |
-            Where-Object { $_.status -eq "fail" }).Count -gt 0) {
-        "fail"
-    }
-    elseif (($manualChecks |
-            Where-Object { $_.status -eq "pending" }).Count -gt 0) {
-        "pending"
-    }
-    else {
-        "pass"
-    }
+$failedManualChecks =
+    @($manualChecks |
+        Where-Object { $_.status -eq "fail" })
+$pendingManualChecks =
+    @($manualChecks |
+        Where-Object { $_.status -eq "pending" })
+
+$manualDecision = "pass"
+if ($failedManualChecks.Count -gt 0) {
+    $manualDecision = "fail"
+}
+elseif ($pendingManualChecks.Count -gt 0) {
+    $manualDecision = "pending"
+}
 
 $combinedDecision =
-    if ($manualDecision -eq "pass") {
-        "pass"
-    }
-    elseif ($manualDecision -eq "fail") {
-        "fail"
-    }
-    else {
-        "automated-pass-manual-review-required"
-    }
+    "automated-pass-manual-review-required"
+if ($manualDecision -eq "pass") {
+    $combinedDecision = "pass"
+}
+elseif ($manualDecision -eq "fail") {
+    $combinedDecision = "fail"
+}
 
 $coreSummarySha256 =
-    (Get-FileHash -LiteralPath $coreSummaryPath -Algorithm SHA256)
-        .Hash
-        .ToLowerInvariant()
+    ((Get-FileHash -LiteralPath $coreSummaryPath -Algorithm SHA256).Hash).ToLowerInvariant()
+
+$unresolvedP0P1 = $null
+if ($manualDecision -eq "pass") {
+    $unresolvedP0P1 = $false
+}
 
 $productSummary = [ordered]@{
     schemaVersion = 1
@@ -321,12 +321,7 @@ $productSummary = [ordered]@{
     combinedDecision = $combinedDecision
     manualChecks = $manualChecks
     unresolvedP0P1 =
-        if ($manualDecision -eq "pass") {
-            $false
-        }
-        else {
-            $null
-        }
+        $unresolvedP0P1
     sourcePolicy = [ordered]@{
         representativeLibraryMutatedByAutomatedRun = $false
         productMutationScenario =
