@@ -57,34 +57,51 @@ public sealed class DetailViewerControl : UserControl
                 CreateViewerIcon(
                     "M15.75 5.25L9 12l6.75 6.75",
                     18),
-                "前の画像");
+                "前の画像",
+                "viewer.previous",
+                "Left Arrow");
         _next =
             CreateViewerButton(
                 CreateViewerIcon(
                     "M8.25 5.25L15 12l-6.75 6.75",
                     18),
-                "次の画像");
+                "次の画像",
+                "viewer.next",
+                "Right Arrow");
         _zoomOut =
             CreateViewerButton(
                 CreateViewerIcon(
                     "M5 12h14",
                     15),
-                "縮小");
+                "縮小",
+                "viewer.zoom-out");
         _zoomIn =
             CreateViewerButton(
                 CreateViewerIcon(
                     "M12 5v14 M5 12h14",
                     15),
-                "拡大");
-        _fit = CreateViewerButton("全体", "全体を表示", "viewer.fit");
-        _actual = CreateViewerButton("1:1", "100%表示", "viewer.actual-size");
+                "拡大",
+                "viewer.zoom-in");
+        _fit =
+            CreateViewerButton(
+                "全体",
+                "全体を表示",
+                "viewer.fit",
+                "0");
+        _actual =
+            CreateViewerButton(
+                "1:1",
+                "100%表示",
+                "viewer.actual-size",
+                "1");
         _fullScreen =
             CreateViewerButton(
                 CreateViewerIcon(
                     "M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5",
                     16),
                 "全画面表示 (F11)",
-                "viewer.fullscreen");
+                "viewer.fullscreen",
+                "F11");
 
         _zoomText = new TextBlock
         {
@@ -300,7 +317,8 @@ public sealed class DetailViewerControl : UserControl
     private static Button CreateViewerButton(
         object content,
         string tooltip,
-        string? automationId = null)
+        string? automationId = null,
+        string? acceleratorKey = null)
     {
         var button =
             new Button
@@ -323,7 +341,8 @@ public sealed class DetailViewerControl : UserControl
         ViewerVisualTokens.Name(
             button,
             tooltip,
-            automationId);
+            automationId,
+            acceleratorKey);
         return button;
     }
 
