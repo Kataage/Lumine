@@ -200,7 +200,7 @@ public sealed class ThumbnailViewerControl : UserControl
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
 
-    public Control? GetRealizedAssetFocusTarget(
+    internal Control? GetRealizedAssetFocusTarget(
         long index) =>
         this.GetVisualDescendants()
             .OfType<ViewerTileControl>()
