@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lumine.Core;
+using Lumine.Image;
 
 namespace Lumine.App;
 
@@ -13,6 +14,80 @@ internal sealed record AppSettingsDocument
 
     public ResourcePolicySettings? ResourcePolicy { get; init; } =
         new();
+
+    public string ThumbnailStorageMode { get; init; } =
+        nameof(Lumine.Image.ThumbnailStorageMode.MemoryOnly);
+}
+
+internal static class ThumbnailStoragePreference
+{
+    public const string EnvironmentVariable =
+        "LUMINE_THUMBNAIL_STORAGE_MODE";
+
+    public static ThumbnailStorageMode Resolve(
+        AppSettingsDocument settings,
+        out string? warning)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        var environmentValue =
+            Environment.GetEnvironmentVariable(
+                EnvironmentVariable);
+
+        if (!string.IsNullOrWhiteSpace(
+                environmentValue))
+        {
+            warning = null;
+            return ParseOrThrow(
+                environmentValue,
+                "environment override");
+        }
+
+        if (Enum.TryParse<ThumbnailStorageMode>(
+                settings.ThumbnailStorageMode,
+                ignoreCase: true,
+                out var persisted)
+            && Enum.IsDefined(persisted))
+        {
+            warning = null;
+            return persisted;
+        }
+
+        warning =
+            $"Unsupported persisted thumbnail storage mode '{settings.ThumbnailStorageMode}'; MemoryOnly was used.";
+        return ThumbnailStorageMode.MemoryOnly;
+    }
+
+    public static string Serialize(
+        ThumbnailStorageMode mode)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                mode,
+                "Unsupported thumbnail storage mode.");
+        }
+
+        return mode.ToString();
+    }
+
+    private static ThumbnailStorageMode ParseOrThrow(
+        string value,
+        string source)
+    {
+        if (Enum.TryParse<ThumbnailStorageMode>(
+                value,
+                ignoreCase: true,
+                out var mode)
+            && Enum.IsDefined(mode))
+        {
+            return mode;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported thumbnail storage mode '{value}' from {source}. Expected MemoryOnly or PersistentDisk.");
+    }
 }
 
 internal sealed record AppSettingsLoadResult(
