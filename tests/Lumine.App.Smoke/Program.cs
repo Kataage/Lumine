@@ -1702,16 +1702,18 @@ try
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         window.IsLightboxVisible
+                        && !window.IsWorkspaceInteractionEnabled
                         && window.CurrentShell.IsFocusedViewVisible
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
-                        "Focused image viewer did not mount into the MainWindow-level lightbox layer.");
+                        "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.IsLightboxVisible
+                        && window.IsWorkspaceInteractionEnabled
                         && !window.CurrentShell.IsFocusedViewVisible,
-                        "Closing the focused image viewer did not release the MainWindow-level lightbox layer.");
+                        "Closing the focused image viewer did not release modality and restore workspace interaction.");
 
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
