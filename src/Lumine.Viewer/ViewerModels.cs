@@ -32,7 +32,11 @@ public sealed record ViewerSelectionSnapshot(
 public readonly record struct ViewerPageCursor(
     long ModifiedAtUtcTicks,
     long AssetId,
-    string? FileName = null);
+    string? FileName = null,
+    long? CreatedAtUtcTicks = null,
+    long? FileSize = null,
+    int? Rating = null,
+    string? StatusLabel = null);
 
 public sealed record ViewerAsset(
     long Id,
@@ -47,7 +51,12 @@ public sealed record ViewerAsset(
     string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
-    bool? HasAlpha = null)
+    bool? HasAlpha = null,
+    long? CreatedAtUtcTicks = null,
+    int? Rating = null,
+    bool Favorite = false,
+    string? StatusLabel = null,
+    string? ColorLabel = null)
 {
     public ViewerSourceTechnicalMetadata? PersistedSourceMetadata =>
         Width is > 0
