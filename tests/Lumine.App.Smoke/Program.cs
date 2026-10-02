@@ -1372,18 +1372,7 @@ finally
 
     if (Directory.Exists(root))
     {
-        try
-        {
-            Directory.Delete(root, recursive: true);
-        }
-        catch (IOException exception)
-        {
-            // Keep the primary smoke failure visible. A per-iteration handle
-            // assertion below owns lifecycle correctness; root cleanup is only
-            // best-effort once the test is already unwinding.
-            Console.Error.WriteLine(
-                $"App smoke root cleanup deferred: {exception.Message}");
-        }
+        Directory.Delete(root, recursive: true);
     }
 }
 
