@@ -288,6 +288,116 @@ internal sealed class CoreViewerShell : UserControl
 
     internal DetailViewerControl DetailViewer => _detail;
 
+    internal ContextualAssetDetailPanel ContextDetail =>
+        _contextDetail;
+
+    internal bool IsContextDetailVisible =>
+        _contextSurface.IsVisible;
+
+    internal bool IsFocusedViewVisible =>
+        _focusedSurface.IsVisible;
+
+    internal async Task ShowContextDetailAsync()
+    {
+        if (_grid.SelectedAssetIndex < 0)
+        {
+            _contextDetail.ShowNoSelection();
+            _contextSurface.IsVisible = true;
+            return;
+        }
+
+        _contextSurface.IsVisible = true;
+        await LoadContextDetailAsync(
+            _grid.SelectedAssetIndex);
+    }
+
+    internal void HideContextDetail()
+    {
+        _contextSurface.IsVisible = false;
+        _grid.Focus();
+    }
+
+    internal Task OpenFocusedViewAsync() =>
+        OpenFocusedViewAsync(
+            _grid.SelectedAssetIndex);
+
+    internal async Task OpenFocusedViewAsync(
+        long index)
+    {
+        if ((ulong)index
+            >= (ulong)_runtime.AssetCount)
+        {
+            return;
+        }
+
+        if (_grid.SelectedAssetIndex != index)
+        {
+            _grid.SelectAsset(index);
+        }
+
+        _focusedSurface.IsVisible = true;
+
+        try
+        {
+            await _detail.SelectAsync(index);
+            _detail.Focus();
+        }
+        catch
+        {
+            _focusedSurface.IsVisible = false;
+            throw;
+        }
+    }
+
+    internal void CloseFocusedView()
+    {
+        if (!_focusedSurface.IsVisible)
+        {
+            return;
+        }
+
+        _focusedSurface.IsVisible = false;
+        _grid.Focus();
+    }
+
+    private async Task LoadContextDetailAsync(
+        long index)
+    {
+        if ((ulong)index
+            >= (ulong)_runtime.AssetCount)
+        {
+            _contextDetail.ShowNoSelection();
+            return;
+        }
+
+        try
+        {
+            var asset =
+                await _runtime.ViewerSession
+                    .GetAssetAsync(index);
+            await _contextDetail.ShowAssetAsync(
+                asset);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async void OnAssetInvoked(
+        object? sender,
+        long index)
+    {
+        try
+        {
+            await OpenFocusedViewAsync(index);
+        }
+        catch (Exception exception)
+        {
+            _bulkStatus.Text =
+                $"集中表示を開けませんでした: {exception.Message}";
+        }
+    }
+
     private Border CreateSelectionBar()
     {
         var actions =
@@ -526,7 +636,7 @@ internal sealed class CoreViewerShell : UserControl
         return button;
     }
 
-    private void OnSelectionChanged(
+    private async void OnSelectionChanged(
         object? sender,
         ViewerSelectionSnapshot selection)
     {
@@ -537,6 +647,38 @@ internal sealed class CoreViewerShell : UserControl
                 ? "1件を選択"
                 : $"{selection.Count:N0}件を選択";
         _bulkStatus.Text = string.Empty;
+
+        var hasPrimary =
+            selection.PrimaryIndex >= 0;
+        _detailToggle.IsEnabled =
+            hasPrimary;
+        _focusButton.IsEnabled =
+            hasPrimary;
+
+        if (!hasPrimary)
+        {
+            _contextDetail.ShowNoSelection();
+            if (_focusedSurface.IsVisible)
+            {
+                CloseFocusedView();
+            }
+
+            return;
+        }
+
+        if (_contextSurface.IsVisible)
+        {
+            try
+            {
+                await LoadContextDetailAsync(
+                    selection.PrimaryIndex);
+            }
+            catch (Exception exception)
+            {
+                _bulkStatus.Text =
+                    $"詳細を更新できませんでした: {exception.Message}";
+            }
+        }
     }
 
     private async Task<IReadOnlyList<ViewerAsset>>
@@ -790,6 +932,17 @@ internal sealed class CoreViewerShell : UserControl
         object? sender,
         KeyEventArgs e)
     {
+        if (_focusedSurface.IsVisible)
+        {
+            if (e.Key == Key.Escape)
+            {
+                CloseFocusedView();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
         var focused =
             TopLevel.GetTopLevel(this)
                 ?.FocusManager
@@ -887,7 +1040,9 @@ internal sealed class CoreViewerShell : UserControl
 
         _detached = true;
         _grid.SelectionChanged -= OnSelectionChanged;
+        _grid.AssetInvoked -= OnAssetInvoked;
         KeyDown -= OnShellKeyDown;
+        _contextDetail.PrepareForDetach();
         _detail.UnbindGrid();
         _detail.PrepareForDetach();
         _grid.PrepareForDetach();
