@@ -352,15 +352,17 @@ internal static class CreativeArchiveDialogs
         };
 
         var pixivR18 =
-            new CheckBox
-            {
-                Content = "Pixiv: R-18"
-            };
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "Pixiv: R-18"
+                });
         var pixivAi =
-            new CheckBox
-            {
-                Content = "Pixiv: AI生成"
-            };
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "Pixiv: AI生成"
+                });
         var customMetadata = CreateMultiline(
             "Custom platform metadata JSON");
         customMetadata.Text = "{}";
@@ -534,14 +536,15 @@ internal static class CreativeArchiveDialogs
 
     private static TextBox CreateMultiline(
         string placeholder) =>
-        new()
-        {
-            PlaceholderText = placeholder,
-            AcceptsReturn = true,
-            TextWrapping =
-                Avalonia.Media.TextWrapping.Wrap,
-            MinHeight = 70
-        };
+        LumineDesign.ConfigureTextBox(
+            new TextBox
+            {
+                PlaceholderText = placeholder,
+                AcceptsReturn = true,
+                TextWrapping =
+                    Avalonia.Media.TextWrapping.Wrap,
+                MinHeight = 70
+            });
 
     private static TextBlock CreateStatus() =>
         new()
@@ -574,6 +577,21 @@ internal static class CreativeArchiveDialogs
         string label,
         Control control)
     {
+        control =
+            control switch
+            {
+                TextBox textBox =>
+                    LumineDesign.ConfigureTextBox(
+                        textBox),
+                ComboBox comboBox =>
+                    LumineDesign.ConfigureComboBox(
+                        comboBox),
+                CheckBox checkBox =>
+                    LumineDesign.ConfigureCheckBox(
+                        checkBox),
+                _ => control
+            };
+
         var stack =
             new StackPanel
             {
