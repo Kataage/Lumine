@@ -193,6 +193,7 @@ public sealed class MainWindow : Window
                     HorizontalAlignment.Center,
                 VerticalAlignment =
                     VerticalAlignment.Top,
+                IsHitTestVisible = false,
                 IsVisible =
                     !string.IsNullOrWhiteSpace(
                         _status.Text),
