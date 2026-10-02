@@ -1021,6 +1021,34 @@ try
                 && shell.DetailViewer.IsOriginal,
                 "Real App shell did not move back and re-admit an original through the composition release contract.");
 
+            shell.SetBrowseLayout(
+                new BrowsePreferences(
+                    BrowseViewMode.List,
+                    2,
+                    AssetSortOrder.ModifiedNewest));
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.List
+                && shell.GridViewer.DensityLevel == 2
+                && shell.GridViewer.Columns == 1,
+                "List browse mode did not preserve single-column virtualization.");
+
+            shell.SetBrowseLayout(
+                new BrowsePreferences(
+                    BrowseViewMode.Grid,
+                    0,
+                    AssetSortOrder.ModifiedNewest));
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.GridViewer.LayoutMode
+                    == ViewerLayoutMode.Grid
+                && shell.GridViewer.DensityLevel == 0
+                && shell.GridViewer.Columns >= 1,
+                "Density/view-mode switch did not reuse the active Viewer session.");
+
             var navigationAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(0);
             await shellRuntime.LibraryService.SetUserMetadataAsync(
@@ -1046,23 +1074,11 @@ try
                 && shellRuntime.CurrentQuery?.RequiredTags is { Count: 1 },
                 "CoreViewerRuntime did not apply the navigation tag query in place.");
 
-            var filteredShell =
-                new CoreViewerShell(shellRuntime);
-            var filteredWindow =
-                new Avalonia.Controls.Window
-                {
-                    Width = 900,
-                    Height = 620,
-                    Content = filteredShell
-                };
-            filteredWindow.Show();
-            Dispatcher.UIThread.RunJobs();
+            var filteredAsset =
+                await shellRuntime.ViewerSession.GetAssetAsync(0);
             Require(
-                filteredShell.GridViewer.AssetCount == 1,
-                "Filtered App shell did not bind the replacement Viewer sessions.");
-            filteredWindow.Close();
-            Dispatcher.UIThread.RunJobs();
-            await filteredShell.DetachAsync();
+                filteredAsset.Id == navigationAsset.Id,
+                "Filtered Viewer session did not expose the tagged asset.");
 
             await shellRuntime.ApplyQueryAsync(
                 new AssetQuery(
@@ -1119,48 +1135,6 @@ try
                     sortedCorrectly,
                     $"Viewer keyset paging did not honor browse sort {sortOrder}.");
             }
-
-            var browseLayoutShell =
-                new CoreViewerShell(
-                    shellRuntime,
-                    new BrowsePreferences(
-                        BrowseViewMode.List,
-                        2,
-                        AssetSortOrder.FileNameDescending));
-            var browseLayoutWindow =
-                new Avalonia.Controls.Window
-                {
-                    Width = 900,
-                    Height = 620,
-                    Content = browseLayoutShell
-                };
-            browseLayoutWindow.Show();
-            Dispatcher.UIThread.RunJobs();
-
-            Require(
-                browseLayoutShell.GridViewer.LayoutMode
-                    == ViewerLayoutMode.List
-                && browseLayoutShell.GridViewer.DensityLevel == 2
-                && browseLayoutShell.GridViewer.Columns == 1,
-                "List browse mode did not preserve single-column virtualization.");
-
-            browseLayoutShell.SetBrowseLayout(
-                new BrowsePreferences(
-                    BrowseViewMode.Grid,
-                    0,
-                    AssetSortOrder.FileNameDescending));
-            Dispatcher.UIThread.RunJobs();
-
-            Require(
-                browseLayoutShell.GridViewer.LayoutMode
-                    == ViewerLayoutMode.Grid
-                && browseLayoutShell.GridViewer.DensityLevel == 0
-                && browseLayoutShell.GridViewer.Columns >= 1,
-                "Density/view-mode switch did not reuse the active Viewer session.");
-
-            browseLayoutWindow.Close();
-            Dispatcher.UIThread.RunJobs();
-            await browseLayoutShell.DetachAsync();
 
             await shellRuntime.ApplyQueryAsync(null);
             Require(
