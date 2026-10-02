@@ -943,15 +943,26 @@ public sealed class DetailViewerControl : UserControl
 
         _status.Text = snapshot.State switch
         {
-            ViewerDetailLoadState.Empty => "No selection",
-            ViewerDetailLoadState.LoadingPreview => "Loading preview…",
-            ViewerDetailLoadState.PreviewReady => snapshot.ErrorMessage is null
-                ? "Preview"
-                : $"Preview · {snapshot.ErrorMessage}",
-            ViewerDetailLoadState.LoadingOriginal => "Loading original…",
-            ViewerDetailLoadState.OriginalReady => "Original",
-            ViewerDetailLoadState.Error => $"Error: {snapshot.ErrorMessage}",
-            _ => snapshot.State.ToString()
+            ViewerDetailLoadState.Empty =>
+                "画像を選択してください",
+            ViewerDetailLoadState.LoadingPreview =>
+                "プレビューを読み込んでいます…",
+            ViewerDetailLoadState.PreviewReady =>
+                snapshot.ErrorMessage is null
+                    ? "プレビュー"
+                    : "プレビューを一部の情報なしで表示しています"
+                      + $" · {snapshot.ErrorMessage}",
+            ViewerDetailLoadState.LoadingOriginal =>
+                "元画像を読み込んでいます…",
+            ViewerDetailLoadState.OriginalReady =>
+                "元画像",
+            ViewerDetailLoadState.Error =>
+                string.IsNullOrWhiteSpace(
+                    snapshot.ErrorMessage)
+                    ? "この画像を表示できません"
+                    : "この画像を表示できません"
+                      + $" · {snapshot.ErrorMessage}",
+            _ => "画像の状態を確認しています…"
         };
 
         var metadata = snapshot.Metadata;
