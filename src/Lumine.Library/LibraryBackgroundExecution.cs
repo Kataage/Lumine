@@ -239,6 +239,19 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<AssetUserMetadataSelectionSummary>
+        GetUserMetadataSelectionSummaryAsync(
+            long libraryId,
+            IReadOnlyList<long> assetIds,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token =>
+                _repository.GetUserMetadataSelectionSummaryAsync(
+                    libraryId,
+                    assetIds,
+                    token),
+            cancellationToken);
+
     public Task<int> RemoveAssetsAsync(
         long libraryId,
         IReadOnlyList<string> relativePaths,
