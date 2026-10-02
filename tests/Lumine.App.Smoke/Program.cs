@@ -971,6 +971,70 @@ try
                 shell.GridViewer.AssetCount == 2,
                 "Real App shell did not expose the runtime asset count.");
 
+            Require(
+                !shell.IsContextDetailVisible
+                && !shell.IsFocusedViewVisible,
+                "Context/focused surfaces should not consume the initial browse workspace.");
+
+            shell.GridViewer.SelectAsset(0);
+            var firstContextAsset =
+                await shellRuntime.ViewerSession.GetAssetAsync(0);
+            await shellRuntime.LibraryService.SetUserMetadataAsync(
+                shellRuntime.Library.Id,
+                firstContextAsset.Id,
+                new AssetUserMetadataUpdate(
+                    Rating: 5,
+                    Favorite: true,
+                    Notes: "context-detail-note",
+                    StatusLabel: "candidate",
+                    ColorLabel: "purple",
+                    Tags: ["context-tag"]));
+
+            await shell.ShowContextDetailAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                shell.IsContextDetailVisible
+                && shell.ContextDetail.AssetId
+                    == firstContextAsset.Id,
+                "Contextual detail panel did not open for the primary selection.");
+            Require(
+                shell.ContextDetail.TitleText
+                    == firstContextAsset.DisplayName
+                && shell.ContextDetail.PathText.Contains(
+                    firstContextAsset.RelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase),
+                "Contextual detail panel did not expose image/path context.");
+            Require(
+                shell.ContextDetail.RatingText == "★5"
+                && shell.ContextDetail.TagsText.Contains(
+                    "context-tag",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail.NotesText
+                    == "context-detail-note",
+                "Contextual detail panel did not expose user-owned metadata.");
+
+            shell.HideContextDetail();
+            Require(
+                !shell.IsContextDetailVisible,
+                "Contextual detail panel did not return the workspace to full browse width.");
+
+            await shell.OpenFocusedViewAsync(0);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.IsFocusedViewVisible
+                && shell.DetailViewer.SelectedAssetIndex == 0
+                && shell.DetailViewer.LoadState
+                    == ViewerDetailLoadState.PreviewReady,
+                "Focused viewer did not reuse the Detail engine for the selected asset.");
+
+            shell.CloseFocusedView();
+            Require(
+                !shell.IsFocusedViewVisible,
+                "Focused viewer did not return to the browse workspace.");
+
             await shell.DetailViewer.SelectAsync(0);
             Dispatcher.UIThread.RunJobs();
 
@@ -1150,7 +1214,7 @@ try
         CancellationToken.None);
 
     Console.WriteLine(
-        "App shell smoke: runtime composition / browse filters / four-way keyset sort / grid-list density / selection / Detail / shutdown OK");
+        "App shell smoke: browse / contextual detail / focused viewer / multi-selection / Detail / shutdown OK");
 
     for (var iteration = 0;
          iteration < 3;

@@ -194,6 +194,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
 
+    public event EventHandler<long>? AssetInvoked;
+
     public bool IsAssetSelected(long index) =>
         _selectedIndices.Contains(index);
 
@@ -1063,6 +1065,15 @@ public sealed class ThumbnailViewerControl : UserControl
                 _index,
                 scrollIntoView: false,
                 mode);
+
+            if (e.ClickCount >= 2
+                && mode == ViewerSelectionMode.Replace)
+            {
+                _owner.AssetInvoked?.Invoke(
+                    _owner,
+                    _index);
+            }
+
             e.Handled = true;
         }
 

@@ -18,6 +18,11 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Border _selectionBar;
     private readonly TextBlock _selectionCount;
     private readonly TextBlock _bulkStatus;
+    private readonly ContextualAssetDetailPanel _contextDetail;
+    private readonly Border _contextSurface;
+    private readonly Border _focusedSurface;
+    private readonly Button _detailToggle;
+    private readonly Button _focusButton;
     private bool _detached;
 
     public CoreViewerShell(
@@ -46,7 +51,119 @@ internal sealed class CoreViewerShell : UserControl
             preferences.Density);
         _detail = new DetailViewerControl(
             runtime.DetailSession);
-        _detail.BindGrid(_grid);
+
+        _contextDetail =
+            new ContextualAssetDetailPanel(
+                runtime,
+                () =>
+                {
+                    HideContextDetail();
+                    return Task.CompletedTask;
+                },
+                OpenFocusedViewAsync);
+        _contextSurface =
+            new Border
+            {
+                Width = 340,
+                Background = LumineDesign.Surface,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1, 0, 0, 0),
+                IsVisible = false,
+                Child = _contextDetail
+            };
+
+        _detailToggle =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "詳細",
+                    MinHeight = 30,
+                    Padding = new Thickness(10, 5),
+                    IsEnabled = false
+                });
+        _detailToggle.Click +=
+            async (_, _) =>
+            {
+                if (_contextSurface.IsVisible)
+                {
+                    HideContextDetail();
+                }
+                else
+                {
+                    await ShowContextDetailAsync();
+                }
+            };
+
+        _focusButton =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "集中表示",
+                    MinHeight = 30,
+                    Padding = new Thickness(12, 5),
+                    IsEnabled = false
+                });
+        _focusButton.Click +=
+            async (_, _) =>
+                await OpenFocusedViewAsync();
+
+        var focusedClose =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "一覧へ戻る  Esc",
+                    MinHeight = 30,
+                    Padding = new Thickness(12, 5)
+                });
+        focusedClose.Click +=
+            (_, _) =>
+                CloseFocusedView();
+
+        var focusedHeader =
+            new Grid
+            {
+                Background = Brushes.Black,
+                ColumnDefinitions =
+                    new ColumnDefinitions("Auto,*,Auto"),
+                Margin = new Thickness(8, 6)
+            };
+        focusedHeader.Children.Add(
+            focusedClose);
+        var focusedHint =
+            new TextBlock
+            {
+                Text = "← → 画像移動 · Ctrl+0 全体表示 · Ctrl+1 1:1 · Ctrl+ホイール ズーム · ドラッグ パン",
+                Foreground = Brushes.LightGray,
+                FontSize = 10,
+                VerticalAlignment =
+                    VerticalAlignment.Center,
+                HorizontalAlignment =
+                    HorizontalAlignment.Center
+            };
+        Grid.SetColumn(focusedHint, 1);
+        focusedHeader.Children.Add(
+            focusedHint);
+
+        var focusedLayout =
+            new Grid
+            {
+                Background = Brushes.Black,
+                RowDefinitions =
+                    new RowDefinitions("Auto,*")
+            };
+        focusedLayout.Children.Add(
+            focusedHeader);
+        Grid.SetRow(_detail, 1);
+        focusedLayout.Children.Add(_detail);
+
+        _focusedSurface =
+            new Border
+            {
+                Background = Brushes.Black,
+                IsVisible = false,
+                Child = focusedLayout
+            };
 
         _selectionCount =
             new TextBlock
@@ -67,6 +184,7 @@ internal sealed class CoreViewerShell : UserControl
         _selectionBar.IsVisible = false;
 
         _grid.SelectionChanged += OnSelectionChanged;
+        _grid.AssetInvoked += OnAssetInvoked;
         KeyDown += OnShellKeyDown;
         Focusable = true;
 
@@ -89,44 +207,207 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _grid
             };
 
-        var detailSurface =
+        var browseActionContent =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto,Auto")
+            };
+        browseActionContent.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "画像を選択すると詳細表示・集中表示を利用できます。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize = 10,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        Grid.SetColumn(_detailToggle, 1);
+        _detailToggle.Margin =
+            new Thickness(4, 0);
+        browseActionContent.Children.Add(
+            _detailToggle);
+        Grid.SetColumn(_focusButton, 2);
+        _focusButton.Margin =
+            new Thickness(4, 0);
+        browseActionContent.Children.Add(
+            _focusButton);
+
+        var browseActions =
             new Border
             {
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
-                    new Thickness(1, 0, 0, 0),
-                Child = _detail
+                    new Thickness(0, 0, 0, 1),
+                Padding =
+                    new Thickness(10, 6),
+                Child = browseActionContent
             };
 
-        var viewerLayout = new Grid
-        {
-            Background = LumineDesign.Background,
-            ColumnDefinitions =
-                new ColumnDefinitions("3*,2*")
-        };
+        var browseViewer =
+            new Grid
+            {
+                Background = LumineDesign.Background,
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto")
+            };
+        browseViewer.Children.Add(
+            gridSurface);
+        Grid.SetColumn(_contextSurface, 1);
+        browseViewer.Children.Add(
+            _contextSurface);
 
-        viewerLayout.Children.Add(gridSurface);
+        var browseLayout =
+            new Grid
+            {
+                Background = LumineDesign.Background,
+                RowDefinitions =
+                    new RowDefinitions("Auto,Auto,*")
+            };
+        browseLayout.Children.Add(
+            _selectionBar);
+        Grid.SetRow(browseActions, 1);
+        browseLayout.Children.Add(
+            browseActions);
+        Grid.SetRow(browseViewer, 2);
+        browseLayout.Children.Add(
+            browseViewer);
 
-        Grid.SetColumn(detailSurface, 1);
-        viewerLayout.Children.Add(detailSurface);
+        var layers =
+            new Grid
+            {
+                Background = LumineDesign.Background
+            };
+        layers.Children.Add(
+            browseLayout);
+        layers.Children.Add(
+            _focusedSurface);
 
-        var layout = new Grid
-        {
-            Background = LumineDesign.Background,
-            RowDefinitions =
-                new RowDefinitions("Auto,*")
-        };
-        layout.Children.Add(_selectionBar);
-        Grid.SetRow(viewerLayout, 1);
-        layout.Children.Add(viewerLayout);
-
-        Content = layout;
+        Content = layers;
     }
 
     internal ThumbnailViewerControl GridViewer => _grid;
 
     internal DetailViewerControl DetailViewer => _detail;
+
+    internal ContextualAssetDetailPanel ContextDetail =>
+        _contextDetail;
+
+    internal bool IsContextDetailVisible =>
+        _contextSurface.IsVisible;
+
+    internal bool IsFocusedViewVisible =>
+        _focusedSurface.IsVisible;
+
+    internal async Task ShowContextDetailAsync()
+    {
+        if (_grid.SelectedAssetIndex < 0)
+        {
+            _contextDetail.ShowNoSelection();
+            _contextSurface.IsVisible = true;
+            return;
+        }
+
+        _contextSurface.IsVisible = true;
+        await LoadContextDetailAsync(
+            _grid.SelectedAssetIndex);
+    }
+
+    internal void HideContextDetail()
+    {
+        _contextSurface.IsVisible = false;
+        _grid.Focus();
+    }
+
+    internal Task OpenFocusedViewAsync() =>
+        OpenFocusedViewAsync(
+            _grid.SelectedAssetIndex);
+
+    internal async Task OpenFocusedViewAsync(
+        long index)
+    {
+        if ((ulong)index
+            >= (ulong)_runtime.AssetCount)
+        {
+            return;
+        }
+
+        if (_grid.SelectedAssetIndex != index)
+        {
+            _grid.SelectAsset(index);
+        }
+
+        _focusedSurface.IsVisible = true;
+
+        try
+        {
+            // Await the explicit selection before binding to Grid. BindGrid()
+            // synchronizes asynchronously; doing it first can make the
+            // explicit SelectAsync observe LoadingPreview and return early.
+            await _detail.SelectAsync(index);
+            _detail.BindGrid(_grid);
+            _detail.Focus();
+        }
+        catch
+        {
+            _focusedSurface.IsVisible = false;
+            throw;
+        }
+    }
+
+    internal void CloseFocusedView()
+    {
+        if (!_focusedSurface.IsVisible)
+        {
+            return;
+        }
+
+        _focusedSurface.IsVisible = false;
+        _detail.UnbindGrid();
+        _runtime.DetailSession.Clear();
+        _grid.Focus();
+    }
+
+    private async Task LoadContextDetailAsync(
+        long index)
+    {
+        if ((ulong)index
+            >= (ulong)_runtime.AssetCount)
+        {
+            _contextDetail.ShowNoSelection();
+            return;
+        }
+
+        try
+        {
+            var asset =
+                await _runtime.ViewerSession
+                    .GetAssetAsync(index);
+            await _contextDetail.ShowAssetAsync(
+                asset);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async void OnAssetInvoked(
+        object? sender,
+        long index)
+    {
+        try
+        {
+            await OpenFocusedViewAsync(index);
+        }
+        catch (Exception exception)
+        {
+            _bulkStatus.Text =
+                $"集中表示を開けませんでした: {exception.Message}";
+        }
+    }
 
     private Border CreateSelectionBar()
     {
@@ -366,7 +647,7 @@ internal sealed class CoreViewerShell : UserControl
         return button;
     }
 
-    private void OnSelectionChanged(
+    private async void OnSelectionChanged(
         object? sender,
         ViewerSelectionSnapshot selection)
     {
@@ -377,6 +658,38 @@ internal sealed class CoreViewerShell : UserControl
                 ? "1件を選択"
                 : $"{selection.Count:N0}件を選択";
         _bulkStatus.Text = string.Empty;
+
+        var hasPrimary =
+            selection.PrimaryIndex >= 0;
+        _detailToggle.IsEnabled =
+            hasPrimary;
+        _focusButton.IsEnabled =
+            hasPrimary;
+
+        if (!hasPrimary)
+        {
+            _contextDetail.ShowNoSelection();
+            if (_focusedSurface.IsVisible)
+            {
+                CloseFocusedView();
+            }
+
+            return;
+        }
+
+        if (_contextSurface.IsVisible)
+        {
+            try
+            {
+                await LoadContextDetailAsync(
+                    selection.PrimaryIndex);
+            }
+            catch (Exception exception)
+            {
+                _bulkStatus.Text =
+                    $"詳細を更新できませんでした: {exception.Message}";
+            }
+        }
     }
 
     private async Task<IReadOnlyList<ViewerAsset>>
@@ -630,6 +943,17 @@ internal sealed class CoreViewerShell : UserControl
         object? sender,
         KeyEventArgs e)
     {
+        if (_focusedSurface.IsVisible)
+        {
+            if (e.Key == Key.Escape)
+            {
+                CloseFocusedView();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
         var focused =
             TopLevel.GetTopLevel(this)
                 ?.FocusManager
@@ -727,7 +1051,9 @@ internal sealed class CoreViewerShell : UserControl
 
         _detached = true;
         _grid.SelectionChanged -= OnSelectionChanged;
+        _grid.AssetInvoked -= OnAssetInvoked;
         KeyDown -= OnShellKeyDown;
+        _contextDetail.PrepareForDetach();
         _detail.UnbindGrid();
         _detail.PrepareForDetach();
         _grid.PrepareForDetach();
