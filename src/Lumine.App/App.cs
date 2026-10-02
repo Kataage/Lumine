@@ -60,7 +60,7 @@ public sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static Avalonia.Controls.Window
+    internal static Avalonia.Controls.Window
         CreateStartupFailureWindow(
             string message)
     {
