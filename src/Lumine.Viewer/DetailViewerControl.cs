@@ -20,6 +20,9 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _next;
     private readonly Button _fit;
     private readonly Button _actual;
+    private readonly Button _zoomOut;
+    private readonly Button _zoomIn;
+    private readonly TextBlock _zoomText;
     private double _zoom = 1;
     private bool _fitMode = true;
     private bool _dragging;
@@ -46,24 +49,52 @@ public sealed class DetailViewerControl : UserControl
         _observedSelectionVersion = _session.Snapshot.SelectionVersion;
         Focusable = true;
 
-        _previous = new Button { Content = "◀" };
-        _next = new Button { Content = "▶" };
-        _fit = new Button { Content = "Fit" };
-        _actual = new Button { Content = "1:1" };
+        _previous = CreateViewerButton("‹", "前の画像");
+        _next = CreateViewerButton("›", "次の画像");
+        _zoomOut = CreateViewerButton("−", "縮小");
+        _zoomIn = CreateViewerButton("+", "拡大");
+        _fit = CreateViewerButton("全体", "全体を表示");
+        _actual = CreateViewerButton("1:1", "100%表示");
+
+        _zoomText = new TextBlock
+        {
+            Text = "100%",
+            MinWidth = 52,
+            Foreground = Brushes.White,
+            FontSize = 11,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         var toolbar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8
+            Spacing = 4,
+            Margin = new Thickness(8, 6),
+            HorizontalAlignment = HorizontalAlignment.Center
         };
         toolbar.Children.Add(_previous);
         toolbar.Children.Add(_next);
+        toolbar.Children.Add(
+            new Border
+            {
+                Width = 1,
+                Height = 22,
+                Margin = new Thickness(5, 0),
+                Background = new SolidColorBrush(Color.Parse("#3F3F46"))
+            });
+        toolbar.Children.Add(_zoomOut);
+        toolbar.Children.Add(_zoomText);
+        toolbar.Children.Add(_zoomIn);
         toolbar.Children.Add(_fit);
         toolbar.Children.Add(_actual);
 
         _status = new TextBlock
         {
-            VerticalAlignment = VerticalAlignment.Center
+            Foreground = Brushes.LightGray,
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0)
         };
         toolbar.Children.Add(_status);
 
@@ -92,13 +123,17 @@ public sealed class DetailViewerControl : UserControl
 
         _metadata = new TextBlock
         {
-            TextWrapping = TextWrapping.Wrap
+            Foreground = Brushes.LightGray,
+            FontSize = 10,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(10, 4, 10, 8)
         };
 
         var layout = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            RowSpacing = 8
+            Background = Brushes.Black,
+            RowDefinitions = new RowDefinitions("Auto,*,Auto")
         };
         layout.Children.Add(toolbar);
         Grid.SetRow(_scroll, 1);
@@ -110,6 +145,14 @@ public sealed class DetailViewerControl : UserControl
 
         _previous.Click += async (_, _) => await MoveAsync(-1);
         _next.Click += async (_, _) => await MoveAsync(1);
+        _zoomOut.Click +=
+            async (_, _) =>
+                await ZoomByAsync(
+                    1 / _session.Options.ZoomStep);
+        _zoomIn.Click +=
+            async (_, _) =>
+                await ZoomByAsync(
+                    _session.Options.ZoomStep);
         _fit.Click += (_, _) => Fit();
         _actual.Click += async (_, _) => await ActualSizeAsync();
 
@@ -132,6 +175,31 @@ public sealed class DetailViewerControl : UserControl
         DetachedFromVisualTree += OnDetachedFromVisualTree;
 
         ApplySnapshot(_session.Snapshot);
+    }
+
+    private static Button CreateViewerButton(
+        object content,
+        string tooltip)
+    {
+        var button =
+            new Button
+            {
+                Content = content,
+                MinWidth = 36,
+                MinHeight = 32,
+                Padding = new Thickness(9, 5),
+                CornerRadius = new CornerRadius(7),
+                Background =
+                    new SolidColorBrush(
+                        Color.Parse("#18181B")),
+                Foreground = Brushes.White,
+                BorderBrush =
+                    new SolidColorBrush(
+                        Color.Parse("#3F3F46")),
+                BorderThickness = new Thickness(1)
+            };
+        ToolTip.SetTip(button, tooltip);
+        return button;
     }
 
     public double Zoom => _zoom;
@@ -483,6 +551,8 @@ public sealed class DetailViewerControl : UserControl
         _displayedZoomBasis = sourceSize;
         _image.Width = displaySize.Width;
         _image.Height = displaySize.Height;
+        _zoomText.Text =
+            $"{Math.Round(zoom * 100):N0}%";
     }
 
     internal static Size CalculateDisplaySize(
@@ -949,13 +1019,12 @@ public sealed class DetailViewerControl : UserControl
                 "プレビューを読み込んでいます…",
             ViewerDetailLoadState.PreviewReady =>
                 snapshot.ErrorMessage is null
-                    ? "プレビュー"
-                    : "プレビューを一部の情報なしで表示しています"
-                      + $" · {snapshot.ErrorMessage}",
+                    ? string.Empty
+                    : snapshot.ErrorMessage,
             ViewerDetailLoadState.LoadingOriginal =>
-                "元画像を読み込んでいます…",
+                "読み込み中…",
             ViewerDetailLoadState.OriginalReady =>
-                "元画像",
+                string.Empty,
             ViewerDetailLoadState.Error =>
                 string.IsNullOrWhiteSpace(
                     snapshot.ErrorMessage)
@@ -1058,7 +1127,7 @@ public sealed class DetailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
-        if ((e.KeyModifiers & KeyModifiers.Control) == 0)
+        if (e.Delta.Y == 0)
         {
             return;
         }
@@ -1074,6 +1143,26 @@ public sealed class DetailViewerControl : UserControl
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_scroll).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if (e.ClickCount >= 2)
+        {
+            e.Handled = true;
+            if (_fitMode)
+            {
+                _ = ActualSizeAsync();
+            }
+            else
+            {
+                Fit();
+            }
+
+            return;
+        }
+
+        if (_fitMode || _zoom <= 1)
         {
             return;
         }
@@ -1124,13 +1213,13 @@ public sealed class DetailViewerControl : UserControl
                 await MoveAsync(1);
                 e.Handled = true;
                 break;
-            case Key.D0 when (e.KeyModifiers & KeyModifiers.Control) != 0:
-            case Key.NumPad0 when (e.KeyModifiers & KeyModifiers.Control) != 0:
+            case Key.D0:
+            case Key.NumPad0:
                 Fit();
                 e.Handled = true;
                 break;
-            case Key.D1 when (e.KeyModifiers & KeyModifiers.Control) != 0:
-            case Key.NumPad1 when (e.KeyModifiers & KeyModifiers.Control) != 0:
+            case Key.D1:
+            case Key.NumPad1:
                 await ActualSizeAsync();
                 e.Handled = true;
                 break;
