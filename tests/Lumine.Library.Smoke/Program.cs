@@ -696,6 +696,26 @@ try
         && patchedTechnical.Tags.Contains("bulk-tag"),
         "Bulk patch overwrote unspecified metadata on the existing tagged asset.");
 
+    var metadataSummary =
+        await repository.GetUserMetadataSelectionSummaryAsync(
+            library.Id,
+            [first.Id, technical.Id]);
+
+    Require(
+        metadataSummary.SelectionCount == 2
+        && !metadataSummary.RatingMixed
+        && metadataSummary.Rating == 5
+        && !metadataSummary.FavoriteMixed
+        && metadataSummary.Favorite
+        && !metadataSummary.StatusLabelMixed
+        && metadataSummary.StatusLabel == "candidate"
+        && metadataSummary.ColorLabelMixed
+        && metadataSummary.ColorLabel is null
+        && metadataSummary.NotesMixed
+        && metadataSummary.TagsMixed
+        && metadataSummary.CommonTags.SequenceEqual(["bulk-tag"]),
+        "Mixed metadata selection summary did not preserve exact common/mixed semantics.");
+
 
     Require(await repository.RemoveAssetAsync(library.Id, "a.jpg"), "Asset removal failed.");
     await repository.UpsertAssetsAsync(
@@ -795,6 +815,22 @@ try
     Require(
         await reopenedRepository.CountAssetsAsync(library.Id) == expectedCount,
         "Reopened database did not expose the existing asset index.");
+
+    var reopenedMetadata =
+        await reopenedRepository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "User metadata disappeared after database reopen.");
+    Require(
+        reopenedMetadata.Rating == 5
+        && reopenedMetadata.Favorite
+        && reopenedMetadata.StatusLabel == "candidate"
+        && reopenedMetadata.ColorLabel == "blue"
+        && reopenedMetadata.Notes.Contains("猫耳", StringComparison.Ordinal)
+        && reopenedMetadata.Tags.Contains("推し")
+        && reopenedMetadata.Tags.Contains("bulk-tag"),
+        "User-owned metadata did not survive database reopen.");
 
     var legacyPath = Path.Combine(tempRoot, "legacy-v1.db");
     await CreateLegacyV1DatabaseAsync(legacyPath);

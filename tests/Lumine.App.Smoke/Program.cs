@@ -954,8 +954,16 @@ try
     await headless.Dispatch(
         async () =>
         {
+            var metadataRefreshCount = 0;
             var shell =
-                new CoreViewerShell(shellRuntime);
+                new CoreViewerShell(
+                    shellRuntime,
+                    afterBulkMutation:
+                        () =>
+                        {
+                            metadataRefreshCount++;
+                            return Task.CompletedTask;
+                        });
             var window =
                 new Avalonia.Controls.Window
                 {
@@ -1015,6 +1023,53 @@ try
                 && shell.ContextDetail.NotesText
                     == "context-detail-note",
                 "Contextual detail panel did not expose user-owned metadata.");
+
+            shell.ContextDetail.SetEditorValuesForSmoke(
+                rating: 3,
+                favorite: false,
+                statusLabel: "reviewed",
+                colorLabel: "green",
+                tags: "context-tag, edited-tag",
+                notes: "metadata-editor-search-token");
+            Require(
+                shell.ContextDetail.IsDirty,
+                "Contextual metadata editor did not expose its unsaved state.");
+
+            var savedContextMetadata =
+                await shell.ContextDetail.SaveEditorAsync();
+            Require(
+                savedContextMetadata is not null
+                && savedContextMetadata.Rating == 3
+                && !savedContextMetadata.Favorite
+                && savedContextMetadata.StatusLabel == "reviewed"
+                && savedContextMetadata.ColorLabel == "green"
+                && savedContextMetadata.Tags.Contains("context-tag")
+                && savedContextMetadata.Tags.Contains("edited-tag")
+                && savedContextMetadata.Notes
+                    == "metadata-editor-search-token",
+                "Contextual metadata editor did not persist the complete user metadata record.");
+            Require(
+                metadataRefreshCount == 1
+                && !shell.ContextDetail.IsDirty,
+                "Contextual metadata save did not notify the browse/navigation refresh path exactly once.");
+
+            var editedQueryPage =
+                await shellRuntime.LibraryService.GetAssetPageAsync(
+                    shellRuntime.Library.Id,
+                    new AssetQuery(
+                        SearchText: "metadata-editor-search-token",
+                        RequiredTags: ["edited-tag"],
+                        MinRating: 3,
+                        MaxRating: 3,
+                        Favorite: false,
+                        StatusLabel: "reviewed",
+                        ColorLabel: "green"),
+                    limit: 10);
+            Require(
+                editedQueryPage.Items.Count == 1
+                && editedQueryPage.Items[0].Id
+                    == firstContextAsset.Id,
+                "Metadata editor save was not immediately visible to composed search/filter queries.");
 
             shell.HideContextDetail();
             Require(

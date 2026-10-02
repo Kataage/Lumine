@@ -17,12 +17,14 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Action<string>? _entryRequested;
     private readonly Border _selectionBar;
     private readonly TextBlock _selectionCount;
+    private readonly TextBlock _selectionMetadataSummary;
     private readonly TextBlock _bulkStatus;
     private readonly ContextualAssetDetailPanel _contextDetail;
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
     private readonly Button _detailToggle;
     private readonly Button _focusButton;
+    private CancellationTokenSource? _selectionSummaryCancellation;
     private bool _detached;
 
     public CoreViewerShell(
@@ -60,7 +62,8 @@ internal sealed class CoreViewerShell : UserControl
                     HideContextDetail();
                     return Task.CompletedTask;
                 },
-                OpenFocusedViewAsync);
+                OpenFocusedViewAsync,
+                _afterBulkMutation);
         _contextSurface =
             new Border
             {
@@ -171,6 +174,14 @@ internal sealed class CoreViewerShell : UserControl
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center
+            };
+        _selectionMetadataSummary =
+            new TextBlock
+            {
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = 9.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
             };
         _bulkStatus =
             new TextBlock
@@ -582,10 +593,20 @@ internal sealed class CoreViewerShell : UserControl
                 Margin = new Thickness(10, 7)
             };
         top.Children.Add(_selectionCount);
-        Grid.SetColumn(_bulkStatus, 1);
-        _bulkStatus.Margin =
-            new Thickness(12, 0);
-        top.Children.Add(_bulkStatus);
+
+        var middle =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                Margin = new Thickness(12, 0)
+            };
+        middle.Children.Add(
+            _selectionMetadataSummary);
+        middle.Children.Add(
+            _bulkStatus);
+        Grid.SetColumn(middle, 1);
+        top.Children.Add(middle);
 
         var hint =
             new TextBlock
@@ -658,6 +679,35 @@ internal sealed class CoreViewerShell : UserControl
                 ? "1件を選択"
                 : $"{selection.Count:N0}件を選択";
         _bulkStatus.Text = string.Empty;
+        _selectionMetadataSummary.Text =
+            selection.Count > 0
+                ? "整理情報を確認中…"
+                : string.Empty;
+
+        _selectionSummaryCancellation?.Cancel();
+        _selectionSummaryCancellation?.Dispose();
+        _selectionSummaryCancellation =
+            selection.Count > 0
+                ? new CancellationTokenSource()
+                : null;
+
+        if (selection.Count > 0)
+        {
+            try
+            {
+                await RefreshSelectionMetadataSummaryAsync(
+                    selection,
+                    _selectionSummaryCancellation!.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                _selectionMetadataSummary.Text =
+                    $"整理情報を取得できません: {exception.Message}";
+            }
+        }
 
         var hasPrimary =
             selection.PrimaryIndex >= 0;
@@ -690,6 +740,82 @@ internal sealed class CoreViewerShell : UserControl
                     $"詳細を更新できませんでした: {exception.Message}";
             }
         }
+    }
+
+    private async Task RefreshSelectionMetadataSummaryAsync(
+        ViewerSelectionSnapshot selection,
+        CancellationToken cancellationToken)
+    {
+        if (selection.Count <= 0)
+        {
+            _selectionMetadataSummary.Text =
+                string.Empty;
+            return;
+        }
+
+        var assets =
+            await ResolveSelectedAssetsAsync(
+                cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var summary =
+            await _runtime.LibraryService
+                .GetUserMetadataSelectionSummaryAsync(
+                    _runtime.Library.Id,
+                    assets.Select(
+                            static asset => asset.Id)
+                        .ToArray(),
+                    cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _selectionMetadataSummary.Text =
+            FormatSelectionMetadataSummary(
+                summary);
+    }
+
+    private static string FormatSelectionMetadataSummary(
+        AssetUserMetadataSelectionSummary summary)
+    {
+        static string MixedOr(
+            bool mixed,
+            string value) =>
+            mixed
+                ? "mixed"
+                : value;
+
+        var rating =
+            MixedOr(
+                summary.RatingMixed,
+                summary.Rating is { } ratingValue
+                    ? $"★{ratingValue}"
+                    : "評価なし");
+        var favorite =
+            MixedOr(
+                summary.FavoriteMixed,
+                summary.Favorite
+                    ? "お気に入り"
+                    : "お気に入りなし");
+        var status =
+            MixedOr(
+                summary.StatusLabelMixed,
+                summary.StatusLabel
+                ?? "状態なし");
+        var color =
+            MixedOr(
+                summary.ColorLabelMixed,
+                summary.ColorLabel
+                ?? "カラーなし");
+        var tags =
+            summary.TagsMixed
+                ? summary.CommonTags.Count > 0
+                    ? $"タグ mixed / 共通 {string.Join(", ", summary.CommonTags)}"
+                    : "タグ mixed"
+                : summary.CommonTags.Count > 0
+                    ? $"タグ {string.Join(", ", summary.CommonTags)}"
+                    : "タグなし";
+
+        return
+            $"{rating} · {favorite} · {status} · {color} · {tags}";
     }
 
     private async Task<IReadOnlyList<ViewerAsset>>
@@ -1052,6 +1178,9 @@ internal sealed class CoreViewerShell : UserControl
         _detached = true;
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
+        _selectionSummaryCancellation?.Cancel();
+        _selectionSummaryCancellation?.Dispose();
+        _selectionSummaryCancellation = null;
         KeyDown -= OnShellKeyDown;
         _contextDetail.PrepareForDetach();
         _detail.UnbindGrid();
