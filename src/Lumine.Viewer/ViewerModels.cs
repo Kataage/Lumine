@@ -124,6 +124,13 @@ public interface IViewerAssetProvider
         CancellationToken cancellationToken = default);
 }
 
+public interface IViewerSelectionIdProvider
+{
+    ValueTask<IReadOnlyList<long>> GetAssetIdsAsync(
+        IReadOnlyList<long> indices,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IViewerThumbnailProvider
 {
     ValueTask<ViewerThumbnail> RequestAsync(
