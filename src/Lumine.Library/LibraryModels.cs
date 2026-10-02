@@ -73,6 +73,18 @@ public sealed record AssetUserMetadataUpdate(
     string? ColorLabel = null,
     IReadOnlyList<string>? Tags = null);
 
+public sealed record AssetUserMetadataPatch(
+    bool SetRating = false,
+    int? Rating = null,
+    bool SetFavorite = false,
+    bool Favorite = false,
+    bool SetStatusLabel = false,
+    string? StatusLabel = null,
+    bool SetColorLabel = false,
+    string? ColorLabel = null,
+    IReadOnlyList<string>? AddTags = null,
+    bool ClearTags = false);
+
 public enum AssetSortOrder
 {
     ModifiedNewest = 0,
