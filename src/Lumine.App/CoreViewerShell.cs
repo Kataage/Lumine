@@ -208,19 +208,13 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _grid
             };
 
-        var browseActions =
+        var browseActionContent =
             new Grid
             {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(0, 0, 0, 1),
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto"),
-                Padding =
-                    new Thickness(10, 6)
+                    new ColumnDefinitions("*,Auto,Auto")
             };
-        browseActions.Children.Add(
+        browseActionContent.Children.Add(
             new TextBlock
             {
                 Text =
@@ -234,13 +228,25 @@ internal sealed class CoreViewerShell : UserControl
         Grid.SetColumn(_detailToggle, 1);
         _detailToggle.Margin =
             new Thickness(4, 0);
-        browseActions.Children.Add(
+        browseActionContent.Children.Add(
             _detailToggle);
         Grid.SetColumn(_focusButton, 2);
         _focusButton.Margin =
             new Thickness(4, 0);
-        browseActions.Children.Add(
+        browseActionContent.Children.Add(
             _focusButton);
+
+        var browseActions =
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(0, 0, 0, 1),
+                Padding =
+                    new Thickness(10, 6),
+                Child = browseActionContent
+            };
 
         var browseViewer =
             new Grid
