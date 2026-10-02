@@ -1763,6 +1763,27 @@ try
                         && window.CurrentShell.GridViewerBounds.Width >= 500,
                         "Minimum-width workspace did not preserve an image-dominant canvas with overlay inspector.");
 
+                    foreach (var scaling in
+                             new[]
+                             {
+                                 1.25,
+                                 1.5,
+                                 2.0
+                             })
+                    {
+                        window.SetRenderScaling(scaling);
+                        Dispatcher.UIThread.RunJobs();
+
+                        Require(
+                            Math.Abs(
+                                window.RenderScaling
+                                - scaling) < 0.001
+                            && window.IsCompactNavigationLayout
+                            && window.CurrentShell.IsCompactInspectorLayout
+                            && window.CurrentShell.GridViewerBounds.Width >= 500,
+                            $"MainWindow responsive layout regressed at {scaling:P0} render scaling.");
+                    }
+
                     await window.CurrentShell
                         .OpenFocusedViewAsync(0);
                     Dispatcher.UIThread.RunJobs();
@@ -1784,6 +1805,8 @@ try
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
                     window.CurrentShell.CloseFocusedView();
+                    Dispatcher.UIThread.RunJobs();
+                    window.SetRenderScaling(1.0);
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.IsLightboxVisible
