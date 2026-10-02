@@ -23,7 +23,7 @@ internal static class LumineDesign
     public static readonly Color BorderColor =
         Color.Parse("#29292F");
     public static readonly Color BorderStrongColor =
-        Color.Parse("#3F3F46");
+        Color.Parse("#71717A");
     public static readonly Color ForegroundColor =
         Color.Parse("#FAFAFA");
     public static readonly Color MutedForegroundColor =
