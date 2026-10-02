@@ -29,7 +29,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         if (options.CacheMaintenanceQuietPeriod < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(options.CacheMaintenanceQuietPeriod),
+                nameof(options),
+                options.CacheMaintenanceQuietPeriod,
                 "Cache maintenance quiet period cannot be negative.");
         }
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
