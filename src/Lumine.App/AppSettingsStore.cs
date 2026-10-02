@@ -17,6 +17,114 @@ internal sealed record AppSettingsDocument
 
     public string ThumbnailStorageMode { get; init; } =
         nameof(Lumine.Image.ThumbnailStorageMode.MemoryOnly);
+
+    public string BrowseViewMode { get; init; } =
+        nameof(BrowseViewMode.Grid);
+
+    public int BrowseDensity { get; init; } = 1;
+
+    public string BrowseSortOrder { get; init; } =
+        nameof(Lumine.Library.AssetSortOrder.ModifiedNewest);
+}
+
+internal enum BrowseViewMode
+{
+    Grid = 0,
+    List = 1
+}
+
+internal sealed record BrowsePreferences(
+    BrowseViewMode ViewMode,
+    int Density,
+    Lumine.Library.AssetSortOrder SortOrder);
+
+internal static class BrowsePreferenceResolver
+{
+    public static BrowsePreferences Resolve(
+        AppSettingsDocument settings,
+        out string? warning)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        var messages = new List<string>();
+
+        if (!Enum.TryParse<BrowseViewMode>(
+                settings.BrowseViewMode,
+                ignoreCase: true,
+                out var viewMode)
+            || !Enum.IsDefined(viewMode))
+        {
+            viewMode = BrowseViewMode.Grid;
+            messages.Add(
+                $"Unsupported browse view mode '{settings.BrowseViewMode}'; Grid was used.");
+        }
+
+        var density = settings.BrowseDensity;
+        if (density is < 0 or > 2)
+        {
+            density = 1;
+            messages.Add(
+                $"Unsupported browse density '{settings.BrowseDensity}'; Standard was used.");
+        }
+
+        if (!Enum.TryParse<Lumine.Library.AssetSortOrder>(
+                settings.BrowseSortOrder,
+                ignoreCase: true,
+                out var sortOrder)
+            || !Enum.IsDefined(sortOrder))
+        {
+            sortOrder =
+                Lumine.Library.AssetSortOrder.ModifiedNewest;
+            messages.Add(
+                $"Unsupported browse sort order '{settings.BrowseSortOrder}'; ModifiedNewest was used.");
+        }
+
+        warning =
+            messages.Count == 0
+                ? null
+                : string.Join(" ", messages);
+
+        return new BrowsePreferences(
+            viewMode,
+            density,
+            sortOrder);
+    }
+
+    public static AppSettingsDocument Apply(
+        AppSettingsDocument settings,
+        BrowsePreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(preferences);
+
+        if (!Enum.IsDefined(preferences.ViewMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(preferences));
+        }
+
+        if (preferences.Density is < 0 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(preferences));
+        }
+
+        if (!Enum.IsDefined(preferences.SortOrder))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(preferences));
+        }
+
+        return settings with
+        {
+            BrowseViewMode =
+                preferences.ViewMode.ToString(),
+            BrowseDensity =
+                preferences.Density,
+            BrowseSortOrder =
+                preferences.SortOrder.ToString()
+        };
+    }
 }
 
 internal static class ThumbnailStoragePreference
@@ -193,17 +301,25 @@ internal sealed class AppSettingsStore
                 settings,
                 out _);
 
-        var normalized = settings with
-        {
-            SchemaVersion =
-                AppSettingsDocument.CurrentSchemaVersion,
-            ResourcePolicy =
-                settings.ResourcePolicy
-                ?? new ResourcePolicySettings(),
-            ThumbnailStorageMode =
-                ThumbnailStoragePreference.Serialize(
-                    persistedThumbnailStorageMode)
-        };
+        var browse =
+            BrowsePreferenceResolver.Resolve(
+                settings,
+                out _);
+
+        var normalized =
+            BrowsePreferenceResolver.Apply(
+                settings with
+                {
+                    SchemaVersion =
+                        AppSettingsDocument.CurrentSchemaVersion,
+                    ResourcePolicy =
+                        settings.ResourcePolicy
+                        ?? new ResourcePolicySettings(),
+                    ThumbnailStorageMode =
+                        ThumbnailStoragePreference.Serialize(
+                            persistedThumbnailStorageMode)
+                },
+                browse);
 
         var directory = Path.GetDirectoryName(_path);
         if (!string.IsNullOrWhiteSpace(directory))
