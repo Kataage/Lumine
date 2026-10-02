@@ -389,6 +389,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             return;
         }
 
+        await _queryGate.WaitAsync()
+            .ConfigureAwait(false);
+
         Exception? failure = null;
 
         try
@@ -467,6 +470,10 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         {
             _disposeCompletion.TrySetException(exception);
             throw;
+        }
+        finally
+        {
+            _queryGate.Release();
         }
     }
 
