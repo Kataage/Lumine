@@ -763,6 +763,16 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        if (_selectedIndex >= 0
+            && e.Key is Key.Enter or Key.Space)
+        {
+            AssetInvoked?.Invoke(
+                this,
+                _selectedIndex);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.A
             && e.KeyModifiers.HasFlag(
                 KeyModifiers.Control))
@@ -1025,6 +1035,9 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             PointerPressed += OnPointerPressed;
+            ToolTip.SetTip(
+                this,
+                "ダブルクリックで表示");
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
         }
