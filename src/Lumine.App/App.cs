@@ -29,24 +29,75 @@ public sealed class App : Application
         if (ApplicationLifetime
             is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var window =
-                new MainWindow();
-            desktop.MainWindow =
-                window;
-
-            if (Program.Acceptance is { } acceptance)
+            if (!string.IsNullOrWhiteSpace(
+                    Program.StartupFailureMessage))
             {
-                desktop.ShutdownMode =
-                    Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+                desktop.MainWindow =
+                    CreateStartupFailureWindow(
+                        Program.StartupFailureMessage);
+            }
+            else
+            {
+                var window =
+                    new MainWindow();
+                desktop.MainWindow =
+                    window;
 
-                window.Opened +=
-                    (_, _) =>
-                        acceptance.Start(
-                            window,
-                            desktop);
+                if (Program.Acceptance is { } acceptance)
+                {
+                    desktop.ShutdownMode =
+                        Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+
+                    window.Opened +=
+                        (_, _) =>
+                            acceptance.Start(
+                                window,
+                                desktop);
+                }
             }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static Avalonia.Controls.Window
+        CreateStartupFailureWindow(
+            string message)
+    {
+        var close =
+            LumineDesign.ConfigurePrimaryButton(
+                new Avalonia.Controls.Button
+                {
+                    Content = "閉じる"
+                });
+
+        var window =
+            new Avalonia.Controls.Window
+            {
+                Title = "Lumine - 起動エラー",
+                Icon = LumineDesign.CreateWindowIcon(),
+                Width = 560,
+                Height = 330,
+                MinWidth = 460,
+                MinHeight = 260,
+                CanResize = true,
+                Background = LumineDesign.Background,
+                Foreground = LumineDesign.Foreground,
+                FontFamily = LumineDesign.UiFont,
+                WindowStartupLocation =
+                    Avalonia.Controls.WindowStartupLocation.CenterScreen
+            };
+
+        close.Click +=
+            (_, _) => window.Close();
+
+        window.Content =
+            LumineDesign.CreateProductState(
+                "Lumineを起動できませんでした",
+                message,
+                close,
+                showBrand: true);
+
+        return window;
     }
 }
