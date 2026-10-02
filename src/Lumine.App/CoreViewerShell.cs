@@ -1610,6 +1610,13 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        if (e.Key == Key.I)
+        {
+            e.Handled = true;
+            await ShowContextDetailAsync();
+            return;
+        }
+
         if (e.Key == Key.F)
         {
             e.Handled = true;
