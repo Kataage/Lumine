@@ -40,7 +40,7 @@ public sealed partial class LibraryRepository
         insert.Parameters.AddWithValue("$description", create.Description ?? string.Empty);
         insert.Parameters.AddWithValue(
             "$cover_asset_id",
-            assetIds.Length > 0 ? assetIds[0] : DBNull.Value);
+            assetIds.Count > 0 ? assetIds[0] : DBNull.Value);
         insert.Parameters.AddWithValue("$created", now);
         insert.Parameters.AddWithValue("$updated", now);
         var workId = Convert.ToInt64(
@@ -211,7 +211,7 @@ public sealed partial class LibraryRepository
         ArgumentNullException.ThrowIfNull(create);
         var destination = RequireText(create.Destination, nameof(create.Destination), 128);
         var assetIds = ValidateOrderedAssetIds(create.AssetIds, nameof(create.AssetIds));
-        if (assetIds.Length == 0)
+        if (assetIds.Count == 0)
         {
             throw new ArgumentException("Publication requires at least one ordered asset.", nameof(create));
         }
@@ -935,7 +935,7 @@ public sealed partial class LibraryRepository
         long[] assetIds,
         CancellationToken cancellationToken)
     {
-        if (assetIds.Length > 10_000)
+        if (assetIds.Count > 10_000)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(assetIds),
@@ -1015,7 +1015,7 @@ public sealed partial class LibraryRepository
         bool includePrimary,
         CancellationToken cancellationToken)
     {
-        if (assetIds.Length == 0)
+        if (assetIds.Count == 0)
         {
             return;
         }
@@ -1048,7 +1048,7 @@ public sealed partial class LibraryRepository
         }
 
         command.Prepare();
-        for (var index = 0; index < assetIds.Length; index++)
+        for (var index = 0; index < assetIds.Count; index++)
         {
             assetParameter.Value = assetIds[index];
             orderParameter.Value = index;
@@ -1066,7 +1066,7 @@ public sealed partial class LibraryRepository
         string parameterName)
     {
         ArgumentNullException.ThrowIfNull(assetIds);
-        if (assetIds.Length > 10_000)
+        if (assetIds.Count > 10_000)
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
@@ -1074,8 +1074,8 @@ public sealed partial class LibraryRepository
         }
 
         var seen = new HashSet<long>();
-        var result = new long[assetIds.Length];
-        for (var index = 0; index < assetIds.Length; index++)
+        var result = new long[assetIds.Count];
+        for (var index = 0; index < assetIds.Count; index++)
         {
             var id = assetIds[index];
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(id, parameterName);
