@@ -60,6 +60,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _summary;
     private readonly TextBlock _path;
     private readonly TextBlock _technical;
+    private readonly TextBlock _works;
+    private readonly TextBlock _groups;
+    private readonly TextBlock _relations;
+    private readonly TextBlock _publications;
     private readonly ComboBox _ratingEditor;
     private readonly CheckBox _favoriteEditor;
     private readonly ComboBox _statusEditor;
@@ -99,6 +103,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _summary = CreateValue();
         _path = CreateValue(wrap: true);
         _technical = CreateValue(wrap: true);
+        _works = CreateValue(wrap: true);
+        _groups = CreateValue(wrap: true);
+        _relations = CreateValue(wrap: true);
+        _publications = CreateValue(wrap: true);
 
         _ratingEditor = new ComboBox
         {
@@ -236,6 +244,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         AddSection(body, "場所", _path);
         AddSection(body, "技術情報", _technical);
+
+        var creative =
+            new StackPanel
+            {
+                Spacing = 8
+            };
+        AddSection(creative, "Work", _works);
+        AddSection(creative, "Generation Group", _groups);
+        AddSection(creative, "Lineage", _relations);
+        AddSection(creative, "Publication", _publications);
+        AddSection(body, "制作コンテキスト", creative);
 
         var editor =
             new Grid
@@ -434,6 +453,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             PopulateEditor(metadata);
             SetEditorEnabled(true);
             _saveStatus.Text = "保存済み";
+
+            await LoadCreativeContextAsync(
+                asset.Id,
+                token);
         }
         catch (OperationCanceledException)
             when (token.IsCancellationRequested)
@@ -578,6 +601,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "選択した画像の情報をここに表示します。";
         _path.Text = "—";
         _technical.Text = "—";
+        _works.Text = "—";
+        _groups.Text = "—";
+        _relations.Text = "—";
+        _publications.Text = "—";
         _saveStatus.Text = "—";
         _focused.IsEnabled = false;
 
@@ -605,6 +632,112 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _loadCancellation?.Dispose();
         _loadCancellation = null;
         KeyDown -= OnKeyDown;
+    }
+
+    private async Task LoadCreativeContextAsync(
+        long assetId,
+        CancellationToken cancellationToken)
+    {
+        _works.Text = "読み込み中…";
+        _groups.Text = "読み込み中…";
+        _relations.Text = "読み込み中…";
+        _publications.Text = "読み込み中…";
+
+        try
+        {
+            var context =
+                await _runtime.LibraryService
+                    .GetAssetCreativeContextAsync(
+                        _runtime.Library.Id,
+                        assetId,
+                        cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_assetId != assetId)
+            {
+                return;
+            }
+
+            _works.Text =
+                context.Works.Count == 0
+                    ? "なし"
+                    : string.Join(
+                        "\n",
+                        context.Works.Select(
+                            static work =>
+                                $"{work.Title} · {work.Assets.Count:N0}枚"
+                                + (string.IsNullOrWhiteSpace(work.Description)
+                                    ? string.Empty
+                                    : $"\n  {work.Description}")));
+
+            _groups.Text =
+                context.GenerationGroups.Count == 0
+                    ? "なし"
+                    : string.Join(
+                        "\n\n",
+                        context.GenerationGroups.Select(
+                            static group =>
+                                $"{group.Name} · {group.Assets.Count:N0}枚"
+                                + (string.IsNullOrWhiteSpace(group.ModelName)
+                                    ? string.Empty
+                                    : $" · {group.ModelName}")
+                                + (group.Steps > 0
+                                    ? $" · {group.Steps} steps / CFG {group.CfgScale:0.##}"
+                                    : string.Empty)
+                                + (string.IsNullOrWhiteSpace(group.Prompt)
+                                    ? string.Empty
+                                    : $"\n  Prompt: {group.Prompt}")));
+
+            _relations.Text =
+                context.Relations.Count == 0
+                    ? "なし"
+                    : string.Join(
+                        "\n",
+                        context.Relations.Select(
+                            static relation =>
+                                $"{relation.Parent.FileName} → {relation.Child.FileName}"
+                                + $" · {relation.RelationType}"
+                                + (string.IsNullOrWhiteSpace(relation.Note)
+                                    ? string.Empty
+                                    : $" · {relation.Note}")));
+
+            _publications.Text =
+                context.Publications.Count == 0
+                    ? "なし"
+                    : string.Join(
+                        "\n\n",
+                        context.Publications.Select(
+                            static publication =>
+                                $"{publication.PublishedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}"
+                                + $" · {publication.Destination}"
+                                + (string.IsNullOrWhiteSpace(publication.Account)
+                                    ? string.Empty
+                                    : $" · {publication.Account}")
+                                + (string.IsNullOrWhiteSpace(publication.Title)
+                                    ? string.Empty
+                                    : $"\n  {publication.Title}")
+                                + (string.IsNullOrWhiteSpace(publication.TagsSnapshot)
+                                    ? string.Empty
+                                    : $"\n  {publication.TagsSnapshot}")
+                                + $"\n  {string.Join(", ", publication.Assets.Select(static asset => asset.FileName))}"));
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (_assetId != assetId)
+            {
+                return;
+            }
+
+            var message =
+                $"制作コンテキストを取得できませんでした: {exception.Message}";
+            _works.Text = message;
+            _groups.Text = "—";
+            _relations.Text = "—";
+            _publications.Text = "—";
+        }
     }
 
     private void PopulateEditor(
