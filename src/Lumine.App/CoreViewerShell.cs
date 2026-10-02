@@ -183,6 +183,7 @@ internal sealed class CoreViewerShell : UserControl
         _detail.FullScreenToggleRequested +=
             OnFullScreenToggleRequested;
         _grid.AssetDetailRequested += OnAssetDetailRequested;
+        _grid.AssetContextRequested += OnAssetContextRequested;
         KeyDown += OnShellKeyDown;
         Focusable = true;
 
@@ -423,6 +424,154 @@ internal sealed class CoreViewerShell : UserControl
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void OnAssetContextRequested(
+        object? sender,
+        ThumbnailViewerControl.ViewerAssetContextRequestedEventArgs request)
+    {
+        var menu =
+            new ContextMenu
+            {
+                Placement = PlacementMode.Pointer
+            };
+
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "画像を表示",
+                () => OpenFocusedViewAsync(
+                    request.Index)));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "詳細",
+                async () =>
+                {
+                    _grid.SelectAsset(
+                        request.Index,
+                        scrollIntoView: false);
+                    await ShowContextDetailAsync();
+                }));
+        menu.Items.Add(new Separator());
+
+        var rating =
+            new MenuItem
+            {
+                Header = "評価"
+            };
+        rating.Items.Add(
+            CreateContextMenuItem(
+                "評価なし",
+                () => ApplyPatchAsync(
+                    new AssetUserMetadataPatch(
+                        SetRating: true,
+                        Rating: null))));
+        for (var value = 1; value <= 5; value++)
+        {
+            var ratingValue = value;
+            rating.Items.Add(
+                CreateContextMenuItem(
+                    new string('★', ratingValue),
+                    () => ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetRating: true,
+                            Rating: ratingValue))));
+        }
+
+        menu.Items.Add(rating);
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "お気に入りを切り替え",
+                () => ToggleFavoriteFromAssetAsync(
+                    request.Index)));
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "Workを作成",
+                ShowCreateWorkDialogAsync));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "生成グループを作成",
+                ShowCreateGenerationGroupDialogAsync));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "公開記録を作成",
+                ShowCreatePublicationDialogAsync));
+
+        if (_grid.SelectedAssetCount == 2)
+        {
+            menu.Items.Add(
+                CreateContextMenuItem(
+                    "Lineageを作成",
+                    ShowCreateRelationDialogAsync));
+        }
+
+        menu.Items.Add(new Separator());
+        var delete =
+            CreateContextMenuItem(
+                "元ファイルを削除…",
+                DeleteSelectedSourcesAsync);
+        delete.Foreground =
+            LumineDesign.Danger;
+        menu.Items.Add(delete);
+
+        menu.Open(request.Anchor);
+    }
+
+    private MenuItem CreateContextMenuItem(
+        string label,
+        Func<Task> action)
+    {
+        var item =
+            new MenuItem
+            {
+                Header = label
+            };
+        item.Click +=
+            async (_, _) =>
+            {
+                item.IsEnabled = false;
+                try
+                {
+                    await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    _bulkStatus.Foreground =
+                        LumineDesign.Danger;
+                    _bulkStatus.Text =
+                        $"操作できませんでした: {exception.Message}";
+                }
+                finally
+                {
+                    item.IsEnabled = true;
+                }
+            };
+        return item;
+    }
+
+    private async Task ToggleFavoriteFromAssetAsync(
+        long index)
+    {
+        var asset =
+            await _runtime.ViewerSession.GetAssetAsync(
+                index);
+        var metadata =
+            await _runtime.LibraryService
+                .GetUserMetadataAsync(
+                    _runtime.Library.Id,
+                    asset.Id);
+        var current =
+            metadata?.Favorite
+            ?? asset.Favorite;
+
+        await ApplyPatchAsync(
+            new AssetUserMetadataPatch(
+                SetFavorite: true,
+                Favorite: !current));
     }
 
     private async void OnAssetInvoked(
@@ -1578,6 +1727,7 @@ internal sealed class CoreViewerShell : UserControl
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
         _grid.AssetDetailRequested -= OnAssetDetailRequested;
+        _grid.AssetContextRequested -= OnAssetContextRequested;
         _detail.FullScreenToggleRequested -=
             OnFullScreenToggleRequested;
         _selectionSummaryCancellation?.Cancel();
