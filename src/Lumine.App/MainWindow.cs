@@ -150,7 +150,7 @@ public sealed class MainWindow : Window
             Text = recovered
                 ? "前回の終了を検出しました。安全な状態から復旧しています。"
                 : string.Empty,
-            FontSize = 11,
+            FontSize = LumineDesign.CaptionFontSize,
             Foreground = recovered
                 ? LumineDesign.Warning
                 : LumineDesign.MutedForeground,
@@ -260,7 +260,7 @@ public sealed class MainWindow : Window
             {
                 Text = _navigationDestination,
                 Foreground = LumineDesign.Foreground,
-                FontSize = 13,
+                FontSize = LumineDesign.BodyFontSize,
                 FontWeight = FontWeight.Bold,
                 VerticalAlignment =
                     VerticalAlignment.Center
@@ -315,7 +315,9 @@ public sealed class MainWindow : Window
         _navigationPane =
             new Border
             {
-                Width = 260,
+                Width = 280,
+                MinWidth = 250,
+                MaxWidth = 320,
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
@@ -340,6 +342,47 @@ public sealed class MainWindow : Window
             _navigationPane);
         Grid.SetColumn(workspace, 2);
         _appShell.Children.Add(workspace);
+
+        void ApplyResponsiveShell(double width)
+        {
+            var compact =
+                width <= 1040;
+
+            if (compact)
+            {
+                _appShell.ColumnDefinitions =
+                    new ColumnDefinitions(
+                        $"{LumineDesign.NavigationWidth},*");
+                Grid.SetColumn(workspace, 1);
+                Grid.SetColumn(_navigationPane, 1);
+                _navigationPane.HorizontalAlignment =
+                    HorizontalAlignment.Left;
+                _navigationPane.Width =
+                    Math.Clamp(
+                        width - LumineDesign.NavigationWidth - 48,
+                        250,
+                        300);
+                _navigationPane.ZIndex = 20;
+            }
+            else
+            {
+                _appShell.ColumnDefinitions =
+                    new ColumnDefinitions(
+                        $"{LumineDesign.NavigationWidth},Auto,*");
+                Grid.SetColumn(_navigationPane, 1);
+                Grid.SetColumn(workspace, 2);
+                _navigationPane.HorizontalAlignment =
+                    HorizontalAlignment.Stretch;
+                _navigationPane.Width = 280;
+                _navigationPane.ZIndex = 0;
+            }
+        }
+
+        SizeChanged +=
+            (_, e) =>
+                ApplyResponsiveShell(
+                    e.NewSize.Width);
+        ApplyResponsiveShell(Width);
 
         _lightboxHost =
             new ContentControl
