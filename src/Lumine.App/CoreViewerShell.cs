@@ -93,7 +93,9 @@ internal sealed class CoreViewerShell : UserControl
                             18,
                             LumineDesign.Foreground)
                 },
-                "閉じる (Esc)");
+                "閉じる (Esc)",
+                automationId: "viewer.close",
+                acceleratorKey: "Esc");
         focusedClose.Background =
             LumineDesign.ControlSurface;
         focusedClose.BorderBrush =
