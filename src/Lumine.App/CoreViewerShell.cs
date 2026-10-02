@@ -399,12 +399,18 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectAsset(index);
         }
 
+        var restoreFocusTarget =
+            _grid.GetAssetFocusTarget(index)
+            ?? _grid;
+        restoreFocusTarget.Focus();
+
         _focusedSurface.IsVisible = true;
         var owner =
             TopLevel.GetTopLevel(this)
             as MainWindow;
         owner?.ShowLightbox(
-            _focusedSurface);
+            _focusedSurface,
+            restoreFocusTarget);
 
         try
         {
