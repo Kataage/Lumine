@@ -341,11 +341,14 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _focusedSurface.IsVisible = true;
-        _detail.BindGrid(_grid);
 
         try
         {
+            // Await the explicit selection before binding to Grid. BindGrid()
+            // synchronizes asynchronously; doing it first can make the
+            // explicit SelectAsync observe LoadingPreview and return early.
             await _detail.SelectAsync(index);
+            _detail.BindGrid(_grid);
             _detail.Focus();
         }
         catch
