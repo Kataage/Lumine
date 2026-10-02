@@ -221,9 +221,10 @@ internal sealed class BrowseWorkspaceControls : UserControl
         primaryRow.Children.Add(densityPanel);
 
         var filterRow =
-            new WrapPanel
+            new StackPanel
             {
-                Orientation = Orientation.Horizontal
+                Orientation = Orientation.Horizontal,
+                Spacing = 2
             };
         AddFilter(filterRow, "並び順", _sort);
         AddFilter(filterRow, "評価", _rating);
@@ -231,15 +232,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
         AddFilter(filterRow, "タグ", _tag);
         AddFilter(filterRow, "色", _color);
         _favorite.Margin =
-            new Thickness(10, 5, 4, 5);
+            new Thickness(8, 4);
         filterRow.Children.Add(_favorite);
+
+        var filterScroll =
+            new ScrollViewer
+            {
+                Content = filterRow,
+                HorizontalScrollBarVisibility =
+                    ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility =
+                    ScrollBarVisibility.Disabled
+            };
 
         var root = new StackPanel
         {
-            Spacing = 5
+            Spacing = 4
         };
         root.Children.Add(primaryRow);
-        root.Children.Add(filterRow);
+        root.Children.Add(filterScroll);
         root.Children.Add(_chips);
 
         Content =
