@@ -71,6 +71,9 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
     private readonly LibraryService _library;
     private readonly long _libraryId;
     private readonly AssetQuery _query;
+    private readonly SemaphoreSlim _orderGate =
+        new(1, 1);
+    private IReadOnlyList<long>? _orderedIds;
 
     public LibraryViewerQueryPageSource(
         LibraryService library,
@@ -96,6 +99,15 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
         ViewerPageCursor? cursor = null,
         CancellationToken cancellationToken = default)
     {
+        if (UsesMaterializedOrder(_query.SortOrder))
+        {
+            return await GetMaterializedPageAsync(
+                limit,
+                cursor,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var libraryCursor =
             cursor is { } value
                 ? ToLibraryCursor(
@@ -110,35 +122,146 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
             libraryCursor,
             cancellationToken).ConfigureAwait(false);
 
-        var items = page.Items
-            .Select(static asset => new ViewerAsset(
-                asset.Id,
-                asset.SourceRevision,
-                asset.RelativePath,
-                asset.FileName,
-                asset.FileSize,
-                asset.ModifiedAtUtc.UtcDateTime.Ticks,
-                asset.Width,
-                asset.Height,
-                asset.Format,
-                asset.SourceIdentity,
-                asset.RawWidth,
-                asset.RawHeight,
-                asset.HasAlpha,
-                asset.CreatedAtUtc?.UtcDateTime.Ticks,
-                asset.Rating,
-                asset.Favorite,
-                asset.StatusLabel,
-                asset.ColorLabel))
-            .ToArray();
-
-        var next =
+        return new ViewerAssetPage(
+            page.Items
+                .Select(ToViewerAsset)
+                .ToArray(),
             page.NextCursor is { } nextCursor
                 ? ToViewerCursor(nextCursor)
-                : (ViewerPageCursor?)null;
-
-        return new ViewerAssetPage(items, next);
+                : (ViewerPageCursor?)null);
     }
+
+    private async ValueTask<ViewerAssetPage>
+        GetMaterializedPageAsync(
+            int limit,
+            ViewerPageCursor? cursor,
+            CancellationToken cancellationToken)
+    {
+        if (limit is < 1 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(limit));
+        }
+
+        var orderedIds =
+            await EnsureOrderedIdsAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+
+        var position =
+            cursor?.Position
+            ?? 0;
+        if (position < 0
+            || position >= orderedIds.Count)
+        {
+            return new ViewerAssetPage(
+                [],
+                null);
+        }
+
+        var take =
+            checked(
+                (int)Math.Min(
+                    limit,
+                    orderedIds.Count - position));
+        var pageIds =
+            new long[take];
+        for (var offset = 0; offset < take; offset++)
+        {
+            pageIds[offset] =
+                orderedIds[
+                    checked((int)(position + offset))];
+        }
+
+        var assets =
+            await _library.GetAssetsByIdsAsync(
+                _libraryId,
+                pageIds,
+                cancellationToken)
+                .ConfigureAwait(false);
+
+        var nextPosition =
+            position + take;
+        ViewerPageCursor? next =
+            nextPosition < orderedIds.Count
+                ? new ViewerPageCursor(
+                    0,
+                    pageIds[^1],
+                    Position: nextPosition)
+                : null;
+
+        return new ViewerAssetPage(
+            assets.Select(ToViewerAsset).ToArray(),
+            next);
+    }
+
+    private async Task<IReadOnlyList<long>>
+        EnsureOrderedIdsAsync(
+            CancellationToken cancellationToken)
+    {
+        if (_orderedIds is not null)
+        {
+            return _orderedIds;
+        }
+
+        await _orderGate.WaitAsync(
+            cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            if (_orderedIds is null)
+            {
+                var ordered =
+                    await _library.GetOrderedAssetIdsAsync(
+                        _libraryId,
+                        _query,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+
+                if (ordered.Count != Count)
+                {
+                    throw new InvalidOperationException(
+                        "Browse result changed while materializing sort order. "
+                        + "Refresh the current view.");
+                }
+
+                _orderedIds = ordered;
+            }
+
+            return _orderedIds;
+        }
+        finally
+        {
+            _orderGate.Release();
+        }
+    }
+
+    private static bool UsesMaterializedOrder(
+        AssetSortOrder sortOrder) =>
+        sortOrder is not AssetSortOrder.ModifiedNewest
+            and not AssetSortOrder.ModifiedOldest;
+
+    private static ViewerAsset ToViewerAsset(
+        AssetInfo asset) =>
+        new(
+            asset.Id,
+            asset.SourceRevision,
+            asset.RelativePath,
+            asset.FileName,
+            asset.FileSize,
+            asset.ModifiedAtUtc.UtcDateTime.Ticks,
+            asset.Width,
+            asset.Height,
+            asset.Format,
+            asset.SourceIdentity,
+            asset.RawWidth,
+            asset.RawHeight,
+            asset.HasAlpha,
+            asset.CreatedAtUtc?.UtcDateTime.Ticks,
+            asset.Rating,
+            asset.Favorite,
+            asset.StatusLabel,
+            asset.ColorLabel);
 
     private static AssetQueryCursor ToLibraryCursor(
         AssetSortOrder sortOrder,
@@ -152,52 +275,8 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
                     cursor.AssetId,
                     ModifiedAtUtcTicks:
                         cursor.ModifiedAtUtcTicks),
-            AssetSortOrder.FileNameAscending
-                or AssetSortOrder.FileNameDescending =>
-                new AssetQueryCursor(
-                    sortOrder,
-                    cursor.AssetId,
-                    FileName:
-                        cursor.FileName
-                        ?? throw new InvalidOperationException(
-                            "Viewer filename cursor did not carry its key.")),
-            AssetSortOrder.CreatedNewest
-                or AssetSortOrder.CreatedOldest =>
-                new AssetQueryCursor(
-                    sortOrder,
-                    cursor.AssetId,
-                    CreatedAtUtcTicks:
-                        cursor.CreatedAtUtcTicks
-                        ?? throw new InvalidOperationException(
-                            "Viewer created cursor did not carry its key.")),
-            AssetSortOrder.FileSizeLargest
-                or AssetSortOrder.FileSizeSmallest =>
-                new AssetQueryCursor(
-                    sortOrder,
-                    cursor.AssetId,
-                    FileSize:
-                        cursor.FileSize
-                        ?? throw new InvalidOperationException(
-                            "Viewer size cursor did not carry its key.")),
-            AssetSortOrder.RatingHighest
-                or AssetSortOrder.RatingLowest =>
-                new AssetQueryCursor(
-                    sortOrder,
-                    cursor.AssetId,
-                    Rating:
-                        cursor.Rating
-                        ?? throw new InvalidOperationException(
-                            "Viewer rating cursor did not carry its key.")),
-            AssetSortOrder.StatusAscending
-                or AssetSortOrder.StatusDescending =>
-                new AssetQueryCursor(
-                    sortOrder,
-                    cursor.AssetId,
-                    StatusLabel:
-                        cursor.StatusLabel
-                        ?? string.Empty),
             _ => throw new InvalidOperationException(
-                "Unsupported Library browse sort order.")
+                "Materialized sort cursor reached keyset path.")
         };
 
     private static ViewerPageCursor ToViewerCursor(
@@ -211,52 +290,8 @@ internal sealed class LibraryViewerQueryPageSource : IViewerPageSource
                         ?? throw new InvalidOperationException(
                             "Modified Library query cursor did not carry its timestamp."),
                     cursor.Id),
-            AssetSortOrder.FileNameAscending
-                or AssetSortOrder.FileNameDescending =>
-                new ViewerPageCursor(
-                    0,
-                    cursor.Id,
-                    FileName:
-                        cursor.FileName
-                        ?? throw new InvalidOperationException(
-                            "Filename Library query cursor did not carry its key.")),
-            AssetSortOrder.CreatedNewest
-                or AssetSortOrder.CreatedOldest =>
-                new ViewerPageCursor(
-                    0,
-                    cursor.Id,
-                    CreatedAtUtcTicks:
-                        cursor.CreatedAtUtcTicks
-                        ?? throw new InvalidOperationException(
-                            "Created Library query cursor did not carry its key.")),
-            AssetSortOrder.FileSizeLargest
-                or AssetSortOrder.FileSizeSmallest =>
-                new ViewerPageCursor(
-                    0,
-                    cursor.Id,
-                    FileSize:
-                        cursor.FileSize
-                        ?? throw new InvalidOperationException(
-                            "Size Library query cursor did not carry its key.")),
-            AssetSortOrder.RatingHighest
-                or AssetSortOrder.RatingLowest =>
-                new ViewerPageCursor(
-                    0,
-                    cursor.Id,
-                    Rating:
-                        cursor.Rating
-                        ?? throw new InvalidOperationException(
-                            "Rating Library query cursor did not carry its key.")),
-            AssetSortOrder.StatusAscending
-                or AssetSortOrder.StatusDescending =>
-                new ViewerPageCursor(
-                    0,
-                    cursor.Id,
-                    StatusLabel:
-                        cursor.StatusLabel
-                        ?? string.Empty),
             _ => throw new InvalidOperationException(
-                "Unsupported Library browse sort order.")
+                "Materialized sort cursor reached keyset path.")
         };
 }
 
