@@ -229,6 +229,9 @@ internal sealed class CoreViewerShell : UserControl
     internal bool IsFocusedViewVisible =>
         _focusedSurface.IsVisible;
 
+    internal bool IsBulkSelectionBarVisible =>
+        _selectionBar.IsVisible;
+
     internal async Task ShowContextDetailAsync()
     {
         if (_grid.SelectedAssetIndex < 0)
