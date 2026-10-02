@@ -71,10 +71,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         _search = new TextBox
         {
-            PlaceholderText = "ファイル名・パス・ノート・タグを検索…",
+            PlaceholderText = "検索",
             MinWidth = 260,
             Text = State.SearchText
         };
+        ToolTip.SetTip(
+            _search,
+            "ファイル名・パス・ノート・タグを検索");
 
         _searchHint = new TextBlock
         {
@@ -117,19 +120,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
             MinWidth = 112
         };
 
-        _grid = LumineDesign.ConfigureSecondaryButton(
+        _grid = LumineDesign.ConfigureIconButton(
             new Button
             {
-                Content = "Grid",
-                Padding = new Thickness(10, 5)
-            });
+                Content =
+                    LumineDesign.CreateStrokeIcon(
+                        LumineDesign.GridIconPath,
+                        17)
+            },
+            "グリッド表示");
 
-        _list = LumineDesign.ConfigureSecondaryButton(
+        _list = LumineDesign.ConfigureIconButton(
             new Button
             {
-                Content = "List",
-                Padding = new Thickness(10, 5)
-            });
+                Content =
+                    LumineDesign.CreateStrokeIcon(
+                        LumineDesign.ListIconPath,
+                        17)
+            },
+            "リスト表示");
 
         _density = new Slider
         {
@@ -179,14 +188,19 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
-            new TextBlock
-            {
-                Text = "密度",
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = 10.5,
-                VerticalAlignment = VerticalAlignment.Center
-            });
+            LumineDesign.CreateStrokeIcon(
+                LumineDesign.GridIconPath,
+                13,
+                LumineDesign.MutedForeground));
         densityPanel.Children.Add(_density);
+        densityPanel.Children.Add(
+            LumineDesign.CreateStrokeIcon(
+                LumineDesign.GridIconPath,
+                19,
+                LumineDesign.MutedForeground));
+        ToolTip.SetTip(
+            densityPanel,
+            "サムネイルサイズ");
         Grid.SetColumn(densityPanel, 3);
         primaryRow.Children.Add(densityPanel);
 
