@@ -86,6 +86,9 @@ public sealed class ThumbnailViewerControl : UserControl
     public IReadOnlyList<long> SelectedAssetIndices =>
         _selection.AsReadOnlyList();
 
+    internal int SelectionRangeCount =>
+        _selection.RangeCount;
+
     public int Columns => _columns;
 
     public ViewerLayoutMode LayoutMode =>
