@@ -252,7 +252,7 @@ internal static class ProductSettingsView
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? LumineDesign.Warning
                         : LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -289,7 +289,7 @@ internal static class ProductSettingsView
                     "この上限も次回起動から有効です。大きくすると再decodeを減らせますが、その分RAMを使います。",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -450,7 +450,7 @@ internal static class ProductSettingsView
                         : "ポータブル起動は --portable、LUMINE_PORTABLE=1、またはLumine.exeと同じ場所の portable.flag で有効にできます。",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -503,7 +503,7 @@ internal static class ProductSettingsView
                 Text = "現在は無効",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 FontWeight = FontWeight.SemiBold
             });
         return CreateCard(content);
@@ -550,7 +550,7 @@ internal static class ProductSettingsView
                 Text = description,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return panel;
@@ -599,7 +599,7 @@ internal static class ProductSettingsView
             {
                 Text = value,
                 Foreground = LumineDesign.Foreground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return panel;
@@ -625,7 +625,7 @@ internal static class ProductSettingsView
                 Text = description,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return CreateCard(content);
@@ -636,7 +636,7 @@ internal static class ProductSettingsView
         {
             Foreground =
                 LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             TextWrapping = TextWrapping.Wrap
         };
 
