@@ -359,6 +359,16 @@ try
         && searchedTags[0].Name == "推し",
         "Tag navigation search did not filter locally persisted tags.");
 
+    var browseFacets =
+        await repository.GetBrowseFacetsAsync(
+            library.Id);
+    Require(
+        browseFacets.StatusLabels.SequenceEqual(
+            ["reviewed"])
+        && browseFacets.ColorLabels.SequenceEqual(
+            ["blue"]),
+        "Browse status/color facets did not reflect persisted user metadata.");
+
     Require(
         await repository.SetLibraryEnabledAsync(
             library.Id,
