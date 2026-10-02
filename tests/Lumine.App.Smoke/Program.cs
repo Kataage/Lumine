@@ -1343,9 +1343,18 @@ try
             || new FileInfo(walPath).Length == 0,
             "Repeated MainWindow close left a non-empty SQLite WAL.");
 
-        Directory.Delete(
-            repeatedLibraryRoot,
-            recursive: true);
+        try
+        {
+            Directory.Delete(
+                repeatedLibraryRoot,
+                recursive: true);
+        }
+        catch (IOException exception)
+        {
+            throw new InvalidOperationException(
+                $"MainWindow lifecycle iteration {iteration} returned before all source handles were released.",
+                exception);
+        }
         Directory.Delete(
             repeatedDataRoot,
             recursive: true);
@@ -1363,7 +1372,18 @@ finally
 
     if (Directory.Exists(root))
     {
-        Directory.Delete(root, recursive: true);
+        try
+        {
+            Directory.Delete(root, recursive: true);
+        }
+        catch (IOException exception)
+        {
+            // Keep the primary smoke failure visible. A per-iteration handle
+            // assertion below owns lifecycle correctness; root cleanup is only
+            // best-effort once the test is already unwinding.
+            Console.Error.WriteLine(
+                $"App smoke root cleanup deferred: {exception.Message}");
+        }
     }
 }
 
