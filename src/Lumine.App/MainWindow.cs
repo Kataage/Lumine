@@ -26,6 +26,7 @@ public sealed class MainWindow : Window
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
     private readonly ContentControl _lightboxHost;
+    private readonly Grid _appShell;
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
@@ -319,20 +320,20 @@ public sealed class MainWindow : Window
             (_, _) =>
                 _navigationPane.IsVisible = false;
 
-        var appShell = new Grid
+        _appShell = new Grid
         {
             Background = LumineDesign.Background,
             ColumnDefinitions =
                 new ColumnDefinitions(
                     $"{LumineDesign.NavigationWidth},Auto,*")
         };
-        appShell.Children.Add(
+        _appShell.Children.Add(
             _navigationRailHost);
         Grid.SetColumn(_navigationPane, 1);
-        appShell.Children.Add(
+        _appShell.Children.Add(
             _navigationPane);
         Grid.SetColumn(workspace, 2);
-        appShell.Children.Add(workspace);
+        _appShell.Children.Add(workspace);
 
         _lightboxHost =
             new ContentControl
@@ -349,7 +350,7 @@ public sealed class MainWindow : Window
             {
                 Background = LumineDesign.Background
             };
-        rootLayer.Children.Add(appShell);
+        rootLayer.Children.Add(_appShell);
         rootLayer.Children.Add(_lightboxHost);
 
         Content = rootLayer;
@@ -394,6 +395,7 @@ public sealed class MainWindow : Window
     {
         ArgumentNullException.ThrowIfNull(content);
 
+        _appShell.IsEnabled = false;
         _lightboxHost.Content = content;
         _lightboxHost.IsVisible = true;
     }
@@ -411,6 +413,7 @@ public sealed class MainWindow : Window
 
         _lightboxHost.Content = null;
         _lightboxHost.IsVisible = false;
+        _appShell.IsEnabled = true;
     }
 
     internal bool IsLightboxVisible =>
