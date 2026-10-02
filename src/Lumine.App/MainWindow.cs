@@ -1410,18 +1410,29 @@ public sealed class MainWindow : Window
 
             operationToken.ThrowIfCancellationRequested();
 
-            var shell =
-                CreateCoreViewerShell(runtime);
-
             _runtime = runtime;
-            _shell = shell;
             runtime = null;
 
-            _viewerHost.Content = shell;
-            _productShellState =
-                _runtime.AssetCount == 0
-                    ? "EmptyLibrary"
-                    : "Workspace";
+            if (_runtime.AssetCount == 0)
+            {
+                _shell = null;
+                _viewerHost.Content =
+                    CreateEmptyLibraryState();
+                _productShellState =
+                    "EmptyLibrary";
+            }
+            else
+            {
+                var shell =
+                    CreateCoreViewerShell(
+                        _runtime);
+                _shell = shell;
+                _viewerHost.Content = shell;
+                _productShellState =
+                    "Workspace";
+                shell.SelectInitialAsset();
+            }
+
             EnsureBrowseControls();
             UpdateScopeDisplay();
             StartNavigationRefresh();
@@ -1429,8 +1440,6 @@ public sealed class MainWindow : Window
             _host?.Log.Write(
                 "library",
                 $"Opened {_runtime.LibraryRoot} with {_runtime.AssetCount:N0} assets.");
-
-            shell.SelectInitialAsset();
         }
         catch (OperationCanceledException)
             when (operationToken.IsCancellationRequested)
