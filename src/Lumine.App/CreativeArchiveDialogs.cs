@@ -193,7 +193,7 @@ internal static class CreativeArchiveDialogs
                         return null;
                     }
 
-                    var workId =
+                    long? workId =
                         work.SelectedIndex > 0
                         && work.SelectedIndex <= works.Count
                             ? works[work.SelectedIndex - 1].Id
@@ -552,7 +552,7 @@ internal static class CreativeArchiveDialogs
                 Avalonia.Media.TextWrapping.Wrap
         };
 
-    private static Control CreateAssetSummary(
+    private static TextBlock CreateAssetSummary(
         IReadOnlyList<ViewerAsset> assets) =>
         new TextBlock
         {
@@ -570,7 +570,7 @@ internal static class CreativeArchiveDialogs
                 Avalonia.Media.TextWrapping.Wrap
         };
 
-    private static Control CreateLabeledControl(
+    private static StackPanel CreateLabeledControl(
         string label,
         Control control)
     {
@@ -600,7 +600,7 @@ internal static class CreativeArchiveDialogs
                 label,
                 control));
 
-    private static Control CreateButtons<T>(
+    private static StackPanel CreateButtons<T>(
         Window dialog,
         Func<T?> create)
         where T : class
@@ -644,7 +644,7 @@ internal static class CreativeArchiveDialogs
         return row;
     }
 
-    private static Control CreateScroll(
+    private static ScrollViewer CreateScroll(
         Control child) =>
         new ScrollViewer
         {
