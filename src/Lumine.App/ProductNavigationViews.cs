@@ -518,31 +518,6 @@ internal static class ProductNavigationViews
         return CreateScroll(stack);
     }
 
-    public static Control CreateSettingsEntry(
-        Func<Task> showDiagnostics)
-    {
-        var stack =
-            new StackPanel
-            {
-                Spacing = 12
-            };
-        stack.Children.Add(
-            CreateHint(
-                "設定の製品UIは #396 で完成させます。診断情報はここから開けます。"));
-
-        var diagnostics =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = "診断情報を開く"
-                });
-        AttachAsync(
-            diagnostics,
-            showDiagnostics);
-        stack.Children.Add(diagnostics);
-        return stack;
-    }
-
     public static Control CreateNoLibrary(
         string destination) =>
         CreatePlaceholder(

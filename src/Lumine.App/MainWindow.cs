@@ -59,6 +59,7 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryTagInfo>();
     private IReadOnlyList<PublicationInfo> _publications =
         Array.Empty<PublicationInfo>();
+    private ProductSettingsSnapshot _settingsSnapshot;
 
     public MainWindow()
         : this(
@@ -94,6 +95,12 @@ public sealed class MainWindow : Window
             new BrowseFilterState(
                 SortOrder:
                     _browsePreferences.SortOrder);
+        _settingsSnapshot =
+            CreateSettingsSnapshot(
+                new ThumbnailCacheStats(
+                    0,
+                    0,
+                    0));
         _navigationLibraryService =
             new LibraryService(
                 _defaultDataPaths.DatabasePath);
@@ -366,6 +373,23 @@ public sealed class MainWindow : Window
     internal string ProductShellState =>
         _productShellState;
 
+    internal ProductSettingsSnapshot SettingsSnapshot =>
+        _settingsSnapshot;
+
+    internal Control? NavigationContentForSmoke =>
+        _navigationContent.Content
+            as Control;
+
+    internal Task ApplyBrowseFilterForSmokeAsync(
+        BrowseFilterState state) =>
+        OnBrowseFiltersChangedAsync(
+            state);
+
+    internal void NavigateForSmoke(
+        string destination) =>
+        OnNavigationRequested(
+            destination);
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
@@ -478,7 +502,14 @@ public sealed class MainWindow : Window
                     cancellationToken);
         }
 
+        var cacheStats =
+            await GetThumbnailCacheStatsAsync(
+                cancellationToken);
+
         cancellationToken.ThrowIfCancellationRequested();
+        _settingsSnapshot =
+            CreateSettingsSnapshot(
+                cacheStats);
         _libraries = libraries;
         _folders = folders;
         _tags = tags;
@@ -534,7 +565,12 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreatePublicationEntry(
                             _publications),
                 "設定" =>
-                    ProductNavigationViews.CreateSettingsEntry(
+                    ProductSettingsView.Create(
+                        _settingsSnapshot,
+                        SaveViewerDefaultsFromSettingsAsync,
+                        SaveThumbnailModeFromSettingsAsync,
+                        SaveMemoryBudgetFromSettingsAsync,
+                        ClearThumbnailCacheFromSettingsAsync,
                         ShowDiagnosticsFromNavigationAsync),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
@@ -627,6 +663,18 @@ public sealed class MainWindow : Window
         LibraryCatalogItem library)
     {
         await _navigationInitialization;
+
+        var confirmed =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "ライブラリの登録を解除しますか？",
+                $"「{library.Name}」をLumineのライブラリ一覧から外します。",
+                "元画像ファイルは削除しません。このライブラリに紐づくLumine側の登録情報は解除されます。",
+                confirmLabel: "登録解除");
+        if (!confirmed)
+        {
+            return;
+        }
 
         if (_runtime?.Library.Id == library.Id)
         {
@@ -764,6 +812,182 @@ public sealed class MainWindow : Window
         }
     }
 
+    private async Task SaveViewerDefaultsFromSettingsAsync(
+        BrowsePreferences preferences)
+    {
+        await OnBrowsePreferencesChangedAsync(
+            preferences);
+
+        _browseFilterState =
+            _browseFilterState with
+            {
+                SortOrder =
+                    preferences.SortOrder
+            };
+
+        if (_runtime is not null)
+        {
+            await ApplyBrowseQueryAsync();
+            EnsureBrowseControls();
+        }
+
+        StartNavigationRefresh();
+    }
+
+    private async Task SaveThumbnailModeFromSettingsAsync(
+        ThumbnailStorageMode mode)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        if (mode == ThumbnailStorageMode.PersistentDisk
+            && _settingsSnapshot.PersistedThumbnailStorageMode
+                != ThumbnailStorageMode.PersistentDisk)
+        {
+            var confirmed =
+                await ProductDialogs.ConfirmAsync(
+                    this,
+                    "永続サムネイルcacheを有効にしますか？",
+                    "表示用サムネイルをLumineのデータフォルダーへ保存します。初回表示後の再利用は速くなりますが、ディスク使用量が増えます。",
+                    "元画像やユーザーメタデータはcacheとは別に管理されます。cacheはいつでも安全に削除できます。",
+                    confirmLabel: "有効にする");
+            if (!confirmed)
+            {
+                StartNavigationRefresh();
+                return;
+            }
+        }
+
+        await _host.SaveThumbnailStorageModeAsync(
+            mode);
+        StartNavigationRefresh();
+    }
+
+    private async Task SaveMemoryBudgetFromSettingsAsync(
+        long bytes)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        var current =
+            _host.Settings.ResourcePolicy
+            ?? new ResourcePolicySettings();
+        var next =
+            current with
+            {
+                EncodedThumbnailMemoryByteLimit =
+                    bytes
+            };
+
+        await _host.SaveSettingsAsync(
+            next);
+        StartNavigationRefresh();
+    }
+
+    private async Task ClearThumbnailCacheFromSettingsAsync()
+    {
+        var confirmed =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "表示用cacheを削除しますか？",
+                "Lumineが生成した表示用サムネイルだけを削除します。",
+                "元画像、ライブラリ登録、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineage、Publicationは削除しません。",
+                confirmLabel: "cacheを削除");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        var result =
+            await PruneThumbnailCacheAsync();
+
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            result.FilesDeleted == 0
+                ? "削除する表示用cacheはありませんでした。"
+                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用cacheを削除しました。";
+
+        StartNavigationRefresh();
+    }
+
+    internal Task<ThumbnailPruneResult>
+        PruneThumbnailCacheForSmokeAsync() =>
+        PruneThumbnailCacheAsync();
+
+    private async Task<ThumbnailPruneResult>
+        PruneThumbnailCacheAsync()
+    {
+        if (_runtime is not null)
+        {
+            return await _runtime.ThumbnailCache.PruneAsync(
+                0);
+        }
+
+        var cache =
+            new ThumbnailCache(
+                _defaultDataPaths.ThumbnailCachePath,
+                _resourcePolicy);
+        return await cache.PruneAsync(
+            0);
+    }
+
+    private async Task<ThumbnailCacheStats>
+        GetThumbnailCacheStatsAsync(
+            CancellationToken cancellationToken)
+    {
+        if (_runtime is not null)
+        {
+            return await _runtime.ThumbnailCache
+                .GetStatsAsync(
+                    cancellationToken);
+        }
+
+        var cache =
+            new ThumbnailCache(
+                _defaultDataPaths.ThumbnailCachePath,
+                _resourcePolicy);
+        return await cache.GetStatsAsync(
+            cancellationToken);
+    }
+
+    private ProductSettingsSnapshot CreateSettingsSnapshot(
+        ThumbnailCacheStats cacheStats)
+    {
+        var persistedMode =
+            _host is null
+                ? ThumbnailStorageMode.MemoryOnly
+                : ThumbnailStoragePreference
+                    .ResolvePersisted(
+                        _host.Settings,
+                        out _);
+        var memoryLimit =
+            _host?.Settings.ResourcePolicy
+                ?.EncodedThumbnailMemoryByteLimit
+            ?? _resourcePolicy
+                .EncodedThumbnailMemoryByteLimit;
+
+        return new ProductSettingsSnapshot(
+            _browsePreferences,
+            persistedMode,
+            _host?.ThumbnailStorageMode
+                ?? _thumbnailStorageMode,
+            memoryLimit,
+            _defaultDataPaths,
+            cacheStats,
+            _host?.SettingsWarning,
+            !string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    ThumbnailStoragePreference
+                        .EnvironmentVariable)));
+    }
+
     private AssetQuery? BuildBrowseQuery()
     {
         var state =
@@ -864,20 +1088,33 @@ public sealed class MainWindow : Window
             await runtime.ApplyQueryAsync(
                 BuildBrowseQuery());
 
-            var nextShell =
-                CreateCoreViewerShell(runtime);
-            _shell = nextShell;
-            _viewerHost.Content = nextShell;
-            _productShellState =
-                runtime.AssetCount == 0
-                    ? "EmptyLibrary"
-                    : "Workspace";
-            UpdateScopeDisplay();
-
-            if (runtime.AssetCount > 0)
+            if (runtime.AssetCount == 0)
             {
+                var totalAssetCount =
+                    await runtime.LibraryService
+                        .CountAssetsAsync(
+                            runtime.Library.Id);
+                _shell = null;
+                _productShellState =
+                    totalAssetCount == 0
+                        ? "EmptyLibrary"
+                        : "NoMatch";
+                _viewerHost.Content =
+                    totalAssetCount == 0
+                        ? CreateEmptyLibraryState()
+                        : CreateNoMatchState();
+            }
+            else
+            {
+                var nextShell =
+                    CreateCoreViewerShell(runtime);
+                _shell = nextShell;
+                _viewerHost.Content = nextShell;
+                _productShellState = "Workspace";
                 nextShell.SelectInitialAsset();
             }
+
+            UpdateScopeDisplay();
         }
         catch (Exception exception)
         {
@@ -1196,18 +1433,29 @@ public sealed class MainWindow : Window
 
             operationToken.ThrowIfCancellationRequested();
 
-            var shell =
-                CreateCoreViewerShell(runtime);
-
             _runtime = runtime;
-            _shell = shell;
             runtime = null;
 
-            _viewerHost.Content = shell;
-            _productShellState =
-                _runtime.AssetCount == 0
-                    ? "EmptyLibrary"
-                    : "Workspace";
+            if (_runtime.AssetCount == 0)
+            {
+                _shell = null;
+                _viewerHost.Content =
+                    CreateEmptyLibraryState();
+                _productShellState =
+                    "EmptyLibrary";
+            }
+            else
+            {
+                var shell =
+                    CreateCoreViewerShell(
+                        _runtime);
+                _shell = shell;
+                _viewerHost.Content = shell;
+                _productShellState =
+                    "Workspace";
+                shell.SelectInitialAsset();
+            }
+
             EnsureBrowseControls();
             UpdateScopeDisplay();
             StartNavigationRefresh();
@@ -1215,8 +1463,6 @@ public sealed class MainWindow : Window
             _host?.Log.Write(
                 "library",
                 $"Opened {_runtime.LibraryRoot} with {_runtime.AssetCount:N0} assets.");
-
-            shell.SelectInitialAsset();
         }
         catch (OperationCanceledException)
             when (operationToken.IsCancellationRequested)
@@ -1533,6 +1779,48 @@ public sealed class MainWindow : Window
                 $"{bytes / kib:F2} KiB",
             _ => $"{bytes} B"
         };
+    }
+
+    private Control CreateEmptyLibraryState()
+    {
+        var add =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "別の画像フォルダーを追加"
+                });
+        add.Click += OnOpenFolderClicked;
+
+        return LumineDesign.CreateProductState(
+            "ライブラリに画像がありません",
+            "このライブラリには、Lumineで管理できる画像がまだありません。元フォルダーへ画像を追加するか、別の画像フォルダーを追加してください。",
+            add);
+    }
+
+    private Control CreateNoMatchState()
+    {
+        var clear =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "検索・フィルターを解除"
+                });
+        clear.Click +=
+            async (_, _) =>
+            {
+                _browseFilterState =
+                    new BrowseFilterState(
+                        SortOrder:
+                            _browsePreferences.SortOrder);
+                EnsureBrowseControls();
+                await ApplyBrowseQueryAsync();
+                RenderNavigationDestination();
+            };
+
+        return LumineDesign.CreateProductState(
+            "一致する画像がありません",
+            "検索語・フォルダー・タグ・評価・お気に入り・状態・カラーの条件に一致する画像がありません。",
+            clear);
     }
 
     private Control CreateWelcomeState(

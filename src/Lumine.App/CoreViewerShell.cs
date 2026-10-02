@@ -1164,9 +1164,13 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         var confirmed =
-            await ShowDeleteConfirmationAsync(
+            await ProductDialogs.ConfirmAsync(
                 owner,
-                assets.Count);
+                "元ファイルを削除しますか？",
+                $"{assets.Count:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
+                "この操作はLumineから元に戻せません。Work / Generation Group / Publication等の履歴は、参照可能なsnapshotを保持する場合があります。",
+                confirmLabel: "元ファイルを削除",
+                tone: ProductDialogTone.Danger);
         if (!confirmed)
         {
             return;
@@ -1254,91 +1258,6 @@ internal sealed class CoreViewerShell : UserControl
         {
             await _afterBulkMutation();
         }
-    }
-
-    private static async Task<bool>
-        ShowDeleteConfirmationAsync(
-            Window owner,
-            int count)
-    {
-        var dialog =
-            new Window
-            {
-                Title = "元ファイルを削除",
-                Width = 460,
-                Height = 210,
-                CanResize = false,
-                WindowStartupLocation =
-                    WindowStartupLocation.CenterOwner,
-                Background = LumineDesign.Background,
-                Foreground = LumineDesign.Foreground,
-                FontFamily = LumineDesign.UiFont
-            };
-
-        var message =
-            new TextBlock
-            {
-                Text =
-                    $"{count:N0}件の元画像ファイルをディスクから削除します。\nこの操作はLumineの登録解除ではなく、実ファイルの削除です。",
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = LumineDesign.Foreground
-            };
-        var warning =
-            new TextBlock
-            {
-                Text =
-                    "削除したファイルはLumineから元に戻せません。",
-                Foreground = LumineDesign.Danger,
-                FontWeight = FontWeight.SemiBold
-            };
-
-        var cancel =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = "キャンセル"
-                });
-        var delete =
-            LumineDesign.ConfigurePrimaryButton(
-                new Button
-                {
-                    Content = "元ファイルを削除"
-                });
-        delete.Foreground =
-            LumineDesign.Danger;
-
-        cancel.Click +=
-            (_, _) =>
-                dialog.Close(false);
-        delete.Click +=
-            (_, _) =>
-                dialog.Close(true);
-
-        var buttons =
-            new StackPanel
-            {
-                Orientation =
-                    Orientation.Horizontal,
-                HorizontalAlignment =
-                    HorizontalAlignment.Right,
-                Spacing = 8
-            };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(delete);
-
-        var panel =
-            new StackPanel
-            {
-                Margin = new Thickness(18),
-                Spacing = 14
-            };
-        panel.Children.Add(message);
-        panel.Children.Add(warning);
-        panel.Children.Add(buttons);
-        dialog.Content = panel;
-
-        return await dialog.ShowDialog<bool>(
-            owner);
     }
 
     private async void OnShellKeyDown(
