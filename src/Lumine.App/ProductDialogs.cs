@@ -199,7 +199,7 @@ internal static class ProductDialogs
                 Text = description,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 11,
+                FontSize = LumineDesign.CaptionFontSize,
                 LineHeight = 18,
                 TextWrapping = TextWrapping.Wrap
             });
@@ -225,7 +225,7 @@ internal static class ProductDialogs
                                     Text = detail,
                                     Foreground =
                                         LumineDesign.MutedForeground,
-                                    FontSize = 9.5,
+                                    FontSize = LumineDesign.CaptionFontSize,
                                     TextWrapping =
                                         TextWrapping.Wrap
                                 }
