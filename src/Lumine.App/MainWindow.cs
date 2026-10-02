@@ -21,8 +21,6 @@ public sealed class MainWindow : Window
     private readonly Button _diagnostics;
     private readonly TextBlock _status;
     private readonly Border _statusSurface;
-    private readonly TextBlock _libraryPath;
-    private readonly TextBlock _sectionTitle;
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
     private readonly ContentControl _lightboxHost;
@@ -143,15 +141,6 @@ public sealed class MainWindow : Window
                 ? "Recovery"
                 : "Welcome";
 
-        _sectionTitle = new TextBlock
-        {
-            Text = "ライブラリ",
-            FontSize = 15,
-            FontWeight = FontWeight.Bold,
-            Foreground = LumineDesign.Foreground,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
         _status = new TextBlock
         {
             Text = recovered
@@ -163,14 +152,6 @@ public sealed class MainWindow : Window
                 : LumineDesign.MutedForeground,
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center
-        };
-
-        _libraryPath = new TextBlock
-        {
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = 10.5
         };
 
         _statusSurface =
@@ -762,7 +743,6 @@ public sealed class MainWindow : Window
             new BrowseFilterState(
                 SortOrder:
                     _browsePreferences.SortOrder);
-        _libraryPath.Text = string.Empty;
         _productShellState = "Welcome";
         _status.Foreground =
             LumineDesign.MutedForeground;
@@ -1209,37 +1189,11 @@ public sealed class MainWindow : Window
 
     private void UpdateScopeDisplay()
     {
-        var runtime = _runtime;
-        if (runtime is null)
+        if (_runtime is null)
         {
-            _libraryPath.Text = string.Empty;
             return;
         }
 
-        var scopes =
-            new List<string>();
-        if (_browseFilterState.FolderPath
-            is { } folder)
-        {
-            scopes.Add(
-                $"フォルダー: {folder}");
-        }
-
-        if (_browseFilterState.Tag
-            is { } tag)
-        {
-            scopes.Add(
-                $"タグ: {tag}");
-        }
-
-        _libraryPath.Text =
-            scopes.Count == 0
-                ? runtime.LibraryRoot
-                : runtime.LibraryRoot
-                  + "  ·  "
-                  + string.Join(
-                      "  ·  ",
-                      scopes);
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text = string.Empty;
@@ -1446,8 +1400,6 @@ public sealed class MainWindow : Window
         _browseHost.Content = null;
         _browseHost.IsVisible = false;
         _openFolder.IsEnabled = false;
-        _libraryPath.Text =
-            Path.GetFullPath(libraryRoot);
         _productShellState = "Loading";
         _status.Foreground =
             LumineDesign.MutedForeground;
@@ -1536,8 +1488,7 @@ public sealed class MainWindow : Window
                 LumineDesign.Danger;
             _status.Text =
                 "ライブラリを開けませんでした。";
-            _libraryPath.Text = string.Empty;
-            _viewerHost.Content =
+                _viewerHost.Content =
                 LumineDesign.CreateProductState(
                     "ライブラリを開けませんでした",
                     "元画像は変更していません。フォルダーの状態を確認して、もう一度追加してください。\n\n"
