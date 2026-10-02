@@ -86,9 +86,9 @@ internal static class LumineDesign
                 return new Bitmap(stream);
             });
 
-    public static Image CreateBrandImage(
+    public static Avalonia.Controls.Image CreateBrandImage(
         double size) =>
-        new()
+        new Avalonia.Controls.Image
         {
             Source = BrandBitmap.Value,
             Width = size,
