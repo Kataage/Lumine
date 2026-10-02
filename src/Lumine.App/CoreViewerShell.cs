@@ -114,6 +114,14 @@ internal sealed class CoreViewerShell : UserControl
 
         _detached = true;
         _detail.UnbindGrid();
+        _detail.PrepareForDetach();
+        _grid.PrepareForDetach();
+
+        // Drop the shell-owned visual tree before awaiting compositor/native
+        // drains. The controls retain only the explicit lifecycle objects
+        // that are awaited below and by CoreViewerRuntime.DisposeAsync().
+        Content = null;
+
         await _grid.DrainBitmapReleasesAsync();
     }
 }
