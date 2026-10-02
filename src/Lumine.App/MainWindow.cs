@@ -1106,8 +1106,14 @@ public sealed class MainWindow : Window
         await _navigationInitialization
             .WaitAsync(operationToken);
 
-        _folderScope = null;
-        _tagScope = null;
+        _browseFilterState =
+            new BrowseFilterState(
+                SortOrder:
+                    _browsePreferences.SortOrder);
+        _browseControls?.DisposeTransientWork();
+        _browseControls = null;
+        _browseHost.Content = null;
+        _browseHost.IsVisible = false;
         _openFolder.IsEnabled = false;
         _libraryPath.Text =
             Path.GetFullPath(libraryRoot);
@@ -1140,12 +1146,15 @@ public sealed class MainWindow : Window
                 _resourcePolicy,
                 progress,
                 operationToken,
-                _thumbnailStorageMode);
+                _thumbnailStorageMode,
+                BuildBrowseQuery());
 
             operationToken.ThrowIfCancellationRequested();
 
             var shell =
-                new CoreViewerShell(runtime);
+                new CoreViewerShell(
+                    runtime,
+                    _browsePreferences);
 
             _runtime = runtime;
             _shell = shell;
@@ -1156,6 +1165,7 @@ public sealed class MainWindow : Window
                 _runtime.AssetCount == 0
                     ? "EmptyLibrary"
                     : "Workspace";
+            EnsureBrowseControls();
             UpdateScopeDisplay();
             StartNavigationRefresh();
 
