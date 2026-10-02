@@ -54,9 +54,9 @@ That product intent is preserved:
 - Lumine must not silently grow an effectively permanent duplicate thumbnail library as a normal consequence of browsing.
 - memory caches must be bounded;
 - any disk-assisted optimization must be bounded, disposable, transparent in settings/diagnostics, and justified against the v1 memory-first behavior;
-- the current v2 persistent-thumbnail implementation is a proven performance mechanism, not automatically the final product policy.
+- persistent disk acceleration may exist only as an explicit bounded opt-in.
 
-The final v2 cache policy requires a dedicated benchmark/ADR.
+#388 / ADR 0001 resolved this invariant: MemoryOnly is the v2 product default. PersistentDisk remains an explicit acceleration option because representative physical testing showed MemoryOnly stayed within the accepted responsiveness envelope without writing display thumbnails to disk.
 
 ### P4 — Bounded resource use
 
