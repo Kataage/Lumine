@@ -81,6 +81,15 @@ public sealed class ThumbnailViewerControl : UserControl
     public int DensityLevel =>
         _densityLevel;
 
+    public void PrepareForDetach()
+    {
+        // Terminal shell teardown must detach realized rows synchronously.
+        // Relying only on visual-tree event delivery leaves a timing window
+        // where tile decode/file work can outlive the owning window.
+        _rows.ItemsSource = null;
+        ClearSelection();
+    }
+
     public void SetLayout(
         ViewerLayoutMode layoutMode,
         int densityLevel)
