@@ -1,6 +1,9 @@
 namespace Lumine.Viewer;
 
-public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisposable
+public sealed class CursorPagedViewerAssetProvider :
+    IViewerAssetProvider,
+    IViewerSelectionIdProvider,
+    IDisposable
 {
     private readonly IViewerPageSource _source;
     private readonly int _pageSize;
@@ -75,6 +78,76 @@ public sealed class CursorPagedViewerAssetProvider : IViewerAssetProvider, IDisp
             _gate.Release();
         }
     }
+
+    public async ValueTask<IReadOnlyList<long>> GetAssetIdsAsync(
+        IReadOnlyList<long> indices,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(indices);
+
+        if (indices.Count == 0)
+        {
+            return Array.Empty<long>();
+        }
+
+        var result = new long[indices.Count];
+
+        await _gate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            long currentPageIndex = -1;
+            CachedPage? currentPage = null;
+
+            for (var position = 0;
+                 position < indices.Count;
+                 position++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var index = indices[position];
+                if ((ulong)index >= (ulong)Count)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(indices),
+                        $"Selection index {index} is outside the current Viewer result.");
+                }
+
+                var pageIndex = index / _pageSize;
+                var itemOffset =
+                    checked((int)(index % _pageSize));
+
+                if (pageIndex != currentPageIndex)
+                {
+                    currentPage =
+                        await GetPageLockedAsync(
+                            pageIndex,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    currentPageIndex = pageIndex;
+                }
+
+                if (currentPage is null
+                    || (uint)itemOffset
+                        >= (uint)currentPage.Items.Count)
+                {
+                    throw new InvalidOperationException(
+                        $"Page {pageIndex} did not contain item offset {itemOffset}.");
+                }
+
+                currentPage.LastAccess = NextSequence();
+                result[position] =
+                    currentPage.Items[itemOffset].Id;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        return result;
+    }
+
 
     private async Task<CachedPage> GetPageLockedAsync(
         long pageIndex,
