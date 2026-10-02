@@ -51,7 +51,6 @@ internal sealed class CoreViewerShell : UserControl
             preferences.Density);
         _detail = new DetailViewerControl(
             runtime.DetailSession);
-        _detail.BindGrid(_grid);
 
         _contextDetail =
             new ContextualAssetDetailPanel(
@@ -342,6 +341,7 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _focusedSurface.IsVisible = true;
+        _detail.BindGrid(_grid);
 
         try
         {
@@ -363,6 +363,8 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _focusedSurface.IsVisible = false;
+        _detail.UnbindGrid();
+        _runtime.DetailSession.Clear();
         _grid.Focus();
     }
 
