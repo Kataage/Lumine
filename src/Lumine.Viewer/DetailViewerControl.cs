@@ -139,9 +139,9 @@ public sealed class DetailViewerControl : UserControl
             VerticalContentAlignment =
                 VerticalAlignment.Center,
             HorizontalScrollBarVisibility =
-                ScrollBarVisibility.Auto,
+                ScrollBarVisibility.Hidden,
             VerticalScrollBarVisibility =
-                ScrollBarVisibility.Auto
+                ScrollBarVisibility.Hidden
         };
 
         _metadata = new TextBlock
