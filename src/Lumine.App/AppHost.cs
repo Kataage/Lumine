@@ -1,5 +1,6 @@
 using System.Text;
 using Lumine.Core;
+using Lumine.Image;
 
 namespace Lumine.App;
 
@@ -18,6 +19,7 @@ internal sealed class AppHost : IAsyncDisposable
 {
     private readonly FileStream _instanceLock;
     private readonly AppSettingsStore _settingsStore;
+    private readonly Task _retiredThumbnailCleanup;
     private int _disposed;
     private int _cleanShutdownCompleted;
 
@@ -27,6 +29,8 @@ internal sealed class AppHost : IAsyncDisposable
         AppSettingsStore settingsStore,
         AppSettingsDocument settings,
         CoreResourcePolicy resourcePolicy,
+        ThumbnailStorageMode thumbnailStorageMode,
+        Task retiredThumbnailCleanup,
         bool previousShutdownWasUnclean,
         string? settingsWarning,
         AppEventLog log)
@@ -36,6 +40,8 @@ internal sealed class AppHost : IAsyncDisposable
         _settingsStore = settingsStore;
         Settings = settings;
         ResourcePolicy = resourcePolicy;
+        ThumbnailStorageMode = thumbnailStorageMode;
+        _retiredThumbnailCleanup = retiredThumbnailCleanup;
         PreviousShutdownWasUnclean =
             previousShutdownWasUnclean;
         SettingsWarning = settingsWarning;
@@ -47,6 +53,8 @@ internal sealed class AppHost : IAsyncDisposable
     public AppSettingsDocument Settings { get; private set; }
 
     public CoreResourcePolicy ResourcePolicy { get; }
+
+    public ThumbnailStorageMode ThumbnailStorageMode { get; private set; }
 
     public bool PreviousShutdownWasUnclean { get; }
 
@@ -101,11 +109,38 @@ internal sealed class AppHost : IAsyncDisposable
                     exception.Message);
 
                 settings =
-                    new AppSettingsDocument();
+                    new AppSettingsDocument
+                    {
+                        ThumbnailStorageMode =
+                            settings.ThumbnailStorageMode
+                    };
                 resourcePolicy =
                     CoreResourcePolicy.Resolve(
                         settings.ResourcePolicy);
             }
+
+            var thumbnailStorageMode =
+                ThumbnailStoragePreference.Resolve(
+                    settings,
+                    out var thumbnailWarning);
+            warning = AppendWarning(
+                warning,
+                thumbnailWarning);
+
+            settings = settings with
+            {
+                ThumbnailStorageMode =
+                    ThumbnailStoragePreference.Serialize(
+                        thumbnailStorageMode)
+            };
+
+            var retiredThumbnailCleanup =
+                thumbnailStorageMode
+                    == ThumbnailStorageMode.MemoryOnly
+                ? RetirePersistentThumbnailCache(
+                    dataPaths.ThumbnailCachePath,
+                    log)
+                : Task.CompletedTask;
 
             await File.WriteAllTextAsync(
                 dataPaths.RuntimeMarkerPath,
@@ -118,6 +153,9 @@ internal sealed class AppHost : IAsyncDisposable
                 previousShutdownWasUnclean
                     ? "Started after an unclean previous shutdown."
                     : "Started after a clean or first launch.");
+            log.Write(
+                "image",
+                $"Thumbnail storage mode: {thumbnailStorageMode}.");
 
             if (!string.IsNullOrWhiteSpace(warning))
             {
@@ -132,6 +170,8 @@ internal sealed class AppHost : IAsyncDisposable
                 settingsStore,
                 settings,
                 resourcePolicy,
+                thumbnailStorageMode,
+                retiredThumbnailCleanup,
                 previousShutdownWasUnclean,
                 warning,
                 log);
@@ -152,7 +192,7 @@ internal sealed class AppHost : IAsyncDisposable
         _ = CoreResourcePolicy.Resolve(resourcePolicy);
 
         var next =
-            new AppSettingsDocument
+            Settings with
             {
                 ResourcePolicy = resourcePolicy
             };
@@ -165,6 +205,30 @@ internal sealed class AppHost : IAsyncDisposable
         Log.Write(
             "settings",
             "Settings saved; resource-policy changes take effect on the next launch.");
+    }
+
+    public async Task SaveThumbnailStorageModeAsync(
+        ThumbnailStorageMode thumbnailStorageMode,
+        CancellationToken cancellationToken = default)
+    {
+        var serialized =
+            ThumbnailStoragePreference.Serialize(
+                thumbnailStorageMode);
+        var next =
+            Settings with
+            {
+                ThumbnailStorageMode = serialized
+            };
+
+        await _settingsStore.SaveAsync(
+            next,
+            cancellationToken).ConfigureAwait(false);
+
+        Settings = next;
+        ThumbnailStorageMode = thumbnailStorageMode;
+        Log.Write(
+            "settings",
+            $"Thumbnail storage preference saved as {thumbnailStorageMode}; it takes effect on the next launch.");
     }
 
     public async Task CompleteCleanShutdownAsync(
@@ -193,6 +257,21 @@ internal sealed class AppHost : IAsyncDisposable
                 Log.Write(
                     "settings",
                     $"Settings flush failed during shutdown: {exception.Message}");
+            }
+
+            try
+            {
+                await _retiredThumbnailCleanup
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException)
+            {
+                Log.Write(
+                    "image",
+                    $"Retired thumbnail cache cleanup did not complete: {exception.Message}");
             }
 
             File.Delete(
@@ -229,6 +308,100 @@ internal sealed class AppHost : IAsyncDisposable
 
         _instanceLock.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static Task RetirePersistentThumbnailCache(
+        string thumbnailCachePath,
+        AppEventLog log)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            thumbnailCachePath);
+        ArgumentNullException.ThrowIfNull(log);
+
+        var fullPath =
+            Path.GetFullPath(
+                thumbnailCachePath);
+        var parent =
+            Path.GetDirectoryName(fullPath);
+
+        if (string.IsNullOrWhiteSpace(parent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var retired = new List<string>();
+
+        try
+        {
+            if (Directory.Exists(fullPath))
+            {
+                var retiredPath =
+                    fullPath
+                    + ".retired-"
+                    + Guid.NewGuid().ToString("N");
+                Directory.Move(
+                    fullPath,
+                    retiredPath);
+                retired.Add(
+                    retiredPath);
+                log.Write(
+                    "image",
+                    $"Retired legacy persistent thumbnail cache to '{retiredPath}'.");
+            }
+
+            foreach (var path in Directory.EnumerateDirectories(
+                         parent,
+                         Path.GetFileName(fullPath)
+                         + ".retired-*",
+                         SearchOption.TopDirectoryOnly))
+            {
+                if (!retired.Contains(
+                        path,
+                        StringComparer.OrdinalIgnoreCase))
+                {
+                    retired.Add(path);
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException)
+        {
+            log.Write(
+                "image",
+                $"Unable to retire legacy persistent thumbnail cache: {exception.Message}");
+            return Task.CompletedTask;
+        }
+
+        if (retired.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return Task.Run(
+            () =>
+            {
+                foreach (var path in retired)
+                {
+                    try
+                    {
+                        if (Directory.Exists(path))
+                        {
+                            Directory.Delete(
+                                path,
+                                recursive: true);
+                        }
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException
+                        or UnauthorizedAccessException)
+                    {
+                        log.Write(
+                            "image",
+                            $"Unable to delete retired thumbnail cache '{path}': {exception.Message}");
+                    }
+                }
+            });
     }
 
     private static FileStream AcquireInstanceLock(
