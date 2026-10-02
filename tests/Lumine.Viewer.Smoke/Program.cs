@@ -786,6 +786,24 @@ internal static class Program
 
         viewer.SelectAsset(0);
 
+        long invokedIndex = -1;
+        void OnAssetInvoked(object? _, long index) =>
+            invokedIndex = index;
+        viewer.AssetInvoked += OnAssetInvoked;
+
+        RaiseKey(viewer, Key.Enter);
+        Require(
+            invokedIndex == 0,
+            "Enter did not invoke the selected image.");
+        invokedIndex = -1;
+
+        RaiseKey(viewer, Key.Space);
+        Require(
+            invokedIndex == 0,
+            "Space did not invoke the selected image.");
+
+        viewer.AssetInvoked -= OnAssetInvoked;
+
         RaiseKey(viewer, Key.Right);
         Require(viewer.SelectedAssetIndex == 1, "Right-arrow navigation failed.");
 
