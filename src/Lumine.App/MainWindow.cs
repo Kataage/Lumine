@@ -440,6 +440,9 @@ public sealed class MainWindow : Window
     internal bool IsLightboxVisible =>
         _lightboxHost.IsVisible;
 
+    internal bool IsWorkspaceInteractionEnabled =>
+        _appShell.IsEnabled;
+
     private void OnNavigationRequested(
         string destination)
     {
