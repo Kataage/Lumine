@@ -202,7 +202,62 @@ internal static class ProductNavigationViews
                 primary = open;
             }
 
-            stack.Children.Add(primary);
+            var libraryRow =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions("*,Auto"),
+                    ColumnSpacing = 6
+                };
+            libraryRow.Children.Add(primary);
+
+            var manageButton =
+                LumineDesign.ConfigureIconButton(
+                    new Button
+                    {
+                        Content =
+                            LumineDesign.CreateStrokeIcon(
+                                LumineDesign.MoreIconPath,
+                                16)
+                    },
+                    "ライブラリを管理");
+            manageButton.VerticalAlignment =
+                VerticalAlignment.Center;
+
+            var manageMenu =
+                new ContextMenu();
+
+            var toggle =
+                new MenuItem
+                {
+                    Header =
+                        library.IsEnabled
+                            ? "ライブラリを無効化"
+                            : "ライブラリを有効化"
+                };
+            AttachAsync(
+                toggle,
+                () => toggleEnabled(library),
+                reportError);
+            manageMenu.Items.Add(toggle);
+
+            var remove =
+                new MenuItem
+                {
+                    Header = "登録解除…"
+                };
+            AttachAsync(
+                remove,
+                () => removeLibrary(library),
+                reportError);
+            manageMenu.Items.Add(remove);
+
+            manageButton.Click +=
+                (_, _) =>
+                    manageMenu.Open(manageButton);
+            Grid.SetColumn(manageButton, 1);
+            libraryRow.Children.Add(manageButton);
+            stack.Children.Add(libraryRow);
 
             if (!string.IsNullOrWhiteSpace(
                     library.SyncError))
@@ -220,59 +275,6 @@ internal static class ProductNavigationViews
                             new Thickness(10, -3, 8, 2)
                     });
             }
-
-            if (isActive
-                || !library.IsEnabled
-                || !rootAvailable)
-            {
-                var manage =
-                    new StackPanel
-                    {
-                        Orientation =
-                            Orientation.Horizontal,
-                        Spacing = 6,
-                        Margin =
-                            new Thickness(8, -2, 8, 4)
-                    };
-
-                var toggle =
-                    LumineDesign.ConfigureSecondaryButton(
-                        new Button
-                        {
-                            Content =
-                                library.IsEnabled
-                                    ? "無効化"
-                                    : "有効化",
-                            FontSize = LumineDesign.CaptionFontSize,
-                            MinHeight = 28,
-                            Padding =
-                                new Thickness(8, 4)
-                        });
-                AttachAsync(
-                    toggle,
-                    () => toggleEnabled(library),
-                    reportError);
-                manage.Children.Add(toggle);
-
-                var remove =
-                    LumineDesign.ConfigureSecondaryButton(
-                        new Button
-                        {
-                            Content = "登録解除",
-                            FontSize = LumineDesign.CaptionFontSize,
-                            MinHeight = 28,
-                            Padding =
-                                new Thickness(8, 4)
-                        });
-                remove.Foreground =
-                    LumineDesign.Danger;
-                AttachAsync(
-                    remove,
-                    () => removeLibrary(library),
-                    reportError);
-                manage.Children.Add(remove);
-
-                stack.Children.Add(manage);
             }
         }
 
@@ -830,6 +832,39 @@ internal static class ProductNavigationViews
             LibraryScanState.Partial => "一部読み込み",
             _ => "状態不明"
         };
+
+    private static void AttachAsync(
+        MenuItem item,
+        Func<Task> action,
+        Action<string>? reportError = null)
+    {
+        item.Click +=
+            async (_, _) =>
+            {
+                item.IsEnabled = false;
+                try
+                {
+                    await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    reportError?.Invoke(
+                        "操作を完了できませんでした。"
+                        + (string.IsNullOrWhiteSpace(exception.Message)
+                            ? string.Empty
+                            : $" {exception.Message}"));
+                }
+                finally
+                {
+                    item.IsEnabled = true;
+                }
+            };
+    }
 
     private static void AttachAsync(
         Button button,
