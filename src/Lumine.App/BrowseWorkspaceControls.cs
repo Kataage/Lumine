@@ -84,7 +84,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _searchHint = new TextBlock
         {
             Foreground = LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             IsVisible = false,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -815,7 +815,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 MinHeight = 26,
                 Padding =
                     new Thickness(9, 3),
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 Margin =
                     new Thickness(3)
             };
@@ -845,7 +845,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
