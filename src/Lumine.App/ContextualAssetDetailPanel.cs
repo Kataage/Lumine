@@ -71,7 +71,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly CheckBox _favoriteEditor;
     private readonly ComboBox _statusEditor;
     private readonly ComboBox _colorEditor;
-    private readonly AssetTagPickerControl _tagPicker;
+    private readonly ManagedTagPicker _tagPicker;
     private readonly TextBox _notesEditor;
     private readonly TextBlock _saveStatus;
     private readonly Button _save;
@@ -172,9 +172,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     MinWidth = 118
                 });
         _tagPicker =
-            new AssetTagPickerControl(
+            new ManagedTagPicker(
                 _runtime,
-                _metadataChanged);
+                ApplyTagsAsync);
         _notesEditor =
             LumineDesign.ConfigureTextBox(
                 new TextBox
@@ -644,7 +644,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal string TagsText =>
         string.Join(
             ", ",
-            _tagPicker.AssignedTags);
+            _tagPicker.SelectedTags);
 
     internal string NotesText =>
         _notesEditor.Text ?? string.Empty;
@@ -781,8 +781,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
             _loadedMetadata = metadata;
             PopulateEditor(metadata);
-            await _tagPicker.SetAssetAsync(
-                asset.Id,
+            await _tagPicker.RefreshAsync(
                 metadata.Tags,
                 token);
             SetEditorEnabled(true);
@@ -876,7 +875,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         ColorValues,
                         _colorEditor.SelectedIndex),
                 Tags:
-                    _tagPicker.AssignedTags);
+                    _tagPicker.SelectedTags);
 
         _saving = true;
         _save.IsEnabled = false;
@@ -951,7 +950,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _favoriteEditor.IsChecked = false;
             _statusEditor.SelectedIndex = 0;
             _colorEditor.SelectedIndex = 0;
-            _tagPicker.Reset();
+            _tagPicker.SetSelectedTags(
+                Array.Empty<string>());
+            _tagPicker.SetInteractionEnabled(false);
             _notesEditor.Text = string.Empty;
         }
         finally
@@ -1246,6 +1247,39 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
     }
 
+    private async Task ApplyTagsAsync(
+        IReadOnlyList<string> tags)
+    {
+        if (_assetId <= 0)
+        {
+            return;
+        }
+
+        var saved =
+            await _runtime.LibraryService
+                .SetAssetTagsAsync(
+                    _runtime.Library.Id,
+                    _assetId,
+                    tags);
+
+        if (_loadedMetadata is not null)
+        {
+            _loadedMetadata =
+                _loadedMetadata with
+                {
+                    Tags = saved
+                };
+        }
+
+        _saveStatus.Text =
+            "タグを更新しました";
+
+        if (_metadataChanged is not null)
+        {
+            await _metadataChanged();
+        }
+    }
+
     private void PopulateEditor(
         AssetUserMetadata metadata)
     {
@@ -1312,7 +1346,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _favoriteEditor.IsEnabled = enabled;
         _statusEditor.IsEnabled = enabled;
         _colorEditor.IsEnabled = enabled;
-        _tagPicker.IsEnabled = enabled;
+        _tagPicker.SetInteractionEnabled(
+            enabled);
         _notesEditor.IsEnabled = enabled;
         _save.IsEnabled =
             enabled && _dirty;
