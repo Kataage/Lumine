@@ -1741,6 +1741,7 @@ try
             // entering bulk-selection mode.
             shell.GridViewer.SelectAsset(0);
             await shell.ShowContextDetailAsync();
+            shell.ContextDetail.SelectTabForSmoke(1);
             Dispatcher.UIThread.RunJobs();
 
             Require(
