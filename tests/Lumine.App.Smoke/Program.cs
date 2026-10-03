@@ -2298,6 +2298,12 @@ try
                         window.IsCompactNavigationLayout,
                         "Minimum-width MainWindow did not switch navigation to compact overlay layout.");
 
+                    Require(
+                        window.BrowseControlsForSmoke is not null
+                        && window.BrowseControlsForSmoke
+                            .PrimaryToolbarIsContainedForSmoke,
+                        "Minimum-width browse command bar clipped or escaped the workspace bounds.");
+
                     window.CurrentShell!.GridViewer.SelectAsset(0);
                     await window.CurrentShell.ShowContextDetailAsync();
                     Dispatcher.UIThread.RunJobs();
@@ -2341,8 +2347,11 @@ try
                             && window.IsCompactNavigationLayout
                             && window.CurrentShell.IsCompactInspectorLayout
                             && window.CurrentShell.GridViewerBounds.Width >= 500
-                            && window.CurrentShell.GridViewer.RealizedRowCount > 0,
-                            $"MainWindow responsive/layout virtualization regressed at {scaling:P0} render scaling.");
+                            && window.CurrentShell.GridViewer.RealizedRowCount > 0
+                            && window.BrowseControlsForSmoke is not null
+                            && window.BrowseControlsForSmoke
+                                .PrimaryToolbarIsContainedForSmoke,
+                            $"MainWindow responsive/layout virtualization or browse command containment regressed at {scaling:P0} render scaling.");
                     }
 
                     Require(
