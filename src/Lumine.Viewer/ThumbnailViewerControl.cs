@@ -217,7 +217,24 @@ public sealed class ThumbnailViewerControl : UserControl
                 .OfType<ViewerTileControl>()
                 .FirstOrDefault(
                     item => item.Index == index);
-        return tile?.Focus() == true;
+        if (tile is null
+            || !tile.IsLoaded
+            || !tile.IsEffectivelyVisible
+            || !tile.IsEffectivelyEnabled)
+        {
+            return false;
+        }
+
+        var focusManager =
+            TopLevel.GetTopLevel(this)
+                ?.FocusManager;
+        return focusManager?.Focus(
+                   tile,
+                   NavigationMethod.Unspecified,
+                   KeyModifiers.None)
+               ?? tile.Focus(
+                   NavigationMethod.Unspecified,
+                   KeyModifiers.None);
     }
 
 
