@@ -2602,13 +2602,17 @@ try
                                     window.CurrentShell.IsBulkSelectionBarVisible
                                     && window.CurrentShell
                                         .SelectionToolbarIsContainedForSmoke
+                                    && window.CurrentShell
+                                        .BulkSelectionUsesDirectActionsForSmoke
+                                    && window.CurrentShell.GridViewer
+                                        .BottomOverlayInset >= 70
                                     && Math.Abs(
                                         gridDuringBulk.Y
                                         - gridBeforeBulk.Y) < 0.5
                                     && Math.Abs(
                                         gridDuringBulk.Height
                                         - gridBeforeBulk.Height) < 0.5,
-                                    $"Bulk selection chrome shifted or escaped the image canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+                                    $"Bulk selection direct-action/safe-area contract regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 window.CurrentShell.GridViewer.ClearSelection();
                                 Dispatcher.UIThread.RunJobs();
@@ -2620,8 +2624,10 @@ try
                                         - gridBeforeBulk.Y) < 0.5
                                     && Math.Abs(
                                         gridAfterBulk.Height
-                                        - gridBeforeBulk.Height) < 0.5,
-                                    $"Leaving bulk selection shifted the image canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                        - gridBeforeBulk.Height) < 0.5
+                                    && window.CurrentShell.GridViewer
+                                        .BottomOverlayInset < 0.5,
+                                    $"Leaving bulk selection shifted the image canvas or retained its bottom safe area at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                             }
 
                             if (viewport.Width >= 1440)

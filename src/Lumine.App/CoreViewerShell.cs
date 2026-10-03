@@ -23,6 +23,10 @@ internal sealed class CoreViewerShell : UserControl
     private readonly TextBlock _selectionCount;
     private readonly TextBlock _selectionMetadataSummary;
     private readonly TextBlock _bulkStatus;
+    private TextBox? _bulkTagSearch;
+    private StackPanel? _bulkTagCandidates;
+    private IReadOnlyList<LibraryTagInfo> _bulkTagChoices =
+        Array.Empty<LibraryTagInfo>();
     private readonly ContextualAssetDetailPanel _contextDetail;
     private readonly Border _contextSurface;
     private readonly Grid _browseViewer;
@@ -231,7 +235,7 @@ internal sealed class CoreViewerShell : UserControl
             HorizontalAlignment.Center;
         _selectionBar.VerticalAlignment =
             VerticalAlignment.Bottom;
-        _selectionBar.MaxWidth = 960;
+        _selectionBar.MaxWidth = 1180;
         _selectionBar.Margin =
             new Thickness(16, 16, 16, 18);
         _selectionBar.ZIndex = 30;
@@ -285,6 +289,48 @@ internal sealed class CoreViewerShell : UserControl
 
     internal Rect GridViewerBounds =>
         _grid.Bounds;
+
+    internal bool BulkSelectionUsesDirectActionsForSmoke
+    {
+        get
+        {
+            var labels =
+                _bulkActions
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Concat(
+                        _bulkActions
+                            .Children
+                            .OfType<Button>())
+                    .Select(
+                        static button =>
+                            button.Content as string
+                            ?? string.Empty)
+                    .ToArray();
+
+            return labels.Contains(
+                    "★1",
+                    StringComparer.Ordinal)
+                && labels.Contains(
+                    "タグ",
+                    StringComparer.Ordinal)
+                && labels.Contains(
+                    "制作",
+                    StringComparer.Ordinal)
+                && labels.Contains(
+                    "＋ 公開記録",
+                    StringComparer.Ordinal)
+                && labels.Contains(
+                    "元ファイルを削除…",
+                    StringComparer.Ordinal)
+                && labels.Contains(
+                    "選択解除",
+                    StringComparer.Ordinal)
+                && !labels.Contains(
+                    "整理",
+                    StringComparer.Ordinal);
+        }
+    }
 
     internal bool SelectionToolbarIsContainedForSmoke
     {
@@ -824,52 +870,72 @@ internal sealed class CoreViewerShell : UserControl
 
     private Border CreateSelectionBar()
     {
-        var rating =
-            LumineDesign.ConfigureComboBox(
-                new ComboBox
-                {
-                    MinWidth = 150,
-                    ItemsSource =
-                        new[]
-                        {
-                            "評価なし",
-                            "★1",
-                            "★2",
-                            "★3",
-                            "★4",
-                            "★5"
-                        },
-                    SelectedIndex = 0
-                });
-        var ratingApply =
-            CreateBulkButton(
-                "評価を適用",
-                () => ApplyPatchAsync(
-                    new AssetUserMetadataPatch(
-                        SetRating: true,
-                        Rating:
-                            rating.SelectedIndex > 0
-                                ? rating.SelectedIndex
-                                : null)));
+        Button CreateRatingButton(int rating)
+        {
+            var button =
+                LumineDesign.ConfigureSecondaryButton(
+                    new Button
+                    {
+                        Content = $"★{rating}",
+                        MinWidth = 36,
+                        MinHeight = 30,
+                        Padding =
+                            new Thickness(
+                                LumineDesign.Space6,
+                                LumineDesign.Space4),
+                        Foreground =
+                            LumineDesign.Warning
+                    });
+            button.Click +=
+                async (_, _) =>
+                    await ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetRating: true,
+                            Rating: rating));
+            ToolTip.SetTip(
+                button,
+                $"選択画像の評価を★{rating}に設定");
+            return button;
+        }
 
-        var favoriteOn =
-            CreateBulkButton(
-                "お気に入りにする",
-                () => ApplyPatchAsync(
-                    new AssetUserMetadataPatch(
-                        SetFavorite: true,
-                        Favorite: true)));
-        var favoriteOff =
-            CreateBulkButton(
-                "お気に入りを解除",
-                () => ApplyPatchAsync(
-                    new AssetUserMetadataPatch(
-                        SetFavorite: true,
-                        Favorite: false)));
+        var ratingGroup =
+            new StackPanel
+            {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing = LumineDesign.Space2,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        ratingGroup.Children.Add(
+            new TextBlock
+            {
+                Text = "評価",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                Margin =
+                    new Thickness(
+                        0,
+                        0,
+                        LumineDesign.Space2,
+                        0),
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        for (var rating = 1;
+             rating <= 5;
+             rating++)
+        {
+            ratingGroup.Children.Add(
+                CreateRatingButton(rating));
+        }
 
         var statusLabels =
             new[]
             {
+                "状態…",
                 "未整理",
                 "確認済み",
                 "候補",
@@ -878,6 +944,7 @@ internal sealed class CoreViewerShell : UserControl
         var statusValues =
             new[]
             {
+                string.Empty,
                 "unsorted",
                 "reviewed",
                 "candidate",
@@ -887,168 +954,261 @@ internal sealed class CoreViewerShell : UserControl
             LumineDesign.ConfigureComboBox(
                 new ComboBox
                 {
-                    MinWidth = 150,
+                    Width = 112,
                     ItemsSource = statusLabels,
                     SelectedIndex = 0
                 });
-        var statusApply =
-            CreateBulkButton(
-                "状態を適用",
-                () => ApplyPatchAsync(
+        status.SelectionChanged +=
+            async (_, _) =>
+            {
+                if (status.SelectedIndex <= 0)
+                {
+                    return;
+                }
+
+                var selected =
+                    status.SelectedIndex;
+                status.SelectedIndex = 0;
+                await ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetStatusLabel: true,
                         StatusLabel:
-                            statusValues[
-                                Math.Max(
-                                    0,
-                                    status.SelectedIndex)])));
+                            statusValues[selected]));
+            };
 
-        var colorLabels =
-            new[]
+        var colorGroup =
+            new StackPanel
             {
-                "赤",
-                "オレンジ",
-                "黄",
-                "緑",
-                "青",
-                "紫",
-                "グレー"
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing = LumineDesign.Space2,
+                VerticalAlignment =
+                    VerticalAlignment.Center
             };
-        var colorValues =
-            new[]
+        colorGroup.Children.Add(
+            new TextBlock
             {
-                "red",
-                "orange",
-                "yellow",
-                "green",
-                "blue",
-                "purple",
-                "gray"
+                Text = "色",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                Margin =
+                    new Thickness(
+                        0,
+                        0,
+                        LumineDesign.Space2,
+                        0),
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+
+        var colors =
+            new (string? Value, string Label, string? Hex)[]
+            {
+                (null, "カラーなし", null),
+                ("red", "赤", "#EF4444"),
+                ("orange", "オレンジ", "#F97316"),
+                ("yellow", "黄", "#EAB308"),
+                ("green", "緑", "#22C55E"),
+                ("blue", "青", "#3B82F6"),
+                ("purple", "紫", "#A855F7"),
+                ("gray", "グレー", "#71717A")
             };
-        var color =
-            LumineDesign.ConfigureComboBox(
-                new ComboBox
+        foreach (var item in colors)
+        {
+            var swatch =
+                new Border
                 {
-                    MinWidth = 150,
-                    ItemsSource = colorLabels,
-                    SelectedIndex = 4
-                });
-        var colorApply =
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius =
+                        new CornerRadius(7),
+                    BorderBrush =
+                        LumineDesign.BorderStrong,
+                    BorderThickness =
+                        new Thickness(1),
+                    Background =
+                        item.Hex is null
+                            ? Brushes.Transparent
+                            : new SolidColorBrush(
+                                Color.Parse(item.Hex)),
+                    Child =
+                        item.Hex is null
+                            ? new TextBlock
+                            {
+                                Text = "×",
+                                FontSize = 10,
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
+                            }
+                            : null
+                };
+            var button =
+                LumineDesign.ConfigureSecondaryButton(
+                    new Button
+                    {
+                        Content = swatch,
+                        Width = 28,
+                        Height = 28,
+                        MinWidth = 28,
+                        MinHeight = 28,
+                        Padding = new Thickness(5)
+                    });
+            ToolTip.SetTip(
+                button,
+                $"カラー: {item.Label}");
+            var value = item.Value;
+            button.Click +=
+                async (_, _) =>
+                    await ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetColorLabel: true,
+                            ColorLabel: value));
+            colorGroup.Children.Add(button);
+        }
+
+        var favoriteOn =
             CreateBulkButton(
-                "カラーを適用",
+                "★ お気に入り",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
-                        SetColorLabel: true,
-                        ColorLabel:
-                            colorValues[
-                                Math.Max(
-                                    0,
-                                    color.SelectedIndex)])));
+                        SetFavorite: true,
+                        Favorite: true)));
+        var favoriteOff =
+            CreateBulkButton(
+                "☆ 解除",
+                () => ApplyPatchAsync(
+                    new AssetUserMetadataPatch(
+                        SetFavorite: true,
+                        Favorite: false)));
 
-        var tag =
+        _bulkTagSearch =
             LumineDesign.ConfigureTextBox(
                 new TextBox
                 {
-                    MinWidth = 180,
-                    PlaceholderText = "タグ"
+                    PlaceholderText = "タグを検索…",
+                    MinWidth = 210
                 });
-        var tagAdd =
-            CreateBulkButton(
-                "追加",
-                async () =>
-                {
-                    var value =
-                        tag.Text?.Trim();
-                    if (string.IsNullOrWhiteSpace(value))
-                    {
-                        return;
-                    }
+        _bulkTagCandidates =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space2
+            };
+        _bulkTagSearch.TextChanged +=
+            (_, _) => RenderBulkTagCandidates();
 
-                    await ApplyPatchAsync(
-                        new AssetUserMetadataPatch(
-                            AddTags: [value]));
-                    tag.Text = string.Empty;
-                });
-        var tagClear =
-            CreateBulkButton(
-                "タグをすべて解除",
-                () => ApplyPatchAsync(
-                    new AssetUserMetadataPatch(
-                        ClearTags: true)));
-
-        var organizationPanel =
+        var tagPanel =
             new StackPanel
             {
                 Width = 280,
-                Spacing = 8,
-                Margin = new Thickness(4)
+                Spacing =
+                    LumineDesign.Space6,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space4)
             };
-        organizationPanel.Children.Add(
+        tagPanel.Children.Add(
             new TextBlock
             {
-                Text = "整理",
-                FontSize = LumineDesign.BodyFontSize,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = LumineDesign.Foreground
+                Text = "既存タグを追加",
+                Foreground =
+                    LumineDesign.Foreground,
+                FontWeight =
+                    FontWeight.SemiBold,
+                FontSize =
+                    LumineDesign.BodyFontSize
             });
-        organizationPanel.Children.Add(rating);
-        organizationPanel.Children.Add(ratingApply);
-        organizationPanel.Children.Add(favoriteOn);
-        organizationPanel.Children.Add(favoriteOff);
-        organizationPanel.Children.Add(status);
-        organizationPanel.Children.Add(statusApply);
-        organizationPanel.Children.Add(color);
-        organizationPanel.Children.Add(colorApply);
-
-        var tagRow =
-            new Grid
+        tagPanel.Children.Add(_bulkTagSearch);
+        tagPanel.Children.Add(
+            new Border
             {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
-                ColumnSpacing = 6
-            };
-        tagRow.Children.Add(tag);
-        Grid.SetColumn(tagAdd, 1);
-        tagRow.Children.Add(tagAdd);
-        organizationPanel.Children.Add(tagRow);
-        organizationPanel.Children.Add(tagClear);
-
-        var organizationFlyout =
-            new Flyout
-            {
-                Content =
-                    new Border
+                MaxHeight = 220,
+                BorderBrush =
+                    LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space4),
+                Child =
+                    new ScrollViewer
                     {
-                        Background =
-                            LumineDesign.SurfaceRaised,
-                        Padding = new Thickness(10),
-                        Child = organizationPanel
+                        VerticalScrollBarVisibility =
+                            Avalonia.Controls.Primitives
+                                .ScrollBarVisibility.Auto,
+                        Content =
+                            _bulkTagCandidates
                     }
-            };
+            });
+        tagPanel.Children.Add(
+            CreateBulkButton(
+                "すべてのタグを解除",
+                () => ApplyPatchAsync(
+                    new AssetUserMetadataPatch(
+                        ClearTags: true))));
+        tagPanel.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "新しいタグはInspectorまたは「タグ」画面で作成できます。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            });
 
-        var organize =
+        var tagAction =
             LumineDesign.ConfigureSecondaryButton(
                 new DropDownButton
                 {
-                    Content = "整理",
-                    Flyout = organizationFlyout,
-                    MinWidth = 76
+                    Content = "タグ",
+                    MinWidth = 66,
+                    Flyout =
+                        new Flyout
+                        {
+                            Content =
+                                new Border
+                                {
+                                    Background =
+                                        LumineDesign.SurfaceRaised,
+                                    Padding =
+                                        new Thickness(
+                                            LumineDesign.Space8),
+                                    Child = tagPanel
+                                }
+                        }
                 });
 
         var creativePanel =
             new StackPanel
             {
                 Width = 230,
-                Spacing = 6,
-                Margin = new Thickness(4)
+                Spacing = LumineDesign.Space6,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space4)
             };
         creativePanel.Children.Add(
             new TextBlock
             {
                 Text = "制作",
-                FontSize = LumineDesign.BodyFontSize,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = LumineDesign.Foreground
+                FontSize =
+                    LumineDesign.BodyFontSize,
+                FontWeight =
+                    FontWeight.SemiBold,
+                Foreground =
+                    LumineDesign.Foreground
             });
         creativePanel.Children.Add(
             CreateBulkButton(
@@ -1064,10 +1224,54 @@ internal sealed class CoreViewerShell : UserControl
                 ShowCreateRelationDialogAsync);
         creativePanel.Children.Add(
             _lineageAction);
-        creativePanel.Children.Add(
-            CreateBulkButton(
-                "公開記録を作成",
-                ShowCreatePublicationDialogAsync));
+
+        var creative =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "制作",
+                    Flyout =
+                        new Flyout
+                        {
+                            Content =
+                                new Border
+                                {
+                                    Background =
+                                        LumineDesign.SurfaceRaised,
+                                    Padding =
+                                        new Thickness(
+                                            LumineDesign.Space8),
+                                    Child =
+                                        creativePanel
+                                }
+                        },
+                    MinWidth = 66
+                });
+
+        var publication =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "＋ 公開記録",
+                    MinHeight = 30,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        publication.Click +=
+            async (_, _) =>
+            {
+                publication.IsEnabled = false;
+                try
+                {
+                    await ShowCreatePublicationDialogAsync();
+                }
+                finally
+                {
+                    publication.IsEnabled = true;
+                }
+            };
 
         var delete =
             CreateBulkButton(
@@ -1075,31 +1279,14 @@ internal sealed class CoreViewerShell : UserControl
                 DeleteSelectedSourcesAsync);
         delete.Foreground =
             LumineDesign.Danger;
+        delete.Margin =
+            new Thickness(
+                LumineDesign.Space8,
+                0,
+                0,
+                0);
         LumineDesign.ConfigureDangerButtonStateResources(
             delete);
-        creativePanel.Children.Add(delete);
-
-        var creativeFlyout =
-            new Flyout
-            {
-                Content =
-                    new Border
-                    {
-                        Background =
-                            LumineDesign.SurfaceRaised,
-                        Padding = new Thickness(10),
-                        Child = creativePanel
-                    }
-            };
-
-        var creative =
-            LumineDesign.ConfigureSecondaryButton(
-                new DropDownButton
-                {
-                    Content = "制作",
-                    Flyout = creativeFlyout,
-                    MinWidth = 76
-                });
 
         _cancelBulkOperationButton =
             LumineDesign.ConfigureSecondaryButton(
@@ -1107,9 +1294,12 @@ internal sealed class CoreViewerShell : UserControl
                 {
                     Content = "処理をキャンセル",
                     MinHeight = 28,
-                    Padding = new Thickness(8, 4),
-                    FontSize = LumineDesign.CaptionFontSize,
-                    Margin = new Thickness(3, 0),
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4),
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
                     IsVisible = false
                 });
         _cancelBulkOperationButton.Click +=
@@ -1124,56 +1314,250 @@ internal sealed class CoreViewerShell : UserControl
                     return Task.CompletedTask;
                 });
 
-        organize.Margin = new Thickness(3, 0);
-        creative.Margin = new Thickness(3, 0);
-        clear.Margin = new Thickness(3, 0);
-        _bulkActions.Children.Add(organize);
-        _bulkActions.Children.Add(creative);
-        _bulkActions.Children.Add(_cancelBulkOperationButton);
-        _bulkActions.Children.Add(clear);
-
-        var top =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions(
-                        "Auto,*,Auto"),
-                ColumnSpacing = 10,
-                Margin = new Thickness(10, 6)
-            };
-        top.Children.Add(_selectionCount);
+        foreach (var control in
+                 new Control[]
+                 {
+                     ratingGroup,
+                     status,
+                     colorGroup,
+                     favoriteOn,
+                     favoriteOff,
+                     tagAction,
+                     creative,
+                     publication,
+                     delete,
+                     _cancelBulkOperationButton,
+                     clear
+                 })
+        {
+            control.Margin =
+                ReferenceEquals(
+                    control,
+                    delete)
+                    ? new Thickness(
+                        LumineDesign.Space8,
+                        0,
+                        LumineDesign.Space4,
+                        LumineDesign.Space4)
+                    : new Thickness(
+                        0,
+                        0,
+                        LumineDesign.Space4,
+                        LumineDesign.Space4);
+            _bulkActions.Children.Add(control);
+        }
 
         var summary =
             new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                MaxWidth = 360,
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space8,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
+        summary.Children.Add(_selectionCount);
         summary.Children.Add(
             _selectionMetadataSummary);
-        summary.Children.Add(
-            _bulkStatus);
-        Grid.SetColumn(summary, 1);
-        top.Children.Add(summary);
+        summary.Children.Add(_bulkStatus);
 
-        Grid.SetColumn(_bulkActions, 2);
-        top.Children.Add(_bulkActions);
+        var root =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space4,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space8,
+                        LumineDesign.Space6)
+            };
+        root.Children.Add(summary);
+        root.Children.Add(_bulkActions);
 
         return new Border
         {
-            Background = LumineDesign.SurfaceRaised,
-            BorderBrush = LumineDesign.BorderStrong,
+            Background =
+                LumineDesign.SurfaceRaised,
+            BorderBrush =
+                LumineDesign.BorderStrong,
             BorderThickness =
                 new Thickness(1),
             CornerRadius =
-                new CornerRadius(10),
+                new CornerRadius(
+                    LumineDesign.PanelRadius),
             Padding =
-                new Thickness(2),
-            Child = top
+                new Thickness(
+                    LumineDesign.Space2),
+            Child = root
         };
+    }
+
+    private async Task RefreshBulkTagChoicesAsync()
+    {
+        try
+        {
+            _bulkTagChoices =
+                await _runtime.LibraryService
+                    .ListTagsAsync(
+                        _runtime.Library.Id,
+                        limit: 512);
+            RenderBulkTagCandidates();
+        }
+        catch (Exception exception)
+        {
+            _bulkStatus.Foreground =
+                LumineDesign.Warning;
+            _bulkStatus.Text =
+                $"タグ候補を読み込めません: {exception.Message}";
+        }
+    }
+
+    private void RenderBulkTagCandidates()
+    {
+        var host =
+            _bulkTagCandidates;
+        if (host is null)
+        {
+            return;
+        }
+
+        host.Children.Clear();
+        var query =
+            _bulkTagSearch?.Text?.Trim()
+            ?? string.Empty;
+        var visible =
+            _bulkTagChoices
+                .Where(
+                    tag =>
+                        query.Length == 0
+                        || tag.Name.Contains(
+                            query,
+                            StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(
+                    static tag =>
+                        tag.AssetCount)
+                .ThenBy(
+                    static tag =>
+                        tag.Name,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .Take(80)
+                .ToArray();
+
+        foreach (var tag in visible)
+        {
+            var row =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions(
+                            "Auto,*,Auto"),
+                    ColumnSpacing =
+                        LumineDesign.Space6
+                };
+            row.Children.Add(
+                new Border
+                {
+                    Width = 10,
+                    Height = 10,
+                    CornerRadius =
+                        new CornerRadius(5),
+                    Background =
+                        ResolveBulkTagBrush(
+                            tag.Color),
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                });
+            var label =
+                new TextBlock
+                {
+                    Text = tag.Name,
+                    TextTrimming =
+                        TextTrimming.CharacterEllipsis,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+            Grid.SetColumn(label, 1);
+            row.Children.Add(label);
+            var count =
+                new TextBlock
+                {
+                    Text =
+                        $"{tag.AssetCount:N0}  ＋",
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+            Grid.SetColumn(count, 2);
+            row.Children.Add(count);
+
+            var button =
+                LumineDesign.ConfigureSecondaryButton(
+                    new Button
+                    {
+                        Content = row,
+                        HorizontalAlignment =
+                            HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment =
+                            HorizontalAlignment.Stretch,
+                        MinHeight = 30,
+                        Padding =
+                            new Thickness(
+                                LumineDesign.Space8,
+                                LumineDesign.Space4)
+                    });
+            var name = tag.Name;
+            button.Click +=
+                async (_, _) =>
+                {
+                    await ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            AddTags: [name]));
+                    _bulkTagSearch!.Text =
+                        string.Empty;
+                };
+            host.Children.Add(button);
+        }
+
+        if (visible.Length == 0)
+        {
+            host.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        query.Length == 0
+                            ? "タグがありません。"
+                            : "一致するタグがありません。",
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    Margin =
+                        new Thickness(
+                            LumineDesign.Space6)
+                });
+        }
+    }
+
+    private static IBrush ResolveBulkTagBrush(
+        string? color)
+    {
+        try
+        {
+            return new SolidColorBrush(
+                Color.Parse(
+                    string.IsNullOrWhiteSpace(
+                        color)
+                        ? "#6366f1"
+                        : color));
+        }
+        catch (FormatException)
+        {
+            return LumineDesign.Accent;
+        }
     }
 
     private CancellationTokenSource BeginBulkOperation(
@@ -1318,6 +1702,25 @@ internal sealed class CoreViewerShell : UserControl
             selection.Count > 1;
         _selectionBar.IsVisible =
             isBulk;
+        if (!isBulk)
+        {
+            _grid.SetBottomOverlayInset(0);
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(
+                () =>
+                    _grid.SetBottomOverlayInset(
+                        Math.Max(
+                            76,
+                            _selectionBar.Bounds.Height + 28)),
+                DispatcherPriority.Render);
+
+            if (_bulkTagChoices.Count == 0)
+            {
+                _ = RefreshBulkTagChoicesAsync();
+            }
+        }
         if (_lineageAction is not null)
         {
             _lineageAction.IsEnabled =
