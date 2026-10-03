@@ -1785,6 +1785,9 @@ try
                             $"MainWindow responsive layout regressed at {scaling:P0} render scaling.");
                     }
 
+                    Console.WriteLine(
+                        $"Before lightbox: grid={window.CurrentShell.GridViewer.Bounds}; rows={window.CurrentShell.GridViewer.RowHostBoundsForSmoke}; row-visible={window.CurrentShell.GridViewer.RowHostVisibleForSmoke}; row-loaded={window.CurrentShell.GridViewer.RowHostLoadedForSmoke}; row-items={window.CurrentShell.GridViewer.RowItemCountForSmoke}; realized={window.CurrentShell.GridViewer.RealizedRowCount}; attached-tiles={window.CurrentShell.GridViewer.Diagnostics.AttachedTiles}; ready-tiles={window.CurrentShell.GridViewer.Diagnostics.ReadyTiles}");
+
                     await window.CurrentShell
                         .OpenFocusedViewAsync(0);
                     Dispatcher.UIThread.RunJobs();
@@ -1875,7 +1878,7 @@ try
                     var restoredFocus =
                         window.FocusManager.GetFocusedElement();
                     Console.WriteLine(
-                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}; grid-bounds={window.CurrentShell.GridViewer.Bounds}; realized-rows={window.CurrentShell.GridViewer.RealizedRowCount}; first-realized={window.CurrentShell.GridViewer.FirstRealizedAssetIndex}; first-visible={window.CurrentShell.GridViewer.FirstVisibleAssetIndex}; last-visible={window.CurrentShell.GridViewer.LastVisibleAssetIndex}; columns={window.CurrentShell.GridViewer.Columns}; assets={window.CurrentShell.GridViewer.AssetCount}");
+                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}; grid-bounds={window.CurrentShell.GridViewer.Bounds}; rows={window.CurrentShell.GridViewer.RowHostBoundsForSmoke}; row-visible={window.CurrentShell.GridViewer.RowHostVisibleForSmoke}; row-loaded={window.CurrentShell.GridViewer.RowHostLoadedForSmoke}; row-items={window.CurrentShell.GridViewer.RowItemCountForSmoke}; realized-rows={window.CurrentShell.GridViewer.RealizedRowCount}; first-realized={window.CurrentShell.GridViewer.FirstRealizedAssetIndex}; first-visible={window.CurrentShell.GridViewer.FirstVisibleAssetIndex}; last-visible={window.CurrentShell.GridViewer.LastVisibleAssetIndex}; columns={window.CurrentShell.GridViewer.Columns}; assets={window.CurrentShell.GridViewer.AssetCount}; attached-tiles={window.CurrentShell.GridViewer.Diagnostics.AttachedTiles}; ready-tiles={window.CurrentShell.GridViewer.Diagnostics.ReadyTiles}");
                     Require(
                         window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
