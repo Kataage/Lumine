@@ -1851,7 +1851,15 @@ try
                          AssetSortOrder.ModifiedNewest,
                          AssetSortOrder.ModifiedOldest,
                          AssetSortOrder.FileNameAscending,
-                         AssetSortOrder.FileNameDescending
+                         AssetSortOrder.FileNameDescending,
+                         AssetSortOrder.CreatedNewest,
+                         AssetSortOrder.CreatedOldest,
+                         AssetSortOrder.FileSizeLargest,
+                         AssetSortOrder.FileSizeSmallest,
+                         AssetSortOrder.RatingHighest,
+                         AssetSortOrder.RatingLowest,
+                         AssetSortOrder.StatusAscending,
+                         AssetSortOrder.StatusDescending
                      })
             {
                 await shellRuntime.ApplyQueryAsync(
@@ -1882,6 +1890,32 @@ try
                             StringComparer.OrdinalIgnoreCase.Compare(
                                 firstSorted.DisplayName,
                                 secondSorted.DisplayName) >= 0,
+                        AssetSortOrder.CreatedNewest =>
+                            (firstSorted.CreatedAtUtcTicks ?? long.MinValue)
+                                >= (secondSorted.CreatedAtUtcTicks ?? long.MinValue),
+                        AssetSortOrder.CreatedOldest =>
+                            (firstSorted.CreatedAtUtcTicks ?? long.MinValue)
+                                <= (secondSorted.CreatedAtUtcTicks ?? long.MinValue),
+                        AssetSortOrder.FileSizeLargest =>
+                            firstSorted.FileSize
+                                >= secondSorted.FileSize,
+                        AssetSortOrder.FileSizeSmallest =>
+                            firstSorted.FileSize
+                                <= secondSorted.FileSize,
+                        AssetSortOrder.RatingHighest =>
+                            (firstSorted.Rating ?? 0)
+                                >= (secondSorted.Rating ?? 0),
+                        AssetSortOrder.RatingLowest =>
+                            (firstSorted.Rating ?? 0)
+                                <= (secondSorted.Rating ?? 0),
+                        AssetSortOrder.StatusAscending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.StatusLabel ?? string.Empty,
+                                secondSorted.StatusLabel ?? string.Empty) <= 0,
+                        AssetSortOrder.StatusDescending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.StatusLabel ?? string.Empty,
+                                secondSorted.StatusLabel ?? string.Empty) >= 0,
                         _ => false
                     };
 
