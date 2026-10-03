@@ -303,6 +303,50 @@ internal sealed class BrowseWorkspaceControls : UserControl
         await PublishPreferencesAsync();
     }
 
+    internal bool PrimaryToolbarIsContainedForSmoke
+    {
+        get
+        {
+            if (Bounds.Width <= 0
+                || Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var control in new Control[]
+                     {
+                         _search,
+                         _grid,
+                         _list,
+                         _density
+                     })
+            {
+                var origin =
+                    control.TranslatePoint(
+                        new Point(0, 0),
+                        this);
+                if (origin is not { } point)
+                {
+                    return false;
+                }
+
+                var bounds =
+                    new Rect(
+                        point,
+                        control.Bounds.Size);
+                if (bounds.Left < -0.5
+                    || bounds.Top < -0.5
+                    || bounds.Right > Bounds.Width + 0.5
+                    || bounds.Bottom > Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
     public BrowseFilterState State { get; private set; }
 
     public BrowsePreferences Preferences { get; private set; }
