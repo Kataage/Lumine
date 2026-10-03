@@ -1525,8 +1525,9 @@ try
                 shell.ContextDetail.HasPreview
                 && shell.ContextDetail.TabHeaders.SequenceEqual(
                     new[] { "整理", "制作", "公開", "情報" })
-                && shell.ContextDetail.TabStripUsesLumineStatesForSmoke,
-                "Inspector did not expose the selected image preview and compact Lumine tab-strip information architecture.");
+                && shell.ContextDetail.TabStripUsesLumineStatesForSmoke
+                && shell.ContextDetail.TabPagesHaveIndependentScrollStateForSmoke,
+                "Inspector did not expose the selected image preview, four-destination Lumine tab strip, and independent scroll ownership.");
 
             shell.ContextDetail.SelectTabForSmoke(3);
             Dispatcher.UIThread.RunJobs();
@@ -2551,7 +2552,9 @@ try
                                         .TabHeaders.SequenceEqual(
                                             new[] { "整理", "制作", "公開", "情報" })
                                     && window.CurrentShell.ContextDetail
-                                        .TabStripUsesLumineStatesForSmoke,
+                                        .TabStripUsesLumineStatesForSmoke
+                                    && window.CurrentShell.ContextDetail
+                                        .TabPagesHaveIndependentScrollStateForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 for (var tabIndex = 0;
