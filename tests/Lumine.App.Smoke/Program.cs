@@ -2157,6 +2157,25 @@ try
                     window.Height = 600;
                     Dispatcher.UIThread.RunJobs();
 
+                    if (iteration == 2)
+                    {
+                        var clippedText =
+                            window.GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .FirstOrDefault(
+                                    block =>
+                                        block.IsEffectivelyVisible
+                                        && !string.IsNullOrWhiteSpace(
+                                            block.Text)
+                                        && block.Bounds.Height > 0
+                                        && block.Bounds.Height + 0.5
+                                            < block.FontSize);
+
+                        Require(
+                            clippedText is null,
+                            $"225% Windows text scaling clipped visible product text: '{clippedText?.Text}' ({clippedText?.Bounds.Height:N1} DIP high for {clippedText?.FontSize:N1} DIP font).");
+                    }
+
                     Require(
                         window.IsCompactNavigationLayout,
                         "Minimum-width MainWindow did not switch navigation to compact overlay layout.");
