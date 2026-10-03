@@ -1857,6 +1857,16 @@ try
                             - detailViewportCenterY) <= 1.5,
                         "Focused image did not start visually centered in the viewer viewport.");
 
+                    // The focus contract is tied to the element that opened
+                    // the modal, not whichever asset happens to be selected
+                    // inside the viewer when it closes.
+                    await window.CurrentShell.DetailViewer
+                        .SelectAsync(1);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.CurrentShell.DetailViewer.SelectedAssetIndex == 1,
+                        "Focused viewer did not move away from the invoking asset for focus-return coverage.");
+
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
                     Require(
