@@ -203,6 +203,56 @@ public sealed class ThumbnailViewerControl : UserControl
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
 
+    public async Task<bool> EnsureAssetFocusTargetAsync(
+        long index)
+    {
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            return false;
+        }
+
+        if (GetAssetFocusTarget(index) is not null)
+        {
+            return true;
+        }
+
+        var row =
+            checked((int)(index / _columns));
+
+        // ScrollIntoView requests realization, but Avalonia's virtualizing
+        // presenter completes container creation during a subsequent layout
+        // pass. Coordinate with that lifecycle explicitly instead of keeping
+        // a stale Control reference or retrying Focus on a non-existent tile.
+        _rows.ScrollIntoView(row);
+        _rows.InvalidateMeasure();
+        InvalidateMeasure();
+
+        await Dispatcher.UIThread.InvokeAsync(
+            () =>
+            {
+                _rows.ScrollIntoView(row);
+                _rows.UpdateLayout();
+                UpdateLayout();
+            },
+            DispatcherPriority.Loaded);
+
+        if (GetAssetFocusTarget(index) is not null)
+        {
+            return true;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(
+            () =>
+            {
+                _rows.ScrollIntoView(row);
+                _rows.UpdateLayout();
+                UpdateLayout();
+            },
+            DispatcherPriority.Render);
+
+        return GetAssetFocusTarget(index) is not null;
+    }
+
     public bool FocusAsset(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
