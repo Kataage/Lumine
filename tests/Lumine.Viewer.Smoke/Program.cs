@@ -724,14 +724,27 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
-        // A short scroll away/back must reuse a just-detached decoded
-        // bitmap instead of showing a blank tile while the full async
-        // thumbnail pipeline runs again. The exact virtualization buffer is
-        // platform/layout dependent, so select the actual most-recent warm
-        // asset rather than assuming row zero detaches at a fixed offset.
+        // A short scroll away/back must reuse the existing decoded-cache
+        // entry instead of showing a blank tile while the full async
+        // thumbnail pipeline runs again.
+        for (var attempt = 0;
+             attempt < 250
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.IsAssetReady(0)
+            && viewer.IsAssetWarmForSmoke(0),
+            "Initial first-row thumbnail did not establish a warm-return descriptor.");
+
+        var firstAssetDetached = false;
         for (var rowOffset = 2;
              rowOffset <= 32
-             && viewer.FirstWarmAssetIndexForSmoke is null;
+             && !firstAssetDetached;
              rowOffset++)
         {
             viewer.ScrollToAsset(
@@ -742,33 +755,36 @@ internal static class Program
                         * rowOffset)));
 
             for (var attempt = 0;
-                 attempt < 20
-                 && viewer.FirstWarmAssetIndexForSmoke is null;
+                 attempt < 20;
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
+                firstAssetDetached =
+                    viewer.GetAssetFocusTarget(0)
+                    is null;
+                if (firstAssetDetached)
+                {
+                    break;
+                }
+
                 await Task.Delay(1);
             }
         }
 
-        var warmReturnIndex =
-            viewer.FirstWarmAssetIndexForSmoke;
         Require(
-            warmReturnIndex is not null
-            && viewer.WarmTileEntryCountForSmoke > 0,
-            "Recently detached thumbnails were not retained in the bounded warm-return cache.");
+            firstAssetDetached
+            && viewer.IsAssetWarmForSmoke(0),
+            "Scroll-away acceptance did not actually virtualize the warm first-row thumbnail.");
 
         var warmHitsBeforeReturn =
             viewer.WarmTileHitCountForSmoke;
         var warmReturnWatch =
             Stopwatch.StartNew();
-        viewer.ScrollToAsset(
-            warmReturnIndex!.Value);
+        viewer.ScrollToAsset(0);
 
         for (var attempt = 0;
              attempt < 100
-             && !viewer.IsAssetReady(
-                 warmReturnIndex.Value);
+             && !viewer.IsAssetReady(0);
              attempt++)
         {
             Dispatcher.UIThread.RunJobs();
@@ -777,13 +793,12 @@ internal static class Program
 
         warmReturnWatch.Stop();
         Require(
-            viewer.IsAssetReady(
-                warmReturnIndex.Value)
+            viewer.IsAssetReady(0)
             && viewer.WarmTileHitCountForSmoke
                 > warmHitsBeforeReturn
             && warmReturnWatch.Elapsed
                 < TimeSpan.FromMilliseconds(150),
-            $"Warm scroll-back did not repaint a recently visible thumbnail within the interactive budget: {warmReturnWatch.Elapsed.TotalMilliseconds:N1} ms.");
+            $"Warm scroll-back did not synchronously reuse the decoded thumbnail within the interactive budget: {warmReturnWatch.Elapsed.TotalMilliseconds:N1} ms.");
 
         var selectAllWatch =
             Stopwatch.StartNew();
