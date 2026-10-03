@@ -502,6 +502,20 @@ public sealed class ThumbnailViewerControl : UserControl
         return tile.GetActionGeometryForSmoke();
     }
 
+    internal bool IsRealizedTileActionOverlayVisibleForSmoke(
+        long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.IsActionOverlayVisibleForSmoke();
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
@@ -1750,7 +1764,10 @@ public sealed class ThumbnailViewerControl : UserControl
                 };
 
             var showActions =
-                _hovered;
+                _layoutMode == ViewerLayoutMode.List
+                || _hovered
+                || IsSelected
+                || IsKeyboardFocusWithin;
             if (showActions)
             {
                 EnsureActionOverlay();
@@ -1846,6 +1863,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 Grid.SetColumn(actions, 2);
                 _listPanel!.Children.Add(actions);
             }
+        }
+
+        public bool IsActionOverlayVisibleForSmoke()
+        {
+            EnsureActionOverlay();
+            UpdateVisualState();
+            return _actionOverlay!.IsVisible;
         }
 
         public List<ViewerTileActionGeometry>
