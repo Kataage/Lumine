@@ -839,30 +839,10 @@ internal static class ProductNavigationViews
     {
         item.Click +=
             async (_, _) =>
-            {
-                item.IsEnabled = false;
-                try
-                {
-                    await action();
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception exception)
-                {
-                    System.Diagnostics.Trace.TraceError(
-                        exception.ToString());
-                    reportError?.Invoke(
-                        "操作を完了できませんでした。"
-                        + (string.IsNullOrWhiteSpace(exception.Message)
-                            ? string.Empty
-                            : $" {exception.Message}"));
-                }
-                finally
-                {
-                    item.IsEnabled = true;
-                }
-            };
+                await ExecuteAsync(
+                    item,
+                    action,
+                    reportError);
     }
 
     private static void AttachAsync(
@@ -872,29 +852,50 @@ internal static class ProductNavigationViews
     {
         button.Click +=
             async (_, _) =>
-            {
-                button.IsEnabled = false;
-                try
-                {
-                    await action();
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception exception)
-                {
-                    System.Diagnostics.Trace.TraceError(
-                        exception.ToString());
-                    reportError?.Invoke(
-                        "操作を完了できませんでした。"
-                        + (string.IsNullOrWhiteSpace(exception.Message)
-                            ? string.Empty
-                            : $" {exception.Message}"));
-                }
-                finally
-                {
-                    button.IsEnabled = true;
-                }
-            };
+                await ExecuteAsync(
+                    button,
+                    action,
+                    reportError);
     }
+
+    private static async Task ExecuteAsync(
+        Control command,
+        Func<Task> action,
+        Action<string>? reportError)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(action);
+
+        command.IsEnabled = false;
+        try
+        {
+            await action();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
+            reportError?.Invoke(
+                "操作を完了できませんでした。"
+                + (string.IsNullOrWhiteSpace(exception.Message)
+                    ? string.Empty
+                    : $" {exception.Message}"));
+        }
+        finally
+        {
+            command.IsEnabled = true;
+        }
+    }
+
+    internal static Task ExecuteAsyncForSmoke(
+        Control command,
+        Func<Task> action,
+        Action<string>? reportError = null) =>
+        ExecuteAsync(
+            command,
+            action,
+            reportError);
 }
