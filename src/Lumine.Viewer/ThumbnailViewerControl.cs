@@ -17,10 +17,9 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly object _bitmapReleaseGate = new();
     private readonly HashSet<Task> _pendingBitmapReleases = [];
     private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
-    private readonly Dictionary<long, WarmTileEntry> _warmTiles = [];
-    private readonly LinkedList<long> _warmTileLru = [];
-    private long _warmTileBytes;
-    private long _warmTileHits;
+    private readonly Dictionary<long, WarmPresentation> _warmPresentations = [];
+    private readonly LinkedList<long> _warmPresentationLru = [];
+    private long _warmPresentationHits;
     private Exception? _bitmapReleaseFailure;
 
     // Tile decode tasks extend beyond ViewerSession.GetThumbnailAsync:
@@ -43,19 +42,12 @@ public sealed class ThumbnailViewerControl : UserControl
     private const double GridOuterPadding = 12;
     private const double GridCornerRadius = 10;
 
-    private int WarmTileEntryLimit =>
+    private int WarmPresentationLimit =>
         Math.Max(
-            1,
+            16,
             Math.Min(
-                48,
-                _session.Options.DecodedBitmapEntryLimit / 3));
-
-    private long WarmTileByteLimit =>
-        Math.Max(
-            1,
-            Math.Min(
-                48L * 1024 * 1024,
-                _session.Options.DecodedBitmapByteLimit / 3));
+                256,
+                _session.Options.DecodedBitmapEntryLimit * 2));
 
     public ThumbnailViewerControl(
         ViewerSession session,
@@ -124,7 +116,8 @@ public sealed class ThumbnailViewerControl : UserControl
         // where tile decode/file work can outlive the owning window.
         CancelPendingAssetFocus();
         _rows.ItemsSource = null;
-        ClearWarmTileCache();
+        _warmPresentations.Clear();
+        _warmPresentationLru.Clear();
         ClearSelection();
     }
 
@@ -222,16 +215,16 @@ public sealed class ThumbnailViewerControl : UserControl
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
     internal int WarmTileEntryCountForSmoke =>
-        _warmTiles.Count;
+        _warmPresentations.Count;
 
     internal long WarmTileHitCountForSmoke =>
-        _warmTileHits;
+        _warmPresentationHits;
 
     internal bool IsAssetWarmForSmoke(long index) =>
-        _warmTiles.ContainsKey(index);
+        _warmPresentations.ContainsKey(index);
 
     internal long? FirstWarmAssetIndexForSmoke =>
-        _warmTileLru.First?.Value;
+        _warmPresentationLru.First?.Value;
 
     public async Task<bool> EnsureAssetFocusTargetAsync(
         long index)
@@ -744,101 +737,103 @@ public sealed class ThumbnailViewerControl : UserControl
             ?? _compositor;
     }
 
-    private void ParkWarmTile(
+    private void RememberWarmPresentation(
         long index,
         ViewerAsset asset,
-        DecodedBitmapLease lease)
+        ViewerThumbnail thumbnail)
     {
-        ArgumentNullException.ThrowIfNull(asset);
-        ArgumentNullException.ThrowIfNull(lease);
-
-        if (_warmTiles.Remove(index, out var previous))
+        if (_warmPresentations.Remove(
+                index,
+                out var previous))
         {
-            _warmTileLru.Remove(previous.Node);
-            _warmTileBytes -= previous.EstimatedBytes;
-            ReleaseBitmapLeaseAfterComposition(
-                previous.Lease);
-        }
-
-        var pixels =
-            lease.Bitmap.PixelSize;
-        var estimatedBytes =
-            Math.Max(
-                1L,
-                checked(
-                    (long)pixels.Width
-                    * pixels.Height
-                    * 4));
-
-        if (estimatedBytes > WarmTileByteLimit)
-        {
-            ReleaseBitmapLeaseAfterComposition(lease);
-            return;
+            _warmPresentationLru.Remove(
+                previous.Node);
         }
 
         var node =
-            _warmTileLru.AddLast(index);
-        _warmTiles[index] =
-            new WarmTileEntry(
+            _warmPresentationLru.AddLast(
+                index);
+        _warmPresentations[index] =
+            new WarmPresentation(
                 asset,
-                lease,
-                estimatedBytes,
+                thumbnail,
                 node);
-        _warmTileBytes += estimatedBytes;
 
-        while (_warmTiles.Count > WarmTileEntryLimit
-               || _warmTileBytes > WarmTileByteLimit)
+        while (_warmPresentations.Count
+               > WarmPresentationLimit)
         {
             var oldest =
-                _warmTileLru.First;
+                _warmPresentationLru.First;
             if (oldest is null)
             {
                 break;
             }
 
-            _warmTileLru.RemoveFirst();
-            if (!_warmTiles.Remove(
-                    oldest.Value,
-                    out var evicted))
-            {
-                continue;
-            }
-
-            _warmTileBytes -=
-                evicted.EstimatedBytes;
-            ReleaseBitmapLeaseAfterComposition(
-                evicted.Lease);
+            _warmPresentationLru.RemoveFirst();
+            _warmPresentations.Remove(
+                oldest.Value);
         }
     }
 
-    private bool TryTakeWarmTile(
+    private void UpdateWarmPresentationAsset(
         long index,
-        out WarmTileEntry entry)
+        ViewerAsset asset)
     {
-        if (!_warmTiles.Remove(
+        if (!_warmPresentations.TryGetValue(
                 index,
-                out entry!))
+                out var existing))
+        {
+            return;
+        }
+
+        _warmPresentations[index] =
+            existing with
+            {
+                Asset = asset
+            };
+    }
+
+    private bool TryAcquireWarmPresentation(
+        long index,
+        out ViewerAsset asset,
+        out DecodedBitmapLease lease)
+    {
+        asset = null!;
+        lease = null!;
+
+        if (!_warmPresentations.TryGetValue(
+                index,
+                out var existing))
         {
             return false;
         }
 
-        _warmTileLru.Remove(entry.Node);
-        _warmTileBytes -= entry.EstimatedBytes;
-        _warmTileHits++;
-        return true;
-    }
-
-    private void ClearWarmTileCache()
-    {
-        foreach (var entry in _warmTiles.Values)
+        if (!_session.BitmapCache.TryAcquireExisting(
+                existing.Thumbnail,
+                out var acquired)
+            || acquired is null)
         {
-            ReleaseBitmapLeaseAfterComposition(
-                entry.Lease);
+            _warmPresentations.Remove(index);
+            _warmPresentationLru.Remove(
+                existing.Node);
+            return false;
         }
 
-        _warmTiles.Clear();
-        _warmTileLru.Clear();
-        _warmTileBytes = 0;
+        _warmPresentationLru.Remove(
+            existing.Node);
+        var node =
+            _warmPresentationLru.AddLast(
+                index);
+        _warmPresentations[index] =
+            existing with
+            {
+                Node = node
+            };
+
+        _warmPresentationHits++;
+        asset = existing.Asset;
+        lease = acquired;
+        return true;
     }
 
     private void ReleaseBitmapLeaseAfterComposition(
@@ -1566,8 +1561,7 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             _owner.SelectionChanged -= OnSelectionChanged;
             _session.NotifyTileDetached();
-            CancelLoad(
-                keepWarmBitmap: true);
+            CancelLoad();
         }
 
         private void OnPointerEntered(
@@ -1882,21 +1876,23 @@ public sealed class ThumbnailViewerControl : UserControl
             var token =
                 _loadCancellation.Token;
 
-            if (_owner.TryTakeWarmTile(
+            if (_owner.TryAcquireWarmPresentation(
                     _index,
-                    out var warm))
+                    out var warmAsset,
+                    out var warmLease))
             {
-                _asset = warm.Asset;
+                _asset = warmAsset;
                 ReplaceBitmapLease(
-                    warm.Lease);
+                    warmLease);
                 ApplyPresentation(
-                    warm.Asset);
+                    warmAsset);
                 MarkReady();
 
                 var refresh =
                     RefreshWarmPresentationAsync(
                         token);
-                _owner.TrackTileLoad(refresh);
+                _owner.TrackTileLoad(
+                    refresh);
                 return;
             }
 
@@ -1905,8 +1901,7 @@ public sealed class ThumbnailViewerControl : UserControl
             _owner.TrackTileLoad(load);
         }
 
-        private void CancelLoad(
-            bool keepWarmBitmap = false)
+        private void CancelLoad()
         {
             _loadCancellation?.Cancel();
             _loadCancellation?.Dispose();
@@ -1916,21 +1911,6 @@ public sealed class ThumbnailViewerControl : UserControl
             {
                 _isReady = false;
                 _session.NotifyTileNotReady();
-            }
-
-            if (keepWarmBitmap
-                && _bitmapLease is not null
-                && _asset is not null)
-            {
-                var lease =
-                    _bitmapLease;
-                _bitmapLease = null;
-                _image.Source = null;
-                _owner.ParkWarmTile(
-                    _index,
-                    _asset,
-                    lease);
-                return;
             }
 
             ReplaceBitmapLease(null);
@@ -1997,6 +1977,9 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken
                             .ThrowIfCancellationRequested();
                         _asset = asset;
+                        _owner.UpdateWarmPresentationAsset(
+                            _index,
+                            asset);
                         ApplyPresentation(asset);
                     });
             }
@@ -2006,9 +1989,6 @@ public sealed class ThumbnailViewerControl : UserControl
             }
             catch (Exception exception)
             {
-                // The warm bitmap is already a valid visual fallback.
-                // Surface the metadata refresh failure through diagnostics
-                // without replacing a visible image with an error placeholder.
                 _session.NotifyTileLoadFailed(
                     exception);
             }
@@ -2048,6 +2028,10 @@ public sealed class ThumbnailViewerControl : UserControl
                         var next = lease;
                         lease = null;
                         _asset = asset;
+                        _owner.RememberWarmPresentation(
+                            _index,
+                            asset,
+                            thumbnail);
                         ReplaceBitmapLease(next);
                         ApplyPresentation(asset);
                         MarkReady();
@@ -2083,10 +2067,9 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
-    private sealed record WarmTileEntry(
+    private sealed record WarmPresentation(
         ViewerAsset Asset,
-        DecodedBitmapLease Lease,
-        long EstimatedBytes,
+        ViewerThumbnail Thumbnail,
         LinkedListNode<long> Node);
 
     internal readonly record struct ViewerTilePresentation(
