@@ -2522,19 +2522,43 @@ try
                                 window.CurrentShell.HideContextDetail();
                                 window.CurrentShell.GridViewer.ClearSelection();
                                 window.CurrentShell.GridViewer.SelectAsset(0);
+                                Dispatcher.UIThread.RunJobs();
+
+                                var gridBeforeBulk =
+                                    window.CurrentShell.GridViewerBounds;
+
                                 window.CurrentShell.GridViewer.SelectAsset(
                                     1,
                                     scrollIntoView: false,
                                     mode: ViewerSelectionMode.Toggle);
                                 Dispatcher.UIThread.RunJobs();
 
+                                var gridDuringBulk =
+                                    window.CurrentShell.GridViewerBounds;
                                 Require(
                                     window.CurrentShell.IsBulkSelectionBarVisible
                                     && window.CurrentShell
-                                        .SelectionToolbarIsContainedForSmoke,
-                                    $"Bulk selection toolbar escaped its surface at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+                                        .SelectionToolbarIsContainedForSmoke
+                                    && Math.Abs(
+                                        gridDuringBulk.Y
+                                        - gridBeforeBulk.Y) < 0.5
+                                    && Math.Abs(
+                                        gridDuringBulk.Height
+                                        - gridBeforeBulk.Height) < 0.5,
+                                    $"Bulk selection chrome shifted or escaped the image canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 window.CurrentShell.GridViewer.ClearSelection();
+                                Dispatcher.UIThread.RunJobs();
+                                var gridAfterBulk =
+                                    window.CurrentShell.GridViewerBounds;
+                                Require(
+                                    Math.Abs(
+                                        gridAfterBulk.Y
+                                        - gridBeforeBulk.Y) < 0.5
+                                    && Math.Abs(
+                                        gridAfterBulk.Height
+                                        - gridBeforeBulk.Height) < 0.5,
+                                    $"Leaving bulk selection shifted the image canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                             }
                         }
                     }
