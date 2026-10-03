@@ -2,19 +2,20 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Lumine.Core;
 
 namespace Lumine.Viewer;
 
 internal static class ViewerVisualTokens
 {
-    public static readonly Color StageColor = Color.Parse("#09090B");
-    public static readonly Color SurfaceColor = Color.Parse("#151518");
-    public static readonly Color SurfaceRaisedColor = Color.Parse("#1C1C20");
-    public static readonly Color BorderColor = Color.Parse("#3F3F46");
-    public static readonly Color BorderStrongColor = Color.Parse("#71717A");
-    public static readonly Color ForegroundColor = Color.Parse("#FAFAFA");
-    public static readonly Color MutedForegroundColor = Color.Parse("#D4D4D8");
-    public static readonly Color SelectionColor = Color.Parse("#E4E4E7");
+    public static readonly Color StageColor = Color.Parse(LumineVisualPalette.Background);
+    public static readonly Color SurfaceColor = Color.Parse(LumineVisualPalette.SurfaceRaised);
+    public static readonly Color SurfaceRaisedColor = Color.Parse(LumineVisualPalette.ControlSurface);
+    public static readonly Color BorderColor = Color.Parse(LumineVisualPalette.ViewerBorder);
+    public static readonly Color BorderStrongColor = Color.Parse(LumineVisualPalette.BorderStrong);
+    public static readonly Color ForegroundColor = Color.Parse(LumineVisualPalette.Foreground);
+    public static readonly Color MutedForegroundColor = Color.Parse(LumineVisualPalette.ViewerMutedForeground);
+    public static readonly Color SelectionColor = Color.Parse(LumineVisualPalette.Selection);
 
     public static readonly IBrush Stage = new SolidColorBrush(StageColor);
     public static readonly IBrush Surface = new SolidColorBrush(SurfaceColor);
