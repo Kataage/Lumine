@@ -1255,24 +1255,72 @@ internal sealed class CoreViewerShell : UserControl
     }
 
     private async Task<IReadOnlyList<ViewerAsset>>
-        ResolveSelectedAssetsAsync(
+        ResolveSelectedRelationAssetsAsync(
             CancellationToken cancellationToken = default)
     {
+        if (_grid.SelectedAssetCount != 2)
+        {
+            return Array.Empty<ViewerAsset>();
+        }
+
         var indices =
             _grid.SelectedAssetIndices;
         var assets =
-            new List<ViewerAsset>(indices.Count);
+            new ViewerAsset[2];
 
-        foreach (var index in indices)
+        for (var position = 0;
+             position < assets.Length;
+             position++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            assets.Add(
+            assets[position] =
                 await _runtime.ViewerSession.GetAssetAsync(
-                    index,
-                    cancellationToken));
+                    indices[position],
+                    cancellationToken);
         }
 
         return assets;
+    }
+
+    private async Task<CreativeSelectionPreview>
+        CreateSelectionPreviewAsync(
+            int sampleLimit = 8,
+            CancellationToken cancellationToken = default)
+    {
+        var count =
+            _grid.SelectedAssetCount;
+        if (count <= 0)
+        {
+            return new CreativeSelectionPreview(
+                0,
+                Array.Empty<string>());
+        }
+
+        var indices =
+            _grid.SelectedAssetIndices;
+        var sampleCount =
+            Math.Min(
+                count,
+                Math.Max(0, sampleLimit));
+        var names =
+            new string[sampleCount];
+
+        for (var position = 0;
+             position < sampleCount;
+             position++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var asset =
+                await _runtime.ViewerSession.GetAssetAsync(
+                    indices[position],
+                    cancellationToken);
+            names[position] =
+                asset.DisplayName;
+        }
+
+        return new CreativeSelectionPreview(
+            count,
+            names);
     }
 
     private ValueTask<IReadOnlyList<long>>
@@ -1377,7 +1425,7 @@ internal sealed class CoreViewerShell : UserControl
     {
         ArgumentNullException.ThrowIfNull(input);
         var assets =
-            await ResolveSelectedAssetsAsync();
+            await ResolveSelectedRelationAssetsAsync();
         if (assets.Count != 2)
         {
             _bulkStatus.Text =
@@ -1460,9 +1508,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateWorkDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1478,7 +1526,7 @@ internal sealed class CoreViewerShell : UserControl
         var input =
             await CreativeArchiveDialogs.ShowWorkAsync(
                 owner,
-                assets);
+                selection);
         if (input is not null)
         {
             await CreateWorkFromSelectionAsync(
@@ -1488,9 +1536,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateGenerationGroupDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1510,7 +1558,7 @@ internal sealed class CoreViewerShell : UserControl
             await CreativeArchiveDialogs
                 .ShowGenerationGroupAsync(
                     owner,
-                    assets,
+                    selection,
                     works);
         if (input is not null)
         {
@@ -1521,8 +1569,15 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateRelationDialogAsync()
     {
+        if (_grid.SelectedAssetCount != 2)
+        {
+            _bulkStatus.Text =
+                "Lineageは2枚を選択してください。";
+            return;
+        }
+
         var assets =
-            await ResolveSelectedAssetsAsync();
+            await ResolveSelectedRelationAssetsAsync();
         if (assets.Count != 2)
         {
             _bulkStatus.Text =
@@ -1551,9 +1606,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreatePublicationDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1573,7 +1628,7 @@ internal sealed class CoreViewerShell : UserControl
             await CreativeArchiveDialogs
                 .ShowPublicationAsync(
                     owner,
-                    assets,
+                    selection,
                     works);
         if (input is not null)
         {
@@ -1584,9 +1639,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task DeleteSelectedSourcesAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selectedCount =
+            _grid.SelectedAssetCount;
+        if (selectedCount == 0)
         {
             return;
         }
@@ -1604,7 +1659,7 @@ internal sealed class CoreViewerShell : UserControl
             await ProductDialogs.ConfirmAsync(
                 owner,
                 "元ファイルを削除しますか？",
-                $"{assets.Count:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
+                $"{selectedCount:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
                 "この操作はLumineから元に戻せません。Work / Generation Group / Publication等の履歴は、参照可能なsnapshotを保持する場合があります。",
                 confirmLabel: "元ファイルを削除",
                 tone: ProductDialogTone.Danger);
@@ -1612,6 +1667,20 @@ internal sealed class CoreViewerShell : UserControl
         {
             return;
         }
+
+        var selectedIds =
+            await ResolveSelectedAssetIdsAsync();
+        if (selectedIds.Count == 0)
+        {
+            return;
+        }
+
+        // Resolve source paths through one background Library batch rather
+        // than issuing one Viewer metadata request per selected item.
+        var assets =
+            await _runtime.LibraryService.GetAssetsByIdsAsync(
+                _runtime.Library.Id,
+                selectedIds);
 
         _bulkStatus.Text =
             "元ファイルを削除しています…";
