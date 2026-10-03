@@ -2298,6 +2298,62 @@ try
                             StringComparison.Ordinal),
                         $"Fresh MainWindow did not start in the branded Welcome state: {window.ProductShellState}.");
 
+                    var retryableMissingRoot =
+                        repeatedLibraryRoot
+                        + "-retryable-missing";
+                    if (Directory.Exists(
+                            retryableMissingRoot))
+                    {
+                        Directory.Delete(
+                            retryableMissingRoot,
+                            recursive: true);
+                    }
+
+                    await window.OpenLibraryAsync(
+                        retryableMissingRoot);
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "Error",
+                            StringComparison.Ordinal)
+                        && window.HasRetryableOpenFailureForSmoke
+                        && window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "もう一度開く",
+                                    StringComparison.Ordinal))
+                        && window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "別の画像フォルダーを選ぶ",
+                                    StringComparison.Ordinal))
+                        && window.GetVisualDescendants()
+                            .OfType<Expander>()
+                            .Any(expander =>
+                                string.Equals(
+                                    expander.Header as string,
+                                    "エラー詳細",
+                                    StringComparison.Ordinal)),
+                        "Library-open failure did not expose local retry/reselect recovery actions.");
+
+                    Directory.CreateDirectory(
+                        retryableMissingRoot);
+                    await window.RetryFailedLibraryForSmokeAsync();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.Equals(
+                            window.ProductShellState,
+                            "EmptyLibrary",
+                            StringComparison.Ordinal)
+                        && !window.HasRetryableOpenFailureForSmoke,
+                        "Retrying the same recovered library path did not transition out of Error cleanly.");
+
                     await window.OpenLibraryAsync(
                         repeatedLibraryRoot);
 
