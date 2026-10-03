@@ -298,17 +298,13 @@ internal sealed class CoreViewerShell : UserControl
                 _bulkActions
                     .GetVisualDescendants()
                     .OfType<Button>()
-                    .Append(
+                    .Concat(
                         _bulkActions
                             .Children
-                            .OfType<Button>()
-                            .FirstOrDefault())
-                    .Where(
-                        static button =>
-                            button is not null)
+                            .OfType<Button>())
                     .Select(
                         static button =>
-                            button!.Content as string
+                            button.Content as string
                             ?? string.Empty)
                     .ToArray();
 
