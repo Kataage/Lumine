@@ -140,8 +140,12 @@ public sealed class DetailViewerControl : UserControl
         _image = new Image
         {
             Stretch = Stretch.Fill,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top
+            // Fit-mode images can be smaller than the ScrollViewer viewport
+            // on one axis. Center the image within the stage instead of
+            // pinning it to the top-left; when zoomed beyond the viewport the
+            // content still expands normally and ScrollViewer offset owns pan.
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         _session.SetOriginalReleaseHandler(
