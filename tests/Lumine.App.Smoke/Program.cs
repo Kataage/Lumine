@@ -2109,4 +2109,7 @@ internal sealed class AppAdapterSmokeApplication : Application
                     UseHeadlessDrawing = false,
                     OverlayPopups = false
                 });
+
+    public override void Initialize() =>
+        App.ApplyProductTheme(this);
 }
