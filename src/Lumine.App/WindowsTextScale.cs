@@ -11,7 +11,24 @@ internal static class WindowsTextScale
         @"Software\Microsoft\Accessibility";
     private const string TextScaleFactorValue =
         "TextScaleFactor";
-    private const double WindowsBaseline = 96d;
+    private const double WindowsPercentBaseline = 100d;
+
+    internal static double NormalizeRegistryValue(
+        double raw)
+    {
+        if (!double.IsFinite(raw)
+            || raw <= 0)
+        {
+            return 1d;
+        }
+
+        // HKCU\Software\Microsoft\Accessibility\TextScaleFactor stores a
+        // percentage: 100 is the default 100% text size and 225 is 225%.
+        return Math.Clamp(
+            raw / WindowsPercentBaseline,
+            1d,
+            2.25d);
+    }
 
     public static double Resolve()
     {
@@ -58,7 +75,7 @@ internal static class WindowsTextScale
                             CultureInfo.InvariantCulture,
                             out var parsed) =>
                         parsed,
-                    _ => WindowsBaseline
+                    _ => WindowsPercentBaseline
                 };
 
             if (!double.IsFinite(raw)
@@ -67,13 +84,7 @@ internal static class WindowsTextScale
                 return 1d;
             }
 
-            // Windows stores the accessibility text scale with 96 as the
-            // baseline. Microsoft presets include 120 and 144; clamp larger
-            // values to Lumine's supported 225% acceptance ceiling.
-            return Math.Clamp(
-                raw / WindowsBaseline,
-                1d,
-                2.25d);
+            return NormalizeRegistryValue(raw);
         }
         catch (Exception exception)
             when (exception is UnauthorizedAccessException
