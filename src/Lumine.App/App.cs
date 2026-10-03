@@ -7,19 +7,36 @@ namespace Lumine.App;
 
 public sealed class App : Application
 {
-    public override void Initialize()
+    public override void Initialize() =>
+        ApplyProductTheme(this);
+
+    internal static void ApplyProductTheme(
+        Application application)
     {
-        RequestedThemeVariant = ThemeVariant.Dark;
-        Resources["Lumine.Background"] = LumineDesign.Background;
-        Resources["Lumine.Surface"] = LumineDesign.Surface;
-        Resources["Lumine.SurfaceRaised"] = LumineDesign.SurfaceRaised;
-        Resources["Lumine.Border"] = LumineDesign.Border;
-        Resources["Lumine.Foreground"] = LumineDesign.Foreground;
-        Resources["Lumine.MutedForeground"] = LumineDesign.MutedForeground;
-        Resources["Lumine.Accent"] = LumineDesign.Accent;
-        Resources["Lumine.Focus"] = LumineDesign.Focus;
-        Resources["Lumine.Warning"] = LumineDesign.Warning;
-        Resources["Lumine.Danger"] = LumineDesign.Danger;
+        ArgumentNullException.ThrowIfNull(application);
+
+        application.RequestedThemeVariant =
+            ThemeVariant.Dark;
+        application.Resources["Lumine.Background"] =
+            LumineDesign.Background;
+        application.Resources["Lumine.Surface"] =
+            LumineDesign.Surface;
+        application.Resources["Lumine.SurfaceRaised"] =
+            LumineDesign.SurfaceRaised;
+        application.Resources["Lumine.Border"] =
+            LumineDesign.Border;
+        application.Resources["Lumine.Foreground"] =
+            LumineDesign.Foreground;
+        application.Resources["Lumine.MutedForeground"] =
+            LumineDesign.MutedForeground;
+        application.Resources["Lumine.Accent"] =
+            LumineDesign.Accent;
+        application.Resources["Lumine.Focus"] =
+            LumineDesign.Focus;
+        application.Resources["Lumine.Warning"] =
+            LumineDesign.Warning;
+        application.Resources["Lumine.Danger"] =
+            LumineDesign.Danger;
 
         var fluentTheme =
             new FluentTheme();
@@ -30,7 +47,7 @@ public sealed class App : Application
                 RegionColor =
                     LumineDesign.BackgroundColor
             };
-        Styles.Add(fluentTheme);
+        application.Styles.Add(fluentTheme);
     }
 
     public override void OnFrameworkInitializationCompleted()
