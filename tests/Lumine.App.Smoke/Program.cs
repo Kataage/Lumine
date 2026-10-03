@@ -1518,6 +1518,27 @@ try
                     == "context-detail-note",
                 "Contextual detail panel did not expose user-owned metadata.");
 
+            Require(
+                shell.ContextDetail.HasPreview
+                && shell.ContextDetail.TabHeaders.SequenceEqual(
+                    new[] { "整理", "制作", "情報" }),
+                "Inspector did not expose the selected image preview and three-section information architecture.");
+
+            shell.ContextDetail.SelectTabForSmoke(2);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.SelectedTabIndex == 2
+                && shell.ContextDetail.SelectedTabHeader == "情報"
+                && shell.ContextDetail.PathText.Contains(
+                    firstContextAsset.RelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase),
+                "Inspector information tab did not remain reachable after the tabbed redesign.");
+
+            shell.ContextDetail.SelectTabForSmoke(0);
+            Dispatcher.UIThread.RunJobs();
+
             shell.ContextDetail.SetEditorValuesForSmoke(
                 rating: 3,
                 favorite: false,
@@ -1661,6 +1682,9 @@ try
                         publication.Id == smokePublication!.Id),
                 "Creative context query did not return all archive concepts for the selected asset.");
 
+            shell.ContextDetail.SelectTabForSmoke(1);
+            Dispatcher.UIThread.RunJobs();
+
             Require(
                 shell.ContextDetail.WorksText.Contains(
                     "App Smoke Work",
@@ -1675,6 +1699,10 @@ try
                     "App Smoke Publication",
                     StringComparison.Ordinal),
                 "Contextual detail did not render human-readable creative archive context.");
+
+            Require(
+                shell.ContextDetail.SelectedTabHeader == "制作",
+                "Inspector creative context was not reachable through the dedicated 制作 tab.");
 
             var publicationHistory =
                 await shellRuntime.LibraryService.ListPublicationsAsync(
