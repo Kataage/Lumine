@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
+using Lumine.Core;
 
 namespace Lumine.App;
 
@@ -14,6 +15,9 @@ public sealed class App : Application
         Application application)
     {
         ArgumentNullException.ThrowIfNull(application);
+
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            WindowsTextScale.Resolve());
 
         application.RequestedThemeVariant =
             ThemeVariant.Dark;
