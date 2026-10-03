@@ -2458,6 +2458,15 @@ try
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
+                                        .UsesAdvancedFilterFlyoutForSmoke
+                                    && window.BrowseControlsForSmoke
+                                        .ActiveAdvancedFilterCountForSmoke == 0
+                                    && string.Equals(
+                                        window.BrowseControlsForSmoke
+                                            .FilterButtonTextForSmoke,
+                                        "フィルター",
+                                        StringComparison.Ordinal)
+                                    && window.BrowseControlsForSmoke
                                         .SearchPaddingForSmoke.Top <= 4
                                     && (iteration == 2
                                         || window.BrowseControlsForSmoke
