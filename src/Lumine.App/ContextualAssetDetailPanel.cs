@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using System.Text.Json;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -67,6 +68,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _groups;
     private readonly TextBlock _relations;
     private readonly TextBlock _publications;
+    private readonly TextBlock _publicationCount;
+    private readonly StackPanel _publicationCards;
     private readonly ComboBox _ratingEditor;
     private readonly CheckBox _favoriteEditor;
     private readonly ComboBox _statusEditor;
@@ -133,7 +136,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _works = CreateValue(wrap: true);
         _groups = CreateValue(wrap: true);
         _relations = CreateValue(wrap: true);
-        _publications = CreateValue(wrap: true);
+        _publications =
+            CreateValue(wrap: true);
+        _publications.IsVisible = false;
+        _publicationCount =
+            new TextBlock
+            {
+                Text = "0件",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            };
+        _publicationCards =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8
+            };
 
         _ratingEditor =
             LumineDesign.ConfigureComboBox(
@@ -507,7 +527,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         AddSection(
             publicationBody,
             "Publication",
-            _publications);
+            _publicationCount);
+        publicationBody.Children.Add(
+            _publicationCards);
 
         var informationBody =
             new StackPanel
@@ -961,6 +983,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _groups.Text = "—";
         _relations.Text = "—";
         _publications.Text = "—";
+        _publicationCount.Text = "0件";
+        _publicationCards.Children.Clear();
+        _publicationCards.Children.Add(
+            CreatePublicationMessageCard(
+                "公開履歴はありません。",
+                warning: false));
         _saveStatus.Text = "—";
         _focused.IsEnabled = false;
         SelectTab(0);
@@ -1172,6 +1200,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _groups.Text = "読み込み中…";
         _relations.Text = "読み込み中…";
         _publications.Text = "読み込み中…";
+        _publicationCount.Text =
+            "読み込み中…";
+        _publicationCards.Children.Clear();
 
         try
         {
@@ -1249,6 +1280,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                     ? string.Empty
                                     : $"\n  {publication.TagsSnapshot}")
                                 + $"\n  {string.Join(", ", publication.Assets.Select(static asset => asset.FileName))}"));
+            RenderPublicationCards(
+                context.Publications);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -1267,8 +1300,300 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _groups.Text = "—";
             _relations.Text = "—";
             _publications.Text = "—";
+            _publicationCount.Text = "取得できませんでした";
+            _publicationCards.Children.Clear();
+            _publicationCards.Children.Add(
+                CreatePublicationMessageCard(
+                    message,
+                    warning: true));
         }
     }
+
+    private void RenderPublicationCards(
+        IReadOnlyList<PublicationInfo> publications)
+    {
+        _publicationCards.Children.Clear();
+        _publicationCount.Text =
+            $"{publications.Count:N0}件";
+
+        if (publications.Count == 0)
+        {
+            _publicationCards.Children.Add(
+                CreatePublicationMessageCard(
+                    "この画像の公開履歴はありません。",
+                    warning: false));
+            return;
+        }
+
+        foreach (var publication in
+                 publications
+                     .OrderByDescending(
+                         static item =>
+                             item.PublishedAtUtc))
+        {
+            _publicationCards.Children.Add(
+                CreatePublicationCard(
+                    publication));
+        }
+    }
+
+    private static Control CreatePublicationCard(
+        PublicationInfo publication)
+    {
+        var body =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space6
+            };
+
+        var header =
+            new TextBlock
+            {
+                Text =
+                    $"{publication.PublishedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}"
+                    + $" · {publication.Destination}"
+                    + (string.IsNullOrWhiteSpace(
+                            publication.Account)
+                        ? string.Empty
+                        : $" · {publication.Account}"),
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+        body.Children.Add(header);
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.Title))
+        {
+            body.Children.Add(
+                new TextBlock
+                {
+                    Text = publication.Title,
+                    Foreground =
+                        LumineDesign.Foreground,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    FontSize =
+                        LumineDesign.BodyFontSize,
+                    TextWrapping =
+                        TextWrapping.Wrap
+                });
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.Body))
+        {
+            var excerpt =
+                publication.Body.Length <= 280
+                    ? publication.Body
+                    : publication.Body[..277]
+                        + "…";
+            body.Children.Add(
+                CreatePublicationDetail(
+                    excerpt));
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.TagsSnapshot))
+        {
+            body.Children.Add(
+                CreatePublicationDetail(
+                    $"タグ: {publication.TagsSnapshot}"));
+        }
+
+        if (publication.Assets.Count > 0)
+        {
+            body.Children.Add(
+                CreatePublicationDetail(
+                    "画像: "
+                    + string.Join(
+                        ", ",
+                        publication.Assets.Select(
+                            static asset =>
+                                asset.FileName))));
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.ExternalId))
+        {
+            body.Children.Add(
+                CreatePublicationDetail(
+                    $"外部ID: {publication.ExternalId}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.ExternalUrl))
+        {
+            body.Children.Add(
+                CreatePublicationDetail(
+                    $"URL: {publication.ExternalUrl}"));
+        }
+
+        foreach (var flag in
+                 ExtractPublicationFlags(
+                     publication.PlatformMetadataJson))
+        {
+            body.Children.Add(
+                CreatePublicationDetail(
+                    flag));
+        }
+
+        return new Border
+        {
+            Background =
+                LumineDesign.SurfaceRaised,
+            BorderBrush =
+                LumineDesign.Border,
+            BorderThickness =
+                new Thickness(1),
+            CornerRadius =
+                new CornerRadius(
+                    LumineDesign.PanelRadius),
+            Padding =
+                new Thickness(
+                    LumineDesign.Space12),
+            Child = body
+        };
+    }
+
+    private static TextBlock CreatePublicationDetail(
+        string text) =>
+        new()
+        {
+            Text = text,
+            Foreground =
+                LumineDesign.MutedForeground,
+            FontSize =
+                LumineDesign.CaptionFontSize,
+            TextWrapping =
+                TextWrapping.Wrap
+        };
+
+    private static Control CreatePublicationMessageCard(
+        string message,
+        bool warning) =>
+        new Border
+        {
+            Background =
+                LumineDesign.Background,
+            BorderBrush =
+                LumineDesign.Border,
+            BorderThickness =
+                new Thickness(1),
+            CornerRadius =
+                new CornerRadius(
+                    LumineDesign.ControlRadius),
+            Padding =
+                new Thickness(
+                    LumineDesign.Space12),
+            Child =
+                new TextBlock
+                {
+                    Text = message,
+                    Foreground =
+                        warning
+                            ? LumineDesign.Warning
+                            : LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    TextWrapping =
+                        TextWrapping.Wrap
+                }
+        };
+
+    private static IReadOnlyList<string>
+        ExtractPublicationFlags(
+            string? platformMetadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(
+                platformMetadataJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            using var document =
+                JsonDocument.Parse(
+                    platformMetadataJson);
+            if (document.RootElement.ValueKind
+                != JsonValueKind.Object)
+            {
+                return Array.Empty<string>();
+            }
+
+            var flags =
+                new List<string>();
+            foreach (var property in
+                     document.RootElement
+                         .EnumerateObject())
+            {
+                var key =
+                    property.Name;
+                if (!key.Contains(
+                        "ai",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !key.Contains(
+                        "age",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !key.Contains(
+                        "adult",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !key.Contains(
+                        "r18",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var value =
+                    property.Value.ValueKind
+                    is JsonValueKind.String
+                        ? property.Value.GetString()
+                        : property.Value
+                            .GetRawText();
+                if (!string.IsNullOrWhiteSpace(
+                        value))
+                {
+                    flags.Add(
+                        $"{key}: {value}");
+                }
+            }
+
+            return flags;
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    internal int PublicationCardCountForSmoke =>
+        _publicationCards.Children.Count;
+
+    internal string PublicationCountTextForSmoke =>
+        _publicationCount.Text
+        ?? string.Empty;
+
+    internal IReadOnlyList<string>
+        PublicationCardTextForSmoke =>
+        _publicationCards.Children
+            .Select(
+                static child =>
+                    string.Join(
+                        "\n",
+                        child
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Select(
+                                static block =>
+                                    block.Text
+                                    ?? string.Empty)))
+            .ToArray();
 
     private async Task ApplyTagsAsync(
         IReadOnlyList<string> tags)
