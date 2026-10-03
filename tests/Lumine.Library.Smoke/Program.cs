@@ -188,7 +188,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 7, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 8, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -342,15 +342,54 @@ try
             StringComparison.Ordinal),
         "Folder scope query did not restrict assets to the selected hierarchy.");
 
+    var standaloneTag =
+        await repository.CreateTagAsync(
+            library.Id,
+            "後で使う",
+            "#22aa88");
+    var disposableTag =
+        await repository.CreateTagAsync(
+            library.Id,
+            "削除確認",
+            "#f04f5f");
+
+    Require(
+        standaloneTag.AssetCount == 0
+        && standaloneTag.Color == "#22aa88"
+        && disposableTag.AssetCount == 0,
+        "Explicit tag creation did not preserve color or zero-asset state.");
+
     var tags =
         await repository.ListTagsAsync(
             library.Id);
     Require(
-        tags.Count == 2
+        tags.Count == 4
         && tags.Any(tag =>
             tag.Name == "推し"
-            && tag.AssetCount == 1),
-        "Tag navigation index did not expose user tags and counts.");
+            && tag.AssetCount == 1
+            && tag.Color == "#6366f1")
+        && tags.Any(tag =>
+            tag.Name == "後で使う"
+            && tag.AssetCount == 0
+            && tag.Color == "#22aa88"),
+        "Tag navigation index did not expose managed tags, colors and counts.");
+
+    Require(
+        await repository.DeleteTagAsync(
+            library.Id,
+            disposableTag.Id),
+        "Explicit tag deletion reported no change.");
+    Require(
+        (await repository.ListTagsAsync(
+            library.Id))
+            .All(tag =>
+                tag.Id != disposableTag.Id)
+        && (await repository.ListTagsAsync(
+            library.Id))
+            .Any(tag =>
+                tag.Id == standaloneTag.Id
+                && tag.AssetCount == 0),
+        "Deleting one tag removed or corrupted another standalone tag.");
 
     var searchedTags =
         await repository.ListTagsAsync(
@@ -468,6 +507,27 @@ try
         exactTag.Items.Count == 1
         && exactTag.Items[0].Id == technical.Id,
         "Exact tag filter failed.");
+
+    var multiTag = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            RequiredTags:
+                ["推し", "blue sky"]),
+        10);
+    Require(
+        multiTag.Items.Count == 1
+        && multiTag.Items[0].Id == technical.Id,
+        "Multi-tag AND filter failed.");
+
+    var impossibleMultiTag = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(
+            RequiredTags:
+                ["推し", "後で使う"]),
+        10);
+    Require(
+        impossibleMultiTag.Items.Count == 0,
+        "Multi-tag AND filter ignored an unassigned required tag.");
 
     var composedFilter = await repository.GetAssetPageAsync(
         library.Id,
@@ -1006,7 +1066,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 7, "v1 database did not migrate to v7.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 8, "v1 database did not migrate to v8.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
