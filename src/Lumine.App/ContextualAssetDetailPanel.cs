@@ -381,6 +381,37 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             editor);
         organizeBody.Children.Add(saveRow);
 
+        Button CreateContextAction(
+            string label,
+            Func<Task> action)
+        {
+            var button =
+                LumineDesign.ConfigureSecondaryButton(
+                    new Button
+                    {
+                        Content = label
+                    });
+            button.Click +=
+                async (_, _) =>
+                {
+                    button.IsEnabled = false;
+                    try
+                    {
+                        await action();
+                    }
+                    catch (Exception exception)
+                    {
+                        _saveStatus.Text =
+                            $"操作を完了できませんでした: {exception.Message}";
+                    }
+                    finally
+                    {
+                        button.IsEnabled = true;
+                    }
+                };
+            return button;
+        }
+
         var creative =
             new StackPanel
             {
@@ -388,40 +419,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
 
         if (createWorkRequested is not null
-            || createGroupRequested is not null
-            || createPublicationRequested is not null)
+            || createGroupRequested is not null)
         {
-            Button CreateCreativeAction(
-                string label,
-                Func<Task> action)
-            {
-                var button =
-                    LumineDesign.ConfigureSecondaryButton(
-                        new Button
-                        {
-                            Content = label
-                        });
-                button.Click +=
-                    async (_, _) =>
-                    {
-                        button.IsEnabled = false;
-                        try
-                        {
-                            await action();
-                        }
-                        catch (Exception exception)
-                        {
-                            _saveStatus.Text =
-                                $"操作を完了できませんでした: {exception.Message}";
-                        }
-                        finally
-                        {
-                            button.IsEnabled = true;
-                        }
-                    };
-                return button;
-            }
-
             var creationPanel =
                 new StackPanel
                 {
@@ -432,7 +431,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             if (createWorkRequested is not null)
             {
                 creationPanel.Children.Add(
-                    CreateCreativeAction(
+                    CreateContextAction(
                         "Workを作成",
                         createWorkRequested));
             }
@@ -440,17 +439,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             if (createGroupRequested is not null)
             {
                 creationPanel.Children.Add(
-                    CreateCreativeAction(
+                    CreateContextAction(
                         "生成グループを作成",
                         createGroupRequested));
-            }
-
-            if (createPublicationRequested is not null)
-            {
-                creationPanel.Children.Add(
-                    CreateCreativeAction(
-                        "公開記録を作成",
-                        createPublicationRequested));
             }
 
             creative.Children.Add(
@@ -478,7 +469,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         AddSection(creative, "Work", _works);
         AddSection(creative, "Generation Group", _groups);
         AddSection(creative, "Lineage", _relations);
-        AddSection(creative, "Publication", _publications);
 
         var creativeBody =
             new StackPanel
@@ -495,6 +485,29 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             creativeBody,
             "制作コンテキスト",
             creative);
+
+        var publicationBody =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space16)
+            };
+        if (createPublicationRequested is not null)
+        {
+            publicationBody.Children.Add(
+                CreateContextAction(
+                    "公開記録を作成",
+                    createPublicationRequested));
+        }
+        AddSection(
+            publicationBody,
+            "Publication",
+            _publications);
 
         var informationBody =
             new StackPanel
@@ -520,6 +533,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         [
             CreateTabScroll(organizeBody),
             CreateTabScroll(creativeBody),
+            CreateTabScroll(publicationBody),
             CreateTabScroll(informationBody)
         ];
 
@@ -545,7 +559,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,*,*"),
+                    new ColumnDefinitions("*,*,*,*"),
                 ColumnSpacing = 2
             };
         for (var index = 0;
@@ -673,7 +687,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         TabHeaders[_selectedTabIndex];
 
     internal IReadOnlyList<string> TabHeaders { get; } =
-        new[] { "整理", "制作", "情報" };
+        new[] { "整理", "制作", "公開", "情報" };
 
     internal void SelectTabForSmoke(int index)
     {
@@ -686,6 +700,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         SelectTab(index);
     }
+
+    internal bool TabPagesHaveIndependentScrollStateForSmoke =>
+        _tabPages.Length == TabHeaders.Count
+        && _tabPages.All(
+            static page => page is ScrollViewer)
+        && _tabPages
+            .Distinct(
+                ReferenceEqualityComparer.Instance)
+            .Count() == _tabPages.Length;
 
     internal bool TabStripUsesLumineStatesForSmoke
     {
