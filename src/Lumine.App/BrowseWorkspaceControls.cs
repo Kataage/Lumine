@@ -11,7 +11,7 @@ namespace Lumine.App;
 internal sealed record BrowseFilterState(
     string SearchText = "",
     string? FolderPath = null,
-    string? Tag = null,
+    IReadOnlyList<string>? RequiredTags = null,
     int? MinRating = null,
     string? StatusLabel = null,
     bool FavoriteOnly = false,
@@ -22,11 +22,40 @@ internal sealed record BrowseFilterState(
     public bool HasFilters =>
         !string.IsNullOrWhiteSpace(SearchText)
         || !string.IsNullOrWhiteSpace(FolderPath)
-        || !string.IsNullOrWhiteSpace(Tag)
+        || TagNames.Count > 0
         || MinRating.HasValue
         || !string.IsNullOrWhiteSpace(StatusLabel)
         || FavoriteOnly
         || !string.IsNullOrWhiteSpace(ColorLabel);
+
+    public IReadOnlyList<string> TagNames =>
+        RequiredTags
+        ?? Array.Empty<string>();
+
+    public bool EquivalentTo(
+        BrowseFilterState other) =>
+        string.Equals(
+            SearchText,
+            other.SearchText,
+            StringComparison.Ordinal)
+        && string.Equals(
+            FolderPath,
+            other.FolderPath,
+            StringComparison.Ordinal)
+        && TagNames.SequenceEqual(
+            other.TagNames,
+            StringComparer.Ordinal)
+        && MinRating == other.MinRating
+        && string.Equals(
+            StatusLabel,
+            other.StatusLabel,
+            StringComparison.Ordinal)
+        && FavoriteOnly == other.FavoriteOnly
+        && string.Equals(
+            ColorLabel,
+            other.ColorLabel,
+            StringComparison.Ordinal)
+        && SortOrder == other.SortOrder;
 }
 
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -499,8 +528,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 .ToArray();
 
             _tag.SelectedItem =
-                State.Tag
-                ?? FilterChoice.AllLabel;
+                State.TagNames.Count == 1
+                    ? State.TagNames[0]
+                    : FilterChoice.AllLabel;
             _status.SelectedItem =
                 State.StatusLabel
                 ?? FilterChoice.AllLabel;
@@ -526,12 +556,63 @@ internal sealed class BrowseWorkspaceControls : UserControl
             });
 
     public Task SetTagScopeAsync(
-        string? tag) =>
+        string? tag)
+    {
+        var normalized =
+            NormalizeOptional(tag);
+        return SetStateAsync(
+            State with
+            {
+                RequiredTags =
+                    normalized is null
+                        ? Array.Empty<string>()
+                        : [normalized]
+            });
+    }
+
+    public Task ToggleTagScopeAsync(
+        string tag)
+    {
+        var normalized =
+            NormalizeOptional(tag)
+            ?? throw new ArgumentException(
+                "Tag is required.",
+                nameof(tag));
+
+        var tags =
+            State.TagNames
+                .ToList();
+        var index =
+            tags.FindIndex(
+                value =>
+                    string.Equals(
+                        value,
+                        normalized,
+                        StringComparison.Ordinal));
+        if (index >= 0)
+        {
+            tags.RemoveAt(index);
+        }
+        else
+        {
+            tags.Add(normalized);
+        }
+
+        tags.Sort(
+            StringComparer.Ordinal);
+        return SetStateAsync(
+            State with
+            {
+                RequiredTags = tags
+            });
+    }
+
+    public Task ClearTagScopesAsync() =>
         SetStateAsync(
             State with
             {
-                Tag =
-                    NormalizeOptional(tag)
+                RequiredTags =
+                    Array.Empty<string>()
             });
 
     public void DisposeTransientWork()
@@ -659,12 +740,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
             return;
         }
 
+        var selected =
+            NormalizeChoice(
+                _tag.SelectedItem);
         await SetStateAsync(
             State with
             {
-                Tag =
-                    NormalizeChoice(
-                        _tag.SelectedItem)
+                RequiredTags =
+                    selected is null
+                        ? Array.Empty<string>()
+                        : [selected]
             });
     }
 
@@ -731,7 +816,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        if (State == state)
+        if (State.EquivalentTo(state))
         {
             // ComboBox ItemsSource refreshes may emit SelectionChanged even
             // when the effective browse constraint did not change. Treat
@@ -775,8 +860,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 State.StatusLabel
                 ?? FilterChoice.AllLabel;
             _tag.SelectedItem =
-                State.Tag
-                ?? FilterChoice.AllLabel;
+                State.TagNames.Count == 1
+                    ? State.TagNames[0]
+                    : FilterChoice.AllLabel;
             _color.SelectedItem =
                 State.ColorLabel
                 ?? FilterChoice.AllLabel;
@@ -846,14 +932,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     FolderPath = null
                 }));
 
-        AddChip(
-            "タグ",
-            State.Tag,
-            () => SetStateAsync(
-                State with
-                {
-                    Tag = null
-                }));
+        foreach (var tag in State.TagNames)
+        {
+            var currentTag = tag;
+            AddChip(
+                "タグ",
+                currentTag,
+                () => SetStateAsync(
+                    State with
+                    {
+                        RequiredTags =
+                            State.TagNames
+                                .Where(value =>
+                                    !string.Equals(
+                                        value,
+                                        currentTag,
+                                        StringComparison.Ordinal))
+                                .ToArray()
+                    }));
+        }
 
         AddChip(
             "評価",
@@ -989,10 +1086,10 @@ internal sealed class BrowseWorkspaceControls : UserControl
             count++;
         }
 
-        if (!string.IsNullOrWhiteSpace(
-                State.Tag))
+        if (State.TagNames.Count > 0)
         {
-            count++;
+            count +=
+                State.TagNames.Count;
         }
 
         if (State.FavoriteOnly)
