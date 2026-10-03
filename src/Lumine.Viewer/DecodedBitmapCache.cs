@@ -135,6 +135,59 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
             "Thumbnail has neither a cache path nor encoded memory payload.");
     }
 
+    public bool TryAcquireExisting(
+        ViewerThumbnail thumbnail,
+        out DecodedBitmapLease? lease)
+    {
+        ArgumentNullException.ThrowIfNull(thumbnail);
+
+        string? key = null;
+        if (thumbnail.EncodedBytes is { Length: > 0 })
+        {
+            key =
+                "memory:"
+                + thumbnail.CacheKey;
+        }
+        else if (!string.IsNullOrWhiteSpace(
+                     thumbnail.CachePath))
+        {
+            key =
+                Path.GetFullPath(
+                    thumbnail.CachePath);
+        }
+
+        if (key is null)
+        {
+            lease = null;
+            return false;
+        }
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(
+                _disposed,
+                this);
+
+            if (!_entries.TryGetValue(
+                    key,
+                    out var existing))
+            {
+                lease = null;
+                return false;
+            }
+
+            existing.Leases++;
+            existing.LastAccess =
+                NextSequence();
+            lease =
+                new DecodedBitmapLease(
+                    this,
+                    key,
+                    existing.Bitmap);
+            return true;
+        }
+    }
+
     private async Task<DecodedBitmapLease> AcquireCoreAsync(
         string key,
         Func<CancellationToken, Bitmap> decodeBitmap,
