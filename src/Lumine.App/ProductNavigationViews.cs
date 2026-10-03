@@ -434,55 +434,198 @@ internal static class ProductNavigationViews
 
     public static Control CreateTags(
         IReadOnlyList<LibraryTagInfo> tags,
-        string? selectedTag,
+        IReadOnlyList<string> selectedTags,
         Func<string?, Task> selectTag,
+        Func<string, string, Task> createTag,
+        Func<LibraryTagInfo, Task> deleteTag,
         Action<string>? reportError = null)
     {
+        ArgumentNullException.ThrowIfNull(tags);
+        ArgumentNullException.ThrowIfNull(selectedTags);
+        ArgumentNullException.ThrowIfNull(selectTag);
+        ArgumentNullException.ThrowIfNull(createTag);
+        ArgumentNullException.ThrowIfNull(deleteTag);
+
+        var selected =
+            new HashSet<string>(
+                selectedTags,
+                StringComparer.OrdinalIgnoreCase);
+
         var root =
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,*"),
+                    new RowDefinitions("Auto,Auto,Auto,Auto,*"),
                 RowSpacing = LumineDesign.Space6
             };
+
+        var heading =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing = LumineDesign.Space4
+            };
+        var count =
+            new TextBlock
+            {
+                Text =
+                    selected.Count == 0
+                        ? $"{tags.Count:N0}件"
+                        : $"{tags.Count:N0}件 · {selected.Count:N0}件で絞り込み中",
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        heading.Children.Add(count);
+
+        var createToggle =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "＋ 新規",
+                    MinHeight = LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        Grid.SetColumn(createToggle, 1);
+        heading.Children.Add(createToggle);
+
+        var manageToggle =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "管理",
+                    MinHeight = LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        Grid.SetColumn(manageToggle, 2);
+        heading.Children.Add(manageToggle);
+        root.Children.Add(heading);
+
+        var createPanel =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6,
+                IsVisible = false,
+                Margin =
+                    new Thickness(
+                        0,
+                        LumineDesign.Space2,
+                        0,
+                        LumineDesign.Space2)
+            };
+        var name =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "新しいタグ名"
+                });
+        var color =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    Text = "#6366f1",
+                    Width = 92
+                });
+        var colorPreview =
+            new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                Background =
+                    ResolveTagBrush("#6366f1"),
+                BorderBrush = LumineDesign.Border,
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        color.TextChanged +=
+            (_, _) =>
+            {
+                colorPreview.Background =
+                    ResolveTagBrush(color.Text);
+            };
+
+        var createRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing = LumineDesign.Space6
+            };
+        createRow.Children.Add(name);
+        Grid.SetColumn(colorPreview, 1);
+        createRow.Children.Add(colorPreview);
+        Grid.SetColumn(color, 2);
+        createRow.Children.Add(color);
+        createPanel.Children.Add(createRow);
+
+        var createButton =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "作成",
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    MinHeight = LumineDesign.CompactCommandHeight
+                });
+        AttachAsync(
+            createButton,
+            async () =>
+            {
+                var tagName = name.Text?.Trim();
+                if (string.IsNullOrWhiteSpace(tagName))
+                {
+                    return;
+                }
+
+                await createTag(
+                    tagName,
+                    string.IsNullOrWhiteSpace(color.Text)
+                        ? "#6366f1"
+                        : color.Text.Trim());
+                name.Text = string.Empty;
+                createPanel.IsVisible = false;
+                createToggle.Content = "＋ 新規";
+            },
+            reportError);
+        createPanel.Children.Add(createButton);
+        Grid.SetRow(createPanel, 1);
+        root.Children.Add(createPanel);
 
         var search =
             LumineDesign.ConfigureTextBox(
                 new TextBox
                 {
-                    PlaceholderText = "タグを検索"
+                    PlaceholderText = "タグを検索…"
                 });
+        Grid.SetRow(search, 2);
         root.Children.Add(search);
 
-        var all =
-            new Button
-            {
-                Content = "すべてのタグ",
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Left,
-                Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
-                Background =
-                    selectedTag is null
-                        ? LumineDesign.AccentMuted
-                        : Brushes.Transparent,
-                BorderBrush =
-                    selectedTag is null
-                        ? LumineDesign.BorderStrong
-                        : Brushes.Transparent,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(LumineDesign.ControlRadius),
-                Foreground =
-                    selectedTag is null
-                        ? LumineDesign.Foreground
-                        : LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize
-            };
+        var clear =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content =
+                        selected.Count == 0
+                            ? "タグ絞り込みなし"
+                            : $"選択中のタグを解除 ({selected.Count})",
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Left,
+                    MinHeight = LumineDesign.CompactCommandHeight,
+                    IsEnabled = selected.Count > 0
+                });
         AttachAsync(
-            all,
+            clear,
             () => selectTag(null),
             reportError);
-        Grid.SetRow(all, 1);
-        root.Children.Add(all);
+        Grid.SetRow(clear, 3);
+        root.Children.Add(clear);
 
         var list =
             new ListBox
@@ -491,46 +634,111 @@ internal static class ProductNavigationViews
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(0)
             };
+
+        var manageMode = false;
+        LibraryTagInfo[] visible = [];
+
+        void RebuildItems(string? filter)
+        {
+            var normalized = filter?.Trim();
+            visible =
+                tags
+                    .Where(
+                        tag =>
+                            string.IsNullOrWhiteSpace(normalized)
+                            || tag.Name.Contains(
+                                normalized,
+                                StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(
+                        tag => selected.Contains(tag.Name))
+                    .ThenBy(
+                        tag => tag.Name,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ToArray();
+            list.ItemsSource = null;
+            list.ItemsSource = visible;
+        }
+
         list.ItemTemplate =
             new FuncDataTemplate<LibraryTagInfo>(
                 (tag, _) =>
                 {
-                    var selected =
-                        string.Equals(
-                            selectedTag,
-                            tag.Name,
-                            StringComparison.OrdinalIgnoreCase);
+                    var active =
+                        selected.Contains(tag.Name);
                     var row =
                         new Grid
                         {
                             ColumnDefinitions =
-                                new ColumnDefinitions("*,Auto")
+                                manageMode
+                                    ? new ColumnDefinitions("Auto,*,Auto,Auto")
+                                    : new ColumnDefinitions("Auto,*,Auto"),
+                            ColumnSpacing = LumineDesign.Space6
                         };
-                    row.Children.Add(
+
+                    var dot =
+                        new Border
+                        {
+                            Width = 11,
+                            Height = 11,
+                            CornerRadius = new CornerRadius(6),
+                            Background = ResolveTagBrush(tag.Color),
+                            BorderBrush = LumineDesign.Border,
+                            BorderThickness = new Thickness(1),
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                    row.Children.Add(dot);
+
+                    var label =
                         new TextBlock
                         {
                             Text = tag.Name,
                             Foreground =
-                                selected
+                                active
                                     ? LumineDesign.Foreground
                                     : LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
+                            FontSize = LumineDesign.CaptionFontSize,
+                            FontWeight =
+                                active
+                                    ? FontWeight.SemiBold
+                                    : FontWeight.Normal,
                             TextTrimming =
-                                TextTrimming.CharacterEllipsis
-                        });
-                    var count =
+                                TextTrimming.CharacterEllipsis,
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        };
+                    Grid.SetColumn(label, 1);
+                    row.Children.Add(label);
+
+                    var assetCount =
                         new TextBlock
                         {
-                            Text =
-                                tag.AssetCount.ToString("N0"),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize
+                            Text = tag.AssetCount.ToString("N0"),
+                            Foreground = LumineDesign.MutedForeground,
+                            FontSize = LumineDesign.CaptionFontSize,
+                            VerticalAlignment = VerticalAlignment.Center
                         };
-                    Grid.SetColumn(count, 1);
-                    row.Children.Add(count);
+                    Grid.SetColumn(assetCount, 2);
+                    row.Children.Add(assetCount);
+
+                    if (manageMode)
+                    {
+                        var remove =
+                            LumineDesign.ConfigureIconButton(
+                                new Button
+                                {
+                                    Content =
+                                        LumineDesign.CreateStrokeIcon(
+                                            LumineDesign.CloseIconPath,
+                                            13)
+                                },
+                                $"「{tag.Name}」を削除");
+                        AttachAsync(
+                            remove,
+                            () => deleteTag(tag),
+                            reportError);
+                        Grid.SetColumn(remove, 3);
+                        row.Children.Add(remove);
+                    }
 
                     var button =
                         new Button
@@ -540,19 +748,22 @@ internal static class ProductNavigationViews
                                 HorizontalAlignment.Stretch,
                             HorizontalContentAlignment =
                                 HorizontalAlignment.Stretch,
-                            Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
+                            Padding =
+                                new Thickness(
+                                    LumineDesign.Space8,
+                                    LumineDesign.Space6),
                             Background =
-                                selected
+                                active
                                     ? LumineDesign.AccentMuted
                                     : Brushes.Transparent,
                             BorderBrush =
-                                selected
+                                active
                                     ? LumineDesign.BorderStrong
                                     : Brushes.Transparent,
-                            BorderThickness =
-                                new Thickness(1),
+                            BorderThickness = new Thickness(1),
                             CornerRadius =
-                                new CornerRadius(LumineDesign.ControlRadius)
+                                new CornerRadius(
+                                    LumineDesign.ControlRadius)
                         };
                     AttachAsync(
                         button,
@@ -567,45 +778,80 @@ internal static class ProductNavigationViews
                 "一致するタグはありません。");
         empty.IsVisible = false;
 
-        Grid.SetRow(list, 2);
-        Grid.SetRow(empty, 2);
+        list.PropertyChanged +=
+            (_, args) =>
+            {
+                if (args.Property == ItemsControl.ItemsSourceProperty)
+                {
+                    list.IsVisible = visible.Length > 0;
+                    empty.IsVisible = visible.Length == 0;
+                }
+            };
+
+        Grid.SetRow(list, 4);
+        Grid.SetRow(empty, 4);
         root.Children.Add(list);
         root.Children.Add(empty);
 
-        var generation = 0;
-        void ApplyFilter(string? filter)
-        {
-            var normalized =
-                filter?.Trim();
-            var visible =
-                tags.Where(
-                        tag =>
-                            string.IsNullOrWhiteSpace(normalized)
-                            || tag.Name.Contains(
-                                normalized,
-                                StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-            list.ItemsSource = visible;
-            list.IsVisible = visible.Length > 0;
-            empty.IsVisible = visible.Length == 0;
-        }
+        createToggle.Click +=
+            (_, _) =>
+            {
+                createPanel.IsVisible =
+                    !createPanel.IsVisible;
+                createToggle.Content =
+                    createPanel.IsVisible
+                        ? "閉じる"
+                        : "＋ 新規";
+                if (createPanel.IsVisible)
+                {
+                    name.Focus();
+                }
+            };
 
+        manageToggle.Click +=
+            (_, _) =>
+            {
+                manageMode = !manageMode;
+                manageToggle.Content =
+                    manageMode
+                        ? "管理中"
+                        : "管理";
+                RebuildItems(search.Text);
+            };
+
+        var generation = 0;
         search.TextChanged +=
             async (_, _) =>
             {
-                var current =
-                    ++generation;
-                await Task.Delay(140);
-                if (current != generation)
+                var current = ++generation;
+                await Task.Delay(120);
+                if (current == generation)
                 {
-                    return;
+                    RebuildItems(search.Text);
                 }
-
-                ApplyFilter(search.Text);
             };
 
-        ApplyFilter(null);
+        RebuildItems(null);
+        list.IsVisible = visible.Length > 0;
+        empty.IsVisible = visible.Length == 0;
         return root;
+    }
+
+    private static IBrush ResolveTagBrush(
+        string? color)
+    {
+        try
+        {
+            return new SolidColorBrush(
+                Color.Parse(
+                    string.IsNullOrWhiteSpace(color)
+                        ? "#6366f1"
+                        : color));
+        }
+        catch (FormatException)
+        {
+            return LumineDesign.Accent;
+        }
     }
 
     public static Control CreatePublicationEntry(
