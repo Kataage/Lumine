@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using Lumine.Core;
 using Lumine.Image;
 using Lumine.Library;
@@ -517,6 +518,26 @@ public sealed class MainWindow : Window
 
     internal bool IsLightboxVisible =>
         _lightboxHost.IsVisible;
+
+    internal bool IsFocusInsideLightboxForSmoke
+    {
+        get
+        {
+            var focused =
+                FocusManager?.GetFocusedElement()
+                as Visual;
+            return focused is not null
+                && (ReferenceEquals(
+                        focused,
+                        _lightboxHost)
+                    || focused.GetVisualAncestors()
+                        .Any(
+                            ancestor =>
+                                ReferenceEquals(
+                                    ancestor,
+                                    _lightboxHost)));
+        }
+    }
 
 
     internal bool IsCompactNavigationLayout =>
