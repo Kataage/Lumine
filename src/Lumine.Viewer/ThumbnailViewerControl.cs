@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
@@ -1544,6 +1545,18 @@ public sealed class ThumbnailViewerControl : UserControl
                     VerticalContentAlignment =
                         VerticalAlignment.Center
                 };
+            button.Resources["ButtonBackgroundPointerOver"] =
+                ViewerVisualTokens.Hover;
+            button.Resources["ButtonBorderBrushPointerOver"] =
+                ViewerVisualTokens.Focus;
+            button.Resources["ButtonForegroundPointerOver"] =
+                ViewerVisualTokens.Foreground;
+            button.Resources["ButtonBackgroundPressed"] =
+                ViewerVisualTokens.Pressed;
+            button.Resources["ButtonBorderBrushPressed"] =
+                ViewerVisualTokens.Focus;
+            button.Resources["ButtonForegroundPressed"] =
+                ViewerVisualTokens.Foreground;
             ToolTip.SetTip(button, tooltip);
             ViewerVisualTokens.Name(
                 button,
