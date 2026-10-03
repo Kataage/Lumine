@@ -228,7 +228,7 @@ internal static class LumineDesign
 
         button.MinHeight = CompactControlHeight;
         button.Padding =
-            new Thickness(Space16 - Space2, Space6);
+            new Thickness(Space12, Space6);
         button.FontSize = CaptionFontSize;
         button.CornerRadius =
             new CornerRadius(ControlRadius);
@@ -273,7 +273,7 @@ internal static class LumineDesign
         textBox.BorderThickness = new Thickness(1);
         textBox.Padding =
             new Thickness(
-                Space12 - Space2,
+                Space12,
                 Space6);
         ConfigureTextControlStateResources(textBox);
         return textBox;
@@ -292,8 +292,8 @@ internal static class LumineDesign
         comboBox.BorderThickness = new Thickness(1);
         comboBox.Padding =
             new Thickness(
-                Space8 + 1,
-                Space4 + 1);
+                Space8,
+                Space4);
         ConfigureComboBoxStateResources(comboBox);
         return comboBox;
     }
@@ -342,7 +342,7 @@ internal static class LumineDesign
         button.MinWidth = CompactControlHeight;
         button.MinHeight = CompactControlHeight;
         button.Padding =
-            new Thickness(Space6 + 1);
+            new Thickness(Space8);
         button.CornerRadius =
             new CornerRadius(ControlRadius);
         button.Background =
