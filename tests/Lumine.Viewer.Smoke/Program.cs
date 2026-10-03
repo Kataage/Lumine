@@ -1569,11 +1569,12 @@ internal static class Program
             detail.Zoom > wheelStartZoom,
             "Focused-view wheel gesture did not zoom in.");
 
+        var afterZoom = detail.Zoom;
         var afterZoomPan = detail.PanOffset;
         await detail.ApplyWheelZoomForSmokeAsync(0);
         Dispatcher.UIThread.RunJobs();
         Require(
-            Math.Abs(detail.Zoom - detail.Zoom) < 0.001
+            Math.Abs(detail.Zoom - afterZoom) < 0.001
             && detail.PanOffset == afterZoomPan,
             "A non-vertical wheel gesture mutated focused-view pan/zoom state.");
 
