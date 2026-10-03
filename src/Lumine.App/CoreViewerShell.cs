@@ -487,7 +487,7 @@ internal sealed class CoreViewerShell : UserControl
                     () =>
                         RestoreAssetFocus(
                             attempt + 1),
-                    DispatcherPriority.Loaded);
+                    DispatcherPriority.Background);
                 return;
             }
 
@@ -496,7 +496,7 @@ internal sealed class CoreViewerShell : UserControl
 
         Dispatcher.UIThread.Post(
             () => RestoreAssetFocus(0),
-            DispatcherPriority.Loaded);
+            DispatcherPriority.Background);
     }
 
     private async Task LoadContextDetailAsync(
