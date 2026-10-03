@@ -2012,6 +2012,18 @@ try
     Console.WriteLine(
         "App shell smoke: browse / contextual detail / focused viewer / multi-selection / Detail / shutdown OK");
 
+    Require(
+        Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(100)
+            - 1.0) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(125)
+            - 1.25) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(225)
+            - 2.25) < 0.001,
+        "Windows registry text-scale percentages were not normalized to 1.0-2.25 factors.");
+
     var previousTextScaleEnvironment =
         Environment.GetEnvironmentVariable(
             "LUMINE_TEXT_SCALE");
