@@ -2233,6 +2233,29 @@ try
                         "Representative Fluent controls are not bound to the canonical Lumine interaction-state resources.");
 
                     Require(
+                        LumineDesign.Space2 < LumineDesign.Space4
+                        && LumineDesign.Space4 < LumineDesign.Space6
+                        && LumineDesign.Space6 < LumineDesign.Space8
+                        && LumineDesign.Space8 < LumineDesign.Space12
+                        && LumineDesign.Space12 < LumineDesign.Space16
+                        && LumineDesign.Space16 < LumineDesign.Space24
+                        && LumineDesign.PageGutter
+                            == LumineDesign.Space24
+                        && neutralStateButton.CornerRadius
+                            == new CornerRadius(
+                                LumineDesign.ControlRadius)
+                        && Math.Abs(
+                            neutralStateButton.Padding.Left
+                            - LumineDesign.Space12) < 0.001
+                        && Math.Abs(
+                            textStateControl.Padding.Left
+                            - LumineDesign.Space12) < 0.001
+                        && Math.Abs(
+                            comboStateControl.Padding.Left
+                            - LumineDesign.Space8) < 0.001,
+                        "Canonical Lumine spacing/control metrics drifted or representative controls stopped using them.");
+
+                    Require(
                         ContrastRatio(
                             LumineDesign.DangerColor,
                             LumineDesign.BackgroundColor) >= 4.5

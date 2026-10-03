@@ -62,8 +62,8 @@ internal static class ProductSettingsView
         var root =
             new StackPanel
             {
-                Spacing = 14,
-                MaxWidth = 920,
+                Spacing = LumineDesign.Space16,
+                MaxWidth = LumineDesign.ReadablePageMaxWidth,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch
             };
@@ -71,8 +71,13 @@ internal static class ProductSettingsView
         var heading =
             new StackPanel
             {
-                Spacing = 4,
-                Margin = new Thickness(2, 0, 2, 4)
+                Spacing = LumineDesign.Space4,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space2,
+                        0,
+                        LumineDesign.Space2,
+                        LumineDesign.Space4)
             };
         heading.Children.Add(
             new TextBlock
@@ -139,7 +144,12 @@ internal static class ProductSettingsView
         return new Border
         {
             Background = LumineDesign.Background,
-            Padding = new Thickness(24, 20, 24, 28),
+            Padding =
+                new Thickness(
+                    LumineDesign.PageGutter,
+                    LumineDesign.Space16,
+                    LumineDesign.PageGutter,
+                    LumineDesign.PageGutter),
             Child = scroll
         };
     }
@@ -655,7 +665,7 @@ internal static class ProductSettingsView
     private static StackPanel CreateCardStack() =>
         new()
         {
-            Spacing = 10
+            Spacing = LumineDesign.Space8
         };
 
     private static Border CreateCard(
@@ -665,8 +675,12 @@ internal static class ProductSettingsView
             Background = LumineDesign.SurfaceRaised,
             BorderBrush = LumineDesign.Border,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14),
+            CornerRadius =
+                new CornerRadius(
+                    LumineDesign.PanelRadius),
+            Padding =
+                new Thickness(
+                    LumineDesign.Space16),
             Child = content
         };
 

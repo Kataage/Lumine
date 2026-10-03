@@ -165,9 +165,9 @@ internal static class ProductNavigationViews
                         BorderThickness =
                             new Thickness(1),
                         CornerRadius =
-                            new CornerRadius(9),
+                            new CornerRadius(LumineDesign.PanelRadius),
                         Padding =
-                            new Thickness(9, 8)
+                            new Thickness(LumineDesign.Space8)
                     };
             }
             else
@@ -185,9 +185,9 @@ internal static class ProductNavigationViews
                         BorderThickness =
                             new Thickness(1),
                         CornerRadius =
-                            new CornerRadius(9),
+                            new CornerRadius(LumineDesign.PanelRadius),
                         Padding =
-                            new Thickness(9, 8),
+                            new Thickness(LumineDesign.Space8),
                         IsEnabled = canOpen
                     };
 
@@ -207,7 +207,7 @@ internal static class ProductNavigationViews
                 {
                     ColumnDefinitions =
                         new ColumnDefinitions("*,Auto"),
-                    ColumnSpacing = 6
+                    ColumnSpacing = LumineDesign.Space6
                 };
             libraryRow.Children.Add(primary);
 
@@ -291,7 +291,7 @@ internal static class ProductNavigationViews
             {
                 RowDefinitions =
                     new RowDefinitions("Auto,*"),
-                RowSpacing = 6
+                RowSpacing = LumineDesign.Space6
             };
 
         var all =
@@ -300,7 +300,7 @@ internal static class ProductNavigationViews
                 Content = "すべての画像",
                 HorizontalContentAlignment =
                     HorizontalAlignment.Left,
-                Padding = new Thickness(8, 7),
+                Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
                 Background =
                     selectedFolder is null
                         ? LumineDesign.AccentMuted
@@ -310,7 +310,7 @@ internal static class ProductNavigationViews
                         ? LumineDesign.BorderStrong
                         : Brushes.Transparent,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = new CornerRadius(LumineDesign.ControlRadius),
                 Foreground =
                     selectedFolder is null
                         ? LumineDesign.Foreground
@@ -414,7 +414,7 @@ internal static class ProductNavigationViews
                                 BorderThickness =
                                     new Thickness(1),
                                 CornerRadius =
-                                    new CornerRadius(8)
+                                    new CornerRadius(LumineDesign.ControlRadius)
                             };
                         AttachAsync(
                             button,
@@ -443,7 +443,7 @@ internal static class ProductNavigationViews
             {
                 RowDefinitions =
                     new RowDefinitions("Auto,Auto,*"),
-                RowSpacing = 6
+                RowSpacing = LumineDesign.Space6
             };
 
         var search =
@@ -460,7 +460,7 @@ internal static class ProductNavigationViews
                 Content = "すべてのタグ",
                 HorizontalContentAlignment =
                     HorizontalAlignment.Left,
-                Padding = new Thickness(8, 7),
+                Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
                 Background =
                     selectedTag is null
                         ? LumineDesign.AccentMuted
@@ -470,7 +470,7 @@ internal static class ProductNavigationViews
                         ? LumineDesign.BorderStrong
                         : Brushes.Transparent,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = new CornerRadius(LumineDesign.ControlRadius),
                 Foreground =
                     selectedTag is null
                         ? LumineDesign.Foreground
@@ -540,7 +540,7 @@ internal static class ProductNavigationViews
                                 HorizontalAlignment.Stretch,
                             HorizontalContentAlignment =
                                 HorizontalAlignment.Stretch,
-                            Padding = new Thickness(8, 7),
+                            Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
                             Background =
                                 selected
                                     ? LumineDesign.AccentMuted
@@ -552,7 +552,7 @@ internal static class ProductNavigationViews
                             BorderThickness =
                                 new Thickness(1),
                             CornerRadius =
-                                new CornerRadius(8)
+                                new CornerRadius(LumineDesign.ControlRadius)
                         };
                     AttachAsync(
                         button,
@@ -783,7 +783,7 @@ internal static class ProductNavigationViews
                     : LumineDesign.SurfaceRaised,
             BorderBrush = LumineDesign.Border,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(9),
+            CornerRadius = new CornerRadius(LumineDesign.PanelRadius),
             Child = child
         };
 

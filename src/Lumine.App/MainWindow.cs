@@ -171,11 +171,15 @@ public sealed class MainWindow : Window
                 BorderThickness =
                     new Thickness(1),
                 CornerRadius =
-                    new CornerRadius(8),
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
                 Padding =
-                    new Thickness(12, 7),
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space6),
                 Margin =
-                    new Thickness(12),
+                    new Thickness(
+                        LumineDesign.Space12),
                 MaxWidth = 720,
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
@@ -2017,7 +2021,7 @@ public sealed class MainWindow : Window
 
         return LumineDesign.CreateProductState(
             "画像がありません",
-            string.Empty,
+            "このライブラリには、まだ表示できる画像がありません。別の画像フォルダーを追加できます。",
             add);
     }
 
@@ -2043,7 +2047,7 @@ public sealed class MainWindow : Window
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            string.Empty,
+            "検索またはフィルター条件を見直すか、条件を解除してすべての画像へ戻れます。",
             clear);
     }
 
@@ -2060,8 +2064,8 @@ public sealed class MainWindow : Window
 
         var description =
             recovered
-                ? "前回の状態から復旧しました。"
-                : string.Empty;
+                ? "前回の状態から安全に復旧しました。画像フォルダーを開いて作業を続けられます。"
+                : "画像フォルダーを追加すると、Lumineで整理・閲覧を始められます。";
 
         return LumineDesign.CreateProductState(
             "Lumine",

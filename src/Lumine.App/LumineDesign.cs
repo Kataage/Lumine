@@ -126,11 +126,24 @@ internal static class LumineDesign
         24 * LumineVisualMetrics.TextScaleFactor;
     public static double BodyLineHeight =>
         18 * LumineVisualMetrics.TextScaleFactor;
+    public const double Space2 = 2;
+    public const double Space4 = 4;
+    public const double Space6 = 6;
+    public const double Space8 = 8;
+    public const double Space12 = 12;
+    public const double Space16 = 16;
+    public const double Space24 = 24;
+
     public const double HeaderHeight = 56;
     public const double CompactControlHeight = 34;
-    public const double ContentGap = 12;
-    public const double SurfaceRadius = 10;
+    public const double CompactCommandHeight = 32;
+    public const double ControlRadius = 8;
+    public const double PanelRadius = 10;
+    public const double PageGutter = Space24;
+    public const double ContentGap = Space12;
+    public const double SurfaceRadius = PanelRadius;
     public const double StateCardMaxWidth = 560;
+    public const double ReadablePageMaxWidth = 920;
 
     internal sealed record NavigationItem(
         string Label,
@@ -215,9 +228,11 @@ internal static class LumineDesign
         ArgumentNullException.ThrowIfNull(button);
 
         button.MinHeight = CompactControlHeight;
-        button.Padding = new Thickness(14, 7);
+        button.Padding =
+            new Thickness(Space12, Space6);
         button.FontSize = CaptionFontSize;
-        button.CornerRadius = new CornerRadius(8);
+        button.CornerRadius =
+            new CornerRadius(ControlRadius);
         button.Background = Accent;
         button.Foreground =
             new SolidColorBrush(BackgroundColor);
@@ -233,9 +248,11 @@ internal static class LumineDesign
         ArgumentNullException.ThrowIfNull(button);
 
         button.MinHeight = CompactControlHeight;
-        button.Padding = new Thickness(12, 7);
+        button.Padding =
+            new Thickness(Space12, Space6);
         button.FontSize = CaptionFontSize;
-        button.CornerRadius = new CornerRadius(8);
+        button.CornerRadius =
+            new CornerRadius(ControlRadius);
         button.Background = AccentMuted;
         button.Foreground = Foreground;
         button.BorderBrush = Border;
@@ -255,7 +272,10 @@ internal static class LumineDesign
         textBox.Foreground = Foreground;
         textBox.BorderBrush = Border;
         textBox.BorderThickness = new Thickness(1);
-        textBox.Padding = new Thickness(10, 6);
+        textBox.Padding =
+            new Thickness(
+                Space12,
+                Space6);
         ConfigureTextControlStateResources(textBox);
         return textBox;
     }
@@ -271,7 +291,10 @@ internal static class LumineDesign
         comboBox.Foreground = Foreground;
         comboBox.BorderBrush = Border;
         comboBox.BorderThickness = new Thickness(1);
-        comboBox.Padding = new Thickness(9, 5);
+        comboBox.Padding =
+            new Thickness(
+                Space8,
+                Space4);
         ConfigureComboBoxStateResources(comboBox);
         return comboBox;
     }
@@ -319,8 +342,10 @@ internal static class LumineDesign
         button.Height = CompactControlHeight;
         button.MinWidth = CompactControlHeight;
         button.MinHeight = CompactControlHeight;
-        button.Padding = new Thickness(7);
-        button.CornerRadius = new CornerRadius(8);
+        button.Padding =
+            new Thickness(Space8);
+        button.CornerRadius =
+            new CornerRadius(ControlRadius);
         button.Background =
             primary ? Accent : Brushes.Transparent;
         button.Foreground =
@@ -687,7 +712,7 @@ internal static class LumineDesign
         var stack =
             new StackPanel
             {
-                Spacing = 12,
+                Spacing = Space12,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch
             };
@@ -741,12 +766,16 @@ internal static class LumineDesign
                 new Border
                 {
                     MaxWidth = StateCardMaxWidth,
-                    Margin = new Thickness(24),
+                    Margin =
+                        new Thickness(PageGutter),
                     Padding =
                         new Thickness(
-                            showBrand ? 36 : 28),
+                            showBrand
+                                ? PageGutter + Space8
+                                : PageGutter),
                     CornerRadius =
-                        new CornerRadius(SurfaceRadius + 4),
+                        new CornerRadius(
+                            PanelRadius + Space2),
                     Background = Surface,
                     BorderBrush = Border,
                     BorderThickness = new Thickness(1),
