@@ -701,6 +701,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         SelectTab(index);
     }
 
+    internal bool TabPagesHaveIndependentScrollStateForSmoke =>
+        _tabPages.Length == TabHeaders.Count
+        && _tabPages.All(
+            static page => page is ScrollViewer)
+        && _tabPages
+            .Distinct(
+                ReferenceEqualityComparer.Instance)
+            .Count() == _tabPages.Length;
+
     internal bool TabStripUsesLumineStatesForSmoke
     {
         get
