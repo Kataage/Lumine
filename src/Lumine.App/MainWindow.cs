@@ -25,6 +25,8 @@ public sealed class MainWindow : Window
     private readonly Border _statusSurface;
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
+    private readonly Grid _workspaceContent;
+    private readonly ContentControl _workspacePageHost;
     private readonly ContentControl _lightboxHost;
     private readonly Grid _appShell;
     private readonly LibraryService _navigationLibraryService;
@@ -217,7 +219,7 @@ public sealed class MainWindow : Window
                     HorizontalAlignment.Stretch
             };
 
-        var workspaceContent =
+        _workspaceContent =
             new Grid
             {
                 Background =
@@ -225,11 +227,21 @@ public sealed class MainWindow : Window
                 RowDefinitions =
                     new RowDefinitions("Auto,*")
             };
-        workspaceContent.Children.Add(
+        _workspaceContent.Children.Add(
             _browseHost);
         Grid.SetRow(_viewerHost, 1);
-        workspaceContent.Children.Add(
+        _workspaceContent.Children.Add(
             _viewerHost);
+
+        _workspacePageHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
 
         var workspace =
             new Grid
@@ -238,7 +250,9 @@ public sealed class MainWindow : Window
                     LumineDesign.Background
             };
         workspace.Children.Add(
-            workspaceContent);
+            _workspaceContent);
+        workspace.Children.Add(
+            _workspacePageHost);
         workspace.Children.Add(
             _statusSurface);
 
@@ -427,6 +441,16 @@ public sealed class MainWindow : Window
         _navigationContent.Content
             as Control;
 
+    internal Control? WorkspacePageForSmoke =>
+        _workspacePageHost.Content
+            as Control;
+
+    internal bool IsWorkspacePageVisibleForSmoke =>
+        _workspacePageHost.IsVisible;
+
+    internal Rect WorkspacePageBoundsForSmoke =>
+        _workspacePageHost.Bounds;
+
     internal BrowseWorkspaceControls? BrowseControlsForSmoke =>
         _browseControls;
 
@@ -569,7 +593,9 @@ public sealed class MainWindow : Window
         }
 
         _navigationDestination = destination;
-        _navigationPane.IsVisible = true;
+        _navigationPane.IsVisible =
+            !IsMainWorkspaceDestination(
+                destination);
         _navigationTitle.Text = destination;
         _navigationRailHost.Content =
             LumineDesign.CreateNavigationRail(
@@ -698,6 +724,28 @@ public sealed class MainWindow : Window
         _navigationTitle.Text =
             _navigationDestination;
 
+        if (IsMainWorkspaceDestination(
+                _navigationDestination))
+        {
+            _navigationContent.Content = null;
+            _workspacePageHost.Content =
+                ProductSettingsView.Create(
+                    _settingsSnapshot,
+                    SaveViewerDefaultsFromSettingsAsync,
+                    SaveThumbnailModeFromSettingsAsync,
+                    SaveDiskCacheBudgetFromSettingsAsync,
+                    SaveMemoryBudgetFromSettingsAsync,
+                    ClearThumbnailCacheFromSettingsAsync,
+                    ShowDiagnosticsFromNavigationAsync);
+            _workspacePageHost.IsVisible = true;
+            _workspaceContent.IsHitTestVisible = false;
+            return;
+        }
+
+        _workspacePageHost.Content = null;
+        _workspacePageHost.IsVisible = false;
+        _workspaceContent.IsHitTestVisible = true;
+
         _navigationContent.Content =
             _navigationDestination switch
             {
@@ -734,20 +782,18 @@ public sealed class MainWindow : Window
                             "公開履歴")
                         : ProductNavigationViews.CreatePublicationEntry(
                             _publications),
-                "設定" =>
-                    ProductSettingsView.Create(
-                        _settingsSnapshot,
-                        SaveViewerDefaultsFromSettingsAsync,
-                        SaveThumbnailModeFromSettingsAsync,
-                        SaveDiskCacheBudgetFromSettingsAsync,
-                        SaveMemoryBudgetFromSettingsAsync,
-                        ClearThumbnailCacheFromSettingsAsync,
-                        ShowDiagnosticsFromNavigationAsync),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
             };
     }
+
+    private static bool IsMainWorkspaceDestination(
+        string destination) =>
+        string.Equals(
+            destination,
+            "設定",
+            StringComparison.Ordinal);
 
     private void ReportNavigationError(
         string message)
