@@ -724,12 +724,14 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
-        // A short scroll away/back must reuse the just-detached decoded
+        // A short scroll away/back must reuse a just-detached decoded
         // bitmap instead of showing a blank tile while the full async
-        // thumbnail pipeline runs again.
+        // thumbnail pipeline runs again. The exact virtualization buffer is
+        // platform/layout dependent, so select the actual most-recent warm
+        // asset rather than assuming row zero detaches at a fixed offset.
         for (var rowOffset = 2;
-             rowOffset <= 16
-             && !viewer.IsAssetWarmForSmoke(0);
+             rowOffset <= 32
+             && viewer.FirstWarmAssetIndexForSmoke is null;
              rowOffset++)
         {
             viewer.ScrollToAsset(
@@ -741,7 +743,7 @@ internal static class Program
 
             for (var attempt = 0;
                  attempt < 20
-                 && !viewer.IsAssetWarmForSmoke(0);
+                 && viewer.FirstWarmAssetIndexForSmoke is null;
                  attempt++)
             {
                 Dispatcher.UIThread.RunJobs();
@@ -749,20 +751,24 @@ internal static class Program
             }
         }
 
+        var warmReturnIndex =
+            viewer.FirstWarmAssetIndexForSmoke;
         Require(
-            viewer.IsAssetWarmForSmoke(0)
+            warmReturnIndex is not null
             && viewer.WarmTileEntryCountForSmoke > 0,
-            "Recently detached first-row thumbnail was not retained in the bounded warm-return cache.");
+            "Recently detached thumbnails were not retained in the bounded warm-return cache.");
 
         var warmHitsBeforeReturn =
             viewer.WarmTileHitCountForSmoke;
         var warmReturnWatch =
             Stopwatch.StartNew();
-        viewer.ScrollToAsset(0);
+        viewer.ScrollToAsset(
+            warmReturnIndex!.Value);
 
         for (var attempt = 0;
              attempt < 100
-             && !viewer.IsAssetReady(0);
+             && !viewer.IsAssetReady(
+                 warmReturnIndex.Value);
              attempt++)
         {
             Dispatcher.UIThread.RunJobs();
@@ -771,7 +777,8 @@ internal static class Program
 
         warmReturnWatch.Stop();
         Require(
-            viewer.IsAssetReady(0)
+            viewer.IsAssetReady(
+                warmReturnIndex.Value)
             && viewer.WarmTileHitCountForSmoke
                 > warmHitsBeforeReturn
             && warmReturnWatch.Elapsed
