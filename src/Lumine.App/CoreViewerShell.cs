@@ -438,8 +438,11 @@ internal sealed class CoreViewerShell : UserControl
             var returnIndex =
                 _focusedViewReturnIndex;
             _focusedViewReturnIndex = -1;
-            if (returnIndex >= 0
-                && !_grid.FocusAsset(returnIndex))
+            if (returnIndex >= 0)
+            {
+                _grid.RestoreAssetFocus(returnIndex);
+            }
+            else
             {
                 _grid.Focus(
                     NavigationMethod.Unspecified,
@@ -494,9 +497,9 @@ internal sealed class CoreViewerShell : UserControl
         owner?.HideLightbox(
             _focusedSurface);
 
-        if (returnIndex >= 0
-            && _grid.FocusAsset(returnIndex))
+        if (returnIndex >= 0)
         {
+            _grid.RestoreAssetFocus(returnIndex);
             return;
         }
 
