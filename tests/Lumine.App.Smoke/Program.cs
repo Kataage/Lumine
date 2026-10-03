@@ -2548,6 +2548,13 @@ try
                                         is >= 300 and <= 400
                                     && window.CurrentShell.GridViewerBounds.Width
                                         >= 500
+                                    && !window.CurrentShell.IsInspectorPinnedForSmoke
+                                    && Math.Abs(
+                                        window.CurrentShell.GridViewerBounds.Width
+                                        - unpinnedClosedCanvasWidth) < 1
+                                    && ReferenceEquals(
+                                        window.CurrentRuntime,
+                                        runtimeBeforeNavigation)
                                     && window.CurrentShell.ContextDetail.HasPreview
                                     && window.CurrentShell.ContextDetail
                                         .TabHeaders.SequenceEqual(
@@ -2619,7 +2626,32 @@ try
 
                             if (viewport.Width >= 1440)
                             {
+                                window.CurrentShell.GridViewer.SelectAsset(0);
+                                await window.CurrentShell.ShowContextDetailAsync();
+                                window.CurrentShell.SetInspectorPinnedForSmoke(true);
+                                Dispatcher.UIThread.RunJobs();
+
+                                var inspectorPinnedCanvasWidth =
+                                    window.CurrentShell.GridViewerBounds.Width;
+                                Require(
+                                    window.CurrentShell.IsInspectorPinnedForSmoke
+                                    && ReferenceEquals(
+                                        window.CurrentRuntime,
+                                        runtimeBeforeNavigation)
+                                    && inspectorPinnedCanvasWidth
+                                        < unpinnedClosedCanvasWidth - 250,
+                                    $"Pinned Inspector did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                window.CurrentShell.SetInspectorPinnedForSmoke(false);
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    !window.CurrentShell.IsInspectorPinnedForSmoke
+                                    && Math.Abs(
+                                        window.CurrentShell.GridViewerBounds.Width
+                                        - unpinnedClosedCanvasWidth) < 1,
+                                    $"Unpinning Inspector did not restore overlay canvas width at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                                 window.CurrentShell.HideContextDetail();
+
                                 window.SetNavigationPaneVisibleForSmoke(true);
                                 window.SetNavigationPinnedForSmoke(true);
                                 Dispatcher.UIThread.RunJobs();

@@ -25,12 +25,14 @@ internal sealed class CoreViewerShell : UserControl
     private readonly TextBlock _bulkStatus;
     private readonly ContextualAssetDetailPanel _contextDetail;
     private readonly Border _contextSurface;
+    private readonly Grid _browseViewer;
     private readonly Border _focusedSurface;
     private CancellationTokenSource? _selectionSummaryCancellation;
     private CancellationTokenSource? _bulkOperationCancellation;
     private Button? _cancelBulkOperationButton;
     private long _focusedViewReturnIndex = -1;
     private bool _compactInspectorLayout;
+    private bool _inspectorPinned;
     private bool _detached;
 
     public CoreViewerShell(
@@ -73,6 +75,20 @@ internal sealed class CoreViewerShell : UserControl
                 ShowCreateWorkDialogAsync,
                 ShowCreateGenerationGroupDialogAsync,
                 ShowCreatePublicationDialogAsync);
+        _contextDetail.PinToggleRequested +=
+            (_, _) =>
+            {
+                if (_compactInspectorLayout)
+                {
+                    return;
+                }
+
+                _inspectorPinned =
+                    !_inspectorPinned;
+                ApplyInspectorLayout(
+                    ResolveInspectorLayoutWidth());
+            };
+
         _contextSurface =
             new Border
             {
@@ -180,57 +196,25 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _grid
             };
 
-        var browseViewer =
+        _browseViewer =
             new Grid
             {
                 Background = LumineDesign.Background,
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto")
+                    new ColumnDefinitions("*")
             };
-        browseViewer.Children.Add(
+        _browseViewer.Children.Add(
             gridSurface);
-        Grid.SetColumn(_contextSurface, 1);
-        browseViewer.Children.Add(
+        Grid.SetColumn(_contextSurface, 0);
+        _contextSurface.ZIndex = 20;
+        _browseViewer.Children.Add(
             _contextSurface);
-
-        void ApplyResponsiveBrowseLayout(double width)
-        {
-            _compactInspectorLayout =
-                width <= 1080;
-
-            if (_compactInspectorLayout)
-            {
-                browseViewer.ColumnDefinitions =
-                    new ColumnDefinitions("*");
-                Grid.SetColumn(_contextSurface, 0);
-                _contextSurface.HorizontalAlignment =
-                    HorizontalAlignment.Right;
-                _contextSurface.Width =
-                    Math.Clamp(
-                        width * 0.44,
-                        300,
-                        400);
-            }
-            else
-            {
-                browseViewer.ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto");
-                Grid.SetColumn(_contextSurface, 1);
-                _contextSurface.HorizontalAlignment =
-                    HorizontalAlignment.Stretch;
-                _contextSurface.Width =
-                    Math.Clamp(
-                        width * 0.28,
-                        320,
-                        400);
-            }
-        }
 
         SizeChanged +=
             (_, e) =>
-                ApplyResponsiveBrowseLayout(
+                ApplyInspectorLayout(
                     e.NewSize.Width);
-        ApplyResponsiveBrowseLayout(
+        ApplyInspectorLayout(
             Math.Max(1100, Bounds.Width));
 
         var browseLayout =
@@ -239,7 +223,7 @@ internal sealed class CoreViewerShell : UserControl
                 Background = LumineDesign.Background
             };
         browseLayout.Children.Add(
-            browseViewer);
+            _browseViewer);
 
         // Multi-selection is contextual chrome, not layout. Keep the image
         // canvas fixed in place while the action surface floats above it.
@@ -284,6 +268,17 @@ internal sealed class CoreViewerShell : UserControl
 
     internal bool IsCompactInspectorLayout =>
         _compactInspectorLayout;
+
+    internal bool IsInspectorPinnedForSmoke =>
+        _inspectorPinned;
+
+    internal void SetInspectorPinnedForSmoke(
+        bool pinned)
+    {
+        _inspectorPinned = pinned;
+        ApplyInspectorLayout(
+            ResolveInspectorLayoutWidth());
+    }
 
     internal Rect ContextSurfaceBounds =>
         _contextSurface.Bounds;
@@ -402,20 +397,81 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
+    private double ResolveInspectorLayoutWidth() =>
+        Bounds.Width > 0
+            ? Bounds.Width
+            : 1100;
+
+    private void ApplyInspectorLayout(
+        double width)
+    {
+        _compactInspectorLayout =
+            width <= 1080;
+
+        var canDock =
+            !_compactInspectorLayout
+            && _inspectorPinned
+            && _contextSurface.IsVisible;
+
+        if (canDock)
+        {
+            _browseViewer.ColumnDefinitions =
+                new ColumnDefinitions("*,Auto");
+            Grid.SetColumn(
+                _contextSurface,
+                1);
+            _contextSurface.HorizontalAlignment =
+                HorizontalAlignment.Stretch;
+            _contextSurface.Width =
+                Math.Clamp(
+                    width * 0.28,
+                    320,
+                    400);
+            _contextSurface.ZIndex = 0;
+        }
+        else
+        {
+            _browseViewer.ColumnDefinitions =
+                new ColumnDefinitions("*");
+            Grid.SetColumn(
+                _contextSurface,
+                0);
+            _contextSurface.HorizontalAlignment =
+                HorizontalAlignment.Right;
+            _contextSurface.Width =
+                _compactInspectorLayout
+                    ? Math.Clamp(
+                        width * 0.44,
+                        300,
+                        400)
+                    : Math.Clamp(
+                        width * 0.28,
+                        320,
+                        400);
+            _contextSurface.ZIndex = 20;
+        }
+
+        _contextDetail.SetPinPresentation(
+            _inspectorPinned,
+            !_compactInspectorLayout);
+    }
+
     internal bool IsAssetFocusedForSmoke(
         long index) =>
         _grid.IsAssetFocused(index);
 
     internal async Task ShowContextDetailAsync()
     {
+        _contextSurface.IsVisible = true;
+        ApplyInspectorLayout(
+            ResolveInspectorLayoutWidth());
+
         if (_grid.SelectedAssetIndex < 0)
         {
             _contextDetail.ShowNoSelection();
-            _contextSurface.IsVisible = true;
             return;
         }
 
-        _contextSurface.IsVisible = true;
         await LoadContextDetailAsync(
             _grid.SelectedAssetIndex);
     }
@@ -423,6 +479,8 @@ internal sealed class CoreViewerShell : UserControl
     internal void HideContextDetail()
     {
         _contextSurface.IsVisible = false;
+        ApplyInspectorLayout(
+            ResolveInspectorLayoutWidth());
         _grid.Focus();
     }
 
