@@ -108,10 +108,7 @@ internal sealed class ManagedTagPicker : UserControl
             };
 
         _paletteHost =
-            new WrapPanel
-            {
-                Spacing = LumineDesign.Space4
-            };
+            new WrapPanel();
         foreach (var color in Palette)
         {
             var value = color;
