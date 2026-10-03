@@ -316,13 +316,15 @@ internal static class ProductAcceptanceFunctionalScenario
             window.NavigateForSmoke("設定");
 
             Require(
-                window.NavigationContentForSmoke
-                    is ScrollViewer
+                window.WorkspacePageForSmoke
+                    is Border
+                && window.IsWorkspacePageVisibleForSmoke
+                && !window.IsNavigationPaneVisibleForSmoke
                 && window.SettingsSnapshot.DataPaths.RootPath
                     == dataPaths.RootPath
                 && window.SettingsSnapshot
                     .EncodedThumbnailMemoryByteLimit > 0,
-                "Product Settings did not expose the active storage/resource state.");
+                "Product Settings did not expose the active storage/resource state in the main workspace.");
 
             var portable =
                 AppDataPaths.CreatePortable();
@@ -415,10 +417,21 @@ internal static class ProductAcceptanceFunctionalScenario
                  in MainWindow.ProductNavigationLabels)
         {
             window.NavigateForSmoke(destination);
+
+            var rendered =
+                string.Equals(
+                    destination,
+                    "設定",
+                    StringComparison.Ordinal)
+                    ? window.WorkspacePageForSmoke is not null
+                        && window.IsWorkspacePageVisibleForSmoke
+                        && !window.IsNavigationPaneVisibleForSmoke
+                    : window.NavigationContentForSmoke is not null
+                        && !window.IsWorkspacePageVisibleForSmoke;
+
             Require(
-                window.NavigationContentForSmoke
-                    is not null,
-                $"Navigation destination '{destination}' did not render a product surface.");
+                rendered,
+                $"Navigation destination '{destination}' did not render the expected product surface.");
         }
 
         return Task.CompletedTask;
