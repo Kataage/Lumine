@@ -27,6 +27,8 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
     private CancellationTokenSource? _selectionSummaryCancellation;
+    private CancellationTokenSource? _bulkOperationCancellation;
+    private Button? _cancelBulkOperationButton;
     private long _focusedViewReturnIndex = -1;
     private bool _compactInspectorLayout;
     private bool _detached;
@@ -997,6 +999,20 @@ internal sealed class CoreViewerShell : UserControl
                     MinWidth = 76
                 });
 
+        _cancelBulkOperationButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "処理をキャンセル",
+                    MinHeight = 28,
+                    Padding = new Thickness(8, 4),
+                    FontSize = LumineDesign.CaptionFontSize,
+                    Margin = new Thickness(3, 0),
+                    IsVisible = false
+                });
+        _cancelBulkOperationButton.Click +=
+            (_, _) => CancelBulkOperation();
+
         var clear =
             CreateBulkButton(
                 "選択解除",
@@ -1011,6 +1027,7 @@ internal sealed class CoreViewerShell : UserControl
         clear.Margin = new Thickness(3, 0);
         _bulkActions.Children.Add(organize);
         _bulkActions.Children.Add(creative);
+        _bulkActions.Children.Add(_cancelBulkOperationButton);
         _bulkActions.Children.Add(clear);
 
         var top =
@@ -1050,6 +1067,98 @@ internal sealed class CoreViewerShell : UserControl
                 new Thickness(0, 0, 0, 1),
             Child = top
         };
+    }
+
+    private CancellationTokenSource BeginBulkOperation(
+        string status)
+    {
+        var previous =
+            _bulkOperationCancellation;
+        _bulkOperationCancellation = null;
+        if (previous is not null)
+        {
+            previous.Cancel();
+            previous.Dispose();
+        }
+
+        var source =
+            new CancellationTokenSource();
+        _bulkOperationCancellation =
+            source;
+        if (_cancelBulkOperationButton is not null)
+        {
+            _cancelBulkOperationButton.IsVisible = true;
+            _cancelBulkOperationButton.IsEnabled = true;
+        }
+
+        _bulkStatus.Foreground =
+            LumineDesign.MutedForeground;
+        _bulkStatus.Text =
+            status;
+        return source;
+    }
+
+    private void CancelBulkOperation()
+    {
+        var source =
+            _bulkOperationCancellation;
+        if (source is null
+            || source.IsCancellationRequested)
+        {
+            return;
+        }
+
+        source.Cancel();
+        if (_cancelBulkOperationButton is not null)
+        {
+            _cancelBulkOperationButton.IsEnabled = false;
+        }
+
+        _bulkStatus.Text =
+            "キャンセルしています…";
+    }
+
+    private void CompleteBulkOperation(
+        CancellationTokenSource source)
+    {
+        if (ReferenceEquals(
+                _bulkOperationCancellation,
+                source))
+        {
+            _bulkOperationCancellation = null;
+            if (_cancelBulkOperationButton is not null)
+            {
+                _cancelBulkOperationButton.IsVisible = false;
+                _cancelBulkOperationButton.IsEnabled = true;
+            }
+        }
+
+        source.Dispose();
+    }
+
+    private async Task<T> RunBulkOperationAsync<T>(
+        string status,
+        Func<CancellationToken, Task<T>> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        var source =
+            BeginBulkOperation(status);
+        try
+        {
+            return await action(
+                source.Token);
+        }
+        catch (OperationCanceledException)
+            when (source.IsCancellationRequested)
+        {
+            _bulkStatus.Text =
+                "操作をキャンセルしました。";
+            throw;
+        }
+        finally
+        {
+            CompleteBulkOperation(source);
+        }
     }
 
     private Button CreateBulkButton(
@@ -1330,168 +1439,204 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectedAssetIndices,
             cancellationToken);
 
-    private async Task ApplyPatchAsync(
-        AssetUserMetadataPatch patch)
-    {
-        var assetIds =
-            await ResolveSelectedAssetIdsAsync();
-        if (assetIds.Count == 0)
-        {
-            return;
-        }
+    private Task ApplyPatchAsync(
+        AssetUserMetadataPatch patch) =>
+        RunBulkOperationAsync(
+            "更新しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return 0;
+                }
 
-        _bulkStatus.Text =
-            "更新しています…";
+                var updated =
+                    await _runtime.LibraryService.PatchUserMetadataAsync(
+                        _runtime.Library.Id,
+                        assetIds,
+                        patch,
+                        cancellationToken);
 
-        var updated =
-            await _runtime.LibraryService.PatchUserMetadataAsync(
-                _runtime.Library.Id,
-                assetIds,
-                patch);
+                _bulkStatus.Text =
+                    $"{updated:N0}件を更新しました。";
 
-        _bulkStatus.Text =
-            $"{updated:N0}件を更新しました。";
+                if (_afterBulkMutation is not null)
+                {
+                    await _afterBulkMutation();
+                }
 
-        if (_afterBulkMutation is not null)
-        {
-            await _afterBulkMutation();
-        }
-    }
+                return updated;
+            });
 
-    internal async Task<WorkInfo?> CreateWorkFromSelectionAsync(
+    internal Task<WorkInfo?> CreateWorkFromSelectionAsync(
         CreativeWorkDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assetIds =
-            await ResolveSelectedAssetIdsAsync();
-        if (assetIds.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService.CreateWorkAsync(
-                _runtime.Library.Id,
-                new WorkCreate(
-                    input.Title,
-                    input.Description,
-                    assetIds));
-        _bulkStatus.Text =
-            $"Work「{created.Title}」を作成しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+        return RunBulkOperationAsync<WorkInfo?>(
+            "Workを作成しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService.CreateWorkAsync(
+                        _runtime.Library.Id,
+                        new WorkCreate(
+                            input.Title,
+                            input.Description,
+                            assetIds),
+                        cancellationToken);
+                _bulkStatus.Text =
+                    $"Work「{created.Title}」を作成しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<GenerationGroupInfo?>
+    internal Task<GenerationGroupInfo?>
         CreateGenerationGroupFromSelectionAsync(
             CreativeGroupDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assetIds =
-            await ResolveSelectedAssetIdsAsync();
-        if (assetIds.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService
-                .CreateGenerationGroupAsync(
-                    _runtime.Library.Id,
-                    new GenerationGroupCreate(
-                        input.Name,
-                        assetIds,
-                        WorkId: input.WorkId,
-                        Prompt: input.Prompt,
-                        NegativePrompt:
-                            input.NegativePrompt,
-                        ModelName: input.ModelName,
-                        Sampler: input.Sampler,
-                        Scheduler: input.Scheduler,
-                        Steps: input.Steps,
-                        CfgScale: input.CfgScale,
-                        WorkflowJson:
-                            input.WorkflowJson,
-                        Notes: input.Notes));
-        _bulkStatus.Text =
-            $"Generation Group「{created.Name}」を作成しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+        return RunBulkOperationAsync<GenerationGroupInfo?>(
+            "Generation Groupを作成しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreateGenerationGroupAsync(
+                            _runtime.Library.Id,
+                            new GenerationGroupCreate(
+                                input.Name,
+                                assetIds,
+                                WorkId: input.WorkId,
+                                Prompt: input.Prompt,
+                                NegativePrompt:
+                                    input.NegativePrompt,
+                                ModelName: input.ModelName,
+                                Sampler: input.Sampler,
+                                Scheduler: input.Scheduler,
+                                Steps: input.Steps,
+                                CfgScale: input.CfgScale,
+                                WorkflowJson:
+                                    input.WorkflowJson,
+                                Notes: input.Notes),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Generation Group「{created.Name}」を作成しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<AssetRelationInfo?>
+    internal Task<AssetRelationInfo?>
         CreateRelationFromSelectionAsync(
             CreativeRelationDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedRelationAssetsAsync();
-        if (assets.Count != 2)
-        {
-            _bulkStatus.Text =
-                "Lineageは2枚を選択して作成してください。";
-            return null;
-        }
 
-        var parent =
-            input.ReverseDirection
-                ? assets[1]
-                : assets[0];
-        var child =
-            input.ReverseDirection
-                ? assets[0]
-                : assets[1];
+        return RunBulkOperationAsync<AssetRelationInfo?>(
+            "Lineageを作成しています…",
+            async cancellationToken =>
+            {
+                var assets =
+                    await ResolveSelectedRelationAssetsAsync(
+                        cancellationToken);
+                if (assets.Count != 2)
+                {
+                    _bulkStatus.Text =
+                        "Lineageは2枚を選択して作成してください。";
+                    return null;
+                }
 
-        var created =
-            await _runtime.LibraryService
-                .CreateAssetRelationAsync(
-                    _runtime.Library.Id,
-                    new AssetRelationCreate(
-                        parent.Id,
-                        child.Id,
-                        input.RelationType,
-                        input.Note));
-        _bulkStatus.Text =
-            $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+                var parent =
+                    input.ReverseDirection
+                        ? assets[1]
+                        : assets[0];
+                var child =
+                    input.ReverseDirection
+                        ? assets[0]
+                        : assets[1];
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreateAssetRelationAsync(
+                            _runtime.Library.Id,
+                            new AssetRelationCreate(
+                                parent.Id,
+                                child.Id,
+                                input.RelationType,
+                                input.Note),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<PublicationInfo?>
+    internal Task<PublicationInfo?>
         CreatePublicationFromSelectionAsync(
             CreativePublicationDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assetIds =
-            await ResolveSelectedAssetIdsAsync();
-        if (assetIds.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService
-                .CreatePublicationAsync(
-                    _runtime.Library.Id,
-                    new PublicationCreate(
-                        assetIds,
-                        input.Destination,
-                        input.PublishedAtUtc,
-                        WorkId: input.WorkId,
-                        Title: input.Title,
-                        Body: input.Body,
-                        TagsSnapshot: input.Tags,
-                        Account: input.Account,
-                        ExternalId: input.ExternalId,
-                        ExternalUrl: input.ExternalUrl,
-                        PlatformMetadataJson:
-                            input.PlatformMetadataJson));
-        _bulkStatus.Text =
-            $"Publicationを{created.Destination}の履歴へ保存しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        _entryRequested?.Invoke(
-            "publication");
-        return created;
+        return RunBulkOperationAsync<PublicationInfo?>(
+            "Publicationを保存しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreatePublicationAsync(
+                            _runtime.Library.Id,
+                            new PublicationCreate(
+                                assetIds,
+                                input.Destination,
+                                input.PublishedAtUtc,
+                                WorkId: input.WorkId,
+                                Title: input.Title,
+                                Body: input.Body,
+                                TagsSnapshot: input.Tags,
+                                Account: input.Account,
+                                ExternalId: input.ExternalId,
+                                ExternalUrl: input.ExternalUrl,
+                                PlatformMetadataJson:
+                                    input.PlatformMetadataJson),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Publicationを{created.Destination}の履歴へ保存しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                _entryRequested?.Invoke(
+                    "publication");
+                return created;
+            });
     }
 
     private async Task RefreshContextAfterCreativeMutationAsync()
@@ -1929,6 +2074,9 @@ internal sealed class CoreViewerShell : UserControl
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation = null;
+        _bulkOperationCancellation?.Cancel();
+        _bulkOperationCancellation?.Dispose();
+        _bulkOperationCancellation = null;
         KeyDown -= OnShellKeyDown;
         _contextDetail.PrepareForDetach();
         _detail.UnbindGrid();
