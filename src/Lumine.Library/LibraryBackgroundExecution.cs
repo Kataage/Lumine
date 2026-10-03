@@ -299,6 +299,28 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<IReadOnlyList<long>> GetOrderedAssetIdsAsync(
+        long libraryId,
+        AssetQuery query,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetOrderedAssetIdsAsync(
+                libraryId,
+                query,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<AssetInfo>> GetAssetsByIdsAsync(
+        long libraryId,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetAssetsByIdsAsync(
+                libraryId,
+                assetIds,
+                token),
+            cancellationToken);
+
     public Task<WorkInfo> CreateWorkAsync(
         long libraryId,
         WorkCreate create,

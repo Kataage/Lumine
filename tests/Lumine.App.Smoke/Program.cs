@@ -1,9 +1,17 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Interactivity;
+using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.App;
 using Lumine.Core;
 using Lumine.Diagnostics;
@@ -18,6 +26,36 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+
+static double RelativeLuminance(Color color)
+{
+    static double Channel(byte value)
+    {
+        var normalized = value / 255d;
+        return normalized <= 0.04045
+            ? normalized / 12.92
+            : Math.Pow(
+                (normalized + 0.055) / 1.055,
+                2.4);
+    }
+
+    return
+        (0.2126 * Channel(color.R))
+        + (0.7152 * Channel(color.G))
+        + (0.0722 * Channel(color.B));
+}
+
+static double ContrastRatio(
+    Color foreground,
+    Color background)
+{
+    var first = RelativeLuminance(foreground);
+    var second = RelativeLuminance(background);
+    var lighter = Math.Max(first, second);
+    var darker = Math.Min(first, second);
+    return (lighter + 0.05) / (darker + 0.05);
 }
 
 static void WriteBmp24(
@@ -799,6 +837,353 @@ try
                 "Fatal/bootstrap failure did not render a Lumine product-state window.");
             fatalStartup.Close();
 
+            // Strict navigation acceptance: large secondary collections must
+            // stay virtualized, active/offline/disabled library rows must
+            // match their interaction semantics, and async command failures
+            // must remain inside the product error boundary.
+            var activeNavRoot =
+                Path.Combine(root, "nav-active");
+            var openNavRoot =
+                Path.Combine(root, "nav-open");
+            Directory.CreateDirectory(activeNavRoot);
+            Directory.CreateDirectory(openNavRoot);
+
+            var navLibraries =
+                new[]
+                {
+                    new LibraryCatalogItem(
+                        1001,
+                        "Active library",
+                        activeNavRoot,
+                        true,
+                        LibraryScanState.Complete,
+                        12,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1002,
+                        "Openable library",
+                        openNavRoot,
+                        true,
+                        LibraryScanState.Complete,
+                        8,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1003,
+                        "Offline library",
+                        Path.Combine(root, "nav-missing"),
+                        true,
+                        LibraryScanState.Complete,
+                        4,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1004,
+                        "Disabled library",
+                        openNavRoot,
+                        false,
+                        LibraryScanState.Complete,
+                        3,
+                        DateTimeOffset.UtcNow,
+                        null)
+                };
+
+            string? navigationError = null;
+            var openAttempts = 0;
+            var navigationView =
+                ProductNavigationViews.CreateLibraries(
+                    navLibraries,
+                    activeLibraryId: 1001,
+                    addLibrary: static () => Task.CompletedTask,
+                    openLibrary: item =>
+                    {
+                        openAttempts++;
+                        return item.Id == 1002
+                            ? Task.FromException(
+                                new InvalidOperationException(
+                                    "navigation-smoke-failure"))
+                            : Task.CompletedTask;
+                    },
+                    toggleEnabled: static _ => Task.CompletedTask,
+                    removeLibrary: static _ => Task.CompletedTask,
+                    reportError: message =>
+                        navigationError = message);
+
+            var navigationWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = navigationView
+                };
+            navigationWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            TextBlock FindNavigationTitle(string text) =>
+                navigationView.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .First(block =>
+                        string.Equals(
+                            block.Text,
+                            text,
+                            StringComparison.Ordinal));
+
+            Require(
+                FindNavigationTitle("Active library")
+                    .FindAncestorOfType<Button>() is null,
+                "Active library still presents as an enabled no-op command.");
+
+            var openableButton =
+                FindNavigationTitle("Openable library")
+                    .FindAncestorOfType<Button>();
+            var offlineButton =
+                FindNavigationTitle("Offline library")
+                    .FindAncestorOfType<Button>();
+            var disabledButton =
+                FindNavigationTitle("Disabled library")
+                    .FindAncestorOfType<Button>();
+
+            Require(
+                openableButton is { IsEnabled: true }
+                && offlineButton is { IsEnabled: false }
+                && disabledButton is { IsEnabled: false },
+                "Library navigation interaction state drifted for openable/offline/disabled rows.");
+
+            openableButton.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+
+            for (var attempt = 0;
+                 attempt < 100
+                 && navigationError is null;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                openAttempts == 1
+                && navigationError?.Contains(
+                    "navigation-smoke-failure",
+                    StringComparison.Ordinal) == true
+                && openableButton.IsEnabled,
+                "Async library open failure escaped the navigation error boundary or left the command disabled.");
+
+            navigationError = null;
+            Require(
+                openableButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None),
+                "Openable library row did not accept keyboard focus.");
+            openableButton.RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Enter
+                });
+            openableButton.RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyUpEvent,
+                    Key = Key.Enter
+                });
+
+            for (var attempt = 0;
+                 attempt < 100
+                 && navigationError is null;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                openAttempts == 2
+                && navigationError?.Contains(
+                    "navigation-smoke-failure",
+                    StringComparison.Ordinal) == true
+                && !offlineButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None)
+                && !disabledButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None),
+                "Library row keyboard behavior drifted for openable/offline/disabled states.");
+
+            foreach (var commandPath in
+                     new[]
+                     {
+                         "enable",
+                         "remove"
+                     })
+            {
+                var command =
+                    new MenuItem
+                    {
+                        Header = commandPath
+                    };
+                string? commandError = null;
+
+                await ProductNavigationViews.ExecuteAsyncForSmoke(
+                    command,
+                    () => Task.FromException(
+                        new InvalidOperationException(
+                            $"{commandPath}-navigation-smoke-failure")),
+                    message =>
+                        commandError = message);
+
+                Require(
+                    command.IsEnabled
+                    && commandError?.Contains(
+                        $"{commandPath}-navigation-smoke-failure",
+                        StringComparison.Ordinal) == true,
+                    $"Async library {commandPath} failure escaped the shared navigation error boundary or left the command disabled.");
+            }
+
+            navigationWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
+            var largeFolders =
+                Enumerable.Range(0, 10_000)
+                    .Select(index =>
+                        new LibraryFolderInfo(
+                            index + 1,
+                            $"root/folder-{index:D5}",
+                            2,
+                            index % 17))
+                    .ToArray();
+            var largeTags =
+                Enumerable.Range(0, 10_000)
+                    .Select(index =>
+                        new LibraryTagInfo(
+                            index + 1,
+                            $"tag-{index:D5}",
+                            index % 31))
+                    .ToArray();
+            var now =
+                DateTimeOffset.UtcNow;
+            var largePublications =
+                Enumerable.Range(0, 2_000)
+                    .Select(index =>
+                        new PublicationInfo(
+                            index + 1,
+                            1,
+                            null,
+                            $"Publication {index:D4}",
+                            string.Empty,
+                            string.Empty,
+                            "Pixiv",
+                            string.Empty,
+                            now.AddMinutes(-index),
+                            string.Empty,
+                            string.Empty,
+                            "{}",
+                            Array.Empty<PublicationAssetSnapshot>(),
+                            now,
+                            now))
+                    .ToArray();
+
+            static int RealizedNavigationRows(Control view)
+            {
+                var list =
+                    view as ListBox
+                    ?? view.GetVisualDescendants()
+                        .OfType<ListBox>()
+                        .FirstOrDefault()
+                    ?? throw new InvalidOperationException(
+                        "Navigation view did not contain a ListBox.");
+                return list.GetRealizedContainers().Count();
+            }
+
+            var navigationScaleWatch =
+                Stopwatch.StartNew();
+            var foldersView =
+                ProductNavigationViews.CreateFolders(
+                    largeFolders,
+                    null,
+                    static _ => Task.CompletedTask);
+            var scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = foldersView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(foldersView) is > 0 and < 128,
+                "10k folder navigation materialized an unbounded visual tree.");
+            scaleWindow.Close();
+
+            var tagsView =
+                ProductNavigationViews.CreateTags(
+                    largeTags,
+                    null,
+                    static _ => Task.CompletedTask);
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = tagsView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(tagsView) is > 0 and < 128,
+                "10k tag navigation materialized an unbounded visual tree.");
+
+            var tagSearch =
+                tagsView.GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .First(box =>
+                        string.Equals(
+                            box.PlaceholderText,
+                            "タグを検索",
+                            StringComparison.Ordinal));
+            var tagList =
+                tagsView.GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .First();
+            tagSearch.Text = "tag-09999";
+            await Task.Delay(180);
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                tagList.ItemsSource?.Cast<LibraryTagInfo>()
+                    .SingleOrDefault()?.Name
+                    == "tag-09999"
+                && tagList.GetRealizedContainers().Count() < 128,
+                "Large tag filtering failed to debounce/filter while retaining bounded realization.");
+            scaleWindow.Close();
+
+            var publicationsView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    largePublications);
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = publicationsView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(publicationsView) is > 0 and < 128,
+                "2k publication navigation materialized an unbounded visual tree.");
+            scaleWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+            navigationScaleWatch.Stop();
+
+            Require(
+                navigationScaleWatch.Elapsed
+                    < TimeSpan.FromSeconds(2),
+                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
+
             var original = await provider.LoadOriginalAsync(
                 asset,
                 8L * 1024 * 1024);
@@ -1082,6 +1467,11 @@ try
                 "Context/focused surfaces should not consume the initial browse workspace.");
 
             shell.GridViewer.SelectAsset(0);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !shell.IsBulkSelectionBarVisible,
+                "Single selection unexpectedly displaced the browse grid with bulk chrome.");
+
             var firstContextAsset =
                 await shellRuntime.ViewerSession.GetAssetAsync(0);
             await shellRuntime.LibraryService.SetUserMetadataAsync(
@@ -1161,6 +1551,10 @@ try
             Require(
                 shell.GridViewer.SelectedAssetCount == 2,
                 "Creative archive smoke did not establish a two-asset selection.");
+
+            Require(
+                shell.IsBulkSelectionBarVisible,
+                "Multi-selection did not expose the contextual bulk action bar.");
 
             var smokeWork =
                 await shell.CreateWorkFromSelectionAsync(
@@ -1288,6 +1682,84 @@ try
                     == smokePublication.Id
                 && publicationView is not null,
                 "Publication navigation did not render persisted publication history.");
+
+            // Single-image creative workflows must be reachable without
+            // entering bulk-selection mode.
+            shell.GridViewer.SelectAsset(0);
+            await shell.ShowContextDetailAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                !shell.IsBulkSelectionBarVisible
+                && shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .Any(button =>
+                        string.Equals(
+                            button.Content as string,
+                            "新規作成",
+                            StringComparison.Ordinal)),
+                "Single-selection Inspector did not expose its creative creation menu.");
+
+            var singleWork =
+                await shell.CreateWorkFromSelectionAsync(
+                    new CreativeWorkDialogResult(
+                        "Single Asset Work",
+                        "single-image acceptance"));
+            Require(
+                singleWork is not null
+                && singleWork.Assets.Count == 1
+                && singleWork.Assets[0].Id
+                    == firstContextAsset.Id,
+                "Single-image Work creation is not semantically reachable.");
+
+            var singleGroup =
+                await shell.CreateGenerationGroupFromSelectionAsync(
+                    new CreativeGroupDialogResult(
+                        "Single Asset Group",
+                        singleWork!.Id,
+                        "single prompt",
+                        string.Empty,
+                        "single-model",
+                        "euler",
+                        "normal",
+                        12,
+                        3.5,
+                        "{}",
+                        "single-image acceptance"));
+            Require(
+                singleGroup is not null
+                && singleGroup.Assets.Count == 1
+                && singleGroup.Assets[0].Id
+                    == firstContextAsset.Id,
+                "Single-image Generation Group creation is not semantically reachable.");
+
+            var singlePublication =
+                await shell.CreatePublicationFromSelectionAsync(
+                    new CreativePublicationDialogResult(
+                        singleWork.Id,
+                        "Pixiv",
+                        "@single",
+                        "Single Asset Publication",
+                        string.Empty,
+                        string.Empty,
+                        new DateTimeOffset(
+                            2026,
+                            10,
+                            3,
+                            0,
+                            0,
+                            0,
+                            TimeSpan.Zero),
+                        "single-acceptance",
+                        "https://example.invalid/single",
+                        "{}"));
+            Require(
+                singlePublication is not null
+                && singlePublication.Assets.Count == 1
+                && singlePublication.Assets[0].AssetId
+                    == firstContextAsset.Id,
+                "Single-image Publication creation is not semantically reachable.");
 
             var editedQueryPage =
                 await shellRuntime.LibraryService.GetAssetPageAsync(
@@ -1452,7 +1924,15 @@ try
                          AssetSortOrder.ModifiedNewest,
                          AssetSortOrder.ModifiedOldest,
                          AssetSortOrder.FileNameAscending,
-                         AssetSortOrder.FileNameDescending
+                         AssetSortOrder.FileNameDescending,
+                         AssetSortOrder.CreatedNewest,
+                         AssetSortOrder.CreatedOldest,
+                         AssetSortOrder.FileSizeLargest,
+                         AssetSortOrder.FileSizeSmallest,
+                         AssetSortOrder.RatingHighest,
+                         AssetSortOrder.RatingLowest,
+                         AssetSortOrder.StatusAscending,
+                         AssetSortOrder.StatusDescending
                      })
             {
                 await shellRuntime.ApplyQueryAsync(
@@ -1483,6 +1963,32 @@ try
                             StringComparer.OrdinalIgnoreCase.Compare(
                                 firstSorted.DisplayName,
                                 secondSorted.DisplayName) >= 0,
+                        AssetSortOrder.CreatedNewest =>
+                            (firstSorted.CreatedAtUtcTicks ?? long.MinValue)
+                                >= (secondSorted.CreatedAtUtcTicks ?? long.MinValue),
+                        AssetSortOrder.CreatedOldest =>
+                            (firstSorted.CreatedAtUtcTicks ?? long.MinValue)
+                                <= (secondSorted.CreatedAtUtcTicks ?? long.MinValue),
+                        AssetSortOrder.FileSizeLargest =>
+                            firstSorted.FileSize
+                                >= secondSorted.FileSize,
+                        AssetSortOrder.FileSizeSmallest =>
+                            firstSorted.FileSize
+                                <= secondSorted.FileSize,
+                        AssetSortOrder.RatingHighest =>
+                            (firstSorted.Rating ?? 0)
+                                >= (secondSorted.Rating ?? 0),
+                        AssetSortOrder.RatingLowest =>
+                            (firstSorted.Rating ?? 0)
+                                <= (secondSorted.Rating ?? 0),
+                        AssetSortOrder.StatusAscending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.StatusLabel ?? string.Empty,
+                                secondSorted.StatusLabel ?? string.Empty) <= 0,
+                        AssetSortOrder.StatusDescending =>
+                            StringComparer.OrdinalIgnoreCase.Compare(
+                                firstSorted.StatusLabel ?? string.Empty,
+                                secondSorted.StatusLabel ?? string.Empty) >= 0,
                         _ => false
                     };
 
@@ -1506,6 +2012,42 @@ try
 
     Console.WriteLine(
         "App shell smoke: browse / contextual detail / focused viewer / multi-selection / Detail / shutdown OK");
+
+    Require(
+        Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(100)
+            - 1.0) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(125)
+            - 1.25) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(225)
+            - 2.25) < 0.001,
+        "Windows registry text-scale percentages were not normalized to 1.0-2.25 factors.");
+
+    var previousTextScaleEnvironment =
+        Environment.GetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE");
+    try
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            "2.25");
+        Require(
+            Math.Abs(
+                WindowsTextScale.Resolve()
+                - 2.25) < 0.001,
+            "Windows text-scale bridge did not accept the 225% accessibility override.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            previousTextScaleEnvironment);
+    }
+
+    var baselineTextScale =
+        LumineVisualMetrics.TextScaleFactor;
 
     for (var iteration = 0;
          iteration < 3;
@@ -1564,6 +2106,11 @@ try
             width: 1280,
             height: 900);
 
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            iteration == 2
+                ? 2.25
+                : baselineTextScale);
+
         await using (var appHost =
                      await AppHost.StartAsync(
                          repeatedPaths))
@@ -1597,6 +2144,23 @@ try
                         ])
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
+                    Require(
+                        ContrastRatio(
+                            LumineDesign.DangerColor,
+                            LumineDesign.BackgroundColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.DangerColor,
+                            LumineDesign.SurfaceRaisedColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.WarningColor,
+                            LumineDesign.BackgroundColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.WarningColor,
+                            LumineDesign.SurfaceRaisedColor) >= 4.5
+                        && ContrastRatio(
+                            LumineDesign.BorderStrongColor,
+                            LumineDesign.BackgroundColor) >= 3.0,
+                        "Lumine semantic color tokens regressed below readable text/UI contrast.");
                     Require(
                         string.Equals(
                             window.ProductShellState,
@@ -1687,6 +2251,280 @@ try
                             StringComparison.Ordinal)
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
+
+                    // App integration must produce a real virtualized thumbnail
+                    // surface before downstream interaction/DPI checks. The
+                    // standalone Viewer smoke has the same first-frame gate.
+                    for (var attempt = 0;
+                         attempt < 250
+                         && (window.CurrentShell.GridViewer.RealizedRowCount == 0
+                             || window.CurrentShell.GridViewer.Diagnostics.ReadyTiles == 0);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
+
+                    Require(
+                        window.CurrentShell.GridViewer.RealizedRowCount > 0
+                        && window.CurrentShell.GridViewer.Diagnostics.ReadyTiles > 0
+                        && window.CurrentShell.GridViewer
+                            .GetAssetFocusTarget(0) is not null,
+                        "MainWindow workspace did not realize its initial thumbnail surface.");
+
+                    window.Width = 900;
+                    window.Height = 600;
+                    Dispatcher.UIThread.RunJobs();
+
+                    if (iteration == 2)
+                    {
+                        var clippedText =
+                            window.GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .FirstOrDefault(
+                                    block =>
+                                        block.IsEffectivelyVisible
+                                        && !string.IsNullOrWhiteSpace(
+                                            block.Text)
+                                        && block.Bounds.Height > 0
+                                        && block.Bounds.Height + 0.5
+                                            < block.FontSize);
+
+                        Require(
+                            clippedText is null,
+                            $"225% Windows text scaling clipped visible product text: '{clippedText?.Text}' ({clippedText?.Bounds.Height:N1} DIP high for {clippedText?.FontSize:N1} DIP font).");
+                    }
+
+                    Require(
+                        window.IsCompactNavigationLayout,
+                        "Minimum-width MainWindow did not switch navigation to compact overlay layout.");
+
+                    Require(
+                        window.BrowseControlsForSmoke is not null
+                        && window.BrowseControlsForSmoke
+                            .PrimaryToolbarIsContainedForSmoke,
+                        "Minimum-width browse command bar clipped or escaped the workspace bounds.");
+
+                    window.CurrentShell!.GridViewer.SelectAsset(0);
+                    await window.CurrentShell.ShowContextDetailAsync();
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        window.CurrentShell.IsCompactInspectorLayout
+                        && window.CurrentShell.ContextSurfaceBounds.Width <= 400
+                        && window.CurrentShell.GridViewerBounds.Width >= 500,
+                        "Minimum-width workspace did not preserve an image-dominant canvas with overlay inspector.");
+
+                    var renderScalings =
+                        iteration == 2
+                            ? new[] { 1.0 }
+                            : new[]
+                            {
+                                1.25,
+                                1.5,
+                                2.0,
+                                2.25
+                            };
+
+                    foreach (var scaling in
+                             renderScalings)
+                    {
+                        window.SetRenderScaling(scaling);
+                        Dispatcher.UIThread.RunJobs();
+
+                        for (var attempt = 0;
+                             attempt < 100
+                             && window.CurrentShell.GridViewer.RealizedRowCount == 0;
+                             attempt++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(1);
+                        }
+
+                        Require(
+                            Math.Abs(
+                                window.RenderScaling
+                                - scaling) < 0.001
+                            && window.IsCompactNavigationLayout
+                            && window.CurrentShell.IsCompactInspectorLayout
+                            && window.CurrentShell.GridViewerBounds.Width >= 500
+                            && window.CurrentShell.GridViewer.RealizedRowCount > 0
+                            && window.BrowseControlsForSmoke is not null
+                            && window.BrowseControlsForSmoke
+                                .PrimaryToolbarIsContainedForSmoke,
+                            $"MainWindow responsive/layout virtualization or browse command containment regressed at {scaling:P0} render scaling.");
+                    }
+
+                    Require(
+                        window.CurrentShell.GridViewer.FocusAsset(0)
+                        && window.CurrentShell.IsAssetFocusedForSmoke(0),
+                        "Focused-view acceptance could not focus the realized invoking thumbnail.");
+
+                    await window.CurrentShell
+                        .OpenFocusedViewAsync(0);
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        Math.Abs(
+                            window.LightboxBounds.Width
+                            - window.ClientSize.Width) < 1
+                        && Math.Abs(
+                            window.LightboxBounds.Height
+                            - window.ClientSize.Height) < 1,
+                        "Focused lightbox did not cover the complete MainWindow client area.");
+
+                    Require(
+                        window.IsLightboxVisible
+                        && !window.IsWorkspaceInteractionEnabled
+                        && window.CurrentShell.IsFocusedViewVisible
+                        && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
+                        "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
+
+                    var unnamedIconButton =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    button.Content
+                                        is Avalonia.Controls.Shapes.Path
+                                    && string.IsNullOrWhiteSpace(
+                                        AutomationProperties.GetName(
+                                            button)));
+                    Require(
+                        unnamedIconButton is null,
+                        "An icon-only product control is missing an accessibility name.");
+
+                    var fullScreenAutomation =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties
+                                            .GetAutomationId(button),
+                                        "viewer.fullscreen",
+                                        StringComparison.Ordinal));
+                    Require(
+                        fullScreenAutomation is not null
+                        && string.Equals(
+                            AutomationProperties.GetAcceleratorKey(
+                                fullScreenAutomation),
+                            "F11",
+                            StringComparison.Ordinal),
+                        "Focused viewer full-screen automation metadata/accelerator regressed.");
+
+                    Require(
+                        window.IsFocusInsideLightboxForSmoke,
+                        "Opening the lightbox did not move keyboard focus into the modal layer.");
+
+                    for (var tabIndex = 0;
+                         tabIndex < 12;
+                         tabIndex++)
+                    {
+                        var focusedElement =
+                            window.FocusManager
+                                .GetFocusedElement()
+                            as InputElement
+                            ?? throw new InvalidOperationException(
+                                "Lightbox lost its focused input element during Tab-cycle acceptance.");
+
+                        focusedElement.RaiseEvent(
+                            new KeyEventArgs
+                            {
+                                RoutedEvent =
+                                    InputElement.KeyDownEvent,
+                                Key = Key.Tab,
+                                KeyModifiers =
+                                    tabIndex >= 6
+                                        ? KeyModifiers.Shift
+                                        : KeyModifiers.None
+                            });
+                        Dispatcher.UIThread.RunJobs();
+
+                        Require(
+                            window.IsFocusInsideLightboxForSmoke,
+                            "Tab/Shift+Tab escaped the modal lightbox into the background workspace.");
+                    }
+
+                    var windowStateBeforeFullscreen =
+                        window.WindowState;
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxFullScreen
+                        && window.WindowState
+                            == WindowState.FullScreen,
+                        "Focused viewer did not enter full-screen state.");
+
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxFullScreen
+                        && window.WindowState
+                            == windowStateBeforeFullscreen,
+                        "Focused viewer did not restore the prior window state after full-screen exit.");
+
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+
+                    var focusedGeometry =
+                        window.CurrentShell
+                            .FocusedViewerGeometryForSmoke;
+                    var detailImageBounds =
+                        focusedGeometry.ImageBounds;
+                    var detailViewportBounds =
+                        focusedGeometry.ViewportBounds;
+                    var detailImageCenterX =
+                        detailImageBounds.X
+                        + (detailImageBounds.Width / 2);
+                    var detailImageCenterY =
+                        detailImageBounds.Y
+                        + (detailImageBounds.Height / 2);
+                    var detailViewportCenterX =
+                        detailViewportBounds.X
+                        + (detailViewportBounds.Width / 2);
+                    var detailViewportCenterY =
+                        detailViewportBounds.Y
+                        + (detailViewportBounds.Height / 2);
+
+                    Require(
+                        detailImageBounds.Width > 0
+                        && detailImageBounds.Height > 0
+                        && Math.Abs(
+                            detailImageCenterX
+                            - detailViewportCenterX) <= 1.5
+                        && Math.Abs(
+                            detailImageCenterY
+                            - detailViewportCenterY) <= 1.5,
+                        "Focused image did not start visually centered in the viewer viewport.");
+
+                    // The focus contract is tied to the element that opened
+                    // the modal, not whichever asset happens to be selected
+                    // inside the viewer when it closes.
+                    await window.CurrentShell.DetailViewer
+                        .SelectAsync(1);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.CurrentShell.DetailViewer.SelectedAssetIndex == 1,
+                        "Focused viewer did not move away from the invoking asset for focus-return coverage.");
+
+                    window.CurrentShell.CloseFocusedView();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.CurrentShell
+                            .IsAssetFocusedForSmoke(0),
+                        "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
+
+                    window.SetRenderScaling(1.0);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxVisible
+                        && !window.IsLightboxFullScreen
+                        && window.WindowState
+                            == windowStateBeforeFullscreen
+                        && window.IsWorkspaceInteractionEnabled
+                        && !window.CurrentShell.IsFocusedViewVisible,
+                        "Closing the focused image viewer did not release modality/full-screen state and restore workspace interaction.");
 
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
@@ -1847,6 +2685,9 @@ try
         Directory.Delete(
             repeatedEmptyLibraryRoot,
             recursive: true);
+
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            baselineTextScale);
     }
 
     Console.WriteLine(
@@ -1876,4 +2717,7 @@ internal sealed class AppAdapterSmokeApplication : Application
                     UseHeadlessDrawing = false,
                     OverlayPopups = false
                 });
+
+    public override void Initialize() =>
+        App.ApplyProductTheme(this);
 }

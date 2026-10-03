@@ -20,11 +20,12 @@ public sealed partial class LibraryRepository
             return 0;
         }
 
-        if (assetIds.Count > 10_000)
+        const int maximumBulkAssetCount = 100_000;
+        if (assetIds.Count > maximumBulkAssetCount)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(assetIds),
-                "Bulk metadata updates are limited to 10,000 assets per operation.");
+                $"Bulk metadata updates are limited to {maximumBulkAssetCount:N0} assets per operation.");
         }
 
         if (patch.SetRating

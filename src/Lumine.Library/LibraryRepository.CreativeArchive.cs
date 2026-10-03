@@ -40,7 +40,7 @@ public sealed partial class LibraryRepository
         insert.Parameters.AddWithValue("$description", create.Description ?? string.Empty);
         insert.Parameters.AddWithValue(
             "$cover_asset_id",
-            assetIds.Count > 0 ? assetIds[0] : DBNull.Value);
+            assetIds.Length > 0 ? assetIds[0] : DBNull.Value);
         insert.Parameters.AddWithValue("$created", now);
         insert.Parameters.AddWithValue("$updated", now);
         var workId = Convert.ToInt64(
@@ -211,7 +211,7 @@ public sealed partial class LibraryRepository
         ArgumentNullException.ThrowIfNull(create);
         var destination = RequireText(create.Destination, nameof(create.Destination), 128);
         var assetIds = ValidateOrderedAssetIds(create.AssetIds, nameof(create.AssetIds));
-        if (assetIds.Count == 0)
+        if (assetIds.Length == 0)
         {
             throw new ArgumentException("Publication requires at least one ordered asset.", nameof(create));
         }
@@ -889,10 +889,10 @@ public sealed partial class LibraryRepository
         SqliteConnection connection,
         SqliteTransaction transaction,
         long libraryId,
-        IReadOnlyList<long> orderedAssetIds,
+        long[] orderedAssetIds,
         CancellationToken cancellationToken)
     {
-        var result = new List<CreativeAssetRef>(orderedAssetIds.Count);
+        var result = new List<CreativeAssetRef>(orderedAssetIds.Length);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -932,10 +932,10 @@ public sealed partial class LibraryRepository
         SqliteConnection connection,
         SqliteTransaction transaction,
         long libraryId,
-        IReadOnlyList<long> assetIds,
+        long[] assetIds,
         CancellationToken cancellationToken)
     {
-        if (assetIds.Count > 10_000)
+        if (assetIds.Length > 10_000)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(assetIds),
@@ -1061,7 +1061,7 @@ public sealed partial class LibraryRepository
         }
     }
 
-    private static IReadOnlyList<long> ValidateOrderedAssetIds(
+    private static long[] ValidateOrderedAssetIds(
         IReadOnlyList<long> assetIds,
         string parameterName)
     {

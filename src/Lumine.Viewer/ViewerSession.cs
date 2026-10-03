@@ -128,6 +128,54 @@ public sealed class ViewerSession : IAsyncDisposable
         }
     }
 
+    public async ValueTask<IReadOnlyList<long>> GetAssetIdsAsync(
+        IReadOnlyList<long> indices,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(indices);
+
+        var operation =
+            BeginOperation(
+                cancellationToken);
+
+        try
+        {
+            if (_assets
+                is IViewerSelectionIdProvider batch)
+            {
+                return await batch
+                    .GetAssetIdsAsync(
+                        indices,
+                        operation.Token)
+                    .ConfigureAwait(false);
+            }
+
+            var result =
+                new long[indices.Count];
+            for (var position = 0;
+                 position < indices.Count;
+                 position++)
+            {
+                operation.Token.ThrowIfCancellationRequested();
+                var asset =
+                    await _assets.GetAssetAsync(
+                        indices[position],
+                        operation.Token)
+                    .ConfigureAwait(false);
+                result[position] =
+                    asset.Id;
+            }
+
+            return result;
+        }
+        finally
+        {
+            operation.Dispose();
+            CompleteOperation();
+        }
+    }
+
+
     public ValueTask<ViewerThumbnail> GetThumbnailAsync(
         ViewerAsset asset,
         ViewerThumbnailPriority priority,

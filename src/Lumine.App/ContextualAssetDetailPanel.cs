@@ -85,7 +85,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         CoreViewerRuntime runtime,
         Func<Task> closeRequested,
         Func<Task> focusedViewRequested,
-        Func<Task>? metadataChanged = null)
+        Func<Task>? metadataChanged = null,
+        Func<Task>? createWorkRequested = null,
+        Func<Task>? createGroupRequested = null,
+        Func<Task>? createPublicationRequested = null)
     {
         _runtime = runtime
             ?? throw new ArgumentNullException(nameof(runtime));
@@ -108,51 +111,63 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _relations = CreateValue(wrap: true);
         _publications = CreateValue(wrap: true);
 
-        _ratingEditor = new ComboBox
-        {
-            ItemsSource =
-                new[]
+        _ratingEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
                 {
-                    "未設定",
-                    "★1",
-                    "★2",
-                    "★3",
-                    "★4",
-                    "★5"
-                },
-            MinWidth = 118
-        };
-        _favoriteEditor = new CheckBox
-        {
-            Content = "お気に入り"
-        };
-        _statusEditor = new ComboBox
-        {
-            ItemsSource = StatusLabels,
-            MinWidth = 118
-        };
-        _colorEditor = new ComboBox
-        {
-            ItemsSource = ColorLabels,
-            MinWidth = 118
-        };
-        _tagsEditor = new TextBox
-        {
-            PlaceholderText = "タグをカンマ区切りで入力",
-            TextWrapping = TextWrapping.Wrap
-        };
-        _notesEditor = new TextBox
-        {
-            PlaceholderText = "ノート",
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 92
-        };
+                    ItemsSource =
+                        new[]
+                        {
+                            "未設定",
+                            "★1",
+                            "★2",
+                            "★3",
+                            "★4",
+                            "★5"
+                        },
+                    MinWidth = 118
+                });
+        _favoriteEditor =
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "お気に入り"
+                });
+        _statusEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource = StatusLabels,
+                    MinWidth = 118
+                });
+        _colorEditor =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource = ColorLabels,
+                    MinWidth = 118
+                });
+        _tagsEditor =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "タグ",
+                    TextWrapping = TextWrapping.Wrap
+                });
+        _notesEditor =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "ノート",
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    MinHeight = 92
+                });
 
         _saveStatus = new TextBlock
         {
             Foreground = LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             VerticalAlignment = VerticalAlignment.Center
         };
 
@@ -160,11 +175,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "保存  Ctrl+S",
+                    Content = "保存",
                     MinHeight = 30,
                     Padding = new Thickness(12, 5),
                     IsEnabled = false
                 });
+        ToolTip.SetTip(
+            _save,
+            "保存 (Ctrl+S)");
         _save.Click +=
             async (_, _) =>
                 await SaveEditorAsync();
@@ -183,30 +201,30 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ResetEditor();
 
         var close =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "×",
-                    Width = 34,
-                    MinHeight = 30,
-                    Padding = new Thickness(0)
-                });
-        ToolTip.SetTip(
-            close,
-            "詳細を閉じる");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.CloseIconPath,
+                            16)
+                },
+                "詳細を閉じる");
         close.Click +=
             async (_, _) =>
                 await _closeRequested();
 
         _focused =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "集中表示",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5),
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.ViewIconPath,
+                            18),
                     IsEnabled = false
-                });
+                },
+                "画像を表示");
         _focused.Click +=
             async (_, _) =>
                 await _focusedViewRequested();
@@ -215,8 +233,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
-                Margin = new Thickness(14, 12, 10, 8)
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing = 6,
+                Margin = new Thickness(14, 10, 10, 8)
             };
         header.Children.Add(
             new TextBlock
@@ -224,47 +243,34 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = "詳細",
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.Bold,
-                FontSize = 13,
+                FontSize = LumineDesign.BodyFontSize,
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
-        Grid.SetColumn(close, 1);
+        Grid.SetColumn(_focused, 1);
+        header.Children.Add(_focused);
+        Grid.SetColumn(close, 2);
         header.Children.Add(close);
 
         var body =
             new StackPanel
             {
-                Spacing = 11,
+                Spacing = 12,
                 Margin = new Thickness(14, 4, 14, 18)
             };
 
         body.Children.Add(_title);
         body.Children.Add(_summary);
-        body.Children.Add(_focused);
-
-        AddSection(body, "場所", _path);
-        AddSection(body, "技術情報", _technical);
-
-        var creative =
-            new StackPanel
-            {
-                Spacing = 8
-            };
-        AddSection(creative, "Work", _works);
-        AddSection(creative, "Generation Group", _groups);
-        AddSection(creative, "Lineage", _relations);
-        AddSection(creative, "Publication", _publications);
-        AddSection(body, "制作コンテキスト", creative);
 
         var editor =
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("74,*"),
+                    new ColumnDefinitions("72,*"),
                 RowDefinitions =
                     new RowDefinitions(
                         "Auto,Auto,Auto,Auto,Auto,Auto"),
-                RowSpacing = 6
+                RowSpacing = 7
             };
         AddEditorRow(
             editor,
@@ -318,17 +324,108 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         saveRow.Children.Add(_save);
         body.Children.Add(saveRow);
 
-        body.Children.Add(
-            new TextBlock
+        var creative =
+            new StackPanel
             {
-                Text =
-                    "状態: 未整理 / 確認済み / 候補 / 公開済み。変更は保存またはCtrl+Sで確定します。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = 9.5,
-                TextWrapping =
-                    TextWrapping.Wrap
-            });
+                Spacing = 8
+            };
+
+        if (createWorkRequested is not null
+            || createGroupRequested is not null
+            || createPublicationRequested is not null)
+        {
+            Button CreateCreativeAction(
+                string label,
+                Func<Task> action)
+            {
+                var button =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = label
+                        });
+                button.Click +=
+                    async (_, _) =>
+                    {
+                        button.IsEnabled = false;
+                        try
+                        {
+                            await action();
+                        }
+                        catch (Exception exception)
+                        {
+                            _saveStatus.Text =
+                                $"操作を完了できませんでした: {exception.Message}";
+                        }
+                        finally
+                        {
+                            button.IsEnabled = true;
+                        }
+                    };
+                return button;
+            }
+
+            var creationPanel =
+                new StackPanel
+                {
+                    Width = 220,
+                    Spacing = 6,
+                    Margin = new Thickness(4)
+                };
+            if (createWorkRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "Workを作成",
+                        createWorkRequested));
+            }
+
+            if (createGroupRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "生成グループを作成",
+                        createGroupRequested));
+            }
+
+            if (createPublicationRequested is not null)
+            {
+                creationPanel.Children.Add(
+                    CreateCreativeAction(
+                        "公開記録を作成",
+                        createPublicationRequested));
+            }
+
+            creative.Children.Add(
+                LumineDesign.ConfigureSecondaryButton(
+                    new DropDownButton
+                    {
+                        Content = "新規作成",
+                        Flyout =
+                            new Flyout
+                            {
+                                Content =
+                                    new Border
+                                    {
+                                        Background =
+                                            LumineDesign.SurfaceRaised,
+                                        Padding =
+                                            new Thickness(10),
+                                        Child =
+                                            creationPanel
+                                    }
+                            }
+                    }));
+        }
+
+        AddSection(creative, "Work", _works);
+        AddSection(creative, "Generation Group", _groups);
+        AddSection(creative, "Lineage", _relations);
+        AddSection(creative, "Publication", _publications);
+        AddSection(body, "制作コンテキスト", creative);
+
+        AddSection(body, "場所", _path);
+        AddSection(body, "技術情報", _technical);
 
         var scroll =
             new ScrollViewer
@@ -996,7 +1093,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 FontWeight =
                     FontWeight.SemiBold
             });
@@ -1016,7 +1113,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 Margin =
                     new Thickness(0, 5, 10, 2)
             };

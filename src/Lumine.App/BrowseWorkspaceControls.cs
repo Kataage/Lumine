@@ -48,7 +48,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Button _list;
     private readonly Slider _density;
     private readonly WrapPanel _chips;
-    private readonly TextBlock _searchHint;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
 
@@ -69,67 +68,81 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _preferencesChanged = preferencesChanged
             ?? throw new ArgumentNullException(nameof(preferencesChanged));
 
-        _search = new TextBox
-        {
-            PlaceholderText = "ファイル名・パス・ノート・タグを検索…",
-            MinWidth = 260,
-            Text = State.SearchText
-        };
+        _search =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText = "検索",
+                    MinWidth = 260,
+                    Text = State.SearchText
+                });
+        ToolTip.SetTip(
+            _search,
+            "ファイル名・パス・ノート・タグを検索");
 
-        _searchHint = new TextBlock
-        {
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = 9.5,
-            IsVisible = false,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        _sort =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = BrowseSortChoice.All
+                });
 
-        _sort = new ComboBox
-        {
-            MinWidth = 150,
-            ItemsSource = BrowseSortChoice.All
-        };
+        _rating =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 112,
+                    ItemsSource = RatingChoice.All
+                });
 
-        _rating = new ComboBox
-        {
-            MinWidth = 112,
-            ItemsSource = RatingChoice.All
-        };
+        _status =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 122
+                });
 
-        _status = new ComboBox
-        {
-            MinWidth = 122
-        };
+        _tag =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 122
+                });
 
-        _tag = new ComboBox
-        {
-            MinWidth = 122
-        };
+        _favorite =
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content = "お気に入り"
+                });
 
-        _favorite = new CheckBox
-        {
-            Content = "お気に入り",
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        _color =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 112
+                });
 
-        _color = new ComboBox
-        {
-            MinWidth = 112
-        };
-
-        _grid = LumineDesign.ConfigureSecondaryButton(
+        _grid = LumineDesign.ConfigureIconButton(
             new Button
             {
-                Content = "Grid",
-                Padding = new Thickness(10, 5)
-            });
+                Content =
+                    LumineDesign.CreateStrokeIcon(
+                        LumineDesign.GridIconPath,
+                        17)
+            },
+            "グリッド表示");
 
-        _list = LumineDesign.ConfigureSecondaryButton(
+        _list = LumineDesign.ConfigureIconButton(
             new Button
             {
-                Content = "List",
-                Padding = new Thickness(10, 5)
-            });
+                Content =
+                    LumineDesign.CreateStrokeIcon(
+                        LumineDesign.ListIconPath,
+                        17)
+            },
+            "リスト表示");
 
         _density = new Slider
         {
@@ -139,25 +152,23 @@ internal sealed class BrowseWorkspaceControls : UserControl
             IsSnapToTickEnabled = true,
             Width = 92,
             Value = Preferences.Density,
+            Foreground = LumineDesign.Focus,
+            Background = LumineDesign.ControlSurface,
             VerticalAlignment = VerticalAlignment.Center
         };
 
         _chips = new WrapPanel
         {
-            Orientation = Orientation.Horizontal
+            Orientation = Orientation.Horizontal,
+            IsVisible = State.HasFilters
         };
 
         var primaryRow = new Grid
         {
             ColumnDefinitions =
-                new ColumnDefinitions("*,Auto,Auto,Auto")
+                new ColumnDefinitions("*,Auto,Auto")
         };
         primaryRow.Children.Add(_search);
-
-        Grid.SetColumn(_searchHint, 1);
-        _searchHint.Margin =
-            new Thickness(8, 0);
-        primaryRow.Children.Add(_searchHint);
 
         var mode =
             new StackPanel
@@ -168,7 +179,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             };
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
-        Grid.SetColumn(mode, 2);
+        Grid.SetColumn(mode, 1);
         primaryRow.Children.Add(mode);
 
         var densityPanel =
@@ -179,21 +190,27 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
-            new TextBlock
-            {
-                Text = "密度",
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = 10.5,
-                VerticalAlignment = VerticalAlignment.Center
-            });
+            LumineDesign.CreateStrokeIcon(
+                LumineDesign.GridIconPath,
+                13,
+                LumineDesign.MutedForeground));
         densityPanel.Children.Add(_density);
-        Grid.SetColumn(densityPanel, 3);
+        densityPanel.Children.Add(
+            LumineDesign.CreateStrokeIcon(
+                LumineDesign.GridIconPath,
+                19,
+                LumineDesign.MutedForeground));
+        ToolTip.SetTip(
+            densityPanel,
+            "サムネイルサイズ");
+        Grid.SetColumn(densityPanel, 2);
         primaryRow.Children.Add(densityPanel);
 
         var filterRow =
-            new WrapPanel
+            new StackPanel
             {
-                Orientation = Orientation.Horizontal
+                Orientation = Orientation.Horizontal,
+                Spacing = 2
             };
         AddFilter(filterRow, "並び順", _sort);
         AddFilter(filterRow, "評価", _rating);
@@ -201,15 +218,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
         AddFilter(filterRow, "タグ", _tag);
         AddFilter(filterRow, "色", _color);
         _favorite.Margin =
-            new Thickness(10, 5, 4, 5);
+            new Thickness(8, 4);
         filterRow.Children.Add(_favorite);
+
+        var filterScroll =
+            new ScrollViewer
+            {
+                Content = filterRow,
+                HorizontalScrollBarVisibility =
+                    ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility =
+                    ScrollBarVisibility.Disabled
+            };
 
         var root = new StackPanel
         {
-            Spacing = 7
+            Spacing = 4
         };
         root.Children.Add(primaryRow);
-        root.Children.Add(filterRow);
+        root.Children.Add(filterScroll);
         root.Children.Add(_chips);
 
         Content =
@@ -219,7 +246,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
                     new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(12, 8),
+                Padding = new Thickness(10, 6),
                 Child = root
             };
 
@@ -274,6 +301,50 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Density = density
             };
         await PublishPreferencesAsync();
+    }
+
+    internal bool PrimaryToolbarIsContainedForSmoke
+    {
+        get
+        {
+            if (Bounds.Width <= 0
+                || Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var control in new Control[]
+                     {
+                         _search,
+                         _grid,
+                         _list,
+                         _density
+                     })
+            {
+                var origin =
+                    control.TranslatePoint(
+                        new Point(0, 0),
+                        this);
+                if (origin is not { } point)
+                {
+                    return false;
+                }
+
+                var bounds =
+                    new Rect(
+                        point,
+                        control.Bounds.Size);
+                if (bounds.Left < -0.5
+                    || bounds.Top < -0.5
+                    || bounds.Right > Bounds.Width + 0.5
+                    || bounds.Bottom > Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     public BrowseFilterState State { get; private set; }
@@ -375,16 +446,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
             _search.Text?.Trim()
             ?? string.Empty;
 
-        if (text.Length > 0
-            && !IsSearchReady(text))
-        {
-            _searchHint.Text =
-                "英数字は3文字以上、日本語/CJKは2文字以上";
-            _searchHint.IsVisible = true;
-            return;
-        }
-
-        _searchHint.IsVisible = false;
         _searchDebounce =
             new CancellationTokenSource();
         var token =
@@ -625,34 +686,35 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     private void UpdateViewButtons()
     {
+        var gridSelected =
+            Preferences.ViewMode
+            == BrowseViewMode.Grid;
         _grid.Background =
-            Preferences.ViewMode
-                == BrowseViewMode.Grid
-                ? LumineDesign.Accent
-                : LumineDesign.AccentMuted;
-        _grid.Foreground =
-            Preferences.ViewMode
-                == BrowseViewMode.Grid
-                ? new SolidColorBrush(
-                    LumineDesign.BackgroundColor)
-                : LumineDesign.Foreground;
+            gridSelected
+                ? LumineDesign.AccentMuted
+                : Brushes.Transparent;
+        _grid.BorderBrush =
+            gridSelected
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
 
+        var listSelected =
+            Preferences.ViewMode
+            == BrowseViewMode.List;
         _list.Background =
-            Preferences.ViewMode
-                == BrowseViewMode.List
-                ? LumineDesign.Accent
-                : LumineDesign.AccentMuted;
-        _list.Foreground =
-            Preferences.ViewMode
-                == BrowseViewMode.List
-                ? new SolidColorBrush(
-                    LumineDesign.BackgroundColor)
-                : LumineDesign.Foreground;
+            listSelected
+                ? LumineDesign.AccentMuted
+                : Brushes.Transparent;
+        _list.BorderBrush =
+            listSelected
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
     }
 
     private void RenderChips()
     {
         _chips.Children.Clear();
+        _chips.IsVisible = State.HasFilters;
 
         AddChip(
             "検索",
@@ -731,7 +793,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                         MinHeight = 26,
                         Padding =
                             new Thickness(8, 3),
-                        FontSize = 10,
+                        FontSize = LumineDesign.CaptionFontSize,
                         Margin =
                             new Thickness(3)
                     });
@@ -773,7 +835,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 MinHeight = 26,
                 Padding =
                     new Thickness(9, 3),
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 Margin =
                     new Thickness(3)
             };
@@ -803,52 +865,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
         group.Children.Add(control);
         panel.Children.Add(group);
     }
-
-    private static bool IsSearchReady(
-        string text)
-    {
-        var terms =
-            text.Split(
-                ' ',
-                StringSplitOptions.RemoveEmptyEntries
-                | StringSplitOptions.TrimEntries);
-
-        if (terms.Length == 0)
-        {
-            return true;
-        }
-
-        foreach (var term in terms)
-        {
-            if (term.Length >= 3)
-            {
-                continue;
-            }
-
-            if (term.Length == 2
-                && term.All(IsCjk))
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private static bool IsCjk(char value) =>
-        value is >= '\u3040' and <= '\u30ff'
-        or >= '\u3400' and <= '\u4dbf'
-        or >= '\u4e00' and <= '\u9fff'
-        or >= '\uff66' and <= '\uff9f';
 
     private static string? NormalizeChoice(
         object? value)
@@ -876,17 +899,41 @@ internal sealed class BrowseWorkspaceControls : UserControl
         public static IReadOnlyList<BrowseSortChoice> All { get; } =
         [
             new(
-                "更新日 ↓",
+                "更新日 新しい順",
                 AssetSortOrder.ModifiedNewest),
             new(
-                "更新日 ↑",
+                "更新日 古い順",
                 AssetSortOrder.ModifiedOldest),
+            new(
+                "作成日 新しい順",
+                AssetSortOrder.CreatedNewest),
+            new(
+                "作成日 古い順",
+                AssetSortOrder.CreatedOldest),
             new(
                 "ファイル名 A→Z",
                 AssetSortOrder.FileNameAscending),
             new(
                 "ファイル名 Z→A",
-                AssetSortOrder.FileNameDescending)
+                AssetSortOrder.FileNameDescending),
+            new(
+                "サイズ 大きい順",
+                AssetSortOrder.FileSizeLargest),
+            new(
+                "サイズ 小さい順",
+                AssetSortOrder.FileSizeSmallest),
+            new(
+                "評価 高い順",
+                AssetSortOrder.RatingHighest),
+            new(
+                "評価 低い順",
+                AssetSortOrder.RatingLowest),
+            new(
+                "状態 A→Z",
+                AssetSortOrder.StatusAscending),
+            new(
+                "状態 Z→A",
+                AssetSortOrder.StatusDescending)
         ];
 
         public override string ToString() =>

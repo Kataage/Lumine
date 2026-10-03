@@ -27,12 +27,17 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly HashSet<Task> _pendingTileLoads = [];
     private Compositor? _compositor;
     private int _columns = 1;
-    private readonly SortedSet<long> _selectedIndices = [];
+    private readonly ViewerRangeSelection _selection = new();
     private long _selectedIndex = -1;
     private long _selectionAnchor = -1;
+    private long _pendingFocusIndex = -1;
+    private bool _pendingFocusLayoutSubscribed;
     private ViewerLayoutMode _layoutMode;
     private int _densityLevel;
     private double _viewportWidth = 1;
+
+    private const double GridOuterPadding = 12;
+    private const double GridCornerRadius = 10;
 
     public ThumbnailViewerControl(
         ViewerSession session,
@@ -60,7 +65,10 @@ public sealed class ThumbnailViewerControl : UserControl
         _rows = new ListBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            SelectionMode = SelectionMode.Single
+            SelectionMode = SelectionMode.Single,
+            Padding = new Thickness(GridOuterPadding),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
         };
 
         Content = _rows;
@@ -75,10 +83,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public long SelectedAssetIndex => _selectedIndex;
 
-    public int SelectedAssetCount => _selectedIndices.Count;
+    public int SelectedAssetCount => _selection.Count;
 
     public IReadOnlyList<long> SelectedAssetIndices =>
-        _selectedIndices.ToArray();
+        _selection.AsReadOnlyList();
+
+    internal int SelectionRangeCount =>
+        _selection.RangeCount;
 
     public int Columns => _columns;
 
@@ -93,6 +104,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Terminal shell teardown must detach realized rows synchronously.
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
+        CancelPendingAssetFocus();
         _rows.ItemsSource = null;
         ClearSelection();
     }
@@ -190,14 +202,274 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
+
+    public async Task<bool> EnsureAssetFocusTargetAsync(
+        long index)
+    {
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            return false;
+        }
+
+        if (GetAssetFocusTarget(index) is not null)
+        {
+            return true;
+        }
+
+        var row =
+            checked((int)(index / _columns));
+
+        // ScrollIntoView requests realization, but Avalonia's virtualizing
+        // presenter completes container creation during a subsequent layout
+        // pass. Coordinate with that lifecycle explicitly instead of keeping
+        // a stale Control reference or retrying Focus on a non-existent tile.
+        _rows.ScrollIntoView(row);
+        _rows.InvalidateMeasure();
+        InvalidateMeasure();
+
+        await Dispatcher.UIThread.InvokeAsync(
+            () =>
+            {
+                _rows.ScrollIntoView(row);
+                _rows.UpdateLayout();
+                UpdateLayout();
+            },
+            DispatcherPriority.Loaded);
+
+        if (GetAssetFocusTarget(index) is not null)
+        {
+            return true;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(
+            () =>
+            {
+                _rows.ScrollIntoView(row);
+                _rows.UpdateLayout();
+                UpdateLayout();
+            },
+            DispatcherPriority.Render);
+
+        return GetAssetFocusTarget(index) is not null;
+    }
+
+    public bool FocusAsset(long index)
+    {
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            return false;
+        }
+
+        _rows.ScrollIntoView(
+            checked((int)(index / _columns)));
+        _rows.UpdateLayout();
+        UpdateLayout();
+
+        var tile =
+            GetAssetFocusTarget(index)
+            as ViewerTileControl;
+        return tile is not null
+            && TryFocusTile(tile);
+    }
+
+    public void RestoreAssetFocus(long index)
+    {
+        CancelPendingAssetFocus();
+
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            Focus(
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+            return;
+        }
+
+        if (FocusAsset(index))
+        {
+            return;
+        }
+
+        // ScrollIntoView requests realization, but Avalonia's virtualizing
+        // panel can complete that work in a later layout pass. Keep the
+        // semantic asset identity and finish focus restoration from layout /
+        // tile-realization events rather than timing-based retries.
+        _pendingFocusIndex = index;
+        EnsurePendingFocusLayoutSubscription();
+
+        Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
+
+        _rows.ScrollIntoView(
+            checked((int)(index / _columns)));
+        _rows.UpdateLayout();
+        UpdateLayout();
+
+        TryCompletePendingAssetFocus();
+    }
+
+    private bool TryFocusTile(
+        ViewerTileControl tile)
+    {
+        if (!tile.IsEffectivelyVisible
+            || !tile.IsEffectivelyEnabled)
+        {
+            return false;
+        }
+
+        var focusManager =
+            TopLevel.GetTopLevel(this)
+                ?.FocusManager;
+        return focusManager?.Focus(
+                   tile,
+                   NavigationMethod.Unspecified,
+                   KeyModifiers.None)
+               ?? tile.Focus(
+                   NavigationMethod.Unspecified,
+                   KeyModifiers.None);
+    }
+
+    private void EnsurePendingFocusLayoutSubscription()
+    {
+        if (_pendingFocusLayoutSubscribed)
+        {
+            return;
+        }
+
+        _rows.LayoutUpdated += OnPendingFocusLayoutUpdated;
+        _pendingFocusLayoutSubscribed = true;
+    }
+
+    private void OnPendingFocusLayoutUpdated(
+        object? sender,
+        EventArgs e)
+    {
+        if (_pendingFocusIndex < 0)
+        {
+            RemovePendingFocusLayoutSubscription();
+            return;
+        }
+
+        if (TryCompletePendingAssetFocus())
+        {
+            return;
+        }
+
+        // If the requested row was still outside the realized window during
+        // this pass, keep it as the scroll target for the next real layout
+        // pass. No delay/retry counter is involved.
+        _rows.ScrollIntoView(
+            checked((int)(_pendingFocusIndex / _columns)));
+    }
+
+    private bool TryCompletePendingAssetFocus()
+    {
+        if (_pendingFocusIndex < 0)
+        {
+            return false;
+        }
+
+        var tile =
+            GetAssetFocusTarget(_pendingFocusIndex)
+            as ViewerTileControl;
+        if (tile is null
+            || !TryFocusTile(tile))
+        {
+            return false;
+        }
+
+        CancelPendingAssetFocus();
+        return true;
+    }
+
+    private void CompletePendingAssetFocus(
+        ViewerTileControl tile)
+    {
+        if (_pendingFocusIndex != tile.Index
+            || !TryFocusTile(tile))
+        {
+            return;
+        }
+
+        CancelPendingAssetFocus();
+    }
+
+    private void CancelPendingAssetFocus()
+    {
+        _pendingFocusIndex = -1;
+        RemovePendingFocusLayoutSubscription();
+    }
+
+    private void RemovePendingFocusLayoutSubscription()
+    {
+        if (!_pendingFocusLayoutSubscribed)
+        {
+            return;
+        }
+
+        _rows.LayoutUpdated -= OnPendingFocusLayoutUpdated;
+        _pendingFocusLayoutSubscribed = false;
+    }
+
+
+    public Control? GetAssetFocusTarget(long index) =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .FirstOrDefault(
+                item => item.Index == index);
+
+    public bool IsAssetFocused(long index) =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .Any(
+                tile =>
+                    tile.Index == index
+                    && tile.IsFocused);
+
+
+    internal ViewerTilePresentation
+        GetRealizedTilePresentationForSmoke(
+            long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.GetPresentationForSmoke();
+    }
+
+    internal IReadOnlyList<ViewerTileActionGeometry>
+        GetRealizedTileActionGeometryForSmoke(
+            long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.GetActionGeometryForSmoke();
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
 
     public event EventHandler<long>? AssetInvoked;
 
+    public event EventHandler<long>? AssetDetailRequested;
+
+    public event EventHandler<ViewerAssetContextRequestedEventArgs>?
+        AssetContextRequested;
+
     public bool IsAssetSelected(long index) =>
-        _selectedIndices.Contains(index);
+        _selection.Contains(index);
 
     public void SelectAsset(
         long index,
@@ -222,34 +494,22 @@ public sealed class ThumbnailViewerControl : UserControl
         switch (mode)
         {
             case ViewerSelectionMode.Replace:
-                if (_selectedIndices.Count != 1
-                    || !_selectedIndices.Contains(index))
-                {
-                    _selectedIndices.Clear();
-                    _selectedIndices.Add(index);
-                    changed = true;
-                }
-
+                changed =
+                    _selection.SetSingle(index);
                 _selectionAnchor = index;
                 _selectedIndex = index;
                 break;
 
             case ViewerSelectionMode.Toggle:
-                if (_selectedIndices.Remove(index))
-                {
-                    changed = true;
-                    _selectedIndex =
-                        _selectedIndices.Count == 0
+                var selectedAfterToggle =
+                    _selection.Toggle(index);
+                changed = true;
+                _selectedIndex =
+                    selectedAfterToggle
+                        ? index
+                        : _selection.IsEmpty
                             ? -1
-                            : _selectedIndices.Max;
-                }
-                else
-                {
-                    _selectedIndices.Add(index);
-                    changed = true;
-                    _selectedIndex = index;
-                }
-
+                            : _selection.Max;
                 _selectionAnchor = index;
                 break;
 
@@ -263,22 +523,10 @@ public sealed class ThumbnailViewerControl : UserControl
                 var start = Math.Min(anchor, index);
                 var end = Math.Max(anchor, index);
 
-                if (_selectedIndices.Count
-                        != checked((int)(end - start + 1))
-                    || _selectedIndices.Min != start
-                    || _selectedIndices.Max != end)
-                {
-                    _selectedIndices.Clear();
-                    for (var current = start;
-                         current <= end;
-                         current++)
-                    {
-                        _selectedIndices.Add(current);
-                    }
-
-                    changed = true;
-                }
-
+                changed =
+                    _selection.SetRange(
+                        start,
+                        end);
                 _selectedIndex = index;
                 if (_selectionAnchor < 0)
                 {
@@ -317,13 +565,8 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
-        _selectedIndices.Clear();
-        for (long index = 0;
-             index < AssetCount;
-             index++)
-        {
-            _selectedIndices.Add(index);
-        }
+        _selection.SelectAll(
+            AssetCount);
 
         _selectedIndex =
             _selectedIndex >= 0
@@ -342,13 +585,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public void ClearSelection()
     {
-        if (_selectedIndices.Count == 0
+        if (_selection.IsEmpty
             && _selectedIndex < 0)
         {
             return;
         }
 
-        _selectedIndices.Clear();
+        _selection.Clear();
         _selectedIndex = -1;
         _selectionAnchor = -1;
         SelectedAssetIndexChanged?.Invoke(
@@ -361,7 +604,7 @@ public sealed class ThumbnailViewerControl : UserControl
         SelectionChanged?.Invoke(
             this,
             new ViewerSelectionSnapshot(
-                _selectedIndices.ToArray(),
+                _selection.AsReadOnlyList(),
                 _selectedIndex,
                 _selectionAnchor));
 
@@ -589,22 +832,32 @@ public sealed class ThumbnailViewerControl : UserControl
             return 1;
         }
 
+        var availableWidth =
+            Math.Max(
+                1,
+                width - (GridOuterPadding * 2));
+        var tileWidth =
+            GetTileWidth();
         var cellWidth =
-            GetTileWidth()
+            tileWidth
             + _session.Options.TileSpacing;
         return Math.Max(
             1,
-            (int)Math.Floor(width / cellWidth));
+            (int)Math.Floor(
+                (availableWidth + _session.Options.TileSpacing)
+                / cellWidth));
     }
 
     private double GetTileWidth() =>
         _layoutMode == ViewerLayoutMode.List
-            ? Math.Max(320, _viewportWidth - 20)
+            ? Math.Max(
+                320,
+                _viewportWidth - (GridOuterPadding * 2))
             : _densityLevel switch
             {
-                0 => 140,
+                0 => 120,
                 1 => _session.Options.TileWidth,
-                2 => 232,
+                2 => 260,
                 _ => throw new ArgumentOutOfRangeException()
             };
 
@@ -612,16 +865,16 @@ public sealed class ThumbnailViewerControl : UserControl
         _layoutMode == ViewerLayoutMode.List
             ? _densityLevel switch
             {
-                0 => 78,
-                1 => 94,
-                2 => 112,
+                0 => 60,
+                1 => 68,
+                2 => 82,
                 _ => throw new ArgumentOutOfRangeException()
             }
             : _densityLevel switch
             {
-                0 => 168,
+                0 => 120,
                 1 => _session.Options.TileHeight,
-                2 => 272,
+                2 => 260,
                 _ => throw new ArgumentOutOfRangeException()
             };
 
@@ -763,6 +1016,26 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        if (_selectedIndex >= 0
+            && e.Key is Key.Enter or Key.Space)
+        {
+            AssetInvoked?.Invoke(
+                this,
+                _selectedIndex);
+            e.Handled = true;
+            return;
+        }
+
+        if (_selectedIndex >= 0
+            && e.Key == Key.I)
+        {
+            AssetDetailRequested?.Invoke(
+                this,
+                _selectedIndex);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.A
             && e.KeyModifiers.HasFlag(
                 KeyModifiers.Control))
@@ -856,7 +1129,10 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Orientation = Orientation.Horizontal;
             Spacing = session.Options.TileSpacing;
-            Height = tileHeight;
+            Height =
+                layoutMode == ViewerLayoutMode.Grid
+                    ? tileHeight + session.Options.TileSpacing
+                    : tileHeight;
 
             var start = checked(rowIndex * columns);
             for (var column = 0; column < columns; column++)
@@ -951,12 +1227,30 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly ThumbnailViewerControl _owner;
         private readonly ViewerSession _session;
         private readonly long _index;
+        private readonly ViewerLayoutMode _layoutMode;
         private readonly Image _image;
-        private readonly TextBlock _label;
+        private readonly TextBlock? _label;
+        private readonly TextBlock? _listSecondary;
+        private readonly TileCaptionOverlay? _captionOverlay;
+        private readonly Grid? _gridLayers;
+        private readonly Grid? _listPanel;
+        private Control? _actionOverlay;
+        private Control? _selectionBadge;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
         private bool _isReady;
+        private bool _hovered;
 
+        private static readonly IBrush TileBackground =
+            ViewerVisualTokens.Surface;
+        private static readonly IBrush SelectedBorder =
+            ViewerVisualTokens.Selection;
+        private static readonly IBrush HoverBorder =
+            ViewerVisualTokens.BorderStrong;
+        private static readonly IBrush OverlayBackground =
+            ViewerVisualTokens.Overlay;
+        private static readonly IBrush OverlayBorder =
+            ViewerVisualTokens.BorderStrong;
         public ViewerTileControl(
             ThumbnailViewerControl owner,
             ViewerSession session,
@@ -968,65 +1262,161 @@ public sealed class ThumbnailViewerControl : UserControl
             _owner = owner;
             _session = session;
             _index = index;
+            _layoutMode = layoutMode;
 
             Width = tileWidth;
             Height = tileHeight;
-            Padding = new Thickness(4);
+            Focusable = true;
+            Padding = new Thickness(0);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
-            CornerRadius = new CornerRadius(4);
+            CornerRadius =
+                new CornerRadius(
+                    layoutMode == ViewerLayoutMode.Grid
+                        ? GridCornerRadius
+                        : 7);
+            ClipToBounds = true;
+            Background = TileBackground;
 
             _image = new Image
             {
-                Stretch = Stretch.Uniform,
+                Stretch =
+                    layoutMode == ViewerLayoutMode.Grid
+                        ? Stretch.UniformToFill
+                        : Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch
             };
 
-            _label = new TextBlock
+            if (layoutMode == ViewerLayoutMode.List)
             {
-                Text = " ",
-                MaxLines = 1,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
+                _label = new TextBlock
+                {
+                    Text = " ",
+                    MaxLines = 1,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontSize = ViewerVisualTokens.BodyFontSize,
+                    FontWeight = FontWeight.Medium,
+                    Foreground = ViewerVisualTokens.Foreground
+                };
+                _listSecondary = new TextBlock
+                {
+                    Text = " ",
+                    MaxLines = 1,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontSize = ViewerVisualTokens.CaptionFontSize,
+                    Foreground = ViewerVisualTokens.MutedForeground
+                };
+                _captionOverlay = null;
+            }
+            else
+            {
+                _label = null;
+                _listSecondary = null;
+                _captionOverlay =
+                    new TileCaptionOverlay(tileWidth);
+            }
 
             if (layoutMode == ViewerLayoutMode.List)
             {
                 _image.Width =
-                    Math.Max(56, tileHeight - 16);
+                    Math.Max(48, tileHeight - 10);
                 _image.Height =
-                    Math.Max(56, tileHeight - 16);
+                    Math.Max(48, tileHeight - 10);
+                _image.Margin = new Thickness(4);
 
                 var panel = new Grid
                 {
                     ColumnDefinitions =
-                        new ColumnDefinitions("Auto,*"),
+                        new ColumnDefinitions("Auto,*,Auto"),
                     ColumnSpacing = 10
                 };
+                _listPanel = panel;
+                _gridLayers = null;
                 panel.Children.Add(_image);
-                Grid.SetColumn(_label, 1);
-                _label.VerticalAlignment =
-                    VerticalAlignment.Center;
-                _label.FontSize = 12;
-                panel.Children.Add(_label);
+
+                var text =
+                    new StackPanel
+                    {
+                        Spacing = 3,
+                        VerticalAlignment =
+                            VerticalAlignment.Center
+                    };
+                text.Children.Add(_label!);
+                text.Children.Add(_listSecondary!);
+                Grid.SetColumn(text, 1);
+                panel.Children.Add(text);
+
                 Child = panel;
             }
             else
             {
-                var panel = new Grid
-                {
-                    RowDefinitions =
-                        new RowDefinitions("*,Auto")
-                };
-                panel.Children.Add(_image);
-                Grid.SetRow(_label, 1);
-                panel.Children.Add(_label);
-                Child = panel;
+                var layers = new Grid();
+                _gridLayers = layers;
+                layers.Children.Add(_image);
+
+                layers.Children.Add(_captionOverlay!);
+                Child = layers;
+                _listPanel = null;
             }
 
             PointerPressed += OnPointerPressed;
+            PointerEntered += OnPointerEntered;
+            PointerExited += OnPointerExited;
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
+        }
+
+        private const string InfoOverlayIconPath =
+            "M12 21a9 9 0 100-18 9 9 0 000 18z M12 10.5v6 M12 7.5h.01";
+        private const string ExpandOverlayIconPath =
+            "M8.25 3.75h-4.5v4.5 M15.75 3.75h4.5v4.5 M8.25 20.25h-4.5v-4.5 M15.75 20.25h4.5v-4.5";
+
+        private static Button CreateOverlayButton(
+            string pathData,
+            string tooltip,
+            string? acceleratorKey = null)
+        {
+            var icon =
+                new Avalonia.Controls.Shapes.Path
+                {
+                    Data = Geometry.Parse(pathData),
+                    Stroke = ViewerVisualTokens.Foreground,
+                    StrokeThickness = 1.8,
+                    Stretch = Stretch.Uniform,
+                    Width = 15,
+                    Height = 15,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+
+            var button =
+                new Button
+                {
+                    Content = icon,
+                    Width = 30,
+                    Height = 30,
+                    MinWidth = 30,
+                    MinHeight = 30,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(8),
+                    Background = OverlayBackground,
+                    Foreground = ViewerVisualTokens.Foreground,
+                    BorderBrush = OverlayBorder,
+                    BorderThickness = new Thickness(1),
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center,
+                    VerticalContentAlignment =
+                        VerticalAlignment.Center
+                };
+            ToolTip.SetTip(button, tooltip);
+            ViewerVisualTokens.Name(
+                button,
+                tooltip,
+                acceleratorKey: acceleratorKey);
+            return button;
         }
 
         public long Index => _index;
@@ -1039,6 +1429,7 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             _owner.SelectionChanged += OnSelectionChanged;
             UpdateSelection();
+            _owner.CompletePendingAssetFocus(this);
             _session.NotifyTileAttached();
             StartLoad();
         }
@@ -1050,8 +1441,53 @@ public sealed class ThumbnailViewerControl : UserControl
             CancelLoad();
         }
 
+        private void OnPointerEntered(
+            object? sender,
+            PointerEventArgs e)
+        {
+            _hovered = true;
+            UpdateVisualState();
+        }
+
+        private void OnPointerExited(
+            object? sender,
+            PointerEventArgs e)
+        {
+            _hovered = false;
+            UpdateVisualState();
+        }
+
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
+            if (e.GetCurrentPoint(this).Properties.PointerUpdateKind
+                == PointerUpdateKind.RightButtonPressed)
+            {
+                if (!_owner.IsAssetSelected(_index))
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false,
+                        ViewerSelectionMode.Replace);
+                }
+
+                Focus();
+
+                _owner.AssetContextRequested?.Invoke(
+                    _owner,
+                    new ViewerAssetContextRequestedEventArgs(
+                        _index,
+                        this));
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Source is Button
+                || (e.Source as Visual)
+                    ?.FindAncestorOfType<Button>() is not null)
+            {
+                return;
+            }
+
             var mode =
                 e.KeyModifiers.HasFlag(
                     KeyModifiers.Shift)
@@ -1065,6 +1501,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 _index,
                 scrollIntoView: false,
                 mode);
+            Focus();
 
             if (e.ClickCount >= 2
                 && mode == ViewerSelectionMode.Replace)
@@ -1087,9 +1524,225 @@ public sealed class ThumbnailViewerControl : UserControl
             IsSelected =
                 _owner.IsAssetSelected(
                     _index);
-            BorderBrush = IsSelected
-                ? Brushes.DodgerBlue
-                : Brushes.Transparent;
+            UpdateVisualState();
+        }
+
+        private void UpdateVisualState()
+        {
+            BorderBrush =
+                IsSelected
+                    ? SelectedBorder
+                    : _hovered
+                        ? HoverBorder
+                        : Brushes.Transparent;
+
+            var showActions =
+                _hovered;
+            if (showActions)
+            {
+                EnsureActionOverlay();
+            }
+
+            if (_actionOverlay is not null)
+            {
+                _actionOverlay.IsVisible =
+                    showActions;
+            }
+
+            var showBadge =
+                IsSelected
+                && _layoutMode == ViewerLayoutMode.Grid;
+            if (showBadge)
+            {
+                EnsureSelectionBadge();
+            }
+
+            if (_selectionBadge is not null)
+            {
+                _selectionBadge.IsVisible =
+                    showBadge;
+            }
+        }
+
+        private void EnsureActionOverlay()
+        {
+            if (_actionOverlay is not null)
+            {
+                return;
+            }
+
+            var actions =
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Right,
+                    VerticalAlignment =
+                        _layoutMode == ViewerLayoutMode.Grid
+                            ? VerticalAlignment.Top
+                            : VerticalAlignment.Center,
+                    Margin =
+                        _layoutMode == ViewerLayoutMode.Grid
+                            ? new Thickness(0, 8, 8, 0)
+                            : new Thickness(4)
+                };
+
+            var info =
+                CreateOverlayButton(
+                    InfoOverlayIconPath,
+                    "詳細 (I)",
+                    "I");
+            info.Click +=
+                (_, _) =>
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false);
+                    _owner.AssetDetailRequested?.Invoke(
+                        _owner,
+                        _index);
+                };
+            actions.Children.Add(info);
+
+            var open =
+                CreateOverlayButton(
+                    ExpandOverlayIconPath,
+                    "大きく表示",
+                    "Enter");
+            open.Click +=
+                (_, _) =>
+                {
+                    _owner.SelectAsset(
+                        _index,
+                        scrollIntoView: false);
+                    _owner.AssetInvoked?.Invoke(
+                        _owner,
+                        _index);
+                };
+            actions.Children.Add(open);
+
+            _actionOverlay = actions;
+
+            if (_layoutMode == ViewerLayoutMode.Grid)
+            {
+                _gridLayers!.Children.Add(actions);
+            }
+            else
+            {
+                Grid.SetColumn(actions, 2);
+                _listPanel!.Children.Add(actions);
+            }
+        }
+
+        public List<ViewerTileActionGeometry>
+            GetActionGeometryForSmoke()
+        {
+            EnsureActionOverlay();
+            _actionOverlay!.IsVisible = true;
+            UpdateLayout();
+
+            var result =
+                new List<ViewerTileActionGeometry>();
+            foreach (var button in _actionOverlay
+                         .GetVisualDescendants()
+                         .OfType<Button>())
+            {
+                var buttonOrigin =
+                    button.TranslatePoint(
+                        new Point(0, 0),
+                        this)
+                    ?? throw new InvalidOperationException(
+                        "Unable to translate overlay button bounds.");
+                var buttonRect =
+                    new Rect(
+                        buttonOrigin,
+                        button.Bounds.Size);
+
+                var icon =
+                    button.GetVisualDescendants()
+                        .OfType<Avalonia.Controls.Shapes.Path>()
+                        .FirstOrDefault();
+                if (icon is null)
+                {
+                    continue;
+                }
+
+                var iconOrigin =
+                    icon.TranslatePoint(
+                        new Point(0, 0),
+                        this)
+                    ?? throw new InvalidOperationException(
+                        "Unable to translate overlay icon bounds.");
+                result.Add(
+                    new ViewerTileActionGeometry(
+                        buttonRect,
+                        new Rect(
+                            iconOrigin,
+                            icon.Bounds.Size)));
+            }
+
+            return result;
+        }
+
+        public ViewerTilePresentation GetPresentationForSmoke()
+        {
+            var actions =
+                GetActionGeometryForSmoke();
+
+            return _layoutMode == ViewerLayoutMode.List
+                ? new ViewerTilePresentation(
+                    _label?.Text ?? string.Empty,
+                    _listSecondary?.Text ?? string.Empty,
+                    string.Empty,
+                    actions.Count)
+                : new ViewerTilePresentation(
+                    _captionOverlay?.NameText ?? string.Empty,
+                    _captionOverlay?.SizeText ?? string.Empty,
+                    _captionOverlay?.OrganizationText ?? string.Empty,
+                    actions.Count);
+        }
+
+        private void EnsureSelectionBadge()
+        {
+            if (_selectionBadge is not null)
+            {
+                return;
+            }
+
+            var badge =
+                new Border
+                {
+                    Width = 20,
+                    Height = 20,
+                    CornerRadius = new CornerRadius(10),
+                    Background = SelectedBorder,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    VerticalAlignment =
+                        VerticalAlignment.Top,
+                    Margin = new Thickness(8),
+                    Child =
+                        new Avalonia.Controls.Shapes.Path
+                        {
+                            Data =
+                                Geometry.Parse(
+                                    "M5 12.5l4 4L19 6.5"),
+                            Stroke =
+                                ViewerVisualTokens.Stage,
+                            StrokeThickness = 2.2,
+                            Stretch = Stretch.Uniform,
+                            Width = 11,
+                            Height = 11,
+                            HorizontalAlignment =
+                                HorizontalAlignment.Center,
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        }
+                };
+
+            _selectionBadge = badge;
+            _gridLayers!.Children.Add(badge);
         }
 
         private void StartLoad()
@@ -1154,7 +1807,20 @@ public sealed class ThumbnailViewerControl : UserControl
                     var next = lease;
                     lease = null;
                     ReplaceBitmapLease(next);
-                    _label.Text = asset.DisplayName;
+                    if (_label is not null)
+                    {
+                        _label.Text = asset.DisplayName;
+                        _listSecondary!.Text =
+                            FormatListSecondary(asset);
+                    }
+                    else
+                    {
+                        _captionOverlay!.SetText(
+                            asset.DisplayName,
+                            FormatFileSize(asset.FileSize),
+                            asset.Rating,
+                            asset.Favorite);
+                    }
 
                     if (!_isReady)
                     {
@@ -1169,7 +1835,22 @@ public sealed class ThumbnailViewerControl : UserControl
             catch (Exception exception)
             {
                 _session.NotifyTileLoadFailed(exception);
-                await Dispatcher.UIThread.InvokeAsync(() => _label.Text = "!");
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        if (_label is not null)
+                        {
+                            _label.Text = "!";
+                        }
+                        else
+                        {
+                            _captionOverlay!.SetText(
+                                "!",
+                                string.Empty,
+                                rating: null,
+                                favorite: false);
+                        }
+                    });
             }
             finally
             {
@@ -1177,4 +1858,252 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal readonly record struct ViewerTilePresentation(
+        string Primary,
+        string Secondary,
+        string Organization,
+        int ActionCount);
+
+    internal readonly record struct ViewerTileActionGeometry(
+        Rect ButtonBounds,
+        Rect IconBounds);
+
+    public sealed class ViewerAssetContextRequestedEventArgs(
+        long index,
+        Control anchor)
+        : EventArgs
+    {
+        public long Index { get; } = index;
+
+        public Control Anchor { get; } =
+            anchor
+            ?? throw new ArgumentNullException(nameof(anchor));
+    }
+
+    private sealed class TileCaptionOverlay : Control
+    {
+        private static readonly IBrush CaptionGradient =
+            ViewerVisualTokens.CaptionGradient;
+        private static readonly IBrush MutedText =
+            ViewerVisualTokens.MutedForeground;
+        private static readonly IBrush BadgeBackground =
+            ViewerVisualTokens.OverlaySoft;
+
+        private readonly double _maxTextWidth;
+        private FormattedText? _name;
+        private FormattedText? _size;
+        private FormattedText? _organization;
+
+        public string NameText { get; private set; } =
+            string.Empty;
+        public string SizeText { get; private set; } =
+            string.Empty;
+        public string OrganizationText { get; private set; } =
+            string.Empty;
+
+        public TileCaptionOverlay(double tileWidth)
+        {
+            _maxTextWidth =
+                Math.Max(1, tileWidth - 16);
+            IsHitTestVisible = false;
+        }
+
+        public void SetText(
+            string name,
+            string size,
+            int? rating,
+            bool favorite)
+        {
+            NameText = name;
+            SizeText = size;
+            OrganizationText =
+                FormatOrganizationCue(
+                    rating,
+                    favorite);
+
+            _name =
+                CreateText(
+                    name,
+                    ViewerVisualTokens.CaptionFontSize,
+                    ViewerVisualTokens.Foreground,
+                    FontWeight.Medium);
+            _size =
+                string.IsNullOrEmpty(size)
+                    ? null
+                    : CreateText(
+                        size,
+                        ViewerVisualTokens.CaptionFontSize,
+                        MutedText,
+                        FontWeight.Normal);
+
+            _organization =
+                string.IsNullOrEmpty(OrganizationText)
+                    ? null
+                    : CreateText(
+                        OrganizationText,
+                        ViewerVisualTokens.CaptionFontSize,
+                        ViewerVisualTokens.Foreground,
+                        FontWeight.SemiBold);
+            InvalidateVisual();
+        }
+
+        private FormattedText CreateText(
+            string text,
+            double fontSize,
+            IBrush foreground,
+            FontWeight weight)
+        {
+            var formatted =
+                new FormattedText(
+                    text,
+                    System.Globalization.CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight,
+                    Typeface.Default,
+                    fontSize,
+                    foreground)
+                {
+                    MaxTextWidth = _maxTextWidth,
+                    MaxLineCount = 1,
+                    Trimming = TextTrimming.CharacterEllipsis
+                };
+            formatted.SetFontWeight(weight);
+            return formatted;
+        }
+
+        public override void Render(
+            DrawingContext context)
+        {
+            base.Render(context);
+
+            var height =
+                Math.Min(74, Bounds.Height);
+            var top =
+                Math.Max(0, Bounds.Height - height);
+            context.DrawRectangle(
+                CaptionGradient,
+                null,
+                new Rect(
+                    0,
+                    top,
+                    Bounds.Width,
+                    height));
+
+            if (_organization is not null)
+            {
+                var badgeWidth =
+                    Math.Min(
+                        Bounds.Width - 16,
+                        _organization.Width + 12);
+                context.DrawRectangle(
+                    BadgeBackground,
+                    null,
+                    new Rect(
+                        8,
+                        8,
+                        badgeWidth,
+                        _organization.Height + 8));
+                context.DrawText(
+                    _organization,
+                    new Point(14, 12));
+            }
+
+            if (_name is null)
+            {
+                return;
+            }
+
+            const double bottom = 8;
+            const double lineGap = 1;
+            var sizeHeight =
+                _size?.Height
+                ?? 0;
+            var nameY =
+                Math.Max(
+                    top,
+                    Bounds.Height
+                    - bottom
+                    - sizeHeight
+                    - (sizeHeight > 0 ? lineGap : 0)
+                    - _name.Height);
+            context.DrawText(
+                _name,
+                new Point(8, nameY));
+
+            if (_size is not null)
+            {
+                var sizeY =
+                    Math.Max(
+                        top,
+                        Bounds.Height
+                        - bottom
+                        - _size.Height);
+                context.DrawText(
+                    _size,
+                    new Point(8, sizeY));
+            }
+        }
+    }
+
+    private static string FormatListSecondary(
+        ViewerAsset asset)
+    {
+        var slash =
+            asset.RelativePath.LastIndexOf('/');
+        var folder =
+            slash > 0
+                ? asset.RelativePath[..slash]
+                : "ルート";
+        var organization =
+            FormatOrganizationCue(
+                asset.Rating,
+                asset.Favorite);
+
+        return string.IsNullOrEmpty(organization)
+            ? $"{folder}  ·  {FormatFileSize(asset.FileSize)}"
+            : $"{folder}  ·  {FormatFileSize(asset.FileSize)}  ·  {organization}";
+    }
+
+    private static string FormatOrganizationCue(
+        int? rating,
+        bool favorite)
+    {
+        var parts = new List<string>(2);
+        if (favorite)
+        {
+            parts.Add("♥");
+        }
+
+        if (rating is > 0)
+        {
+            parts.Add(
+                new string(
+                    '★',
+                    Math.Clamp(
+                        rating.Value,
+                        1,
+                        5)));
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        const double kib = 1024;
+        const double mib = kib * 1024;
+        const double gib = mib * 1024;
+
+        return bytes switch
+        {
+            >= (long)gib =>
+                $"{bytes / gib:F1} GB",
+            >= (long)mib =>
+                $"{bytes / mib:F1} MB",
+            >= (long)kib =>
+                $"{bytes / kib:F0} KB",
+            _ =>
+                $"{bytes} B"
+        };
+    }
+
 }

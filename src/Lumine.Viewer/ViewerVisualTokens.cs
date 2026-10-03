@@ -1,0 +1,89 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Lumine.Core;
+
+namespace Lumine.Viewer;
+
+internal static class ViewerVisualTokens
+{
+    public static readonly Color StageColor = Color.Parse(LumineVisualPalette.Background);
+    public static readonly Color SurfaceColor = Color.Parse(LumineVisualPalette.SurfaceRaised);
+    public static readonly Color SurfaceRaisedColor = Color.Parse(LumineVisualPalette.ControlSurface);
+    public static readonly Color BorderColor = Color.Parse(LumineVisualPalette.ViewerBorder);
+    public static readonly Color BorderStrongColor = Color.Parse(LumineVisualPalette.BorderStrong);
+    public static readonly Color ForegroundColor = Color.Parse(LumineVisualPalette.Foreground);
+    public static readonly Color MutedForegroundColor = Color.Parse(LumineVisualPalette.ViewerMutedForeground);
+    public static readonly Color SelectionColor = Color.Parse(LumineVisualPalette.Selection);
+
+    public static readonly IBrush Stage = new SolidColorBrush(StageColor);
+    public static readonly IBrush Surface = new SolidColorBrush(SurfaceColor);
+    public static readonly IBrush SurfaceRaised = new SolidColorBrush(SurfaceRaisedColor);
+    public static readonly IBrush Border = new SolidColorBrush(BorderColor);
+    public static readonly IBrush BorderStrong = new SolidColorBrush(BorderStrongColor);
+    public static readonly IBrush Foreground = new SolidColorBrush(ForegroundColor);
+    public static readonly IBrush MutedForeground = new SolidColorBrush(MutedForegroundColor);
+    public static readonly IBrush Selection = new SolidColorBrush(SelectionColor);
+    public static readonly IBrush Overlay =
+        new SolidColorBrush(
+            Color.Parse(LumineVisualPalette.Overlay));
+    public static readonly IBrush OverlaySoft =
+        new SolidColorBrush(
+            Color.Parse(LumineVisualPalette.OverlaySoft));
+
+    public static readonly IBrush CaptionGradient =
+        new LinearGradientBrush
+        {
+            StartPoint =
+                new RelativePoint(
+                    0,
+                    0,
+                    RelativeUnit.Relative),
+            EndPoint =
+                new RelativePoint(
+                    0,
+                    1,
+                    RelativeUnit.Relative),
+            GradientStops =
+            [
+                new GradientStop(
+                    Color.Parse(LumineVisualPalette.CaptionGradientTransparent),
+                    0),
+                new GradientStop(
+                    Color.Parse(LumineVisualPalette.CaptionGradientMiddle),
+                    0.35),
+                new GradientStop(
+                    Color.Parse(LumineVisualPalette.CaptionGradientEnd),
+                    1)
+            ]
+        };
+
+    public static double BodyFontSize =>
+        14 * LumineVisualMetrics.TextScaleFactor;
+    public static double CaptionFontSize =>
+        12 * LumineVisualMetrics.TextScaleFactor;
+
+    public static void Name(
+        Control control,
+        string accessibleName,
+        string? automationId = null,
+        string? acceleratorKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accessibleName);
+
+        AutomationProperties.SetName(control, accessibleName);
+        if (!string.IsNullOrWhiteSpace(automationId))
+        {
+            AutomationProperties.SetAutomationId(control, automationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(acceleratorKey))
+        {
+            AutomationProperties.SetAcceleratorKey(
+                control,
+                acceleratorKey);
+        }
+    }
+}

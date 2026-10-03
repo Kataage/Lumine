@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -43,6 +45,7 @@ internal static class Program
                     await VerifyDecodedCacheAsyncShutdown(
                         thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
+                    await VerifyBrowsePresentationParityAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
                     await VerifyDetailObserverIsolationAsync(
                         thumbnailPath);
@@ -94,6 +97,13 @@ internal static class Program
         var viewer = ViewerOptions.FromResourcePolicy(policy);
         var detail = ViewerDetailOptions.FromResourcePolicy(policy);
 
+        var productDefaults = new ViewerOptions();
+        Require(
+            Math.Abs(
+                productDefaults.TileWidth
+                - productDefaults.TileHeight) < 0.001,
+            "Default product grid is no longer square.");
+
         Require(
             viewer.DecodedBitmapEntryLimit
                 == policy.DecodedThumbnailEntryLimit
@@ -132,6 +142,30 @@ internal static class Program
         Require(last.Id == 100_000, "Last cursor-paged asset mismatch.");
         Require(middle.Id == 50_001, "Middle cursor-paged asset mismatch.");
         Require(back.Id == 11, "Backward cursor-paged lookup mismatch.");
+
+        var batchIds =
+            await provider.GetAssetIdsAsync(
+                new long[]
+                {
+                    0,
+                    1,
+                    255,
+                    256,
+                    50_000,
+                    99_999
+                });
+        Require(
+            batchIds.SequenceEqual(
+                new long[]
+                {
+                    1,
+                    2,
+                    256,
+                    257,
+                    50_001,
+                    100_000
+                }),
+            "Cursor-paged batch selection ID resolution lost result order or page boundaries.");
 
         var diagnostics = provider.Diagnostics;
         Require(diagnostics.CachedPages <= 8, "Metadata page cache exceeded hard limit.");
@@ -690,6 +724,41 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
+        var selectAllWatch =
+            Stopwatch.StartNew();
+        viewer.SelectAll();
+        selectAllWatch.Stop();
+        Require(
+            viewer.SelectedAssetCount == 100_000
+            && viewer.SelectionRangeCount == 1
+            && viewer.SelectedAssetIndices[0] == 0
+            && viewer.SelectedAssetIndices[99_999] == 99_999
+            && selectAllWatch.Elapsed
+                < TimeSpan.FromMilliseconds(500),
+            $"100k Select-All did not remain one fast compact range: {selectAllWatch.Elapsed.TotalMilliseconds:N1} ms.");
+
+        viewer.ClearSelection();
+        Require(
+            viewer.SelectedAssetCount == 0
+            && viewer.SelectionRangeCount == 0,
+            "Clearing a compact Select-All did not release selection ranges.");
+
+        viewer.SelectAsset(0);
+        var largeRangeWatch =
+            Stopwatch.StartNew();
+        viewer.SelectAsset(
+            99_999,
+            scrollIntoView: false,
+            ViewerSelectionMode.Range);
+        largeRangeWatch.Stop();
+        Require(
+            viewer.SelectedAssetCount == 100_000
+            && viewer.SelectionRangeCount == 1
+            && largeRangeWatch.Elapsed
+                < TimeSpan.FromMilliseconds(500),
+            $"100k Shift-range selection did not remain one fast compact range: {largeRangeWatch.Elapsed.TotalMilliseconds:N1} ms.");
+        viewer.ClearSelection();
+
         var firstTile = viewer.GetVisualDescendants()
             .OfType<Border>()
             .FirstOrDefault(
@@ -697,11 +766,107 @@ internal static class Program
                     && Math.Abs(border.Height - 190) < 0.1)
             ?? throw new InvalidOperationException("No realized thumbnail tile was available for mouse selection.");
 
+        var actionGeometry =
+            viewer.GetRealizedTileActionGeometryForSmoke(0);
+        Require(
+            actionGeometry.Count == 2,
+            "Thumbnail hover overlay did not expose the expected two primary icon actions.");
+
+        var overlayButtons =
+            viewer.GetVisualDescendants()
+                .OfType<Button>()
+                .Where(
+                    button =>
+                        button.Content
+                            is Avalonia.Controls.Shapes.Path)
+                .ToArray();
+        Require(
+            overlayButtons.Length >= 2
+            && overlayButtons.All(
+                button =>
+                    !string.IsNullOrWhiteSpace(
+                        AutomationProperties.GetName(
+                            button)))
+            && overlayButtons.Any(
+                button =>
+                    string.Equals(
+                        AutomationProperties.GetAcceleratorKey(
+                            button),
+                        "I",
+                        StringComparison.Ordinal))
+            && overlayButtons.Any(
+                button =>
+                    string.Equals(
+                        AutomationProperties.GetAcceleratorKey(
+                            button),
+                        "Enter",
+                        StringComparison.Ordinal)),
+            "Thumbnail icon actions lost accessible names or accelerator metadata.");
+
+        foreach (var geometry in actionGeometry)
+        {
+            Require(
+                geometry.ButtonBounds.Left >= 0
+                && geometry.ButtonBounds.Top >= 0
+                && geometry.ButtonBounds.Right <= 160
+                && geometry.ButtonBounds.Bottom <= 190,
+                "Thumbnail action button escaped the tile bounds.");
+
+            var buttonCenterX =
+                geometry.ButtonBounds.X
+                + (geometry.ButtonBounds.Width / 2);
+            var buttonCenterY =
+                geometry.ButtonBounds.Y
+                + (geometry.ButtonBounds.Height / 2);
+            var iconCenterX =
+                geometry.IconBounds.X
+                + (geometry.IconBounds.Width / 2);
+            var iconCenterY =
+                geometry.IconBounds.Y
+                + (geometry.IconBounds.Height / 2);
+
+            Require(
+                Math.Abs(
+                    buttonCenterX
+                    - iconCenterX) <= 1
+                && Math.Abs(
+                    buttonCenterY
+                    - iconCenterY) <= 1,
+                "Thumbnail overlay icon is not visually centered inside its button.");
+        }
+
+        Require(
+            Math.Abs(
+                actionGeometry[0].ButtonBounds.Width
+                - actionGeometry[1].ButtonBounds.Width) < 0.1
+            && Math.Abs(
+                actionGeometry[0].ButtonBounds.Height
+                - actionGeometry[1].ButtonBounds.Height) < 0.1
+            && Math.Abs(
+                actionGeometry[0].ButtonBounds.Y
+                - actionGeometry[1].ButtonBounds.Y) < 0.1,
+            "Thumbnail action buttons do not share a consistent size/alignment.");
+
         var tileCenter = new Point(
             firstTile.Bounds.Width / 2,
             firstTile.Bounds.Height / 2);
         var windowPoint = firstTile.TranslatePoint(tileCenter, window)
             ?? throw new InvalidOperationException("Unable to map thumbnail tile to window coordinates.");
+
+        ThumbnailViewerControl.ViewerAssetContextRequestedEventArgs?
+            contextRequest = null;
+        viewer.AssetContextRequested +=
+            (_, request) =>
+                contextRequest = request;
+        window.MouseDown(windowPoint, MouseButton.Right);
+        window.MouseUp(windowPoint, MouseButton.Right);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            contextRequest is not null
+            && contextRequest.Index == 0
+            && viewer.SelectedAssetCount == 1
+            && viewer.SelectedAssetIndex == 0,
+            "Right-click did not preserve the clicked thumbnail as the context action target.");
 
         window.MouseDown(windowPoint, MouseButton.Left);
         window.MouseUp(windowPoint, MouseButton.Left);
@@ -785,6 +950,34 @@ internal static class Program
             "Viewer did not clear multi-selection state.");
 
         viewer.SelectAsset(0);
+
+        long invokedIndex = -1;
+        long detailIndex = -1;
+        void OnAssetInvoked(object? _, long index) =>
+            invokedIndex = index;
+        void OnAssetDetailRequested(object? _, long index) =>
+            detailIndex = index;
+        viewer.AssetInvoked += OnAssetInvoked;
+        viewer.AssetDetailRequested += OnAssetDetailRequested;
+
+        RaiseKey(viewer, Key.I);
+        Require(
+            detailIndex == 0,
+            "I did not request details for the selected image.");
+
+        RaiseKey(viewer, Key.Enter);
+        Require(
+            invokedIndex == 0,
+            "Enter did not invoke the selected image.");
+        invokedIndex = -1;
+
+        RaiseKey(viewer, Key.Space);
+        Require(
+            invokedIndex == 0,
+            "Space did not invoke the selected image.");
+
+        viewer.AssetInvoked -= OnAssetInvoked;
+        viewer.AssetDetailRequested -= OnAssetDetailRequested;
 
         RaiseKey(viewer, Key.Right);
         Require(viewer.SelectedAssetIndex == 1, "Right-arrow navigation failed.");
@@ -932,6 +1125,119 @@ internal static class Program
             "Viewer close did not detach all thumbnail tiles before visual-release drain completed.");
     }
 
+    private static async Task VerifyBrowsePresentationParityAsync(
+        string thumbnailPath)
+    {
+        await using var session =
+            new ViewerSession(
+                new DirectFixtureAssetProvider(
+                    1,
+                    organizationMetadata: true),
+                new ImmediateThumbnailProvider(
+                    thumbnailPath),
+                new ViewerOptions
+                {
+                    TileWidth = 180,
+                    TileHeight = 180,
+                    TileSpacing = 8,
+                    PrefetchRows = 0
+                });
+
+        var viewer =
+            new ThumbnailViewerControl(session);
+        var window =
+            new Window
+            {
+                Width = 760,
+                Height = 500,
+                Content = viewer
+            };
+
+        window.Show();
+
+        for (var attempt = 0;
+             attempt < 250
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        var gridPresentation =
+            viewer.GetRealizedTilePresentationForSmoke(0);
+        Require(
+            gridPresentation.Primary == "asset-000000.jpg"
+            && gridPresentation.Secondary.Contains(
+                "MB",
+                StringComparison.Ordinal)
+            && gridPresentation.Organization.Contains(
+                "♥",
+                StringComparison.Ordinal)
+            && gridPresentation.Organization.Contains(
+                "★★★★",
+                StringComparison.Ordinal)
+            && gridPresentation.ActionCount == 2,
+            "Grid browse parity lost filename/size/favorite/rating or direct detail/open actions.");
+
+        viewer.SetLayout(
+            ViewerLayoutMode.List,
+            densityLevel: 1);
+
+        for (var attempt = 0;
+             attempt < 250
+             && (!viewer.IsAssetReady(0)
+                 || viewer.RealizedRowCount == 0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        var listPresentation =
+            viewer.GetRealizedTilePresentationForSmoke(0);
+        Require(
+            listPresentation.Primary == "asset-000000.jpg"
+            && listPresentation.Secondary.Contains(
+                "fixture/organized",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "MB",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "♥",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "★★★★",
+                StringComparison.Ordinal)
+            && listPresentation.ActionCount == 2,
+            "List browse parity lost folder/file-size/organization information or direct detail/open actions.");
+
+        foreach (var width in new[] { 520d, 1200d })
+        {
+            window.Width = width;
+            for (var attempt = 0;
+                 attempt < 100
+                 && !viewer.IsAssetReady(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            var responsivePresentation =
+                viewer.GetRealizedTilePresentationForSmoke(0);
+            Require(
+                responsivePresentation.ActionCount == 2
+                && !string.IsNullOrWhiteSpace(
+                    responsivePresentation.Secondary),
+                $"List browse information/actions were lost at {width:N0} DIP width.");
+        }
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+    }
+
     private static async Task VerifyDetailViewerAsync(string previewPath)
     {
         var assets = new DirectFixtureAssetProvider(3);
@@ -983,6 +1289,15 @@ internal static class Program
 
         window.Show();
         Dispatcher.UIThread.RunJobs();
+
+        var fullScreenRequests = 0;
+        detail.FullScreenToggleRequested +=
+            (_, _) =>
+                fullScreenRequests++;
+        RaiseKey(detail, Key.F11);
+        Require(
+            fullScreenRequests == 1,
+            "F11 did not request focused-view full-screen toggle.");
 
         await detail.ActualSizeAsync();
         await detail.SetZoomAsync(2);
@@ -1123,10 +1438,63 @@ internal static class Program
                 && snapshot.State == ViewerDetailLoadState.PreviewReady);
 
         detail.Fit();
+        Dispatcher.UIThread.RunJobs();
         Require(
             detail.Zoom > 0
             && detail.Zoom <= detailSession.Options.MaxZoom,
             "Detail fit produced an invalid zoom.");
+
+        var viewportBounds =
+            detail.ViewportBoundsInControlForSmoke;
+        var imageBounds =
+            detail.ImageBoundsInControlForSmoke;
+        var imageCenterX =
+            imageBounds.X
+            + (imageBounds.Width / 2);
+        var imageCenterY =
+            imageBounds.Y
+            + (imageBounds.Height / 2);
+        var viewportCenterX =
+            viewportBounds.X
+            + (viewportBounds.Width / 2);
+        var viewportCenterY =
+            viewportBounds.Y
+            + (viewportBounds.Height / 2);
+
+        Require(
+            Math.Abs(
+                imageCenterX
+                - viewportCenterX) <= 1.5
+            && Math.Abs(
+                imageCenterY
+                - viewportCenterY) <= 1.5,
+            "Fit image did not start visually centered in the Viewer viewport.");
+
+        var toolbarBounds =
+            detail.ToolbarBoundsInControlForSmoke;
+        var previousBounds =
+            detail.PreviousBoundsInControlForSmoke;
+        var nextBounds =
+            detail.NextBoundsInControlForSmoke;
+
+        Require(
+            toolbarBounds.Top >= viewportBounds.Top
+            && toolbarBounds.Bottom <= viewportBounds.Top + 96
+            && previousBounds.Left >= viewportBounds.Left
+            && previousBounds.Right <= viewportBounds.Left + 96
+            && nextBounds.Right <= viewportBounds.Right
+            && nextBounds.Left >= viewportBounds.Right - 96,
+            "Viewer chrome escaped its top/edge safe bands and can obstruct the image center.");
+
+        detail.FadeChromeForSmoke();
+        Require(
+            detail.IsChromeNonBlockingForSmoke,
+            "Idle Viewer chrome remained visible or intercepted the image surface.");
+
+        detail.RevealChromeForSmoke();
+        Require(
+            detail.IsChromeVisibleForSmoke,
+            "Viewer chrome did not fully return after interaction.");
 
         await detailSession.SelectAsync(0);
         await WaitForDetailAsync(
@@ -2070,7 +2438,8 @@ internal sealed class DirectFixtureAssetProvider(
     long count,
     int? width = 1024,
     int? height = 768,
-    string? format = "png") : IViewerAssetProvider
+    string? format = "png",
+    bool organizationMetadata = false) : IViewerAssetProvider
 {
     public long Count { get; } = count;
 
@@ -2089,13 +2458,27 @@ internal sealed class DirectFixtureAssetProvider(
             new ViewerAsset(
                 index + 1,
                 1,
-                $"fixture/{index:D6}.jpg",
+                organizationMetadata
+                    ? $"fixture/organized/asset-{index:D6}.jpg"
+                    : $"fixture/{index:D6}.jpg",
                 $"asset-{index:D6}.jpg",
-                10_000 + index,
+                organizationMetadata
+                    ? 5L * 1024 * 1024
+                    : 10_000 + index,
                 DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks,
                 width,
                 height,
-                format));
+                format,
+                CreatedAtUtcTicks:
+                    DateTimeOffset.UnixEpoch
+                        .AddSeconds(index)
+                        .UtcDateTime.Ticks,
+                Rating:
+                    organizationMetadata
+                        ? 4
+                        : null,
+                Favorite:
+                    organizationMetadata));
     }
 }
 

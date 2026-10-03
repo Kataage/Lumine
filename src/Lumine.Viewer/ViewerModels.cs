@@ -32,7 +32,12 @@ public sealed record ViewerSelectionSnapshot(
 public readonly record struct ViewerPageCursor(
     long ModifiedAtUtcTicks,
     long AssetId,
-    string? FileName = null);
+    string? FileName = null,
+    long? CreatedAtUtcTicks = null,
+    long? FileSize = null,
+    int? Rating = null,
+    string? StatusLabel = null,
+    long? Position = null);
 
 public sealed record ViewerAsset(
     long Id,
@@ -47,7 +52,12 @@ public sealed record ViewerAsset(
     string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
-    bool? HasAlpha = null)
+    bool? HasAlpha = null,
+    long? CreatedAtUtcTicks = null,
+    int? Rating = null,
+    bool Favorite = false,
+    string? StatusLabel = null,
+    string? ColorLabel = null)
 {
     public ViewerSourceTechnicalMetadata? PersistedSourceMetadata =>
         Width is > 0
@@ -114,6 +124,13 @@ public interface IViewerAssetProvider
         CancellationToken cancellationToken = default);
 }
 
+public interface IViewerSelectionIdProvider
+{
+    ValueTask<IReadOnlyList<long>> GetAssetIdsAsync(
+        IReadOnlyList<long> indices,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IViewerThumbnailProvider
 {
     ValueTask<ViewerThumbnail> RequestAsync(
@@ -124,9 +141,9 @@ public interface IViewerThumbnailProvider
 
 public sealed class ViewerOptions
 {
-    public double TileWidth { get; init; } = 184;
+    public double TileWidth { get; init; } = 180;
 
-    public double TileHeight { get; init; } = 216;
+    public double TileHeight { get; init; } = 180;
 
     public double TileSpacing { get; init; } = 8;
 

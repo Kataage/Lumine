@@ -34,7 +34,12 @@ public sealed record AssetInfo(
     string? SourceIdentity = null,
     int? RawWidth = null,
     int? RawHeight = null,
-    bool? HasAlpha = null);
+    bool? HasAlpha = null,
+    DateTimeOffset? CreatedAtUtc = null,
+    int? Rating = null,
+    bool Favorite = false,
+    string? StatusLabel = null,
+    string? ColorLabel = null);
 
 public sealed record AssetTechnicalMetadata(
     int Width,
@@ -104,7 +109,15 @@ public enum AssetSortOrder
     ModifiedNewest = 0,
     ModifiedOldest = 1,
     FileNameAscending = 2,
-    FileNameDescending = 3
+    FileNameDescending = 3,
+    CreatedNewest = 4,
+    CreatedOldest = 5,
+    FileSizeLargest = 6,
+    FileSizeSmallest = 7,
+    RatingHighest = 8,
+    RatingLowest = 9,
+    StatusAscending = 10,
+    StatusDescending = 11
 }
 
 public sealed record AssetQuery(
@@ -122,7 +135,11 @@ public sealed record AssetQueryCursor(
     AssetSortOrder SortOrder,
     long Id,
     long? ModifiedAtUtcTicks = null,
-    string? FileName = null);
+    string? FileName = null,
+    long? CreatedAtUtcTicks = null,
+    long? FileSize = null,
+    int? Rating = null,
+    string? StatusLabel = null);
 
 public sealed record AssetQueryPage(
     IReadOnlyList<AssetInfo> Items,

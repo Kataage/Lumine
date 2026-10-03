@@ -75,8 +75,6 @@ internal static class ProductSettingsView
         root.Children.Add(
             CreateDiagnostics(
                 showDiagnostics));
-        root.Children.Add(
-            CreateFutureAiSection());
 
         return new ScrollViewer
         {
@@ -99,48 +97,59 @@ internal static class ProductSettingsView
                 "新しくライブラリを開いたときの既定表示です。現在のライブラリにもすぐ反映します。"));
 
         var view =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "グリッド",
-                        "リスト"
-                    },
-                SelectedIndex =
-                    snapshot.ViewerDefaults.ViewMode
-                        == BrowseViewMode.Grid
-                            ? 0
-                            : 1
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "グリッド",
+                            "リスト"
+                        },
+                    SelectedIndex =
+                        snapshot.ViewerDefaults.ViewMode
+                            == BrowseViewMode.Grid
+                                ? 0
+                                : 1
+                });
         var density =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "コンパクト",
-                        "標準",
-                        "ゆったり"
-                    },
-                SelectedIndex =
-                    snapshot.ViewerDefaults.Density
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "コンパクト",
+                            "標準",
+                            "ゆったり"
+                        },
+                    SelectedIndex =
+                        snapshot.ViewerDefaults.Density
+                });
         var sort =
-            new ComboBox
-            {
-                ItemsSource =
-                    new[]
-                    {
-                        "更新日時: 新しい順",
-                        "更新日時: 古い順",
-                        "ファイル名: A → Z",
-                        "ファイル名: Z → A"
-                    },
-                SelectedIndex =
-                    SortIndex(
-                        snapshot.ViewerDefaults.SortOrder)
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        new[]
+                        {
+                            "更新日時: 新しい順",
+                            "更新日時: 古い順",
+                            "作成日時: 新しい順",
+                            "作成日時: 古い順",
+                            "ファイル名: A → Z",
+                            "ファイル名: Z → A",
+                            "サイズ: 大きい順",
+                            "サイズ: 小さい順",
+                            "評価: 高い順",
+                            "評価: 低い順",
+                            "状態: A → Z",
+                            "状態: Z → A"
+                        },
+                    SelectedIndex =
+                        SortIndex(
+                            snapshot.ViewerDefaults.SortOrder)
+                });
         var status = CreateStatusText();
 
         content.Children.Add(
@@ -224,17 +233,18 @@ internal static class ProductSettingsView
         content.Children.Add(
             CreateSectionHeader(
                 "画像キャッシュ",
-                "通常閲覧はMemoryOnlyが既定です。元画像はLumineへコピーせず、永続サムネイルも作りません。"));
+                "通常閲覧はメモリのみが既定です。元画像はLumineへコピーしません。"));
 
         var persistent =
-            new CheckBox
-            {
-                Content =
-                    "表示用サムネイルをディスクへ永続保存する",
-                IsChecked =
-                    snapshot.PersistedThumbnailStorageMode
-                    == ThumbnailStorageMode.PersistentDisk
-            };
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content =
+                        "表示用サムネイルを次回起動後も再利用する",
+                    IsChecked =
+                        snapshot.PersistedThumbnailStorageMode
+                        == ThumbnailStorageMode.PersistentDisk
+                });
         content.Children.Add(persistent);
 
         content.Children.Add(
@@ -243,12 +253,12 @@ internal static class ProductSettingsView
                 Text =
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? $"環境変数による一時上書き中: 実際の動作は {DescribeMode(snapshot.EffectiveThumbnailStorageMode)}。画面の選択は上書き値を保存しません。"
-                        : "変更は次回起動から有効です。MemoryOnlyへ戻すと、旧display-thumbnail cacheは安全に退役・削除されます。",
+                        : "変更は次回起動から有効です。メモリのみに戻すと、不要になった表示用キャッシュは安全に削除されます。",
                 Foreground =
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? LumineDesign.Warning
                         : LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -260,31 +270,32 @@ internal static class ProductSettingsView
                 .Order()
                 .ToArray();
         var memory =
-            new ComboBox
-            {
-                ItemsSource =
-                    budgets
-                        .Select(
-                            static value =>
-                                FormatBytes(value))
-                        .ToArray(),
-                SelectedIndex =
-                    Array.IndexOf(
-                        budgets,
-                        snapshot.EncodedThumbnailMemoryByteLimit)
-            };
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        budgets
+                            .Select(
+                                static value =>
+                                    FormatBytes(value))
+                            .ToArray(),
+                    SelectedIndex =
+                        Array.IndexOf(
+                            budgets,
+                            snapshot.EncodedThumbnailMemoryByteLimit)
+                });
         content.Children.Add(
             CreateField(
-                "メモリ内thumbnail cache上限",
+                "サムネイル用メモリ上限",
                 memory));
         content.Children.Add(
             new TextBlock
             {
                 Text =
-                    "この上限も次回起動から有効です。大きくすると再decodeを減らせますが、その分RAMを使います。",
+                    "この上限も次回起動から有効です。大きくすると再読み込みを減らせますが、その分RAMを使います。",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
 
@@ -292,10 +303,10 @@ internal static class ProductSettingsView
             new TextBlock
             {
                 Text =
-                    $"現在のディスクcache: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
+                    $"現在のディスクキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5
+                FontSize = LumineDesign.CaptionFontSize
             };
         content.Children.Add(diskStats);
 
@@ -303,7 +314,7 @@ internal static class ProductSettingsView
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "表示用cacheを削除"
+                    Content = "表示用キャッシュを削除"
                 });
         content.Children.Add(clear);
 
@@ -325,7 +336,7 @@ internal static class ProductSettingsView
                 {
                     await saveThumbnailMode(requested);
                     status.Text =
-                        "cache方式を保存しました。次回起動から有効です。";
+                        "キャッシュ方式を保存しました。次回起動から有効です。";
                 }
                 catch (Exception exception)
                 {
@@ -380,18 +391,18 @@ internal static class ProductSettingsView
                 clear.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
-                status.Text = "cacheを削除しています…";
+                status.Text = "キャッシュを削除しています…";
                 try
                 {
                     await clearCache();
                     status.Text =
-                        "表示用cacheを削除しました。元画像・タグ・評価・Publication等のユーザーデータは変更していません。";
+                        "表示用キャッシュを削除しました。元画像・タグ・評価・公開履歴などのユーザーデータは変更していません。";
                 }
                 catch (Exception exception)
                 {
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
-                        $"cacheを削除できませんでした: {exception.Message}";
+                        $"キャッシュを削除できませんでした: {exception.Message}";
                 }
                 finally
                 {
@@ -409,44 +420,73 @@ internal static class ProductSettingsView
         content.Children.Add(
             CreateSectionHeader(
                 "保存場所",
-                "Lumineが所有するデータの場所です。元画像はライブラリとして参照するだけで、ここへコピーしません。"));
+                "元画像は移動・コピーせず、そのままライブラリとして参照します。"));
 
         content.Children.Add(
             CreateKeyValue(
-                "モード",
-                snapshot.DataPaths.DescribeLocation()));
-        content.Children.Add(
-            CreateKeyValue(
-                "Lumineデータ",
-                snapshot.DataPaths.RootPath));
-        content.Children.Add(
-            CreateKeyValue(
-                "ユーザーメタデータDB",
-                snapshot.DataPaths.DatabasePath));
-        content.Children.Add(
-            CreateKeyValue(
-                "設定",
-                snapshot.DataPaths.SettingsPath));
-        content.Children.Add(
-            CreateKeyValue(
-                "破棄可能cache",
-                snapshot.DataPaths.ThumbnailCachePath));
-        content.Children.Add(
-            CreateKeyValue(
-                "ログ",
-                snapshot.DataPaths.LogsPath));
+                "Lumineのデータ",
+                snapshot.DataPaths.IsPortable
+                    ? "アプリと一緒に持ち運べる場所へ保存"
+                    : "このPCのユーザー領域へ保存"));
 
         content.Children.Add(
             new TextBlock
             {
                 Text =
                     snapshot.DataPaths.IsPortable
-                        ? "ポータブルモードでは、これらはすべてLumine.exe配下の data フォルダー内に収まります。フォルダーごと移動できます。"
-                        : "ポータブル起動は --portable、LUMINE_PORTABLE=1、またはLumine.exeと同じ場所の portable.flag で有効にできます。",
+                        ? "Lumine本体のフォルダーごと移動できます。"
+                        : "通常利用では保存先の詳細を意識する必要はありません。",
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
+            });
+
+        var details =
+            CreateCardStack();
+        details.Children.Add(
+            CreateKeyValue(
+                "データ",
+                snapshot.DataPaths.RootPath));
+        details.Children.Add(
+            CreateKeyValue(
+                "メタデータ",
+                snapshot.DataPaths.DatabasePath));
+        details.Children.Add(
+            CreateKeyValue(
+                "設定",
+                snapshot.DataPaths.SettingsPath));
+        details.Children.Add(
+            CreateKeyValue(
+                "一時キャッシュ",
+                snapshot.DataPaths.ThumbnailCachePath));
+        details.Children.Add(
+            CreateKeyValue(
+                "ログ",
+                snapshot.DataPaths.LogsPath));
+
+        if (!snapshot.DataPaths.IsPortable)
+        {
+            details.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        "ポータブル利用が必要な場合は、起動オプションまたは portable.flag で切り替えられます。",
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize = LumineDesign.CaptionFontSize,
+                    TextWrapping = TextWrapping.Wrap
+                });
+        }
+
+        content.Children.Add(
+            new Expander
+            {
+                Header = "詳細な保存場所",
+                IsExpanded = false,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                Content = details
             });
 
         return CreateCard(content);
@@ -484,26 +524,6 @@ internal static class ProductSettingsView
         return CreateCard(content);
     }
 
-    private static Control CreateFutureAiSection()
-    {
-        var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "ローカルAI",
-                "AI機能はProduct Acceptance完了後のフェーズで追加します。現在はモデルを読み込まず、画像管理機能だけで完結します。"));
-
-        content.Children.Add(
-            new TextBlock
-            {
-                Text = "現在は無効",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = 10,
-                FontWeight = FontWeight.SemiBold
-            });
-        return CreateCard(content);
-    }
-
     private static StackPanel CreateCardStack() =>
         new()
         {
@@ -537,7 +557,7 @@ internal static class ProductSettingsView
                 Text = title,
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 11.5
+                FontSize = LumineDesign.BodyFontSize
             });
         panel.Children.Add(
             new TextBlock
@@ -545,7 +565,7 @@ internal static class ProductSettingsView
                 Text = description,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return panel;
@@ -566,7 +586,7 @@ internal static class ProductSettingsView
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         panel.Children.Add(control);
         return panel;
@@ -587,14 +607,14 @@ internal static class ProductSettingsView
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9
+                FontSize = LumineDesign.CaptionFontSize
             });
         panel.Children.Add(
             new TextBlock
             {
                 Text = value,
                 Foreground = LumineDesign.Foreground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return panel;
@@ -612,7 +632,7 @@ internal static class ProductSettingsView
                 Text = title,
                 Foreground = brush,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 10.5
+                FontSize = LumineDesign.CaptionFontSize
             });
         content.Children.Add(
             new TextBlock
@@ -620,7 +640,7 @@ internal static class ProductSettingsView
                 Text = description,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         return CreateCard(content);
@@ -631,7 +651,7 @@ internal static class ProductSettingsView
         {
             Foreground =
                 LumineDesign.MutedForeground,
-            FontSize = 9.5,
+            FontSize = LumineDesign.CaptionFontSize,
             TextWrapping = TextWrapping.Wrap
         };
 
@@ -641,8 +661,16 @@ internal static class ProductSettingsView
         {
             AssetSortOrder.ModifiedNewest => 0,
             AssetSortOrder.ModifiedOldest => 1,
-            AssetSortOrder.FileNameAscending => 2,
-            AssetSortOrder.FileNameDescending => 3,
+            AssetSortOrder.CreatedNewest => 2,
+            AssetSortOrder.CreatedOldest => 3,
+            AssetSortOrder.FileNameAscending => 4,
+            AssetSortOrder.FileNameDescending => 5,
+            AssetSortOrder.FileSizeLargest => 6,
+            AssetSortOrder.FileSizeSmallest => 7,
+            AssetSortOrder.RatingHighest => 8,
+            AssetSortOrder.RatingLowest => 9,
+            AssetSortOrder.StatusAscending => 10,
+            AssetSortOrder.StatusDescending => 11,
             _ => 0
         };
 
@@ -651,16 +679,24 @@ internal static class ProductSettingsView
         index switch
         {
             1 => AssetSortOrder.ModifiedOldest,
-            2 => AssetSortOrder.FileNameAscending,
-            3 => AssetSortOrder.FileNameDescending,
+            2 => AssetSortOrder.CreatedNewest,
+            3 => AssetSortOrder.CreatedOldest,
+            4 => AssetSortOrder.FileNameAscending,
+            5 => AssetSortOrder.FileNameDescending,
+            6 => AssetSortOrder.FileSizeLargest,
+            7 => AssetSortOrder.FileSizeSmallest,
+            8 => AssetSortOrder.RatingHighest,
+            9 => AssetSortOrder.RatingLowest,
+            10 => AssetSortOrder.StatusAscending,
+            11 => AssetSortOrder.StatusDescending,
             _ => AssetSortOrder.ModifiedNewest
         };
 
     private static string DescribeMode(
         ThumbnailStorageMode mode) =>
         mode == ThumbnailStorageMode.PersistentDisk
-            ? "PersistentDisk"
-            : "MemoryOnly";
+            ? "再起動後も高速化データを保持"
+            : "メモリのみ";
 
     private static string FormatBytes(
         long bytes)

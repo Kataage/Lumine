@@ -413,6 +413,24 @@ try
         && japaneseShort.Items[0].Id == technical.Id,
         "Two-character Japanese search did not use the CJK bigram index correctly.");
 
+    var japaneseSingle = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "猫"),
+        10);
+    Require(
+        japaneseSingle.Items.Count == 1
+        && japaneseSingle.Items[0].Id == technical.Id,
+        "Single-character Japanese search fallback failed.");
+
+    var asciiTwoCharacter = await repository.GetAssetPageAsync(
+        library.Id,
+        new AssetQuery(SearchText: "pn"),
+        10);
+    Require(
+        asciiTwoCharacter.Items.Any(
+            asset => asset.Id == technical.Id),
+        "Two-character ASCII search fallback failed.");
+
     var asciiPartial = await repository.GetAssetPageAsync(
         library.Id,
         new AssetQuery(SearchText: "png"),

@@ -244,13 +244,13 @@ try
     {
         var page = await repository.GetAssetPageAsync(
             library.Id,
-            new AssetQuery(SearchText: "猫耳"),
+            new AssetQuery(SearchText: "猫"),
             20);
         if (page.Items.Count != 1
             || page.Items[0].Id != searchAsset.Id)
         {
             throw new InvalidOperationException(
-                "100k Japanese short search benchmark did not find exactly its target.");
+                "100k single-character Japanese fallback benchmark did not find exactly its target.");
         }
     }
 
@@ -329,7 +329,7 @@ try
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
-    Console.WriteLine("Search fixtures: ASCII partial / Japanese 2-char / exact tag+filter OK");
+    Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
     Console.WriteLine($"Ingest retained working set: {retainedWorkingSetBytes / 1048576d:N1} MiB (+{retainedAdditionalWorkingSetBytes / 1048576d:N1} MiB), post-GC heap={postGcHeapSizeBytes / 1048576d:N1} MiB");
     Console.WriteLine($"Database: {databaseBytes:N0} bytes");

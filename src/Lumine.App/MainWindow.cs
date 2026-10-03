@@ -2,9 +2,11 @@ using System.Globalization;
 using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using Lumine.Core;
 using Lumine.Image;
 using Lumine.Library;
@@ -20,10 +22,11 @@ public sealed class MainWindow : Window
     private readonly Button _openFolder;
     private readonly Button _diagnostics;
     private readonly TextBlock _status;
-    private readonly TextBlock _libraryPath;
-    private readonly TextBlock _sectionTitle;
+    private readonly Border _statusSurface;
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
+    private readonly ContentControl _lightboxHost;
+    private readonly Grid _appShell;
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
@@ -38,6 +41,9 @@ public sealed class MainWindow : Window
     private Task _diagnosticFlushOperation = Task.CompletedTask;
     private Task _navigationOperation = Task.CompletedTask;
     private Window? _diagnosticsWindow;
+    private WindowState? _lightboxPreviousWindowState;
+    private bool _lightboxFullScreen;
+    private bool _compactNavigationLayout;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -140,21 +146,12 @@ public sealed class MainWindow : Window
                 ? "Recovery"
                 : "Welcome";
 
-        _sectionTitle = new TextBlock
-        {
-            Text = "ライブラリ",
-            FontSize = 15,
-            FontWeight = FontWeight.Bold,
-            Foreground = LumineDesign.Foreground,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
         _status = new TextBlock
         {
             Text = recovered
                 ? "前回の終了を検出しました。安全な状態から復旧しています。"
-                : "画像を見る準備ができています。",
-            FontSize = 11,
+                : string.Empty,
+            FontSize = LumineDesign.CaptionFontSize,
             Foreground = recovered
                 ? LumineDesign.Warning
                 : LumineDesign.MutedForeground,
@@ -162,58 +159,42 @@ public sealed class MainWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        _libraryPath = new TextBlock
-        {
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = 10.5
-        };
-
-        var heading =
-            new StackPanel
-            {
-                Spacing = 2,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        heading.Children.Add(_sectionTitle);
-        heading.Children.Add(_status);
-
-        var actions =
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        actions.Children.Add(_diagnostics);
-        actions.Children.Add(_openFolder);
-
-        var headerGrid =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
-                MinHeight = LumineDesign.HeaderHeight
-            };
-        heading.Margin =
-            new Thickness(16, 8, 12, 8);
-        headerGrid.Children.Add(heading);
-        Grid.SetColumn(actions, 1);
-        actions.Margin =
-            new Thickness(8, 8, 14, 8);
-        headerGrid.Children.Add(actions);
-
-        var header =
+        _statusSurface =
             new Border
             {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
+                Background =
+                    LumineDesign.SurfaceRaised,
+                BorderBrush =
+                    LumineDesign.BorderStrong,
                 BorderThickness =
-                    new Thickness(0, 0, 0, 1),
-                Child = headerGrid
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(8),
+                Padding =
+                    new Thickness(12, 7),
+                Margin =
+                    new Thickness(12),
+                MaxWidth = 720,
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                IsHitTestVisible = false,
+                IsVisible =
+                    !string.IsNullOrWhiteSpace(
+                        _status.Text),
+                Child = _status
+            };
+        _status.PropertyChanged +=
+            (_, args) =>
+            {
+                if (args.Property
+                    == TextBlock.TextProperty)
+                {
+                    _statusSurface.IsVisible =
+                        !string.IsNullOrWhiteSpace(
+                            _status.Text);
+                }
             };
 
         _viewerHost = new ContentControl
@@ -236,24 +217,30 @@ public sealed class MainWindow : Window
                     HorizontalAlignment.Stretch
             };
 
-        var workspace = new Grid
-        {
-            Background = LumineDesign.Background,
-            RowDefinitions =
-                new RowDefinitions("Auto,Auto,Auto,*")
-        };
-        workspace.Children.Add(header);
+        var workspaceContent =
+            new Grid
+            {
+                Background =
+                    LumineDesign.Background,
+                RowDefinitions =
+                    new RowDefinitions("Auto,*")
+            };
+        workspaceContent.Children.Add(
+            _browseHost);
+        Grid.SetRow(_viewerHost, 1);
+        workspaceContent.Children.Add(
+            _viewerHost);
 
-        Grid.SetRow(_browseHost, 1);
-        workspace.Children.Add(_browseHost);
-
-        Grid.SetRow(_libraryPath, 2);
-        _libraryPath.Margin =
-            new Thickness(16, 6, 16, 6);
-        workspace.Children.Add(_libraryPath);
-
-        Grid.SetRow(_viewerHost, 3);
-        workspace.Children.Add(_viewerHost);
+        var workspace =
+            new Grid
+            {
+                Background =
+                    LumineDesign.Background
+            };
+        workspace.Children.Add(
+            workspaceContent);
+        workspace.Children.Add(
+            _statusSurface);
 
         _navigationRailHost =
             new ContentControl
@@ -274,23 +261,22 @@ public sealed class MainWindow : Window
             {
                 Text = _navigationDestination,
                 Foreground = LumineDesign.Foreground,
-                FontSize = 13,
+                FontSize = LumineDesign.BodyFontSize,
                 FontWeight = FontWeight.Bold,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
 
         var collapseNavigation =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "‹",
-                    Width = 34,
-                    Padding = new Thickness(0)
-                });
-        ToolTip.SetTip(
-            collapseNavigation,
-            "ナビゲーションを閉じる");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.ChevronLeftIconPath,
+                            16)
+                },
+                "ナビゲーションを閉じる");
 
         var navigationHeader =
             new Grid
@@ -331,6 +317,8 @@ public sealed class MainWindow : Window
             new Border
             {
                 Width = 280,
+                MinWidth = 250,
+                MaxWidth = 320,
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
@@ -341,22 +329,81 @@ public sealed class MainWindow : Window
             (_, _) =>
                 _navigationPane.IsVisible = false;
 
-        var appShell = new Grid
+        _appShell = new Grid
         {
             Background = LumineDesign.Background,
             ColumnDefinitions =
                 new ColumnDefinitions(
                     $"{LumineDesign.NavigationWidth},Auto,*")
         };
-        appShell.Children.Add(
+        _appShell.Children.Add(
             _navigationRailHost);
         Grid.SetColumn(_navigationPane, 1);
-        appShell.Children.Add(
+        _appShell.Children.Add(
             _navigationPane);
         Grid.SetColumn(workspace, 2);
-        appShell.Children.Add(workspace);
+        _appShell.Children.Add(workspace);
 
-        Content = appShell;
+        void ApplyResponsiveShell(double width)
+        {
+            _compactNavigationLayout =
+                width <= 1040;
+
+            if (_compactNavigationLayout)
+            {
+                _appShell.ColumnDefinitions =
+                    new ColumnDefinitions(
+                        $"{LumineDesign.NavigationWidth},*");
+                Grid.SetColumn(workspace, 1);
+                Grid.SetColumn(_navigationPane, 1);
+                _navigationPane.HorizontalAlignment =
+                    HorizontalAlignment.Left;
+                _navigationPane.Width =
+                    Math.Clamp(
+                        width - LumineDesign.NavigationWidth - 48,
+                        250,
+                        300);
+                _navigationPane.ZIndex = 20;
+            }
+            else
+            {
+                _appShell.ColumnDefinitions =
+                    new ColumnDefinitions(
+                        $"{LumineDesign.NavigationWidth},Auto,*");
+                Grid.SetColumn(_navigationPane, 1);
+                Grid.SetColumn(workspace, 2);
+                _navigationPane.HorizontalAlignment =
+                    HorizontalAlignment.Stretch;
+                _navigationPane.Width = 280;
+                _navigationPane.ZIndex = 0;
+            }
+        }
+
+        SizeChanged +=
+            (_, e) =>
+                ApplyResponsiveShell(
+                    e.NewSize.Width);
+        ApplyResponsiveShell(Width);
+
+        _lightboxHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
+
+        var rootLayer =
+            new Grid
+            {
+                Background = LumineDesign.Background
+            };
+        rootLayer.Children.Add(_appShell);
+        rootLayer.Children.Add(_lightboxHost);
+
+        Content = rootLayer;
 
         RenderNavigationDestination();
 
@@ -380,6 +427,9 @@ public sealed class MainWindow : Window
         _navigationContent.Content
             as Control;
 
+    internal BrowseWorkspaceControls? BrowseControlsForSmoke =>
+        _browseControls;
+
     internal Task ApplyBrowseFilterForSmokeAsync(
         BrowseFilterState state) =>
         OnBrowseFiltersChangedAsync(
@@ -392,6 +442,116 @@ public sealed class MainWindow : Window
 
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
+
+    internal void ShowLightbox(
+        Control content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        // MainWindow owns only modal presentation. Keep the browse visual
+        // tree enabled so its virtualized rows remain realized while the
+        // lightbox is open. The full-client lightbox blocks pointer input and
+        // owns keyboard focus; hit testing is disabled on the background as
+        // an explicit modal boundary without tearing down virtualization.
+        _appShell.IsHitTestVisible = false;
+        _lightboxHost.Content = content;
+        _lightboxHost.IsVisible = true;
+    }
+
+    internal void HideLightbox(
+        Control? content = null)
+    {
+        if (content is not null
+            && !ReferenceEquals(
+                _lightboxHost.Content,
+                content))
+        {
+            return;
+        }
+
+        ExitLightboxFullScreen();
+        _lightboxHost.Content = null;
+        _lightboxHost.IsVisible = false;
+        _appShell.IsHitTestVisible = true;
+    }
+
+    internal void ToggleLightboxFullScreen()
+    {
+        if (!_lightboxHost.IsVisible)
+        {
+            return;
+        }
+
+        if (_lightboxFullScreen)
+        {
+            ExitLightboxFullScreen();
+            return;
+        }
+
+        _lightboxPreviousWindowState =
+            WindowState;
+        WindowState =
+            WindowState.FullScreen;
+        _lightboxFullScreen = true;
+    }
+
+    private void ExitLightboxFullScreen()
+    {
+        if (!_lightboxFullScreen)
+        {
+            return;
+        }
+
+        var restore =
+            _lightboxPreviousWindowState
+            ?? WindowState.Normal;
+        _lightboxPreviousWindowState = null;
+        _lightboxFullScreen = false;
+        WindowState =
+            restore == WindowState.FullScreen
+                ? WindowState.Normal
+                : restore;
+    }
+
+    internal bool IsLightboxFullScreen =>
+        _lightboxFullScreen;
+
+    internal bool IsLightboxVisible =>
+        _lightboxHost.IsVisible;
+
+    internal bool IsFocusInsideLightboxForSmoke
+    {
+        get
+        {
+            var focused =
+                FocusManager?.GetFocusedElement()
+                as Visual;
+            return focused is not null
+                && (ReferenceEquals(
+                        focused,
+                        _lightboxHost)
+                    || focused.GetVisualAncestors()
+                        .Any(
+                            ancestor =>
+                                ReferenceEquals(
+                                    ancestor,
+                                    _lightboxHost)));
+        }
+    }
+
+
+    internal bool IsCompactNavigationLayout =>
+        _compactNavigationLayout;
+
+    internal Rect NavigationPaneBounds =>
+        _navigationPane.Bounds;
+
+    internal Rect LightboxBounds =>
+        _lightboxHost.Bounds;
+
+    internal bool IsWorkspaceInteractionEnabled =>
+        _appShell.IsHitTestVisible
+        && !_lightboxHost.IsVisible;
 
     private void OnNavigationRequested(
         string destination)
@@ -541,7 +701,8 @@ public sealed class MainWindow : Window
                         ChooseAndOpenLibraryAsync,
                         OpenCatalogLibraryAsync,
                         ToggleLibraryEnabledAsync,
-                        RemoveLibraryAsync),
+                        RemoveLibraryAsync,
+                        ReportNavigationError),
                 "フォルダー" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -549,7 +710,8 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreateFolders(
                             _folders,
                             _browseFilterState.FolderPath,
-                            ApplyFolderScopeAsync),
+                            ApplyFolderScopeAsync,
+                            ReportNavigationError),
                 "タグ" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -557,7 +719,8 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreateTags(
                             _tags,
                             _browseFilterState.Tag,
-                            ApplyTagScopeAsync),
+                            ApplyTagScopeAsync,
+                            ReportNavigationError),
                 "公開履歴" =>
                     _runtime is null
                         ? ProductNavigationViews.CreateNoLibrary(
@@ -576,6 +739,14 @@ public sealed class MainWindow : Window
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
             };
+    }
+
+    private void ReportNavigationError(
+        string message)
+    {
+        _status.Foreground =
+            LumineDesign.Warning;
+        _status.Text = message;
     }
 
     private async Task ChooseAndOpenLibraryAsync()
@@ -712,7 +883,6 @@ public sealed class MainWindow : Window
             new BrowseFilterState(
                 SortOrder:
                     _browsePreferences.SortOrder);
-        _libraryPath.Text = string.Empty;
         _productShellState = "Welcome";
         _status.Foreground =
             LumineDesign.MutedForeground;
@@ -1081,7 +1251,7 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             LumineDesign.CreateProductState(
                 "表示を更新しています",
-                "検索・並び順・フィルターを反映しています。");
+                string.Empty);
 
         try
         {
@@ -1159,41 +1329,14 @@ public sealed class MainWindow : Window
 
     private void UpdateScopeDisplay()
     {
-        var runtime = _runtime;
-        if (runtime is null)
+        if (_runtime is null)
         {
-            _libraryPath.Text = string.Empty;
             return;
         }
 
-        var scopes =
-            new List<string>();
-        if (_browseFilterState.FolderPath
-            is { } folder)
-        {
-            scopes.Add(
-                $"フォルダー: {folder}");
-        }
-
-        if (_browseFilterState.Tag
-            is { } tag)
-        {
-            scopes.Add(
-                $"タグ: {tag}");
-        }
-
-        _libraryPath.Text =
-            scopes.Count == 0
-                ? runtime.LibraryRoot
-                : runtime.LibraryRoot
-                  + "  ·  "
-                  + string.Join(
-                      "  ·  ",
-                      scopes);
         _status.Foreground =
             LumineDesign.MutedForeground;
-        _status.Text =
-            $"{runtime.AssetCount:N0} 件 · {runtime.Library.Name}";
+        _status.Text = string.Empty;
     }
 
     private async Task ShowDiagnosticsFromNavigationAsync()
@@ -1397,8 +1540,6 @@ public sealed class MainWindow : Window
         _browseHost.Content = null;
         _browseHost.IsVisible = false;
         _openFolder.IsEnabled = false;
-        _libraryPath.Text =
-            Path.GetFullPath(libraryRoot);
         _productShellState = "Loading";
         _status.Foreground =
             LumineDesign.MutedForeground;
@@ -1411,7 +1552,7 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             LumineDesign.CreateProductState(
                 "ライブラリを開いています",
-                "画像を確認し、表示の準備をしています。");
+                string.Empty);
 
         var progress =
             new Progress<CoreViewerOpenProgress>(
@@ -1487,8 +1628,7 @@ public sealed class MainWindow : Window
                 LumineDesign.Danger;
             _status.Text =
                 "ライブラリを開けませんでした。";
-            _libraryPath.Text = string.Empty;
-            _viewerHost.Content =
+                _viewerHost.Content =
                 LumineDesign.CreateProductState(
                     "ライブラリを開けませんでした",
                     "元画像は変更していません。フォルダーの状態を確認して、もう一度追加してください。\n\n"
@@ -1792,8 +1932,8 @@ public sealed class MainWindow : Window
         add.Click += OnOpenFolderClicked;
 
         return LumineDesign.CreateProductState(
-            "ライブラリに画像がありません",
-            "このライブラリには、Lumineで管理できる画像がまだありません。元フォルダーへ画像を追加するか、別の画像フォルダーを追加してください。",
+            "画像がありません",
+            string.Empty,
             add);
     }
 
@@ -1819,7 +1959,7 @@ public sealed class MainWindow : Window
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            "検索語・フォルダー・タグ・評価・お気に入り・状態・カラーの条件に一致する画像がありません。",
+            string.Empty,
             clear);
     }
 
@@ -1836,8 +1976,8 @@ public sealed class MainWindow : Window
 
         var description =
             recovered
-                ? "前回の終了状態から復旧しました。画像そのものには変更を加えず、ライブラリを開くまで待機しています。"
-                : "最初に画像フォルダーを追加してください。画像そのものをコピーせず、通常閲覧では表示用サムネイルもディスクへ保存しません。";
+                ? "前回の状態から復旧しました。"
+                : string.Empty;
 
         return LumineDesign.CreateProductState(
             "Lumine",

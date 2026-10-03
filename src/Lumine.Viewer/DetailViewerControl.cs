@@ -20,6 +20,12 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _next;
     private readonly Button _fit;
     private readonly Button _actual;
+    private readonly Button _zoomOut;
+    private readonly Button _zoomIn;
+    private readonly Button _fullScreen;
+    private readonly TextBlock _zoomText;
+    private readonly Border _toolbarHost;
+    private readonly DispatcherTimer _chromeTimer;
     private double _zoom = 1;
     private bool _fitMode = true;
     private bool _dragging;
@@ -46,32 +52,100 @@ public sealed class DetailViewerControl : UserControl
         _observedSelectionVersion = _session.Snapshot.SelectionVersion;
         Focusable = true;
 
-        _previous = new Button { Content = "◀" };
-        _next = new Button { Content = "▶" };
-        _fit = new Button { Content = "Fit" };
-        _actual = new Button { Content = "1:1" };
+        _previous =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M15.75 5.25L9 12l6.75 6.75",
+                    18),
+                "前の画像",
+                "viewer.previous",
+                "Left Arrow");
+        _next =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M8.25 5.25L15 12l-6.75 6.75",
+                    18),
+                "次の画像",
+                "viewer.next",
+                "Right Arrow");
+        _zoomOut =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M5 12h14",
+                    15),
+                "縮小",
+                "viewer.zoom-out");
+        _zoomIn =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M12 5v14 M5 12h14",
+                    15),
+                "拡大",
+                "viewer.zoom-in");
+        _fit =
+            CreateViewerButton(
+                "全体",
+                "全体を表示",
+                "viewer.fit",
+                "0");
+        _actual =
+            CreateViewerButton(
+                "1:1",
+                "100%表示",
+                "viewer.actual-size",
+                "1");
+        _fullScreen =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5",
+                    16),
+                "全画面表示 (F11)",
+                "viewer.fullscreen",
+                "F11");
+
+        _zoomText = new TextBlock
+        {
+            Text = "100%",
+            MinWidth = 52,
+            Foreground = ViewerVisualTokens.Foreground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         var toolbar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 8
+            Spacing = 4,
+            Margin = new Thickness(8, 6),
+            HorizontalAlignment = HorizontalAlignment.Center
         };
-        toolbar.Children.Add(_previous);
-        toolbar.Children.Add(_next);
+        toolbar.Children.Add(_zoomOut);
+        toolbar.Children.Add(_zoomText);
+        toolbar.Children.Add(_zoomIn);
         toolbar.Children.Add(_fit);
         toolbar.Children.Add(_actual);
+        toolbar.Children.Add(_fullScreen);
 
         _status = new TextBlock
         {
-            VerticalAlignment = VerticalAlignment.Center
+            Foreground = ViewerVisualTokens.MutedForeground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0),
+            IsVisible = false
         };
         toolbar.Children.Add(_status);
 
         _image = new Image
         {
             Stretch = Stretch.Fill,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top
+            // Fit-mode images can be smaller than the ScrollViewer viewport
+            // on one axis. Center the image within the stage instead of
+            // pinning it to the top-left; when zoomed beyond the viewport the
+            // content still expands normally and ScrollViewer offset owns pan.
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         _session.SetOriginalReleaseHandler(
@@ -79,39 +153,130 @@ public sealed class DetailViewerControl : UserControl
 
         var surface = new Border
         {
-            Background = Brushes.Black,
+            Background = ViewerVisualTokens.Stage,
             Child = _image
         };
 
         _scroll = new ScrollViewer
         {
             Content = surface,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            HorizontalContentAlignment =
+                HorizontalAlignment.Center,
+            VerticalContentAlignment =
+                VerticalAlignment.Center,
+            HorizontalScrollBarVisibility =
+                ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility =
+                ScrollBarVisibility.Hidden
         };
 
         _metadata = new TextBlock
         {
-            TextWrapping = TextWrapping.Wrap
+            Foreground = ViewerVisualTokens.MutedForeground,
+            FontSize = ViewerVisualTokens.CaptionFontSize,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(10, 4, 10, 8)
         };
 
-        var layout = new Grid
+        var stage = new Grid
         {
-            RowDefinitions = new RowDefinitions("Auto,*,Auto"),
-            RowSpacing = 8
+            Background = ViewerVisualTokens.Stage
         };
-        layout.Children.Add(toolbar);
-        Grid.SetRow(_scroll, 1);
-        layout.Children.Add(_scroll);
-        Grid.SetRow(_metadata, 2);
-        layout.Children.Add(_metadata);
+        stage.Children.Add(_scroll);
 
-        Content = layout;
+        _previous.Width = 44;
+        _previous.Height = 56;
+        _previous.MinWidth = 44;
+        _previous.MinHeight = 56;
+        _previous.Padding = new Thickness(0);
+        _previous.HorizontalAlignment =
+            HorizontalAlignment.Left;
+        _previous.VerticalAlignment =
+            VerticalAlignment.Center;
+        _previous.Margin = new Thickness(14, 0);
+        stage.Children.Add(_previous);
+
+        _next.Width = 44;
+        _next.Height = 56;
+        _next.MinWidth = 44;
+        _next.MinHeight = 56;
+        _next.Padding = new Thickness(0);
+        _next.HorizontalAlignment =
+            HorizontalAlignment.Right;
+        _next.VerticalAlignment =
+            VerticalAlignment.Center;
+        _next.Margin = new Thickness(14, 0);
+        stage.Children.Add(_next);
+
+        _toolbarHost =
+            new Border
+            {
+                Background = ViewerVisualTokens.Overlay,
+                BorderBrush = ViewerVisualTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(4),
+                Margin = new Thickness(10),
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                Child = toolbar
+            };
+        stage.Children.Add(_toolbarHost);
+
+        _chromeTimer =
+            new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(2.4)
+            };
+        _chromeTimer.Tick +=
+            (_, _) => FadeChrome();
+
+        stage.PointerEntered +=
+            (_, _) => RevealChrome();
+        stage.PointerMoved +=
+            (_, _) => RevealChrome();
+
+        foreach (var control in new Control[]
+                 {
+                     _previous,
+                     _next,
+                     _zoomOut,
+                     _zoomIn,
+                     _fit,
+                     _actual,
+                     _fullScreen
+                 })
+        {
+            control.GotFocus +=
+                (_, _) => RevealChrome();
+            control.PointerEntered +=
+                (_, _) => RevealChrome();
+        }
+
+        RevealChrome();
+
+        Content = stage;
 
         _previous.Click += async (_, _) => await MoveAsync(-1);
         _next.Click += async (_, _) => await MoveAsync(1);
+        _zoomOut.Click +=
+            async (_, _) =>
+                await ZoomByAsync(
+                    1 / _session.Options.ZoomStep);
+        _zoomIn.Click +=
+            async (_, _) =>
+                await ZoomByAsync(
+                    _session.Options.ZoomStep);
         _fit.Click += (_, _) => Fit();
         _actual.Click += async (_, _) => await ActualSizeAsync();
+        _fullScreen.Click +=
+            (_, _) =>
+                FullScreenToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
 
         _scroll.SizeChanged += (_, _) =>
         {
@@ -134,6 +299,55 @@ public sealed class DetailViewerControl : UserControl
         ApplySnapshot(_session.Snapshot);
     }
 
+    private static Avalonia.Controls.Shapes.Path CreateViewerIcon(
+        string pathData,
+        double size) =>
+        new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(pathData),
+            Stroke = ViewerVisualTokens.Foreground,
+            StrokeThickness = 1.9,
+            Stretch = Stretch.Uniform,
+            Width = size,
+            Height = size,
+            HorizontalAlignment =
+                HorizontalAlignment.Center,
+            VerticalAlignment =
+                VerticalAlignment.Center
+        };
+
+    private static Button CreateViewerButton(
+        object content,
+        string tooltip,
+        string? automationId = null,
+        string? acceleratorKey = null)
+    {
+        var button =
+            new Button
+            {
+                Content = content,
+                MinWidth = 36,
+                MinHeight = 32,
+                Padding = new Thickness(9, 5),
+                CornerRadius = new CornerRadius(7),
+                Background = ViewerVisualTokens.Overlay,
+                Foreground = ViewerVisualTokens.Foreground,
+                BorderBrush = ViewerVisualTokens.Border,
+                BorderThickness = new Thickness(1),
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Center,
+                VerticalContentAlignment =
+                    VerticalAlignment.Center
+            };
+        ToolTip.SetTip(button, tooltip);
+        ViewerVisualTokens.Name(
+            button,
+            tooltip,
+            automationId,
+            acceleratorKey);
+        return button;
+    }
+
     public double Zoom => _zoom;
 
     public long SelectedAssetIndex => _session.Snapshot.SelectedIndex;
@@ -146,7 +360,74 @@ public sealed class DetailViewerControl : UserControl
 
     public string MetadataText => _metadata.Text ?? string.Empty;
 
+
+    internal Rect ImageBoundsInControlForSmoke
+    {
+        get
+        {
+            var origin =
+                _image.TranslatePoint(
+                    new Point(0, 0),
+                    this)
+                ?? throw new InvalidOperationException(
+                    "Unable to map detail image bounds.");
+            return new Rect(
+                origin,
+                _image.Bounds.Size);
+        }
+    }
+
+    internal Rect ViewportBoundsInControlForSmoke
+    {
+        get
+        {
+            var origin =
+                _scroll.TranslatePoint(
+                    new Point(0, 0),
+                    this)
+                ?? throw new InvalidOperationException(
+                    "Unable to map detail viewport bounds.");
+            return new Rect(
+                origin,
+                _scroll.Bounds.Size);
+        }
+    }
+
+
+    internal Rect ToolbarBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _toolbarHost,
+            "toolbar");
+
+    internal Rect PreviousBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _previous,
+            "previous button");
+
+    internal Rect NextBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _next,
+            "next button");
+
+
+    private Rect GetControlBoundsForSmoke(
+        Control control,
+        string label)
+    {
+        var origin =
+            control.TranslatePoint(
+                new Point(0, 0),
+                this)
+            ?? throw new InvalidOperationException(
+                $"Unable to map detail {label} bounds.");
+        return new Rect(
+            origin,
+            control.Bounds.Size);
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
+
+    public event EventHandler? FullScreenToggleRequested;
 
     public Task SelectAsync(
         long index,
@@ -276,7 +557,9 @@ public sealed class DetailViewerControl : UserControl
         _fitMode = true;
         SetZoom(zoom);
         SynchronizeRequestedZoomIfIdle(zoom);
-        _scroll.Offset = default;
+        Dispatcher.UIThread.Post(
+            CenterViewport,
+            DispatcherPriority.Render);
     }
 
     public async Task ActualSizeAsync(
@@ -313,9 +596,14 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
+        var anchor =
+            CaptureViewportAnchor();
         _fitMode = false;
         SetZoom(1);
         SynchronizeRequestedZoom(1);
+        Dispatcher.UIThread.Post(
+            () => RestoreViewportAnchor(anchor),
+            DispatcherPriority.Render);
     }
 
     public void PanBy(double horizontal, double vertical)
@@ -437,9 +725,16 @@ public sealed class DetailViewerControl : UserControl
                 _session.Options.MaxZoom);
         }
 
+        var anchor =
+            _fitMode
+                ? (0.5, 0.5)
+                : CaptureViewportAnchor();
         _fitMode = false;
         SetZoom(committedTarget);
         SynchronizeRequestedZoom(committedTarget);
+        Dispatcher.UIThread.Post(
+            () => RestoreViewportAnchor(anchor),
+            DispatcherPriority.Render);
     }
 
     private async Task MoveAsync(long delta)
@@ -483,6 +778,117 @@ public sealed class DetailViewerControl : UserControl
         _displayedZoomBasis = sourceSize;
         _image.Width = displaySize.Width;
         _image.Height = displaySize.Height;
+        _zoomText.Text =
+            $"{Math.Round(zoom * 100):N0}%";
+    }
+
+    private void CenterViewport()
+    {
+        var extent =
+            _scroll.Extent;
+        var viewport =
+            _scroll.Viewport;
+
+        var horizontal =
+            Math.Max(
+                0,
+                (extent.Width - viewport.Width)
+                / 2);
+        var vertical =
+            Math.Max(
+                0,
+                (extent.Height - viewport.Height)
+                / 2);
+
+        _scroll.Offset =
+            new Vector(
+                horizontal,
+                vertical);
+    }
+
+    private (double X, double Y) CaptureViewportAnchor()
+    {
+        var viewport =
+            _scroll.Viewport;
+        var width =
+            double.IsFinite(_image.Width)
+                ? _image.Width
+                : _image.Bounds.Width;
+        var height =
+            double.IsFinite(_image.Height)
+                ? _image.Height
+                : _image.Bounds.Height;
+
+        static double Axis(
+            double content,
+            double viewportSize,
+            double offset)
+        {
+            if (content <= 0
+                || content <= viewportSize)
+            {
+                return 0.5;
+            }
+
+            return Math.Clamp(
+                (offset + (viewportSize / 2))
+                / content,
+                0,
+                1);
+        }
+
+        return (
+            Axis(
+                width,
+                viewport.Width,
+                _scroll.Offset.X),
+            Axis(
+                height,
+                viewport.Height,
+                _scroll.Offset.Y));
+    }
+
+    private void RestoreViewportAnchor(
+        (double X, double Y) anchor)
+    {
+        var viewport =
+            _scroll.Viewport;
+        var width =
+            double.IsFinite(_image.Width)
+                ? _image.Width
+                : _image.Bounds.Width;
+        var height =
+            double.IsFinite(_image.Height)
+                ? _image.Height
+                : _image.Bounds.Height;
+
+        static double Axis(
+            double content,
+            double viewportSize,
+            double fraction)
+        {
+            if (content <= viewportSize)
+            {
+                return 0;
+            }
+
+            return Math.Clamp(
+                (content * fraction)
+                - (viewportSize / 2),
+                0,
+                Math.Max(0, content - viewportSize));
+        }
+
+        _scroll.Offset =
+            new Vector(
+                Axis(
+                    width,
+                    viewport.Width,
+                    anchor.X),
+                Axis(
+                    height,
+                    viewport.Height,
+                    anchor.Y));
     }
 
     internal static Size CalculateDisplaySize(
@@ -675,7 +1081,9 @@ public sealed class DetailViewerControl : UserControl
         }
 
         _fitMode = true;
-        _scroll.Offset = default;
+        Dispatcher.UIThread.Post(
+            CenterViewport,
+            DispatcherPriority.Render);
     }
 
     private static bool ShouldUseOriginal(
@@ -775,6 +1183,7 @@ public sealed class DetailViewerControl : UserControl
 
     public void PrepareForDetach()
     {
+        _chromeTimer.Stop();
         _visualAttached = false;
         _image.Source = null;
         DetachGridEvents();
@@ -949,13 +1358,12 @@ public sealed class DetailViewerControl : UserControl
                 "プレビューを読み込んでいます…",
             ViewerDetailLoadState.PreviewReady =>
                 snapshot.ErrorMessage is null
-                    ? "プレビュー"
-                    : "プレビューを一部の情報なしで表示しています"
-                      + $" · {snapshot.ErrorMessage}",
+                    ? string.Empty
+                    : snapshot.ErrorMessage,
             ViewerDetailLoadState.LoadingOriginal =>
-                "元画像を読み込んでいます…",
+                "読み込み中…",
             ViewerDetailLoadState.OriginalReady =>
-                "元画像",
+                string.Empty,
             ViewerDetailLoadState.Error =>
                 string.IsNullOrWhiteSpace(
                     snapshot.ErrorMessage)
@@ -964,6 +1372,9 @@ public sealed class DetailViewerControl : UserControl
                       + $" · {snapshot.ErrorMessage}",
             _ => "画像の状態を確認しています…"
         };
+        _status.IsVisible =
+            !string.IsNullOrWhiteSpace(
+                _status.Text);
 
         var metadata = snapshot.Metadata;
         _metadata.Text = snapshot.Asset is null
@@ -1058,7 +1469,7 @@ public sealed class DetailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
-        if ((e.KeyModifiers & KeyModifiers.Control) == 0)
+        if (e.Delta.Y == 0)
         {
             return;
         }
@@ -1074,6 +1485,26 @@ public sealed class DetailViewerControl : UserControl
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_scroll).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        if (e.ClickCount >= 2)
+        {
+            e.Handled = true;
+            if (_fitMode)
+            {
+                _ = ActualSizeAsync();
+            }
+            else
+            {
+                Fit();
+            }
+
+            return;
+        }
+
+        if (_fitMode || _zoom <= 1)
         {
             return;
         }
@@ -1100,6 +1531,56 @@ public sealed class DetailViewerControl : UserControl
         e.Handled = true;
     }
 
+    private void RevealChrome()
+    {
+        _toolbarHost.Opacity = 1;
+        _previous.Opacity = 1;
+        _next.Opacity = 1;
+        _toolbarHost.IsHitTestVisible = true;
+        _previous.IsHitTestVisible = true;
+        _next.IsHitTestVisible = true;
+        _chromeTimer.Stop();
+        _chromeTimer.Start();
+    }
+
+    private void FadeChrome()
+    {
+        _chromeTimer.Stop();
+
+        if (_dragging)
+        {
+            RevealChrome();
+            return;
+        }
+
+        // Idle Viewer chrome must not obscure or intercept the image.
+        _toolbarHost.Opacity = 0;
+        _previous.Opacity = 0;
+        _next.Opacity = 0;
+        _toolbarHost.IsHitTestVisible = false;
+        _previous.IsHitTestVisible = false;
+        _next.IsHitTestVisible = false;
+    }
+
+    internal bool IsChromeVisibleForSmoke =>
+        _toolbarHost.Opacity > 0.9
+        && _previous.Opacity > 0.9
+        && _next.Opacity > 0.9;
+
+    internal bool IsChromeNonBlockingForSmoke =>
+        _toolbarHost.Opacity <= 0.001
+        && _previous.Opacity <= 0.001
+        && _next.Opacity <= 0.001
+        && !_toolbarHost.IsHitTestVisible
+        && !_previous.IsHitTestVisible
+        && !_next.IsHitTestVisible;
+
+    internal void FadeChromeForSmoke() =>
+        FadeChrome();
+
+    internal void RevealChromeForSmoke() =>
+        RevealChrome();
+
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!_dragging)
@@ -1124,14 +1605,20 @@ public sealed class DetailViewerControl : UserControl
                 await MoveAsync(1);
                 e.Handled = true;
                 break;
-            case Key.D0 when (e.KeyModifiers & KeyModifiers.Control) != 0:
-            case Key.NumPad0 when (e.KeyModifiers & KeyModifiers.Control) != 0:
+            case Key.D0:
+            case Key.NumPad0:
                 Fit();
                 e.Handled = true;
                 break;
-            case Key.D1 when (e.KeyModifiers & KeyModifiers.Control) != 0:
-            case Key.NumPad1 when (e.KeyModifiers & KeyModifiers.Control) != 0:
+            case Key.D1:
+            case Key.NumPad1:
                 await ActualSizeAsync();
+                e.Handled = true;
+                break;
+            case Key.F11:
+                FullScreenToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
                 e.Handled = true;
                 break;
         }

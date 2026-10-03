@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -16,15 +18,19 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Func<Task>? _afterBulkMutation;
     private readonly Action<string>? _entryRequested;
     private readonly Border _selectionBar;
+    private readonly WrapPanel _bulkActions;
+    private Button? _lineageAction;
     private readonly TextBlock _selectionCount;
     private readonly TextBlock _selectionMetadataSummary;
     private readonly TextBlock _bulkStatus;
     private readonly ContextualAssetDetailPanel _contextDetail;
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
-    private readonly Button _detailToggle;
-    private readonly Button _focusButton;
     private CancellationTokenSource? _selectionSummaryCancellation;
+    private CancellationTokenSource? _bulkOperationCancellation;
+    private Button? _cancelBulkOperationButton;
+    private long _focusedViewReturnIndex = -1;
+    private bool _compactInspectorLayout;
     private bool _detached;
 
     public CoreViewerShell(
@@ -63,11 +69,16 @@ internal sealed class CoreViewerShell : UserControl
                     return Task.CompletedTask;
                 },
                 OpenFocusedViewAsync,
-                _afterBulkMutation);
+                _afterBulkMutation,
+                ShowCreateWorkDialogAsync,
+                ShowCreateGenerationGroupDialogAsync,
+                ShowCreatePublicationDialogAsync);
         _contextSurface =
             new Border
             {
-                Width = 340,
+                Width = 360,
+                MinWidth = 300,
+                MaxWidth = 420,
                 Background = LumineDesign.Surface,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
@@ -76,96 +87,76 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _contextDetail
             };
 
-        _detailToggle =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = "詳細",
-                    MinHeight = 30,
-                    Padding = new Thickness(10, 5),
-                    IsEnabled = false
-                });
-        _detailToggle.Click +=
-            async (_, _) =>
-            {
-                if (_contextSurface.IsVisible)
-                {
-                    HideContextDetail();
-                }
-                else
-                {
-                    await ShowContextDetailAsync();
-                }
-            };
-
-        _focusButton =
-            LumineDesign.ConfigurePrimaryButton(
-                new Button
-                {
-                    Content = "集中表示",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5),
-                    IsEnabled = false
-                });
-        _focusButton.Click +=
-            async (_, _) =>
-                await OpenFocusedViewAsync();
-
         var focusedClose =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "一覧へ戻る  Esc",
-                    MinHeight = 30,
-                    Padding = new Thickness(12, 5)
-                });
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.CloseIconPath,
+                            18,
+                            LumineDesign.Foreground)
+                },
+                "閉じる (Esc)",
+                automationId: "viewer.close",
+                acceleratorKey: "Esc");
+        focusedClose.Background =
+            LumineDesign.ControlSurface;
+        focusedClose.BorderBrush =
+            LumineDesign.BorderStrong;
         focusedClose.Click +=
             (_, _) =>
                 CloseFocusedView();
 
         var focusedHeader =
-            new Grid
+            new Border
             {
-                Background = Brushes.Black,
-                ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*,Auto"),
-                Margin = new Thickness(8, 6)
-            };
-        focusedHeader.Children.Add(
-            focusedClose);
-        var focusedHint =
-            new TextBlock
-            {
-                Text = "← → 画像移動 · Ctrl+0 全体表示 · Ctrl+1 1:1 · Ctrl+ホイール ズーム · ドラッグ パン",
-                Foreground = Brushes.LightGray,
-                FontSize = 10,
-                VerticalAlignment =
-                    VerticalAlignment.Center,
+                Background = Brushes.Transparent,
+                Margin = new Thickness(10),
                 HorizontalAlignment =
-                    HorizontalAlignment.Center
+                    HorizontalAlignment.Right,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                Child = focusedClose
             };
-        Grid.SetColumn(focusedHint, 1);
-        focusedHeader.Children.Add(
-            focusedHint);
 
         var focusedLayout =
             new Grid
             {
-                Background = Brushes.Black,
-                RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                Background = LumineDesign.Background
             };
+        focusedLayout.Children.Add(_detail);
         focusedLayout.Children.Add(
             focusedHeader);
-        Grid.SetRow(_detail, 1);
-        focusedLayout.Children.Add(_detail);
 
         _focusedSurface =
             new Border
             {
-                Background = Brushes.Black,
+                Background = LumineDesign.Background,
+                Padding = new Thickness(0),
                 IsVisible = false,
+                Focusable = true,
+                ClipToBounds = true,
                 Child = focusedLayout
+            };
+        _focusedSurface.SetValue(
+            KeyboardNavigation.TabNavigationProperty,
+            KeyboardNavigationMode.Cycle);
+        _focusedSurface.KeyDown +=
+            (_, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    CloseFocusedView();
+                    e.Handled = true;
+                }
+            };
+
+        _bulkActions =
+            new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                IsVisible = false
             };
 
         _selectionCount =
@@ -179,7 +170,7 @@ internal sealed class CoreViewerShell : UserControl
             new TextBlock
             {
                 Foreground = LumineDesign.MutedForeground,
-                FontSize = 9.5,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -187,7 +178,7 @@ internal sealed class CoreViewerShell : UserControl
             new TextBlock
             {
                 Foreground = LumineDesign.MutedForeground,
-                FontSize = 10,
+                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -196,6 +187,10 @@ internal sealed class CoreViewerShell : UserControl
 
         _grid.SelectionChanged += OnSelectionChanged;
         _grid.AssetInvoked += OnAssetInvoked;
+        _detail.FullScreenToggleRequested +=
+            OnFullScreenToggleRequested;
+        _grid.AssetDetailRequested += OnAssetDetailRequested;
+        _grid.AssetContextRequested += OnAssetContextRequested;
         KeyDown += OnShellKeyDown;
         Focusable = true;
 
@@ -218,46 +213,6 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _grid
             };
 
-        var browseActionContent =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto")
-            };
-        browseActionContent.Children.Add(
-            new TextBlock
-            {
-                Text =
-                    "画像を選択すると詳細表示・集中表示を利用できます。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = 10,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            });
-        Grid.SetColumn(_detailToggle, 1);
-        _detailToggle.Margin =
-            new Thickness(4, 0);
-        browseActionContent.Children.Add(
-            _detailToggle);
-        Grid.SetColumn(_focusButton, 2);
-        _focusButton.Margin =
-            new Thickness(4, 0);
-        browseActionContent.Children.Add(
-            _focusButton);
-
-        var browseActions =
-            new Border
-            {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(0, 0, 0, 1),
-                Padding =
-                    new Thickness(10, 6),
-                Child = browseActionContent
-            };
-
         var browseViewer =
             new Grid
             {
@@ -271,19 +226,56 @@ internal sealed class CoreViewerShell : UserControl
         browseViewer.Children.Add(
             _contextSurface);
 
+        void ApplyResponsiveBrowseLayout(double width)
+        {
+            _compactInspectorLayout =
+                width <= 1080;
+
+            if (_compactInspectorLayout)
+            {
+                browseViewer.ColumnDefinitions =
+                    new ColumnDefinitions("*");
+                Grid.SetColumn(_contextSurface, 0);
+                _contextSurface.HorizontalAlignment =
+                    HorizontalAlignment.Right;
+                _contextSurface.Width =
+                    Math.Clamp(
+                        width * 0.44,
+                        300,
+                        400);
+            }
+            else
+            {
+                browseViewer.ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto");
+                Grid.SetColumn(_contextSurface, 1);
+                _contextSurface.HorizontalAlignment =
+                    HorizontalAlignment.Stretch;
+                _contextSurface.Width =
+                    Math.Clamp(
+                        width * 0.28,
+                        320,
+                        400);
+            }
+        }
+
+        SizeChanged +=
+            (_, e) =>
+                ApplyResponsiveBrowseLayout(
+                    e.NewSize.Width);
+        ApplyResponsiveBrowseLayout(
+            Math.Max(1100, Bounds.Width));
+
         var browseLayout =
             new Grid
             {
                 Background = LumineDesign.Background,
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,*")
+                    new RowDefinitions("Auto,*")
             };
         browseLayout.Children.Add(
             _selectionBar);
-        Grid.SetRow(browseActions, 1);
-        browseLayout.Children.Add(
-            browseActions);
-        Grid.SetRow(browseViewer, 2);
+        Grid.SetRow(browseViewer, 1);
         browseLayout.Children.Add(
             browseViewer);
 
@@ -294,8 +286,6 @@ internal sealed class CoreViewerShell : UserControl
             };
         layers.Children.Add(
             browseLayout);
-        layers.Children.Add(
-            _focusedSurface);
 
         Content = layers;
     }
@@ -312,6 +302,67 @@ internal sealed class CoreViewerShell : UserControl
 
     internal bool IsFocusedViewVisible =>
         _focusedSurface.IsVisible;
+
+    internal bool IsBulkSelectionBarVisible =>
+        _selectionBar.IsVisible;
+
+
+    internal bool IsCompactInspectorLayout =>
+        _compactInspectorLayout;
+
+    internal Rect ContextSurfaceBounds =>
+        _contextSurface.Bounds;
+
+    internal Rect GridViewerBounds =>
+        _grid.Bounds;
+
+
+    internal (
+        Rect ImageBounds,
+        Rect ViewportBounds)
+        FocusedViewerGeometryForSmoke
+    {
+        get
+        {
+            var image =
+                _detail.GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Image>()
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    "Focused viewer image visual is unavailable.");
+            var viewport =
+                _detail.GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    "Focused viewer viewport is unavailable.");
+
+            var imageOrigin =
+                image.TranslatePoint(
+                    new Point(0, 0),
+                    _detail)
+                ?? throw new InvalidOperationException(
+                    "Unable to map focused image bounds.");
+            var viewportOrigin =
+                viewport.TranslatePoint(
+                    new Point(0, 0),
+                    _detail)
+                ?? throw new InvalidOperationException(
+                    "Unable to map focused viewport bounds.");
+
+            return (
+                new Rect(
+                    imageOrigin,
+                    image.Bounds.Size),
+                new Rect(
+                    viewportOrigin,
+                    viewport.Bounds.Size));
+        }
+    }
+
+    internal bool IsAssetFocusedForSmoke(
+        long index) =>
+        _grid.IsAssetFocused(index);
 
     internal async Task ShowContextDetailAsync()
     {
@@ -351,7 +402,22 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectAsset(index);
         }
 
+        // Keep a stable semantic return target instead of a Control instance.
+        // Virtualization may recycle the invoking tile while the lightbox is
+        // open; the asset index lets us resolve the current realized tile at
+        // close time. Ensure the invoking asset has a realized focus target
+        // before entering the modal viewer so the return contract is valid
+        // even after DPI/layout changes.
+        _focusedViewReturnIndex = index;
+        await _grid.EnsureAssetFocusTargetAsync(index);
+        _grid.FocusAsset(index);
+
         _focusedSurface.IsVisible = true;
+        var owner =
+            TopLevel.GetTopLevel(this)
+            as MainWindow;
+        owner?.ShowLightbox(
+            _focusedSurface);
 
         try
         {
@@ -364,9 +430,44 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch
         {
+            // Clear focus while the lightbox subtree is still attached. If a
+            // focused subtree is detached first, Avalonia's detach lifecycle
+            // can clear a newly restored browse focus afterward.
+            owner?.FocusManager.Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+            owner?.HideLightbox(
+                _focusedSurface);
             _focusedSurface.IsVisible = false;
+            var returnIndex =
+                _focusedViewReturnIndex;
+            _focusedViewReturnIndex = -1;
+            if (returnIndex >= 0)
+            {
+                _grid.RestoreAssetFocus(returnIndex);
+            }
+            else
+            {
+                _grid.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            }
+
             throw;
         }
+    }
+
+    private void OnFullScreenToggleRequested(
+        object? sender,
+        EventArgs e)
+    {
+        var owner =
+            TopLevel.GetTopLevel(_focusedSurface)
+            as MainWindow
+            ?? TopLevel.GetTopLevel(this)
+                as MainWindow;
+        owner?.ToggleLightboxFullScreen();
     }
 
     internal void CloseFocusedView()
@@ -376,10 +477,40 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        var returnIndex =
+            _focusedViewReturnIndex;
+        _focusedViewReturnIndex = -1;
+        var owner =
+            TopLevel.GetTopLevel(_focusedSurface)
+            as MainWindow
+            ?? TopLevel.GetTopLevel(this)
+                as MainWindow;
+
+        // End the modal focus scope before detaching it. This prevents the
+        // lightbox subtree's detach lifecycle from clearing the browse focus
+        // that we restore below.
+        owner?.FocusManager.Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
-        _grid.Focus();
+
+        // Release modality before resolving focus so the browse surface is
+        // enabled when Avalonia's FocusManager evaluates the target.
+        owner?.HideLightbox(
+            _focusedSurface);
+
+        if (returnIndex >= 0)
+        {
+            _grid.RestoreAssetFocus(returnIndex);
+            return;
+        }
+
+        _grid.Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
     }
 
     private async Task LoadContextDetailAsync(
@@ -405,6 +536,154 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
+    private void OnAssetContextRequested(
+        object? sender,
+        ThumbnailViewerControl.ViewerAssetContextRequestedEventArgs request)
+    {
+        var menu =
+            new ContextMenu
+            {
+                Placement = PlacementMode.Pointer
+            };
+
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "画像を表示",
+                () => OpenFocusedViewAsync(
+                    request.Index)));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "詳細",
+                async () =>
+                {
+                    _grid.SelectAsset(
+                        request.Index,
+                        scrollIntoView: false);
+                    await ShowContextDetailAsync();
+                }));
+        menu.Items.Add(new Separator());
+
+        var rating =
+            new MenuItem
+            {
+                Header = "評価"
+            };
+        rating.Items.Add(
+            CreateContextMenuItem(
+                "評価なし",
+                () => ApplyPatchAsync(
+                    new AssetUserMetadataPatch(
+                        SetRating: true,
+                        Rating: null))));
+        for (var value = 1; value <= 5; value++)
+        {
+            var ratingValue = value;
+            rating.Items.Add(
+                CreateContextMenuItem(
+                    new string('★', ratingValue),
+                    () => ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetRating: true,
+                            Rating: ratingValue))));
+        }
+
+        menu.Items.Add(rating);
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "お気に入りを切り替え",
+                () => ToggleFavoriteFromAssetAsync(
+                    request.Index)));
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "Workを作成",
+                ShowCreateWorkDialogAsync));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "生成グループを作成",
+                ShowCreateGenerationGroupDialogAsync));
+        menu.Items.Add(
+            CreateContextMenuItem(
+                "公開記録を作成",
+                ShowCreatePublicationDialogAsync));
+
+        if (_grid.SelectedAssetCount == 2)
+        {
+            menu.Items.Add(
+                CreateContextMenuItem(
+                    "Lineageを作成",
+                    ShowCreateRelationDialogAsync));
+        }
+
+        menu.Items.Add(new Separator());
+        var delete =
+            CreateContextMenuItem(
+                "元ファイルを削除…",
+                DeleteSelectedSourcesAsync);
+        delete.Foreground =
+            LumineDesign.Danger;
+        menu.Items.Add(delete);
+
+        menu.Open(request.Anchor);
+    }
+
+    private MenuItem CreateContextMenuItem(
+        string label,
+        Func<Task> action)
+    {
+        var item =
+            new MenuItem
+            {
+                Header = label
+            };
+        item.Click +=
+            async (_, _) =>
+            {
+                item.IsEnabled = false;
+                try
+                {
+                    await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    _bulkStatus.Foreground =
+                        LumineDesign.Danger;
+                    _bulkStatus.Text =
+                        $"操作できませんでした: {exception.Message}";
+                }
+                finally
+                {
+                    item.IsEnabled = true;
+                }
+            };
+        return item;
+    }
+
+    private async Task ToggleFavoriteFromAssetAsync(
+        long index)
+    {
+        var asset =
+            await _runtime.ViewerSession.GetAssetAsync(
+                index);
+        var metadata =
+            await _runtime.LibraryService
+                .GetUserMetadataAsync(
+                    _runtime.Library.Id,
+                    asset.Id);
+        var current =
+            metadata?.Favorite
+            ?? asset.Favorite;
+
+        await ApplyPatchAsync(
+            new AssetUserMetadataPatch(
+                SetFavorite: true,
+                Favorite: !current));
+    }
+
     private async void OnAssetInvoked(
         object? sender,
         long index)
@@ -416,121 +695,170 @@ internal sealed class CoreViewerShell : UserControl
         catch (Exception exception)
         {
             _bulkStatus.Text =
-                $"集中表示を開けませんでした: {exception.Message}";
+                $"画像を表示できませんでした: {exception.Message}";
+        }
+    }
+
+    private async void OnAssetDetailRequested(
+        object? sender,
+        long index)
+    {
+        try
+        {
+            if (_grid.SelectedAssetIndex != index)
+            {
+                _grid.SelectAsset(
+                    index,
+                    scrollIntoView: false);
+            }
+
+            _contextSurface.IsVisible = true;
+            await LoadContextDetailAsync(index);
+        }
+        catch (Exception exception)
+        {
+            _bulkStatus.Text =
+                $"詳細を表示できませんでした: {exception.Message}";
         }
     }
 
     private Border CreateSelectionBar()
     {
-        var actions =
-            new WrapPanel
-            {
-                Orientation = Orientation.Horizontal
-            };
-
-        actions.Children.Add(
+        var rating =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource =
+                        new[]
+                        {
+                            "評価なし",
+                            "★1",
+                            "★2",
+                            "★3",
+                            "★4",
+                            "★5"
+                        },
+                    SelectedIndex = 0
+                });
+        var ratingApply =
             CreateBulkButton(
-                "★0",
+                "評価を適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetRating: true,
-                        Rating: null))));
-        for (var rating = 1;
-             rating <= 5;
-             rating++)
-        {
-            var captured = rating;
-            actions.Children.Add(
-                CreateBulkButton(
-                    $"★{captured}",
-                    () => ApplyPatchAsync(
-                        new AssetUserMetadataPatch(
-                            SetRating: true,
-                            Rating: captured))));
-        }
+                        Rating:
+                            rating.SelectedIndex > 0
+                                ? rating.SelectedIndex
+                                : null)));
 
-        actions.Children.Add(
+        var favoriteOn =
             CreateBulkButton(
-                "お気に入り",
+                "お気に入りにする",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetFavorite: true,
-                        Favorite: true))));
-        actions.Children.Add(
+                        Favorite: true)));
+        var favoriteOff =
             CreateBulkButton(
-                "お気に入り解除",
+                "お気に入りを解除",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetFavorite: true,
-                        Favorite: false))));
+                        Favorite: false)));
 
-        var status =
-            new ComboBox
+        var statusLabels =
+            new[]
             {
-                Width = 118,
-                ItemsSource =
-                    new[]
-                    {
-                        "unsorted",
-                        "reviewed",
-                        "candidate",
-                        "published"
-                    },
-                SelectedIndex = 0,
-                Margin = new Thickness(3)
+                "未整理",
+                "確認済み",
+                "候補",
+                "公開済み"
             };
-        actions.Children.Add(status);
-        actions.Children.Add(
+        var statusValues =
+            new[]
+            {
+                "unsorted",
+                "reviewed",
+                "candidate",
+                "published"
+            };
+        var status =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = statusLabels,
+                    SelectedIndex = 0
+                });
+        var statusApply =
             CreateBulkButton(
                 "状態を適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetStatusLabel: true,
                         StatusLabel:
-                            status.SelectedItem as string))));
+                            statusValues[
+                                Math.Max(
+                                    0,
+                                    status.SelectedIndex)])));
 
-        var color =
-            new ComboBox
+        var colorLabels =
+            new[]
             {
-                Width = 104,
-                ItemsSource =
-                    new[]
-                    {
-                        "red",
-                        "orange",
-                        "yellow",
-                        "green",
-                        "blue",
-                        "purple",
-                        "gray"
-                    },
-                SelectedIndex = 4,
-                Margin = new Thickness(3)
+                "赤",
+                "オレンジ",
+                "黄",
+                "緑",
+                "青",
+                "紫",
+                "グレー"
             };
-        actions.Children.Add(color);
-        actions.Children.Add(
+        var colorValues =
+            new[]
+            {
+                "red",
+                "orange",
+                "yellow",
+                "green",
+                "blue",
+                "purple",
+                "gray"
+            };
+        var color =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    MinWidth = 150,
+                    ItemsSource = colorLabels,
+                    SelectedIndex = 4
+                });
+        var colorApply =
             CreateBulkButton(
-                "色を適用",
+                "カラーを適用",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
                         SetColorLabel: true,
                         ColorLabel:
-                            color.SelectedItem as string))));
+                            colorValues[
+                                Math.Max(
+                                    0,
+                                    color.SelectedIndex)])));
 
         var tag =
-            new TextBox
-            {
-                Width = 128,
-                PlaceholderText = "タグを追加",
-                Margin = new Thickness(3)
-            };
-        actions.Children.Add(tag);
-        actions.Children.Add(
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    MinWidth = 180,
+                    PlaceholderText = "タグ"
+                });
+        var tagAdd =
             CreateBulkButton(
-                "タグ追加",
+                "追加",
                 async () =>
                 {
-                    var value = tag.Text?.Trim();
+                    var value =
+                        tag.Text?.Trim();
                     if (string.IsNullOrWhiteSpace(value))
                     {
                         return;
@@ -540,29 +868,105 @@ internal sealed class CoreViewerShell : UserControl
                         new AssetUserMetadataPatch(
                             AddTags: [value]));
                     tag.Text = string.Empty;
-                }));
-        actions.Children.Add(
+                });
+        var tagClear =
             CreateBulkButton(
-                "タグ全解除",
+                "タグをすべて解除",
                 () => ApplyPatchAsync(
                     new AssetUserMetadataPatch(
-                        ClearTags: true))));
+                        ClearTags: true)));
 
-        actions.Children.Add(
+        var organizationPanel =
+            new StackPanel
+            {
+                Width = 280,
+                Spacing = 8,
+                Margin = new Thickness(4)
+            };
+        organizationPanel.Children.Add(
+            new TextBlock
+            {
+                Text = "整理",
+                FontSize = LumineDesign.BodyFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = LumineDesign.Foreground
+            });
+        organizationPanel.Children.Add(rating);
+        organizationPanel.Children.Add(ratingApply);
+        organizationPanel.Children.Add(favoriteOn);
+        organizationPanel.Children.Add(favoriteOff);
+        organizationPanel.Children.Add(status);
+        organizationPanel.Children.Add(statusApply);
+        organizationPanel.Children.Add(color);
+        organizationPanel.Children.Add(colorApply);
+
+        var tagRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 6
+            };
+        tagRow.Children.Add(tag);
+        Grid.SetColumn(tagAdd, 1);
+        tagRow.Children.Add(tagAdd);
+        organizationPanel.Children.Add(tagRow);
+        organizationPanel.Children.Add(tagClear);
+
+        var organizationFlyout =
+            new Flyout
+            {
+                Content =
+                    new Border
+                    {
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        Padding = new Thickness(10),
+                        Child = organizationPanel
+                    }
+            };
+
+        var organize =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "整理",
+                    Flyout = organizationFlyout,
+                    MinWidth = 76
+                });
+
+        var creativePanel =
+            new StackPanel
+            {
+                Width = 230,
+                Spacing = 6,
+                Margin = new Thickness(4)
+            };
+        creativePanel.Children.Add(
+            new TextBlock
+            {
+                Text = "制作",
+                FontSize = LumineDesign.BodyFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = LumineDesign.Foreground
+            });
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Work",
+                "Workを作成",
                 ShowCreateWorkDialogAsync));
-        actions.Children.Add(
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Generation Group",
+                "生成グループを作成",
                 ShowCreateGenerationGroupDialogAsync));
-        actions.Children.Add(
+        _lineageAction =
             CreateBulkButton(
-                "Lineage",
-                ShowCreateRelationDialogAsync));
-        actions.Children.Add(
+                "Lineageを作成",
+                ShowCreateRelationDialogAsync);
+        creativePanel.Children.Add(
+            _lineageAction);
+        creativePanel.Children.Add(
             CreateBulkButton(
-                "Publication",
+                "公開記録を作成",
                 ShowCreatePublicationDialogAsync));
 
         var delete =
@@ -571,7 +975,43 @@ internal sealed class CoreViewerShell : UserControl
                 DeleteSelectedSourcesAsync);
         delete.Foreground =
             LumineDesign.Danger;
-        actions.Children.Add(delete);
+        creativePanel.Children.Add(delete);
+
+        var creativeFlyout =
+            new Flyout
+            {
+                Content =
+                    new Border
+                    {
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        Padding = new Thickness(10),
+                        Child = creativePanel
+                    }
+            };
+
+        var creative =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "制作",
+                    Flyout = creativeFlyout,
+                    MinWidth = 76
+                });
+
+        _cancelBulkOperationButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "処理をキャンセル",
+                    MinHeight = 28,
+                    Padding = new Thickness(8, 4),
+                    FontSize = LumineDesign.CaptionFontSize,
+                    Margin = new Thickness(3, 0),
+                    IsVisible = false
+                });
+        _cancelBulkOperationButton.Click +=
+            (_, _) => CancelBulkOperation();
 
         var clear =
             CreateBulkButton(
@@ -581,49 +1021,43 @@ internal sealed class CoreViewerShell : UserControl
                     _grid.ClearSelection();
                     return Task.CompletedTask;
                 });
-        actions.Children.Add(clear);
+
+        organize.Margin = new Thickness(3, 0);
+        creative.Margin = new Thickness(3, 0);
+        clear.Margin = new Thickness(3, 0);
+        _bulkActions.Children.Add(organize);
+        _bulkActions.Children.Add(creative);
+        _bulkActions.Children.Add(_cancelBulkOperationButton);
+        _bulkActions.Children.Add(clear);
 
         var top =
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*,Auto"),
-                Margin = new Thickness(10, 7)
+                    new ColumnDefinitions(
+                        "Auto,*,Auto"),
+                ColumnSpacing = 10,
+                Margin = new Thickness(10, 6)
             };
         top.Children.Add(_selectionCount);
 
-        var middle =
+        var summary =
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 10,
-                Margin = new Thickness(12, 0)
+                VerticalAlignment =
+                    VerticalAlignment.Center
             };
-        middle.Children.Add(
+        summary.Children.Add(
             _selectionMetadataSummary);
-        middle.Children.Add(
+        summary.Children.Add(
             _bulkStatus);
-        Grid.SetColumn(middle, 1);
-        top.Children.Add(middle);
+        Grid.SetColumn(summary, 1);
+        top.Children.Add(summary);
 
-        var hint =
-            new TextBlock
-            {
-                Text = "Ctrl: 追加/解除 · Shift: 範囲 · Ctrl+A: すべて",
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = 9.5,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-        Grid.SetColumn(hint, 2);
-        top.Children.Add(hint);
-
-        var root =
-            new StackPanel
-            {
-                Spacing = 2
-            };
-        root.Children.Add(top);
-        root.Children.Add(actions);
+        Grid.SetColumn(_bulkActions, 2);
+        top.Children.Add(_bulkActions);
 
         return new Border
         {
@@ -631,12 +1065,103 @@ internal sealed class CoreViewerShell : UserControl
             BorderBrush = LumineDesign.Border,
             BorderThickness =
                 new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(6, 2, 6, 6),
-            Child = root
+            Child = top
         };
     }
 
-    private static Button CreateBulkButton(
+    private CancellationTokenSource BeginBulkOperation(
+        string status)
+    {
+        var previous =
+            _bulkOperationCancellation;
+        _bulkOperationCancellation = null;
+        if (previous is not null)
+        {
+            previous.Cancel();
+            previous.Dispose();
+        }
+
+        var source =
+            new CancellationTokenSource();
+        _bulkOperationCancellation =
+            source;
+        if (_cancelBulkOperationButton is not null)
+        {
+            _cancelBulkOperationButton.IsVisible = true;
+            _cancelBulkOperationButton.IsEnabled = true;
+        }
+
+        _bulkStatus.Foreground =
+            LumineDesign.MutedForeground;
+        _bulkStatus.Text =
+            status;
+        return source;
+    }
+
+    private void CancelBulkOperation()
+    {
+        var source =
+            _bulkOperationCancellation;
+        if (source is null
+            || source.IsCancellationRequested)
+        {
+            return;
+        }
+
+        source.Cancel();
+        if (_cancelBulkOperationButton is not null)
+        {
+            _cancelBulkOperationButton.IsEnabled = false;
+        }
+
+        _bulkStatus.Text =
+            "キャンセルしています…";
+    }
+
+    private void CompleteBulkOperation(
+        CancellationTokenSource source)
+    {
+        if (ReferenceEquals(
+                _bulkOperationCancellation,
+                source))
+        {
+            _bulkOperationCancellation = null;
+            if (_cancelBulkOperationButton is not null)
+            {
+                _cancelBulkOperationButton.IsVisible = false;
+                _cancelBulkOperationButton.IsEnabled = true;
+            }
+        }
+
+        source.Dispose();
+    }
+
+    private async Task<T> RunBulkOperationAsync<T>(
+        string status,
+        Func<CancellationToken, Task<T>> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        var source =
+            BeginBulkOperation(status);
+        try
+        {
+            return await action(
+                source.Token);
+        }
+        catch (OperationCanceledException)
+            when (source.IsCancellationRequested)
+        {
+            _bulkStatus.Text =
+                "操作をキャンセルしました。";
+            throw;
+        }
+        finally
+        {
+            CompleteBulkOperation(source);
+        }
+    }
+
+    private Button CreateBulkButton(
         string label,
         Func<Task> action)
     {
@@ -647,7 +1172,7 @@ internal sealed class CoreViewerShell : UserControl
                     Content = label,
                     MinHeight = 28,
                     Padding = new Thickness(8, 4),
-                    FontSize = 10,
+                    FontSize = LumineDesign.CaptionFontSize,
                     Margin = new Thickness(3)
                 });
         button.Click +=
@@ -657,6 +1182,18 @@ internal sealed class CoreViewerShell : UserControl
                 try
                 {
                     await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    _bulkStatus.Foreground =
+                        LumineDesign.Danger;
+                    _bulkStatus.Text =
+                        "操作を完了できませんでした。";
                 }
                 finally
                 {
@@ -670,26 +1207,42 @@ internal sealed class CoreViewerShell : UserControl
         object? sender,
         ViewerSelectionSnapshot selection)
     {
+        var isBulk =
+            selection.Count > 1;
         _selectionBar.IsVisible =
-            selection.Count > 0;
+            isBulk;
+        if (_lineageAction is not null)
+        {
+            _lineageAction.IsEnabled =
+                selection.Count == 2;
+        }
+        _bulkActions.IsVisible = isBulk;
+        _selectionCount.IsVisible = isBulk;
+        _selectionMetadataSummary.IsVisible = isBulk;
         _selectionCount.Text =
-            selection.Count == 1
-                ? "1件を選択"
-                : $"{selection.Count:N0}件を選択";
-        _bulkStatus.Text = string.Empty;
-        _selectionMetadataSummary.Text =
-            selection.Count > 0
-                ? "整理情報を確認中…"
+            isBulk
+                ? $"{selection.Count:N0}件"
                 : string.Empty;
+        _bulkStatus.Text = string.Empty;
+        const int detailedSummaryLimit = 256;
+        var canSummarize =
+            isBulk
+            && selection.Count <= detailedSummaryLimit;
+        _selectionMetadataSummary.Text =
+            canSummarize
+                ? "整理情報を確認中…"
+                : isBulk
+                    ? "複数選択"
+                    : string.Empty;
 
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation =
-            selection.Count > 0
+            canSummarize
                 ? new CancellationTokenSource()
                 : null;
 
-        if (selection.Count > 0)
+        if (canSummarize)
         {
             try
             {
@@ -709,10 +1262,6 @@ internal sealed class CoreViewerShell : UserControl
 
         var hasPrimary =
             selection.PrimaryIndex >= 0;
-        _detailToggle.IsEnabled =
-            hasPrimary;
-        _focusButton.IsEnabled =
-            hasPrimary;
 
         if (!hasPrimary)
         {
@@ -751,8 +1300,8 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        var assets =
-            await ResolveSelectedAssetsAsync(
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync(
                 cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -760,9 +1309,7 @@ internal sealed class CoreViewerShell : UserControl
             await _runtime.LibraryService
                 .GetUserMetadataSelectionSummaryAsync(
                     _runtime.Library.Id,
-                    assets.Select(
-                            static asset => asset.Id)
-                        .ToArray(),
+                    assetIds,
                     cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -817,196 +1364,279 @@ internal sealed class CoreViewerShell : UserControl
     }
 
     private async Task<IReadOnlyList<ViewerAsset>>
-        ResolveSelectedAssetsAsync(
+        ResolveSelectedRelationAssetsAsync(
             CancellationToken cancellationToken = default)
     {
+        if (_grid.SelectedAssetCount != 2)
+        {
+            return Array.Empty<ViewerAsset>();
+        }
+
         var indices =
             _grid.SelectedAssetIndices;
         var assets =
-            new List<ViewerAsset>(indices.Count);
+            new ViewerAsset[2];
 
-        foreach (var index in indices)
+        for (var position = 0;
+             position < assets.Length;
+             position++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            assets.Add(
+            assets[position] =
                 await _runtime.ViewerSession.GetAssetAsync(
-                    index,
-                    cancellationToken));
+                    indices[position],
+                    cancellationToken);
         }
 
         return assets;
     }
 
-    private async Task ApplyPatchAsync(
-        AssetUserMetadataPatch patch)
+    private async Task<CreativeSelectionPreview>
+        CreateSelectionPreviewAsync(
+            int sampleLimit = 8,
+            CancellationToken cancellationToken = default)
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var count =
+            _grid.SelectedAssetCount;
+        if (count <= 0)
         {
-            return;
+            return new CreativeSelectionPreview(
+                0,
+                Array.Empty<string>());
         }
 
-        _bulkStatus.Text =
-            "更新しています…";
+        var indices =
+            _grid.SelectedAssetIndices;
+        var sampleCount =
+            Math.Min(
+                count,
+                Math.Max(0, sampleLimit));
+        var names =
+            new string[sampleCount];
 
-        var updated =
-            await _runtime.LibraryService.PatchUserMetadataAsync(
-                _runtime.Library.Id,
-                assets.Select(
-                        static asset => asset.Id)
-                    .ToArray(),
-                patch);
-
-        _bulkStatus.Text =
-            $"{updated:N0}件を更新しました。";
-
-        if (_afterBulkMutation is not null)
+        for (var position = 0;
+             position < sampleCount;
+             position++)
         {
-            await _afterBulkMutation();
+            cancellationToken.ThrowIfCancellationRequested();
+            var asset =
+                await _runtime.ViewerSession.GetAssetAsync(
+                    indices[position],
+                    cancellationToken);
+            names[position] =
+                asset.DisplayName;
         }
+
+        return new CreativeSelectionPreview(
+            count,
+            names);
     }
 
-    internal async Task<WorkInfo?> CreateWorkFromSelectionAsync(
+    private ValueTask<IReadOnlyList<long>>
+        ResolveSelectedAssetIdsAsync(
+            CancellationToken cancellationToken = default) =>
+        _runtime.ViewerSession.GetAssetIdsAsync(
+            _grid.SelectedAssetIndices,
+            cancellationToken);
+
+    private Task ApplyPatchAsync(
+        AssetUserMetadataPatch patch) =>
+        RunBulkOperationAsync(
+            "更新しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return 0;
+                }
+
+                var updated =
+                    await _runtime.LibraryService.PatchUserMetadataAsync(
+                        _runtime.Library.Id,
+                        assetIds,
+                        patch,
+                        cancellationToken);
+
+                _bulkStatus.Text =
+                    $"{updated:N0}件を更新しました。";
+
+                if (_afterBulkMutation is not null)
+                {
+                    await _afterBulkMutation();
+                }
+
+                return updated;
+            });
+
+    internal Task<WorkInfo?> CreateWorkFromSelectionAsync(
         CreativeWorkDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService.CreateWorkAsync(
-                _runtime.Library.Id,
-                new WorkCreate(
-                    input.Title,
-                    input.Description,
-                    assets.Select(
-                            static asset => asset.Id)
-                        .ToArray()));
-        _bulkStatus.Text =
-            $"Work「{created.Title}」を作成しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+        return RunBulkOperationAsync<WorkInfo?>(
+            "Workを作成しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService.CreateWorkAsync(
+                        _runtime.Library.Id,
+                        new WorkCreate(
+                            input.Title,
+                            input.Description,
+                            assetIds),
+                        cancellationToken);
+                _bulkStatus.Text =
+                    $"Work「{created.Title}」を作成しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<GenerationGroupInfo?>
+    internal Task<GenerationGroupInfo?>
         CreateGenerationGroupFromSelectionAsync(
             CreativeGroupDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService
-                .CreateGenerationGroupAsync(
-                    _runtime.Library.Id,
-                    new GenerationGroupCreate(
-                        input.Name,
-                        assets.Select(
-                                static asset => asset.Id)
-                            .ToArray(),
-                        WorkId: input.WorkId,
-                        Prompt: input.Prompt,
-                        NegativePrompt:
-                            input.NegativePrompt,
-                        ModelName: input.ModelName,
-                        Sampler: input.Sampler,
-                        Scheduler: input.Scheduler,
-                        Steps: input.Steps,
-                        CfgScale: input.CfgScale,
-                        WorkflowJson:
-                            input.WorkflowJson,
-                        Notes: input.Notes));
-        _bulkStatus.Text =
-            $"Generation Group「{created.Name}」を作成しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+        return RunBulkOperationAsync<GenerationGroupInfo?>(
+            "Generation Groupを作成しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreateGenerationGroupAsync(
+                            _runtime.Library.Id,
+                            new GenerationGroupCreate(
+                                input.Name,
+                                assetIds,
+                                WorkId: input.WorkId,
+                                Prompt: input.Prompt,
+                                NegativePrompt:
+                                    input.NegativePrompt,
+                                ModelName: input.ModelName,
+                                Sampler: input.Sampler,
+                                Scheduler: input.Scheduler,
+                                Steps: input.Steps,
+                                CfgScale: input.CfgScale,
+                                WorkflowJson:
+                                    input.WorkflowJson,
+                                Notes: input.Notes),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Generation Group「{created.Name}」を作成しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<AssetRelationInfo?>
+    internal Task<AssetRelationInfo?>
         CreateRelationFromSelectionAsync(
             CreativeRelationDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count != 2)
-        {
-            _bulkStatus.Text =
-                "Lineageは2枚を選択して作成してください。";
-            return null;
-        }
 
-        var parent =
-            input.ReverseDirection
-                ? assets[1]
-                : assets[0];
-        var child =
-            input.ReverseDirection
-                ? assets[0]
-                : assets[1];
+        return RunBulkOperationAsync<AssetRelationInfo?>(
+            "Lineageを作成しています…",
+            async cancellationToken =>
+            {
+                var assets =
+                    await ResolveSelectedRelationAssetsAsync(
+                        cancellationToken);
+                if (assets.Count != 2)
+                {
+                    _bulkStatus.Text =
+                        "Lineageは2枚を選択して作成してください。";
+                    return null;
+                }
 
-        var created =
-            await _runtime.LibraryService
-                .CreateAssetRelationAsync(
-                    _runtime.Library.Id,
-                    new AssetRelationCreate(
-                        parent.Id,
-                        child.Id,
-                        input.RelationType,
-                        input.Note));
-        _bulkStatus.Text =
-            $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        return created;
+                var parent =
+                    input.ReverseDirection
+                        ? assets[1]
+                        : assets[0];
+                var child =
+                    input.ReverseDirection
+                        ? assets[0]
+                        : assets[1];
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreateAssetRelationAsync(
+                            _runtime.Library.Id,
+                            new AssetRelationCreate(
+                                parent.Id,
+                                child.Id,
+                                input.RelationType,
+                                input.Note),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"{created.Parent.FileName} → {created.Child.FileName} · {created.RelationType} を保存しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return created;
+            });
     }
 
-    internal async Task<PublicationInfo?>
+    internal Task<PublicationInfo?>
         CreatePublicationFromSelectionAsync(
             CreativePublicationDialogResult input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
-        {
-            return null;
-        }
 
-        var created =
-            await _runtime.LibraryService
-                .CreatePublicationAsync(
-                    _runtime.Library.Id,
-                    new PublicationCreate(
-                        assets.Select(
-                                static asset => asset.Id)
-                            .ToArray(),
-                        input.Destination,
-                        input.PublishedAtUtc,
-                        WorkId: input.WorkId,
-                        Title: input.Title,
-                        Body: input.Body,
-                        TagsSnapshot: input.Tags,
-                        Account: input.Account,
-                        ExternalId: input.ExternalId,
-                        ExternalUrl: input.ExternalUrl,
-                        PlatformMetadataJson:
-                            input.PlatformMetadataJson));
-        _bulkStatus.Text =
-            $"Publicationを{created.Destination}の履歴へ保存しました。";
-        await RefreshContextAfterCreativeMutationAsync();
-        _entryRequested?.Invoke(
-            "publication");
-        return created;
+        return RunBulkOperationAsync<PublicationInfo?>(
+            "Publicationを保存しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var created =
+                    await _runtime.LibraryService
+                        .CreatePublicationAsync(
+                            _runtime.Library.Id,
+                            new PublicationCreate(
+                                assetIds,
+                                input.Destination,
+                                input.PublishedAtUtc,
+                                WorkId: input.WorkId,
+                                Title: input.Title,
+                                Body: input.Body,
+                                TagsSnapshot: input.Tags,
+                                Account: input.Account,
+                                ExternalId: input.ExternalId,
+                                ExternalUrl: input.ExternalUrl,
+                                PlatformMetadataJson:
+                                    input.PlatformMetadataJson),
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Publicationを{created.Destination}の履歴へ保存しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                _entryRequested?.Invoke(
+                    "publication");
+                return created;
+            });
     }
 
     private async Task RefreshContextAfterCreativeMutationAsync()
@@ -1023,9 +1653,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateWorkDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1041,7 +1671,7 @@ internal sealed class CoreViewerShell : UserControl
         var input =
             await CreativeArchiveDialogs.ShowWorkAsync(
                 owner,
-                assets);
+                selection);
         if (input is not null)
         {
             await CreateWorkFromSelectionAsync(
@@ -1051,9 +1681,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateGenerationGroupDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1073,7 +1703,7 @@ internal sealed class CoreViewerShell : UserControl
             await CreativeArchiveDialogs
                 .ShowGenerationGroupAsync(
                     owner,
-                    assets,
+                    selection,
                     works);
         if (input is not null)
         {
@@ -1084,8 +1714,15 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreateRelationDialogAsync()
     {
+        if (_grid.SelectedAssetCount != 2)
+        {
+            _bulkStatus.Text =
+                "Lineageは2枚を選択してください。";
+            return;
+        }
+
         var assets =
-            await ResolveSelectedAssetsAsync();
+            await ResolveSelectedRelationAssetsAsync();
         if (assets.Count != 2)
         {
             _bulkStatus.Text =
@@ -1114,9 +1751,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreatePublicationDialogAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
         {
             return;
         }
@@ -1136,7 +1773,7 @@ internal sealed class CoreViewerShell : UserControl
             await CreativeArchiveDialogs
                 .ShowPublicationAsync(
                     owner,
-                    assets,
+                    selection,
                     works);
         if (input is not null)
         {
@@ -1147,9 +1784,9 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task DeleteSelectedSourcesAsync()
     {
-        var assets =
-            await ResolveSelectedAssetsAsync();
-        if (assets.Count == 0)
+        var selectedCount =
+            _grid.SelectedAssetCount;
+        if (selectedCount == 0)
         {
             return;
         }
@@ -1167,7 +1804,7 @@ internal sealed class CoreViewerShell : UserControl
             await ProductDialogs.ConfirmAsync(
                 owner,
                 "元ファイルを削除しますか？",
-                $"{assets.Count:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
+                $"{selectedCount:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
                 "この操作はLumineから元に戻せません。Work / Generation Group / Publication等の履歴は、参照可能なsnapshotを保持する場合があります。",
                 confirmLabel: "元ファイルを削除",
                 tone: ProductDialogTone.Danger);
@@ -1176,88 +1813,125 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        _bulkStatus.Text =
-            "元ファイルを削除しています…";
-
-        var root =
-            Path.TrimEndingDirectorySeparator(
-                Path.GetFullPath(
-                    _runtime.LibraryRoot));
-        var prefix =
-            root
-            + Path.DirectorySeparatorChar;
-        var removed =
-            new List<string>();
-        var failures =
-            new List<string>();
-
-        await Task.Run(
-            () =>
+        await RunBulkOperationAsync(
+            "元ファイルを削除しています…",
+            async cancellationToken =>
             {
-                foreach (var asset in assets)
+                var selectedIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (selectedIds.Count == 0)
                 {
-                    var relative =
-                        asset.RelativePath.Replace(
-                            '/',
-                            Path.DirectorySeparatorChar);
-                    var source =
-                        Path.GetFullPath(
-                            Path.Combine(
-                                root,
-                                relative));
-
-                    if (!source.StartsWith(
-                            prefix,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (File.Exists(source))
-                        {
-                            File.Delete(source);
-                        }
-
-                        removed.Add(
-                            asset.RelativePath);
-                    }
-                    catch (
-                        IOException)
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                    }
-                    catch (
-                        UnauthorizedAccessException)
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                    }
+                    return 0;
                 }
+
+                // Resolve source paths through one background Library batch
+                // rather than issuing one Viewer metadata request per item.
+                var assets =
+                    await _runtime.LibraryService.GetAssetsByIdsAsync(
+                        _runtime.Library.Id,
+                        selectedIds,
+                        cancellationToken);
+
+                var root =
+                    Path.TrimEndingDirectorySeparator(
+                        Path.GetFullPath(
+                            _runtime.LibraryRoot));
+                var prefix =
+                    root
+                    + Path.DirectorySeparatorChar;
+                var removed =
+                    new List<string>();
+                var failures =
+                    new List<string>();
+                var cancelled =
+                    false;
+
+                await Task.Run(
+                    () =>
+                    {
+                        foreach (var asset in assets)
+                        {
+                            if (cancellationToken
+                                .IsCancellationRequested)
+                            {
+                                cancelled = true;
+                                break;
+                            }
+
+                            var relative =
+                                asset.RelativePath.Replace(
+                                    '/',
+                                    Path.DirectorySeparatorChar);
+                            var source =
+                                Path.GetFullPath(
+                                    Path.Combine(
+                                        root,
+                                        relative));
+
+                            if (!source.StartsWith(
+                                    prefix,
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                                continue;
+                            }
+
+                            try
+                            {
+                                if (File.Exists(source))
+                                {
+                                    File.Delete(source);
+                                }
+
+                                removed.Add(
+                                    asset.RelativePath);
+                            }
+                            catch (IOException)
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                            }
+                            catch (UnauthorizedAccessException)
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                            }
+                        }
+                    });
+
+                // Cancellation can arrive after physical files have already
+                // been deleted. Always reconcile those successful deletions
+                // before surfacing cancellation so Library state never keeps
+                // stale rows for files Lumine removed.
+                if (removed.Count > 0)
+                {
+                    await _runtime.LibraryService.RemoveAssetsAsync(
+                        _runtime.Library.Id,
+                        removed,
+                        CancellationToken.None);
+                    _grid.ClearSelection();
+                }
+
+                if (_afterBulkMutation is not null
+                    && removed.Count > 0)
+                {
+                    await _afterBulkMutation();
+                }
+
+                if (cancelled
+                    || cancellationToken.IsCancellationRequested)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                _bulkStatus.Text =
+                    failures.Count == 0
+                        ? $"{removed.Count:N0}件の元ファイルを削除しました。"
+                        : $"{removed.Count:N0}件を削除、{failures.Count:N0}件は削除できませんでした。";
+                return removed.Count;
             });
-
-        if (removed.Count > 0)
-        {
-            await _runtime.LibraryService.RemoveAssetsAsync(
-                _runtime.Library.Id,
-                removed);
-        }
-
-        _grid.ClearSelection();
-
-        _bulkStatus.Text =
-            failures.Count == 0
-                ? $"{removed.Count:N0}件の元ファイルを削除しました。"
-                : $"{removed.Count:N0}件を削除、{failures.Count:N0}件は削除できませんでした。";
-
-        if (_afterBulkMutation is not null)
-        {
-            await _afterBulkMutation();
-        }
     }
 
     private async void OnShellKeyDown(
@@ -1291,6 +1965,20 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        if (e.Key == Key.I)
+        {
+            e.Handled = true;
+            await ShowContextDetailAsync();
+            return;
+        }
+
+        if (e.Key == Key.F)
+        {
+            e.Handled = true;
+            await ToggleFavoriteAsync();
+            return;
+        }
+
         AssetUserMetadataPatch? patch =
             e.Key switch
             {
@@ -1318,10 +2006,6 @@ internal sealed class CoreViewerShell : UserControl
                     new AssetUserMetadataPatch(
                         SetRating: true,
                         Rating: 5),
-                Key.F =>
-                    new AssetUserMetadataPatch(
-                        SetFavorite: true,
-                        Favorite: true),
                 _ => null
             };
 
@@ -1337,6 +2021,34 @@ internal sealed class CoreViewerShell : UserControl
             e.Handled = true;
             await DeleteSelectedSourcesAsync();
         }
+    }
+
+    private async Task ToggleFavoriteAsync()
+    {
+        var primaryIndex =
+            _grid.SelectedAssetIndex;
+        if (primaryIndex < 0)
+        {
+            return;
+        }
+
+        var asset =
+            await _runtime.ViewerSession.GetAssetAsync(
+                primaryIndex);
+        var metadata =
+            await _runtime.LibraryService
+                .GetUserMetadataAsync(
+                    _runtime.Library.Id,
+                    asset.Id);
+
+        var current =
+            metadata?.Favorite
+            ?? asset.Favorite;
+
+        await ApplyPatchAsync(
+            new AssetUserMetadataPatch(
+                SetFavorite: true,
+                Favorite: !current));
     }
 
     public void SetBrowseLayout(
@@ -1371,11 +2083,23 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         _detached = true;
+        if (_focusedSurface.IsVisible)
+        {
+            CloseFocusedView();
+        }
+
         _grid.SelectionChanged -= OnSelectionChanged;
         _grid.AssetInvoked -= OnAssetInvoked;
+        _grid.AssetDetailRequested -= OnAssetDetailRequested;
+        _grid.AssetContextRequested -= OnAssetContextRequested;
+        _detail.FullScreenToggleRequested -=
+            OnFullScreenToggleRequested;
         _selectionSummaryCancellation?.Cancel();
         _selectionSummaryCancellation?.Dispose();
         _selectionSummaryCancellation = null;
+        _bulkOperationCancellation?.Cancel();
+        _bulkOperationCancellation?.Dispose();
+        _bulkOperationCancellation = null;
         KeyDown -= OnShellKeyDown;
         _contextDetail.PrepareForDetach();
         _detail.UnbindGrid();
