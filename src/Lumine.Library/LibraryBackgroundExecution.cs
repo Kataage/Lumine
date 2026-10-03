@@ -250,6 +250,19 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<IReadOnlyList<string>> SetAssetTagsAsync(
+        long libraryId,
+        long assetId,
+        IReadOnlyList<string> tagNames,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.SetAssetTagsAsync(
+                libraryId,
+                assetId,
+                tagNames,
+                token),
+            cancellationToken);
+
     public Task<int> PatchUserMetadataAsync(
         long libraryId,
         IReadOnlyList<long> assetIds,
