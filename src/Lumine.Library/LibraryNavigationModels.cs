@@ -19,6 +19,7 @@ public sealed record LibraryFolderInfo(
 public sealed record LibraryTagInfo(
     long Id,
     string Name,
+    string Color,
     long AssetCount);
 
 
