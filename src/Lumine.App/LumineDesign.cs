@@ -5,39 +5,40 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Lumine.Core;
 
 namespace Lumine.App;
 
 internal static class LumineDesign
 {
     public static readonly Color BackgroundColor =
-        Color.Parse("#09090B");
+        Color.Parse(LumineVisualPalette.Background);
     public static readonly Color SurfaceColor =
-        Color.Parse("#0D0D10");
+        Color.Parse(LumineVisualPalette.Surface);
     public static readonly Color SurfaceRaisedColor =
-        Color.Parse("#151518");
+        Color.Parse(LumineVisualPalette.SurfaceRaised);
     public static readonly Color ControlSurfaceColor =
-        Color.Parse("#1C1C20");
+        Color.Parse(LumineVisualPalette.ControlSurface);
     public static readonly Color ControlHoverColor =
-        Color.Parse("#242429");
+        Color.Parse(LumineVisualPalette.ControlHover);
     public static readonly Color BorderColor =
-        Color.Parse("#29292F");
+        Color.Parse(LumineVisualPalette.Border);
     public static readonly Color BorderStrongColor =
-        Color.Parse("#71717A");
+        Color.Parse(LumineVisualPalette.BorderStrong);
     public static readonly Color ForegroundColor =
-        Color.Parse("#FAFAFA");
+        Color.Parse(LumineVisualPalette.Foreground);
     public static readonly Color MutedForegroundColor =
-        Color.Parse("#A1A1AA");
+        Color.Parse(LumineVisualPalette.MutedForeground);
     public static readonly Color AccentColor =
-        Color.Parse("#FAFAFA");
+        Color.Parse(LumineVisualPalette.Accent);
     public static readonly Color AccentMutedColor =
-        Color.Parse("#222227");
+        Color.Parse(LumineVisualPalette.AccentMuted);
     public static readonly Color DangerColor =
-        Color.Parse("#F87171");
+        Color.Parse(LumineVisualPalette.Danger);
     public static readonly Color WarningColor =
-        Color.Parse("#FBBF24");
+        Color.Parse(LumineVisualPalette.Warning);
     public static readonly Color FocusColor =
-        Color.Parse("#D4D4D8");
+        Color.Parse(LumineVisualPalette.Focus);
 
     public static readonly IBrush Background =
         new SolidColorBrush(BackgroundColor);
