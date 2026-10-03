@@ -596,6 +596,12 @@ internal static class ProductNavigationViews
                         new Thickness(2),
                     CornerRadius =
                         new CornerRadius(12),
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space4,
+                            LumineDesign.Space4),
                     Content =
                         new Border
                         {
