@@ -56,7 +56,7 @@ internal static class LumineDesign
         new SolidColorBrush(BorderStrongColor);
     public static readonly IBrush ModalScrim =
         new SolidColorBrush(
-            Color.FromArgb(190, 0, 0, 0));
+            Color.Parse(LumineVisualPalette.ModalScrim));
     public static readonly IBrush Foreground =
         new SolidColorBrush(ForegroundColor);
     public static readonly IBrush MutedForeground =
