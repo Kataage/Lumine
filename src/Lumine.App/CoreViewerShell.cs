@@ -1040,7 +1040,7 @@ internal sealed class CoreViewerShell : UserControl
         };
     }
 
-    private static Button CreateBulkButton(
+    private Button CreateBulkButton(
         string label,
         Func<Task> action)
     {
@@ -1061,6 +1061,18 @@ internal sealed class CoreViewerShell : UserControl
                 try
                 {
                     await action();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    _bulkStatus.Foreground =
+                        LumineDesign.Danger;
+                    _bulkStatus.Text =
+                        "操作を完了できませんでした。";
                 }
                 finally
                 {
