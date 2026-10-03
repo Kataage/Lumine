@@ -165,7 +165,17 @@ internal sealed class ManagedTagPicker : UserControl
                 });
         _create.Click +=
             async (_, _) =>
-                await CreateAndAssignAsync();
+            {
+                try
+                {
+                    await CreateAndAssignAsync();
+                }
+                catch (Exception exception)
+                {
+                    _candidateSummary.Text =
+                        $"タグを作成できませんでした: {exception.Message}";
+                }
+            };
 
         var createBody =
             new StackPanel
@@ -386,7 +396,17 @@ internal sealed class ManagedTagPicker : UserControl
             var current = name;
             chip.Click +=
                 async (_, _) =>
-                    await RemoveAsync(current);
+                {
+                    try
+                    {
+                        await RemoveAsync(current);
+                    }
+                    catch (Exception exception)
+                    {
+                        _candidateSummary.Text =
+                            $"タグを外せませんでした: {exception.Message}";
+                    }
+                };
             _assigned.Children.Add(chip);
         }
     }
@@ -490,7 +510,17 @@ internal sealed class ManagedTagPicker : UserControl
             var current = tag;
             button.Click +=
                 async (_, _) =>
-                    await ToggleAsync(current);
+                {
+                    try
+                    {
+                        await ToggleAsync(current);
+                    }
+                    catch (Exception exception)
+                    {
+                        _candidateSummary.Text =
+                            $"タグを追加できませんでした: {exception.Message}";
+                    }
+                };
             _candidates.Children.Add(button);
         }
 
@@ -576,8 +606,24 @@ internal sealed class ManagedTagPicker : UserControl
                 await _runtime.LibraryService.ListTagsAsync(
                     _runtime.Library.Id,
                     limit: 512);
+            var before =
+                SelectedTags;
             _selected.Add(created.Name);
-            await _applyTags(SelectedTags);
+            try
+            {
+                await _applyTags(SelectedTags);
+            }
+            catch
+            {
+                _selected.Clear();
+                foreach (var tag in before)
+                {
+                    _selected.Add(tag);
+                }
+
+                throw;
+            }
+
             _search.Text = string.Empty;
             RenderAssigned();
             RenderCandidates();
