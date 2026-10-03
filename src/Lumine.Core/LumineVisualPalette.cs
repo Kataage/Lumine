@@ -25,3 +25,31 @@ public static class LumineVisualPalette
     public const string Focus = "#D4D4D8";
     public const string Selection = "#E4E4E7";
 }
+
+
+/// <summary>
+/// Shared visual metrics that must remain identical across App and Viewer.
+/// The text scale is configured once from the Windows accessibility setting
+/// before product controls are constructed.
+/// </summary>
+public static class LumineVisualMetrics
+{
+    private static double _textScaleFactor = 1d;
+
+    public static double TextScaleFactor =>
+        Volatile.Read(ref _textScaleFactor);
+
+    public static void ConfigureTextScaleFactor(
+        double factor)
+    {
+        if (!double.IsFinite(factor))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(factor));
+        }
+
+        Volatile.Write(
+            ref _textScaleFactor,
+            Math.Clamp(factor, 1d, 2.25d));
+    }
+}
