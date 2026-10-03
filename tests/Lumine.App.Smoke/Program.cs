@@ -1875,7 +1875,7 @@ try
                     var restoredFocus =
                         window.FocusManager.GetFocusedElement();
                     Console.WriteLine(
-                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}");
+                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}; grid-bounds={window.CurrentShell.GridViewer.Bounds}; realized-rows={window.CurrentShell.GridViewer.RealizedRowCount}; first-realized={window.CurrentShell.GridViewer.FirstRealizedAssetIndex}; first-visible={window.CurrentShell.GridViewer.FirstVisibleAssetIndex}; last-visible={window.CurrentShell.GridViewer.LastVisibleAssetIndex}; columns={window.CurrentShell.GridViewer.Columns}; assets={window.CurrentShell.GridViewer.AssetCount}");
                     Require(
                         window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
