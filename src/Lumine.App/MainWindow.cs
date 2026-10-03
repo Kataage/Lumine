@@ -26,6 +26,7 @@ public sealed class MainWindow : Window
     private readonly ContentControl _viewerHost;
     private readonly ContentControl _browseHost;
     private readonly Grid _workspaceContent;
+    private readonly Grid _workspaceHost;
     private readonly ContentControl _workspacePageHost;
     private readonly ContentControl _lightboxHost;
     private readonly Grid _appShell;
@@ -33,6 +34,7 @@ public sealed class MainWindow : Window
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
     private readonly Border _navigationPane;
+    private readonly Button _navigationPin;
     private readonly TextBlock _navigationTitle;
     private readonly ContentControl _navigationContent;
     private CancellationTokenSource? _openCancellation;
@@ -46,6 +48,7 @@ public sealed class MainWindow : Window
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
     private bool _compactNavigationLayout;
+    private bool _navigationPinned;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -247,17 +250,17 @@ public sealed class MainWindow : Window
                     VerticalAlignment.Stretch
             };
 
-        var workspace =
+        _workspaceHost =
             new Grid
             {
                 Background =
                     LumineDesign.Background
             };
-        workspace.Children.Add(
+        _workspaceHost.Children.Add(
             _workspaceContent);
-        workspace.Children.Add(
+        _workspaceHost.Children.Add(
             _workspacePageHost);
-        workspace.Children.Add(
+        _workspaceHost.Children.Add(
             _statusSurface);
 
         _navigationRailHost =
@@ -285,6 +288,21 @@ public sealed class MainWindow : Window
                     VerticalAlignment.Center
             };
 
+        _navigationPin =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "固定",
+                    MinHeight = 28,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space2)
+                });
+        ToolTip.SetTip(
+            _navigationPin,
+            "ナビゲーションを画像一覧の横に固定");
+
         var collapseNavigation =
             LumineDesign.ConfigureIconButton(
                 new Button
@@ -300,12 +318,17 @@ public sealed class MainWindow : Window
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto"),
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing =
+                    LumineDesign.Space4,
                 Margin = new Thickness(12, 10, 8, 8)
             };
         navigationHeader.Children.Add(
             _navigationTitle);
-        Grid.SetColumn(collapseNavigation, 1);
+        Grid.SetColumn(_navigationPin, 1);
+        navigationHeader.Children.Add(
+            _navigationPin);
+        Grid.SetColumn(collapseNavigation, 2);
         navigationHeader.Children.Add(
             collapseNavigation);
 
@@ -345,63 +368,44 @@ public sealed class MainWindow : Window
             };
         collapseNavigation.Click +=
             (_, _) =>
+            {
                 _navigationPane.IsVisible = false;
+                ApplyNavigationLayout(
+                    ResolveLayoutWidth());
+            };
+        _navigationPin.Click +=
+            (_, _) =>
+            {
+                _navigationPinned =
+                    !_navigationPinned;
+                UpdateNavigationPinVisual();
+                ApplyNavigationLayout(
+                    ResolveLayoutWidth());
+            };
 
         _appShell = new Grid
         {
             Background = LumineDesign.Background,
             ColumnDefinitions =
                 new ColumnDefinitions(
-                    $"{LumineDesign.NavigationWidth},Auto,*")
+                    $"{LumineDesign.NavigationWidth},*")
         };
         _appShell.Children.Add(
             _navigationRailHost);
+        Grid.SetColumn(_workspaceHost, 1);
+        _appShell.Children.Add(
+            _workspaceHost);
         Grid.SetColumn(_navigationPane, 1);
+        _navigationPane.ZIndex = 20;
         _appShell.Children.Add(
             _navigationPane);
-        Grid.SetColumn(workspace, 2);
-        _appShell.Children.Add(workspace);
-
-        void ApplyResponsiveShell(double width)
-        {
-            _compactNavigationLayout =
-                width <= 1040;
-
-            if (_compactNavigationLayout)
-            {
-                _appShell.ColumnDefinitions =
-                    new ColumnDefinitions(
-                        $"{LumineDesign.NavigationWidth},*");
-                Grid.SetColumn(workspace, 1);
-                Grid.SetColumn(_navigationPane, 1);
-                _navigationPane.HorizontalAlignment =
-                    HorizontalAlignment.Left;
-                _navigationPane.Width =
-                    Math.Clamp(
-                        width - LumineDesign.NavigationWidth - 48,
-                        250,
-                        300);
-                _navigationPane.ZIndex = 20;
-            }
-            else
-            {
-                _appShell.ColumnDefinitions =
-                    new ColumnDefinitions(
-                        $"{LumineDesign.NavigationWidth},Auto,*");
-                Grid.SetColumn(_navigationPane, 1);
-                Grid.SetColumn(workspace, 2);
-                _navigationPane.HorizontalAlignment =
-                    HorizontalAlignment.Stretch;
-                _navigationPane.Width = 280;
-                _navigationPane.ZIndex = 0;
-            }
-        }
 
         SizeChanged +=
             (_, e) =>
-                ApplyResponsiveShell(
+                ApplyNavigationLayout(
                     e.NewSize.Width);
-        ApplyResponsiveShell(Width);
+        UpdateNavigationPinVisual();
+        ApplyNavigationLayout(Width);
 
         _lightboxHost =
             new ContentControl
@@ -574,9 +578,25 @@ public sealed class MainWindow : Window
     internal bool IsNavigationPaneVisibleForSmoke =>
         _navigationPane.IsVisible;
 
+    internal bool IsNavigationPinnedForSmoke =>
+        _navigationPinned;
+
     internal void SetNavigationPaneVisibleForSmoke(
-        bool visible) =>
+        bool visible)
+    {
         _navigationPane.IsVisible = visible;
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
+    }
+
+    internal void SetNavigationPinnedForSmoke(
+        bool pinned)
+    {
+        _navigationPinned = pinned;
+        UpdateNavigationPinVisual();
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
+    }
 
     internal Rect NavigationPaneBounds =>
         _navigationPane.Bounds;
@@ -587,6 +607,91 @@ public sealed class MainWindow : Window
     internal bool IsWorkspaceInteractionEnabled =>
         _appShell.IsHitTestVisible
         && !_lightboxHost.IsVisible;
+
+    private double ResolveLayoutWidth() =>
+        ClientSize.Width > 0
+            ? ClientSize.Width
+            : Width;
+
+    private void ApplyNavigationLayout(
+        double width)
+    {
+        _compactNavigationLayout =
+            width <= 1040;
+
+        var paneCanDock =
+            !_compactNavigationLayout
+            && _navigationPinned
+            && _navigationPane.IsVisible
+            && !IsMainWorkspaceDestination(
+                _navigationDestination);
+
+        _navigationPin.IsEnabled =
+            !_compactNavigationLayout;
+        _navigationPin.IsVisible =
+            !_compactNavigationLayout;
+
+        if (paneCanDock)
+        {
+            _appShell.ColumnDefinitions =
+                new ColumnDefinitions(
+                    $"{LumineDesign.NavigationWidth},Auto,*");
+            Grid.SetColumn(
+                _navigationPane,
+                1);
+            Grid.SetColumn(
+                _workspaceHost,
+                2);
+            _navigationPane.HorizontalAlignment =
+                HorizontalAlignment.Stretch;
+            _navigationPane.Width = 280;
+            _navigationPane.ZIndex = 0;
+            return;
+        }
+
+        _appShell.ColumnDefinitions =
+            new ColumnDefinitions(
+                $"{LumineDesign.NavigationWidth},*");
+        Grid.SetColumn(
+            _workspaceHost,
+            1);
+        Grid.SetColumn(
+            _navigationPane,
+            1);
+        _navigationPane.HorizontalAlignment =
+            HorizontalAlignment.Left;
+        _navigationPane.Width =
+            _compactNavigationLayout
+                ? Math.Clamp(
+                    width
+                    - LumineDesign.NavigationWidth
+                    - 48,
+                    250,
+                    300)
+                : 280;
+        _navigationPane.ZIndex = 20;
+    }
+
+    private void UpdateNavigationPinVisual()
+    {
+        _navigationPin.Content =
+            _navigationPinned
+                ? "固定中"
+                : "固定";
+        _navigationPin.Background =
+            _navigationPinned
+                ? LumineDesign.AccentMuted
+                : LumineDesign.ControlSurface;
+        _navigationPin.BorderBrush =
+            _navigationPinned
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
+        ToolTip.SetTip(
+            _navigationPin,
+            _navigationPinned
+                ? "固定を解除して画像一覧の上に重ねる"
+                : "ナビゲーションを画像一覧の横に固定");
+    }
 
     private void OnNavigationRequested(
         string destination)
@@ -601,6 +706,8 @@ public sealed class MainWindow : Window
             !IsMainWorkspaceDestination(
                 destination);
         _navigationTitle.Text = destination;
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
         _navigationRailHost.Content =
             LumineDesign.CreateNavigationRail(
                 destination,
