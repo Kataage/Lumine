@@ -2271,12 +2271,21 @@ try
                         && window.CurrentShell is not null,
                         "MainWindow did not compose the production Core Viewer runtime/shell.");
 
+                    var shellBeforeSettings =
+                        window.CurrentShell;
+
                     window.NavigateForSmoke(
                         "設定");
                     Dispatcher.UIThread.RunJobs();
                     Require(
-                        window.NavigationContentForSmoke
-                            is Avalonia.Controls.ScrollViewer
+                        window.WorkspacePageForSmoke
+                            is Border
+                        && window.IsWorkspacePageVisibleForSmoke
+                        && !window.IsNavigationPaneVisibleForSmoke
+                        && window.WorkspacePageBoundsForSmoke.Width >= 500
+                        && ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeSettings)
                         && window.SettingsSnapshot.DataPaths.RootPath
                             == repeatedPaths.RootPath
                         && window.SettingsSnapshot.PersistedThumbnailStorageMode
@@ -2291,10 +2300,18 @@ try
                                 ? 512L * 1024 * 1024
                                 : appHost.ResourcePolicy
                                     .EncodedThumbnailMemoryByteLimit),
-                        "Product Settings did not expose viewer/cache/storage state without diagnostics.");
+                        "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
                     Require(
-                        window.NavigationContentForSmoke
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(block =>
+                                string.Equals(
+                                    block.Text,
+                                    "設定",
+                                    StringComparison.Ordinal))
+                        && window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<TextBlock>()
                             .Any(block =>
@@ -2302,7 +2319,7 @@ try
                                     block.Text,
                                     "ディスク保持上限",
                                     StringComparison.Ordinal))
-                        && window.NavigationContentForSmoke
+                        && window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<TextBlock>()
                             .Any(block =>
@@ -2310,7 +2327,18 @@ try
                                     block.Text,
                                     "高速再表示用メモリ上限",
                                     StringComparison.Ordinal)),
-                        "Product Settings did not separate persistent disk retention from temporary memory cache controls.");
+                        "Product Settings did not expose a readable full-page hierarchy for viewer/cache/storage controls.");
+
+                    window.NavigateForSmoke(
+                        "ライブラリ");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsWorkspacePageVisibleForSmoke
+                        && window.IsNavigationPaneVisibleForSmoke
+                        && ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeSettings),
+                        "Returning from Settings did not restore browse navigation without rebuilding the viewer shell.");
 
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
