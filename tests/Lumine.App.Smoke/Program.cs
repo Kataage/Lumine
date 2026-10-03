@@ -6,6 +6,7 @@ using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.App;
 using Lumine.Core;
 using Lumine.Diagnostics;
