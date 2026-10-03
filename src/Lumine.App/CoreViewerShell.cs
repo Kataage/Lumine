@@ -403,8 +403,11 @@ internal sealed class CoreViewerShell : UserControl
         // Keep a stable semantic return target instead of a Control instance.
         // Virtualization may recycle the invoking tile while the lightbox is
         // open; the asset index lets us resolve the current realized tile at
-        // close time.
+        // close time. Ensure the invoking asset has a realized focus target
+        // before entering the modal viewer so the return contract is valid
+        // even after DPI/layout changes.
         _focusedViewReturnIndex = index;
+        await _grid.EnsureAssetFocusTargetAsync(index);
         _grid.FocusAsset(index);
 
         _focusedSurface.IsVisible = true;
