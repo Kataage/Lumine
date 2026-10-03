@@ -724,6 +724,82 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
+        // A short scroll away/back must reuse the existing decoded-cache
+        // entry instead of showing a blank tile while the full async
+        // thumbnail pipeline runs again.
+        for (var attempt = 0;
+             attempt < 250
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.IsAssetReady(0)
+            && viewer.IsAssetWarmForSmoke(0),
+            "Initial first-row thumbnail did not establish a warm-return descriptor.");
+
+        var firstAssetDetached = false;
+        for (var rowOffset = 2;
+             rowOffset <= 32
+             && !firstAssetDetached;
+             rowOffset++)
+        {
+            viewer.ScrollToAsset(
+                Math.Min(
+                    viewer.AssetCount - 1,
+                    checked(
+                        (long)viewer.Columns
+                        * rowOffset)));
+
+            for (var attempt = 0;
+                 attempt < 20;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                firstAssetDetached =
+                    viewer.GetAssetFocusTarget(0)
+                    is null;
+                if (firstAssetDetached)
+                {
+                    break;
+                }
+
+                await Task.Delay(1);
+            }
+        }
+
+        Require(
+            firstAssetDetached
+            && viewer.IsAssetWarmForSmoke(0),
+            "Scroll-away acceptance did not actually virtualize the warm first-row thumbnail.");
+
+        var warmHitsBeforeReturn =
+            viewer.WarmTileHitCountForSmoke;
+        var warmReturnWatch =
+            Stopwatch.StartNew();
+        viewer.ScrollToAsset(0);
+
+        for (var attempt = 0;
+             attempt < 100
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        warmReturnWatch.Stop();
+        Require(
+            viewer.IsAssetReady(0)
+            && viewer.WarmTileHitCountForSmoke
+                > warmHitsBeforeReturn
+            && warmReturnWatch.Elapsed
+                < TimeSpan.FromMilliseconds(150),
+            $"Warm scroll-back did not synchronously reuse the decoded thumbnail within the interactive budget: {warmReturnWatch.Elapsed.TotalMilliseconds:N1} ms.");
+
         var selectAllWatch =
             Stopwatch.StartNew();
         viewer.SelectAll();

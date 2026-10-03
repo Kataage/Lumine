@@ -17,6 +17,9 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly object _bitmapReleaseGate = new();
     private readonly HashSet<Task> _pendingBitmapReleases = [];
     private readonly List<DecodedBitmapLease> _unfencedBitmapLeases = [];
+    private readonly Dictionary<long, WarmPresentation> _warmPresentations = [];
+    private readonly LinkedList<long> _warmPresentationLru = [];
+    private long _warmPresentationHits;
     private Exception? _bitmapReleaseFailure;
 
     // Tile decode tasks extend beyond ViewerSession.GetThumbnailAsync:
@@ -38,6 +41,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private const double GridOuterPadding = 12;
     private const double GridCornerRadius = 10;
+
+    private int WarmPresentationLimit =>
+        Math.Max(
+            16,
+            Math.Min(
+                256,
+                _session.Options.DecodedBitmapEntryLimit * 2));
 
     public ThumbnailViewerControl(
         ViewerSession session,
@@ -106,6 +116,8 @@ public sealed class ThumbnailViewerControl : UserControl
         // where tile decode/file work can outlive the owning window.
         CancelPendingAssetFocus();
         _rows.ItemsSource = null;
+        _warmPresentations.Clear();
+        _warmPresentationLru.Clear();
         ClearSelection();
     }
 
@@ -202,6 +214,17 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public ViewerRuntimeDiagnostics Diagnostics => _session.Diagnostics;
 
+    internal int WarmTileEntryCountForSmoke =>
+        _warmPresentations.Count;
+
+    internal long WarmTileHitCountForSmoke =>
+        _warmPresentationHits;
+
+    internal bool IsAssetWarmForSmoke(long index) =>
+        _warmPresentations.ContainsKey(index);
+
+    internal long? FirstWarmAssetIndexForSmoke =>
+        _warmPresentationLru.First?.Value;
 
     public async Task<bool> EnsureAssetFocusTargetAsync(
         long index)
@@ -712,6 +735,105 @@ public sealed class ThumbnailViewerControl : UserControl
         _compositor =
             ElementComposition.GetElementVisual(this)?.Compositor
             ?? _compositor;
+    }
+
+    private void RememberWarmPresentation(
+        long index,
+        ViewerAsset asset,
+        ViewerThumbnail thumbnail)
+    {
+        if (_warmPresentations.Remove(
+                index,
+                out var previous))
+        {
+            _warmPresentationLru.Remove(
+                previous.Node);
+        }
+
+        var node =
+            _warmPresentationLru.AddLast(
+                index);
+        _warmPresentations[index] =
+            new WarmPresentation(
+                asset,
+                thumbnail,
+                node);
+
+        while (_warmPresentations.Count
+               > WarmPresentationLimit)
+        {
+            var oldest =
+                _warmPresentationLru.First;
+            if (oldest is null)
+            {
+                break;
+            }
+
+            _warmPresentationLru.RemoveFirst();
+            _warmPresentations.Remove(
+                oldest.Value);
+        }
+    }
+
+    private void UpdateWarmPresentationAsset(
+        long index,
+        ViewerAsset asset)
+    {
+        if (!_warmPresentations.TryGetValue(
+                index,
+                out var existing))
+        {
+            return;
+        }
+
+        _warmPresentations[index] =
+            existing with
+            {
+                Asset = asset
+            };
+    }
+
+    private bool TryAcquireWarmPresentation(
+        long index,
+        out ViewerAsset asset,
+        out DecodedBitmapLease lease)
+    {
+        asset = null!;
+        lease = null!;
+
+        if (!_warmPresentations.TryGetValue(
+                index,
+                out var existing))
+        {
+            return false;
+        }
+
+        if (!_session.BitmapCache.TryAcquireExisting(
+                existing.Thumbnail,
+                out var acquired)
+            || acquired is null)
+        {
+            _warmPresentations.Remove(index);
+            _warmPresentationLru.Remove(
+                existing.Node);
+            return false;
+        }
+
+        _warmPresentationLru.Remove(
+            existing.Node);
+        var node =
+            _warmPresentationLru.AddLast(
+                index);
+        _warmPresentations[index] =
+            existing with
+            {
+                Node = node
+            };
+
+        _warmPresentationHits++;
+        asset = existing.Asset;
+        lease = acquired;
+        return true;
     }
 
     private void ReleaseBitmapLeaseAfterComposition(
@@ -1238,6 +1360,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private Control? _selectionBadge;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
+        private ViewerAsset? _asset;
         private bool _isReady;
         private bool _hovered;
 
@@ -1748,9 +1871,33 @@ public sealed class ThumbnailViewerControl : UserControl
         private void StartLoad()
         {
             CancelLoad();
-            _loadCancellation = new CancellationTokenSource();
+            _loadCancellation =
+                new CancellationTokenSource();
+            var token =
+                _loadCancellation.Token;
+
+            if (_owner.TryAcquireWarmPresentation(
+                    _index,
+                    out var warmAsset,
+                    out var warmLease))
+            {
+                _asset = warmAsset;
+                ReplaceBitmapLease(
+                    warmLease);
+                ApplyPresentation(
+                    warmAsset);
+                MarkReady();
+
+                var refresh =
+                    RefreshWarmPresentationAsync(
+                        token);
+                _owner.TrackTileLoad(
+                    refresh);
+                return;
+            }
+
             var load =
-                LoadAsync(_loadCancellation.Token);
+                LoadAsync(token);
             _owner.TrackTileLoad(load);
         }
 
@@ -1783,53 +1930,115 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
 
-        private async Task LoadAsync(CancellationToken cancellationToken)
+        private void ApplyPresentation(
+            ViewerAsset asset)
+        {
+            if (_label is not null)
+            {
+                _label.Text =
+                    asset.DisplayName;
+                _listSecondary!.Text =
+                    FormatListSecondary(asset);
+                return;
+            }
+
+            _captionOverlay!.SetText(
+                asset.DisplayName,
+                FormatFileSize(asset.FileSize),
+                asset.Rating,
+                asset.Favorite);
+        }
+
+        private void MarkReady()
+        {
+            if (_isReady)
+            {
+                return;
+            }
+
+            _isReady = true;
+            _session.NotifyTileReady();
+        }
+
+        private async Task RefreshWarmPresentationAsync(
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var asset =
+                    await _session.GetAssetAsync(
+                        _index,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        cancellationToken
+                            .ThrowIfCancellationRequested();
+                        _asset = asset;
+                        _owner.UpdateWarmPresentationAsset(
+                            _index,
+                            asset);
+                        ApplyPresentation(asset);
+                    });
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                _session.NotifyTileLoadFailed(
+                    exception);
+            }
+        }
+
+        private async Task LoadAsync(
+            CancellationToken cancellationToken)
         {
             DecodedBitmapLease? lease = null;
 
             try
             {
-                var asset = await _session.GetAssetAsync(
-                    _index,
-                    cancellationToken).ConfigureAwait(false);
-                var thumbnail = await _session.GetThumbnailAsync(
-                    asset,
-                    ViewerThumbnailPriority.Foreground,
-                    cancellationToken).ConfigureAwait(false);
-                lease = await _session.BitmapCache.AcquireAsync(
-                    thumbnail,
-                    cancellationToken).ConfigureAwait(false);
+                var asset =
+                    await _session.GetAssetAsync(
+                        _index,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                var thumbnail =
+                    await _session.GetThumbnailAsync(
+                        asset,
+                        ViewerThumbnailPriority.Foreground,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                lease =
+                    await _session.BitmapCache
+                        .AcquireAsync(
+                            thumbnail,
+                            cancellationToken)
+                        .ConfigureAwait(false);
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        cancellationToken
+                            .ThrowIfCancellationRequested();
 
-                    var next = lease;
-                    lease = null;
-                    ReplaceBitmapLease(next);
-                    if (_label is not null)
-                    {
-                        _label.Text = asset.DisplayName;
-                        _listSecondary!.Text =
-                            FormatListSecondary(asset);
-                    }
-                    else
-                    {
-                        _captionOverlay!.SetText(
-                            asset.DisplayName,
-                            FormatFileSize(asset.FileSize),
-                            asset.Rating,
-                            asset.Favorite);
-                    }
-
-                    if (!_isReady)
-                    {
-                        _isReady = true;
-                        _session.NotifyTileReady();
-                    }
-                });
+                        var next = lease;
+                        lease = null;
+                        _asset = asset;
+                        _owner.RememberWarmPresentation(
+                            _index,
+                            asset,
+                            thumbnail);
+                        ReplaceBitmapLease(next);
+                        ApplyPresentation(asset);
+                        MarkReady();
+                    });
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
             {
             }
             catch (Exception exception)
@@ -1858,6 +2067,11 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    private sealed record WarmPresentation(
+        ViewerAsset Asset,
+        ViewerThumbnail Thumbnail,
+        LinkedListNode<long> Node);
+
     internal readonly record struct ViewerTilePresentation(
         string Primary,
         string Secondary,
