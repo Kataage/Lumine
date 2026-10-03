@@ -126,6 +126,12 @@ internal sealed class ManagedTagPicker : UserControl
                         new Thickness(2),
                     CornerRadius =
                         new CornerRadius(13),
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space4,
+                            LumineDesign.Space4),
                     Content =
                         new Border
                         {
@@ -404,7 +410,13 @@ internal sealed class ManagedTagPicker : UserControl
                     BorderThickness =
                         new Thickness(1),
                     CornerRadius =
-                        new CornerRadius(13)
+                        new CornerRadius(13),
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space4,
+                            LumineDesign.Space4)
                 };
             LumineDesign
                 .ConfigureSelectedButtonStateResources(
