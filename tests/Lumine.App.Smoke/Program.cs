@@ -1796,8 +1796,8 @@ try
                         "Pixiv",
                         "@single",
                         "Single Asset Publication",
-                        string.Empty,
-                        string.Empty,
+                        "Single publication body for Inspector parity.",
+                        "#single #art",
                         new DateTimeOffset(
                             2026,
                             10,
@@ -1808,13 +1808,49 @@ try
                             TimeSpan.Zero),
                         "single-acceptance",
                         "https://example.invalid/single",
-                        "{}"));
+                        "{\"aiGenerated\":true,\"ageRestriction\":\"R18\"}"));
             Require(
                 singlePublication is not null
                 && singlePublication.Assets.Count == 1
                 && singlePublication.Assets[0].AssetId
                     == firstContextAsset.Id,
                 "Single-image Publication creation is not semantically reachable.");
+
+            await shell.ContextDetail.ShowAssetAsync(
+                firstContextAsset);
+            shell.ContextDetail.SelectTabForSmoke(2);
+            Dispatcher.UIThread.RunJobs();
+
+            var publicationCardText =
+                string.Join(
+                    "\n",
+                    shell.ContextDetail
+                        .PublicationCardTextForSmoke);
+            Require(
+                shell.ContextDetail.PublicationCardCountForSmoke == 1
+                && shell.ContextDetail.PublicationCountTextForSmoke == "1件"
+                && publicationCardText.Contains(
+                    "Single Asset Publication",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "Single publication body",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "#single #art",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "https://example.invalid/single",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "aiGenerated: true",
+                    StringComparison.OrdinalIgnoreCase)
+                && publicationCardText.Contains(
+                    "ageRestriction: R18",
+                    StringComparison.OrdinalIgnoreCase),
+                "Inspector Publication tab did not render rich publication card fields and platform flags.");
+
+            shell.ContextDetail.SelectTabForSmoke(0);
+            Dispatcher.UIThread.RunJobs();
 
             var editedQueryPage =
                 await shellRuntime.LibraryService.GetAssetPageAsync(
