@@ -78,7 +78,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Button _reset;
     private readonly Button _focused;
     private readonly Avalonia.Controls.Image _preview;
-    private readonly TabControl _tabs;
+    private readonly ContentControl _tabContent;
+    private readonly Button[] _tabButtons;
+    private readonly Control[] _tabPages;
     private readonly object _previewReleaseGate = new();
     private readonly HashSet<Task> _pendingPreviewReleases = [];
     private readonly List<DecodedBitmapLease> _unfencedPreviewLeases = [];
@@ -91,6 +93,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private bool _loadingEditor;
     private bool _dirty;
     private bool _saving;
+    private int _selectedTabIndex;
 
     public ContextualAssetDetailPanel(
         CoreViewerRuntime runtime,
@@ -124,15 +127,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center,
                 MaxHeight = 168
-            };
-        _tabs =
-            new TabControl
-            {
-                SelectedIndex = 0,
-                HorizontalAlignment =
-                    HorizontalAlignment.Stretch,
-                VerticalAlignment =
-                    VerticalAlignment.Stretch
             };
         _path = CreateValue(wrap: true);
         _technical = CreateValue(wrap: true);
@@ -498,18 +492,74 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "技術情報",
             _technical);
 
-        _tabs.Items.Add(
-            CreateTab(
-                "整理",
-                CreateTabScroll(organizeBody)));
-        _tabs.Items.Add(
-            CreateTab(
-                "制作",
-                CreateTabScroll(creativeBody)));
-        _tabs.Items.Add(
-            CreateTab(
-                "情報",
-                CreateTabScroll(informationBody)));
+        _tabPages =
+        [
+            CreateTabScroll(organizeBody),
+            CreateTabScroll(creativeBody),
+            CreateTabScroll(informationBody)
+        ];
+
+        _tabContent =
+            new ContentControl
+            {
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch
+            };
+
+        _tabButtons =
+            TabHeaders
+                .Select(
+                    (headerText, index) =>
+                        CreateInspectorTabButton(
+                            headerText,
+                            index))
+                .ToArray();
+
+        var tabStrip =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,*,*"),
+                ColumnSpacing = 2
+            };
+        for (var index = 0;
+             index < _tabButtons.Length;
+             index++)
+        {
+            Grid.SetColumn(
+                _tabButtons[index],
+                index);
+            tabStrip.Children.Add(
+                _tabButtons[index]);
+        }
+
+        var tabStripHost =
+            new Border
+            {
+                Margin = new Thickness(12, 0, 12, 6),
+                Padding = new Thickness(2),
+                Background =
+                    LumineDesign.ControlSurface,
+                BorderBrush =
+                    LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(8),
+                Child = tabStrip
+            };
+
+        var tabLayout =
+            new Grid
+            {
+                RowDefinitions =
+                    new RowDefinitions("Auto,*")
+            };
+        tabLayout.Children.Add(tabStripHost);
+        Grid.SetRow(_tabContent, 1);
+        tabLayout.Children.Add(_tabContent);
 
         var layout =
             new Grid
@@ -520,8 +570,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         layout.Children.Add(header);
         Grid.SetRow(summaryBody, 1);
         layout.Children.Add(summaryBody);
-        Grid.SetRow(_tabs, 2);
-        layout.Children.Add(_tabs);
+        Grid.SetRow(tabLayout, 2);
+        layout.Children.Add(tabLayout);
+
+        SelectTab(0);
 
         Background = LumineDesign.Surface;
         Content = layout;
@@ -584,11 +636,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _preview.Source is not null;
 
     internal int SelectedTabIndex =>
-        _tabs.SelectedIndex;
+        _selectedTabIndex;
 
     internal string SelectedTabHeader =>
-        (_tabs.SelectedItem as TabItem)?.Header as string
-        ?? string.Empty;
+        TabHeaders[_selectedTabIndex];
 
     internal IReadOnlyList<string> TabHeaders { get; } =
         new[] { "整理", "制作", "情報" };
@@ -602,7 +653,40 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 nameof(index));
         }
 
-        _tabs.SelectedIndex = index;
+        SelectTab(index);
+    }
+
+    internal bool TabStripUsesLumineStatesForSmoke
+    {
+        get
+        {
+            if (_tabButtons.Length != TabHeaders.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0;
+                 index < _tabButtons.Length;
+                 index++)
+            {
+                var button = _tabButtons[index];
+                var expectedHover =
+                    index == _selectedTabIndex
+                        ? LumineDesign.InteractionSelectedHover
+                        : LumineDesign.InteractionHover;
+                if (!ReferenceEquals(
+                        button.Resources[
+                            "ButtonBackgroundPointerOver"],
+                        expectedHover))
+                {
+                    return false;
+                }
+            }
+
+            return ReferenceEquals(
+                _tabButtons[_selectedTabIndex].Background,
+                LumineDesign.InteractionSelected);
+        }
     }
 
     public async Task ShowAssetAsync(
@@ -822,7 +906,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _publications.Text = "—";
         _saveStatus.Text = "—";
         _focused.IsEnabled = false;
-        _tabs.SelectedIndex = 0;
+        SelectTab(0);
         ReplacePreviewLease(null);
 
         _loadingEditor = true;
@@ -1355,14 +1439,107 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     : TextTrimming.CharacterEllipsis
         };
 
-    private static TabItem CreateTab(
+    private Button CreateInspectorTabButton(
         string header,
-        Control content) =>
-        new()
+        int index)
+    {
+        var button =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = header,
+                    MinHeight = 30,
+                    Padding =
+                        new Thickness(8, 4),
+                    CornerRadius =
+                        new CornerRadius(6),
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center
+                });
+
+        button.Click +=
+            (_, _) => SelectTab(index);
+        button.KeyDown +=
+            (_, args) =>
+            {
+                var next =
+                    args.Key switch
+                    {
+                        Key.Left =>
+                            Math.Max(0, index - 1),
+                        Key.Right =>
+                            Math.Min(
+                                TabHeaders.Count - 1,
+                                index + 1),
+                        _ =>
+                            index
+                    };
+                if (next == index)
+                {
+                    return;
+                }
+
+                SelectTab(next);
+                _tabButtons[next].Focus();
+                args.Handled = true;
+            };
+
+        return button;
+    }
+
+    private void SelectTab(int index)
+    {
+        if ((uint)index
+            >= (uint)_tabPages.Length)
         {
-            Header = header,
-            Content = content
-        };
+            throw new ArgumentOutOfRangeException(
+                nameof(index));
+        }
+
+        _selectedTabIndex = index;
+        _tabContent.Content =
+            _tabPages[index];
+
+        for (var itemIndex = 0;
+             itemIndex < _tabButtons.Length;
+             itemIndex++)
+        {
+            var button =
+                _tabButtons[itemIndex];
+            var selected =
+                itemIndex == index;
+
+            button.Background =
+                selected
+                    ? LumineDesign.InteractionSelected
+                    : Brushes.Transparent;
+            button.BorderBrush =
+                selected
+                    ? LumineDesign.BorderStrong
+                    : Brushes.Transparent;
+            button.BorderThickness =
+                new Thickness(1);
+            button.FontWeight =
+                selected
+                    ? FontWeight.SemiBold
+                    : FontWeight.Normal;
+
+            if (selected)
+            {
+                LumineDesign
+                    .ConfigureSelectedButtonStateResources(
+                        button);
+            }
+            else
+            {
+                LumineDesign
+                    .ConfigureNeutralButtonStateResources(
+                        button);
+            }
+        }
+    }
 
     private static ScrollViewer CreateTabScroll(
         Control content) =>
