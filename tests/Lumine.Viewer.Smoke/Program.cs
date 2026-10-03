@@ -1466,14 +1466,16 @@ internal static class Program
             !detail.IsMetadataVisibleForSmoke,
             "Viewer info command did not hide metadata.");
 
-        var sliderStart = detail.ZoomSliderValueForSmoke;
-        await detail.SetZoomSliderForSmokeAsync(70);
+        var sliderStartZoom = detail.Zoom;
+        await detail.SetZoomSliderForSmokeAsync(20);
         Dispatcher.UIThread.RunJobs();
         var sliderZoom = detail.Zoom;
         Require(
             sliderZoom > detailSession.Options.MinZoom
-            && sliderZoom < detailSession.Options.MaxZoom
-            && detail.ZoomSliderValueForSmoke > sliderStart,
+            && sliderZoom < 0.5
+            && Math.Abs(sliderZoom - sliderStartZoom) > 0.001
+            && Math.Abs(
+                detail.ZoomSliderValueForSmoke - 20) < 0.5,
             "Viewer zoom slider did not drive the existing zoom pipeline.");
 
         var sliderBeforeWheel =
@@ -1481,8 +1483,9 @@ internal static class Program
         await detail.ApplyWheelZoomForSmokeAsync(1);
         Dispatcher.UIThread.RunJobs();
         Require(
-            detail.ZoomSliderValueForSmoke > sliderBeforeWheel,
-            "Wheel zoom did not synchronize the visible zoom slider.");
+            detail.ZoomSliderValueForSmoke > sliderBeforeWheel
+            && provider.OriginalRequests == 0,
+            "Wheel zoom did not synchronize the visible slider inside preview-safe zoom.");
 
         detail.Fit();
         Dispatcher.UIThread.RunJobs();
