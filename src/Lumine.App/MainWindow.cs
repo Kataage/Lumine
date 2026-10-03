@@ -478,14 +478,20 @@ public sealed class MainWindow : Window
             () =>
             {
                 if (restoreTarget is Control restore
+                    && restore.IsLoaded
                     && restore.IsEffectivelyVisible
-                    && restore.IsEnabled
-                    && restore.Focus())
+                    && restore.IsEffectivelyEnabled
+                    && FocusManager?.Focus(
+                           restore,
+                           NavigationMethod.Unspecified,
+                           KeyModifiers.None) == true)
                 {
                     return;
                 }
 
-                _shell?.GridViewer.Focus();
+                _shell?.GridViewer.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
             },
             Avalonia.Threading.DispatcherPriority.Background);
     }
