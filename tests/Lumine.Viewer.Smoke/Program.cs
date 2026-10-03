@@ -1521,9 +1521,11 @@ internal static class Program
             "Actual-size DPI conversion did not preserve one source pixel per physical pixel at 200% scaling.");
 
         await detail.SetZoomAsync(2);
+        Dispatcher.UIThread.RunJobs();
         Require(
-            Math.Abs(detail.Zoom - 2) < 0.001,
-            "Detail zoom command did not apply requested scale.");
+            Math.Abs(detail.Zoom - 2) < 0.001
+            && detail.CanPanForSmoke,
+            "Detail zoom command did not create a draggable oversized image.");
 
         detail.PanBy(80, 60);
         Dispatcher.UIThread.RunJobs();
@@ -1558,6 +1560,29 @@ internal static class Program
             detail.Zoom > 0
             && detail.Zoom <= detailSession.Options.MaxZoom,
             "Detail fit produced an invalid zoom.");
+
+        var wheelStartZoom = detail.Zoom;
+        var wheelStartPan = detail.PanOffset;
+        await detail.ApplyWheelZoomForSmokeAsync(1);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.Zoom > wheelStartZoom,
+            "Focused-view wheel gesture did not zoom in.");
+
+        var afterZoomPan = detail.PanOffset;
+        await detail.ApplyWheelZoomForSmokeAsync(0);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            Math.Abs(detail.Zoom - detail.Zoom) < 0.001
+            && detail.PanOffset == afterZoomPan,
+            "A non-vertical wheel gesture mutated focused-view pan/zoom state.");
+
+        detail.Fit();
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.PanOffset.X < 0.001
+            && detail.PanOffset.Y < 0.001,
+            $"Fit did not clear pan after wheel zoom: before={wheelStartPan}, after={detail.PanOffset}.");
 
         var viewportBounds =
             detail.ViewportBoundsInControlForSmoke;
