@@ -1521,8 +1521,9 @@ try
             Require(
                 shell.ContextDetail.HasPreview
                 && shell.ContextDetail.TabHeaders.SequenceEqual(
-                    new[] { "整理", "制作", "情報" }),
-                "Inspector did not expose the selected image preview and three-section information architecture.");
+                    new[] { "整理", "制作", "情報" })
+                && shell.ContextDetail.TabStripUsesLumineStatesForSmoke,
+                "Inspector did not expose the selected image preview and compact Lumine tab-strip information architecture.");
 
             shell.ContextDetail.SelectTabForSmoke(2);
             Dispatcher.UIThread.RunJobs();
@@ -2454,7 +2455,9 @@ try
                                     && window.CurrentShell.ContextDetail.HasPreview
                                     && window.CurrentShell.ContextDetail
                                         .TabHeaders.SequenceEqual(
-                                            new[] { "整理", "制作", "情報" }),
+                                            new[] { "整理", "制作", "情報" })
+                                    && window.CurrentShell.ContextDetail
+                                        .TabStripUsesLumineStatesForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 for (var tabIndex = 0;
@@ -2468,8 +2471,10 @@ try
                                     Dispatcher.UIThread.RunJobs();
                                     Require(
                                         window.CurrentShell.ContextDetail
-                                            .SelectedTabIndex == tabIndex,
-                                        $"Inspector tab {tabIndex} was not reachable at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                            .SelectedTabIndex == tabIndex
+                                        && window.CurrentShell.ContextDetail
+                                            .TabStripUsesLumineStatesForSmoke,
+                                        $"Inspector tab {tabIndex} was not reachable or lost Lumine state styling at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                                 }
 
                                 window.CurrentShell.HideContextDetail();
