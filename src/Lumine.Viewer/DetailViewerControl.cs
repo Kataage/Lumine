@@ -1549,6 +1549,9 @@ public sealed class DetailViewerControl : UserControl
         _toolbarHost.Opacity = 1;
         _previous.Opacity = 1;
         _next.Opacity = 1;
+        _toolbarHost.IsHitTestVisible = true;
+        _previous.IsHitTestVisible = true;
+        _next.IsHitTestVisible = true;
         _chromeTimer.Stop();
         _chromeTimer.Start();
     }
@@ -1563,10 +1566,33 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        _toolbarHost.Opacity = 0.34;
-        _previous.Opacity = 0.22;
-        _next.Opacity = 0.22;
+        // Idle Viewer chrome must not obscure or intercept the image.
+        _toolbarHost.Opacity = 0;
+        _previous.Opacity = 0;
+        _next.Opacity = 0;
+        _toolbarHost.IsHitTestVisible = false;
+        _previous.IsHitTestVisible = false;
+        _next.IsHitTestVisible = false;
     }
+
+    internal bool IsChromeVisibleForSmoke =>
+        _toolbarHost.Opacity > 0.9
+        && _previous.Opacity > 0.9
+        && _next.Opacity > 0.9;
+
+    internal bool IsChromeNonBlockingForSmoke =>
+        _toolbarHost.Opacity <= 0.001
+        && _previous.Opacity <= 0.001
+        && _next.Opacity <= 0.001
+        && !_toolbarHost.IsHitTestVisible
+        && !_previous.IsHitTestVisible
+        && !_next.IsHitTestVisible;
+
+    internal void FadeChromeForSmoke() =>
+        FadeChrome();
+
+    internal void RevealChromeForSmoke() =>
+        RevealChrome();
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
