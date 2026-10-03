@@ -2468,6 +2468,8 @@ try
                                     AssetSortOrder.ModifiedNewest));
                             Dispatcher.UIThread.RunJobs();
 
+                            var runtimeBeforeNavigation =
+                                window.CurrentRuntime;
                             window.CurrentShell!.HideContextDetail();
                             window.SetNavigationPinnedForSmoke(false);
                             window.SetNavigationPaneVisibleForSmoke(false);
@@ -2485,6 +2487,9 @@ try
                                 Require(
                                     window.IsNavigationPaneVisibleForSmoke
                                         == navigationVisible
+                                    && ReferenceEquals(
+                                        window.CurrentRuntime,
+                                        runtimeBeforeNavigation)
                                     && window.IsCompactNavigationLayout
                                         == (viewport.Width <= 1040)
                                     && window.BrowseControlsForSmoke is not null
@@ -2605,6 +2610,9 @@ try
                                     window.CurrentShell.GridViewerBounds.Width;
                                 Require(
                                     window.IsNavigationPinnedForSmoke
+                                    && ReferenceEquals(
+                                        window.CurrentRuntime,
+                                        runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
                                         < unpinnedClosedCanvasWidth - 200,
                                     $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
