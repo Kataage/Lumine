@@ -1869,6 +1869,13 @@ try
 
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
+                    var restoredTile =
+                        window.CurrentShell.GridViewer
+                            .GetAssetFocusTarget(0);
+                    var restoredFocus =
+                        window.FocusManager.GetFocusedElement();
+                    Console.WriteLine(
+                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}");
                     Require(
                         window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
