@@ -1747,6 +1747,26 @@ try
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
 
+                    // App integration must produce a real virtualized thumbnail
+                    // surface before downstream interaction/DPI checks. The
+                    // standalone Viewer smoke has the same first-frame gate.
+                    for (var attempt = 0;
+                         attempt < 250
+                         && (window.CurrentShell.GridViewer.RealizedRowCount == 0
+                             || window.CurrentShell.GridViewer.Diagnostics.ReadyTiles == 0);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
+
+                    Require(
+                        window.CurrentShell.GridViewer.RealizedRowCount > 0
+                        && window.CurrentShell.GridViewer.Diagnostics.ReadyTiles > 0
+                        && window.CurrentShell.GridViewer
+                            .GetAssetFocusTarget(0) is not null,
+                        "MainWindow workspace did not realize its initial thumbnail surface.");
+
                     window.Width = 900;
                     window.Height = 600;
                     Dispatcher.UIThread.RunJobs();
@@ -1776,40 +1796,30 @@ try
                         window.SetRenderScaling(scaling);
                         Dispatcher.UIThread.RunJobs();
 
+                        for (var attempt = 0;
+                             attempt < 100
+                             && window.CurrentShell.GridViewer.RealizedRowCount == 0;
+                             attempt++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(1);
+                        }
+
                         Require(
                             Math.Abs(
                                 window.RenderScaling
                                 - scaling) < 0.001
                             && window.IsCompactNavigationLayout
                             && window.CurrentShell.IsCompactInspectorLayout
-                            && window.CurrentShell.GridViewerBounds.Width >= 500,
-                            $"MainWindow responsive layout regressed at {scaling:P0} render scaling.");
-                    }
-
-                    // Focus restoration is a contract of an actual thumbnail
-                    // invocation. Wait for the production virtualized viewer to
-                    // realize the selected thumbnail before opening the modal,
-                    // just as Viewer.Smoke does before pointer/keyboard work.
-                    for (var attempt = 0;
-                         attempt < 250
-                         && (window.CurrentShell.GridViewer
-                                 .GetAssetFocusTarget(0) is null
-                             || window.CurrentShell.GridViewer
-                                 .Diagnostics.ReadyTiles == 0);
-                         attempt++)
-                    {
-                        Dispatcher.UIThread.RunJobs();
-                        await Task.Delay(1);
+                            && window.CurrentShell.GridViewerBounds.Width >= 500
+                            && window.CurrentShell.GridViewer.RealizedRowCount > 0,
+                            $"MainWindow responsive/layout virtualization regressed at {scaling:P0} render scaling.");
                     }
 
                     Require(
-                        window.CurrentShell.GridViewer
-                            .GetAssetFocusTarget(0) is not null
-                        && window.CurrentShell.GridViewer
-                            .Diagnostics.ReadyTiles > 0
-                        && window.CurrentShell.GridViewer.FocusAsset(0)
+                        window.CurrentShell.GridViewer.FocusAsset(0)
                         && window.CurrentShell.IsAssetFocusedForSmoke(0),
-                        "Focused-view acceptance could not establish a real invoking thumbnail.");
+                        "Focused-view acceptance could not focus the realized invoking thumbnail.");
 
                     await window.CurrentShell
                         .OpenFocusedViewAsync(0);
