@@ -295,11 +295,20 @@ internal sealed class CoreViewerShell : UserControl
         get
         {
             var labels =
-                _bulkActions.Children
+                _bulkActions
+                    .GetVisualDescendants()
                     .OfType<Button>()
+                    .Append(
+                        _bulkActions
+                            .Children
+                            .OfType<Button>()
+                            .FirstOrDefault())
+                    .Where(
+                        static button =>
+                            button is not null)
                     .Select(
                         static button =>
-                            button.Content as string
+                            button!.Content as string
                             ?? string.Empty)
                     .ToArray();
 
