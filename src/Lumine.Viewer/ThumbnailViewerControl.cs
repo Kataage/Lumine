@@ -1764,10 +1764,11 @@ public sealed class ThumbnailViewerControl : UserControl
                 };
 
             var showActions =
-                _layoutMode == ViewerLayoutMode.List
-                || _hovered
-                || IsSelected
-                || IsKeyboardFocusWithin;
+                ShouldShowTileActions(
+                    _layoutMode,
+                    IsSelected,
+                    _hovered,
+                    IsKeyboardFocusWithin);
             if (showActions)
             {
                 EnsureActionOverlay();
@@ -2181,6 +2182,27 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal static bool ResolveTileActionVisibilityForSmoke(
+        ViewerLayoutMode layoutMode,
+        bool selected,
+        bool hovered,
+        bool focused) =>
+        ShouldShowTileActions(
+            layoutMode,
+            selected,
+            hovered,
+            focused);
+
+    private static bool ShouldShowTileActions(
+        ViewerLayoutMode layoutMode,
+        bool selected,
+        bool hovered,
+        bool focused) =>
+        layoutMode == ViewerLayoutMode.List
+        || hovered
+        || selected
+        || focused;
+
     internal static string ResolveTileVisualStateForSmoke(
         bool selected,
         bool hovered,
