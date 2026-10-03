@@ -283,9 +283,28 @@ internal static class ProductNavigationViews
     public static Control CreateFolders(
         IReadOnlyList<LibraryFolderInfo> folders,
         string? selectedFolder,
+        ISet<string> expandedFolders,
         Func<string?, Task> selectFolder,
         Action<string>? reportError = null)
     {
+        ArgumentNullException.ThrowIfNull(folders);
+        ArgumentNullException.ThrowIfNull(expandedFolders);
+        ArgumentNullException.ThrowIfNull(selectFolder);
+
+        static string? GetParentPath(
+            string relativePath)
+        {
+            var normalized =
+                relativePath.Replace(
+                    '\\',
+                    '/');
+            var separator =
+                normalized.LastIndexOf('/');
+            return separator <= 0
+                ? null
+                : normalized[..separator];
+        }
+
         var root =
             new Grid
             {
@@ -300,7 +319,10 @@ internal static class ProductNavigationViews
                 Content = "すべての画像",
                 HorizontalContentAlignment =
                     HorizontalAlignment.Left,
-                Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space8,
+                        LumineDesign.Space6),
                 Background =
                     selectedFolder is null
                         ? LumineDesign.AccentMuted
@@ -310,12 +332,15 @@ internal static class ProductNavigationViews
                         ? LumineDesign.BorderStrong
                         : Brushes.Transparent,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(LumineDesign.ControlRadius),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
                 Foreground =
                     selectedFolder is null
                         ? LumineDesign.Foreground
                         : LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize
+                FontSize =
+                    LumineDesign.CaptionFontSize
             };
         AttachAsync(
             all,
@@ -332,77 +357,269 @@ internal static class ProductNavigationViews
         }
         else
         {
+            var pathSet =
+                new HashSet<string>(
+                    folders.Select(
+                        static folder =>
+                            folder.RelativePath.Replace(
+                                '\\',
+                                '/')),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var roots =
+                new List<LibraryFolderInfo>();
+            var children =
+                new Dictionary<
+                    string,
+                    List<LibraryFolderInfo>>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (var folder in folders)
+            {
+                var normalized =
+                    folder.RelativePath.Replace(
+                        '\\',
+                        '/');
+                var parent =
+                    GetParentPath(normalized);
+                if (parent is null
+                    || !pathSet.Contains(parent))
+                {
+                    roots.Add(folder);
+                    continue;
+                }
+
+                if (!children.TryGetValue(
+                        parent,
+                        out var bucket))
+                {
+                    bucket = [];
+                    children[parent] = bucket;
+                }
+
+                bucket.Add(folder);
+            }
+
+            roots.Sort(
+                static (left, right) =>
+                    StringComparer.CurrentCultureIgnoreCase
+                        .Compare(
+                            left.RelativePath,
+                            right.RelativePath));
+            foreach (var bucket in children.Values)
+            {
+                bucket.Sort(
+                    static (left, right) =>
+                        StringComparer.CurrentCultureIgnoreCase
+                            .Compare(
+                                left.RelativePath,
+                                right.RelativePath));
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    selectedFolder))
+            {
+                var parent =
+                    GetParentPath(
+                        selectedFolder.Replace(
+                            '\\',
+                            '/'));
+                while (parent is not null)
+                {
+                    expandedFolders.Add(parent);
+                    parent = GetParentPath(parent);
+                }
+            }
+
             var list =
                 new ListBox
                 {
-                    ItemsSource = folders,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(0)
+                    Background =
+                        Brushes.Transparent,
+                    BorderThickness =
+                        new Thickness(0),
+                    Padding =
+                        new Thickness(0)
                 };
+
+            IReadOnlyList<LibraryFolderInfo>
+                BuildVisibleFolders()
+            {
+                var visible =
+                    new List<LibraryFolderInfo>(
+                        Math.Min(
+                            folders.Count,
+                            512));
+
+                var stack =
+                    new Stack<
+                        (LibraryFolderInfo Folder, int State)>();
+
+                for (var index =
+                         roots.Count - 1;
+                     index >= 0;
+                     index--)
+                {
+                    stack.Push(
+                        (roots[index], 0));
+                }
+
+                while (stack.Count > 0)
+                {
+                    var entry =
+                        stack.Pop();
+                    var folder =
+                        entry.Folder;
+                    visible.Add(folder);
+
+                    var path =
+                        folder.RelativePath.Replace(
+                            '\\',
+                            '/');
+                    if (!expandedFolders.Contains(path)
+                        || !children.TryGetValue(
+                            path,
+                            out var nested))
+                    {
+                        continue;
+                    }
+
+                    for (var index =
+                             nested.Count - 1;
+                         index >= 0;
+                         index--)
+                    {
+                        stack.Push(
+                            (nested[index], 0));
+                    }
+                }
+
+                return visible;
+            }
+
+            void RebuildVisibleFolders()
+            {
+                list.ItemsSource = null;
+                list.ItemsSource =
+                    BuildVisibleFolders();
+            }
+
             list.ItemTemplate =
                 new FuncDataTemplate<LibraryFolderInfo>(
                     (folder, _) =>
                     {
+                        var normalized =
+                            folder.RelativePath.Replace(
+                                '\\',
+                                '/');
                         var selected =
                             string.Equals(
                                 selectedFolder,
                                 folder.RelativePath,
                                 StringComparison.OrdinalIgnoreCase);
+                        var hasChildren =
+                            children.ContainsKey(
+                                normalized);
+                        var expanded =
+                            hasChildren
+                            && expandedFolders.Contains(
+                                normalized);
                         var leaf =
-                            folder.RelativePath
+                            normalized
                                 .Split('/')
                                 .LastOrDefault()
-                            ?? folder.RelativePath;
+                            ?? normalized;
 
                         var row =
                             new Grid
                             {
                                 ColumnDefinitions =
-                                    new ColumnDefinitions("*,Auto")
+                                    new ColumnDefinitions(
+                                        "Auto,*,Auto"),
+                                ColumnSpacing =
+                                    LumineDesign.Space4,
+                                Margin =
+                                    new Thickness(
+                                        Math.Max(
+                                            0,
+                                            folder.Depth - 1)
+                                        * 10,
+                                        0,
+                                        0,
+                                        0)
                             };
-                        row.Children.Add(
-                            new TextBlock
-                            {
-                                Text = leaf,
-                                Foreground =
-                                    selected
-                                        ? LumineDesign.Foreground
-                                        : LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextTrimming =
-                                    TextTrimming.CharacterEllipsis
-                            });
-                        var count =
-                            new TextBlock
-                            {
-                                Text =
-                                    folder.DirectAssetCount
-                                        .ToString("N0"),
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize
-                            };
-                        Grid.SetColumn(count, 1);
-                        row.Children.Add(count);
 
-                        var button =
+                        var disclosure =
+                            LumineDesign.ConfigureIconButton(
+                                new Button
+                                {
+                                    Content =
+                                        hasChildren
+                                            ? expanded
+                                                ? "▼"
+                                                : "▶"
+                                            : string.Empty,
+                                    Width = 26,
+                                    Height = 28,
+                                    MinWidth = 26,
+                                    MinHeight = 28,
+                                    Padding =
+                                        new Thickness(0),
+                                    IsEnabled =
+                                        hasChildren
+                                },
+                                hasChildren
+                                    ? expanded
+                                        ? $"{leaf} を閉じる"
+                                        : $"{leaf} を開く"
+                                    : $"{leaf} に子フォルダーはありません");
+                        disclosure.Opacity =
+                            hasChildren
+                                ? 1
+                                : 0;
+                        disclosure.Click +=
+                            (_, _) =>
+                            {
+                                if (!hasChildren)
+                                {
+                                    return;
+                                }
+
+                                if (!expandedFolders.Add(
+                                        normalized))
+                                {
+                                    expandedFolders.Remove(
+                                        normalized);
+                                }
+
+                                RebuildVisibleFolders();
+                            };
+                        row.Children.Add(disclosure);
+
+                        var folderButton =
                             new Button
                             {
-                                Content = row,
+                                Content =
+                                    new TextBlock
+                                    {
+                                        Text = leaf,
+                                        Foreground =
+                                            selected
+                                                ? LumineDesign.Foreground
+                                                : LumineDesign.MutedForeground,
+                                        FontSize =
+                                            LumineDesign.CaptionFontSize,
+                                        TextTrimming =
+                                            TextTrimming.CharacterEllipsis
+                                    },
                                 HorizontalAlignment =
                                     HorizontalAlignment.Stretch,
                                 HorizontalContentAlignment =
-                                    HorizontalAlignment.Stretch,
+                                    HorizontalAlignment.Left,
                                 Padding =
                                     new Thickness(
-                                        8
-                                        + (Math.Max(0, folder.Depth - 1) * 12),
-                                        7,
-                                        8,
-                                        7),
+                                        LumineDesign.Space4,
+                                        LumineDesign.Space6),
                                 Background =
                                     selected
                                         ? LumineDesign.AccentMuted
@@ -414,16 +631,44 @@ internal static class ProductNavigationViews
                                 BorderThickness =
                                     new Thickness(1),
                                 CornerRadius =
-                                    new CornerRadius(LumineDesign.ControlRadius)
+                                    new CornerRadius(
+                                        LumineDesign.ControlRadius)
                             };
+                        ToolTip.SetTip(
+                            folderButton,
+                            folder.RelativePath);
                         AttachAsync(
-                            button,
+                            folderButton,
                             () => selectFolder(
                                 folder.RelativePath),
                             reportError);
-                        return button;
+                        Grid.SetColumn(
+                            folderButton,
+                            1);
+                        row.Children.Add(
+                            folderButton);
+
+                        var count =
+                            new TextBlock
+                            {
+                                Text =
+                                    folder.DirectAssetCount
+                                        .ToString("N0"),
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
+                            };
+                        Grid.SetColumn(count, 2);
+                        row.Children.Add(count);
+
+                        return row;
                     },
                     supportsRecycling: true);
+
+            RebuildVisibleFolders();
             body = list;
         }
 
