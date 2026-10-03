@@ -202,6 +202,16 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public bool FocusAsset(long index)
     {
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            return false;
+        }
+
+        _rows.ScrollIntoView(
+            checked((int)(index / _columns)));
+        _rows.UpdateLayout();
+        UpdateLayout();
+
         var tile =
             this.GetVisualDescendants()
                 .OfType<ViewerTileControl>()
@@ -1061,7 +1071,6 @@ public sealed class ThumbnailViewerControl : UserControl
                         : 7);
             ClipToBounds = true;
             Background = TileBackground;
-            Focusable = true;
 
             _image = new Image
             {
