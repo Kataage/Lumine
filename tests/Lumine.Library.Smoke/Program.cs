@@ -400,6 +400,48 @@ try
         && searchedTags[0].Name == "推し",
         "Tag navigation search did not filter locally persisted tags.");
 
+    var tagOnlySaved =
+        await repository.SetAssetTagsAsync(
+            library.Id,
+            technical.Id,
+            ["推し", "後で使う"]);
+    var afterTagOnlySave =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "Tag-only assignment lost user metadata.");
+    Require(
+        tagOnlySaved.SequenceEqual(
+            ["推し", "後で使う"])
+        && afterTagOnlySave.Rating == 4
+        && afterTagOnlySave.Favorite
+        && afterTagOnlySave.Notes
+            == "猫耳 メイド reference note"
+        && afterTagOnlySave.StatusLabel
+            == "reviewed"
+        && afterTagOnlySave.ColorLabel
+            == "blue",
+        "Tag-only assignment overwrote unrelated user metadata.");
+
+    var multiTagScope =
+        await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                RequiredTags:
+                    ["推し", "後で使う"]),
+            10);
+    Require(
+        multiTagScope.Items.Count == 1
+        && multiTagScope.Items[0].Id
+            == technical.Id,
+        "Multi-tag AND filtering did not preserve v1 tag semantics.");
+
+    _ = await repository.SetAssetTagsAsync(
+        library.Id,
+        technical.Id,
+        ["推し", "blue sky"]);
+
     var browseFacets =
         await repository.GetBrowseFacetsAsync(
             library.Id);
