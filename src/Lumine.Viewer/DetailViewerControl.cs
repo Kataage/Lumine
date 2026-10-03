@@ -7,6 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace Lumine.Viewer;
 
@@ -509,14 +510,23 @@ public sealed class DetailViewerControl : UserControl
     internal Task SetZoomSliderForSmokeAsync(
         double value)
     {
-        _zoomSlider.Value =
+        var clamped =
             Math.Clamp(
                 value,
                 _zoomSlider.Minimum,
                 _zoomSlider.Maximum);
+        _syncingZoomSlider = true;
+        try
+        {
+            _zoomSlider.Value = clamped;
+        }
+        finally
+        {
+            _syncingZoomSlider = false;
+        }
+
         return SetZoomAsync(
-            ZoomFromSlider(
-                _zoomSlider.Value));
+            ZoomFromSlider(clamped));
     }
 
     internal void ToggleMetadataForSmoke()
@@ -1927,6 +1937,17 @@ public sealed class DetailViewerControl : UserControl
             case Key.D1:
             case Key.NumPad1:
                 await ActualSizeAsync();
+                e.Handled = true;
+                break;
+            case Key.I:
+                _metadataHost.IsVisible =
+                    !_metadataHost.IsVisible;
+                _info.Background =
+                    _metadataHost.IsVisible
+                        ? ViewerVisualTokens.SelectedSurface
+                        : ViewerVisualTokens.Overlay;
+                RevealChrome(
+                    autoHide: false);
                 e.Handled = true;
                 break;
             case Key.F11:
