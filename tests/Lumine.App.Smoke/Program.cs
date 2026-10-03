@@ -1524,14 +1524,14 @@ try
             Require(
                 shell.ContextDetail.HasPreview
                 && shell.ContextDetail.TabHeaders.SequenceEqual(
-                    new[] { "整理", "制作", "情報" })
+                    new[] { "整理", "制作", "公開", "情報" })
                 && shell.ContextDetail.TabStripUsesLumineStatesForSmoke,
                 "Inspector did not expose the selected image preview and compact Lumine tab-strip information architecture.");
 
-            shell.ContextDetail.SelectTabForSmoke(2);
+            shell.ContextDetail.SelectTabForSmoke(3);
             Dispatcher.UIThread.RunJobs();
             Require(
-                shell.ContextDetail.SelectedTabIndex == 2
+                shell.ContextDetail.SelectedTabIndex == 3
                 && shell.ContextDetail.SelectedTabHeader == "情報"
                 && shell.ContextDetail.PathText.Contains(
                     firstContextAsset.RelativePath.Replace(
@@ -1698,15 +1698,29 @@ try
                     StringComparison.Ordinal)
                 && shell.ContextDetail.RelationsText.Contains(
                     "img2img",
-                    StringComparison.Ordinal)
-                && shell.ContextDetail.PublicationsText.Contains(
-                    "App Smoke Publication",
                     StringComparison.Ordinal),
                 "Contextual detail did not render human-readable creative archive context.");
 
             Require(
                 shell.ContextDetail.SelectedTabHeader == "制作",
                 "Inspector creative context was not reachable through the dedicated 制作 tab.");
+
+            shell.ContextDetail.SelectTabForSmoke(2);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.SelectedTabHeader == "公開"
+                && shell.ContextDetail.PublicationsText.Contains(
+                    "App Smoke Publication",
+                    StringComparison.Ordinal)
+                && shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(button =>
+                        string.Equals(
+                            button.Content as string,
+                            "公開記録を作成",
+                            StringComparison.Ordinal)),
+                "Inspector publication context/actions were not isolated under the dedicated 公開 tab.");
 
             var publicationHistory =
                 await shellRuntime.LibraryService.ListPublicationsAsync(
@@ -2535,7 +2549,7 @@ try
                                     && window.CurrentShell.ContextDetail.HasPreview
                                     && window.CurrentShell.ContextDetail
                                         .TabHeaders.SequenceEqual(
-                                            new[] { "整理", "制作", "情報" })
+                                            new[] { "整理", "制作", "公開", "情報" })
                                     && window.CurrentShell.ContextDetail
                                         .TabStripUsesLumineStatesForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
