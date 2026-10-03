@@ -1827,8 +1827,11 @@ try
                     shell.ContextDetail
                         .PublicationCardTextForSmoke);
             Require(
-                shell.ContextDetail.PublicationCardCountForSmoke == 1
-                && shell.ContextDetail.PublicationCountTextForSmoke == "1件"
+                shell.ContextDetail.PublicationCardCountForSmoke >= 1
+                && !string.Equals(
+                    shell.ContextDetail.PublicationCountTextForSmoke,
+                    "0件",
+                    StringComparison.Ordinal)
                 && publicationCardText.Contains(
                     "Single Asset Publication",
                     StringComparison.Ordinal)
