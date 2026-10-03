@@ -135,10 +135,10 @@ The v2 interaction model should remain consistent with current desktop guidance:
 
 ## Visual and accessibility contract
 
-- ordinary product text uses the Lumine type ramp; normal captions do not shrink below 12 DIP;
+- ordinary product text uses the shared Lumine type ramp; normal captions do not shrink below 12 DIP at 100%; Windows Accessibility > Text size is read at startup and scales the App/Viewer type ramp up to the 225% acceptance ceiling;
 - semantic warning/destructive text must retain normal-text contrast against product surfaces;
 - icon-only controls require an accessibility name, and implemented keyboard shortcuts are exposed through accelerator metadata;
-- high-risk geometry is regression-tested at the minimum supported window size and at 125%, 150% and 200% scaling;
+- high-risk geometry is regression-tested at the minimum supported window size and at 125%, 150%, 200% and 225% display scaling; a separate 225% accessibility text-size lifecycle scenario verifies that text scaling is not confused with DPI scaling;
 - thumbnail action icons must stay centered inside consistent button bounds;
 - focused images must start centered in the full-client lightbox;
 - secondary commands use contextual flyouts/menus rather than permanently expanding primary image chrome.
