@@ -1522,6 +1522,27 @@ try
                 "Contextual detail panel did not expose user-owned metadata.");
 
             Require(
+                shell.ContextDetail.UsesDirectRatingControlsForSmoke
+                && shell.ContextDetail.UsesDirectColorControlsForSmoke
+                && !shell.ContextDetail.RetryVisibleForSmoke,
+                "Inspector did not expose direct rating/color controls in the successful loaded state.");
+
+            shell.ContextDetail.InvokeRatingForSmoke(4);
+            shell.ContextDetail.InvokeColorForSmoke(4);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.RatingText == "★4"
+                && shell.ContextDetail.ColorLabelForSmoke == "green"
+                && shell.ContextDetail.IsDirty,
+                "One-click Inspector rating/color controls did not update visible editor state.");
+
+            shell.ContextDetail.InvokeRatingForSmoke(4);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.RatingText == "未設定",
+                "Clicking the active Inspector rating did not clear the rating.");
+
+                        Require(
                 shell.ContextDetail.HasPreview
                 && shell.ContextDetail.TabHeaders.SequenceEqual(
                     new[] { "整理", "制作", "公開", "情報" })
