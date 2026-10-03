@@ -62,8 +62,39 @@ internal static class ProductSettingsView
         var root =
             new StackPanel
             {
-                Spacing = 12
+                Spacing = 14,
+                MaxWidth = 920,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch
             };
+
+        var heading =
+            new StackPanel
+            {
+                Spacing = 4,
+                Margin = new Thickness(2, 0, 2, 4)
+            };
+        heading.Children.Add(
+            new TextBlock
+            {
+                Text = "設定",
+                Foreground = LumineDesign.Foreground,
+                FontSize = LumineDesign.EmphasisFontSize,
+                FontWeight = FontWeight.Bold
+            });
+        heading.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "Lumineの閲覧・キャッシュ・保存方法を調整します。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            });
+        root.Children.Add(heading);
 
         if (!string.IsNullOrWhiteSpace(
                 snapshot.SettingsWarning))
@@ -93,13 +124,23 @@ internal static class ProductSettingsView
             CreateDiagnostics(
                 showDiagnostics));
 
-        return new ScrollViewer
+        var scroll =
+            new ScrollViewer
+            {
+                Content = root,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                HorizontalScrollBarVisibility =
+                    Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility =
+                    Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+            };
+
+        return new Border
         {
-            Content = root,
-            HorizontalScrollBarVisibility =
-                Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility =
-                Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+            Background = LumineDesign.Background,
+            Padding = new Thickness(24, 20, 24, 28),
+            Child = scroll
         };
     }
 
@@ -614,7 +655,7 @@ internal static class ProductSettingsView
     private static StackPanel CreateCardStack() =>
         new()
         {
-            Spacing = 8
+            Spacing = 10
         };
 
     private static Border CreateCard(
@@ -624,8 +665,8 @@ internal static class ProductSettingsView
             Background = LumineDesign.SurfaceRaised,
             BorderBrush = LumineDesign.Border,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(10),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14),
             Child = content
         };
 
