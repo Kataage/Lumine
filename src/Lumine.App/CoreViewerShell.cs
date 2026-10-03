@@ -269,15 +269,23 @@ internal sealed class CoreViewerShell : UserControl
         var browseLayout =
             new Grid
             {
-                Background = LumineDesign.Background,
-                RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                Background = LumineDesign.Background
             };
         browseLayout.Children.Add(
-            _selectionBar);
-        Grid.SetRow(browseViewer, 1);
-        browseLayout.Children.Add(
             browseViewer);
+
+        // Multi-selection is contextual chrome, not layout. Keep the image
+        // canvas fixed in place while the action surface floats above it.
+        _selectionBar.HorizontalAlignment =
+            HorizontalAlignment.Center;
+        _selectionBar.VerticalAlignment =
+            VerticalAlignment.Bottom;
+        _selectionBar.MaxWidth = 960;
+        _selectionBar.Margin =
+            new Thickness(16, 16, 16, 18);
+        _selectionBar.ZIndex = 30;
+        browseLayout.Children.Add(
+            _selectionBar);
 
         var layers =
             new Grid
@@ -1114,7 +1122,8 @@ internal sealed class CoreViewerShell : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 10,
+                Spacing = 8,
+                MaxWidth = 360,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
@@ -1131,9 +1140,13 @@ internal sealed class CoreViewerShell : UserControl
         return new Border
         {
             Background = LumineDesign.SurfaceRaised,
-            BorderBrush = LumineDesign.Border,
+            BorderBrush = LumineDesign.BorderStrong,
             BorderThickness =
-                new Thickness(0, 0, 0, 1),
+                new Thickness(1),
+            CornerRadius =
+                new CornerRadius(10),
+            Padding =
+                new Thickness(2),
             Child = top
         };
     }
