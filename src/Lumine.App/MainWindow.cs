@@ -732,6 +732,7 @@ public sealed class MainWindow : Window
                         _settingsSnapshot,
                         SaveViewerDefaultsFromSettingsAsync,
                         SaveThumbnailModeFromSettingsAsync,
+                        SaveDiskCacheBudgetFromSettingsAsync,
                         SaveMemoryBudgetFromSettingsAsync,
                         ClearThumbnailCacheFromSettingsAsync,
                         ShowDiagnosticsFromNavigationAsync),
@@ -1036,6 +1037,30 @@ public sealed class MainWindow : Window
         StartNavigationRefresh();
     }
 
+    private async Task SaveDiskCacheBudgetFromSettingsAsync(
+        long bytes)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        var current =
+            _host.Settings.ResourcePolicy
+            ?? new ResourcePolicySettings();
+        var next =
+            current with
+            {
+                ThumbnailCacheByteLimit =
+                    bytes
+            };
+
+        await _host.SaveSettingsAsync(
+            next);
+        StartNavigationRefresh();
+    }
+
     private async Task SaveMemoryBudgetFromSettingsAsync(
         long bytes)
     {
@@ -1137,6 +1162,11 @@ public sealed class MainWindow : Window
                     .ResolvePersisted(
                         _host.Settings,
                         out _);
+        var diskLimit =
+            _host?.Settings.ResourcePolicy
+                ?.ThumbnailCacheByteLimit
+            ?? _resourcePolicy
+                .ThumbnailCacheByteLimit;
         var memoryLimit =
             _host?.Settings.ResourcePolicy
                 ?.EncodedThumbnailMemoryByteLimit
@@ -1148,6 +1178,7 @@ public sealed class MainWindow : Window
             persistedMode,
             _host?.ThumbnailStorageMode
                 ?? _thumbnailStorageMode,
+            diskLimit,
             memoryLimit,
             _defaultDataPaths,
             cacheStats,
