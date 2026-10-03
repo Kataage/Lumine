@@ -1062,7 +1062,8 @@ public sealed class MainWindow : Window
                 tag.AssetCount > 0
                     ? $"{tag.AssetCount:N0}件の画像からもこのタグが外れます。画像ファイル自体は変更しません。"
                     : "このタグはまだ画像へ付与されていません。",
-                confirmLabel: "タグを削除");
+                confirmLabel: "タグを削除",
+                tone: ProductDialogTone.Danger);
         if (!confirmed)
         {
             return;
@@ -1108,7 +1109,17 @@ public sealed class MainWindow : Window
             ?? throw new ArgumentNullException(nameof(state));
 
         await ApplyBrowseQueryAsync();
-        RenderNavigationDestination();
+
+        // The tag manager owns transient search/manage state. Rebuilding the
+        // entire navigation surface after every tag toggle would erase that
+        // state and recreate the v2 regression where tagging feels jumpy.
+        if (!string.Equals(
+                _navigationDestination,
+                "タグ",
+                StringComparison.Ordinal))
+        {
+            RenderNavigationDestination();
+        }
     }
 
     private async Task OnBrowsePreferencesChangedAsync(
