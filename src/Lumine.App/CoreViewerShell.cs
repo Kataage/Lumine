@@ -428,7 +428,10 @@ internal sealed class CoreViewerShell : UserControl
             // Clear focus while the lightbox subtree is still attached. If a
             // focused subtree is detached first, Avalonia's detach lifecycle
             // can clear a newly restored browse focus afterward.
-            owner?.FocusManager.ClearFocus();
+            owner?.FocusManager.Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
             owner?.HideLightbox(
                 _focusedSurface);
             _focusedSurface.IsVisible = false;
@@ -478,7 +481,10 @@ internal sealed class CoreViewerShell : UserControl
         // End the modal focus scope before detaching it. This prevents the
         // lightbox subtree's detach lifecycle from clearing the browse focus
         // that we restore below.
-        owner?.FocusManager.ClearFocus();
+        owner?.FocusManager.Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
