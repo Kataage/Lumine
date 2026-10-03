@@ -1905,6 +1905,30 @@ try
     Console.WriteLine(
         "App shell smoke: browse / contextual detail / focused viewer / multi-selection / Detail / shutdown OK");
 
+    var previousTextScaleEnvironment =
+        Environment.GetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE");
+    try
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            "2.25");
+        Require(
+            Math.Abs(
+                WindowsTextScale.Resolve()
+                - 2.25) < 0.001,
+            "Windows text-scale bridge did not accept the 225% accessibility override.");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            previousTextScaleEnvironment);
+    }
+
+    var baselineTextScale =
+        LumineVisualMetrics.TextScaleFactor;
+
     for (var iteration = 0;
          iteration < 3;
          iteration++)
@@ -1961,6 +1985,11 @@ try
                 "second.bmp"),
             width: 1280,
             height: 900);
+
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            iteration == 2
+                ? 2.25
+                : baselineTextScale);
 
         await using (var appHost =
                      await AppHost.StartAsync(
@@ -2141,14 +2170,19 @@ try
                         && window.CurrentShell.GridViewerBounds.Width >= 500,
                         "Minimum-width workspace did not preserve an image-dominant canvas with overlay inspector.");
 
+                    var renderScalings =
+                        iteration == 2
+                            ? new[] { 1.0 }
+                            : new[]
+                            {
+                                1.25,
+                                1.5,
+                                2.0,
+                                2.25
+                            };
+
                     foreach (var scaling in
-                             new[]
-                             {
-                                 1.25,
-                                 1.5,
-                                 2.0,
-                                 2.25
-                             })
+                             renderScalings)
                     {
                         window.SetRenderScaling(scaling);
                         Dispatcher.UIThread.RunJobs();
@@ -2437,6 +2471,9 @@ try
         Directory.Delete(
             repeatedEmptyLibraryRoot,
             recursive: true);
+
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            baselineTextScale);
     }
 
     Console.WriteLine(
