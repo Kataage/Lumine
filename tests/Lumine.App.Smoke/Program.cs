@@ -1,8 +1,11 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -832,6 +835,281 @@ try
                 "Fatal/bootstrap failure did not render a Lumine product-state window.");
             fatalStartup.Close();
 
+            // Strict navigation acceptance: large secondary collections must
+            // stay virtualized, active/offline/disabled library rows must
+            // match their interaction semantics, and async command failures
+            // must remain inside the product error boundary.
+            var activeNavRoot =
+                Path.Combine(root, "nav-active");
+            var openNavRoot =
+                Path.Combine(root, "nav-open");
+            Directory.CreateDirectory(activeNavRoot);
+            Directory.CreateDirectory(openNavRoot);
+
+            var navLibraries =
+                new[]
+                {
+                    new LibraryCatalogItem(
+                        1001,
+                        "Active library",
+                        activeNavRoot,
+                        true,
+                        LibraryScanState.Complete,
+                        12,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1002,
+                        "Openable library",
+                        openNavRoot,
+                        true,
+                        LibraryScanState.Complete,
+                        8,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1003,
+                        "Offline library",
+                        Path.Combine(root, "nav-missing"),
+                        true,
+                        LibraryScanState.Complete,
+                        4,
+                        DateTimeOffset.UtcNow,
+                        null),
+                    new LibraryCatalogItem(
+                        1004,
+                        "Disabled library",
+                        openNavRoot,
+                        false,
+                        LibraryScanState.Complete,
+                        3,
+                        DateTimeOffset.UtcNow,
+                        null)
+                };
+
+            string? navigationError = null;
+            var openAttempts = 0;
+            var navigationView =
+                ProductNavigationViews.CreateLibraries(
+                    navLibraries,
+                    activeLibraryId: 1001,
+                    addLibrary: static () => Task.CompletedTask,
+                    openLibrary: item =>
+                    {
+                        openAttempts++;
+                        return item.Id == 1002
+                            ? Task.FromException(
+                                new InvalidOperationException(
+                                    "navigation-smoke-failure"))
+                            : Task.CompletedTask;
+                    },
+                    toggleEnabled: static _ => Task.CompletedTask,
+                    removeLibrary: static _ => Task.CompletedTask,
+                    reportError: message =>
+                        navigationError = message);
+
+            var navigationWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = navigationView
+                };
+            navigationWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            TextBlock FindNavigationTitle(string text) =>
+                navigationView.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .First(block =>
+                        string.Equals(
+                            block.Text,
+                            text,
+                            StringComparison.Ordinal));
+
+            Require(
+                FindNavigationTitle("Active library")
+                    .FindAncestorOfType<Button>() is null,
+                "Active library still presents as an enabled no-op command.");
+
+            var openableButton =
+                FindNavigationTitle("Openable library")
+                    .FindAncestorOfType<Button>();
+            var offlineButton =
+                FindNavigationTitle("Offline library")
+                    .FindAncestorOfType<Button>();
+            var disabledButton =
+                FindNavigationTitle("Disabled library")
+                    .FindAncestorOfType<Button>();
+
+            Require(
+                openableButton is { IsEnabled: true }
+                && offlineButton is { IsEnabled: false }
+                && disabledButton is { IsEnabled: false },
+                "Library navigation interaction state drifted for openable/offline/disabled rows.");
+
+            openableButton.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+
+            for (var attempt = 0;
+                 attempt < 100
+                 && navigationError is null;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                openAttempts == 1
+                && navigationError?.Contains(
+                    "navigation-smoke-failure",
+                    StringComparison.Ordinal) == true
+                && openableButton.IsEnabled,
+                "Async library command failure escaped the navigation error boundary or left the command disabled.");
+
+            navigationWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
+            var largeFolders =
+                Enumerable.Range(0, 10_000)
+                    .Select(index =>
+                        new LibraryFolderInfo(
+                            index + 1,
+                            $"root/folder-{index:D5}",
+                            2,
+                            index % 17))
+                    .ToArray();
+            var largeTags =
+                Enumerable.Range(0, 10_000)
+                    .Select(index =>
+                        new LibraryTagInfo(
+                            index + 1,
+                            $"tag-{index:D5}",
+                            index % 31))
+                    .ToArray();
+            var now =
+                DateTimeOffset.UtcNow;
+            var largePublications =
+                Enumerable.Range(0, 2_000)
+                    .Select(index =>
+                        new PublicationInfo(
+                            index + 1,
+                            1,
+                            null,
+                            $"Publication {index:D4}",
+                            string.Empty,
+                            string.Empty,
+                            "Pixiv",
+                            string.Empty,
+                            now.AddMinutes(-index),
+                            string.Empty,
+                            string.Empty,
+                            "{}",
+                            Array.Empty<PublicationAssetSnapshot>(),
+                            now,
+                            now))
+                    .ToArray();
+
+            static int RealizedNavigationRows(Control view)
+            {
+                var list =
+                    view.GetVisualDescendants()
+                        .OfType<ListBox>()
+                        .FirstOrDefault()
+                    ?? throw new InvalidOperationException(
+                        "Navigation view did not contain a ListBox.");
+                return list.GetRealizedContainers().Count();
+            }
+
+            var navigationScaleWatch =
+                Stopwatch.StartNew();
+            var foldersView =
+                ProductNavigationViews.CreateFolders(
+                    largeFolders,
+                    null,
+                    static _ => Task.CompletedTask);
+            var scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = foldersView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(foldersView) is > 0 and < 128,
+                "10k folder navigation materialized an unbounded visual tree.");
+            scaleWindow.Close();
+
+            var tagsView =
+                ProductNavigationViews.CreateTags(
+                    largeTags,
+                    null,
+                    static _ => Task.CompletedTask);
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = tagsView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(tagsView) is > 0 and < 128,
+                "10k tag navigation materialized an unbounded visual tree.");
+
+            var tagSearch =
+                tagsView.GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .First(box =>
+                        string.Equals(
+                            box.PlaceholderText,
+                            "タグを検索",
+                            StringComparison.Ordinal));
+            var tagList =
+                tagsView.GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .First();
+            tagSearch.Text = "tag-09999";
+            await Task.Delay(180);
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                tagList.ItemsSource?.Cast<LibraryTagInfo>()
+                    .SingleOrDefault()?.Name
+                    == "tag-09999"
+                && tagList.GetRealizedContainers().Count() < 128,
+                "Large tag filtering failed to debounce/filter while retaining bounded realization.");
+            scaleWindow.Close();
+
+            var publicationsView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    largePublications);
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = publicationsView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                RealizedNavigationRows(publicationsView) is > 0 and < 128,
+                "2k publication navigation materialized an unbounded visual tree.");
+            scaleWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+            navigationScaleWatch.Stop();
+
+            Require(
+                navigationScaleWatch.Elapsed
+                    < TimeSpan.FromSeconds(2),
+                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
+
             var original = await provider.LoadOriginalAsync(
                 asset,
                 8L * 1024 * 1024);
@@ -1331,6 +1609,84 @@ try
                 && publicationView is not null,
                 "Publication navigation did not render persisted publication history.");
 
+            // Single-image creative workflows must be reachable without
+            // entering bulk-selection mode.
+            shell.GridViewer.SelectAsset(0);
+            await shell.ShowContextDetailAsync();
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
+                !shell.IsBulkSelectionBarVisible
+                && shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .Any(button =>
+                        string.Equals(
+                            button.Content as string,
+                            "新規作成",
+                            StringComparison.Ordinal)),
+                "Single-selection Inspector did not expose its creative creation menu.");
+
+            var singleWork =
+                await shell.CreateWorkFromSelectionAsync(
+                    new CreativeWorkDialogResult(
+                        "Single Asset Work",
+                        "single-image acceptance"));
+            Require(
+                singleWork is not null
+                && singleWork.Assets.Count == 1
+                && singleWork.Assets[0].Id
+                    == firstContextAsset.Id,
+                "Single-image Work creation is not semantically reachable.");
+
+            var singleGroup =
+                await shell.CreateGenerationGroupFromSelectionAsync(
+                    new CreativeGroupDialogResult(
+                        "Single Asset Group",
+                        singleWork!.Id,
+                        "single prompt",
+                        string.Empty,
+                        "single-model",
+                        "euler",
+                        "normal",
+                        12,
+                        3.5,
+                        "{}",
+                        "single-image acceptance"));
+            Require(
+                singleGroup is not null
+                && singleGroup.Assets.Count == 1
+                && singleGroup.Assets[0].Id
+                    == firstContextAsset.Id,
+                "Single-image Generation Group creation is not semantically reachable.");
+
+            var singlePublication =
+                await shell.CreatePublicationFromSelectionAsync(
+                    new CreativePublicationDialogResult(
+                        singleWork.Id,
+                        "Pixiv",
+                        "@single",
+                        "Single Asset Publication",
+                        string.Empty,
+                        string.Empty,
+                        new DateTimeOffset(
+                            2026,
+                            10,
+                            3,
+                            0,
+                            0,
+                            0,
+                            TimeSpan.Zero),
+                        "single-acceptance",
+                        "https://example.invalid/single",
+                        "{}"));
+            Require(
+                singlePublication is not null
+                && singlePublication.Assets.Count == 1
+                && singlePublication.Assets[0].AssetId
+                    == firstContextAsset.Id,
+                "Single-image Publication creation is not semantically reachable.");
+
             var editedQueryPage =
                 await shellRuntime.LibraryService.GetAssetPageAsync(
                     shellRuntime.Library.Id,
@@ -1790,7 +2146,8 @@ try
                              {
                                  1.25,
                                  1.5,
-                                 2.0
+                                 2.0,
+                                 2.25
                              })
                     {
                         window.SetRenderScaling(scaling);
