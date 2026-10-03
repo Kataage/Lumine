@@ -1121,6 +1121,15 @@ internal static class Program
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
+        var fullScreenRequests = 0;
+        detail.FullScreenToggleRequested +=
+            (_, _) =>
+                fullScreenRequests++;
+        RaiseKey(detail, Key.F11);
+        Require(
+            fullScreenRequests == 1,
+            "F11 did not request focused-view full-screen toggle.");
+
         await detail.ActualSizeAsync();
         await detail.SetZoomAsync(2);
         Require(
