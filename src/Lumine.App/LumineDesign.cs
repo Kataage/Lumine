@@ -82,6 +82,12 @@ internal static class LumineDesign
         12 * LumineVisualMetrics.TextScaleFactor;
     public static double CompactLabelFontSize =>
         12 * LumineVisualMetrics.TextScaleFactor;
+    public static double DialogTitleFontSize =>
+        15 * LumineVisualMetrics.TextScaleFactor;
+    public static double EmphasisFontSize =>
+        18 * LumineVisualMetrics.TextScaleFactor;
+    public static double BodyLineHeight =>
+        18 * LumineVisualMetrics.TextScaleFactor;
     public const double HeaderHeight = 56;
     public const double CompactControlHeight = 34;
     public const double ContentGap = 12;
