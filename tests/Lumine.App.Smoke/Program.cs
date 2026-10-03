@@ -1085,6 +1085,61 @@ try
             navigationWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
+            var nestedFolders =
+                new[]
+                {
+                    new LibraryFolderInfo(1, "root", 1, 1),
+                    new LibraryFolderInfo(2, "root/child", 2, 2),
+                    new LibraryFolderInfo(3, "root/child/deep", 3, 3),
+                    new LibraryFolderInfo(4, "root/sibling", 2, 4)
+                };
+            var nestedFoldersView =
+                ProductNavigationViews.CreateFolders(
+                    nestedFolders,
+                    "root/child/deep",
+                    static _ => Task.CompletedTask);
+            var nestedWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 500,
+                    Content = nestedFoldersView
+                };
+            nestedWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var nestedList =
+                nestedFoldersView
+                    .GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .First();
+            Require(
+                nestedList.Items.Count == 4,
+                "Selected nested folder did not auto-expand its ancestor chain.");
+
+            var rootDisclosure =
+                nestedFoldersView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "⌄",
+                                StringComparison.Ordinal));
+            Require(
+                rootDisclosure is not null,
+                "Expanded folder tree did not expose a collapse affordance.");
+            rootDisclosure.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                nestedList.Items.Count == 1,
+                "Collapsing a folder kept hidden descendants materialized in the visible tree.");
+            nestedWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
             var largeFolders =
                 Enumerable.Range(0, 10_000)
                     .Select(index =>
@@ -2466,6 +2521,21 @@ try
                             StringComparison.Ordinal)
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
+
+                    var runtimeBeforeManualRescan =
+                        window.CurrentRuntime;
+                    await window.RescanActiveLibraryForSmokeAsync();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ReferenceEquals(
+                            window.CurrentRuntime,
+                            runtimeBeforeManualRescan)
+                        && window.CurrentShell is not null
+                        && string.Equals(
+                            window.ProductShellState,
+                            "Workspace",
+                            StringComparison.Ordinal),
+                        "Manual library rescan recreated the active CoreViewerRuntime or failed to restore Workspace.");
 
                     // App integration must produce a real virtualized thumbnail
                     // surface before downstream interaction/DPI checks. The
