@@ -49,10 +49,7 @@ internal sealed class ManagedTagPicker : UserControl
             ?? throw new ArgumentNullException(nameof(applyTags));
 
         _assignedHost =
-            new WrapPanel
-            {
-                Spacing = LumineDesign.Space4
-            };
+            new WrapPanel();
 
         _search =
             LumineDesign.ConfigureTextBox(
@@ -283,7 +280,7 @@ internal sealed class ManagedTagPicker : UserControl
             await _runtime.LibraryService.ListTagsAsync(
                 _runtime.Library.Id,
                 limit: 512,
-                cancellationToken);
+                cancellationToken: cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
         RenderAssigned();
