@@ -426,6 +426,9 @@ public sealed class MainWindow : Window
         _navigationContent.Content
             as Control;
 
+    internal BrowseWorkspaceControls? BrowseControlsForSmoke =>
+        _browseControls;
+
     internal Task ApplyBrowseFilterForSmokeAsync(
         BrowseFilterState state) =>
         OnBrowseFiltersChangedAsync(
