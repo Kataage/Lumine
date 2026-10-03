@@ -340,7 +340,9 @@ try
                 ?? new ResourcePolicySettings()) with
             {
                 EncodedThumbnailMemoryByteLimit =
-                    512L * 1024 * 1024
+                    512L * 1024 * 1024,
+                ThumbnailCacheByteLimit =
+                    4L * 1024 * 1024 * 1024
             });
 
         AppHost? unexpectedSecondHost = null;
@@ -392,6 +394,11 @@ try
                 .EncodedThumbnailMemoryByteLimit
                 == 512L * 1024 * 1024,
             "User-facing encoded thumbnail memory budget did not persist across restart.");
+        Require(
+            cleanRestart.ResourcePolicy
+                .ThumbnailCacheByteLimit
+                == 4L * 1024 * 1024 * 1024,
+            "User-facing persistent thumbnail disk budget did not persist across restart.");
 
         await cleanRestart.CompleteCleanShutdownAsync();
     }
@@ -2193,12 +2200,36 @@ try
                             == repeatedPaths.RootPath
                         && window.SettingsSnapshot.PersistedThumbnailStorageMode
                             == ThumbnailStorageMode.MemoryOnly
+                        && window.SettingsSnapshot.ThumbnailCacheByteLimit
+                            == (appHost.Settings.ResourcePolicy
+                                    ?.ThumbnailCacheByteLimit
+                                ?? appHost.ResourcePolicy
+                                    .ThumbnailCacheByteLimit)
                         && window.SettingsSnapshot.EncodedThumbnailMemoryByteLimit
                             == (iteration == 0
                                 ? 512L * 1024 * 1024
                                 : appHost.ResourcePolicy
                                     .EncodedThumbnailMemoryByteLimit),
                         "Product Settings did not expose viewer/cache/storage state without diagnostics.");
+
+                    Require(
+                        window.NavigationContentForSmoke
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(block =>
+                                string.Equals(
+                                    block.Text,
+                                    "ディスク保持上限",
+                                    StringComparison.Ordinal))
+                        && window.NavigationContentForSmoke
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .Any(block =>
+                                string.Equals(
+                                    block.Text,
+                                    "高速再表示用メモリ上限",
+                                    StringComparison.Ordinal)),
+                        "Product Settings did not separate persistent disk retention from temporary memory cache controls.");
 
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
