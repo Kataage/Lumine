@@ -468,23 +468,35 @@ internal sealed class CoreViewerShell : UserControl
         owner?.HideLightbox(
             _focusedSurface);
 
-        Dispatcher.UIThread.Post(
-            () =>
+        void RestoreAssetFocus(int attempt)
+        {
+            if (_detached)
             {
-                if (_detached)
-                {
-                    return;
-                }
+                return;
+            }
 
-                if (returnIndex >= 0
-                    && _grid.FocusAsset(returnIndex))
-                {
-                    return;
-                }
+            if (returnIndex >= 0
+                && _grid.FocusAsset(returnIndex))
+            {
+                return;
+            }
 
-                _grid.Focus();
-            },
-            DispatcherPriority.Input);
+            if (attempt < 4)
+            {
+                Dispatcher.UIThread.Post(
+                    () =>
+                        RestoreAssetFocus(
+                            attempt + 1),
+                    DispatcherPriority.Loaded);
+                return;
+            }
+
+            _grid.Focus();
+        }
+
+        Dispatcher.UIThread.Post(
+            () => RestoreAssetFocus(0),
+            DispatcherPriority.Loaded);
     }
 
     private async Task LoadContextDetailAsync(
