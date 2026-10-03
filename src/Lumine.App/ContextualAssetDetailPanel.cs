@@ -832,7 +832,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 IndexOfValue(
                     ColorValues,
                     colorLabel);
-            _tagPicker.SetAssignedTags(
+            _tagPicker.SetSelectedTags(
                 ParseTags(tags));
             _notesEditor.Text = notes;
         }
@@ -1298,7 +1298,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 IndexOfValue(
                     ColorValues,
                     metadata.ColorLabel);
-            _tagPicker.SetAssignedTags(
+            _tagPicker.SetSelectedTags(
                 metadata.Tags);
             _notesEditor.Text =
                 metadata.Notes;
