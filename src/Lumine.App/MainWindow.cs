@@ -40,7 +40,6 @@ public sealed class MainWindow : Window
     private Task _diagnosticFlushOperation = Task.CompletedTask;
     private Task _navigationOperation = Task.CompletedTask;
     private Window? _diagnosticsWindow;
-    private IInputElement? _lightboxRestoreFocus;
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
     private bool _compactNavigationLayout;
@@ -441,14 +440,13 @@ public sealed class MainWindow : Window
         LumineDesign.NavigationLabels;
 
     internal void ShowLightbox(
-        Control content,
-        IInputElement? restoreFocusTarget = null)
+        Control content)
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        _lightboxRestoreFocus =
-            restoreFocusTarget
-            ?? FocusManager?.GetFocusedElement();
+        // MainWindow owns only modal presentation. The invoking surface owns
+        // focus restoration because virtualized controls can be recycled
+        // while the lightbox is open.
         _appShell.IsEnabled = false;
         _lightboxHost.Content = content;
         _lightboxHost.IsVisible = true;
@@ -469,31 +467,6 @@ public sealed class MainWindow : Window
         _lightboxHost.Content = null;
         _lightboxHost.IsVisible = false;
         _appShell.IsEnabled = true;
-
-        var restoreTarget =
-            _lightboxRestoreFocus;
-        _lightboxRestoreFocus = null;
-
-        Avalonia.Threading.Dispatcher.UIThread.Post(
-            () =>
-            {
-                if (restoreTarget is Control restore
-                    && restore.IsLoaded
-                    && restore.IsEffectivelyVisible
-                    && restore.IsEffectivelyEnabled
-                    && FocusManager?.Focus(
-                           restore,
-                           NavigationMethod.Unspecified,
-                           KeyModifiers.None) == true)
-                {
-                    return;
-                }
-
-                _shell?.GridViewer.Focus(
-                    NavigationMethod.Unspecified,
-                    KeyModifiers.None);
-            },
-            Avalonia.Threading.DispatcherPriority.Background);
     }
 
     internal void ToggleLightboxFullScreen()
