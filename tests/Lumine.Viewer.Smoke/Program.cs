@@ -1136,7 +1136,7 @@ internal static class Program
             viewer.GetRealizedTilePresentationForSmoke(0);
         Require(
             gridPresentation.Primary == "asset-000000.jpg"
-            && gridPresentation.Size.Contains(
+            && gridPresentation.Secondary.Contains(
                 "MB",
                 StringComparison.Ordinal)
             && gridPresentation.Organization.Contains(
