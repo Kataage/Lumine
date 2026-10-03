@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -770,6 +771,37 @@ internal static class Program
         Require(
             actionGeometry.Count == 2,
             "Thumbnail hover overlay did not expose the expected two primary icon actions.");
+
+        var overlayButtons =
+            viewer.GetVisualDescendants()
+                .OfType<Button>()
+                .Where(
+                    button =>
+                        button.Content
+                            is Avalonia.Controls.Shapes.Path)
+                .ToArray();
+        Require(
+            overlayButtons.Length >= 2
+            && overlayButtons.All(
+                button =>
+                    !string.IsNullOrWhiteSpace(
+                        AutomationProperties.GetName(
+                            button)))
+            && overlayButtons.Any(
+                button =>
+                    string.Equals(
+                        AutomationProperties.GetAcceleratorKey(
+                            button),
+                        "I",
+                        StringComparison.Ordinal))
+            && overlayButtons.Any(
+                button =>
+                    string.Equals(
+                        AutomationProperties.GetAcceleratorKey(
+                            button),
+                        "Enter",
+                        StringComparison.Ordinal)),
+            "Thumbnail icon actions lost accessible names or accelerator metadata.");
 
         foreach (var geometry in actionGeometry)
         {
