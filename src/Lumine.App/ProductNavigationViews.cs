@@ -362,36 +362,175 @@ internal static class ProductNavigationViews
         }
         else
         {
-            var list =
-                new ListBox
+            var byPath =
+                folders.ToDictionary(
+                    static folder =>
+                        folder.RelativePath,
+                    StringComparer.OrdinalIgnoreCase);
+            var children =
+                new Dictionary<
+                    string?,
+                    List<LibraryFolderInfo>>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (var folder in folders)
+            {
+                var parent =
+                    GetFolderParentPath(
+                        folder.RelativePath);
+                if (parent is not null
+                    && !byPath.ContainsKey(parent))
                 {
-                    ItemsSource = folders,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(0)
+                    parent = null;
+                }
+
+                if (!children.TryGetValue(
+                        parent,
+                        out var items))
+                {
+                    items = [];
+                    children[parent] = items;
+                }
+
+                items.Add(folder);
+            }
+
+            foreach (var items in children.Values)
+            {
+                items.Sort(
+                    static (left, right) =>
+                        StringComparer.CurrentCultureIgnoreCase
+                            .Compare(
+                                left.RelativePath,
+                                right.RelativePath));
+            }
+
+            var expanded =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(
+                    selectedFolder))
+            {
+                var parent =
+                    GetFolderParentPath(
+                        selectedFolder);
+                while (parent is not null)
+                {
+                    expanded.Add(parent);
+                    parent =
+                        GetFolderParentPath(
+                            parent);
+                }
+            }
+
+            var tree =
+                new StackPanel
+                {
+                    Spacing =
+                        LumineDesign.Space2
                 };
-            list.ItemTemplate =
-                new FuncDataTemplate<LibraryFolderInfo>(
-                    (folder, _) =>
+
+            void RebuildTree()
+            {
+                tree.Children.Clear();
+
+                if (!children.TryGetValue(
+                        null,
+                        out var roots))
+                {
+                    return;
+                }
+
+                void AddNodes(
+                    IReadOnlyList<LibraryFolderInfo> nodes)
+                {
+                    foreach (var folder in nodes)
                     {
                         var selected =
                             string.Equals(
                                 selectedFolder,
                                 folder.RelativePath,
                                 StringComparison.OrdinalIgnoreCase);
-                        var leaf =
-                            folder.RelativePath
-                                .Split('/')
-                                .LastOrDefault()
-                            ?? folder.RelativePath;
+                        var hasChildren =
+                            children.ContainsKey(
+                                folder.RelativePath);
+                        var isExpanded =
+                            expanded.Contains(
+                                folder.RelativePath);
 
                         var row =
                             new Grid
                             {
                                 ColumnDefinitions =
-                                    new ColumnDefinitions("*,Auto")
+                                    new ColumnDefinitions(
+                                        "Auto,*"),
+                                ColumnSpacing =
+                                    LumineDesign.Space2,
+                                Margin =
+                                    new Thickness(
+                                        Math.Max(
+                                            0,
+                                            folder.Depth - 1)
+                                        * LumineDesign.Space12,
+                                        0,
+                                        0,
+                                        0)
                             };
-                        row.Children.Add(
+
+                        var disclosure =
+                            LumineDesign.ConfigureIconButton(
+                                new Button
+                                {
+                                    Content =
+                                        hasChildren
+                                            ? isExpanded
+                                                ? "⌄"
+                                                : "›"
+                                            : string.Empty,
+                                    Width = 26,
+                                    MinWidth = 26,
+                                    Height = 28,
+                                    MinHeight = 28,
+                                    Padding =
+                                        new Thickness(0),
+                                    IsEnabled = hasChildren
+                                },
+                                hasChildren
+                                    ? isExpanded
+                                        ? "フォルダーを折りたたむ"
+                                        : "フォルダーを展開"
+                                    : "子フォルダーなし");
+                        if (hasChildren)
+                        {
+                            var path =
+                                folder.RelativePath;
+                            disclosure.Click +=
+                                (_, _) =>
+                                {
+                                    if (!expanded.Add(path))
+                                    {
+                                        expanded.Remove(path);
+                                    }
+
+                                    RebuildTree();
+                                };
+                        }
+
+                        row.Children.Add(disclosure);
+
+                        var leaf =
+                            folder.RelativePath
+                                .Split('/')
+                                .LastOrDefault()
+                            ?? folder.RelativePath;
+                        var content =
+                            new Grid
+                            {
+                                ColumnDefinitions =
+                                    new ColumnDefinitions(
+                                        "*,Auto")
+                            };
+                        content.Children.Add(
                             new TextBlock
                             {
                                 Text = leaf,
@@ -402,7 +541,9 @@ internal static class ProductNavigationViews
                                 FontSize =
                                     LumineDesign.CaptionFontSize,
                                 TextTrimming =
-                                    TextTrimming.CharacterEllipsis
+                                    TextTrimming.CharacterEllipsis,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
                             });
                         var count =
                             new TextBlock
@@ -413,26 +554,25 @@ internal static class ProductNavigationViews
                                 Foreground =
                                     LumineDesign.MutedForeground,
                                 FontSize =
-                                    LumineDesign.CaptionFontSize
+                                    LumineDesign.CaptionFontSize,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
                             };
                         Grid.SetColumn(count, 1);
-                        row.Children.Add(count);
+                        content.Children.Add(count);
 
-                        var button =
+                        var select =
                             new Button
                             {
-                                Content = row,
+                                Content = content,
                                 HorizontalAlignment =
                                     HorizontalAlignment.Stretch,
                                 HorizontalContentAlignment =
                                     HorizontalAlignment.Stretch,
                                 Padding =
                                     new Thickness(
-                                        8
-                                        + (Math.Max(0, folder.Depth - 1) * 12),
-                                        7,
-                                        8,
-                                        7),
+                                        LumineDesign.Space8,
+                                        LumineDesign.Space6),
                                 Background =
                                     selected
                                         ? LumineDesign.AccentMuted
@@ -444,17 +584,44 @@ internal static class ProductNavigationViews
                                 BorderThickness =
                                     new Thickness(1),
                                 CornerRadius =
-                                    new CornerRadius(LumineDesign.ControlRadius)
+                                    new CornerRadius(
+                                        LumineDesign.ControlRadius)
                             };
                         AttachAsync(
-                            button,
+                            select,
                             () => selectFolder(
                                 folder.RelativePath),
                             reportError);
-                        return button;
-                    },
-                    supportsRecycling: true);
-            body = list;
+                        Grid.SetColumn(select, 1);
+                        row.Children.Add(select);
+                        tree.Children.Add(row);
+
+                        if (hasChildren
+                            && isExpanded
+                            && children.TryGetValue(
+                                folder.RelativePath,
+                                out var nested))
+                        {
+                            AddNodes(nested);
+                        }
+                    }
+                }
+
+                AddNodes(roots);
+            }
+
+            RebuildTree();
+            body =
+                new ScrollViewer
+                {
+                    Content = tree,
+                    VerticalScrollBarVisibility =
+                        Avalonia.Controls.Primitives
+                            .ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility =
+                        Avalonia.Controls.Primitives
+                            .ScrollBarVisibility.Disabled
+                };
         }
 
         Grid.SetRow(body, 1);
@@ -1342,6 +1509,18 @@ internal static class ProductNavigationViews
         stack.Children.Add(
             CreateHint(description));
         return stack;
+    }
+
+    private static string? GetFolderParentPath(
+        string relativePath)
+    {
+        var normalized =
+            relativePath.Trim('/');
+        var separator =
+            normalized.LastIndexOf('/');
+        return separator <= 0
+            ? null
+            : normalized[..separator];
     }
 
     private static string DescribeScanState(
