@@ -239,26 +239,8 @@ public sealed partial class LibraryRepository
                 .ConfigureAwait(false);
         }
 
-        await using (var removeOrphanTags = connection.CreateCommand())
-        {
-            removeOrphanTags.Transaction = transaction;
-            removeOrphanTags.CommandText =
-                """
-                DELETE FROM tags
-                WHERE library_id = $library_id
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM asset_tags AS at
-                      WHERE at.tag_id = tags.id
-                  );
-                """;
-            removeOrphanTags.Parameters.AddWithValue(
-                "$library_id",
-                libraryId);
-            await removeOrphanTags.ExecuteNonQueryAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-
+        // Keep zero-asset tags. Tags are now a first-class managed library
+        // resource and may be created before they are assigned to an image.
         await ReindexAssetOnConnectionAsync(
             connection,
             transaction,
