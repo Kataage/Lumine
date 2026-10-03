@@ -1015,7 +1015,8 @@ try
             static int RealizedNavigationRows(Control view)
             {
                 var list =
-                    view.GetVisualDescendants()
+                    view as ListBox
+                    ?? view.GetVisualDescendants()
                         .OfType<ListBox>()
                         .FirstOrDefault()
                     ?? throw new InvalidOperationException(
