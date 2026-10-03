@@ -24,6 +24,12 @@ public static class LumineVisualPalette
     public const string Warning = "#FBBF24";
     public const string Focus = "#D4D4D8";
     public const string Selection = "#E4E4E7";
+    public const string ModalScrim = "#BE000000";
+    public const string Overlay = "#D618181B";
+    public const string OverlaySoft = "#B018181B";
+    public const string CaptionGradientTransparent = "#00000000";
+    public const string CaptionGradientMiddle = "#46000000";
+    public const string CaptionGradientEnd = "#DC000000";
 }
 
 
