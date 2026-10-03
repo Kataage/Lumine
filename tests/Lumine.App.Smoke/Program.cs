@@ -1129,7 +1129,9 @@ try
             var tagsView =
                 ProductNavigationViews.CreateTags(
                     largeTags,
-                    null,
+                    Array.Empty<string>(),
+                    static _ => Task.CompletedTask,
+                    static (_, _) => Task.CompletedTask,
                     static _ => Task.CompletedTask);
             scaleWindow =
                 new Window
