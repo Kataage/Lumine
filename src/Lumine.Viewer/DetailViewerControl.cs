@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
@@ -286,7 +287,14 @@ public sealed class DetailViewerControl : UserControl
             }
         };
 
-        _scroll.PointerWheelChanged += OnPointerWheelChanged;
+        // Own wheel input before ScrollViewer's built-in scrolling sees it.
+        // In focused viewing the interaction contract is deliberately simple:
+        // wheel = zoom, left drag = pan.
+        stage.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnPointerWheelChanged,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
         surface.PointerPressed += OnPointerPressed;
         surface.PointerMoved += OnPointerMoved;
         surface.PointerReleased += OnPointerReleased;
@@ -1469,18 +1477,37 @@ public sealed class DetailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
-        if (e.Delta.Y == 0)
+        // Consume the routed wheel gesture even when a device reports only a
+        // horizontal delta. Letting any wheel event reach ScrollViewer makes
+        // zoom and pan feel coupled.
+        e.Handled = true;
+        await ApplyWheelZoomAsync(e.Delta.Y);
+    }
+
+    private Task ApplyWheelZoomAsync(double deltaY)
+    {
+        if (deltaY == 0)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        e.Handled = true;
-        var factor = e.Delta.Y > 0
+        var factor = deltaY > 0
             ? _session.Options.ZoomStep
             : 1 / _session.Options.ZoomStep;
-
-        await ZoomByAsync(factor);
+        return ZoomByAsync(factor);
     }
+
+    internal Task ApplyWheelZoomForSmokeAsync(double deltaY) =>
+        ApplyWheelZoomAsync(deltaY);
+
+    internal bool CanPanForSmoke =>
+        CanPan();
+
+    private bool CanPan() =>
+        _scroll.Extent.Width
+            > _scroll.Viewport.Width + 0.5
+        || _scroll.Extent.Height
+            > _scroll.Viewport.Height + 0.5;
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -1504,7 +1531,7 @@ public sealed class DetailViewerControl : UserControl
             return;
         }
 
-        if (_fitMode || _zoom <= 1)
+        if (!CanPan())
         {
             return;
         }
