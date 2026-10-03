@@ -408,21 +408,6 @@ public sealed class DetailViewerControl : UserControl
             "next button");
 
 
-    internal double ToolbarOpacityForSmoke =>
-        _toolbarHost.Opacity;
-
-    internal double PreviousOpacityForSmoke =>
-        _previous.Opacity;
-
-    internal double NextOpacityForSmoke =>
-        _next.Opacity;
-
-    internal void FadeChromeForSmoke() =>
-        FadeChrome();
-
-    internal void RevealChromeForSmoke() =>
-        RevealChrome();
-
     private Rect GetControlBoundsForSmoke(
         Control control,
         string label)
