@@ -470,18 +470,24 @@ public sealed class MainWindow : Window
         _lightboxHost.IsVisible = false;
         _appShell.IsEnabled = true;
 
-        if (_lightboxRestoreFocus is Control restore
-            && restore.IsEffectivelyVisible
-            && restore.IsEnabled)
-        {
-            restore.Focus();
-        }
-        else
-        {
-            _shell?.GridViewer.Focus();
-        }
-
+        var restoreTarget =
+            _lightboxRestoreFocus;
         _lightboxRestoreFocus = null;
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (restoreTarget is Control restore
+                    && restore.IsEffectivelyVisible
+                    && restore.IsEnabled
+                    && restore.Focus())
+                {
+                    return;
+                }
+
+                _shell?.GridViewer.Focus();
+            },
+            DispatcherPriority.Background);
     }
 
     internal void ToggleLightboxFullScreen()
