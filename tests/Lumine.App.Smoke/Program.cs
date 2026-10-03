@@ -1804,6 +1804,27 @@ try
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
+                    var windowStateBeforeFullscreen =
+                        window.WindowState;
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxFullScreen
+                        && window.WindowState
+                            == WindowState.FullScreen,
+                        "Focused viewer did not enter full-screen state.");
+
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxFullScreen
+                        && window.WindowState
+                            == windowStateBeforeFullscreen,
+                        "Focused viewer did not restore the prior window state after full-screen exit.");
+
+                    window.ToggleLightboxFullScreen();
+                    Dispatcher.UIThread.RunJobs();
+
                     var focusedGeometry =
                         window.CurrentShell
                             .FocusedViewerGeometryForSmoke;
@@ -1841,9 +1862,12 @@ try
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.IsLightboxVisible
+                        && !window.IsLightboxFullScreen
+                        && window.WindowState
+                            == windowStateBeforeFullscreen
                         && window.IsWorkspaceInteractionEnabled
                         && !window.CurrentShell.IsFocusedViewVisible,
-                        "Closing the focused image viewer did not release modality and restore workspace interaction.");
+                        "Closing the focused image viewer did not release modality/full-screen state and restore workspace interaction.");
                     Require(
                         window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
