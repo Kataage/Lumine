@@ -2413,6 +2413,39 @@ try
                             StringComparison.Ordinal),
                         "Focused viewer full-screen automation metadata/accelerator regressed.");
 
+                    Require(
+                        window.IsFocusInsideLightboxForSmoke,
+                        "Opening the lightbox did not move keyboard focus into the modal layer.");
+
+                    for (var tabIndex = 0;
+                         tabIndex < 12;
+                         tabIndex++)
+                    {
+                        var focusedElement =
+                            window.FocusManager
+                                .GetFocusedElement()
+                            as InputElement
+                            ?? throw new InvalidOperationException(
+                                "Lightbox lost its focused input element during Tab-cycle acceptance.");
+
+                        focusedElement.RaiseEvent(
+                            new KeyEventArgs
+                            {
+                                RoutedEvent =
+                                    InputElement.KeyDownEvent,
+                                Key = Key.Tab,
+                                KeyModifiers =
+                                    tabIndex >= 6
+                                        ? KeyModifiers.Shift
+                                        : KeyModifiers.None
+                            });
+                        Dispatcher.UIThread.RunJobs();
+
+                        Require(
+                            window.IsFocusInsideLightboxForSmoke,
+                            "Tab/Shift+Tab escaped the modal lightbox into the background workspace.");
+                    }
+
                     var windowStateBeforeFullscreen =
                         window.WindowState;
                     window.ToggleLightboxFullScreen();
