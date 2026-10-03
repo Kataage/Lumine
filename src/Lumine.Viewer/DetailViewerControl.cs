@@ -12,6 +12,11 @@ namespace Lumine.Viewer;
 
 public sealed class DetailViewerControl : UserControl
 {
+    private static readonly Cursor PanAvailableCursor =
+        new(StandardCursorType.Hand);
+    private static readonly Cursor PanningCursor =
+        new(StandardCursorType.SizeAll);
+
     private readonly ViewerDetailSession _session;
     private readonly ScrollViewer _scroll;
     private readonly Image _image;
@@ -24,8 +29,10 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _zoomOut;
     private readonly Button _zoomIn;
     private readonly Button _fullScreen;
+    private readonly Button _close;
     private readonly TextBlock _zoomText;
     private readonly Border _toolbarHost;
+    private readonly Border _surface;
     private readonly DispatcherTimer _chromeTimer;
     private double _zoom = 1;
     private bool _fitMode = true;
@@ -103,6 +110,14 @@ public sealed class DetailViewerControl : UserControl
                 "全画面表示 (F11)",
                 "viewer.fullscreen",
                 "F11");
+        _close =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M6 6l12 12 M18 6L6 18",
+                    16),
+                "閉じる (Esc)",
+                "viewer.close",
+                "Esc");
 
         _zoomText = new TextBlock
         {
@@ -127,6 +142,16 @@ public sealed class DetailViewerControl : UserControl
         toolbar.Children.Add(_fit);
         toolbar.Children.Add(_actual);
         toolbar.Children.Add(_fullScreen);
+        toolbar.Children.Add(
+            new Border
+            {
+                Width = 1,
+                Height = 18,
+                Margin = new Thickness(3, 0),
+                Background = ViewerVisualTokens.Border,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        toolbar.Children.Add(_close);
 
         _status = new TextBlock
         {
@@ -152,15 +177,16 @@ public sealed class DetailViewerControl : UserControl
         _session.SetOriginalReleaseHandler(
             ReleaseOriginalAfterCompositionAsync);
 
-        var surface = new Border
+        _surface = new Border
         {
             Background = ViewerVisualTokens.Stage,
-            Child = _image
+            Child = _image,
+            Cursor = Cursor.Default
         };
 
         _scroll = new ScrollViewer
         {
-            Content = surface,
+            Content = _surface,
             HorizontalContentAlignment =
                 HorizontalAlignment.Center,
             VerticalContentAlignment =
@@ -248,12 +274,19 @@ public sealed class DetailViewerControl : UserControl
                      _zoomIn,
                      _fit,
                      _actual,
-                     _fullScreen
+                     _fullScreen,
+                     _close
                  })
         {
             control.GotFocus +=
+                (_, _) => RevealChrome(
+                    autoHide: false);
+            control.LostFocus +=
                 (_, _) => RevealChrome();
             control.PointerEntered +=
+                (_, _) => RevealChrome(
+                    autoHide: false);
+            control.PointerExited +=
                 (_, _) => RevealChrome();
         }
 
@@ -278,6 +311,11 @@ public sealed class DetailViewerControl : UserControl
                 FullScreenToggleRequested?.Invoke(
                     this,
                     EventArgs.Empty);
+        _close.Click +=
+            (_, _) =>
+                CloseRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
 
         _scroll.SizeChanged += (_, _) =>
         {
@@ -285,6 +323,10 @@ public sealed class DetailViewerControl : UserControl
             {
                 ApplyFit();
             }
+
+            Dispatcher.UIThread.Post(
+                UpdatePanAffordance,
+                DispatcherPriority.Render);
         };
 
         // Own wheel input before ScrollViewer's built-in scrolling sees it.
@@ -295,9 +337,9 @@ public sealed class DetailViewerControl : UserControl
             OnPointerWheelChanged,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
-        surface.PointerPressed += OnPointerPressed;
-        surface.PointerMoved += OnPointerMoved;
-        surface.PointerReleased += OnPointerReleased;
+        _surface.PointerPressed += OnPointerPressed;
+        _surface.PointerMoved += OnPointerMoved;
+        _surface.PointerReleased += OnPointerReleased;
         KeyDown += OnKeyDown;
 
         AttachSessionEvents();
@@ -436,6 +478,8 @@ public sealed class DetailViewerControl : UserControl
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler? FullScreenToggleRequested;
+
+    public event EventHandler? CloseRequested;
 
     public Task SelectAsync(
         long index,
@@ -788,6 +832,10 @@ public sealed class DetailViewerControl : UserControl
         _image.Height = displaySize.Height;
         _zoomText.Text =
             $"{Math.Round(zoom * 100):N0}%";
+
+        Dispatcher.UIThread.Post(
+            UpdatePanAffordance,
+            DispatcherPriority.Render);
     }
 
     private void CenterViewport()
@@ -1509,6 +1557,16 @@ public sealed class DetailViewerControl : UserControl
         || _scroll.Extent.Height
             > _scroll.Viewport.Height + 0.5;
 
+    private void UpdatePanAffordance()
+    {
+        _surface.Cursor =
+            _dragging
+                ? PanningCursor
+                : CanPan()
+                    ? PanAvailableCursor
+                    : Cursor.Default;
+    }
+
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_scroll).Properties.IsLeftButtonPressed)
@@ -1537,6 +1595,7 @@ public sealed class DetailViewerControl : UserControl
         }
 
         _dragging = true;
+        UpdatePanAffordance();
         _dragStart = e.GetPosition(_scroll);
         _dragStartOffset = _scroll.Offset;
         e.Pointer.Capture((IInputElement?)sender);
@@ -1558,7 +1617,8 @@ public sealed class DetailViewerControl : UserControl
         e.Handled = true;
     }
 
-    private void RevealChrome()
+    private void RevealChrome(
+        bool autoHide = true)
     {
         _toolbarHost.Opacity = 1;
         _previous.Opacity = 1;
@@ -1567,16 +1627,34 @@ public sealed class DetailViewerControl : UserControl
         _previous.IsHitTestVisible = true;
         _next.IsHitTestVisible = true;
         _chromeTimer.Stop();
-        _chromeTimer.Start();
+        if (autoHide)
+        {
+            _chromeTimer.Start();
+        }
     }
+
+    private bool IsChromeInteractionActive() =>
+        _dragging
+        || _toolbarHost.IsPointerOver
+        || _previous.IsPointerOver
+        || _next.IsPointerOver
+        || _close.IsFocused
+        || _fullScreen.IsFocused
+        || _actual.IsFocused
+        || _fit.IsFocused
+        || _zoomIn.IsFocused
+        || _zoomOut.IsFocused
+        || _previous.IsFocused
+        || _next.IsFocused;
 
     private void FadeChrome()
     {
         _chromeTimer.Stop();
 
-        if (_dragging)
+        if (IsChromeInteractionActive())
         {
-            RevealChrome();
+            RevealChrome(
+                autoHide: false);
             return;
         }
 
@@ -1588,6 +1666,24 @@ public sealed class DetailViewerControl : UserControl
         _previous.IsHitTestVisible = false;
         _next.IsHitTestVisible = false;
     }
+
+    internal Rect CloseButtonBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _close,
+            "close button");
+
+    internal bool HasPanCursorForSmoke =>
+        !ReferenceEquals(
+            _surface.Cursor,
+            Cursor.Default);
+
+    internal void RequestCloseForSmoke() =>
+        CloseRequested?.Invoke(
+            this,
+            EventArgs.Empty);
+
+    internal void FocusCloseForSmoke() =>
+        _close.Focus();
 
     internal bool IsChromeVisibleForSmoke =>
         _toolbarHost.Opacity > 0.9
@@ -1616,6 +1712,7 @@ public sealed class DetailViewerControl : UserControl
         }
 
         _dragging = false;
+        UpdatePanAffordance();
         e.Pointer.Capture(null);
         e.Handled = true;
     }

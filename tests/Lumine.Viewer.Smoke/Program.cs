@@ -1406,13 +1406,23 @@ internal static class Program
         Dispatcher.UIThread.RunJobs();
 
         var fullScreenRequests = 0;
+        var closeRequests = 0;
         detail.FullScreenToggleRequested +=
             (_, _) =>
                 fullScreenRequests++;
+        detail.CloseRequested +=
+            (_, _) =>
+                closeRequests++;
+
         RaiseKey(detail, Key.F11);
         Require(
             fullScreenRequests == 1,
             "F11 did not request focused-view full-screen toggle.");
+
+        detail.RequestCloseForSmoke();
+        Require(
+            closeRequests == 1,
+            "Integrated focused-view close command did not raise CloseRequested.");
 
         await detail.ActualSizeAsync();
         await detail.SetZoomAsync(2);
@@ -1527,6 +1537,10 @@ internal static class Program
             && detail.CanPanForSmoke,
             "Detail zoom command did not create a draggable oversized image.");
 
+        Require(
+            detail.HasPanCursorForSmoke,
+            "Zoomed oversized image did not expose a visible pan affordance.");
+
         detail.PanBy(80, 60);
         Dispatcher.UIThread.RunJobs();
         Require(
@@ -1617,6 +1631,8 @@ internal static class Program
             detail.PreviousBoundsInControlForSmoke;
         var nextBounds =
             detail.NextBoundsInControlForSmoke;
+        var closeBounds =
+            detail.CloseButtonBoundsInControlForSmoke;
 
         Require(
             toolbarBounds.Top >= viewportBounds.Top
@@ -1624,9 +1640,20 @@ internal static class Program
             && previousBounds.Left >= viewportBounds.Left
             && previousBounds.Right <= viewportBounds.Left + 96
             && nextBounds.Right <= viewportBounds.Right
-            && nextBounds.Left >= viewportBounds.Right - 96,
-            "Viewer chrome escaped its top/edge safe bands and can obstruct the image center.");
+            && nextBounds.Left >= viewportBounds.Right - 96
+            && closeBounds.Left >= toolbarBounds.Left
+            && closeBounds.Right <= toolbarBounds.Right
+            && closeBounds.Top >= toolbarBounds.Top
+            && closeBounds.Bottom <= toolbarBounds.Bottom,
+            "Viewer chrome escaped its safe bands or the close command remained a separate overlay.");
 
+        detail.FocusCloseForSmoke();
+        detail.FadeChromeForSmoke();
+        Require(
+            detail.IsChromeVisibleForSmoke,
+            "Viewer chrome auto-hid while a chrome command held keyboard focus.");
+
+        detail.Focus();
         detail.FadeChromeForSmoke();
         Require(
             detail.IsChromeNonBlockingForSmoke,

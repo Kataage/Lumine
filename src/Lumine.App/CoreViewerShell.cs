@@ -87,47 +87,12 @@ internal sealed class CoreViewerShell : UserControl
                 Child = _contextDetail
             };
 
-        var focusedClose =
-            LumineDesign.ConfigureIconButton(
-                new Button
-                {
-                    Content =
-                        LumineDesign.CreateStrokeIcon(
-                            LumineDesign.CloseIconPath,
-                            18,
-                            LumineDesign.Foreground)
-                },
-                "閉じる (Esc)",
-                automationId: "viewer.close",
-                acceleratorKey: "Esc");
-        focusedClose.Background =
-            LumineDesign.ControlSurface;
-        focusedClose.BorderBrush =
-            LumineDesign.BorderStrong;
-        focusedClose.Click +=
-            (_, _) =>
-                CloseFocusedView();
-
-        var focusedHeader =
-            new Border
-            {
-                Background = Brushes.Transparent,
-                Margin = new Thickness(10),
-                HorizontalAlignment =
-                    HorizontalAlignment.Right,
-                VerticalAlignment =
-                    VerticalAlignment.Top,
-                Child = focusedClose
-            };
-
         var focusedLayout =
             new Grid
             {
                 Background = LumineDesign.Background
             };
         focusedLayout.Children.Add(_detail);
-        focusedLayout.Children.Add(
-            focusedHeader);
 
         _focusedSurface =
             new Border
@@ -189,6 +154,8 @@ internal sealed class CoreViewerShell : UserControl
         _grid.AssetInvoked += OnAssetInvoked;
         _detail.FullScreenToggleRequested +=
             OnFullScreenToggleRequested;
+        _detail.CloseRequested +=
+            (_, _) => CloseFocusedView();
         _grid.AssetDetailRequested += OnAssetDetailRequested;
         _grid.AssetContextRequested += OnAssetContextRequested;
         KeyDown += OnShellKeyDown;
