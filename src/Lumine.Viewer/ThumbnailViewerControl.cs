@@ -31,6 +31,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _selectedIndex = -1;
     private long _selectionAnchor = -1;
     private long _pendingFocusIndex = -1;
+    private bool _pendingFocusLayoutSubscribed;
     private ViewerLayoutMode _layoutMode;
     private int _densityLevel;
     private double _viewportWidth = 1;
@@ -103,7 +104,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Terminal shell teardown must detach realized rows synchronously.
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
-        _pendingFocusIndex = -1;
+        CancelPendingAssetFocus();
         _rows.ItemsSource = null;
         ClearSelection();
     }
@@ -223,7 +224,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public void RestoreAssetFocus(long index)
     {
-        _pendingFocusIndex = -1;
+        CancelPendingAssetFocus();
 
         if ((ulong)index >= (ulong)AssetCount)
         {
@@ -238,15 +239,23 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
-        // ScrollIntoView may realize the virtualized row on a later layout
-        // pass. Keep the semantic asset identity and complete the focus move
-        // when that tile actually joins the visual tree.
+        // ScrollIntoView requests realization, but Avalonia's virtualizing
+        // panel can complete that work in a later layout pass. Keep the
+        // semantic asset identity and finish focus restoration from layout /
+        // tile-realization events rather than timing-based retries.
         _pendingFocusIndex = index;
+        EnsurePendingFocusLayoutSubscription();
+
         Focus(
             NavigationMethod.Unspecified,
             KeyModifiers.None);
+
         _rows.ScrollIntoView(
             checked((int)(index / _columns)));
+        _rows.UpdateLayout();
+        UpdateLayout();
+
+        TryCompletePendingAssetFocus();
     }
 
     private bool TryFocusTile(
@@ -270,18 +279,86 @@ public sealed class ThumbnailViewerControl : UserControl
                    KeyModifiers.None);
     }
 
-    private void CompletePendingAssetFocus(
-        ViewerTileControl tile)
+    private void EnsurePendingFocusLayoutSubscription()
     {
-        if (_pendingFocusIndex != tile.Index)
+        if (_pendingFocusLayoutSubscribed)
         {
             return;
         }
 
-        if (TryFocusTile(tile))
+        _rows.LayoutUpdated += OnPendingFocusLayoutUpdated;
+        _pendingFocusLayoutSubscribed = true;
+    }
+
+    private void OnPendingFocusLayoutUpdated(
+        object? sender,
+        EventArgs e)
+    {
+        if (_pendingFocusIndex < 0)
         {
-            _pendingFocusIndex = -1;
+            RemovePendingFocusLayoutSubscription();
+            return;
         }
+
+        if (TryCompletePendingAssetFocus())
+        {
+            return;
+        }
+
+        // If the requested row was still outside the realized window during
+        // this pass, keep it as the scroll target for the next real layout
+        // pass. No delay/retry counter is involved.
+        _rows.ScrollIntoView(
+            checked((int)(_pendingFocusIndex / _columns)));
+    }
+
+    private bool TryCompletePendingAssetFocus()
+    {
+        if (_pendingFocusIndex < 0)
+        {
+            return false;
+        }
+
+        var tile =
+            GetAssetFocusTarget(_pendingFocusIndex)
+            as ViewerTileControl;
+        if (tile is null
+            || !TryFocusTile(tile))
+        {
+            return false;
+        }
+
+        CancelPendingAssetFocus();
+        return true;
+    }
+
+    private void CompletePendingAssetFocus(
+        ViewerTileControl tile)
+    {
+        if (_pendingFocusIndex != tile.Index
+            || !TryFocusTile(tile))
+        {
+            return;
+        }
+
+        CancelPendingAssetFocus();
+    }
+
+    private void CancelPendingAssetFocus()
+    {
+        _pendingFocusIndex = -1;
+        RemovePendingFocusLayoutSubscription();
+    }
+
+    private void RemovePendingFocusLayoutSubscription()
+    {
+        if (!_pendingFocusLayoutSubscribed)
+        {
+            return;
+        }
+
+        _rows.LayoutUpdated -= OnPendingFocusLayoutUpdated;
+        _pendingFocusLayoutSubscribed = false;
     }
 
 
