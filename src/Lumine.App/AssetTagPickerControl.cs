@@ -299,32 +299,33 @@ internal sealed class AssetTagPickerControl : UserControl
                 });
 
             var chip =
-                LumineDesign.ConfigureSelectedButtonStateResources(
-                    new Button
-                    {
-                        Content = content,
-                        MinHeight = 26,
-                        Padding =
-                            new Thickness(
-                                LumineDesign.Space8,
-                                LumineDesign.Space4),
-                        Margin =
-                            new Thickness(
-                                0,
-                                0,
-                                LumineDesign.Space4,
-                                LumineDesign.Space4),
-                        CornerRadius =
-                            new CornerRadius(13),
-                        Background =
-                            LumineDesign.AccentMuted,
-                        BorderBrush =
-                            LumineDesign.BorderStrong,
-                        BorderThickness =
-                            new Thickness(1),
-                        FontSize =
-                            LumineDesign.CaptionFontSize
-                    });
+                new Button
+                {
+                    Content = content,
+                    MinHeight = 26,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4),
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space4,
+                            LumineDesign.Space4),
+                    CornerRadius =
+                        new CornerRadius(13),
+                    Background =
+                        LumineDesign.AccentMuted,
+                    BorderBrush =
+                        LumineDesign.BorderStrong,
+                    BorderThickness =
+                        new Thickness(1),
+                    FontSize =
+                        LumineDesign.CaptionFontSize
+                };
+            LumineDesign.ConfigureSelectedButtonStateResources(
+                chip);
             var current = name;
             chip.Click +=
                 async (_, _) =>
