@@ -86,6 +86,8 @@ internal static class LumineDesign
         15 * LumineVisualMetrics.TextScaleFactor;
     public static double EmphasisFontSize =>
         18 * LumineVisualMetrics.TextScaleFactor;
+    public static double BrandTitleFontSize =>
+        24 * LumineVisualMetrics.TextScaleFactor;
     public static double BodyLineHeight =>
         18 * LumineVisualMetrics.TextScaleFactor;
     public const double HeaderHeight = 56;
@@ -343,25 +345,32 @@ internal static class LumineDesign
                     selected
                         ? Foreground
                         : MutedForeground));
-            content.Children.Add(
-                new TextBlock
-                {
-                    Text = item.Label,
-                    Width = 56,
-                    FontSize = CompactLabelFontSize,
-                    FontWeight =
-                        selected
-                            ? FontWeight.SemiBold
-                            : FontWeight.Normal,
-                    Foreground =
-                        selected
-                            ? Foreground
-                            : MutedForeground,
-                    TextAlignment = TextAlignment.Center,
-                    TextWrapping = TextWrapping.NoWrap,
-                    TextTrimming =
-                        TextTrimming.CharacterEllipsis
-                });
+            // At large Windows accessibility text scales, keep the
+            // compact rail icon-first instead of clipping oversized Japanese
+            // labels into an unreadable 56-DIP slot. Tooltip and automation
+            // name preserve the full destination label.
+            if (LumineVisualMetrics.TextScaleFactor < 1.75)
+            {
+                content.Children.Add(
+                    new TextBlock
+                    {
+                        Text = item.Label,
+                        Width = 56,
+                        FontSize = CompactLabelFontSize,
+                        FontWeight =
+                            selected
+                                ? FontWeight.SemiBold
+                                : FontWeight.Normal,
+                        Foreground =
+                            selected
+                                ? Foreground
+                                : MutedForeground,
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.NoWrap,
+                        TextTrimming =
+                            TextTrimming.CharacterEllipsis
+                    });
+            }
 
             var button =
                 new Button
@@ -465,7 +474,9 @@ internal static class LumineDesign
             new TextBlock
             {
                 Text = title,
-                FontSize = showBrand ? 24 : 18,
+                FontSize = showBrand
+                    ? BrandTitleFontSize
+                    : EmphasisFontSize,
                 FontWeight = FontWeight.Bold,
                 Foreground = Foreground,
                 TextAlignment = TextAlignment.Center,
@@ -483,7 +494,7 @@ internal static class LumineDesign
                     Foreground = MutedForeground,
                     TextAlignment = TextAlignment.Center,
                     TextWrapping = TextWrapping.Wrap,
-                    LineHeight = 18
+                    LineHeight = BodyLineHeight
                 });
         }
 
