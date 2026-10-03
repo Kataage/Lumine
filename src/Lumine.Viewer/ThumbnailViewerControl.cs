@@ -110,6 +110,27 @@ public sealed class ThumbnailViewerControl : UserControl
     public int DensityLevel =>
         _densityLevel;
 
+    public double BottomOverlayInset =>
+        Math.Max(
+            0,
+            _rows.Padding.Bottom
+            - GridOuterPadding);
+
+    public void SetBottomOverlayInset(
+        double inset)
+    {
+        var next =
+            Math.Max(
+                0,
+                inset);
+        _rows.Padding =
+            new Thickness(
+                GridOuterPadding,
+                GridOuterPadding,
+                GridOuterPadding,
+                GridOuterPadding + next);
+    }
+
     public void PrepareForDetach()
     {
         // Terminal shell teardown must detach realized rows synchronously.
