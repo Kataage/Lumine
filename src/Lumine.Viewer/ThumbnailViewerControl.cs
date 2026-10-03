@@ -427,6 +427,21 @@ public sealed class ThumbnailViewerControl : UserControl
                     && tile.IsFocused);
 
 
+    internal ViewerTilePresentation
+        GetRealizedTilePresentationForSmoke(
+            long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.GetPresentationForSmoke();
+    }
+
     internal IReadOnlyList<ViewerTileActionGeometry>
         GetRealizedTileActionGeometryForSmoke(
             long index)
@@ -1670,6 +1685,24 @@ public sealed class ThumbnailViewerControl : UserControl
             return result;
         }
 
+        public ViewerTilePresentation GetPresentationForSmoke()
+        {
+            var actions =
+                GetActionGeometryForSmoke();
+
+            return _layoutMode == ViewerLayoutMode.List
+                ? new ViewerTilePresentation(
+                    _label?.Text ?? string.Empty,
+                    _listSecondary?.Text ?? string.Empty,
+                    string.Empty,
+                    actions.Count)
+                : new ViewerTilePresentation(
+                    _captionOverlay?.NameText ?? string.Empty,
+                    _captionOverlay?.SizeText ?? string.Empty,
+                    _captionOverlay?.OrganizationText ?? string.Empty,
+                    actions.Count);
+        }
+
         private void EnsureSelectionBadge()
         {
             if (_selectionBadge is not null)
@@ -1825,6 +1858,12 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal readonly record struct ViewerTilePresentation(
+        string Primary,
+        string Secondary,
+        string Organization,
+        int ActionCount);
+
     internal readonly record struct ViewerTileActionGeometry(
         Rect ButtonBounds,
         Rect IconBounds);
@@ -1855,6 +1894,13 @@ public sealed class ThumbnailViewerControl : UserControl
         private FormattedText? _size;
         private FormattedText? _organization;
 
+        public string NameText { get; private set; } =
+            string.Empty;
+        public string SizeText { get; private set; } =
+            string.Empty;
+        public string OrganizationText { get; private set; } =
+            string.Empty;
+
         public TileCaptionOverlay(double tileWidth)
         {
             _maxTextWidth =
@@ -1868,6 +1914,13 @@ public sealed class ThumbnailViewerControl : UserControl
             int? rating,
             bool favorite)
         {
+            NameText = name;
+            SizeText = size;
+            OrganizationText =
+                FormatOrganizationCue(
+                    rating,
+                    favorite);
+
             _name =
                 CreateText(
                     name,
@@ -1883,15 +1936,11 @@ public sealed class ThumbnailViewerControl : UserControl
                         MutedText,
                         FontWeight.Normal);
 
-            var organization =
-                FormatOrganizationCue(
-                    rating,
-                    favorite);
             _organization =
-                string.IsNullOrEmpty(organization)
+                string.IsNullOrEmpty(OrganizationText)
                     ? null
                     : CreateText(
-                        organization,
+                        OrganizationText,
                         ViewerVisualTokens.CaptionFontSize,
                         ViewerVisualTokens.Foreground,
                         FontWeight.SemiBold);
