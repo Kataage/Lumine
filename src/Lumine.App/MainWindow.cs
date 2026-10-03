@@ -474,7 +474,7 @@ public sealed class MainWindow : Window
             _lightboxRestoreFocus;
         _lightboxRestoreFocus = null;
 
-        Dispatcher.UIThread.Post(
+        Avalonia.Threading.Dispatcher.UIThread.Post(
             () =>
             {
                 if (restoreTarget is Control restore
@@ -487,7 +487,7 @@ public sealed class MainWindow : Window
 
                 _shell?.GridViewer.Focus();
             },
-            DispatcherPriority.Background);
+            Avalonia.Threading.DispatcherPriority.Background);
     }
 
     internal void ToggleLightboxFullScreen()
