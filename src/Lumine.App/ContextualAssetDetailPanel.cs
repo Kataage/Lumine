@@ -77,6 +77,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _focused;
+    private readonly Button _pin;
     private readonly Avalonia.Controls.Image _preview;
     private readonly ContentControl _tabContent;
     private readonly Button[] _tabButtons;
@@ -221,6 +222,26 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             (_, _) =>
                 ResetEditor();
 
+        _pin =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "固定",
+                    MinHeight = 28,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space2)
+                });
+        ToolTip.SetTip(
+            _pin,
+            "詳細パネルを画像一覧の横に固定");
+        _pin.Click +=
+            (_, _) =>
+                PinToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
+
         var close =
             LumineDesign.ConfigureIconButton(
                 new Button
@@ -254,7 +275,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto"),
+                    new ColumnDefinitions("*,Auto,Auto,Auto"),
                 ColumnSpacing = LumineDesign.Space6,
                 Margin =
                     new Thickness(
@@ -275,7 +296,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             });
         Grid.SetColumn(_focused, 1);
         header.Children.Add(_focused);
-        Grid.SetColumn(close, 2);
+        Grid.SetColumn(_pin, 2);
+        header.Children.Add(_pin);
+        Grid.SetColumn(close, 3);
         header.Children.Add(close);
 
         var summaryBody =
@@ -679,6 +702,33 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal bool HasPreview =>
         _preview.Source is not null;
+
+    internal event EventHandler? PinToggleRequested;
+
+    internal void SetPinPresentation(
+        bool pinned,
+        bool available)
+    {
+        _pin.IsVisible = available;
+        _pin.IsEnabled = available;
+        _pin.Content =
+            pinned
+                ? "固定中"
+                : "固定";
+        _pin.Background =
+            pinned
+                ? LumineDesign.AccentMuted
+                : LumineDesign.ControlSurface;
+        _pin.BorderBrush =
+            pinned
+                ? LumineDesign.BorderStrong
+                : LumineDesign.Border;
+        ToolTip.SetTip(
+            _pin,
+            pinned
+                ? "固定を解除して画像一覧の上に重ねる"
+                : "詳細パネルを画像一覧の横に固定");
+    }
 
     internal int SelectedTabIndex =>
         _selectedTabIndex;
