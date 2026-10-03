@@ -369,7 +369,7 @@ internal static class ProductNavigationViews
                     StringComparer.OrdinalIgnoreCase);
             var children =
                 new Dictionary<
-                    string?,
+                    string,
                     List<LibraryFolderInfo>>(
                     StringComparer.OrdinalIgnoreCase);
 
@@ -384,12 +384,14 @@ internal static class ProductNavigationViews
                     parent = null;
                 }
 
+                var parentKey =
+                    parent ?? string.Empty;
                 if (!children.TryGetValue(
-                        parent,
+                        parentKey,
                         out var items))
                 {
                     items = [];
-                    children[parent] = items;
+                    children[parentKey] = items;
                 }
 
                 items.Add(folder);
@@ -441,7 +443,7 @@ internal static class ProductNavigationViews
                 visible.Clear();
 
                 if (children.TryGetValue(
-                        null,
+                        string.Empty,
                         out var roots))
                 {
                     void AddNodes(
