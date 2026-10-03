@@ -712,7 +712,7 @@ internal static class LumineDesign
         var stack =
             new StackPanel
             {
-                Spacing = 12,
+                Spacing = Space12,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch
             };
@@ -766,12 +766,16 @@ internal static class LumineDesign
                 new Border
                 {
                     MaxWidth = StateCardMaxWidth,
-                    Margin = new Thickness(24),
+                    Margin =
+                        new Thickness(PageGutter),
                     Padding =
                         new Thickness(
-                            showBrand ? 36 : 28),
+                            showBrand
+                                ? PageGutter + Space8
+                                : PageGutter),
                     CornerRadius =
-                        new CornerRadius(SurfaceRadius + 4),
+                        new CornerRadius(
+                            PanelRadius + Space2),
                     Background = Surface,
                     BorderBrush = Border,
                     BorderThickness = new Thickness(1),
