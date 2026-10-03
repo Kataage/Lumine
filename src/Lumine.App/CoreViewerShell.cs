@@ -27,6 +27,7 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Border _contextSurface;
     private readonly Border _focusedSurface;
     private CancellationTokenSource? _selectionSummaryCancellation;
+    private long _focusedViewReturnIndex = -1;
     private bool _compactInspectorLayout;
     private bool _detached;
 
@@ -399,18 +400,19 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectAsset(index);
         }
 
-        var restoreFocusTarget =
-            _grid.GetAssetFocusTarget(index)
-            ?? _grid;
-        restoreFocusTarget.Focus();
+        // Keep a stable semantic return target instead of a Control instance.
+        // Virtualization may recycle the invoking tile while the lightbox is
+        // open; the asset index lets us resolve the current realized tile at
+        // close time.
+        _focusedViewReturnIndex = index;
+        _grid.FocusAsset(index);
 
         _focusedSurface.IsVisible = true;
         var owner =
             TopLevel.GetTopLevel(this)
             as MainWindow;
         owner?.ShowLightbox(
-            _focusedSurface,
-            restoreFocusTarget);
+            _focusedSurface);
 
         try
         {
@@ -426,6 +428,17 @@ internal sealed class CoreViewerShell : UserControl
             owner?.HideLightbox(
                 _focusedSurface);
             _focusedSurface.IsVisible = false;
+            var returnIndex =
+                _focusedViewReturnIndex;
+            _focusedViewReturnIndex = -1;
+            if (returnIndex >= 0
+                && !_grid.FocusAsset(returnIndex))
+            {
+                _grid.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            }
+
             throw;
         }
     }
@@ -450,53 +463,32 @@ internal sealed class CoreViewerShell : UserControl
         }
 
         var returnIndex =
-            _detail.SelectedAssetIndex;
+            _focusedViewReturnIndex;
+        _focusedViewReturnIndex = -1;
         var owner =
             TopLevel.GetTopLevel(_focusedSurface)
             as MainWindow
             ?? TopLevel.GetTopLevel(this)
                 as MainWindow;
+
         _focusedSurface.IsVisible = false;
         _detail.UnbindGrid();
         _runtime.DetailSession.Clear();
 
-        if (returnIndex >= 0)
-        {
-            _grid.ScrollToAsset(returnIndex);
-        }
-
+        // Release modality before resolving focus so the browse surface is
+        // enabled when Avalonia's FocusManager evaluates the target.
         owner?.HideLightbox(
             _focusedSurface);
 
-        void RestoreAssetFocus(int attempt)
+        if (returnIndex >= 0
+            && _grid.FocusAsset(returnIndex))
         {
-            if (_detached)
-            {
-                return;
-            }
-
-            if (returnIndex >= 0
-                && _grid.FocusAsset(returnIndex))
-            {
-                return;
-            }
-
-            if (attempt < 4)
-            {
-                Dispatcher.UIThread.Post(
-                    () =>
-                        RestoreAssetFocus(
-                            attempt + 1),
-                    DispatcherPriority.Background);
-                return;
-            }
-
-            _grid.Focus();
+            return;
         }
 
-        Dispatcher.UIThread.Post(
-            () => RestoreAssetFocus(0),
-            DispatcherPriority.Background);
+        _grid.Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
     }
 
     private async Task LoadContextDetailAsync(
