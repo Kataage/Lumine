@@ -444,10 +444,12 @@ public sealed class MainWindow : Window
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        // MainWindow owns only modal presentation. The invoking surface owns
-        // focus restoration because virtualized controls can be recycled
-        // while the lightbox is open.
-        _appShell.IsEnabled = false;
+        // MainWindow owns only modal presentation. Keep the browse visual
+        // tree enabled so its virtualized rows remain realized while the
+        // lightbox is open. The full-client lightbox blocks pointer input and
+        // owns keyboard focus; hit testing is disabled on the background as
+        // an explicit modal boundary without tearing down virtualization.
+        _appShell.IsHitTestVisible = false;
         _lightboxHost.Content = content;
         _lightboxHost.IsVisible = true;
     }
@@ -466,7 +468,7 @@ public sealed class MainWindow : Window
         ExitLightboxFullScreen();
         _lightboxHost.Content = null;
         _lightboxHost.IsVisible = false;
-        _appShell.IsEnabled = true;
+        _appShell.IsHitTestVisible = true;
     }
 
     internal void ToggleLightboxFullScreen()
@@ -524,7 +526,8 @@ public sealed class MainWindow : Window
         _lightboxHost.Bounds;
 
     internal bool IsWorkspaceInteractionEnabled =>
-        _appShell.IsEnabled;
+        _appShell.IsHitTestVisible
+        && !_lightboxHost.IsVisible;
 
     private void OnNavigationRequested(
         string destination)
