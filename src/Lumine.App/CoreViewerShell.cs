@@ -1813,102 +1813,125 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        var selectedIds =
-            await ResolveSelectedAssetIdsAsync();
-        if (selectedIds.Count == 0)
-        {
-            return;
-        }
-
-        // Resolve source paths through one background Library batch rather
-        // than issuing one Viewer metadata request per selected item.
-        var assets =
-            await _runtime.LibraryService.GetAssetsByIdsAsync(
-                _runtime.Library.Id,
-                selectedIds);
-
-        _bulkStatus.Text =
-            "元ファイルを削除しています…";
-
-        var root =
-            Path.TrimEndingDirectorySeparator(
-                Path.GetFullPath(
-                    _runtime.LibraryRoot));
-        var prefix =
-            root
-            + Path.DirectorySeparatorChar;
-        var removed =
-            new List<string>();
-        var failures =
-            new List<string>();
-
-        await Task.Run(
-            () =>
+        await RunBulkOperationAsync(
+            "元ファイルを削除しています…",
+            async cancellationToken =>
             {
-                foreach (var asset in assets)
+                var selectedIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (selectedIds.Count == 0)
                 {
-                    var relative =
-                        asset.RelativePath.Replace(
-                            '/',
-                            Path.DirectorySeparatorChar);
-                    var source =
-                        Path.GetFullPath(
-                            Path.Combine(
-                                root,
-                                relative));
-
-                    if (!source.StartsWith(
-                            prefix,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (File.Exists(source))
-                        {
-                            File.Delete(source);
-                        }
-
-                        removed.Add(
-                            asset.RelativePath);
-                    }
-                    catch (
-                        IOException)
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                    }
-                    catch (
-                        UnauthorizedAccessException)
-                    {
-                        failures.Add(
-                            asset.RelativePath);
-                    }
+                    return 0;
                 }
+
+                // Resolve source paths through one background Library batch
+                // rather than issuing one Viewer metadata request per item.
+                var assets =
+                    await _runtime.LibraryService.GetAssetsByIdsAsync(
+                        _runtime.Library.Id,
+                        selectedIds,
+                        cancellationToken);
+
+                var root =
+                    Path.TrimEndingDirectorySeparator(
+                        Path.GetFullPath(
+                            _runtime.LibraryRoot));
+                var prefix =
+                    root
+                    + Path.DirectorySeparatorChar;
+                var removed =
+                    new List<string>();
+                var failures =
+                    new List<string>();
+                var cancelled =
+                    false;
+
+                await Task.Run(
+                    () =>
+                    {
+                        foreach (var asset in assets)
+                        {
+                            if (cancellationToken
+                                .IsCancellationRequested)
+                            {
+                                cancelled = true;
+                                break;
+                            }
+
+                            var relative =
+                                asset.RelativePath.Replace(
+                                    '/',
+                                    Path.DirectorySeparatorChar);
+                            var source =
+                                Path.GetFullPath(
+                                    Path.Combine(
+                                        root,
+                                        relative));
+
+                            if (!source.StartsWith(
+                                    prefix,
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                                continue;
+                            }
+
+                            try
+                            {
+                                if (File.Exists(source))
+                                {
+                                    File.Delete(source);
+                                }
+
+                                removed.Add(
+                                    asset.RelativePath);
+                            }
+                            catch (IOException)
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                            }
+                            catch (UnauthorizedAccessException)
+                            {
+                                failures.Add(
+                                    asset.RelativePath);
+                            }
+                        }
+                    });
+
+                // Cancellation can arrive after physical files have already
+                // been deleted. Always reconcile those successful deletions
+                // before surfacing cancellation so Library state never keeps
+                // stale rows for files Lumine removed.
+                if (removed.Count > 0)
+                {
+                    await _runtime.LibraryService.RemoveAssetsAsync(
+                        _runtime.Library.Id,
+                        removed,
+                        CancellationToken.None);
+                    _grid.ClearSelection();
+                }
+
+                if (_afterBulkMutation is not null
+                    && removed.Count > 0)
+                {
+                    await _afterBulkMutation();
+                }
+
+                if (cancelled
+                    || cancellationToken.IsCancellationRequested)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                _bulkStatus.Text =
+                    failures.Count == 0
+                        ? $"{removed.Count:N0}件の元ファイルを削除しました。"
+                        : $"{removed.Count:N0}件を削除、{failures.Count:N0}件は削除できませんでした。";
+                return removed.Count;
             });
-
-        if (removed.Count > 0)
-        {
-            await _runtime.LibraryService.RemoveAssetsAsync(
-                _runtime.Library.Id,
-                removed);
-        }
-
-        _grid.ClearSelection();
-
-        _bulkStatus.Text =
-            failures.Count == 0
-                ? $"{removed.Count:N0}件の元ファイルを削除しました。"
-                : $"{removed.Count:N0}件を削除、{failures.Count:N0}件は削除できませんでした。";
-
-        if (_afterBulkMutation is not null)
-        {
-            await _afterBulkMutation();
-        }
     }
 
     private async void OnShellKeyDown(
