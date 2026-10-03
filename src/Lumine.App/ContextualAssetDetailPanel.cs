@@ -258,8 +258,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             {
                 ColumnDefinitions =
                     new ColumnDefinitions("*,Auto,Auto"),
-                ColumnSpacing = 6,
-                Margin = new Thickness(14, 10, 10, 8)
+                ColumnSpacing = LumineDesign.Space6,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space8,
+                        LumineDesign.Space8,
+                        LumineDesign.Space8)
             };
         header.Children.Add(
             new TextBlock
@@ -279,8 +284,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var summaryBody =
             new StackPanel
             {
-                Spacing = 8,
-                Margin = new Thickness(14, 4, 14, 10)
+                Spacing = LumineDesign.Space8,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space4,
+                        LumineDesign.Space12,
+                        LumineDesign.Space8)
             };
 
         var previewSurface =
@@ -290,7 +300,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Background = LumineDesign.Background,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(9),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
                 ClipToBounds = true,
                 Child = _preview
             };
@@ -358,8 +370,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var organizeBody =
             new StackPanel
             {
-                Spacing = 12,
-                Margin = new Thickness(14, 12, 14, 18)
+                Spacing = LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space16)
             };
         AddSection(
             organizeBody,
@@ -370,7 +387,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var creative =
             new StackPanel
             {
-                Spacing = 8
+                Spacing = LumineDesign.Space8
             };
 
         if (createWorkRequested is not null
@@ -469,8 +486,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var creativeBody =
             new StackPanel
             {
-                Spacing = 12,
-                Margin = new Thickness(14, 12, 14, 18)
+                Spacing = LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space16)
             };
         AddSection(
             creativeBody,
@@ -480,8 +502,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var informationBody =
             new StackPanel
             {
-                Spacing = 14,
-                Margin = new Thickness(14, 12, 14, 18)
+                Spacing = LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12,
+                        LumineDesign.Space16)
             };
         AddSection(
             informationBody,
@@ -538,8 +565,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var tabStripHost =
             new Border
             {
-                Margin = new Thickness(12, 0, 12, 6),
-                Padding = new Thickness(2),
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        0,
+                        LumineDesign.Space12,
+                        LumineDesign.Space6),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space2),
                 Background =
                     LumineDesign.ControlSurface,
                 BorderBrush =
