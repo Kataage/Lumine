@@ -2111,6 +2111,7 @@ internal sealed class CoreViewerShell : UserControl
         // that are awaited below and by CoreViewerRuntime.DisposeAsync().
         Content = null;
 
+        await _contextDetail.DrainPreviewBitmapReleasesAsync();
         await _grid.DrainBitmapReleasesAsync();
     }
 }
