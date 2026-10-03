@@ -1448,8 +1448,44 @@ internal static class Program
             "Detail incorrectly reported original residency while preview-only.");
         Require(
             detail.MetadataText.Contains("1024×768", StringComparison.Ordinal)
-            && detail.MetadataText.Contains("png", StringComparison.Ordinal),
-            "Detail preview did not expose stored technical metadata without opening original.");
+            && detail.MetadataText.Contains("png", StringComparison.Ordinal)
+            && detail.IsMetadataInVisualTreeForSmoke
+            && !detail.IsMetadataVisibleForSmoke,
+            "Detail preview metadata was not available as hidden viewer UI without opening original.");
+
+        detail.ToggleMetadataForSmoke();
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.IsMetadataVisibleForSmoke
+            && detail.MetadataBoundsInControlForSmoke.Width > 0
+            && detail.MetadataBoundsInControlForSmoke.Height > 0,
+            "Viewer info command did not expose metadata in the visual tree.");
+        detail.ToggleMetadataForSmoke();
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            !detail.IsMetadataVisibleForSmoke,
+            "Viewer info command did not hide metadata.");
+
+        var sliderStart = detail.ZoomSliderValueForSmoke;
+        await detail.SetZoomSliderForSmokeAsync(70);
+        Dispatcher.UIThread.RunJobs();
+        var sliderZoom = detail.Zoom;
+        Require(
+            sliderZoom > detailSession.Options.MinZoom
+            && sliderZoom < detailSession.Options.MaxZoom
+            && detail.ZoomSliderValueForSmoke > sliderStart,
+            "Viewer zoom slider did not drive the existing zoom pipeline.");
+
+        var sliderBeforeWheel =
+            detail.ZoomSliderValueForSmoke;
+        await detail.ApplyWheelZoomForSmokeAsync(1);
+        Dispatcher.UIThread.RunJobs();
+        Require(
+            detail.ZoomSliderValueForSmoke > sliderBeforeWheel,
+            "Wheel zoom did not synchronize the visible zoom slider.");
+
+        detail.Fit();
+        Dispatcher.UIThread.RunJobs();
 
         var densityOriginalBefore = provider.OriginalRequests;
         await detail.SetZoomAsync(0.5);
@@ -1633,6 +1669,8 @@ internal static class Program
             detail.NextBoundsInControlForSmoke;
         var closeBounds =
             detail.CloseButtonBoundsInControlForSmoke;
+        var zoomSliderBounds =
+            detail.ZoomSliderBoundsInControlForSmoke;
 
         Require(
             toolbarBounds.Top >= viewportBounds.Top
@@ -1644,8 +1682,12 @@ internal static class Program
             && closeBounds.Left >= toolbarBounds.Left
             && closeBounds.Right <= toolbarBounds.Right
             && closeBounds.Top >= toolbarBounds.Top
-            && closeBounds.Bottom <= toolbarBounds.Bottom,
-            "Viewer chrome escaped its safe bands or the close command remained a separate overlay.");
+            && closeBounds.Bottom <= toolbarBounds.Bottom
+            && zoomSliderBounds.Left >= toolbarBounds.Left
+            && zoomSliderBounds.Right <= toolbarBounds.Right
+            && zoomSliderBounds.Top >= toolbarBounds.Top
+            && zoomSliderBounds.Bottom <= toolbarBounds.Bottom,
+            "Viewer chrome escaped its safe bands or integrated viewer controls escaped the toolbar.");
 
         detail.FocusCloseForSmoke();
         detail.FadeChromeForSmoke();
