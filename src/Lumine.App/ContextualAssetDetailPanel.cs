@@ -75,7 +75,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _focused;
-    private readonly Image _preview;
+    private readonly Avalonia.Controls.Image _preview;
     private readonly TabControl _tabs;
     private DecodedBitmapLease? _previewLease;
     private CancellationTokenSource? _loadCancellation;
@@ -109,7 +109,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             weight: FontWeight.Bold);
         _summary = CreateValue();
         _preview =
-            new Image
+            new Avalonia.Controls.Image
             {
                 Stretch = Stretch.Uniform,
                 HorizontalAlignment =
