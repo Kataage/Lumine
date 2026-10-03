@@ -3,7 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -77,7 +79,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Button _focused;
     private readonly Avalonia.Controls.Image _preview;
     private readonly TabControl _tabs;
+    private readonly object _previewReleaseGate = new();
+    private readonly HashSet<Task> _pendingPreviewReleases = [];
+    private readonly List<DecodedBitmapLease> _unfencedPreviewLeases = [];
     private DecodedBitmapLease? _previewLease;
+    private Compositor? _compositor;
+    private Exception? _previewReleaseFailure;
     private CancellationTokenSource? _loadCancellation;
     private long _assetId;
     private AssetUserMetadata? _loadedMetadata;
@@ -532,6 +539,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _notesEditor.TextChanged +=
             (_, _) => MarkDirty();
         KeyDown += OnKeyDown;
+        AttachedToVisualTree += OnAttachedToVisualTree;
 
         ShowNoSelection();
     }
@@ -842,6 +850,43 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _loadCancellation = null;
         ReplacePreviewLease(null);
         KeyDown -= OnKeyDown;
+        AttachedToVisualTree -= OnAttachedToVisualTree;
+    }
+
+    public async Task DrainPreviewBitmapReleasesAsync()
+    {
+        while (true)
+        {
+            Task[] pending;
+
+            lock (_previewReleaseGate)
+            {
+                if (_previewReleaseFailure is not null)
+                {
+                    throw new InvalidOperationException(
+                        "An Inspector preview composition release failed.",
+                        _previewReleaseFailure);
+                }
+
+                pending = [.. _pendingPreviewReleases];
+                if (pending.Length == 0)
+                {
+                    return;
+                }
+            }
+
+            await Task.WhenAll(pending)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private void OnAttachedToVisualTree(
+        object? sender,
+        VisualTreeAttachmentEventArgs e)
+    {
+        _compositor =
+            ElementComposition.GetElementVisual(this)?.Compositor
+            ?? _compositor;
     }
 
     private async Task LoadPreviewAsync(
@@ -900,10 +945,80 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         if (previous is not null)
         {
-            Dispatcher.UIThread.Post(
-                previous.Dispose,
-                DispatcherPriority.Background);
+            ReleasePreviewLeaseAfterComposition(
+                previous);
         }
+    }
+
+    private void ReleasePreviewLeaseAfterComposition(
+        DecodedBitmapLease lease)
+    {
+        var compositor = _compositor;
+        if (compositor is null)
+        {
+            lease.Dispose();
+            return;
+        }
+
+        Task release;
+        try
+        {
+            var batch =
+                compositor.RequestCompositionBatchCommitAsync();
+            release =
+                DisposePreviewLeaseAfterAsync(
+                    lease,
+                    batch.Rendered);
+        }
+        catch (Exception exception)
+        {
+            lock (_previewReleaseGate)
+            {
+                _previewReleaseFailure ??= exception;
+                _unfencedPreviewLeases.Add(lease);
+            }
+
+            return;
+        }
+
+        lock (_previewReleaseGate)
+        {
+            _pendingPreviewReleases.Add(release);
+        }
+
+        _ = ObservePreviewReleaseAsync(release);
+    }
+
+    private async Task ObservePreviewReleaseAsync(
+        Task release)
+    {
+        try
+        {
+            await release.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            lock (_previewReleaseGate)
+            {
+                _previewReleaseFailure ??= exception;
+            }
+        }
+        finally
+        {
+            lock (_previewReleaseGate)
+            {
+                _pendingPreviewReleases.Remove(release);
+            }
+        }
+    }
+
+    private static async Task DisposePreviewLeaseAfterAsync(
+        DecodedBitmapLease lease,
+        Task compositionRendered)
+    {
+        await compositionRendered.ConfigureAwait(false);
+        await Dispatcher.UIThread.InvokeAsync(
+            lease.Dispose);
     }
 
     private async Task LoadCreativeContextAsync(
