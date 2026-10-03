@@ -42,6 +42,65 @@ public sealed class App : Application
         application.Resources["Lumine.Danger"] =
             LumineDesign.Danger;
 
+        application.Resources["ButtonBackgroundPointerOver"] =
+            LumineDesign.InteractionHover;
+        application.Resources["ButtonBorderBrushPointerOver"] =
+            LumineDesign.BorderStrong;
+        application.Resources["ButtonForegroundPointerOver"] =
+            LumineDesign.Foreground;
+        application.Resources["ButtonBackgroundPressed"] =
+            LumineDesign.InteractionPressed;
+        application.Resources["ButtonBorderBrushPressed"] =
+            LumineDesign.InteractionFocus;
+        application.Resources["ButtonForegroundPressed"] =
+            LumineDesign.Foreground;
+        application.Resources["ButtonBackgroundDisabled"] =
+            LumineDesign.InteractionDisabled;
+        application.Resources["ButtonBorderBrushDisabled"] =
+            LumineDesign.Border;
+        application.Resources["ButtonForegroundDisabled"] =
+            LumineDesign.MutedForeground;
+
+        application.Resources["TextControlBackgroundPointerOver"] =
+            LumineDesign.InteractionHover;
+        application.Resources["TextControlBorderBrushPointerOver"] =
+            LumineDesign.BorderStrong;
+        application.Resources["TextControlForegroundPointerOver"] =
+            LumineDesign.Foreground;
+        application.Resources["TextControlBackgroundFocused"] =
+            LumineDesign.InteractionNeutral;
+        application.Resources["TextControlBorderBrushFocused"] =
+            LumineDesign.InteractionFocus;
+        application.Resources["TextControlForegroundFocused"] =
+            LumineDesign.Foreground;
+        application.Resources["TextControlBackgroundDisabled"] =
+            LumineDesign.InteractionDisabled;
+        application.Resources["TextControlBorderBrushDisabled"] =
+            LumineDesign.Border;
+        application.Resources["TextControlForegroundDisabled"] =
+            LumineDesign.MutedForeground;
+
+        application.Resources["ComboBoxBackgroundPointerOver"] =
+            LumineDesign.InteractionHover;
+        application.Resources["ComboBoxBorderBrushPointerOver"] =
+            LumineDesign.BorderStrong;
+        application.Resources["ComboBoxBackgroundPressed"] =
+            LumineDesign.InteractionPressed;
+        application.Resources["ComboBoxBorderBrushPressed"] =
+            LumineDesign.InteractionFocus;
+        application.Resources["ComboBoxBackgroundBorderBrushFocused"] =
+            LumineDesign.InteractionFocus;
+        application.Resources["ComboBoxForegroundFocused"] =
+            LumineDesign.Foreground;
+        application.Resources["ComboBoxForegroundFocusedPressed"] =
+            LumineDesign.Foreground;
+        application.Resources["ComboBoxBackgroundDisabled"] =
+            LumineDesign.InteractionDisabled;
+        application.Resources["ComboBoxBorderBrushDisabled"] =
+            LumineDesign.Border;
+        application.Resources["ComboBoxForegroundDisabled"] =
+            LumineDesign.MutedForeground;
+
         var fluentTheme =
             new FluentTheme();
         fluentTheme.Palettes[ThemeVariant.Dark] =
