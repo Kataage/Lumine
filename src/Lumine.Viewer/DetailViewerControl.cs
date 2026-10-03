@@ -29,14 +29,18 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _zoomOut;
     private readonly Button _zoomIn;
     private readonly Button _fullScreen;
+    private readonly Button _info;
     private readonly Button _close;
+    private readonly Slider _zoomSlider;
     private readonly TextBlock _zoomText;
     private readonly Border _toolbarHost;
+    private readonly Border _metadataHost;
     private readonly Border _surface;
     private readonly DispatcherTimer _chromeTimer;
     private double _zoom = 1;
     private bool _fitMode = true;
     private bool _dragging;
+    private bool _syncingZoomSlider;
     private Point _dragStart;
     private Vector _dragStartOffset;
     private ThumbnailViewerControl? _grid;
@@ -110,6 +114,14 @@ public sealed class DetailViewerControl : UserControl
                 "全画面表示 (F11)",
                 "viewer.fullscreen",
                 "F11");
+        _info =
+            CreateViewerButton(
+                CreateViewerIcon(
+                    "M12 21a9 9 0 100-18 9 9 0 000 18z M12 10.5v6 M12 7.5h.01",
+                    16),
+                "画像情報",
+                "viewer.info",
+                "I");
         _close =
             CreateViewerButton(
                 CreateViewerIcon(
@@ -118,6 +130,26 @@ public sealed class DetailViewerControl : UserControl
                 "閉じる (Esc)",
                 "viewer.close",
                 "Esc");
+
+        _zoomSlider =
+            new Slider
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Width = 104,
+                MinWidth = 84,
+                VerticalAlignment =
+                    VerticalAlignment.Center,
+                SmallChange = 1,
+                LargeChange = 8
+            };
+        ToolTip.SetTip(
+            _zoomSlider,
+            "ズーム");
+        ViewerVisualTokens.Name(
+            _zoomSlider,
+            "ズーム",
+            "viewer.zoom-slider");
 
         _zoomText = new TextBlock
         {
@@ -137,10 +169,12 @@ public sealed class DetailViewerControl : UserControl
             HorizontalAlignment = HorizontalAlignment.Center
         };
         toolbar.Children.Add(_zoomOut);
+        toolbar.Children.Add(_zoomSlider);
         toolbar.Children.Add(_zoomText);
         toolbar.Children.Add(_zoomIn);
         toolbar.Children.Add(_fit);
         toolbar.Children.Add(_actual);
+        toolbar.Children.Add(_info);
         toolbar.Children.Add(_fullScreen);
         toolbar.Children.Add(
             new Border
@@ -199,12 +233,35 @@ public sealed class DetailViewerControl : UserControl
 
         _metadata = new TextBlock
         {
-            Foreground = ViewerVisualTokens.MutedForeground,
+            Foreground = ViewerVisualTokens.Foreground,
             FontSize = ViewerVisualTokens.CaptionFontSize,
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(10, 4, 10, 8)
+            MaxWidth = 720
         };
+        _metadataHost =
+            new Border
+            {
+                Background =
+                    ViewerVisualTokens.Overlay,
+                BorderBrush =
+                    ViewerVisualTokens.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(9),
+                Padding =
+                    new Thickness(10, 6),
+                Margin =
+                    new Thickness(12, 12, 12, 16),
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Bottom,
+                IsVisible = false,
+                IsHitTestVisible = false,
+                Child = _metadata
+            };
 
         var stage = new Grid
         {
@@ -252,6 +309,7 @@ public sealed class DetailViewerControl : UserControl
                 Child = toolbar
             };
         stage.Children.Add(_toolbarHost);
+        stage.Children.Add(_metadataHost);
 
         _chromeTimer =
             new DispatcherTimer
@@ -274,8 +332,10 @@ public sealed class DetailViewerControl : UserControl
                      _zoomIn,
                      _fit,
                      _actual,
+                     _info,
                      _fullScreen,
-                     _close
+                     _close,
+                     _zoomSlider
                  })
         {
             control.GotFocus +=
@@ -306,6 +366,18 @@ public sealed class DetailViewerControl : UserControl
                     _session.Options.ZoomStep);
         _fit.Click += (_, _) => Fit();
         _actual.Click += async (_, _) => await ActualSizeAsync();
+        _info.Click +=
+            (_, _) =>
+            {
+                _metadataHost.IsVisible =
+                    !_metadataHost.IsVisible;
+                _info.Background =
+                    _metadataHost.IsVisible
+                        ? ViewerVisualTokens.SelectedSurface
+                        : ViewerVisualTokens.Overlay;
+                RevealChrome(
+                    autoHide: false);
+            };
         _fullScreen.Click +=
             (_, _) =>
                 FullScreenToggleRequested?.Invoke(
@@ -316,6 +388,21 @@ public sealed class DetailViewerControl : UserControl
                 CloseRequested?.Invoke(
                     this,
                     EventArgs.Empty);
+
+        _zoomSlider.PropertyChanged +=
+            async (_, args) =>
+            {
+                if (_syncingZoomSlider
+                    || args.Property
+                        != RangeBase.ValueProperty)
+                {
+                    return;
+                }
+
+                await SetZoomAsync(
+                    ZoomFromSlider(
+                        _zoomSlider.Value));
+            };
 
         _scroll.SizeChanged += (_, _) =>
         {
@@ -409,6 +496,44 @@ public sealed class DetailViewerControl : UserControl
     public Vector PanOffset => _scroll.Offset;
 
     public string MetadataText => _metadata.Text ?? string.Empty;
+
+    internal bool IsMetadataVisibleForSmoke =>
+        _metadataHost.IsVisible;
+
+    internal bool IsMetadataInVisualTreeForSmoke =>
+        _metadataHost.GetVisualParent() is not null;
+
+    internal double ZoomSliderValueForSmoke =>
+        _zoomSlider.Value;
+
+    internal Task SetZoomSliderForSmokeAsync(
+        double value)
+    {
+        _zoomSlider.Value =
+            Math.Clamp(
+                value,
+                _zoomSlider.Minimum,
+                _zoomSlider.Maximum);
+        return SetZoomAsync(
+            ZoomFromSlider(
+                _zoomSlider.Value));
+    }
+
+    internal void ToggleMetadataForSmoke()
+    {
+        _metadataHost.IsVisible =
+            !_metadataHost.IsVisible;
+    }
+
+    internal Rect MetadataBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _metadataHost,
+            "metadata host");
+
+    internal Rect ZoomSliderBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _zoomSlider,
+            "zoom slider");
 
 
     internal Rect ImageBoundsInControlForSmoke
@@ -832,10 +957,73 @@ public sealed class DetailViewerControl : UserControl
         _image.Height = displaySize.Height;
         _zoomText.Text =
             $"{Math.Round(zoom * 100):N0}%";
+        SynchronizeZoomSlider(zoom);
 
         Dispatcher.UIThread.Post(
             UpdatePanAffordance,
             DispatcherPriority.Render);
+    }
+
+    private double SliderFromZoom(
+        double zoom)
+    {
+        var minimum =
+            _session.Options.MinZoom;
+        var maximum =
+            _session.Options.MaxZoom;
+        var clamped =
+            Math.Clamp(
+                zoom,
+                minimum,
+                maximum);
+
+        if (maximum <= minimum
+            || minimum <= 0)
+        {
+            return 0;
+        }
+
+        return 100
+            * Math.Log(clamped / minimum)
+            / Math.Log(maximum / minimum);
+    }
+
+    private double ZoomFromSlider(
+        double value)
+    {
+        var minimum =
+            _session.Options.MinZoom;
+        var maximum =
+            _session.Options.MaxZoom;
+
+        if (maximum <= minimum
+            || minimum <= 0)
+        {
+            return minimum;
+        }
+
+        var normalized =
+            Math.Clamp(value, 0, 100)
+            / 100;
+        return minimum
+            * Math.Pow(
+                maximum / minimum,
+                normalized);
+    }
+
+    private void SynchronizeZoomSlider(
+        double zoom)
+    {
+        _syncingZoomSlider = true;
+        try
+        {
+            _zoomSlider.Value =
+                SliderFromZoom(zoom);
+        }
+        finally
+        {
+            _syncingZoomSlider = false;
+        }
     }
 
     private void CenterViewport()
@@ -1641,6 +1829,8 @@ public sealed class DetailViewerControl : UserControl
         || _close.IsFocused
         || _fullScreen.IsFocused
         || _actual.IsFocused
+        || _info.IsFocused
+        || _zoomSlider.IsFocused
         || _fit.IsFocused
         || _zoomIn.IsFocused
         || _zoomOut.IsFocused
