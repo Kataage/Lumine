@@ -2180,6 +2180,58 @@ try
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
                     Require(
+                        LumineDesign.InteractionNeutralColor
+                            != LumineDesign.InteractionHoverColor
+                        && LumineDesign.InteractionHoverColor
+                            != LumineDesign.InteractionPressedColor
+                        && LumineDesign.InteractionSelectedColor
+                            != LumineDesign.InteractionSelectedHoverColor
+                        && LumineDesign.InteractionFocusColor
+                            != LumineDesign.InteractionSelectedColor
+                        && LumineDesign.InteractionDangerHoverColor
+                            != LumineDesign.InteractionDangerPressedColor
+                        && ContrastRatio(
+                            LumineDesign.InteractionFocusColor,
+                            LumineDesign.BackgroundColor) >= 3.0,
+                        "Lumine interaction-state tokens collapsed distinct hover/pressed/selected/focus semantics.");
+
+                    var neutralStateButton =
+                        LumineDesign.ConfigureSecondaryButton(
+                            new Button());
+                    var primaryStateButton =
+                        LumineDesign.ConfigurePrimaryButton(
+                            new Button());
+                    var textStateControl =
+                        LumineDesign.ConfigureTextBox(
+                            new TextBox());
+                    var comboStateControl =
+                        LumineDesign.ConfigureComboBox(
+                            new ComboBox());
+
+                    Require(
+                        ReferenceEquals(
+                            neutralStateButton.Resources[
+                                "ButtonBackgroundPointerOver"],
+                            LumineDesign.InteractionHover)
+                        && ReferenceEquals(
+                            neutralStateButton.Resources[
+                                "ButtonBackgroundPressed"],
+                            LumineDesign.InteractionPressed)
+                        && ReferenceEquals(
+                            primaryStateButton.Resources[
+                                "ButtonForegroundPointerOver"],
+                            LumineDesign.Background)
+                        && ReferenceEquals(
+                            textStateControl.Resources[
+                                "TextControlBorderBrushFocused"],
+                            LumineDesign.InteractionFocus)
+                        && ReferenceEquals(
+                            comboStateControl.Resources[
+                                "ComboBoxBackgroundPointerOver"],
+                            LumineDesign.InteractionHover),
+                        "Representative Fluent controls are not bound to the canonical Lumine interaction-state resources.");
+
+                    Require(
                         ContrastRatio(
                             LumineDesign.DangerColor,
                             LumineDesign.BackgroundColor) >= 4.5

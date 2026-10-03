@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
@@ -1363,13 +1364,20 @@ public sealed class ThumbnailViewerControl : UserControl
         private ViewerAsset? _asset;
         private bool _isReady;
         private bool _hovered;
+        private bool _pressed;
 
         private static readonly IBrush TileBackground =
             ViewerVisualTokens.Surface;
         private static readonly IBrush SelectedBorder =
             ViewerVisualTokens.Selection;
+        private static readonly IBrush SelectedHoverBorder =
+            ViewerVisualTokens.Focus;
         private static readonly IBrush HoverBorder =
             ViewerVisualTokens.BorderStrong;
+        private static readonly IBrush PressedBorder =
+            ViewerVisualTokens.Focus;
+        private static readonly IBrush FocusBorder =
+            ViewerVisualTokens.Focus;
         private static readonly IBrush OverlayBackground =
             ViewerVisualTokens.Overlay;
         private static readonly IBrush OverlayBorder =
@@ -1484,8 +1492,11 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             PointerPressed += OnPointerPressed;
+            PointerReleased += OnPointerReleased;
             PointerEntered += OnPointerEntered;
             PointerExited += OnPointerExited;
+            GotFocus += OnFocusChanged;
+            LostFocus += OnFocusChanged;
             AttachedToVisualTree += OnAttached;
             DetachedFromVisualTree += OnDetached;
         }
@@ -1534,6 +1545,18 @@ public sealed class ThumbnailViewerControl : UserControl
                     VerticalContentAlignment =
                         VerticalAlignment.Center
                 };
+            button.Resources["ButtonBackgroundPointerOver"] =
+                ViewerVisualTokens.Hover;
+            button.Resources["ButtonBorderBrushPointerOver"] =
+                ViewerVisualTokens.Focus;
+            button.Resources["ButtonForegroundPointerOver"] =
+                ViewerVisualTokens.Foreground;
+            button.Resources["ButtonBackgroundPressed"] =
+                ViewerVisualTokens.Pressed;
+            button.Resources["ButtonBorderBrushPressed"] =
+                ViewerVisualTokens.Focus;
+            button.Resources["ButtonForegroundPressed"] =
+                ViewerVisualTokens.Foreground;
             ToolTip.SetTip(button, tooltip);
             ViewerVisualTokens.Name(
                 button,
@@ -1577,11 +1600,27 @@ public sealed class ThumbnailViewerControl : UserControl
             PointerEventArgs e)
         {
             _hovered = false;
+            _pressed = false;
             UpdateVisualState();
         }
 
+        private void OnPointerReleased(
+            object? sender,
+            PointerReleasedEventArgs e)
+        {
+            _pressed = false;
+            UpdateVisualState();
+        }
+
+        private void OnFocusChanged(
+            object? sender,
+            RoutedEventArgs e) =>
+            UpdateVisualState();
+
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
+            _pressed = true;
+            UpdateVisualState();
             if (e.GetCurrentPoint(this).Properties.PointerUpdateKind
                 == PointerUpdateKind.RightButtonPressed)
             {
@@ -1652,12 +1691,42 @@ public sealed class ThumbnailViewerControl : UserControl
 
         private void UpdateVisualState()
         {
+            var visualState =
+                ResolveTileVisualState(
+                    IsSelected,
+                    _hovered,
+                    _pressed,
+                    IsKeyboardFocusWithin);
+
             BorderBrush =
-                IsSelected
-                    ? SelectedBorder
-                    : _hovered
-                        ? HoverBorder
-                        : Brushes.Transparent;
+                visualState switch
+                {
+                    ViewerTileVisualState.SelectedHover =>
+                        SelectedHoverBorder,
+                    ViewerTileVisualState.Selected =>
+                        SelectedBorder,
+                    ViewerTileVisualState.Pressed =>
+                        PressedBorder,
+                    ViewerTileVisualState.Hover =>
+                        HoverBorder,
+                    ViewerTileVisualState.Focus =>
+                        FocusBorder,
+                    _ => Brushes.Transparent
+                };
+
+            Background =
+                visualState switch
+                {
+                    ViewerTileVisualState.SelectedHover =>
+                        ViewerVisualTokens.SelectedHover,
+                    ViewerTileVisualState.Selected =>
+                        ViewerVisualTokens.SelectedSurface,
+                    ViewerTileVisualState.Pressed =>
+                        ViewerVisualTokens.Pressed,
+                    ViewerTileVisualState.Hover =>
+                        ViewerVisualTokens.Hover,
+                    _ => TileBackground
+                };
 
             var showActions =
                 _hovered;
@@ -2067,6 +2136,48 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal static string ResolveTileVisualStateForSmoke(
+        bool selected,
+        bool hovered,
+        bool pressed,
+        bool focused) =>
+        ResolveTileVisualState(
+            selected,
+            hovered,
+            pressed,
+            focused).ToString();
+
+    private static ViewerTileVisualState ResolveTileVisualState(
+        bool selected,
+        bool hovered,
+        bool pressed,
+        bool focused) =>
+        (selected, hovered, pressed, focused) switch
+        {
+            (true, true, _, _) =>
+                ViewerTileVisualState.SelectedHover,
+            (true, false, _, _) =>
+                ViewerTileVisualState.Selected,
+            (false, _, true, _) =>
+                ViewerTileVisualState.Pressed,
+            (false, true, false, _) =>
+                ViewerTileVisualState.Hover,
+            (false, false, false, true) =>
+                ViewerTileVisualState.Focus,
+            _ =>
+                ViewerTileVisualState.Neutral
+        };
+
+    private enum ViewerTileVisualState
+    {
+        Neutral = 0,
+        Hover = 1,
+        Pressed = 2,
+        Selected = 3,
+        SelectedHover = 4,
+        Focus = 5
+    }
+
     private sealed record WarmPresentation(
         ViewerAsset Asset,
         ViewerThumbnail Thumbnail,

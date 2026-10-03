@@ -21,6 +21,24 @@ internal static class LumineDesign
         Color.Parse(LumineVisualPalette.ControlSurface);
     public static readonly Color ControlHoverColor =
         Color.Parse(LumineVisualPalette.ControlHover);
+    public static readonly Color InteractionNeutralColor =
+        Color.Parse(LumineVisualPalette.InteractionNeutral);
+    public static readonly Color InteractionHoverColor =
+        Color.Parse(LumineVisualPalette.InteractionHover);
+    public static readonly Color InteractionPressedColor =
+        Color.Parse(LumineVisualPalette.InteractionPressed);
+    public static readonly Color InteractionSelectedColor =
+        Color.Parse(LumineVisualPalette.InteractionSelected);
+    public static readonly Color InteractionSelectedHoverColor =
+        Color.Parse(LumineVisualPalette.InteractionSelectedHover);
+    public static readonly Color InteractionFocusColor =
+        Color.Parse(LumineVisualPalette.InteractionFocus);
+    public static readonly Color InteractionDisabledColor =
+        Color.Parse(LumineVisualPalette.InteractionDisabled);
+    public static readonly Color InteractionDangerHoverColor =
+        Color.Parse(LumineVisualPalette.InteractionDangerHover);
+    public static readonly Color InteractionDangerPressedColor =
+        Color.Parse(LumineVisualPalette.InteractionDangerPressed);
     public static readonly Color BorderColor =
         Color.Parse(LumineVisualPalette.Border);
     public static readonly Color BorderStrongColor =
@@ -50,6 +68,24 @@ internal static class LumineDesign
         new SolidColorBrush(ControlSurfaceColor);
     public static readonly IBrush ControlHover =
         new SolidColorBrush(ControlHoverColor);
+    public static readonly IBrush InteractionNeutral =
+        new SolidColorBrush(InteractionNeutralColor);
+    public static readonly IBrush InteractionHover =
+        new SolidColorBrush(InteractionHoverColor);
+    public static readonly IBrush InteractionPressed =
+        new SolidColorBrush(InteractionPressedColor);
+    public static readonly IBrush InteractionSelected =
+        new SolidColorBrush(InteractionSelectedColor);
+    public static readonly IBrush InteractionSelectedHover =
+        new SolidColorBrush(InteractionSelectedHoverColor);
+    public static readonly IBrush InteractionFocus =
+        new SolidColorBrush(InteractionFocusColor);
+    public static readonly IBrush InteractionDisabled =
+        new SolidColorBrush(InteractionDisabledColor);
+    public static readonly IBrush InteractionDangerHover =
+        new SolidColorBrush(InteractionDangerHoverColor);
+    public static readonly IBrush InteractionDangerPressed =
+        new SolidColorBrush(InteractionDangerPressedColor);
     public static readonly IBrush Border =
         new SolidColorBrush(BorderColor);
     public static readonly IBrush BorderStrong =
@@ -187,6 +223,7 @@ internal static class LumineDesign
             new SolidColorBrush(BackgroundColor);
         button.BorderThickness = new Thickness(0);
         button.FontWeight = FontWeight.SemiBold;
+        ConfigurePrimaryButtonStateResources(button);
         return button;
     }
 
@@ -203,6 +240,7 @@ internal static class LumineDesign
         button.Foreground = Foreground;
         button.BorderBrush = Border;
         button.BorderThickness = new Thickness(1);
+        ConfigureNeutralButtonStateResources(button);
         return button;
     }
 
@@ -218,6 +256,7 @@ internal static class LumineDesign
         textBox.BorderBrush = Border;
         textBox.BorderThickness = new Thickness(1);
         textBox.Padding = new Thickness(10, 6);
+        ConfigureTextControlStateResources(textBox);
         return textBox;
     }
 
@@ -233,6 +272,7 @@ internal static class LumineDesign
         comboBox.BorderBrush = Border;
         comboBox.BorderThickness = new Thickness(1);
         comboBox.Padding = new Thickness(9, 5);
+        ConfigureComboBoxStateResources(comboBox);
         return comboBox;
     }
 
@@ -245,6 +285,7 @@ internal static class LumineDesign
         checkBox.Foreground = Foreground;
         checkBox.VerticalAlignment =
             VerticalAlignment.Center;
+        ConfigureCheckBoxStateResources(checkBox);
         return checkBox;
     }
 
@@ -292,6 +333,14 @@ internal static class LumineDesign
             primary
                 ? new Thickness(0)
                 : new Thickness(1);
+        if (primary)
+        {
+            ConfigurePrimaryButtonStateResources(button);
+        }
+        else
+        {
+            ConfigureNeutralButtonStateResources(button);
+        }
         ToolTip.SetTip(button, tooltip);
         AutomationProperties.SetName(button, tooltip);
         if (!string.IsNullOrWhiteSpace(automationId))
@@ -309,6 +358,177 @@ internal static class LumineDesign
         }
 
         return button;
+    }
+
+    internal static void ConfigureNeutralButtonStateResources(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+        button.Resources["ButtonBackgroundPointerOver"] =
+            InteractionHover;
+        button.Resources["ButtonBorderBrushPointerOver"] =
+            BorderStrong;
+        button.Resources["ButtonForegroundPointerOver"] =
+            Foreground;
+        button.Resources["ButtonBackgroundPressed"] =
+            InteractionPressed;
+        button.Resources["ButtonBorderBrushPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonForegroundPressed"] =
+            Foreground;
+        button.Resources["ButtonBackgroundDisabled"] =
+            InteractionDisabled;
+        button.Resources["ButtonBorderBrushDisabled"] =
+            Border;
+        button.Resources["ButtonForegroundDisabled"] =
+            MutedForeground;
+    }
+
+    internal static void ConfigurePrimaryButtonStateResources(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+        button.Resources["ButtonBackgroundPointerOver"] =
+            new SolidColorBrush(Color.Parse(LumineVisualPalette.Selection));
+        button.Resources["ButtonBorderBrushPointerOver"] =
+            Brushes.Transparent;
+        button.Resources["ButtonForegroundPointerOver"] =
+            Background;
+        button.Resources["ButtonBackgroundPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonBorderBrushPressed"] =
+            Brushes.Transparent;
+        button.Resources["ButtonForegroundPressed"] =
+            Background;
+        button.Resources["ButtonBackgroundDisabled"] =
+            InteractionDisabled;
+        button.Resources["ButtonBorderBrushDisabled"] =
+            Border;
+        button.Resources["ButtonForegroundDisabled"] =
+            MutedForeground;
+    }
+
+    internal static void ConfigureSelectedButtonStateResources(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+        button.Resources["ButtonBackgroundPointerOver"] =
+            InteractionSelectedHover;
+        button.Resources["ButtonBorderBrushPointerOver"] =
+            InteractionFocus;
+        button.Resources["ButtonForegroundPointerOver"] =
+            Foreground;
+        button.Resources["ButtonBackgroundPressed"] =
+            InteractionSelected;
+        button.Resources["ButtonBorderBrushPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonForegroundPressed"] =
+            Foreground;
+        button.Resources["ButtonBackgroundDisabled"] =
+            InteractionDisabled;
+        button.Resources["ButtonBorderBrushDisabled"] =
+            Border;
+        button.Resources["ButtonForegroundDisabled"] =
+            MutedForeground;
+    }
+
+    internal static void ConfigureDangerButtonStateResources(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+        button.Resources["ButtonBackgroundPointerOver"] =
+            InteractionDangerHover;
+        button.Resources["ButtonBorderBrushPointerOver"] =
+            InteractionDangerHover;
+        button.Resources["ButtonForegroundPointerOver"] =
+            Background;
+        button.Resources["ButtonBackgroundPressed"] =
+            InteractionDangerPressed;
+        button.Resources["ButtonBorderBrushPressed"] =
+            InteractionDangerPressed;
+        button.Resources["ButtonForegroundPressed"] =
+            Foreground;
+    }
+
+    private static void ConfigureTextControlStateResources(
+        TextBox textBox)
+    {
+        textBox.Resources["TextControlBackgroundPointerOver"] =
+            InteractionHover;
+        textBox.Resources["TextControlBorderBrushPointerOver"] =
+            BorderStrong;
+        textBox.Resources["TextControlForegroundPointerOver"] =
+            Foreground;
+        textBox.Resources["TextControlBackgroundFocused"] =
+            InteractionNeutral;
+        textBox.Resources["TextControlBorderBrushFocused"] =
+            InteractionFocus;
+        textBox.Resources["TextControlForegroundFocused"] =
+            Foreground;
+        textBox.Resources["TextControlBackgroundDisabled"] =
+            InteractionDisabled;
+        textBox.Resources["TextControlBorderBrushDisabled"] =
+            Border;
+        textBox.Resources["TextControlForegroundDisabled"] =
+            MutedForeground;
+        textBox.Resources["TextControlSelectionHighlightColor"] =
+            InteractionSelectedHover;
+    }
+
+    private static void ConfigureComboBoxStateResources(
+        ComboBox comboBox)
+    {
+        comboBox.Resources["ComboBoxBackgroundPointerOver"] =
+            InteractionHover;
+        comboBox.Resources["ComboBoxBorderBrushPointerOver"] =
+            BorderStrong;
+        comboBox.Resources["ComboBoxBackgroundPressed"] =
+            InteractionPressed;
+        comboBox.Resources["ComboBoxBorderBrushPressed"] =
+            InteractionFocus;
+        comboBox.Resources["ComboBoxBackgroundBorderBrushFocused"] =
+            InteractionFocus;
+        comboBox.Resources["ComboBoxForegroundFocused"] =
+            Foreground;
+        comboBox.Resources["ComboBoxForegroundFocusedPressed"] =
+            Foreground;
+        comboBox.Resources["ComboBoxBackgroundDisabled"] =
+            InteractionDisabled;
+        comboBox.Resources["ComboBoxBorderBrushDisabled"] =
+            Border;
+        comboBox.Resources["ComboBoxForegroundDisabled"] =
+            MutedForeground;
+    }
+
+    private static void ConfigureCheckBoxStateResources(
+        CheckBox checkBox)
+    {
+        checkBox.Resources["CheckBoxBackgroundUncheckedPointerOver"] =
+            InteractionHover;
+        checkBox.Resources["CheckBoxBorderBrushUncheckedPointerOver"] =
+            BorderStrong;
+        checkBox.Resources["CheckBoxBackgroundUncheckedPressed"] =
+            InteractionPressed;
+        checkBox.Resources["CheckBoxBorderBrushUncheckedPressed"] =
+            InteractionFocus;
+        checkBox.Resources["CheckBoxCheckBackgroundFillChecked"] =
+            InteractionSelected;
+        checkBox.Resources["CheckBoxCheckBackgroundStrokeChecked"] =
+            InteractionFocus;
+        checkBox.Resources["CheckBoxCheckBackgroundFillCheckedPointerOver"] =
+            InteractionSelectedHover;
+        checkBox.Resources["CheckBoxCheckBackgroundStrokeCheckedPointerOver"] =
+            InteractionFocus;
+        checkBox.Resources["CheckBoxCheckBackgroundFillCheckedPressed"] =
+            InteractionPressed;
+        checkBox.Resources["CheckBoxCheckBackgroundStrokeCheckedPressed"] =
+            InteractionFocus;
+        checkBox.Resources["CheckBoxCheckGlyphForegroundChecked"] =
+            Foreground;
+        checkBox.Resources["CheckBoxCheckGlyphForegroundCheckedPointerOver"] =
+            Foreground;
+        checkBox.Resources["CheckBoxCheckGlyphForegroundCheckedPressed"] =
+            Foreground;
     }
 
     public static Border CreateNavigationRail() =>
@@ -391,6 +611,14 @@ internal static class LumineDesign
                     HorizontalContentAlignment =
                         HorizontalAlignment.Center
                 };
+            if (selected)
+            {
+                ConfigureSelectedButtonStateResources(button);
+            }
+            else
+            {
+                ConfigureNeutralButtonStateResources(button);
+            }
             ToolTip.SetTip(button, item.Label);
             AutomationProperties.SetName(button, item.Label);
             button.Click +=

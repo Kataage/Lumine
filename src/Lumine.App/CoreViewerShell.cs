@@ -975,6 +975,8 @@ internal sealed class CoreViewerShell : UserControl
                 DeleteSelectedSourcesAsync);
         delete.Foreground =
             LumineDesign.Danger;
+        LumineDesign.ConfigureDangerButtonStateResources(
+            delete);
         creativePanel.Children.Add(delete);
 
         var creativeFlyout =

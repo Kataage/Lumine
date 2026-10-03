@@ -724,6 +724,45 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
+        Require(
+            ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: false,
+                hovered: false,
+                pressed: false,
+                focused: false)
+                == "Neutral"
+            && ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: false,
+                hovered: true,
+                pressed: false,
+                focused: false)
+                == "Hover"
+            && ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: false,
+                hovered: true,
+                pressed: true,
+                focused: false)
+                == "Pressed"
+            && ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: true,
+                hovered: false,
+                pressed: false,
+                focused: false)
+                == "Selected"
+            && ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: true,
+                hovered: true,
+                pressed: false,
+                focused: false)
+                == "SelectedHover"
+            && ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
+                selected: false,
+                hovered: false,
+                pressed: false,
+                focused: true)
+                == "Focus",
+            "Viewer tile interaction-state precedence drifted across neutral/hover/pressed/selected/focus states.");
+
         // A short scroll away/back must reuse the existing decoded-cache
         // entry instead of showing a blank tile while the full async
         // thumbnail pipeline runs again.

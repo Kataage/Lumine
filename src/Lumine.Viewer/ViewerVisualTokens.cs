@@ -16,6 +16,11 @@ internal static class ViewerVisualTokens
     public static readonly Color ForegroundColor = Color.Parse(LumineVisualPalette.Foreground);
     public static readonly Color MutedForegroundColor = Color.Parse(LumineVisualPalette.ViewerMutedForeground);
     public static readonly Color SelectionColor = Color.Parse(LumineVisualPalette.Selection);
+    public static readonly Color HoverColor = Color.Parse(LumineVisualPalette.InteractionHover);
+    public static readonly Color PressedColor = Color.Parse(LumineVisualPalette.InteractionPressed);
+    public static readonly Color SelectedSurfaceColor = Color.Parse(LumineVisualPalette.InteractionSelected);
+    public static readonly Color SelectedHoverColor = Color.Parse(LumineVisualPalette.InteractionSelectedHover);
+    public static readonly Color FocusColor = Color.Parse(LumineVisualPalette.InteractionFocus);
 
     public static readonly IBrush Stage = new SolidColorBrush(StageColor);
     public static readonly IBrush Surface = new SolidColorBrush(SurfaceColor);
@@ -25,6 +30,11 @@ internal static class ViewerVisualTokens
     public static readonly IBrush Foreground = new SolidColorBrush(ForegroundColor);
     public static readonly IBrush MutedForeground = new SolidColorBrush(MutedForegroundColor);
     public static readonly IBrush Selection = new SolidColorBrush(SelectionColor);
+    public static readonly IBrush Hover = new SolidColorBrush(HoverColor);
+    public static readonly IBrush Pressed = new SolidColorBrush(PressedColor);
+    public static readonly IBrush SelectedSurface = new SolidColorBrush(SelectedSurfaceColor);
+    public static readonly IBrush SelectedHover = new SolidColorBrush(SelectedHoverColor);
+    public static readonly IBrush Focus = new SolidColorBrush(FocusColor);
     public static readonly IBrush Overlay =
         new SolidColorBrush(
             Color.Parse(LumineVisualPalette.Overlay));
