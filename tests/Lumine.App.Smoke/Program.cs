@@ -2468,6 +2468,13 @@ try
                                     AssetSortOrder.ModifiedNewest));
                             Dispatcher.UIThread.RunJobs();
 
+                            window.CurrentShell!.HideContextDetail();
+                            window.SetNavigationPinnedForSmoke(false);
+                            window.SetNavigationPaneVisibleForSmoke(false);
+                            Dispatcher.UIThread.RunJobs();
+                            var unpinnedClosedCanvasWidth =
+                                window.CurrentShell.GridViewerBounds.Width;
+
                             foreach (var navigationVisible in
                                      new[] { true, false })
                             {
@@ -2500,8 +2507,12 @@ try
                                 Require(
                                     !window.CurrentShell.IsContextDetailVisible
                                     && window.CurrentShell.GridViewerBounds.Width
-                                        >= 500,
-                                    $"Browse canvas became too narrow with Inspector closed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                        >= 500
+                                    && (viewport.Width < 1440
+                                        || Math.Abs(
+                                            window.CurrentShell.GridViewerBounds.Width
+                                            - unpinnedClosedCanvasWidth) < 1),
+                                    $"Browse canvas changed width for unpinned secondary navigation at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 window.CurrentShell.GridViewer.SelectAsset(0);
                                 await window.CurrentShell
@@ -2581,6 +2592,34 @@ try
                                         gridAfterBulk.Height
                                         - gridBeforeBulk.Height) < 0.5,
                                     $"Leaving bulk selection shifted the image canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                            }
+
+                            if (viewport.Width >= 1440)
+                            {
+                                window.CurrentShell.HideContextDetail();
+                                window.SetNavigationPaneVisibleForSmoke(true);
+                                window.SetNavigationPinnedForSmoke(true);
+                                Dispatcher.UIThread.RunJobs();
+
+                                var pinnedCanvasWidth =
+                                    window.CurrentShell.GridViewerBounds.Width;
+                                Require(
+                                    window.IsNavigationPinnedForSmoke
+                                    && pinnedCanvasWidth
+                                        < unpinnedClosedCanvasWidth - 200,
+                                    $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                window.SetNavigationPinnedForSmoke(false);
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    !window.IsNavigationPinnedForSmoke
+                                    && Math.Abs(
+                                        window.CurrentShell.GridViewerBounds.Width
+                                        - unpinnedClosedCanvasWidth) < 1,
+                                    $"Unpinning navigation did not restore overlay canvas width at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                window.SetNavigationPaneVisibleForSmoke(false);
+                                Dispatcher.UIThread.RunJobs();
                             }
                         }
                     }
