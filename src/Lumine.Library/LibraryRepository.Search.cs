@@ -239,26 +239,8 @@ public sealed partial class LibraryRepository
                 .ConfigureAwait(false);
         }
 
-        await using (var removeOrphanTags = connection.CreateCommand())
-        {
-            removeOrphanTags.Transaction = transaction;
-            removeOrphanTags.CommandText =
-                """
-                DELETE FROM tags
-                WHERE library_id = $library_id
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM asset_tags AS at
-                      WHERE at.tag_id = tags.id
-                  );
-                """;
-            removeOrphanTags.Parameters.AddWithValue(
-                "$library_id",
-                libraryId);
-            await removeOrphanTags.ExecuteNonQueryAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-
+        // Keep zero-asset tags. Tags are now a first-class managed library
+        // resource and may be created before they are assigned to an image.
         await ReindexAssetOnConnectionAsync(
             connection,
             transaction,
@@ -276,6 +258,134 @@ public sealed partial class LibraryRepository
             statusLabel,
             colorLabel,
             tags.Select(static tag => tag.Name).ToArray());
+    }
+
+    public async Task<IReadOnlyList<string>> SetAssetTagsAsync(
+        long libraryId,
+        long assetId,
+        IReadOnlyList<string> tagNames,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(assetId);
+        ArgumentNullException.ThrowIfNull(tagNames);
+
+        var tags = NormalizeTags(tagNames);
+        if (tags.Length > MaxTagsPerAsset)
+        {
+            throw new ArgumentException(
+                $"An asset may have at most {MaxTagsPerAsset} tags.",
+                nameof(tagNames));
+        }
+
+        var now = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+        await using var connection =
+            await _database.OpenConnectionAsync(
+                cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction();
+
+        await using (var exists = connection.CreateCommand())
+        {
+            exists.Transaction = transaction;
+            exists.CommandText =
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM assets
+                    WHERE library_id = $library_id
+                      AND id = $asset_id
+                );
+                """;
+            exists.Parameters.AddWithValue("$library_id", libraryId);
+            exists.Parameters.AddWithValue("$asset_id", assetId);
+            if (Convert.ToInt32(
+                    await exists.ExecuteScalarAsync(cancellationToken)
+                        .ConfigureAwait(false),
+                    CultureInfo.InvariantCulture) == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Asset {assetId} does not belong to library {libraryId}.");
+            }
+        }
+
+        await using (var clear = connection.CreateCommand())
+        {
+            clear.Transaction = transaction;
+            clear.CommandText =
+                """
+                DELETE FROM asset_tags
+                WHERE asset_id = $asset_id;
+                """;
+            clear.Parameters.AddWithValue("$asset_id", assetId);
+            await clear.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        foreach (var tag in tags)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            long tagId;
+            await using (var upsert = connection.CreateCommand())
+            {
+                upsert.Transaction = transaction;
+                upsert.CommandText =
+                    """
+                    INSERT INTO tags(
+                        library_id,
+                        name,
+                        name_key,
+                        created_at_utc_ticks)
+                    VALUES(
+                        $library_id,
+                        $name,
+                        $name_key,
+                        $created)
+                    ON CONFLICT(library_id, name_key) DO UPDATE SET
+                        name = excluded.name
+                    RETURNING id;
+                    """;
+                upsert.Parameters.AddWithValue("$library_id", libraryId);
+                upsert.Parameters.AddWithValue("$name", tag.Name);
+                upsert.Parameters.AddWithValue("$name_key", tag.Key);
+                upsert.Parameters.AddWithValue("$created", now);
+                tagId = Convert.ToInt64(
+                    await upsert.ExecuteScalarAsync(cancellationToken)
+                        .ConfigureAwait(false),
+                    CultureInfo.InvariantCulture);
+            }
+
+            await using var assign = connection.CreateCommand();
+            assign.Transaction = transaction;
+            assign.CommandText =
+                """
+                INSERT INTO asset_tags(
+                    asset_id,
+                    tag_id,
+                    created_at_utc_ticks)
+                VALUES(
+                    $asset_id,
+                    $tag_id,
+                    $created);
+                """;
+            assign.Parameters.AddWithValue("$asset_id", assetId);
+            assign.Parameters.AddWithValue("$tag_id", tagId);
+            assign.Parameters.AddWithValue("$created", now);
+            await assign.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await ReindexAssetOnConnectionAsync(
+            connection,
+            transaction,
+            libraryId,
+            assetId,
+            cancellationToken).ConfigureAwait(false);
+
+        transaction.Commit();
+        return tags
+            .Select(static tag => tag.Name)
+            .ToArray();
     }
 
     public async Task<int> RebuildSearchIndexAsync(

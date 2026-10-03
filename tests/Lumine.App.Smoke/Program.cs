@@ -1067,6 +1067,7 @@ try
                         new LibraryTagInfo(
                             index + 1,
                             $"tag-{index:D5}",
+                            "#6366f1",
                             index % 31))
                     .ToArray();
             var now =
@@ -1128,7 +1129,9 @@ try
             var tagsView =
                 ProductNavigationViews.CreateTags(
                     largeTags,
-                    null,
+                    Array.Empty<string>(),
+                    static _ => Task.CompletedTask,
+                    static (_, _) => Task.CompletedTask,
                     static _ => Task.CompletedTask);
             scaleWindow =
                 new Window

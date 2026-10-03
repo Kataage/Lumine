@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
@@ -209,6 +210,7 @@ public sealed partial class LibraryRepository
             SELECT
                 t.id,
                 t.name,
+                t.color,
                 COUNT(at.asset_id) AS asset_count
             FROM tags AS t
             LEFT JOIN asset_tags AS at
@@ -221,7 +223,7 @@ public sealed partial class LibraryRepository
                         lower($search)
                     ) > 0
                   )
-            GROUP BY t.id, t.name, t.name_key
+            GROUP BY t.id, t.name, t.color, t.name_key
             ORDER BY
                 asset_count DESC,
                 t.name_key ASC,
@@ -250,10 +252,202 @@ public sealed partial class LibraryRepository
                 new LibraryTagInfo(
                     reader.GetInt64(0),
                     reader.GetString(1),
-                    reader.GetInt64(2)));
+                    reader.GetString(2),
+                    reader.GetInt64(3)));
         }
 
         return items;
+    }
+
+    public async Task<LibraryTagInfo> CreateTagAsync(
+        long libraryId,
+        string name,
+        string color,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+
+        var normalized =
+            NormalizeTags([name]);
+        if (normalized.Length != 1)
+        {
+            throw new ArgumentException(
+                "Tag name is required.",
+                nameof(name));
+        }
+
+        var tag = normalized[0];
+        var normalizedColor =
+            NormalizeTagColor(color);
+        var now =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO tags(
+                library_id,
+                name,
+                name_key,
+                color,
+                created_at_utc_ticks)
+            VALUES(
+                $library_id,
+                $name,
+                $name_key,
+                $color,
+                $created)
+            ON CONFLICT(library_id, name_key) DO UPDATE SET
+                name = excluded.name,
+                color = excluded.color
+            RETURNING id, name, color;
+            """;
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        command.Parameters.AddWithValue(
+            "$name",
+            tag.Name);
+        command.Parameters.AddWithValue(
+            "$name_key",
+            tag.Key);
+        command.Parameters.AddWithValue(
+            "$color",
+            normalizedColor);
+        command.Parameters.AddWithValue(
+            "$created",
+            now);
+
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Tag creation returned no row.");
+        }
+
+        return new LibraryTagInfo(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            0);
+    }
+
+    public async Task<bool> DeleteTagAsync(
+        long libraryId,
+        long tagId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tagId);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+
+        var affectedAssetIds =
+            new List<long>();
+        await using (var affected =
+            connection.CreateCommand())
+        {
+            affected.Transaction = transaction;
+            affected.CommandText =
+                """
+                SELECT at.asset_id
+                FROM asset_tags AS at
+                INNER JOIN tags AS t
+                  ON t.id = at.tag_id
+                WHERE t.library_id = $library_id
+                  AND t.id = $tag_id
+                ORDER BY at.asset_id;
+                """;
+            affected.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            affected.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+
+            await using var reader =
+                await affected.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                affectedAssetIds.Add(
+                    reader.GetInt64(0));
+            }
+        }
+
+        int deleted;
+        await using (var command =
+            connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                DELETE FROM tags
+                WHERE library_id = $library_id
+                  AND id = $tag_id;
+                """;
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            command.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+            deleted =
+                await command.ExecuteNonQueryAsync(cancellationToken)
+                    .ConfigureAwait(false);
+        }
+
+        if (deleted != 0)
+        {
+            foreach (var assetId in affectedAssetIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await ReindexAssetOnConnectionAsync(
+                    connection,
+                    transaction,
+                    libraryId,
+                    assetId,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        transaction.Commit();
+        return deleted != 0;
+    }
+
+    private static string NormalizeTagColor(
+        string? color)
+    {
+        var value =
+            string.IsNullOrWhiteSpace(color)
+                ? "#6366f1"
+                : color.Trim();
+
+        if (value.Length is not (4 or 7 or 9)
+            || value[0] != '#'
+            || !value
+                .AsSpan(1)
+                .ToString()
+                .All(Uri.IsHexDigit))
+        {
+            throw new ArgumentException(
+                "Tag color must be #RGB, #RRGGBB, or #RRGGBBAA.",
+                nameof(color));
+        }
+
+        return value.ToLowerInvariant();
     }
 
     public async Task<LibraryBrowseFacets> GetBrowseFacetsAsync(

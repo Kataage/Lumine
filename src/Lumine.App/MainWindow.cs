@@ -777,8 +777,10 @@ public sealed class MainWindow : Window
                             "タグ")
                         : ProductNavigationViews.CreateTags(
                             _tags,
-                            _browseFilterState.Tag,
+                            _browseFilterState.TagNames,
                             ApplyTagScopeAsync,
+                            CreateTagFromNavigationAsync,
+                            DeleteTagFromNavigationAsync,
                             ReportNavigationError),
                 "公開履歴" =>
                     _runtime is null
@@ -982,19 +984,121 @@ public sealed class MainWindow : Window
     {
         if (_browseControls is not null)
         {
-            return _browseControls.SetTagScopeAsync(
-                tag);
+            return tag is null
+                ? _browseControls.ClearTagScopesAsync()
+                : _browseControls.ToggleTagScopeAsync(
+                    tag);
         }
 
+        if (tag is null)
+        {
+            _browseFilterState =
+                _browseFilterState with
+                {
+                    RequiredTags =
+                        Array.Empty<string>()
+                };
+            return ApplyBrowseQueryAsync();
+        }
+
+        var tags =
+            _browseFilterState.TagNames
+                .ToList();
+        var existing =
+            tags.FindIndex(
+                value =>
+                    string.Equals(
+                        value,
+                        tag,
+                        StringComparison.Ordinal));
+        if (existing >= 0)
+        {
+            tags.RemoveAt(existing);
+        }
+        else
+        {
+            tags.Add(tag);
+        }
+
+        tags.Sort(StringComparer.Ordinal);
         _browseFilterState =
             _browseFilterState with
             {
-                Tag =
-                    string.IsNullOrWhiteSpace(tag)
-                        ? null
-                        : tag
+                RequiredTags = tags
             };
         return ApplyBrowseQueryAsync();
+    }
+
+    private async Task CreateTagFromNavigationAsync(
+        string name,
+        string color)
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "タグを作成するにはライブラリを開いてください。");
+
+        await _navigationLibraryService.CreateTagAsync(
+            runtime.Library.Id,
+            name,
+            color);
+        await RefreshNavigationAsync(
+            CancellationToken.None);
+    }
+
+    private async Task DeleteTagFromNavigationAsync(
+        LibraryTagInfo tag)
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "タグを削除するにはライブラリを開いてください。");
+
+        var confirmed =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "タグを削除しますか？",
+                $"「{tag.Name}」を削除します。",
+                tag.AssetCount > 0
+                    ? $"{tag.AssetCount:N0}件の画像からもこのタグが外れます。画像ファイル自体は変更しません。"
+                    : "このタグはまだ画像へ付与されていません。",
+                confirmLabel: "タグを削除",
+                tone: ProductDialogTone.Danger);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        if (!await _navigationLibraryService.DeleteTagAsync(
+                runtime.Library.Id,
+                tag.Id))
+        {
+            throw new InvalidOperationException(
+                "タグを削除できませんでした。");
+        }
+
+        var remaining =
+            _browseFilterState.TagNames
+                .Where(value =>
+                    !string.Equals(
+                        value,
+                        tag.Name,
+                        StringComparison.Ordinal))
+                .ToArray();
+        if (remaining.Length
+            != _browseFilterState.TagNames.Count)
+        {
+            _browseFilterState =
+                _browseFilterState with
+                {
+                    RequiredTags =
+                        remaining
+                };
+            await ApplyBrowseQueryAsync();
+        }
+
+        await RefreshNavigationAsync(
+            CancellationToken.None);
     }
 
     private async Task OnBrowseFiltersChangedAsync(
@@ -1005,7 +1109,17 @@ public sealed class MainWindow : Window
             ?? throw new ArgumentNullException(nameof(state));
 
         await ApplyBrowseQueryAsync();
-        RenderNavigationDestination();
+
+        // The tag manager owns transient search/manage state. Rebuilding the
+        // entire navigation surface after every tag toggle would erase that
+        // state and recreate the v2 regression where tagging feels jumpy.
+        if (!string.Equals(
+                _navigationDestination,
+                "タグ",
+                StringComparison.Ordinal))
+        {
+            RenderNavigationDestination();
+        }
     }
 
     private async Task OnBrowsePreferencesChangedAsync(
@@ -1265,10 +1379,9 @@ public sealed class MainWindow : Window
                     ? null
                     : state.SearchText,
             RequiredTags:
-                string.IsNullOrWhiteSpace(
-                    state.Tag)
+                state.TagNames.Count == 0
                     ? null
-                    : [state.Tag],
+                    : state.TagNames,
             MinRating:
                 state.MinRating,
             Favorite:

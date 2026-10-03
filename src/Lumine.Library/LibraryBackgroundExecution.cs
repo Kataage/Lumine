@@ -126,6 +126,30 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<LibraryTagInfo> CreateTagAsync(
+        long libraryId,
+        string name,
+        string color,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreateTagAsync(
+                libraryId,
+                name,
+                color,
+                token),
+            cancellationToken);
+
+    public Task<bool> DeleteTagAsync(
+        long libraryId,
+        long tagId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.DeleteTagAsync(
+                libraryId,
+                tagId,
+                token),
+            cancellationToken);
+
     public Task<LibraryBrowseFacets> GetBrowseFacetsAsync(
         long libraryId,
         CancellationToken cancellationToken = default) =>
@@ -223,6 +247,19 @@ public sealed class LibraryService
                 libraryId,
                 assetId,
                 update,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<string>> SetAssetTagsAsync(
+        long libraryId,
+        long assetId,
+        IReadOnlyList<string> tagNames,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.SetAssetTagsAsync(
+                libraryId,
+                assetId,
+                tagNames,
                 token),
             cancellationToken);
 

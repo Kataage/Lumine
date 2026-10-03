@@ -434,177 +434,670 @@ internal static class ProductNavigationViews
 
     public static Control CreateTags(
         IReadOnlyList<LibraryTagInfo> tags,
-        string? selectedTag,
+        IReadOnlyList<string> selectedTags,
         Func<string?, Task> selectTag,
+        Func<string, string, Task> createTag,
+        Func<LibraryTagInfo, Task> deleteTag,
         Action<string>? reportError = null)
     {
+        ArgumentNullException.ThrowIfNull(tags);
+        ArgumentNullException.ThrowIfNull(selectedTags);
+        ArgumentNullException.ThrowIfNull(selectTag);
+        ArgumentNullException.ThrowIfNull(createTag);
+        ArgumentNullException.ThrowIfNull(deleteTag);
+
+        var selected =
+            new HashSet<string>(
+                selectedTags,
+                StringComparer.OrdinalIgnoreCase);
+        var manageMode = false;
+
         var root =
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,*"),
-                RowSpacing = LumineDesign.Space6
+                    new RowDefinitions("Auto,Auto,Auto,*"),
+                RowSpacing =
+                    LumineDesign.Space8
             };
+
+        var countText =
+            new TextBlock
+            {
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+
+        var add =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "＋ 新規",
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+
+        var manage =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "管理",
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+
+        var toolbar =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto,Auto"),
+                ColumnSpacing =
+                    LumineDesign.Space6
+            };
+        toolbar.Children.Add(countText);
+        Grid.SetColumn(add, 1);
+        toolbar.Children.Add(add);
+        Grid.SetColumn(manage, 2);
+        toolbar.Children.Add(manage);
+        root.Children.Add(toolbar);
 
         var search =
             LumineDesign.ConfigureTextBox(
                 new TextBox
                 {
-                    PlaceholderText = "タグを検索"
+                    PlaceholderText =
+                        "タグを検索",
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
                 });
+        Grid.SetRow(search, 1);
         root.Children.Add(search);
 
-        var all =
-            new Button
+        var createName =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    PlaceholderText =
+                        "新しいタグ名"
+                });
+
+        var selectedColor =
+            "#6366f1";
+        var colorPreview =
+            new Border
             {
-                Content = "すべてのタグ",
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Left,
-                Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
+                Width = 24,
+                Height = 24,
+                CornerRadius =
+                    new CornerRadius(12),
                 Background =
-                    selectedTag is null
-                        ? LumineDesign.AccentMuted
-                        : Brushes.Transparent,
+                    new SolidColorBrush(
+                        Color.Parse(
+                            selectedColor)),
                 BorderBrush =
-                    selectedTag is null
-                        ? LumineDesign.BorderStrong
-                        : Brushes.Transparent,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(LumineDesign.ControlRadius),
-                Foreground =
-                    selectedTag is null
-                        ? LumineDesign.Foreground
-                        : LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize
+                    LumineDesign.BorderStrong,
+                BorderThickness =
+                    new Thickness(1)
             };
-        AttachAsync(
-            all,
-            () => selectTag(null),
-            reportError);
-        Grid.SetRow(all, 1);
-        root.Children.Add(all);
+
+        var palette =
+            new WrapPanel();
+        var paletteColors =
+            new[]
+            {
+                "#6366f1",
+                "#ef4444",
+                "#f97316",
+                "#eab308",
+                "#22c55e",
+                "#06b6d4",
+                "#3b82f6",
+                "#ec4899",
+                "#8b5cf6",
+                "#71717a"
+            };
+        foreach (var color in paletteColors)
+        {
+            var paletteButton =
+                new Button
+                {
+                    Width = 24,
+                    Height = 24,
+                    MinWidth = 24,
+                    MinHeight = 24,
+                    Padding =
+                        new Thickness(3),
+                    Background =
+                        Brushes.Transparent,
+                    BorderBrush =
+                        string.Equals(
+                            color,
+                            selectedColor,
+                            StringComparison.Ordinal)
+                            ? LumineDesign.InteractionFocus
+                            : Brushes.Transparent,
+                    BorderThickness =
+                        new Thickness(2),
+                    CornerRadius =
+                        new CornerRadius(12),
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space4,
+                            LumineDesign.Space4),
+                    Content =
+                        new Border
+                        {
+                            Width = 14,
+                            Height = 14,
+                            CornerRadius =
+                                new CornerRadius(7),
+                            Background =
+                                new SolidColorBrush(
+                                    Color.Parse(color))
+                        }
+                };
+            ToolTip.SetTip(
+                paletteButton,
+                color);
+            var colorValue = color;
+            paletteButton.Click +=
+                (_, _) =>
+                {
+                    selectedColor =
+                        colorValue;
+                    colorPreview.Background =
+                        new SolidColorBrush(
+                            Color.Parse(
+                                selectedColor));
+                    foreach (var child in
+                             palette.Children
+                                 .OfType<Button>())
+                    {
+                        child.BorderBrush =
+                            string.Equals(
+                                ToolTip.GetTip(child)
+                                    as string,
+                                selectedColor,
+                                StringComparison.Ordinal)
+                                ? LumineDesign.InteractionFocus
+                                : Brushes.Transparent;
+                    }
+                };
+            palette.Children.Add(
+                paletteButton);
+        }
+
+        var createAction =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "作成",
+                    MinWidth = 68
+                });
+
+        var cancelCreate =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "キャンセル"
+                });
+
+        var createActions =
+            new StackPanel
+            {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space6,
+                HorizontalAlignment =
+                    HorizontalAlignment.Right
+            };
+        createActions.Children.Add(
+            cancelCreate);
+        createActions.Children.Add(
+            createAction);
+
+        var colorRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("Auto,*"),
+                ColumnSpacing =
+                    LumineDesign.Space8
+            };
+        colorRow.Children.Add(
+            colorPreview);
+        Grid.SetColumn(
+            palette,
+            1);
+        colorRow.Children.Add(
+            palette);
+
+        var createBody =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8
+            };
+        createBody.Children.Add(
+            new TextBlock
+            {
+                Text = "タグを作成",
+                Foreground =
+                    LumineDesign.Foreground,
+                FontWeight =
+                    FontWeight.SemiBold,
+                FontSize =
+                    LumineDesign.BodyFontSize
+            });
+        createBody.Children.Add(
+            createName);
+        createBody.Children.Add(
+            colorRow);
+        createBody.Children.Add(
+            createActions);
+
+        var createSurface =
+            new Border
+            {
+                IsVisible = false,
+                Background =
+                    LumineDesign.SurfaceRaised,
+                BorderBrush =
+                    LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space12),
+                Child = createBody
+            };
+        Grid.SetRow(
+            createSurface,
+            2);
+        root.Children.Add(
+            createSurface);
 
         var list =
             new ListBox
             {
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0)
+                Background =
+                    Brushes.Transparent,
+                BorderThickness =
+                    new Thickness(0),
+                Padding =
+                    new Thickness(0)
             };
-        list.ItemTemplate =
-            new FuncDataTemplate<LibraryTagInfo>(
-                (tag, _) =>
-                {
-                    var selected =
-                        string.Equals(
-                            selectedTag,
-                            tag.Name,
-                            StringComparison.OrdinalIgnoreCase);
-                    var row =
-                        new Grid
-                        {
-                            ColumnDefinitions =
-                                new ColumnDefinitions("*,Auto")
-                        };
-                    row.Children.Add(
-                        new TextBlock
-                        {
-                            Text = tag.Name,
-                            Foreground =
-                                selected
-                                    ? LumineDesign.Foreground
-                                    : LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextTrimming =
-                                TextTrimming.CharacterEllipsis
-                        });
-                    var count =
-                        new TextBlock
-                        {
-                            Text =
-                                tag.AssetCount.ToString("N0"),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize
-                        };
-                    Grid.SetColumn(count, 1);
-                    row.Children.Add(count);
-
-                    var button =
-                        new Button
-                        {
-                            Content = row,
-                            HorizontalAlignment =
-                                HorizontalAlignment.Stretch,
-                            HorizontalContentAlignment =
-                                HorizontalAlignment.Stretch,
-                            Padding = new Thickness(LumineDesign.Space8, LumineDesign.Space6),
-                            Background =
-                                selected
-                                    ? LumineDesign.AccentMuted
-                                    : Brushes.Transparent,
-                            BorderBrush =
-                                selected
-                                    ? LumineDesign.BorderStrong
-                                    : Brushes.Transparent,
-                            BorderThickness =
-                                new Thickness(1),
-                            CornerRadius =
-                                new CornerRadius(LumineDesign.ControlRadius)
-                        };
-                    AttachAsync(
-                        button,
-                        () => selectTag(tag.Name),
-                        reportError);
-                    return button;
-                },
-                supportsRecycling: true);
 
         var empty =
             CreateHint(
                 "一致するタグはありません。");
         empty.IsVisible = false;
 
-        Grid.SetRow(list, 2);
-        Grid.SetRow(empty, 2);
-        root.Children.Add(list);
-        root.Children.Add(empty);
+        Grid.SetRow(
+            list,
+            3);
+        Grid.SetRow(
+            empty,
+            3);
+        root.Children.Add(
+            list);
+        root.Children.Add(
+            empty);
 
-        var generation = 0;
-        void ApplyFilter(string? filter)
+        void UpdateToolbar()
+        {
+            countText.Text =
+                selected.Count == 0
+                    ? $"{tags.Count:N0}件"
+                    : $"{selected.Count:N0}件選択 / {tags.Count:N0}件";
+            manage.Content =
+                manageMode
+                    ? "完了"
+                    : "管理";
+            manage.Background =
+                manageMode
+                    ? LumineDesign.AccentMuted
+                    : LumineDesign.ControlSurface;
+        }
+
+        void ApplyFilter(
+            string? filter)
         {
             var normalized =
                 filter?.Trim();
             var visible =
                 tags.Where(
                         tag =>
-                            string.IsNullOrWhiteSpace(normalized)
+                            string.IsNullOrWhiteSpace(
+                                normalized)
                             || tag.Name.Contains(
                                 normalized,
-                                StringComparison.OrdinalIgnoreCase))
+                                StringComparison
+                                    .OrdinalIgnoreCase))
+                    .OrderByDescending(
+                        tag =>
+                            selected.Contains(
+                                tag.Name))
+                    .ThenByDescending(
+                        tag =>
+                            tag.AssetCount)
+                    .ThenBy(
+                        tag =>
+                            tag.Name,
+                        StringComparer
+                            .OrdinalIgnoreCase)
                     .ToArray();
-            list.ItemsSource = visible;
-            list.IsVisible = visible.Length > 0;
-            empty.IsVisible = visible.Length == 0;
+
+            list.ItemTemplate =
+                new FuncDataTemplate<LibraryTagInfo>(
+                    (tag, _) =>
+                    {
+                        var isSelected =
+                            selected.Contains(
+                                tag.Name);
+
+                        var colorDot =
+                            new Border
+                            {
+                                Width = 10,
+                                Height = 10,
+                                CornerRadius =
+                                    new CornerRadius(5),
+                                Background =
+                                    new SolidColorBrush(
+                                        Color.Parse(
+                                            tag.Color)),
+                                VerticalAlignment =
+                                    VerticalAlignment
+                                        .Center
+                            };
+
+                        var name =
+                            new TextBlock
+                            {
+                                Text = tag.Name,
+                                Foreground =
+                                    isSelected
+                                        ? LumineDesign
+                                            .Foreground
+                                        : LumineDesign
+                                            .MutedForeground,
+                                FontSize =
+                                    LumineDesign
+                                        .CaptionFontSize,
+                                TextTrimming =
+                                    TextTrimming
+                                        .CharacterEllipsis,
+                                VerticalAlignment =
+                                    VerticalAlignment
+                                        .Center
+                            };
+
+                        var count =
+                            new TextBlock
+                            {
+                                Text =
+                                    tag.AssetCount
+                                        .ToString("N0"),
+                                Foreground =
+                                    LumineDesign
+                                        .MutedForeground,
+                                FontSize =
+                                    LumineDesign
+                                        .CaptionFontSize,
+                                VerticalAlignment =
+                                    VerticalAlignment
+                                        .Center
+                            };
+
+                        var content =
+                            new Grid
+                            {
+                                ColumnDefinitions =
+                                    new ColumnDefinitions(
+                                        "Auto,*,Auto,Auto"),
+                                ColumnSpacing =
+                                    LumineDesign.Space6
+                            };
+                        content.Children.Add(
+                            colorDot);
+                        Grid.SetColumn(
+                            name,
+                            1);
+                        content.Children.Add(
+                            name);
+                        Grid.SetColumn(
+                            count,
+                            2);
+                        content.Children.Add(
+                            count);
+
+                        var button =
+                            new Button
+                            {
+                                Content = content,
+                                HorizontalAlignment =
+                                    HorizontalAlignment
+                                        .Stretch,
+                                HorizontalContentAlignment =
+                                    HorizontalAlignment
+                                        .Stretch,
+                                Padding =
+                                    new Thickness(
+                                        LumineDesign.Space8,
+                                        LumineDesign.Space6),
+                                Background =
+                                    isSelected
+                                        ? LumineDesign
+                                            .AccentMuted
+                                        : Brushes.Transparent,
+                                BorderBrush =
+                                    isSelected
+                                        ? LumineDesign
+                                            .BorderStrong
+                                        : Brushes.Transparent,
+                                BorderThickness =
+                                    new Thickness(1),
+                                CornerRadius =
+                                    new CornerRadius(
+                                        LumineDesign
+                                            .ControlRadius)
+                            };
+
+                        if (manageMode)
+                        {
+                            var remove =
+                                LumineDesign
+                                    .ConfigureSecondaryButton(
+                                        new Button
+                                        {
+                                            Content =
+                                                "削除",
+                                            MinHeight = 26,
+                                            Padding =
+                                                new Thickness(
+                                                    LumineDesign.Space6,
+                                                    LumineDesign.Space2),
+                                            FontSize =
+                                                LumineDesign
+                                                    .CaptionFontSize
+                                        });
+                            remove.Foreground =
+                                LumineDesign.Danger;
+                            Grid.SetColumn(
+                                remove,
+                                3);
+                            content.Children.Add(
+                                remove);
+                            AttachAsync(
+                                remove,
+                                () => deleteTag(tag),
+                                reportError);
+                        }
+                        else
+                        {
+                            AttachAsync(
+                                button,
+                                async () =>
+                                {
+                                    if (!selected.Add(
+                                            tag.Name))
+                                    {
+                                        selected.Remove(
+                                            tag.Name);
+                                    }
+
+                                    UpdateToolbar();
+                                    ApplyFilter(
+                                        search.Text);
+                                    await selectTag(
+                                        tag.Name);
+                                },
+                                reportError);
+                        }
+
+                        return button;
+                    },
+                    supportsRecycling: true);
+
+            list.ItemsSource =
+                visible;
+            list.IsVisible =
+                visible.Length > 0;
+            empty.IsVisible =
+                visible.Length == 0;
+            UpdateToolbar();
         }
 
-        search.TextChanged +=
-            async (_, _) =>
+        add.Click +=
+            (_, _) =>
             {
-                var current =
-                    ++generation;
-                await Task.Delay(140);
-                if (current != generation)
+                createSurface.IsVisible =
+                    !createSurface.IsVisible;
+                if (createSurface.IsVisible)
                 {
+                    createName.Focus();
+                }
+            };
+
+        cancelCreate.Click +=
+            (_, _) =>
+            {
+                createName.Text =
+                    string.Empty;
+                createSurface.IsVisible =
+                    false;
+            };
+
+        AttachAsync(
+            createAction,
+            async () =>
+            {
+                var name =
+                    createName.Text?.Trim();
+                if (string.IsNullOrWhiteSpace(
+                        name))
+                {
+                    createName.Focus();
                     return;
                 }
 
-                ApplyFilter(search.Text);
+                await createTag(
+                    name,
+                    selectedColor);
+                createName.Text =
+                    string.Empty;
+                createSurface.IsVisible =
+                    false;
+            },
+            reportError);
+
+        manage.Click +=
+            (_, _) =>
+            {
+                manageMode =
+                    !manageMode;
+                ApplyFilter(
+                    search.Text);
             };
 
+        search.TextChanged +=
+            (_, _) =>
+                ApplyFilter(
+                    search.Text);
+
+        var clearSelection =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "選択を解除",
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        clearSelection.IsVisible =
+            selected.Count > 0;
+        toolbar.ColumnDefinitions =
+            new ColumnDefinitions(
+                "*,Auto,Auto,Auto");
+        Grid.SetColumn(
+            clearSelection,
+            1);
+        Grid.SetColumn(
+            add,
+            2);
+        Grid.SetColumn(
+            manage,
+            3);
+        toolbar.Children.Add(
+            clearSelection);
+        clearSelection.Click +=
+            async (_, _) =>
+            {
+                selected.Clear();
+                clearSelection.IsVisible =
+                    false;
+                UpdateToolbar();
+                ApplyFilter(
+                    search.Text);
+                await selectTag(null);
+            };
+
+        void RefreshClearVisibility() =>
+            clearSelection.IsVisible =
+                selected.Count > 0;
+
+        list.PropertyChanged +=
+            (_, _) =>
+                RefreshClearVisibility();
+
         ApplyFilter(null);
+        RefreshClearVisibility();
         return root;
     }
 
