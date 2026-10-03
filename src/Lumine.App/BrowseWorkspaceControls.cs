@@ -44,6 +44,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly ComboBox _tag;
     private readonly CheckBox _favorite;
     private readonly ComboBox _color;
+    private readonly DropDownButton _filterButton;
     private readonly Button _grid;
     private readonly Button _list;
     private readonly Slider _density;
@@ -226,37 +227,111 @@ internal sealed class BrowseWorkspaceControls : UserControl
         Grid.SetColumn(densityPanel, 2);
         primaryRow.Children.Add(densityPanel);
 
-        var filterRow =
+        var advancedFilters =
             new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 2
+                Spacing = 9,
+                Width = 260
             };
-        AddFilter(filterRow, "並び順", _sort);
-        AddFilter(filterRow, "評価", _rating);
-        AddFilter(filterRow, "状態", _status);
-        AddFilter(filterRow, "タグ", _tag);
-        AddFilter(filterRow, "色", _color);
+        advancedFilters.Children.Add(
+            CreateFilterField(
+                "評価",
+                _rating));
+        advancedFilters.Children.Add(
+            CreateFilterField(
+                "状態",
+                _status));
+        advancedFilters.Children.Add(
+            CreateFilterField(
+                "タグ",
+                _tag));
+        advancedFilters.Children.Add(
+            CreateFilterField(
+                "色",
+                _color));
         _favorite.Margin =
-            new Thickness(8, 4);
-        filterRow.Children.Add(_favorite);
+            new Thickness(0, 3, 0, 0);
+        advancedFilters.Children.Add(
+            _favorite);
 
-        var filterScroll =
-            new ScrollViewer
+        _filterButton =
+            new DropDownButton
             {
-                Content = filterRow,
-                HorizontalScrollBarVisibility =
-                    ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility =
-                    ScrollBarVisibility.Disabled
+                Content = "フィルター",
+                MinHeight = 32,
+                Padding = new Thickness(10, 4),
+                Flyout =
+                    new Flyout
+                    {
+                        Content =
+                            new Border
+                            {
+                                Background =
+                                    LumineDesign.SurfaceRaised,
+                                BorderBrush =
+                                    LumineDesign.Border,
+                                BorderThickness =
+                                    new Thickness(1),
+                                CornerRadius =
+                                    new CornerRadius(9),
+                                Padding =
+                                    new Thickness(12),
+                                Child =
+                                    advancedFilters
+                            }
+                    }
             };
+        LumineDesign.ConfigureSecondaryButton(
+            _filterButton);
+        _filterButton.MinHeight = 32;
+        _filterButton.Padding =
+            new Thickness(10, 4);
+        ToolTip.SetTip(
+            _filterButton,
+            "評価・状態・タグ・色・お気に入りを絞り込み");
+
+        var sortGroup =
+            new StackPanel
+            {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing = 6,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        sortGroup.Children.Add(
+            new TextBlock
+            {
+                Text = "並び順",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        sortGroup.Children.Add(_sort);
+
+        var secondaryRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 8,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        secondaryRow.Children.Add(sortGroup);
+        Grid.SetColumn(_filterButton, 1);
+        secondaryRow.Children.Add(
+            _filterButton);
 
         var root = new StackPanel
         {
             Spacing = 3
         };
         root.Children.Add(primaryRow);
-        root.Children.Add(filterScroll);
+        root.Children.Add(secondaryRow);
         root.Children.Add(_chips);
 
         Content =
@@ -366,6 +441,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
             return true;
         }
     }
+
+    internal bool UsesAdvancedFilterFlyoutForSmoke =>
+        _filterButton.Flyout is not null;
+
+    internal int ActiveAdvancedFilterCountForSmoke =>
+        CountActiveAdvancedFilters();
+
+    internal string FilterButtonTextForSmoke =>
+        _filterButton.Content as string
+        ?? string.Empty;
 
     internal double SearchHeightForSmoke =>
         _search.Bounds.Height;
@@ -739,6 +824,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     private void RenderChips()
     {
+        UpdateFilterButton();
         _chips.Children.Clear();
         _chips.IsVisible = State.HasFilters;
 
@@ -871,19 +957,69 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _chips.Children.Add(chip);
     }
 
-    private static void AddFilter(
-        Panel panel,
+    private void UpdateFilterButton()
+    {
+        var count =
+            CountActiveAdvancedFilters();
+        _filterButton.Content =
+            count == 0
+                ? "フィルター"
+                : $"フィルター {count}";
+        _filterButton.Background =
+            count == 0
+                ? LumineDesign.ControlSurface
+                : LumineDesign.AccentMuted;
+        _filterButton.BorderBrush =
+            count == 0
+                ? LumineDesign.Border
+                : LumineDesign.BorderStrong;
+    }
+
+    private int CountActiveAdvancedFilters()
+    {
+        var count = 0;
+        if (State.MinRating.HasValue)
+        {
+            count++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                State.StatusLabel))
+        {
+            count++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                State.Tag))
+        {
+            count++;
+        }
+
+        if (State.FavoriteOnly)
+        {
+            count++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                State.ColorLabel))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static Control CreateFilterField(
         string label,
         Control control)
     {
+        control.HorizontalAlignment =
+            HorizontalAlignment.Stretch;
+
         var group =
             new StackPanel
             {
-                Orientation =
-                    Orientation.Horizontal,
-                Spacing = 5,
-                Margin =
-                    new Thickness(3, 2)
+                Spacing = 4
             };
         group.Children.Add(
             new TextBlock
@@ -891,12 +1027,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
-                VerticalAlignment =
-                    VerticalAlignment.Center
+                FontSize =
+                    LumineDesign.CaptionFontSize
             });
         group.Children.Add(control);
-        panel.Children.Add(group);
+        return group;
     }
 
     private static string? NormalizeChoice(
