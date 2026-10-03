@@ -557,11 +557,7 @@ internal static class ProductNavigationViews
             };
 
         var palette =
-            new WrapPanel
-            {
-                Spacing =
-                    LumineDesign.Space4
-            };
+            new WrapPanel();
         var paletteColors =
             new[]
             {
