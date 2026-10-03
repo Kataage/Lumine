@@ -71,7 +71,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly CheckBox _favoriteEditor;
     private readonly ComboBox _statusEditor;
     private readonly ComboBox _colorEditor;
-    private readonly TextBox _tagsEditor;
+    private readonly AssetTagPickerControl _tagPicker;
     private readonly TextBox _notesEditor;
     private readonly TextBlock _saveStatus;
     private readonly Button _save;
@@ -171,13 +171,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     ItemsSource = ColorLabels,
                     MinWidth = 118
                 });
-        _tagsEditor =
-            LumineDesign.ConfigureTextBox(
-                new TextBox
-                {
-                    PlaceholderText = "タグ",
-                    TextWrapping = TextWrapping.Wrap
-                });
+        _tagPicker =
+            new AssetTagPickerControl(
+                _runtime,
+                _metadataChanged);
         _notesEditor =
             LumineDesign.ConfigureTextBox(
                 new TextBox
@@ -344,7 +341,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             editor,
             4,
             "タグ",
-            _tagsEditor);
+            _tagPicker);
         AddEditorRow(
             editor,
             5,
@@ -620,8 +617,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             (_, _) => MarkDirty();
         _colorEditor.SelectionChanged +=
             (_, _) => MarkDirty();
-        _tagsEditor.TextChanged +=
-            (_, _) => MarkDirty();
         _notesEditor.TextChanged +=
             (_, _) => MarkDirty();
         KeyDown += OnKeyDown;
@@ -647,7 +642,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             : "未設定";
 
     internal string TagsText =>
-        _tagsEditor.Text ?? string.Empty;
+        string.Join(
+            ", ",
+            _tagPicker.AssignedTags);
 
     internal string NotesText =>
         _notesEditor.Text ?? string.Empty;
@@ -784,6 +781,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
             _loadedMetadata = metadata;
             PopulateEditor(metadata);
+            await _tagPicker.SetAssetAsync(
+                asset.Id,
+                metadata.Tags,
+                token);
             SetEditorEnabled(true);
             _saveStatus.Text = "保存済み";
 
@@ -832,7 +833,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 IndexOfValue(
                     ColorValues,
                     colorLabel);
-            _tagsEditor.Text = tags;
+            _tagPicker.SetAssignedTags(
+                ParseTags(tags));
             _notesEditor.Text = notes;
         }
         finally
@@ -874,8 +876,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         ColorValues,
                         _colorEditor.SelectedIndex),
                 Tags:
-                    ParseTags(
-                        _tagsEditor.Text));
+                    _tagPicker.AssignedTags);
 
         _saving = true;
         _save.IsEnabled = false;
@@ -950,7 +951,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _favoriteEditor.IsChecked = false;
             _statusEditor.SelectedIndex = 0;
             _colorEditor.SelectedIndex = 0;
-            _tagsEditor.Text = string.Empty;
+            _tagPicker.Reset();
             _notesEditor.Text = string.Empty;
         }
         finally
@@ -1263,10 +1264,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 IndexOfValue(
                     ColorValues,
                     metadata.ColorLabel);
-            _tagsEditor.Text =
-                string.Join(
-                    ", ",
-                    metadata.Tags);
+            _tagPicker.SetAssignedTags(
+                metadata.Tags);
             _notesEditor.Text =
                 metadata.Notes;
             _dirty = false;
@@ -1313,7 +1312,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _favoriteEditor.IsEnabled = enabled;
         _statusEditor.IsEnabled = enabled;
         _colorEditor.IsEnabled = enabled;
-        _tagsEditor.IsEnabled = enabled;
+        _tagPicker.IsEnabled = enabled;
         _notesEditor.IsEnabled = enabled;
         _save.IsEnabled =
             enabled && _dirty;
