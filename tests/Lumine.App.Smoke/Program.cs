@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -968,6 +969,47 @@ try
                     StringComparison.Ordinal) == true
                 && openableButton.IsEnabled,
                 "Async library open failure escaped the navigation error boundary or left the command disabled.");
+
+            navigationError = null;
+            Require(
+                openableButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None),
+                "Openable library row did not accept keyboard focus.");
+            openableButton.RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Enter
+                });
+            openableButton.RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyUpEvent,
+                    Key = Key.Enter
+                });
+
+            for (var attempt = 0;
+                 attempt < 100
+                 && navigationError is null;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                openAttempts == 2
+                && navigationError?.Contains(
+                    "navigation-smoke-failure",
+                    StringComparison.Ordinal) == true
+                && !offlineButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None)
+                && !disabledButton.Focus(
+                    NavigationMethod.Tab,
+                    KeyModifiers.None),
+                "Library row keyboard behavior drifted for openable/offline/disabled states.");
 
             foreach (var commandPath in
                      new[]
