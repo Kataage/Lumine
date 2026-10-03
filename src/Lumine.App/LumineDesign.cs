@@ -143,6 +143,7 @@ internal static class LumineDesign
     public const double ContentGap = Space12;
     public const double SurfaceRadius = PanelRadius;
     public const double StateCardMaxWidth = 560;
+    public const double ReadablePageMaxWidth = 920;
 
     internal sealed record NavigationItem(
         string Label,
