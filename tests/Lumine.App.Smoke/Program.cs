@@ -1111,6 +1111,8 @@ try
                 ProductNavigationViews.CreateFolders(
                     largeFolders,
                     null,
+                    new HashSet<string>(
+                        StringComparer.OrdinalIgnoreCase),
                     static _ => Task.CompletedTask);
             var scaleWindow =
                 new Window
@@ -1125,6 +1127,102 @@ try
                 RealizedNavigationRows(foldersView) is > 0 and < 128,
                 "10k folder navigation materialized an unbounded visual tree.");
             scaleWindow.Close();
+
+            var hierarchyExpansion =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            var hierarchyFolders =
+                new[]
+                {
+                    new LibraryFolderInfo(
+                        1,
+                        "root",
+                        1,
+                        4),
+                    new LibraryFolderInfo(
+                        2,
+                        "root/a",
+                        2,
+                        2),
+                    new LibraryFolderInfo(
+                        3,
+                        "root/a/deep",
+                        3,
+                        1),
+                    new LibraryFolderInfo(
+                        4,
+                        "root/b",
+                        2,
+                        1)
+                };
+            var hierarchyView =
+                ProductNavigationViews.CreateFolders(
+                    hierarchyFolders,
+                    null,
+                    hierarchyExpansion,
+                    static _ => Task.CompletedTask);
+            var hierarchyWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = hierarchyView
+                };
+            hierarchyWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var hierarchyList =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .First();
+            static int VisibleFolderCount(
+                ListBox list) =>
+                (list.ItemsSource as IEnumerable<LibraryFolderInfo>)
+                    ?.Count()
+                ?? 0;
+
+            Require(
+                VisibleFolderCount(hierarchyList) == 1,
+                "Collapsed folder tree exposed descendants before disclosure.");
+
+            var rootDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button =>
+                        string.Equals(
+                            button.Content as string,
+                            "▶",
+                            StringComparison.Ordinal));
+            rootDisclosure.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                VisibleFolderCount(hierarchyList) == 3
+                && hierarchyExpansion.Contains("root"),
+                "Expanding a root folder did not reveal only its direct children.");
+
+            var nestedDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button =>
+                        string.Equals(
+                            button.Content as string,
+                            "▶",
+                            StringComparison.Ordinal));
+            nestedDisclosure.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                VisibleFolderCount(hierarchyList) == 4
+                && hierarchyExpansion.Contains("root/a"),
+                "Expanding a nested folder did not reveal its descendants.");
+
+            hierarchyWindow.Close();
 
             var tagsView =
                 ProductNavigationViews.CreateTags(
