@@ -76,9 +76,12 @@ internal static class LumineDesign
         new("Yu Gothic UI, Yu Gothic, Meiryo, Segoe UI");
 
     public const double NavigationWidth = 64;
-    public const double BodyFontSize = 14;
-    public const double CaptionFontSize = 12;
-    public const double CompactLabelFontSize = 12;
+    public static double BodyFontSize =>
+        14 * LumineVisualMetrics.TextScaleFactor;
+    public static double CaptionFontSize =>
+        12 * LumineVisualMetrics.TextScaleFactor;
+    public static double CompactLabelFontSize =>
+        12 * LumineVisualMetrics.TextScaleFactor;
     public const double HeaderHeight = 56;
     public const double CompactControlHeight = 34;
     public const double ContentGap = 12;
