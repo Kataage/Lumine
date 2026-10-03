@@ -3,6 +3,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -74,6 +77,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _focused;
+    private readonly Avalonia.Controls.Image _preview;
+    private readonly TabControl _tabs;
+    private readonly object _previewReleaseGate = new();
+    private readonly HashSet<Task> _pendingPreviewReleases = [];
+    private readonly List<DecodedBitmapLease> _unfencedPreviewLeases = [];
+    private DecodedBitmapLease? _previewLease;
+    private Compositor? _compositor;
+    private Exception? _previewReleaseFailure;
     private CancellationTokenSource? _loadCancellation;
     private long _assetId;
     private AssetUserMetadata? _loadedMetadata;
@@ -104,6 +115,25 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             fontSize: 14,
             weight: FontWeight.Bold);
         _summary = CreateValue();
+        _preview =
+            new Avalonia.Controls.Image
+            {
+                Stretch = Stretch.Uniform,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalAlignment =
+                    VerticalAlignment.Center,
+                MaxHeight = 168
+            };
+        _tabs =
+            new TabControl
+            {
+                SelectedIndex = 0,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalAlignment =
+                    VerticalAlignment.Stretch
+            };
         _path = CreateValue(wrap: true);
         _technical = CreateValue(wrap: true);
         _works = CreateValue(wrap: true);
@@ -252,15 +282,27 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         Grid.SetColumn(close, 2);
         header.Children.Add(close);
 
-        var body =
+        var summaryBody =
             new StackPanel
             {
-                Spacing = 12,
-                Margin = new Thickness(14, 4, 14, 18)
+                Spacing = 8,
+                Margin = new Thickness(14, 4, 14, 10)
             };
 
-        body.Children.Add(_title);
-        body.Children.Add(_summary);
+        var previewSurface =
+            new Border
+            {
+                Height = 168,
+                Background = LumineDesign.Background,
+                BorderBrush = LumineDesign.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                ClipToBounds = true,
+                Child = _preview
+            };
+        summaryBody.Children.Add(previewSurface);
+        summaryBody.Children.Add(_title);
+        summaryBody.Children.Add(_summary);
 
         var editor =
             new Grid
@@ -302,10 +344,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             5,
             "ノート",
             _notesEditor);
-        AddSection(
-            body,
-            "整理情報",
-            editor);
 
         var saveRow =
             new Grid
@@ -322,7 +360,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _save.Margin =
             new Thickness(4, 0);
         saveRow.Children.Add(_save);
-        body.Children.Add(saveRow);
+
+        var organizeBody =
+            new StackPanel
+            {
+                Spacing = 12,
+                Margin = new Thickness(14, 12, 14, 18)
+            };
+        AddSection(
+            organizeBody,
+            "整理情報",
+            editor);
+        organizeBody.Children.Add(saveRow);
 
         var creative =
             new StackPanel
@@ -422,30 +471,57 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         AddSection(creative, "Generation Group", _groups);
         AddSection(creative, "Lineage", _relations);
         AddSection(creative, "Publication", _publications);
-        AddSection(body, "制作コンテキスト", creative);
 
-        AddSection(body, "場所", _path);
-        AddSection(body, "技術情報", _technical);
-
-        var scroll =
-            new ScrollViewer
+        var creativeBody =
+            new StackPanel
             {
-                Content = body,
-                HorizontalScrollBarVisibility =
-                    Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility =
-                    Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+                Spacing = 12,
+                Margin = new Thickness(14, 12, 14, 18)
             };
+        AddSection(
+            creativeBody,
+            "制作コンテキスト",
+            creative);
+
+        var informationBody =
+            new StackPanel
+            {
+                Spacing = 14,
+                Margin = new Thickness(14, 12, 14, 18)
+            };
+        AddSection(
+            informationBody,
+            "場所",
+            _path);
+        AddSection(
+            informationBody,
+            "技術情報",
+            _technical);
+
+        _tabs.Items.Add(
+            CreateTab(
+                "整理",
+                CreateTabScroll(organizeBody)));
+        _tabs.Items.Add(
+            CreateTab(
+                "制作",
+                CreateTabScroll(creativeBody)));
+        _tabs.Items.Add(
+            CreateTab(
+                "情報",
+                CreateTabScroll(informationBody)));
 
         var layout =
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                    new RowDefinitions("Auto,Auto,*")
             };
         layout.Children.Add(header);
-        Grid.SetRow(scroll, 1);
-        layout.Children.Add(scroll);
+        Grid.SetRow(summaryBody, 1);
+        layout.Children.Add(summaryBody);
+        Grid.SetRow(_tabs, 2);
+        layout.Children.Add(_tabs);
 
         Background = LumineDesign.Surface;
         Content = layout;
@@ -463,6 +539,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _notesEditor.TextChanged +=
             (_, _) => MarkDirty();
         KeyDown += OnKeyDown;
+        AttachedToVisualTree += OnAttachedToVisualTree;
 
         ShowNoSelection();
     }
@@ -503,6 +580,31 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal bool IsDirty => _dirty;
 
+    internal bool HasPreview =>
+        _preview.Source is not null;
+
+    internal int SelectedTabIndex =>
+        _tabs.SelectedIndex;
+
+    internal string SelectedTabHeader =>
+        (_tabs.SelectedItem as TabItem)?.Header as string
+        ?? string.Empty;
+
+    internal IReadOnlyList<string> TabHeaders { get; } =
+        new[] { "整理", "制作", "情報" };
+
+    internal void SelectTabForSmoke(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        if (index >= TabHeaders.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(index));
+        }
+
+        _tabs.SelectedIndex = index;
+    }
+
     public async Task ShowAssetAsync(
         ViewerAsset asset,
         CancellationToken cancellationToken = default)
@@ -534,6 +636,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         SetEditorEnabled(false);
         _saveStatus.Text = "整理情報を読み込んでいます…";
+
+        await LoadPreviewAsync(
+            asset,
+            token);
 
         try
         {
@@ -716,6 +822,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _publications.Text = "—";
         _saveStatus.Text = "—";
         _focused.IsEnabled = false;
+        _tabs.SelectedIndex = 0;
+        ReplacePreviewLease(null);
 
         _loadingEditor = true;
         try
@@ -740,7 +848,177 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = null;
+        ReplacePreviewLease(null);
         KeyDown -= OnKeyDown;
+        AttachedToVisualTree -= OnAttachedToVisualTree;
+    }
+
+    public async Task DrainPreviewBitmapReleasesAsync()
+    {
+        while (true)
+        {
+            Task[] pending;
+
+            lock (_previewReleaseGate)
+            {
+                if (_previewReleaseFailure is not null)
+                {
+                    throw new InvalidOperationException(
+                        "An Inspector preview composition release failed.",
+                        _previewReleaseFailure);
+                }
+
+                pending = [.. _pendingPreviewReleases];
+                if (pending.Length == 0)
+                {
+                    return;
+                }
+            }
+
+            await Task.WhenAll(pending)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private void OnAttachedToVisualTree(
+        object? sender,
+        VisualTreeAttachmentEventArgs e)
+    {
+        _compositor =
+            ElementComposition.GetElementVisual(this)?.Compositor
+            ?? _compositor;
+    }
+
+    private async Task LoadPreviewAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken)
+    {
+        DecodedBitmapLease? lease = null;
+
+        try
+        {
+            var thumbnail =
+                await _runtime.ViewerSession
+                    .GetThumbnailAsync(
+                        asset,
+                        ViewerThumbnailPriority.Foreground,
+                        cancellationToken);
+            lease =
+                await _runtime.ViewerSession.BitmapCache
+                    .AcquireAsync(
+                        thumbnail,
+                        cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_assetId != asset.Id)
+            {
+                return;
+            }
+
+            var next = lease;
+            lease = null;
+            ReplacePreviewLease(next);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            if (_assetId == asset.Id)
+            {
+                ReplacePreviewLease(null);
+            }
+        }
+        finally
+        {
+            lease?.Dispose();
+        }
+    }
+
+    private void ReplacePreviewLease(
+        DecodedBitmapLease? next)
+    {
+        var previous = _previewLease;
+        _previewLease = next;
+        _preview.Source = next?.Bitmap;
+
+        if (previous is not null)
+        {
+            ReleasePreviewLeaseAfterComposition(
+                previous);
+        }
+    }
+
+    private void ReleasePreviewLeaseAfterComposition(
+        DecodedBitmapLease lease)
+    {
+        var compositor = _compositor;
+        if (compositor is null)
+        {
+            lease.Dispose();
+            return;
+        }
+
+        Task release;
+        try
+        {
+            var batch =
+                compositor.RequestCompositionBatchCommitAsync();
+            release =
+                DisposePreviewLeaseAfterAsync(
+                    lease,
+                    batch.Rendered);
+        }
+        catch (Exception exception)
+        {
+            lock (_previewReleaseGate)
+            {
+                _previewReleaseFailure ??= exception;
+                _unfencedPreviewLeases.Add(lease);
+            }
+
+            return;
+        }
+
+        lock (_previewReleaseGate)
+        {
+            _pendingPreviewReleases.Add(release);
+        }
+
+        _ = ObservePreviewReleaseAsync(release);
+    }
+
+    private async Task ObservePreviewReleaseAsync(
+        Task release)
+    {
+        try
+        {
+            await release.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            lock (_previewReleaseGate)
+            {
+                _previewReleaseFailure ??= exception;
+            }
+        }
+        finally
+        {
+            lock (_previewReleaseGate)
+            {
+                _pendingPreviewReleases.Remove(release);
+            }
+        }
+    }
+
+    private static async Task DisposePreviewLeaseAfterAsync(
+        DecodedBitmapLease lease,
+        Task compositionRendered)
+    {
+        await compositionRendered.ConfigureAwait(false);
+        await Dispatcher.UIThread.InvokeAsync(
+            lease.Dispose);
     }
 
     private async Task LoadCreativeContextAsync(
@@ -1075,6 +1353,26 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 wrap
                     ? TextTrimming.None
                     : TextTrimming.CharacterEllipsis
+        };
+
+    private static TabItem CreateTab(
+        string header,
+        Control content) =>
+        new()
+        {
+            Header = header,
+            Content = content
+        };
+
+    private static ScrollViewer CreateTabScroll(
+        Control content) =>
+        new()
+        {
+            Content = content,
+            HorizontalScrollBarVisibility =
+                Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility =
+                Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
 
     private static void AddSection(
