@@ -1319,19 +1319,12 @@ internal static class Program
 
         detail.FadeChromeForSmoke();
         Require(
-            detail.ToolbarOpacityForSmoke < 0.5
-            && detail.PreviousOpacityForSmoke < 0.5
-            && detail.NextOpacityForSmoke < 0.5,
-            "Viewer chrome did not fade after inactivity.");
+            detail.IsChromeNonBlockingForSmoke,
+            "Idle Viewer chrome remained visible or intercepted the image surface.");
 
         detail.RevealChromeForSmoke();
         Require(
-            Math.Abs(
-                detail.ToolbarOpacityForSmoke - 1) < 0.001
-            && Math.Abs(
-                detail.PreviousOpacityForSmoke - 1) < 0.001
-            && Math.Abs(
-                detail.NextOpacityForSmoke - 1) < 0.001,
+            detail.IsChromeVisibleForSmoke,
             "Viewer chrome did not fully return after interaction.");
 
         await detailSession.SelectAsync(0);
