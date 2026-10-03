@@ -30,6 +30,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly ViewerRangeSelection _selection = new();
     private long _selectedIndex = -1;
     private long _selectionAnchor = -1;
+    private long _pendingFocusIndex = -1;
     private ViewerLayoutMode _layoutMode;
     private int _densityLevel;
     private double _viewportWidth = 1;
@@ -102,6 +103,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Terminal shell teardown must detach realized rows synchronously.
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
+        _pendingFocusIndex = -1;
         _rows.ItemsSource = null;
         ClearSelection();
     }
@@ -213,17 +215,44 @@ public sealed class ThumbnailViewerControl : UserControl
         UpdateLayout();
 
         var tile =
-            this.GetVisualDescendants()
-                .OfType<ViewerTileControl>()
-                .FirstOrDefault(
-                    item => item.Index == index);
-        // GetVisualDescendants() already resolves the current realized tile.
-        // Do not gate focus on Control.IsLoaded: headless/native lifecycle
-        // ordering can report Loaded later even though the visual is attached
-        // and focusable. Effective visibility/enabled state is the relevant
-        // keyboard-focus contract here.
-        if (tile is null
-            || !tile.IsEffectivelyVisible
+            GetAssetFocusTarget(index)
+            as ViewerTileControl;
+        return tile is not null
+            && TryFocusTile(tile);
+    }
+
+    public void RestoreAssetFocus(long index)
+    {
+        _pendingFocusIndex = -1;
+
+        if ((ulong)index >= (ulong)AssetCount)
+        {
+            Focus(
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+            return;
+        }
+
+        if (FocusAsset(index))
+        {
+            return;
+        }
+
+        // ScrollIntoView may realize the virtualized row on a later layout
+        // pass. Keep the semantic asset identity and complete the focus move
+        // when that tile actually joins the visual tree.
+        _pendingFocusIndex = index;
+        Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
+        _rows.ScrollIntoView(
+            checked((int)(index / _columns)));
+    }
+
+    private bool TryFocusTile(
+        ViewerTileControl tile)
+    {
+        if (!tile.IsEffectivelyVisible
             || !tile.IsEffectivelyEnabled)
         {
             return false;
@@ -239,6 +268,20 @@ public sealed class ThumbnailViewerControl : UserControl
                ?? tile.Focus(
                    NavigationMethod.Unspecified,
                    KeyModifiers.None);
+    }
+
+    private void CompletePendingAssetFocus(
+        ViewerTileControl tile)
+    {
+        if (_pendingFocusIndex != tile.Index)
+        {
+            return;
+        }
+
+        if (TryFocusTile(tile))
+        {
+            _pendingFocusIndex = -1;
+        }
     }
 
 
@@ -1244,6 +1287,7 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             _owner.SelectionChanged += OnSelectionChanged;
             UpdateSelection();
+            _owner.CompletePendingAssetFocus(this);
             _session.NotifyTileAttached();
             StartLoad();
         }
