@@ -1323,6 +1323,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _groups.Text = "—";
             _relations.Text = "—";
             _publications.Text = "—";
+            _retry.IsVisible = true;
+            _saveStatus.Foreground =
+                LumineDesign.Warning;
+            _saveStatus.Text =
+                "追加情報の取得に失敗しました。再読み込みできます。";
         }
     }
 
@@ -1414,6 +1419,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 .Select(
                     (value, index) =>
                     {
+                        var swatch =
+                            ResolveColorBrush(value);
                         var button =
                             new Button
                             {
@@ -1431,8 +1438,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                         LumineDesign.Space4),
                                 CornerRadius =
                                     new CornerRadius(13),
-                                Background =
-                                    ResolveColorBrush(value),
+                                Background = swatch,
                                 BorderBrush =
                                     LumineDesign.Border,
                                 BorderThickness =
@@ -1444,9 +1450,22 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                 Foreground =
                                     LumineDesign.Foreground
                             };
-                        LumineDesign
-                            .ConfigureNeutralButtonStateResources(
-                                button);
+                        button.Resources[
+                            "ButtonBackgroundPointerOver"] =
+                            value is null
+                                ? LumineDesign.InteractionHover
+                                : swatch;
+                        button.Resources[
+                            "ButtonBackgroundPressed"] =
+                            value is null
+                                ? LumineDesign.InteractionPressed
+                                : swatch;
+                        button.Resources[
+                            "ButtonBorderBrushPointerOver"] =
+                            LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBorderBrushPressed"] =
+                            LumineDesign.Focus;
                         ToolTip.SetTip(
                             button,
                             ColorLabels[index]);
