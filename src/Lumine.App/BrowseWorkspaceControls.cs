@@ -76,6 +76,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     MinWidth = 260,
                     Text = State.SearchText
                 });
+        var searchHeight =
+            Math.Max(
+                32,
+                LumineDesign.BodyLineHeight + 8);
+        _search.MinHeight = searchHeight;
+        _search.Height = searchHeight;
+        _search.Padding = new Thickness(10, 4);
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
@@ -144,6 +151,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
             },
             "リスト表示");
 
+        foreach (var button in new[] { _grid, _list })
+        {
+            button.Width = 32;
+            button.Height = 32;
+            button.MinWidth = 32;
+            button.MinHeight = 32;
+            button.Padding = new Thickness(6);
+            button.CornerRadius = new CornerRadius(7);
+        }
+
         _density = new Slider
         {
             Minimum = 0,
@@ -166,7 +183,10 @@ internal sealed class BrowseWorkspaceControls : UserControl
         var primaryRow = new Grid
         {
             ColumnDefinitions =
-                new ColumnDefinitions("*,Auto,Auto")
+                new ColumnDefinitions("*,Auto,Auto"),
+            ColumnSpacing = 6,
+            VerticalAlignment =
+                VerticalAlignment.Center
         };
         primaryRow.Children.Add(_search);
 
@@ -174,8 +194,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 5,
-                Margin = new Thickness(8, 0)
+                Spacing = 4,
+                Margin = new Thickness(0)
             };
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
@@ -186,7 +206,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 6,
+                Spacing = 4,
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
@@ -233,7 +253,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         var root = new StackPanel
         {
-            Spacing = 4
+            Spacing = 3
         };
         root.Children.Add(primaryRow);
         root.Children.Add(filterScroll);
@@ -246,7 +266,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 BorderBrush = LumineDesign.Border,
                 BorderThickness =
                     new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(10, 6),
+                Padding = new Thickness(10, 5),
                 Child = root
             };
 
@@ -346,6 +366,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
             return true;
         }
     }
+
+    internal double SearchHeightForSmoke =>
+        _search.Bounds.Height;
+
+    internal Thickness SearchPaddingForSmoke =>
+        _search.Padding;
 
     public BrowseFilterState State { get; private set; }
 
@@ -857,7 +883,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     Orientation.Horizontal,
                 Spacing = 5,
                 Margin =
-                    new Thickness(4, 3)
+                    new Thickness(3, 2)
             };
         group.Children.Add(
             new TextBlock
