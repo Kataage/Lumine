@@ -171,11 +171,15 @@ public sealed class MainWindow : Window
                 BorderThickness =
                     new Thickness(1),
                 CornerRadius =
-                    new CornerRadius(8),
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
                 Padding =
-                    new Thickness(12, 7),
+                    new Thickness(
+                        LumineDesign.Space12,
+                        LumineDesign.Space6),
                 Margin =
-                    new Thickness(12),
+                    new Thickness(
+                        LumineDesign.Space12),
                 MaxWidth = 720,
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
