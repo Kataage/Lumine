@@ -189,6 +189,7 @@ internal sealed class AssetTagPickerControl : UserControl
 
         _status.Text = string.Empty;
         Render();
+        IsEnabled = true;
     }
 
     public void SetAssignedTags(
