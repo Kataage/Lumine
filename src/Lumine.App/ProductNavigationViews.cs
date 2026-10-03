@@ -14,6 +14,7 @@ internal static class ProductNavigationViews
         long? activeLibraryId,
         Func<Task> addLibrary,
         Func<LibraryCatalogItem, Task> openLibrary,
+        Func<LibraryCatalogItem, Task> rescanLibrary,
         Func<LibraryCatalogItem, Task> toggleEnabled,
         Func<LibraryCatalogItem, Task> removeLibrary,
         Action<string>? reportError = null)
@@ -206,10 +207,39 @@ internal static class ProductNavigationViews
                 new Grid
                 {
                     ColumnDefinitions =
-                        new ColumnDefinitions("*,Auto"),
+                        new ColumnDefinitions("*,Auto,Auto"),
                     ColumnSpacing = LumineDesign.Space6
                 };
             libraryRow.Children.Add(primary);
+
+            if (isActive
+                && library.IsEnabled
+                && rootAvailable)
+            {
+                var rescan =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = "再スキャン",
+                            MinHeight =
+                                LumineDesign.CompactCommandHeight,
+                            Padding =
+                                new Thickness(
+                                    LumineDesign.Space8,
+                                    LumineDesign.Space4),
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        });
+                ToolTip.SetTip(
+                    rescan,
+                    "現在のライブラリを再スキャン");
+                AttachAsync(
+                    rescan,
+                    () => rescanLibrary(library),
+                    reportError);
+                Grid.SetColumn(rescan, 1);
+                libraryRow.Children.Add(rescan);
+            }
 
             var manageButton =
                 LumineDesign.ConfigureIconButton(
@@ -255,7 +285,7 @@ internal static class ProductNavigationViews
             manageButton.Click +=
                 (_, _) =>
                     manageMenu.Open(manageButton);
-            Grid.SetColumn(manageButton, 1);
+            Grid.SetColumn(manageButton, 2);
             libraryRow.Children.Add(manageButton);
             stack.Children.Add(libraryRow);
 
