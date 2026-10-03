@@ -26,9 +26,11 @@ internal static class ViewerVisualTokens
     public static readonly IBrush MutedForeground = new SolidColorBrush(MutedForegroundColor);
     public static readonly IBrush Selection = new SolidColorBrush(SelectionColor);
     public static readonly IBrush Overlay =
-        new SolidColorBrush(Color.FromArgb(214, 24, 24, 27));
+        new SolidColorBrush(
+            Color.Parse(LumineVisualPalette.Overlay));
     public static readonly IBrush OverlaySoft =
-        new SolidColorBrush(Color.FromArgb(176, 24, 24, 27));
+        new SolidColorBrush(
+            Color.Parse(LumineVisualPalette.OverlaySoft));
 
     public static readonly IBrush CaptionGradient =
         new LinearGradientBrush
@@ -46,13 +48,13 @@ internal static class ViewerVisualTokens
             GradientStops =
             [
                 new GradientStop(
-                    Color.FromArgb(0, 0, 0, 0),
+                    Color.Parse(LumineVisualPalette.CaptionGradientTransparent),
                     0),
                 new GradientStop(
-                    Color.FromArgb(70, 0, 0, 0),
+                    Color.Parse(LumineVisualPalette.CaptionGradientMiddle),
                     0.35),
                 new GradientStop(
-                    Color.FromArgb(220, 0, 0, 0),
+                    Color.Parse(LumineVisualPalette.CaptionGradientEnd),
                     1)
             ]
         };
