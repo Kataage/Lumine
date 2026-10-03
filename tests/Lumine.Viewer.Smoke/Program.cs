@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -721,18 +722,40 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
+        var selectAllWatch =
+            Stopwatch.StartNew();
         viewer.SelectAll();
+        selectAllWatch.Stop();
         Require(
             viewer.SelectedAssetCount == 100_000
             && viewer.SelectionRangeCount == 1
             && viewer.SelectedAssetIndices[0] == 0
-            && viewer.SelectedAssetIndices[99_999] == 99_999,
-            "100k Select-All was materialized instead of remaining one compact selection range.");
+            && viewer.SelectedAssetIndices[99_999] == 99_999
+            && selectAllWatch.Elapsed
+                < TimeSpan.FromMilliseconds(500),
+            $"100k Select-All did not remain one fast compact range: {selectAllWatch.Elapsed.TotalMilliseconds:N1} ms.");
+
         viewer.ClearSelection();
         Require(
             viewer.SelectedAssetCount == 0
             && viewer.SelectionRangeCount == 0,
             "Clearing a compact Select-All did not release selection ranges.");
+
+        viewer.SelectAsset(0);
+        var largeRangeWatch =
+            Stopwatch.StartNew();
+        viewer.SelectAsset(
+            99_999,
+            scrollIntoView: false,
+            ViewerSelectionMode.Range);
+        largeRangeWatch.Stop();
+        Require(
+            viewer.SelectedAssetCount == 100_000
+            && viewer.SelectionRangeCount == 1
+            && largeRangeWatch.Elapsed
+                < TimeSpan.FromMilliseconds(500),
+            $"100k Shift-range selection did not remain one fast compact range: {largeRangeWatch.Elapsed.TotalMilliseconds:N1} ms.");
+        viewer.ClearSelection();
 
         var firstTile = viewer.GetVisualDescendants()
             .OfType<Border>()
