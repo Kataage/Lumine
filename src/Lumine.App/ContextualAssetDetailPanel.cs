@@ -697,6 +697,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             ? $"★{_ratingEditor.SelectedIndex}"
             : "未設定";
 
+    internal string ColorLabelForSmoke =>
+        _colorEditor.SelectedIndex >= 0
+        && _colorEditor.SelectedIndex < ColorValues.Length
+            ? ColorValues[_colorEditor.SelectedIndex]
+                ?? string.Empty
+            : string.Empty;
+
     internal string TagsText =>
         string.Join(
             ", ",
