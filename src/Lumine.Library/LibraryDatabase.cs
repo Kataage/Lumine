@@ -430,6 +430,14 @@ public sealed class LibraryDatabase
 
             CREATE INDEX idx_publication_assets_asset
                 ON publication_assets(asset_id, publication_id);
+            """),
+        new(
+            8,
+            "tag-color-and-management-parity",
+            """
+            ALTER TABLE tags
+                ADD COLUMN color TEXT NOT NULL DEFAULT '#6366f1'
+                    CHECK(length(color) BETWEEN 4 AND 32);
             """)
     ];
 
