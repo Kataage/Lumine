@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -2378,6 +2379,39 @@ try
                         && window.CurrentShell.IsFocusedViewVisible
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
+
+                    var unnamedIconButton =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    button.Content
+                                        is Avalonia.Controls.Shapes.Path
+                                    && string.IsNullOrWhiteSpace(
+                                        AutomationProperties.GetName(
+                                            button)));
+                    Require(
+                        unnamedIconButton is null,
+                        "An icon-only product control is missing an accessibility name.");
+
+                    var fullScreenAutomation =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties
+                                            .GetAutomationId(button),
+                                        "viewer.fullscreen",
+                                        StringComparison.Ordinal));
+                    Require(
+                        fullScreenAutomation is not null
+                        && string.Equals(
+                            AutomationProperties.GetAcceleratorKey(
+                                fullScreenAutomation),
+                            "F11",
+                            StringComparison.Ordinal),
+                        "Focused viewer full-screen automation metadata/accelerator regressed.");
 
                     var windowStateBeforeFullscreen =
                         window.WindowState;
