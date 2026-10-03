@@ -143,6 +143,14 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public int RealizedRowCount => _rows.GetRealizedContainers().Count();
 
+    internal Rect RowHostBoundsForSmoke => _rows.Bounds;
+
+    internal bool RowHostVisibleForSmoke => _rows.IsEffectivelyVisible;
+
+    internal bool RowHostLoadedForSmoke => _rows.IsLoaded;
+
+    internal int RowItemCountForSmoke => _rows.ItemCount;
+
     public int SelectedRealizedTileCount =>
         this.GetVisualDescendants()
             .OfType<ViewerTileControl>()
