@@ -189,7 +189,6 @@ public sealed class DetailViewerControl : UserControl
         _previous.Height = 56;
         _previous.MinWidth = 44;
         _previous.MinHeight = 56;
-        _previous.FontSize = 28;
         _previous.Padding = new Thickness(0);
         _previous.HorizontalAlignment =
             HorizontalAlignment.Left;
@@ -202,7 +201,6 @@ public sealed class DetailViewerControl : UserControl
         _next.Height = 56;
         _next.MinWidth = 44;
         _next.MinHeight = 56;
-        _next.FontSize = 28;
         _next.Padding = new Thickness(0);
         _next.HorizontalAlignment =
             HorizontalAlignment.Right;
