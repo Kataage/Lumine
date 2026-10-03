@@ -17,9 +17,9 @@ The shell is not a pixel copy of v1. It is an Avalonia-native foundation for #39
 
 ## Tokens
 
-The source of truth is `LumineDesign` in `src/Lumine.App/LumineDesign.cs`.
+The raw palette source of truth is `LumineVisualPalette` in `src/Lumine.Core/LumineVisualPalette.cs`. `LumineDesign` in `src/Lumine.App/LumineDesign.cs` is the App semantic/control adapter, and `ViewerVisualTokens` consumes the same shared palette across the App/Viewer architecture boundary.
 
-It defines:
+Together they define:
 
 - background, surface, raised surface and border colors;
 - foreground and muted text colors;
