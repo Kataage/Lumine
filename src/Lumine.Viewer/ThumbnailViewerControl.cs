@@ -217,8 +217,12 @@ public sealed class ThumbnailViewerControl : UserControl
                 .OfType<ViewerTileControl>()
                 .FirstOrDefault(
                     item => item.Index == index);
+        // GetVisualDescendants() already resolves the current realized tile.
+        // Do not gate focus on Control.IsLoaded: headless/native lifecycle
+        // ordering can report Loaded later even though the visual is attached
+        // and focusable. Effective visibility/enabled state is the relevant
+        // keyboard-focus contract here.
         if (tile is null
-            || !tile.IsLoaded
             || !tile.IsEffectivelyVisible
             || !tile.IsEffectivelyEnabled)
         {
