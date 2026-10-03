@@ -316,6 +316,73 @@ internal sealed class CoreViewerShell : UserControl
     internal Rect GridViewerBounds =>
         _grid.Bounds;
 
+    internal bool SelectionToolbarIsContainedForSmoke
+    {
+        get
+        {
+            if (!_selectionBar.IsVisible)
+            {
+                return true;
+            }
+
+            var origin =
+                _bulkActions.TranslatePoint(
+                    new Point(0, 0),
+                    _selectionBar);
+            if (origin is not { } point)
+            {
+                return false;
+            }
+
+            var bounds =
+                new Rect(
+                    point,
+                    _bulkActions.Bounds.Size);
+            if (bounds.Left < -0.5
+                || bounds.Top < -0.5
+                || bounds.Right
+                    > _selectionBar.Bounds.Width + 0.5
+                || bounds.Bottom
+                    > _selectionBar.Bounds.Height + 0.5)
+            {
+                return false;
+            }
+
+            foreach (var child in
+                     _bulkActions.Children
+                         .OfType<Control>()
+                         .Where(
+                             static control =>
+                                 control.IsEffectivelyVisible))
+            {
+                var childOrigin =
+                    child.TranslatePoint(
+                        new Point(0, 0),
+                        _selectionBar);
+                if (childOrigin is not { } childPoint)
+                {
+                    return false;
+                }
+
+                var childBounds =
+                    new Rect(
+                        childPoint,
+                        child.Bounds.Size);
+                if (childBounds.Left < -0.5
+                    || childBounds.Top < -0.5
+                    || childBounds.Right
+                        > _selectionBar.Bounds.Width + 0.5
+                    || childBounds.Bottom
+                        > _selectionBar.Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
 
     internal (
         Rect ImageBounds,
