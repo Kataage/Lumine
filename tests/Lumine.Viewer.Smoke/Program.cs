@@ -724,6 +724,60 @@ internal static class Program
 
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
+        // A short scroll away/back must reuse the just-detached decoded
+        // bitmap instead of showing a blank tile while the full async
+        // thumbnail pipeline runs again.
+        for (var rowOffset = 2;
+             rowOffset <= 16
+             && !viewer.IsAssetWarmForSmoke(0);
+             rowOffset++)
+        {
+            viewer.ScrollToAsset(
+                Math.Min(
+                    viewer.AssetCount - 1,
+                    checked(
+                        (long)viewer.Columns
+                        * rowOffset)));
+
+            for (var attempt = 0;
+                 attempt < 20
+                 && !viewer.IsAssetWarmForSmoke(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+        }
+
+        Require(
+            viewer.IsAssetWarmForSmoke(0)
+            && viewer.WarmTileEntryCountForSmoke > 0,
+            "Recently detached first-row thumbnail was not retained in the bounded warm-return cache.");
+
+        var warmHitsBeforeReturn =
+            viewer.WarmTileHitCountForSmoke;
+        var warmReturnWatch =
+            Stopwatch.StartNew();
+        viewer.ScrollToAsset(0);
+
+        for (var attempt = 0;
+             attempt < 100
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        warmReturnWatch.Stop();
+        Require(
+            viewer.IsAssetReady(0)
+            && viewer.WarmTileHitCountForSmoke
+                > warmHitsBeforeReturn
+            && warmReturnWatch.Elapsed
+                < TimeSpan.FromMilliseconds(150),
+            $"Warm scroll-back did not repaint a recently visible thumbnail within the interactive budget: {warmReturnWatch.Elapsed.TotalMilliseconds:N1} ms.");
+
         var selectAllWatch =
             Stopwatch.StartNew();
         viewer.SelectAll();
