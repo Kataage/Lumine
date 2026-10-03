@@ -2484,14 +2484,10 @@ try
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
-                                        .UsesAdvancedFilterFlyoutForSmoke
-                                    && window.BrowseControlsForSmoke
-                                        .ActiveAdvancedFilterCountForSmoke == 0
-                                    && string.Equals(
-                                        window.BrowseControlsForSmoke
-                                            .FilterButtonTextForSmoke,
-                                        "フィルター",
-                                        StringComparison.Ordinal)
+                                        .DirectFiltersAreVisibleForSmoke
+                                    && (viewport.Width < 1440
+                                        || window.BrowseControlsForSmoke
+                                            .DirectFiltersFitWithoutScrollForSmoke)
                                     && window.BrowseControlsForSmoke
                                         .SearchPaddingForSmoke.Top <= 4
                                     && (iteration == 2
