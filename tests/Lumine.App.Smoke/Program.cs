@@ -1786,13 +1786,30 @@ try
                             $"MainWindow responsive layout regressed at {scaling:P0} render scaling.");
                     }
 
-                    var rowHostBeforeLightbox =
+                    // Focus restoration is a contract of an actual thumbnail
+                    // invocation. Wait for the production virtualized viewer to
+                    // realize the selected thumbnail before opening the modal,
+                    // just as Viewer.Smoke does before pointer/keyboard work.
+                    for (var attempt = 0;
+                         attempt < 250
+                         && (window.CurrentShell.GridViewer
+                                 .GetAssetFocusTarget(0) is null
+                             || window.CurrentShell.GridViewer
+                                 .Diagnostics.ReadyTiles == 0);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
+
+                    Require(
                         window.CurrentShell.GridViewer
-                            .GetVisualDescendants()
-                            .OfType<ListBox>()
-                            .FirstOrDefault();
-                    Console.WriteLine(
-                        $"Before lightbox: grid={window.CurrentShell.GridViewer.Bounds}; rows={rowHostBeforeLightbox?.Bounds}; row-visible={rowHostBeforeLightbox?.IsEffectivelyVisible}; row-loaded={rowHostBeforeLightbox?.IsLoaded}; realized={window.CurrentShell.GridViewer.RealizedRowCount}; attached-tiles={window.CurrentShell.GridViewer.Diagnostics.AttachedTiles}; ready-tiles={window.CurrentShell.GridViewer.Diagnostics.ReadyTiles}");
+                            .GetAssetFocusTarget(0) is not null
+                        && window.CurrentShell.GridViewer
+                            .Diagnostics.ReadyTiles > 0
+                        && window.CurrentShell.GridViewer.FocusAsset(0)
+                        && window.CurrentShell.IsAssetFocusedForSmoke(0),
+                        "Focused-view acceptance could not establish a real invoking thumbnail.");
 
                     await window.CurrentShell
                         .OpenFocusedViewAsync(0);
@@ -1878,18 +1895,6 @@ try
 
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
-                    var restoredTile =
-                        window.CurrentShell.GridViewer
-                            .GetAssetFocusTarget(0);
-                    var restoredFocus =
-                        window.FocusManager.GetFocusedElement();
-                    var rowHostAfterLightbox =
-                        window.CurrentShell.GridViewer
-                            .GetVisualDescendants()
-                            .OfType<ListBox>()
-                            .FirstOrDefault();
-                    Console.WriteLine(
-                        $"Lightbox focus restore: target={restoredTile?.GetType().FullName ?? "<null>"}; focused={restoredFocus?.GetType().FullName ?? "<null>"}; same={ReferenceEquals(restoredTile, restoredFocus)}; is-focused={restoredTile?.IsFocused}; focus-within={restoredTile?.IsKeyboardFocusWithin}; effective-visible={restoredTile?.IsEffectivelyVisible}; effective-enabled={restoredTile?.IsEffectivelyEnabled}; grid-bounds={window.CurrentShell.GridViewer.Bounds}; rows={rowHostAfterLightbox?.Bounds}; row-visible={rowHostAfterLightbox?.IsEffectivelyVisible}; row-loaded={rowHostAfterLightbox?.IsLoaded}; realized-rows={window.CurrentShell.GridViewer.RealizedRowCount}; first-realized={window.CurrentShell.GridViewer.FirstRealizedAssetIndex}; first-visible={window.CurrentShell.GridViewer.FirstVisibleAssetIndex}; last-visible={window.CurrentShell.GridViewer.LastVisibleAssetIndex}; columns={window.CurrentShell.GridViewer.Columns}; assets={window.CurrentShell.GridViewer.AssetCount}; attached-tiles={window.CurrentShell.GridViewer.Diagnostics.AttachedTiles}; ready-tiles={window.CurrentShell.GridViewer.Diagnostics.ReadyTiles}");
                     Require(
                         window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
