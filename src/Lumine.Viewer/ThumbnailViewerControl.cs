@@ -230,6 +230,9 @@ public sealed class ThumbnailViewerControl : UserControl
     internal bool IsAssetWarmForSmoke(long index) =>
         _warmTiles.ContainsKey(index);
 
+    internal long? FirstWarmAssetIndexForSmoke =>
+        _warmTileLru.First?.Value;
+
     public async Task<bool> EnsureAssetFocusTargetAsync(
         long index)
     {
