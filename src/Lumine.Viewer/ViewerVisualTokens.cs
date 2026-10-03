@@ -57,8 +57,10 @@ internal static class ViewerVisualTokens
             ]
         };
 
-    public const double BodyFontSize = 14;
-    public const double CaptionFontSize = 12;
+    public static double BodyFontSize =>
+        14 * LumineVisualMetrics.TextScaleFactor;
+    public static double CaptionFontSize =>
+        12 * LumineVisualMetrics.TextScaleFactor;
 
     public static void Name(
         Control control,
