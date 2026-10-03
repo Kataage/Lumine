@@ -2428,7 +2428,12 @@ try
                                         == (viewport.Width <= 1040)
                                     && window.BrowseControlsForSmoke is not null
                                     && window.BrowseControlsForSmoke
-                                        .PrimaryToolbarIsContainedForSmoke,
+                                        .PrimaryToolbarIsContainedForSmoke
+                                    && window.BrowseControlsForSmoke
+                                        .SearchPaddingForSmoke.Top <= 4
+                                    && (iteration == 2
+                                        || window.BrowseControlsForSmoke
+                                            .SearchHeightForSmoke <= 33.5),
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 window.CurrentShell.HideContextDetail();
@@ -2534,7 +2539,12 @@ try
                     Require(
                         window.BrowseControlsForSmoke is not null
                         && window.BrowseControlsForSmoke
-                            .PrimaryToolbarIsContainedForSmoke,
+                            .PrimaryToolbarIsContainedForSmoke
+                        && window.BrowseControlsForSmoke
+                            .SearchPaddingForSmoke.Top <= 4
+                        && (iteration == 2
+                            || window.BrowseControlsForSmoke
+                                .SearchHeightForSmoke <= 33.5),
                         "Minimum-width browse command bar clipped or escaped the workspace bounds.");
 
                     window.CurrentShell!.GridViewer.SelectAsset(0);
@@ -2583,7 +2593,9 @@ try
                             && window.CurrentShell.GridViewer.RealizedRowCount > 0
                             && window.BrowseControlsForSmoke is not null
                             && window.BrowseControlsForSmoke
-                                .PrimaryToolbarIsContainedForSmoke,
+                                .PrimaryToolbarIsContainedForSmoke
+                            && window.BrowseControlsForSmoke
+                                .SearchPaddingForSmoke.Top <= 4,
                             $"MainWindow responsive/layout virtualization or browse command containment regressed at {scaling:P0} render scaling.");
                     }
 
