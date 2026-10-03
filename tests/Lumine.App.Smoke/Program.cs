@@ -1859,6 +1859,11 @@ try
 
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.CurrentShell
+                            .IsAssetFocusedForSmoke(0),
+                        "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
+
                     window.SetRenderScaling(1.0);
                     Dispatcher.UIThread.RunJobs();
                     Require(
@@ -1869,10 +1874,6 @@ try
                         && window.IsWorkspaceInteractionEnabled
                         && !window.CurrentShell.IsFocusedViewVisible,
                         "Closing the focused image viewer did not release modality/full-screen state and restore workspace interaction.");
-                    Require(
-                        window.CurrentShell
-                            .IsAssetFocusedForSmoke(0),
-                        "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
 
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
