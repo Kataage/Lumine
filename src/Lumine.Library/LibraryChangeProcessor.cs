@@ -183,14 +183,12 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
             _shutdown.Cancel();
             _shutdown.Dispose();
-            _mutationGate.Dispose();
             _disposeCompletion.TrySetResult();
         }
         catch (Exception exception)
         {
             _shutdown.Cancel();
             _shutdown.Dispose();
-            _mutationGate.Dispose();
             _disposeCompletion.TrySetException(exception);
             throw;
         }
@@ -761,7 +759,6 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
             if (!result.Completed)
             {
-                Interlocked.Increment(ref _reconcileFailures);
                 throw new InvalidOperationException(
                     "Filesystem reconciliation was incomplete; incremental synchronization cannot safely continue.");
             }
