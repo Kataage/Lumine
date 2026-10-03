@@ -423,28 +423,55 @@ internal static class ProductNavigationViews
                 }
             }
 
-            var tree =
-                new StackPanel
+            var visible =
+                new List<LibraryFolderInfo>();
+            var list =
+                new ListBox
                 {
-                    Spacing =
-                        LumineDesign.Space2
+                    Background =
+                        Brushes.Transparent,
+                    BorderThickness =
+                        new Thickness(0),
+                    Padding =
+                        new Thickness(0)
                 };
 
-            void RebuildTree()
+            void RebuildVisibleItems()
             {
-                tree.Children.Clear();
+                visible.Clear();
 
-                if (!children.TryGetValue(
+                if (children.TryGetValue(
                         null,
                         out var roots))
                 {
-                    return;
+                    void AddNodes(
+                        IReadOnlyList<LibraryFolderInfo> nodes)
+                    {
+                        foreach (var folder in nodes)
+                        {
+                            visible.Add(folder);
+                            if (expanded.Contains(
+                                    folder.RelativePath)
+                                && children.TryGetValue(
+                                    folder.RelativePath,
+                                    out var nested))
+                            {
+                                AddNodes(nested);
+                            }
+                        }
+                    }
+
+                    AddNodes(roots);
                 }
 
-                void AddNodes(
-                    IReadOnlyList<LibraryFolderInfo> nodes)
-                {
-                    foreach (var folder in nodes)
+                list.ItemsSource = null;
+                list.ItemsSource =
+                    visible.ToArray();
+            }
+
+            list.ItemTemplate =
+                new FuncDataTemplate<LibraryFolderInfo>(
+                    (folder, _) =>
                     {
                         var selected =
                             string.Equals(
@@ -512,10 +539,9 @@ internal static class ProductNavigationViews
                                         expanded.Remove(path);
                                     }
 
-                                    RebuildTree();
+                                    RebuildVisibleItems();
                                 };
                         }
-
                         row.Children.Add(disclosure);
 
                         var leaf =
@@ -594,34 +620,12 @@ internal static class ProductNavigationViews
                             reportError);
                         Grid.SetColumn(select, 1);
                         row.Children.Add(select);
-                        tree.Children.Add(row);
+                        return row;
+                    },
+                    supportsRecycling: true);
 
-                        if (hasChildren
-                            && isExpanded
-                            && children.TryGetValue(
-                                folder.RelativePath,
-                                out var nested))
-                        {
-                            AddNodes(nested);
-                        }
-                    }
-                }
-
-                AddNodes(roots);
-            }
-
-            RebuildTree();
-            body =
-                new ScrollViewer
-                {
-                    Content = tree,
-                    VerticalScrollBarVisibility =
-                        Avalonia.Controls.Primitives
-                            .ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility =
-                        Avalonia.Controls.Primitives
-                            .ScrollBarVisibility.Disabled
-                };
+            RebuildVisibleItems();
+            body = list;
         }
 
         Grid.SetRow(body, 1);
