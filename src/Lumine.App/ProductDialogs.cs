@@ -176,7 +176,7 @@ internal static class ProductDialogs
                                 ? LumineDesign.Danger
                                 : LumineDesign.Accent,
                         FontWeight = FontWeight.Bold,
-                        FontSize = 18,
+                        FontSize = LumineDesign.EmphasisFontSize,
                         HorizontalAlignment =
                             HorizontalAlignment.Center,
                         VerticalAlignment =
@@ -190,7 +190,7 @@ internal static class ProductDialogs
                 Text = title,
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = 15
+                FontSize = LumineDesign.DialogTitleFontSize
             });
 
         panel.Children.Add(
@@ -200,7 +200,7 @@ internal static class ProductDialogs
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
-                LineHeight = 18,
+                LineHeight = LumineDesign.BodyLineHeight,
                 TextWrapping = TextWrapping.Wrap
             });
 
