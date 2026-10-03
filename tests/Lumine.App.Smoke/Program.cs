@@ -967,7 +967,37 @@ try
                     "navigation-smoke-failure",
                     StringComparison.Ordinal) == true
                 && openableButton.IsEnabled,
-                "Async library command failure escaped the navigation error boundary or left the command disabled.");
+                "Async library open failure escaped the navigation error boundary or left the command disabled.");
+
+            foreach (var commandPath in
+                     new[]
+                     {
+                         "enable",
+                         "remove"
+                     })
+            {
+                var command =
+                    new MenuItem
+                    {
+                        Header = commandPath
+                    };
+                string? commandError = null;
+
+                await ProductNavigationViews.ExecuteAsyncForSmoke(
+                    command,
+                    () => Task.FromException(
+                        new InvalidOperationException(
+                            $"{commandPath}-navigation-smoke-failure")),
+                    message =>
+                        commandError = message);
+
+                Require(
+                    command.IsEnabled
+                    && commandError?.Contains(
+                        $"{commandPath}-navigation-smoke-failure",
+                        StringComparison.Ordinal) == true,
+                    $"Async library {commandPath} failure escaped the shared navigation error boundary or left the command disabled.");
+            }
 
             navigationWindow.Close();
             Dispatcher.UIThread.RunJobs();
