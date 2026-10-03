@@ -12,6 +12,7 @@ internal sealed record ProductSettingsSnapshot(
     BrowsePreferences ViewerDefaults,
     ThumbnailStorageMode PersistedThumbnailStorageMode,
     ThumbnailStorageMode EffectiveThumbnailStorageMode,
+    long ThumbnailCacheByteLimit,
     long EncodedThumbnailMemoryByteLimit,
     AppDataPaths DataPaths,
     ThumbnailCacheStats CacheStats,
@@ -20,6 +21,19 @@ internal sealed record ProductSettingsSnapshot(
 
 internal static class ProductSettingsView
 {
+    private static readonly long[] DiskBudgetOptions =
+    [
+        1L * 1024 * 1024 * 1024,
+        2L * 1024 * 1024 * 1024,
+        4L * 1024 * 1024 * 1024,
+        8L * 1024 * 1024 * 1024,
+        16L * 1024 * 1024 * 1024,
+        32L * 1024 * 1024 * 1024,
+        64L * 1024 * 1024 * 1024,
+        128L * 1024 * 1024 * 1024,
+        256L * 1024 * 1024 * 1024
+    ];
+
     private static readonly long[] MemoryBudgetOptions =
     [
         128L * 1024 * 1024,
@@ -32,6 +46,7 @@ internal static class ProductSettingsView
         ProductSettingsSnapshot snapshot,
         Func<BrowsePreferences, Task> saveViewerDefaults,
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
+        Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
         Func<Task> clearCache,
         Func<Task> showDiagnostics)
@@ -39,6 +54,7 @@ internal static class ProductSettingsView
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(saveViewerDefaults);
         ArgumentNullException.ThrowIfNull(saveThumbnailMode);
+        ArgumentNullException.ThrowIfNull(saveDiskBudget);
         ArgumentNullException.ThrowIfNull(saveMemoryBudget);
         ArgumentNullException.ThrowIfNull(clearCache);
         ArgumentNullException.ThrowIfNull(showDiagnostics);
@@ -67,6 +83,7 @@ internal static class ProductSettingsView
             CreateCacheSettings(
                 snapshot,
                 saveThumbnailMode,
+                saveDiskBudget,
                 saveMemoryBudget,
                 clearCache));
         root.Children.Add(
@@ -226,6 +243,7 @@ internal static class ProductSettingsView
     private static Control CreateCacheSettings(
         ProductSettingsSnapshot snapshot,
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
+        Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
         Func<Task> clearCache)
     {
@@ -262,6 +280,43 @@ internal static class ProductSettingsView
                 TextWrapping = TextWrapping.Wrap
             });
 
+        var diskBudgets =
+            DiskBudgetOptions
+                .Concat(
+                    [snapshot.ThumbnailCacheByteLimit])
+                .Distinct()
+                .Order()
+                .ToArray();
+        var disk =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        diskBudgets
+                            .Select(
+                                static value =>
+                                    FormatBytes(value))
+                            .ToArray(),
+                    SelectedIndex =
+                        Array.IndexOf(
+                            diskBudgets,
+                            snapshot.ThumbnailCacheByteLimit)
+                });
+        content.Children.Add(
+            CreateField(
+                "ディスク保持上限",
+                disk));
+        content.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "永続サムネイルを有効にしたときの最大保持量です。上限を超えた古い表示用cacheは自動整理されます。変更は次回起動から有効です。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize,
+                TextWrapping = TextWrapping.Wrap
+            });
+
         var budgets =
             MemoryBudgetOptions
                 .Concat(
@@ -286,13 +341,13 @@ internal static class ProductSettingsView
                 });
         content.Children.Add(
             CreateField(
-                "サムネイル用メモリ上限",
+                "高速再表示用メモリ上限",
                 memory));
         content.Children.Add(
             new TextBlock
             {
                 Text =
-                    "この上限も次回起動から有効です。大きくすると再読み込みを減らせますが、その分RAMを使います。",
+                    "ディスク保持量とは別の、一時的なメモリcache上限です。大きくすると再読み込みを減らせますが、その分RAMを使います。変更は次回起動から有効です。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
@@ -303,7 +358,7 @@ internal static class ProductSettingsView
             new TextBlock
             {
                 Text =
-                    $"現在のディスクキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
+                    $"現在のディスクcache: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}（上限 {FormatBytes(snapshot.ThumbnailCacheByteLimit)}）",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize
@@ -350,6 +405,38 @@ internal static class ProductSettingsView
                 finally
                 {
                     persistent.IsEnabled = true;
+                }
+            };
+
+        disk.SelectionChanged +=
+            async (_, _) =>
+            {
+                if (disk.SelectedIndex < 0
+                    || disk.SelectedIndex >= diskBudgets.Length)
+                {
+                    return;
+                }
+
+                disk.IsEnabled = false;
+                status.Foreground =
+                    LumineDesign.MutedForeground;
+                status.Text = "保存しています…";
+                try
+                {
+                    await saveDiskBudget(
+                        diskBudgets[disk.SelectedIndex]);
+                    status.Text =
+                        "ディスク保持上限を保存しました。次回起動から有効です。";
+                }
+                catch (Exception exception)
+                {
+                    status.Foreground = LumineDesign.Danger;
+                    status.Text =
+                        $"保存できませんでした: {exception.Message}";
+                }
+                finally
+                {
+                    disk.IsEnabled = true;
                 }
             };
 
