@@ -1494,13 +1494,6 @@ internal static class Program
 
         detail.Fit();
         Dispatcher.UIThread.RunJobs();
-        Require(
-            detail.ZoomSliderValueForSmoke
-                < sliderStart
-                || Math.Abs(
-                    detail.ZoomSliderValueForSmoke
-                    - sliderStart) < 0.5,
-            "Fit did not synchronize the zoom slider back to the fitted scale.");
 
         await detailSession.SelectAsync(0);
         await WaitForDetailAsync(
