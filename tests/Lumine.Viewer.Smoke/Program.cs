@@ -44,6 +44,7 @@ internal static class Program
                     await VerifyDecodedCacheAsyncShutdown(
                         thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
+                    await VerifyBrowsePresentationParityAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
                     await VerifyDetailObserverIsolationAsync(
                         thumbnailPath);
@@ -1090,6 +1091,119 @@ internal static class Program
             viewer.Diagnostics.AttachedTiles == 0
             && viewer.Diagnostics.ReadyTiles == 0,
             "Viewer close did not detach all thumbnail tiles before visual-release drain completed.");
+    }
+
+    private static async Task VerifyBrowsePresentationParityAsync(
+        string thumbnailPath)
+    {
+        await using var session =
+            new ViewerSession(
+                new DirectFixtureAssetProvider(
+                    1,
+                    organizationMetadata: true),
+                new ImmediateThumbnailProvider(
+                    thumbnailPath),
+                new ViewerOptions
+                {
+                    TileWidth = 180,
+                    TileHeight = 180,
+                    TileSpacing = 8,
+                    PrefetchRows = 0
+                });
+
+        var viewer =
+            new ThumbnailViewerControl(session);
+        var window =
+            new Window
+            {
+                Width = 760,
+                Height = 500,
+                Content = viewer
+            };
+
+        window.Show();
+
+        for (var attempt = 0;
+             attempt < 250
+             && !viewer.IsAssetReady(0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        var gridPresentation =
+            viewer.GetRealizedTilePresentationForSmoke(0);
+        Require(
+            gridPresentation.Primary == "asset-000000.jpg"
+            && gridPresentation.Size.Contains(
+                "MB",
+                StringComparison.Ordinal)
+            && gridPresentation.Organization.Contains(
+                "♥",
+                StringComparison.Ordinal)
+            && gridPresentation.Organization.Contains(
+                "★★★★",
+                StringComparison.Ordinal)
+            && gridPresentation.ActionCount == 2,
+            "Grid browse parity lost filename/size/favorite/rating or direct detail/open actions.");
+
+        viewer.SetLayout(
+            ViewerLayoutMode.List,
+            densityLevel: 1);
+
+        for (var attempt = 0;
+             attempt < 250
+             && (!viewer.IsAssetReady(0)
+                 || viewer.RealizedRowCount == 0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        var listPresentation =
+            viewer.GetRealizedTilePresentationForSmoke(0);
+        Require(
+            listPresentation.Primary == "asset-000000.jpg"
+            && listPresentation.Secondary.Contains(
+                "fixture/organized",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "MB",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "♥",
+                StringComparison.Ordinal)
+            && listPresentation.Secondary.Contains(
+                "★★★★",
+                StringComparison.Ordinal)
+            && listPresentation.ActionCount == 2,
+            "List browse parity lost folder/file-size/organization information or direct detail/open actions.");
+
+        foreach (var width in new[] { 520d, 1200d })
+        {
+            window.Width = width;
+            for (var attempt = 0;
+                 attempt < 100
+                 && !viewer.IsAssetReady(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            var responsivePresentation =
+                viewer.GetRealizedTilePresentationForSmoke(0);
+            Require(
+                responsivePresentation.ActionCount == 2
+                && !string.IsNullOrWhiteSpace(
+                    responsivePresentation.Secondary),
+                $"List browse information/actions were lost at {width:N0} DIP width.");
+        }
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static async Task VerifyDetailViewerAsync(string previewPath)
@@ -2292,7 +2406,8 @@ internal sealed class DirectFixtureAssetProvider(
     long count,
     int? width = 1024,
     int? height = 768,
-    string? format = "png") : IViewerAssetProvider
+    string? format = "png",
+    bool organizationMetadata = false) : IViewerAssetProvider
 {
     public long Count { get; } = count;
 
@@ -2311,13 +2426,27 @@ internal sealed class DirectFixtureAssetProvider(
             new ViewerAsset(
                 index + 1,
                 1,
-                $"fixture/{index:D6}.jpg",
+                organizationMetadata
+                    ? $"fixture/organized/asset-{index:D6}.jpg"
+                    : $"fixture/{index:D6}.jpg",
                 $"asset-{index:D6}.jpg",
-                10_000 + index,
+                organizationMetadata
+                    ? 5L * 1024 * 1024
+                    : 10_000 + index,
                 DateTimeOffset.UnixEpoch.AddSeconds(index).UtcDateTime.Ticks,
                 width,
                 height,
-                format));
+                format,
+                CreatedAtUtcTicks:
+                    DateTimeOffset.UnixEpoch
+                        .AddSeconds(index)
+                        .UtcDateTime.Ticks,
+                Rating:
+                    organizationMetadata
+                        ? 4
+                        : null,
+                Favorite:
+                    organizationMetadata));
     }
 }
 
