@@ -41,11 +41,19 @@ internal sealed record CreativePublicationDialogResult(
     string ExternalUrl,
     string PlatformMetadataJson);
 
+internal sealed record CreativeSelectionPreview(
+    int Count,
+    IReadOnlyList<string> SampleDisplayNames)
+{
+    public bool IsTruncated =>
+        SampleDisplayNames.Count < Count;
+}
+
 internal static class CreativeArchiveDialogs
 {
     public static Task<CreativeWorkDialogResult?> ShowWorkAsync(
         Window owner,
-        IReadOnlyList<ViewerAsset> assets)
+        CreativeSelectionPreview selection)
     {
         var title = new TextBox
         {
@@ -63,11 +71,11 @@ internal static class CreativeArchiveDialogs
             500,
             390);
         var stack = CreateFormStack(
-            $"選択した{assets.Count:N0}枚を、1つの人間向け制作単位としてまとめます。");
+            $"選択した{selection.Count:N0}枚を、1つの人間向け制作単位としてまとめます。");
         AddField(stack, "作品名", title);
         AddField(stack, "説明", description);
         stack.Children.Add(
-            CreateAssetSummary(assets));
+            CreateAssetSummary(selection));
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -92,7 +100,7 @@ internal static class CreativeArchiveDialogs
 
     public static Task<CreativeGroupDialogResult?> ShowGenerationGroupAsync(
         Window owner,
-        IReadOnlyList<ViewerAsset> assets,
+        CreativeSelectionPreview selection,
         IReadOnlyList<WorkInfo> works)
     {
         var name = new TextBox
@@ -124,7 +132,7 @@ internal static class CreativeArchiveDialogs
             620,
             760);
         var stack = CreateFormStack(
-            $"選択した{assets.Count:N0}枚を、同じ生成意図・run familyとして順序付きで保存します。");
+            $"選択した{selection.Count:N0}枚を、同じ生成意図・run familyとして順序付きで保存します。");
         AddField(stack, "名前", name);
         AddField(stack, "Work", work);
         AddField(stack, "Prompt", prompt);
@@ -154,7 +162,7 @@ internal static class CreativeArchiveDialogs
 
         AddField(stack, "Workflow", workflow);
         AddField(stack, "Notes", notes);
-        stack.Children.Add(CreateAssetSummary(assets));
+        stack.Children.Add(CreateAssetSummary(selection));
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -296,7 +304,7 @@ internal static class CreativeArchiveDialogs
 
     public static Task<CreativePublicationDialogResult?> ShowPublicationAsync(
         Window owner,
-        IReadOnlyList<ViewerAsset> assets,
+        CreativeSelectionPreview selection,
         IReadOnlyList<WorkInfo> works)
     {
         var destination =
@@ -417,7 +425,7 @@ internal static class CreativeArchiveDialogs
             620,
             760);
         var stack = CreateFormStack(
-            $"選択した{assets.Count:N0}枚の「実際に公開した内容」を、現在のローカルmetadataとは独立したsnapshotとして保存します。");
+            $"選択した{selection.Count:N0}枚の「実際に公開した内容」を、現在のローカルmetadataとは独立したsnapshotとして保存します。");
         AddField(stack, "公開先", destination);
         stack.Children.Add(destinationHint);
         AddField(stack, "Work", work);
@@ -431,7 +439,7 @@ internal static class CreativeArchiveDialogs
         stack.Children.Add(pixivR18);
         stack.Children.Add(pixivAi);
         AddField(stack, "Platform metadata", customMetadata);
-        stack.Children.Add(CreateAssetSummary(assets));
+        stack.Children.Add(CreateAssetSummary(selection));
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -556,16 +564,19 @@ internal static class CreativeArchiveDialogs
         };
 
     private static TextBlock CreateAssetSummary(
-        IReadOnlyList<ViewerAsset> assets) =>
+        CreativeSelectionPreview selection) =>
         new TextBlock
         {
             Text =
-                "画像順: "
-                + string.Join(
-                    " → ",
-                    assets.Select(
-                        static asset =>
-                            asset.DisplayName)),
+                selection.SampleDisplayNames.Count == 0
+                    ? $"選択画像: {selection.Count:N0}枚"
+                    : "画像順: "
+                      + string.Join(
+                          " → ",
+                          selection.SampleDisplayNames)
+                      + (selection.IsTruncated
+                          ? $" → …（残り{selection.Count - selection.SampleDisplayNames.Count:N0}枚）"
+                          : string.Empty),
             Foreground =
                 LumineDesign.MutedForeground,
             FontSize = LumineDesign.CaptionFontSize,
