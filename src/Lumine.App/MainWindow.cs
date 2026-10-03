@@ -543,6 +543,13 @@ public sealed class MainWindow : Window
     internal bool IsCompactNavigationLayout =>
         _compactNavigationLayout;
 
+    internal bool IsNavigationPaneVisibleForSmoke =>
+        _navigationPane.IsVisible;
+
+    internal void SetNavigationPaneVisibleForSmoke(
+        bool visible) =>
+        _navigationPane.IsVisible = visible;
+
     internal Rect NavigationPaneBounds =>
         _navigationPane.Bounds;
 

@@ -2383,6 +2383,122 @@ try
                             .GetAssetFocusTarget(0) is not null,
                         "MainWindow workspace did not realize its initial thumbnail surface.");
 
+                    var viewportMatrix =
+                        new[]
+                        {
+                            (Width: 900d, Height: 600d),
+                            (Width: 1024d, Height: 768d),
+                            (Width: 1440d, Height: 900d),
+                            (Width: 1920d, Height: 1080d)
+                        };
+
+                    foreach (var viewport in viewportMatrix)
+                    {
+                        window.Width = viewport.Width;
+                        window.Height = viewport.Height;
+                        window.SetRenderScaling(1.0);
+                        Dispatcher.UIThread.RunJobs();
+
+                        foreach (var mode in
+                                 new[]
+                                 {
+                                     BrowseViewMode.Grid,
+                                     BrowseViewMode.List
+                                 })
+                        {
+                            window.CurrentShell!.SetBrowseLayout(
+                                new BrowsePreferences(
+                                    mode,
+                                    1,
+                                    AssetSortOrder.ModifiedNewest));
+                            Dispatcher.UIThread.RunJobs();
+
+                            foreach (var navigationVisible in
+                                     new[] { true, false })
+                            {
+                                window.SetNavigationPaneVisibleForSmoke(
+                                    navigationVisible);
+                                Dispatcher.UIThread.RunJobs();
+
+                                Require(
+                                    window.IsNavigationPaneVisibleForSmoke
+                                        == navigationVisible
+                                    && window.IsCompactNavigationLayout
+                                        == (viewport.Width <= 1040)
+                                    && window.BrowseControlsForSmoke is not null
+                                    && window.BrowseControlsForSmoke
+                                        .PrimaryToolbarIsContainedForSmoke,
+                                    $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                window.CurrentShell.HideContextDetail();
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    !window.CurrentShell.IsContextDetailVisible
+                                    && window.CurrentShell.GridViewerBounds.Width
+                                        >= 500,
+                                    $"Browse canvas became too narrow with Inspector closed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                window.CurrentShell.GridViewer.SelectAsset(0);
+                                await window.CurrentShell
+                                    .ShowContextDetailAsync();
+                                Dispatcher.UIThread.RunJobs();
+
+                                Require(
+                                    window.CurrentShell.IsContextDetailVisible
+                                    && window.CurrentShell.IsCompactInspectorLayout
+                                        == (viewport.Width <= 1080)
+                                    && window.CurrentShell.ContextSurfaceBounds.Width
+                                        is >= 300 and <= 400
+                                    && window.CurrentShell.GridViewerBounds.Width
+                                        >= 500
+                                    && window.CurrentShell.ContextDetail.HasPreview
+                                    && window.CurrentShell.ContextDetail
+                                        .TabHeaders.SequenceEqual(
+                                            new[] { "整理", "制作", "情報" }),
+                                    $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                for (var tabIndex = 0;
+                                     tabIndex
+                                         < window.CurrentShell.ContextDetail
+                                             .TabHeaders.Count;
+                                     tabIndex++)
+                                {
+                                    window.CurrentShell.ContextDetail
+                                        .SelectTabForSmoke(tabIndex);
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        window.CurrentShell.ContextDetail
+                                            .SelectedTabIndex == tabIndex,
+                                        $"Inspector tab {tabIndex} was not reachable at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                }
+
+                                window.CurrentShell.HideContextDetail();
+                                window.CurrentShell.GridViewer.ClearSelection();
+                                window.CurrentShell.GridViewer.SelectAsset(0);
+                                window.CurrentShell.GridViewer.SelectAsset(
+                                    1,
+                                    scrollIntoView: false,
+                                    mode: ViewerSelectionMode.Toggle);
+                                Dispatcher.UIThread.RunJobs();
+
+                                Require(
+                                    window.CurrentShell.IsBulkSelectionBarVisible
+                                    && window.CurrentShell
+                                        .SelectionToolbarIsContainedForSmoke,
+                                    $"Bulk selection toolbar escaped its surface at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                window.CurrentShell.GridViewer.ClearSelection();
+                            }
+                        }
+                    }
+
+                    window.SetNavigationPaneVisibleForSmoke(true);
+                    window.CurrentShell!.SetBrowseLayout(
+                        new BrowsePreferences(
+                            BrowseViewMode.Grid,
+                            1,
+                            AssetSortOrder.ModifiedNewest));
+
                     window.Width = 900;
                     window.Height = 600;
                     Dispatcher.UIThread.RunJobs();
