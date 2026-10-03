@@ -412,9 +412,16 @@ try
         ?? throw new InvalidOperationException(
             "Tag-only assignment lost user metadata.");
     Require(
-        tagOnlySaved.SequenceEqual(
-            ["推し", "後で使う"])
-        && afterTagOnlySave.Rating == 4
+        tagOnlySaved.Count == 2
+        && tagOnlySaved.Contains(
+            "推し",
+            StringComparer.Ordinal)
+        && tagOnlySaved.Contains(
+            "後で使う",
+            StringComparer.Ordinal),
+        "Tag-only assignment did not persist the requested tag set.");
+    Require(
+        afterTagOnlySave.Rating == 4
         && afterTagOnlySave.Favorite
         && afterTagOnlySave.Notes
             == "猫耳 メイド reference note"
