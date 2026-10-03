@@ -1067,6 +1067,7 @@ try
                         new LibraryTagInfo(
                             index + 1,
                             $"tag-{index:D5}",
+                            "#6366f1",
                             index % 31))
                     .ToArray();
             var now =
