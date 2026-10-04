@@ -1774,7 +1774,13 @@ try
                     "custom-color-smoke";
                 compactColorEditor.SetCustomTextForSmoke(
                     "#12345678");
+                compactColorEditor.OpenVisualPickerForSmoke();
                 Dispatcher.UIThread.RunJobs();
+                Require(
+                    compactColorEditor.VisualPickerFlyoutOpenForSmoke
+                    && compactColorEditor
+                        .VisualPickerFlyoutHasSpectrumForSmoke,
+                    "Tag create visual evidence did not open the real ColorPicker spectrum flyout.");
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-create-900x600-text225");
@@ -1962,9 +1968,21 @@ try
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
 
+                editColor.OpenVisualPickerForSmoke();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    editColor.VisualPickerFlyoutOpenForSmoke
+                    && editColor.VisualPickerFlyoutHasSpectrumForSmoke,
+                    "Tag edit visual evidence did not open the real ColorPicker spectrum flyout.");
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-edit-900x600-text225");
+
+                editFlyout.Hide();
+                Dispatcher.UIThread.RunJobs();
+                editFlyout.ShowAt(
+                    editButton);
+                Dispatcher.UIThread.RunJobs();
 
                 editName.Text =
                     "renamed-long-tag";
