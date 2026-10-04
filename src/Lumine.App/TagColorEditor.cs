@@ -3,6 +3,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 namespace Lumine.App;
 
@@ -376,6 +377,61 @@ internal sealed class TagColorEditor : UserControl
 
     internal Color VisualColorForSmoke =>
         _visualPicker.Color;
+
+    internal bool VisualPickerFlyoutOpenForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            return button?.Flyout?.IsOpen
+                == true;
+        }
+    }
+
+    internal bool VisualPickerFlyoutHasSpectrumForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            return button?.Flyout
+                    is Flyout
+                    {
+                        Content:
+                            ColorView view
+                    }
+                && view.IsColorSpectrumVisible;
+        }
+    }
+
+    internal void OpenVisualPickerForSmoke()
+    {
+        _visualPicker.ApplyTemplate();
+        var button =
+            _visualPicker
+                .GetVisualDescendants()
+                .OfType<DropDownButton>()
+                .SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                "ColorPicker drop-down button was not realized.");
+
+        if (button.Flyout?.IsOpen
+            == true)
+        {
+            return;
+        }
+
+        button.RaiseEvent(
+            new Avalonia.Interactivity.RoutedEventArgs(
+                Button.ClickEvent));
+    }
 
     internal void SetVisualColorForSmoke(
         Color value)
