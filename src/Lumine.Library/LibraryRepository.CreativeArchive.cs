@@ -846,7 +846,7 @@ public sealed partial class LibraryRepository
             SqliteConnection connection,
             SqliteTransaction? transaction,
             long libraryId,
-            IReadOnlyList<long> publicationIds,
+            List<long> publicationIds,
             CancellationToken cancellationToken)
     {
         if (publicationIds.Count == 0)
