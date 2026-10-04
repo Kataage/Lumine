@@ -1537,7 +1537,7 @@ internal sealed class CoreViewerShell : UserControl
                 await _runtime.LibraryService
                     .ListTagsAsync(
                         _runtime.Library.Id,
-                        limit: 512);
+                        limit: LibraryRepository.MaxTagListLimit);
             RenderBulkTagCandidates();
         }
         catch (Exception exception)

@@ -251,7 +251,7 @@ internal sealed class ManagedTagPicker : UserControl
         _allTags =
             await _runtime.LibraryService.ListTagsAsync(
                 _runtime.Library.Id,
-                limit: 512,
+                limit: LibraryRepository.MaxTagListLimit,
                 cancellationToken: cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -627,7 +627,7 @@ internal sealed class ManagedTagPicker : UserControl
             _allTags =
                 await _runtime.LibraryService.ListTagsAsync(
                     _runtime.Library.Id,
-                    limit: 512);
+                    limit: LibraryRepository.MaxTagListLimit);
             _selected.Add(created.Name);
 
             try
