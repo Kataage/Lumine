@@ -1458,22 +1458,6 @@ try
                                                     as string,
                                                 "＋ 新規",
                                                 StringComparison.Ordinal)));
-                Require(
-                    compactActionRow.Bounds.Width
-                        <= compactTagsView.Bounds.Width + 0.5
-                    && compactActionRow.Children
-                        .OfType<Control>()
-                        .Where(
-                            child =>
-                                child.IsVisible)
-                        .All(
-                            child =>
-                                child.Bounds.X >= -0.5
-                                && child.Bounds.Right
-                                    <= compactActionRow.Bounds.Width
-                                        + 0.5),
-                    "Compact Tags toolbar escaped its available width instead of wrapping.");
-
                 var newTagButton =
                     compactActionRow.Children
                         .OfType<Button>()
@@ -1532,22 +1516,60 @@ try
                 compactCreateName.Text =
                     "custom-color-smoke";
                 compactColorEditor.SetCustomTextForSmoke(
+                    "#12345678");
+                Dispatcher.UIThread.RunJobs();
+
+                foreach (var navigationWidth in
+                         new[]
+                         {
+                             250d,
+                             280d,
+                             300d
+                         })
+                {
+                    compactTagsWindow.Width =
+                        navigationWidth;
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        compactActionRow.Bounds.Width
+                            <= compactTagsView.Bounds.Width + 0.5
+                        && compactActionRow.Children
+                            .OfType<Control>()
+                            .Where(
+                                child =>
+                                    child.IsVisible)
+                            .All(
+                                child =>
+                                    child.Bounds.X >= -0.5
+                                    && child.Bounds.Right
+                                        <= compactActionRow.Bounds.Width
+                                            + 0.5),
+                        $"Tags toolbar escaped its available width at {navigationWidth:N0} DIP / 225% text scale.");
+
+                    Require(
+                        compactCreateButton.IsEnabled
+                        && compactCreateSurface.Bounds.Width
+                            <= compactTagsView.Bounds.Width + 0.5
+                        && compactColorEditor.Bounds.Width
+                            <= compactCreateSurface.Bounds.Width + 0.5,
+                        $"Tag create form overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                }
+
+                compactTagsWindow.Width = 250;
+                compactColorEditor.SetCustomTextForSmoke(
                     "broken");
                 Dispatcher.UIThread.RunJobs();
                 Require(
                     !compactCreateButton.IsEnabled,
-                    "Tag creation remained enabled with an invalid custom color.");
+                    "Tag creation remained enabled with an invalid custom color at the minimum navigation width.");
 
                 compactColorEditor.SetCustomTextForSmoke(
                     "#12345678");
                 Dispatcher.UIThread.RunJobs();
                 Require(
-                    compactCreateButton.IsEnabled
-                    && compactCreateSurface.Bounds.Width
-                        <= compactTagsView.Bounds.Width + 0.5
-                    && compactColorEditor.Bounds.Width
-                        <= compactCreateSurface.Bounds.Width + 0.5,
-                    "Compact tag create form overflowed or failed to enable a valid custom color.");
+                    compactCreateButton.IsEnabled,
+                    "Tag creation did not recover after restoring a valid custom color.");
 
                 compactCreateButton.RaiseEvent(
                     new RoutedEventArgs(
@@ -1606,12 +1628,26 @@ try
                             grid =>
                                 grid.Children.Contains(
                                     removeButton));
-                Require(
-                    removeButton.Bounds.Right
-                        <= manageRow.Bounds.Width + 0.5
-                    && manageRow.Bounds.Width
-                        <= compactTagsView.Bounds.Width + 0.5,
-                    "Compact tag manage row overflowed its navigation surface.");
+
+                foreach (var navigationWidth in
+                         new[]
+                         {
+                             250d,
+                             280d,
+                             300d
+                         })
+                {
+                    compactTagsWindow.Width =
+                        navigationWidth;
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        removeButton.Bounds.Right
+                            <= manageRow.Bounds.Width + 0.5
+                        && manageRow.Bounds.Width
+                            <= compactTagsView.Bounds.Width + 0.5,
+                        $"Tag manage row overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                }
 
                 compactTagsWindow.Close();
                 Dispatcher.UIThread.RunJobs();
