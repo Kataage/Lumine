@@ -1620,6 +1620,30 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         };
     }
 
+    private static string FormatPublicationAssets(
+        PublicationInfo publication)
+    {
+        var total =
+            publication.AssetCount >= 0
+                ? publication.AssetCount
+                : publication.Assets.Count;
+        var visible =
+            string.Join(
+                ", ",
+                publication.Assets.Select(
+                    static asset =>
+                        asset.FileName));
+
+        if (total <= publication.Assets.Count)
+        {
+            return "画像: " + visible;
+        }
+
+        return "画像: "
+            + visible
+            + $", … +{total - publication.Assets.Count:N0}枚";
+    }
+
     private static TextBlock CreatePublicationDetail(
         string text) =>
         new()
