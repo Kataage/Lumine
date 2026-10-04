@@ -374,6 +374,33 @@ try
             && tag.Color == "#22aa88"),
         "Tag navigation index did not expose managed tags, colors and counts.");
 
+    try
+    {
+        _ = await repository.CreateTagAsync(
+            library.Id,
+            " 推し ",
+            "#000000");
+        throw new InvalidOperationException(
+            "Duplicate explicit tag creation unexpectedly succeeded.");
+    }
+    catch (InvalidOperationException exception)
+        when (exception.Message.Contains(
+            "already exists",
+            StringComparison.Ordinal))
+    {
+    }
+
+    var afterDuplicateCreate =
+        await repository.ListTagsAsync(
+            library.Id);
+    Require(
+        afterDuplicateCreate.Count == 4
+        && afterDuplicateCreate.Any(tag =>
+            tag.Name == "推し"
+            && tag.Color == "#6366f1"
+            && tag.AssetCount == 1),
+        "Duplicate create mutated the existing tag instead of failing explicitly.");
+
     Require(
         await repository.DeleteTagAsync(
             library.Id,
@@ -443,6 +470,89 @@ try
         && multiTagScope.Items[0].Id
             == technical.Id,
         "Multi-tag AND filtering did not preserve v1 tag semantics.");
+
+    var updatedStandaloneTag =
+        await repository.UpdateTagAsync(
+            library.Id,
+            standaloneTag.Id,
+            "  あとで使う  ",
+            "#ABCDEF80");
+    Require(
+        updatedStandaloneTag.Id == standaloneTag.Id
+        && updatedStandaloneTag.Name == "あとで使う"
+        && updatedStandaloneTag.Color == "#abcdef80"
+        && updatedStandaloneTag.AssetCount == 1,
+        "Explicit tag update did not preserve id/count or normalize name/color.");
+
+    var metadataAfterTagRename =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            technical.Id)
+        ?? throw new InvalidOperationException(
+            "Renamed tag asset lost metadata.");
+    Require(
+        metadataAfterTagRename.Tags.Contains(
+            "あとで使う",
+            StringComparer.Ordinal)
+        && !metadataAfterTagRename.Tags.Contains(
+            "後で使う",
+            StringComparer.Ordinal),
+        "Tag rename did not preserve asset membership under the new name.");
+
+    var renamedTagScope =
+        await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                RequiredTags:
+                    ["あとで使う"]),
+            10);
+    var renamedTagSearch =
+        await repository.GetAssetPageAsync(
+            library.Id,
+            new AssetQuery(
+                SearchText:
+                    "あとで使う"),
+            10);
+    Require(
+        renamedTagScope.Items.Count == 1
+        && renamedTagScope.Items[0].Id
+            == technical.Id
+        && renamedTagSearch.Items.Any(
+            item =>
+                item.Id == technical.Id),
+        "Tag rename did not refresh filter/search behavior for assigned assets.");
+
+    try
+    {
+        _ = await repository.UpdateTagAsync(
+            library.Id,
+            standaloneTag.Id,
+            "推し",
+            "#111111");
+        throw new InvalidOperationException(
+            "Colliding tag rename unexpectedly succeeded.");
+    }
+    catch (InvalidOperationException exception)
+        when (exception.Message.Contains(
+            "already exists",
+            StringComparison.Ordinal))
+    {
+    }
+
+    var afterRenameCollision =
+        await repository.ListTagsAsync(
+            library.Id);
+    Require(
+        afterRenameCollision.Any(tag =>
+            tag.Id == standaloneTag.Id
+            && tag.Name == "あとで使う"
+            && tag.Color == "#abcdef80"
+            && tag.AssetCount == 1)
+        && afterRenameCollision.Any(tag =>
+            tag.Name == "推し"
+            && tag.Color == "#6366f1"
+            && tag.AssetCount == 1),
+        "Collision rollback changed tag identity, color, or membership.");
 
     _ = await repository.SetAssetTagsAsync(
         library.Id,
