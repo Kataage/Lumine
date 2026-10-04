@@ -86,6 +86,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private Button[] _ratingButtons = [];
     private Button[] _colorButtons = [];
     private readonly Avalonia.Controls.Image _preview;
+    private readonly Border _previewSurface;
     private readonly ContentControl _tabContent;
     private readonly Button[] _tabButtons;
     private readonly Control[] _tabPages;
@@ -369,10 +370,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space8)
             };
 
-        var previewSurface =
+        _previewSurface =
             new Border
             {
-                Height = 168,
+                Height = 148,
                 Background = LumineDesign.Background,
                 BorderBrush = LumineDesign.Border,
                 BorderThickness = new Thickness(1),
@@ -382,7 +383,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ClipToBounds = true,
                 Child = _preview
             };
-        summaryBody.Children.Add(previewSurface);
+        summaryBody.Children.Add(_previewSurface);
         summaryBody.Children.Add(_title);
         summaryBody.Children.Add(_summary);
 
@@ -414,13 +415,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         AddEditorRow(
             editor,
             3,
-            "カラー",
-            colorPicker);
+            "タグ",
+            _tagPicker);
         AddEditorRow(
             editor,
             4,
-            "タグ",
-            _tagPicker);
+            "カラー",
+            colorPicker);
         AddEditorRow(
             editor,
             5,
@@ -808,6 +809,27 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _preview.Source is not null;
 
     internal event EventHandler? PinToggleRequested;
+
+    internal bool IsCompactPresentationForSmoke =>
+        _previewSurface.Height <= 120.5
+        && _notesEditor.MinHeight <= 72.5;
+
+    internal void SetCompactPresentation(
+        bool compact)
+    {
+        _previewSurface.Height =
+            compact
+                ? 120
+                : 148;
+        _preview.MaxHeight =
+            compact
+                ? 120
+                : 148;
+        _notesEditor.MinHeight =
+            compact
+                ? 72
+                : 92;
+    }
 
     internal void SetPinPresentation(
         bool pinned,

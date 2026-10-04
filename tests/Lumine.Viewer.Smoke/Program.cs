@@ -731,7 +731,7 @@ internal static class Program
                 selected: false,
                 hovered: false,
                 focused: false)
-            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+            && !ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
                 ViewerLayoutMode.Grid,
                 selected: true,
                 hovered: false,
@@ -746,12 +746,22 @@ internal static class Program
                 selected: false,
                 hovered: false,
                 focused: true)
+            && !ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.List,
+                selected: false,
+                hovered: false,
+                focused: false)
+            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.List,
+                selected: false,
+                hovered: true,
+                focused: false)
             && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
                 ViewerLayoutMode.List,
                 selected: false,
                 hovered: false,
-                focused: false),
-            "Thumbnail primary actions regressed from v1 selected/focus/list discoverability.");
+                focused: true),
+            "Thumbnail secondary actions must stay contextual while hover/focus remains discoverable.");
 
         Require(
             ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
