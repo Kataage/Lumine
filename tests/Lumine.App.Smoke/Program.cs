@@ -4011,6 +4011,15 @@ try
                             "settings-1440x900");
 
                         advancedSettings.IsExpanded = true;
+                        advancedSettings.BringIntoView();
+                        for (var renderPass = 0;
+                             renderPass < 3;
+                             renderPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform
+                                .ForceRenderTimerTick();
+                        }
                         Dispatcher.UIThread.RunJobs();
                         var expandedSettingsText =
                             window.WorkspacePageForSmoke
