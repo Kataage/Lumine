@@ -775,7 +775,7 @@ public sealed class MainWindow : Window
         _navigationPin.BorderBrush =
             _navigationPinned
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
         ToolTip.SetTip(
             _navigationPin,
             _navigationPinned
