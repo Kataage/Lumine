@@ -2173,7 +2173,23 @@ public sealed class MainWindow : Window
                 });
         choose.Click +=
             async (_, _) =>
-                await ChooseAndOpenLibraryAsync();
+            {
+                choose.IsEnabled = false;
+                try
+                {
+                    await ChooseAndOpenLibraryAsync();
+                }
+                finally
+                {
+                    if (string.Equals(
+                            _productShellState,
+                            "Error",
+                            StringComparison.Ordinal))
+                    {
+                        choose.IsEnabled = true;
+                    }
+                }
+            };
 
         var detail =
             new Expander
