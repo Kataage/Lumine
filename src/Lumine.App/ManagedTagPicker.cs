@@ -311,7 +311,7 @@ internal sealed class ManagedTagPicker : UserControl
                             StringComparison.OrdinalIgnoreCase));
             var color =
                 tag?.Color
-                ?? "#6366f1";
+                ?? TagColor.Default;
 
             var row =
                 new StackPanel
