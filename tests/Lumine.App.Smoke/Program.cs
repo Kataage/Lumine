@@ -1564,15 +1564,30 @@ try
         width: 640,
         height: 480);
 
+    var shellOpenProgress =
+        new List<CoreViewerOpenProgress>();
     var shellRuntime =
         await CoreViewerRuntime.OpenAsync(
             shellLibraryRoot,
             AppDataPaths.FromRoot(shellDataRoot),
-            Lumine.App.Program.ResourcePolicy);
+            Lumine.App.Program.ResourcePolicy,
+            progress:
+                new InlineProgress<CoreViewerOpenProgress>(
+                    shellOpenProgress.Add));
 
     Require(
-        shellRuntime.AssetCount == 2,
-        $"Production Core Viewer runtime indexed {shellRuntime.AssetCount} assets; expected 2.");
+        shellRuntime.AssetCount == 2
+        && shellOpenProgress.Any(
+            static update =>
+                update.Stage
+                    == CoreViewerOpenStage.SynchronizingLibrary
+                && update.ScanProgress
+                    is { Discovered: >= 2, Persisted: >= 2 })
+        && shellOpenProgress.Any(
+            static update =>
+                update.Stage
+                    == CoreViewerOpenStage.Ready),
+        $"Production Core Viewer runtime/progress bridge did not index and report the expected 2 assets; actual={shellRuntime.AssetCount}.");
 
     await headless.Dispatch(
         async () =>
@@ -2811,8 +2826,11 @@ try
                         && string.Equals(
                             window.ProductShellState,
                             "Workspace",
+                            StringComparison.Ordinal)
+                        && window.StatusTextForSmoke.Contains(
+                            "再スキャン完了",
                             StringComparison.Ordinal),
-                        "Manual library rescan recreated the active runtime/shell or failed to restore Workspace.");
+                        "Manual library rescan recreated the active runtime/shell or failed to report its final state.");
 
                     // App integration must produce a real virtualized thumbnail
                     // surface before downstream interaction/DPI checks. The
@@ -3530,4 +3548,16 @@ internal sealed class AppAdapterSmokeApplication : Application
 
     public override void Initialize() =>
         App.ApplyProductTheme(this);
+}
+
+
+internal sealed class InlineProgress<T>(
+    Action<T> report) : IProgress<T>
+{
+    private readonly Action<T> _report =
+        report
+        ?? throw new ArgumentNullException(nameof(report));
+
+    public void Report(T value) =>
+        _report(value);
 }
