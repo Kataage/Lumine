@@ -2020,6 +2020,8 @@ public sealed class MainWindow : Window
         _browseHost.Content = null;
         _browseHost.IsVisible = false;
         _openFolder.IsEnabled = false;
+        _failedLibraryRoot = null;
+        _failedLibraryDataPaths = null;
         _productShellState = "Loading";
         _status.Foreground =
             LumineDesign.MutedForeground;
