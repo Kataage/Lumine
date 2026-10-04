@@ -8,20 +8,6 @@ namespace Lumine.App;
 
 internal sealed class ManagedTagPicker : UserControl
 {
-    private static readonly string[] Palette =
-    [
-        "#6366f1",
-        "#ef4444",
-        "#f97316",
-        "#eab308",
-        "#22c55e",
-        "#06b6d4",
-        "#3b82f6",
-        "#ec4899",
-        "#8b5cf6",
-        "#71717a"
-    ];
-
     private readonly CoreViewerRuntime _runtime;
     private readonly Func<IReadOnlyList<string>, Task> _applyTags;
     private readonly WrapPanel _assignedHost;
@@ -30,13 +16,12 @@ internal sealed class ManagedTagPicker : UserControl
     private readonly StackPanel _candidateHost;
     private readonly Border _createSurface;
     private readonly TextBlock _createLabel;
-    private readonly WrapPanel _paletteHost;
+    private readonly TagColorEditor _colorEditor;
     private readonly Button _create;
     private readonly HashSet<string> _selected =
         new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<LibraryTagInfo> _allTags =
         Array.Empty<LibraryTagInfo>();
-    private string _selectedColor = Palette[0];
     private bool _busy;
 
     public ManagedTagPicker(
@@ -64,7 +49,11 @@ internal sealed class ManagedTagPicker : UserControl
                             LumineDesign.Space4)
                 });
         _search.TextChanged +=
-            (_, _) => RenderCandidates();
+            (_, _) =>
+            {
+                RenderCandidates();
+                UpdateCreateButtonState();
+            };
 
         _summary =
             new TextBlock
@@ -107,52 +96,11 @@ internal sealed class ManagedTagPicker : UserControl
                     TextWrapping.Wrap
             };
 
-        _paletteHost =
-            new WrapPanel();
-        foreach (var color in Palette)
-        {
-            var value = color;
-            var button =
-                new Button
-                {
-                    Width = 26,
-                    Height = 26,
-                    MinWidth = 26,
-                    MinHeight = 26,
-                    Padding = new Thickness(4),
-                    Background =
-                        Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(2),
-                    CornerRadius =
-                        new CornerRadius(13),
-                    Margin =
-                        new Thickness(
-                            0,
-                            0,
-                            LumineDesign.Space4,
-                            LumineDesign.Space4),
-                    Content =
-                        new Border
-                        {
-                            Width = 14,
-                            Height = 14,
-                            CornerRadius =
-                                new CornerRadius(7),
-                            Background =
-                                new SolidColorBrush(
-                                    Color.Parse(color))
-                        }
-                };
-            ToolTip.SetTip(button, color);
-            button.Click +=
-                (_, _) =>
-                {
-                    _selectedColor = value;
-                    RenderPaletteSelection();
-                };
-            _paletteHost.Children.Add(button);
-        }
+        _colorEditor =
+            new TagColorEditor();
+        _colorEditor.StateChanged +=
+            (_, _) =>
+                UpdateCreateButtonState();
 
         _create =
             LumineDesign.ConfigurePrimaryButton(
@@ -182,7 +130,7 @@ internal sealed class ManagedTagPicker : UserControl
                 Spacing = LumineDesign.Space6
             };
         createBody.Children.Add(_createLabel);
-        createBody.Children.Add(_paletteHost);
+        createBody.Children.Add(_colorEditor);
         createBody.Children.Add(_create);
 
         _createSurface =
@@ -234,9 +182,9 @@ internal sealed class ManagedTagPicker : UserControl
         root.Children.Add(_createSurface);
         Content = root;
 
-        RenderPaletteSelection();
         SetSelectedTags(Array.Empty<string>());
         SetInteractionEnabled(false);
+        UpdateCreateButtonState();
     }
 
     internal IReadOnlyList<string> SelectedTags =>
@@ -254,6 +202,20 @@ internal sealed class ManagedTagPicker : UserControl
 
     internal bool CreateSurfaceVisibleForSmoke =>
         _createSurface.IsVisible;
+
+    internal bool ColorValidForSmoke =>
+        _colorEditor.IsColorValid;
+
+    internal string? SelectedColorForSmoke =>
+        _colorEditor.SelectedColor;
+
+    internal string CustomColorTextForSmoke =>
+        _colorEditor.CustomTextForSmoke;
+
+    internal void SetCustomColorForSmoke(
+        string value) =>
+        _colorEditor.SetCustomTextForSmoke(
+            value);
 
     internal void SetSelectedTags(
         IReadOnlyList<string> tags)
@@ -296,8 +258,9 @@ internal sealed class ManagedTagPicker : UserControl
         IsEnabled = enabled;
         _search.IsEnabled =
             enabled && !_busy;
-        _create.IsEnabled =
+        _colorEditor.IsEnabled =
             enabled && !_busy;
+        UpdateCreateButtonState();
     }
 
     internal async Task ToggleForSmokeAsync(
@@ -366,8 +329,7 @@ internal sealed class ManagedTagPicker : UserControl
                     CornerRadius =
                         new CornerRadius(4),
                     Background =
-                        new SolidColorBrush(
-                            Color.Parse(color)),
+                        TagColor.ToBrush(color),
                     VerticalAlignment =
                         VerticalAlignment.Center
                 });
@@ -492,8 +454,7 @@ internal sealed class ManagedTagPicker : UserControl
                     CornerRadius =
                         new CornerRadius(5),
                     Background =
-                        new SolidColorBrush(
-                            Color.Parse(tag.Color)),
+                        TagColor.ToBrush(tag.Color),
                     VerticalAlignment =
                         VerticalAlignment.Center
                 });
@@ -575,6 +536,7 @@ internal sealed class ManagedTagPicker : UserControl
             _createSurface.IsVisible
                 ? $"「{query}」を新しいタグとして作成"
                 : string.Empty;
+        UpdateCreateButtonState();
 
         if (visible.Length == 0
             && !_createSurface.IsVisible)
@@ -653,7 +615,8 @@ internal sealed class ManagedTagPicker : UserControl
                 await _runtime.LibraryService.CreateTagAsync(
                     _runtime.Library.Id,
                     name,
-                    _selectedColor);
+                    _colorEditor.SelectedColor
+                    ?? TagColor.Default);
             _allTags =
                 await _runtime.LibraryService.ListTagsAsync(
                     _runtime.Library.Id,
@@ -676,6 +639,7 @@ internal sealed class ManagedTagPicker : UserControl
             }
 
             _search.Text = string.Empty;
+            _colorEditor.Reset();
             RenderAssigned();
             RenderCandidates();
         }
@@ -723,24 +687,20 @@ internal sealed class ManagedTagPicker : UserControl
     {
         _search.IsEnabled =
             !_busy && IsEnabled;
-        _create.IsEnabled =
+        _colorEditor.IsEnabled =
             !_busy && IsEnabled;
+        UpdateCreateButtonState();
     }
 
-    private void RenderPaletteSelection()
+    private void UpdateCreateButtonState()
     {
-        foreach (var button in
-                 _paletteHost.Children
-                     .OfType<Button>())
-        {
-            button.BorderBrush =
-                string.Equals(
-                    ToolTip.GetTip(button)
-                        as string,
-                    _selectedColor,
-                    StringComparison.Ordinal)
-                    ? LumineDesign.InteractionFocus
-                    : Brushes.Transparent;
-        }
+        var name =
+            _search.Text?.Trim();
+        _create.IsEnabled =
+            !_busy
+            && IsEnabled
+            && _createSurface.IsVisible
+            && !string.IsNullOrWhiteSpace(name)
+            && _colorEditor.IsColorValid;
     }
 }
