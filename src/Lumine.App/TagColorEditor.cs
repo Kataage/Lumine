@@ -401,13 +401,25 @@ internal sealed class TagColorEditor : UserControl
                     .GetVisualDescendants()
                     .OfType<DropDownButton>()
                     .SingleOrDefault();
-            return button?.Flyout
-                    is Flyout
+            if (button?.Flyout
+                    is not Flyout
                     {
                         Content:
-                            ColorView view
-                    }
-                && view.IsColorSpectrumVisible;
+                            Control content
+                    })
+            {
+                return false;
+            }
+
+            return content
+                .GetVisualDescendants()
+                .OfType<
+                    Avalonia.Controls.Primitives.ColorSpectrum>()
+                .Any(
+                    spectrum =>
+                        spectrum.IsEffectivelyVisible
+                        && spectrum.Bounds.Width > 0
+                        && spectrum.Bounds.Height > 0);
         }
     }
 
