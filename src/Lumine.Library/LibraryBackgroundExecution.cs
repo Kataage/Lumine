@@ -428,12 +428,25 @@ public sealed class LibraryService
 
     public Task<IReadOnlyList<PublicationInfo>> ListPublicationsAsync(
         long libraryId,
-        int limit = 100,
+        int limit = LibraryRepository.PublicationPageSize,
         CancellationToken cancellationToken = default) =>
         LibraryBackgroundExecution.RunAsync(
             token => _repository.ListPublicationsAsync(
                 libraryId,
                 limit,
+                token),
+            cancellationToken);
+
+    public Task<PublicationPage> ListPublicationsPageAsync(
+        long libraryId,
+        int limit = LibraryRepository.PublicationPageSize,
+        PublicationCursor? cursor = null,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListPublicationsPageAsync(
+                libraryId,
+                limit,
+                cursor,
                 token),
             cancellationToken);
 
