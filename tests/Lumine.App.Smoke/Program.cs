@@ -1811,16 +1811,25 @@ try
                     "custom-color-smoke";
                 compactColorEditor.SetCustomTextForSmoke(
                     "#12345678");
+                Require(
+                    !compactColorEditor.AdvancedVisibleForSmoke,
+                    "Tag create expanded custom color controls by default.");
+
                 if (visualOutputDirectory is not null)
                 {
-                    compactColorEditor.OpenVisualPickerForSmoke();
-                    await WaitForVisualPickerSpectrumAsync(
-                        compactColorEditor,
-                        "Tag create visual evidence");
                     CaptureVisualEvidence(
                         compactTagsWindow,
                         "tags-create-900x600-text225");
+
+                    compactColorEditor.OpenVisualPickerForSmoke();
+                    await WaitForVisualPickerSpectrumAsync(
+                        compactColorEditor,
+                        "Tag create custom-color visual evidence");
+                    CaptureVisualEvidence(
+                        compactTagsWindow,
+                        "tags-create-custom-color-900x600-text225");
                     compactColorEditor.CloseVisualPickerForSmoke();
+                    compactColorEditor.SetAdvancedVisibleForSmoke(false);
                     Dispatcher.UIThread.RunJobs();
                 }
 
@@ -2007,18 +2016,27 @@ try
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
 
+                Require(
+                    !editColor.AdvancedVisibleForSmoke,
+                    "Tag edit expanded custom color controls by default.");
+
                 if (visualOutputDirectory is not null)
                 {
+                    CaptureVisualEvidence(
+                        compactTagsWindow,
+                        "tags-edit-900x600-text225");
+
                     // ColorSpectrum builds its bitmap asynchronously after layout.
                     // Wait on the actual ImageBrush rather than sleeping blindly.
                     editColor.OpenVisualPickerForSmoke();
                     await WaitForVisualPickerSpectrumAsync(
                         editColor,
-                        "Tag edit visual evidence");
+                        "Tag edit custom-color visual evidence");
                     CaptureVisualEvidence(
                         compactTagsWindow,
-                        "tags-edit-900x600-text225");
+                        "tags-edit-custom-color-900x600-text225");
                     editColor.CloseVisualPickerForSmoke();
+                    editColor.SetAdvancedVisibleForSmoke(false);
                     Dispatcher.UIThread.RunJobs();
                 }
 
@@ -2554,17 +2572,29 @@ try
                     .GetVisualDescendants()
                     .OfType<ManagedTagPicker>()
                     .Single();
-            inspectorTagPicker.SetSearchForSmoke(
-                "__inspector_custom_tag__");
-            Dispatcher.UIThread.RunJobs();
-
             var inspectorTagColorEditor =
                 inspectorTagPicker
                     .GetVisualDescendants()
                     .OfType<TagColorEditor>()
                     .Single();
             Require(
+                !inspectorTagColorEditor.AdvancedVisibleForSmoke,
+                "Frequent Inspector tagging unexpectedly expanded custom color controls.");
+
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "tags-assignment-1100x720");
+            }
+
+            inspectorTagPicker.SetSearchForSmoke(
+                "__inspector_custom_tag__");
+            Dispatcher.UIThread.RunJobs();
+
+            Require(
                 inspectorTagPicker.CreateSurfaceVisibleForSmoke
+                && !inspectorTagColorEditor.AdvancedVisibleForSmoke
                 && inspectorTagColorEditor
                     .GetVisualDescendants()
                     .OfType<ColorPicker>()
@@ -4568,8 +4598,11 @@ try
                 "browse-1440x900",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
+                "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
+                "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
+                "tags-edit-custom-color-900x600-text225",
                 "inspector-900x600",
                 "inspector-1440x900-pinned",
                 "focused-viewer-900x600",
