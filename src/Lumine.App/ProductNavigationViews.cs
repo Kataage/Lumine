@@ -611,10 +611,12 @@ internal static class ProductNavigationViews
                                 {
                                     Content =
                                         hasChildren
-                                            ? expanded
-                                                ? "▼"
-                                                : "▶"
-                                            : string.Empty,
+                                            ? LumineDesign.CreateStrokeIcon(
+                                                expanded
+                                                    ? LumineDesign.ChevronDownIconPath
+                                                    : LumineDesign.ChevronRightIconPath,
+                                                14)
+                                            : null,
                                     Width = 26,
                                     Height = 28,
                                     MinWidth = 26,
