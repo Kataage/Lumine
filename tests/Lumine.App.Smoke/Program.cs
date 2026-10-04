@@ -2629,6 +2629,25 @@ try
                     == "context-detail-note",
                 "Contextual detail panel did not expose user-owned metadata.");
 
+            var directRatingButtons =
+                shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(
+                        button =>
+                            (AutomationProperties.GetName(button)
+                                ?? string.Empty)
+                            .StartsWith(
+                                "評価 ",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            Require(
+                directRatingButtons.Length == 5
+                && directRatingButtons.All(
+                    static button =>
+                        button.FontSize >= 17),
+                "Inspector direct-rating stars regressed to an unreadably small shared caption size.");
+
             Require(
                 shell.ContextDetail.UsesDirectRatingControlsForSmoke
                 && shell.ContextDetail.UsesDirectColorControlsForSmoke
