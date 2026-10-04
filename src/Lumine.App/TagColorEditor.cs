@@ -515,7 +515,7 @@ internal sealed class TagColorEditor : UserControl
 
     private void RefreshVisualPickerAfterAttach()
     {
-        if (!_visualPicker.IsAttachedToVisualTree
+        if (!_visualPicker.IsAttachedToVisualTree()
             || _selectedColor is null)
         {
             return;
