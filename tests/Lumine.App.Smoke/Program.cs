@@ -111,6 +111,90 @@ static void WriteBmp24(
     File.WriteAllBytes(path, bytes);
 }
 
+const string VisualOutputPrefix =
+    "--visual-output=";
+var visualOutputArgument =
+    args.FirstOrDefault(
+        static argument =>
+            argument.StartsWith(
+                VisualOutputPrefix,
+                StringComparison.Ordinal));
+var visualOutputDirectory =
+    visualOutputArgument is null
+        ? null
+        : Path.GetFullPath(
+            visualOutputArgument[
+                VisualOutputPrefix.Length..]);
+if (visualOutputArgument is not null
+    && string.IsNullOrWhiteSpace(
+        visualOutputDirectory))
+{
+    throw new ArgumentException(
+        "--visual-output requires a directory.");
+}
+
+var visualEvidenceNames =
+    new HashSet<string>(
+        StringComparer.Ordinal);
+if (visualOutputDirectory is not null)
+{
+    Directory.CreateDirectory(
+        visualOutputDirectory);
+    var manifestPath =
+        Path.Combine(
+            visualOutputDirectory,
+            "manifest.tsv");
+    File.WriteAllText(
+        manifestPath,
+        "surface\tpixels\tbytes"
+        + Environment.NewLine);
+}
+
+void CaptureVisualEvidence(
+    Window window,
+    string name)
+{
+    if (visualOutputDirectory is null)
+    {
+        return;
+    }
+
+    AvaloniaHeadlessPlatform
+        .ForceRenderTimerTick();
+    Dispatcher.UIThread.RunJobs();
+
+    using var frame =
+        window.CaptureRenderedFrame();
+    Require(
+        frame.PixelSize.Width > 0
+        && frame.PixelSize.Height > 0,
+        $"Visual evidence '{name}' produced an empty frame.");
+
+    var outputPath =
+        Path.Combine(
+            visualOutputDirectory,
+            name + ".png");
+    frame.Save(
+        outputPath);
+
+    var outputInfo =
+        new FileInfo(
+            outputPath);
+    Require(
+        outputInfo.Exists
+        && outputInfo.Length > 1024,
+        $"Visual evidence '{name}' was not persisted as a non-empty PNG.");
+
+    visualEvidenceNames.Add(
+        name);
+    File.AppendAllText(
+        Path.Combine(
+            visualOutputDirectory,
+            "manifest.tsv"),
+        $"{name}\t{frame.PixelSize.Width}x{frame.PixelSize.Height}\t{outputInfo.Length}"
+        + Environment.NewLine);
+}
+
 var root = Path.Combine(
     Path.GetTempPath(),
     $"lumine-app-smoke-{Guid.NewGuid():N}");
@@ -1591,7 +1675,7 @@ try
                     new Window
                     {
                         Width = 900,
-                        Height = 520,
+                        Height = 600,
                         Content = compactTagsView
                     };
                 compactTagsWindow.Show();
@@ -1686,6 +1770,9 @@ try
                 compactColorEditor.SetCustomTextForSmoke(
                     "#12345678");
                 Dispatcher.UIThread.RunJobs();
+                CaptureVisualEvidence(
+                    compactTagsWindow,
+                    "tags-create-900x600-text225");
 
                 foreach (var navigationWidth in
                          new[]
@@ -1869,6 +1956,10 @@ try
                                     "123件の画像で使用",
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
+
+                CaptureVisualEvidence(
+                    compactTagsWindow,
+                    "tags-edit-900x600-text225");
 
                 editName.Text =
                     "renamed-long-tag";
@@ -3337,6 +3428,10 @@ try
                                 { IsExpanded: false },
                             "Library-open failure did not expose local retry/reselect recovery actions with secondary technical detail.");
 
+                        CaptureVisualEvidence(
+                            window,
+                            "error-1440x900");
+
                         Directory.CreateDirectory(
                             retryableMissingRoot);
                         await window
@@ -3442,6 +3537,13 @@ try
                                     StringComparison.Ordinal)),
                         "Product Settings did not expose a readable full-page hierarchy for viewer/cache/storage controls.");
 
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-1440x900");
+                    }
+
                     window.NavigateForSmoke(
                         "ライブラリ");
                     Dispatcher.UIThread.RunJobs();
@@ -3517,6 +3619,13 @@ try
                         && !window.CurrentShell
                             .IsContextDetailVisible,
                         "Filtered zero-result query replaced the Viewer shell or kept stale selection/Inspector state.");
+
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "no-match-1440x900");
+                    }
 
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
@@ -3686,6 +3795,18 @@ try
                                             - unpinnedClosedCanvasWidth) < 1),
                                     $"Browse canvas changed width for unpinned secondary navigation at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width is 900d or 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        viewport.Width == 900d
+                                            ? "browse-900x600"
+                                            : "browse-1440x900");
+                                }
+
                                 window.CurrentShell.GridViewer.SelectAsset(0);
                                 await window.CurrentShell
                                     .ShowContextDetailAsync();
@@ -3715,6 +3836,16 @@ try
                                     && window.CurrentShell.ContextDetail
                                         .TabPagesHaveIndependentScrollStateForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-900x600");
+                                }
 
                                 for (var tabIndex = 0;
                                      tabIndex
@@ -3960,6 +4091,13 @@ try
                         && window.CurrentShell.IsFocusedViewVisible
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
+
+                    if (iteration == 2)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "focused-viewer-900x600-text225");
+                    }
 
                     var unnamedIconButton =
                         window.GetVisualDescendants()
@@ -4271,6 +4409,38 @@ try
             baselineTextScale);
     }
 
+    if (visualOutputDirectory is not null)
+    {
+        var expectedVisualEvidence =
+            new[]
+            {
+                "browse-900x600",
+                "browse-1440x900",
+                "tags-create-900x600-text225",
+                "tags-edit-900x600-text225",
+                "inspector-900x600",
+                "focused-viewer-900x600-text225",
+                "settings-1440x900",
+                "no-match-1440x900",
+                "error-1440x900"
+            };
+        var missingEvidence =
+            expectedVisualEvidence
+                .Where(
+                    name =>
+                        !visualEvidenceNames.Contains(
+                            name))
+                .ToArray();
+        Require(
+            missingEvidence.Length == 0
+            && visualEvidenceNames.Count
+                == expectedVisualEvidence.Length,
+            "Visual regression evidence set was incomplete: "
+            + string.Join(
+                ", ",
+                missingEvidence));
+    }
+
     Console.WriteLine(
         "MainWindow lifecycle smoke: branded shell / Welcome-to-Workspace / repeated launch-close / rapid original-navigation close / diagnostics / handle release OK");
 
@@ -4296,7 +4466,7 @@ internal sealed class AppAdapterSmokeApplication : Application
                 new AvaloniaHeadlessPlatformOptions
                 {
                     UseHeadlessDrawing = false,
-                    OverlayPopups = false
+                    OverlayPopups = true
                 });
 
     public override void Initialize() =>
