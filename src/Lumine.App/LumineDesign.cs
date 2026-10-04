@@ -174,6 +174,8 @@ internal static class LumineDesign
         "M15.75 5.25L9 12l6.75 6.75";
     public const string MoreIconPath =
         "M6.75 12h.01M12 12h.01M17.25 12h.01";
+    public const string PinIconPath =
+        "M14.25 3.75l6 6-2.25 2.25-2.25-.75-3.75 3.75.75 2.25-1.5 1.5-6-6 1.5-1.5 2.25.75 3.75-3.75-.75-2.25 2.25-2.25z M8.25 15.75l-4.5 4.5";
     public const string GridIconPath =
         "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     public const string ListIconPath =
