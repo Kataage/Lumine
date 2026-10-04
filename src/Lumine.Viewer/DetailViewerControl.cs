@@ -35,6 +35,8 @@ public sealed class DetailViewerControl : UserControl
     private readonly Slider _zoomSlider;
     private readonly TextBlock _zoomText;
     private readonly Border _toolbarHost;
+    private readonly Border _utilityHost;
+    private readonly Border _statusHost;
     private readonly Border _metadataHost;
     private readonly Border _surface;
     private readonly DispatcherTimer _chromeTimer;
@@ -97,8 +99,8 @@ public sealed class DetailViewerControl : UserControl
                 "viewer.zoom-in");
         _fit =
             CreateViewerButton(
-                "全体",
-                "全体を表示",
+                "フィット",
+                "ウィンドウに合わせる (0)",
                 "viewer.fit",
                 "0");
         _actual =
@@ -166,17 +168,13 @@ public sealed class DetailViewerControl : UserControl
         {
             Orientation = Orientation.Horizontal,
             Spacing = 4,
-            Margin = new Thickness(8, 6),
+            Margin = new Thickness(6, 4),
             HorizontalAlignment = HorizontalAlignment.Center
         };
         toolbar.Children.Add(_zoomOut);
         toolbar.Children.Add(_zoomSlider);
         toolbar.Children.Add(_zoomText);
         toolbar.Children.Add(_zoomIn);
-        toolbar.Children.Add(_fit);
-        toolbar.Children.Add(_actual);
-        toolbar.Children.Add(_info);
-        toolbar.Children.Add(_fullScreen);
         toolbar.Children.Add(
             new Border
             {
@@ -186,17 +184,52 @@ public sealed class DetailViewerControl : UserControl
                 Background = ViewerVisualTokens.Border,
                 VerticalAlignment = VerticalAlignment.Center
             });
-        toolbar.Children.Add(_close);
+        toolbar.Children.Add(_fit);
+        toolbar.Children.Add(_actual);
+
+        var utilityBar =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4,
+                Margin = new Thickness(4)
+            };
+        utilityBar.Children.Add(_info);
+        utilityBar.Children.Add(_fullScreen);
+        utilityBar.Children.Add(
+            new Border
+            {
+                Width = 1,
+                Height = 18,
+                Margin = new Thickness(2, 0),
+                Background = ViewerVisualTokens.Border,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        utilityBar.Children.Add(_close);
 
         _status = new TextBlock
         {
-            Foreground = ViewerVisualTokens.MutedForeground,
+            Foreground = ViewerVisualTokens.Foreground,
             FontSize = ViewerVisualTokens.CaptionFontSize,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0),
+            TextAlignment = TextAlignment.Center,
             IsVisible = false
         };
-        toolbar.Children.Add(_status);
+        _statusHost =
+            new Border
+            {
+                Background = ViewerVisualTokens.Overlay,
+                BorderBrush = ViewerVisualTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(10, 6),
+                Margin = new Thickness(12, 12, 12, 16),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                IsVisible = false,
+                IsHitTestVisible = false,
+                Child = _status
+            };
 
         _image = new Image
         {
@@ -301,7 +334,7 @@ public sealed class DetailViewerControl : UserControl
                 BorderBrush = ViewerVisualTokens.Border,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(4),
+                Padding = new Thickness(2),
                 Margin = new Thickness(10),
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
@@ -309,7 +342,24 @@ public sealed class DetailViewerControl : UserControl
                     VerticalAlignment.Top,
                 Child = toolbar
             };
+        _utilityHost =
+            new Border
+            {
+                Background = ViewerVisualTokens.Overlay,
+                BorderBrush = ViewerVisualTokens.Border,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(2),
+                Margin = new Thickness(10),
+                HorizontalAlignment =
+                    HorizontalAlignment.Right,
+                VerticalAlignment =
+                    VerticalAlignment.Top,
+                Child = utilityBar
+            };
         stage.Children.Add(_toolbarHost);
+        stage.Children.Add(_utilityHost);
+        stage.Children.Add(_statusHost);
         stage.Children.Add(_metadataHost);
 
         _chromeTimer =
@@ -583,6 +633,11 @@ public sealed class DetailViewerControl : UserControl
         GetControlBoundsForSmoke(
             _toolbarHost,
             "toolbar");
+
+    internal Rect UtilityBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _utilityHost,
+            "utility toolbar");
 
     internal Rect PreviousBoundsInControlForSmoke =>
         GetControlBoundsForSmoke(
@@ -1659,6 +1714,8 @@ public sealed class DetailViewerControl : UserControl
         _status.IsVisible =
             !string.IsNullOrWhiteSpace(
                 _status.Text);
+        _statusHost.IsVisible =
+            _status.IsVisible;
 
         var metadata = snapshot.Metadata;
         _metadata.Text = snapshot.Asset is null
@@ -1849,9 +1906,11 @@ public sealed class DetailViewerControl : UserControl
         bool autoHide = true)
     {
         _toolbarHost.Opacity = 1;
+        _utilityHost.Opacity = 1;
         _previous.Opacity = 1;
         _next.Opacity = 1;
         _toolbarHost.IsHitTestVisible = true;
+        _utilityHost.IsHitTestVisible = true;
         _previous.IsHitTestVisible = true;
         _next.IsHitTestVisible = true;
         _chromeTimer.Stop();
@@ -1864,6 +1923,7 @@ public sealed class DetailViewerControl : UserControl
     private bool IsChromeInteractionActive() =>
         _dragging
         || _toolbarHost.IsPointerOver
+        || _utilityHost.IsPointerOver
         || _previous.IsPointerOver
         || _next.IsPointerOver
         || _close.IsFocused
@@ -1890,9 +1950,11 @@ public sealed class DetailViewerControl : UserControl
 
         // Idle Viewer chrome must not obscure or intercept the image.
         _toolbarHost.Opacity = 0;
+        _utilityHost.Opacity = 0;
         _previous.Opacity = 0;
         _next.Opacity = 0;
         _toolbarHost.IsHitTestVisible = false;
+        _utilityHost.IsHitTestVisible = false;
         _previous.IsHitTestVisible = false;
         _next.IsHitTestVisible = false;
     }
@@ -1917,14 +1979,17 @@ public sealed class DetailViewerControl : UserControl
 
     internal bool IsChromeVisibleForSmoke =>
         _toolbarHost.Opacity > 0.9
+        && _utilityHost.Opacity > 0.9
         && _previous.Opacity > 0.9
         && _next.Opacity > 0.9;
 
     internal bool IsChromeNonBlockingForSmoke =>
         _toolbarHost.Opacity <= 0.001
+        && _utilityHost.Opacity <= 0.001
         && _previous.Opacity <= 0.001
         && _next.Opacity <= 0.001
         && !_toolbarHost.IsHitTestVisible
+        && !_utilityHost.IsHitTestVisible
         && !_previous.IsHitTestVisible
         && !_next.IsHitTestVisible;
 
