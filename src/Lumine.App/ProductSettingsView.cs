@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -745,6 +746,15 @@ internal static class ProductSettingsView
         string label,
         Control control)
     {
+        if (string.IsNullOrWhiteSpace(
+                AutomationProperties.GetName(
+                    control)))
+        {
+            AutomationProperties.SetName(
+                control,
+                label);
+        }
+
         var panel =
             new StackPanel
             {
