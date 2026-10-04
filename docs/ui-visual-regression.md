@@ -12,6 +12,11 @@ The App smoke receives:
 
 When enabled it captures the required product surfaces below:
 
+- `design-system-scale-100.png`
+- `design-system-scale-125.png`
+- `design-system-scale-150.png`
+- `design-system-scale-200.png`
+- `design-system-scale-225.png`
 - `welcome-1440x900.png`
 - `loading-1440x900.png`
 - `browse-900x600.png`
