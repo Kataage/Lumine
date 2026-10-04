@@ -79,7 +79,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     // Manual reconciliation shares the same mutation gate as watcher
     // batches so an explicit re-scan cannot race incremental DB updates.
     public async Task<LibraryReconcileResult> ReconcileNowAsync(
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<LibraryScanProgress>? progress = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(
@@ -92,7 +93,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         {
             return await ReconcileCoreAsync(
                 cancellationToken,
-                manualRequest: true)
+                manualRequest: true,
+                progress)
                 .ConfigureAwait(false);
         }
         finally
@@ -737,7 +739,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         {
             _ = await ReconcileCoreAsync(
                 cancellationToken,
-                manualRequest: false)
+                manualRequest: false,
+                progress: null)
                 .ConfigureAwait(false);
         }
         finally
@@ -748,7 +751,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
 
     private async Task<LibraryReconcileResult> ReconcileCoreAsync(
         CancellationToken cancellationToken,
-        bool manualRequest)
+        bool manualRequest,
+        IProgress<LibraryScanProgress>? progress)
     {
         Interlocked.Increment(ref _reconciliations);
 
@@ -756,7 +760,9 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         {
             var result = await _reconciler.ReconcileAsync(
                 _libraryId,
-                cancellationToken: cancellationToken)
+                progress,
+                cancellationToken:
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             if (!result.Completed)
