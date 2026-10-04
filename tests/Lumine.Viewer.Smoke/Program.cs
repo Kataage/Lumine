@@ -1797,6 +1797,43 @@ internal static class Program
             && detail.PanOffset.Y < 0.001,
             $"Fit did not clear pan after wheel zoom: before={wheelStartPan}, after={detail.PanOffset}.");
 
+        var keyboardZoomStart =
+            detail.Zoom;
+        RaiseKey(
+            detail,
+            Key.OemPlus);
+        for (var attempt = 0;
+             attempt < 100
+             && detail.Zoom <= keyboardZoomStart;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+        Require(
+            detail.Zoom > keyboardZoomStart,
+            "Viewer '+' shortcut did not zoom in.");
+
+        var keyboardZoomPeak =
+            detail.Zoom;
+        RaiseKey(
+            detail,
+            Key.OemMinus);
+        for (var attempt = 0;
+             attempt < 100
+             && detail.Zoom >= keyboardZoomPeak;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+        Require(
+            detail.Zoom < keyboardZoomPeak,
+            "Viewer '-' shortcut did not zoom out.");
+
+        detail.Fit();
+        Dispatcher.UIThread.RunJobs();
+
         var viewportBounds =
             detail.ViewportBoundsInControlForSmoke;
         var imageBounds =
