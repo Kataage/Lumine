@@ -408,7 +408,7 @@ internal sealed class TagColorEditor : UserControl
         SetColor(
             TagColor.Default);
 
-    private void SetColor(
+    public void SetColor(
         string value)
     {
         if (!TagColor.TryNormalize(
