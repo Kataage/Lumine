@@ -136,6 +136,7 @@ internal sealed class TagColorEditor : UserControl
     private readonly TextBlock _validation;
     private readonly WrapPanel _presetHost;
     private string? _selectedColor;
+    private bool _suppressCustomTextChanged;
 
     public TagColorEditor(
         string initialColor = TagColor.Default)
@@ -284,7 +285,12 @@ internal sealed class TagColorEditor : UserControl
 
         _custom.TextChanged +=
             (_, _) =>
-                ApplyCustomText();
+            {
+                if (!_suppressCustomTextChanged)
+                {
+                    ApplyCustomText();
+                }
+            };
 
         SetColor(initialColor);
     }
@@ -348,8 +354,16 @@ internal sealed class TagColorEditor : UserControl
                 normalized,
                 StringComparison.Ordinal))
         {
-            _custom.Text =
-                normalized;
+            _suppressCustomTextChanged = true;
+            try
+            {
+                _custom.Text =
+                    normalized;
+            }
+            finally
+            {
+                _suppressCustomTextChanged = false;
+            }
         }
 
         ApplyNormalizedColor(
@@ -367,8 +381,16 @@ internal sealed class TagColorEditor : UserControl
                     normalized,
                     StringComparison.Ordinal))
             {
-                _custom.Text =
-                    normalized;
+                _suppressCustomTextChanged = true;
+                try
+                {
+                    _custom.Text =
+                        normalized;
+                }
+                finally
+                {
+                    _suppressCustomTextChanged = false;
+                }
             }
 
             ApplyNormalizedColor(
