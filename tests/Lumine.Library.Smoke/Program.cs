@@ -1396,9 +1396,13 @@ try
             work => work.Id == creativeWork.Id)
         && reopenedCreativeContext.GenerationGroups.Any(
             group => group.Id == creativeGroup.Id)
-        && reopenedCreativeContext.Publications.Any(
-            item => item.Id == publication.Id),
-        "Creative archive did not survive database reopen.");
+        && reopenedCreativeContext.PublicationCount
+            == scaleCreativeContext.PublicationCount
+        && reopenedCreativeContext.Publications.Count
+            == LibraryRepository.InspectorPublicationLimit
+        && reopenedCreativeContext.Publications[0].Title
+            == "Scale Publication 000",
+        "Creative archive detail or bounded Inspector context did not survive database reopen.");
 
     var legacyPath = Path.Combine(tempRoot, "legacy-v1.db");
     await CreateLegacyV1DatabaseAsync(legacyPath);
