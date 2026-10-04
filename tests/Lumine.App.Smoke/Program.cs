@@ -1607,6 +1607,20 @@ try
                 && !shell.IsFocusedViewVisible,
                 "Context/focused surfaces should not consume the initial browse workspace.");
 
+            Require(
+                shell.ContextDetail.PublicationCardCountForSmoke == 1
+                && string.Equals(
+                    shell.ContextDetail.PublicationCountTextForSmoke,
+                    "0件",
+                    StringComparison.Ordinal)
+                && string.Join(
+                        "\n",
+                        shell.ContextDetail.PublicationCardTextForSmoke)
+                    .Contains(
+                        "公開履歴はありません",
+                        StringComparison.Ordinal),
+                "Inspector Publication empty state was not explicit and compact.");
+
             shell.GridViewer.SelectAsset(0);
             Dispatcher.UIThread.RunJobs();
             Require(
@@ -1880,11 +1894,39 @@ try
 
             shell.ContextDetail.SelectTabForSmoke(2);
             Dispatcher.UIThread.RunJobs();
+            var publicationCardText =
+                string.Join(
+                    "\n",
+                    shell.ContextDetail
+                        .PublicationCardTextForSmoke);
             Require(
                 shell.ContextDetail.SelectedTabHeader == "公開"
-                && shell.ContextDetail.PublicationsText.Contains(
+                && shell.ContextDetail.PublicationCardCountForSmoke >= 1
+                && !string.Equals(
+                    shell.ContextDetail.PublicationCountTextForSmoke,
+                    "0件",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
                     "App Smoke Publication",
                     StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "snapshot body",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "app-smoke #publication",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "external-smoke",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "https://example.invalid/app-smoke",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "aiGenerated: true",
+                    StringComparison.OrdinalIgnoreCase)
+                && publicationCardText.Contains(
+                    "ageRestriction: all",
+                    StringComparison.OrdinalIgnoreCase)
                 && shell.ContextDetail
                     .GetVisualDescendants()
                     .OfType<Button>()
@@ -1893,7 +1935,7 @@ try
                             button.Content as string,
                             "公開記録を作成",
                             StringComparison.Ordinal)),
-                "Inspector publication context/actions were not isolated under the dedicated 公開 tab.");
+                "Inspector Publication tab did not render rich publication cards while keeping its direct create action.");
 
             var publicationHistory =
                 await shellRuntime.LibraryService.ListPublicationsAsync(
