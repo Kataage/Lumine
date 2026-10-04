@@ -16,8 +16,11 @@ When enabled it captures the required product surfaces below:
 - `browse-1440x900.png`
 - `browse-filter-open-900x600.png`
 - `browse-active-filter-900x600.png`
+- `tags-assignment-1100x720.png`
 - `tags-create-900x600-text225.png`
+- `tags-create-custom-color-900x600-text225.png`
 - `tags-edit-900x600-text225.png`
+- `tags-edit-custom-color-900x600-text225.png`
 - `inspector-900x600.png`
 - `inspector-1440x900-pinned.png`
 - `focused-viewer-900x600.png`
@@ -43,3 +46,5 @@ For now:
 3. the Product Portable real-machine acceptance remains authoritative for final product review.
 
 A golden/tolerance gate can be added later if repeated CI captures demonstrate stable raster output across runner updates.
+
+Tag review must confirm that preset colors remain the default path and the spectrum/HEX editor appears only after explicit custom-color disclosure.
