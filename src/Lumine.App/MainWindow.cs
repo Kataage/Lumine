@@ -1656,9 +1656,9 @@ public sealed class MainWindow : Window
             var confirmed =
                 await ProductDialogs.ConfirmAsync(
                     this,
-                    "永続サムネイルcacheを有効にしますか？",
-                    "表示用サムネイルをLumineのデータフォルダーへ保存します。初回表示後の再利用は速くなりますが、ディスク使用量が増えます。",
-                    "元画像やユーザーメタデータはcacheとは別に管理されます。cacheはいつでも安全に削除できます。",
+                    "サムネイルを次回起動後も再利用しますか？",
+                    "表示用サムネイルをLumineのデータフォルダーへ保存します。次回以降の表示が速くなりますが、ディスク使用量が増えます。",
+                    "元画像や評価・お気に入り・タグなどの整理情報は変更されません。キャッシュはいつでも安全に削除できます。",
                     confirmLabel: "有効にする");
             if (!confirmed)
             {
@@ -1741,8 +1741,10 @@ public sealed class MainWindow : Window
             LumineDesign.MutedForeground;
         _status.Text =
             result.FilesDeleted == 0
-                ? "削除する表示用cacheはありませんでした。"
+                ? "削除する表示用キャッシュはありませんでした。"
                 : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用キャッシュを削除しました。";
+        _ = ClearTransientStatusAsync(
+            _status.Text);
 
         StartNavigationRefresh();
     }
