@@ -1445,7 +1445,7 @@ internal static class ProductNavigationViews
                             edit);
 
                         var remove =
-                            LumineDesign.ConfigureSecondaryButton(
+                            LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
                                     Content = "削除",
@@ -1459,8 +1459,6 @@ internal static class ProductNavigationViews
                                     VerticalAlignment =
                                         VerticalAlignment.Center
                                 });
-                        remove.Foreground =
-                            LumineDesign.Danger;
                         Grid.SetColumn(
                             remove,
                             2);
