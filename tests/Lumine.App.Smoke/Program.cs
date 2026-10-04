@@ -3761,6 +3761,20 @@ try
                             StringComparison.Ordinal),
                         "Manual library rescan recreated the active runtime/shell or failed to report its final state.");
 
+                    for (var attempt = 0;
+                         attempt < 180
+                         && !string.IsNullOrWhiteSpace(
+                             window.StatusTextForSmoke);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(10);
+                    }
+                    Require(
+                        string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Completed rescan status remained permanently over the Browse canvas.");
+
                     // App integration must produce a real virtualized thumbnail
                     // surface before downstream interaction/DPI checks. The
                     // standalone Viewer smoke has the same first-frame gate.
