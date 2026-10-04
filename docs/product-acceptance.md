@@ -61,7 +61,9 @@ Defaults:
 
 The wrapper first runs automated cold/warm NativeAOT acceptance. If that passes, `-InteractiveReview` reopens the same executable using the same acceptance database/data root for normal product use.
 
-The representative library is already registered by the automated phase, so select it from **ライブラリ** and perform the manual review before closing Lumine.
+The Product Acceptance wrapper first verifies that `portable.flag` exists beside the supplied NativeAOT executable. This prevents an artifact that silently falls back to `%LOCALAPPDATA%\Lumine\v2` from passing the product gate.
+
+The representative library is already registered by the automated phase, so select it from **ライブラリ** and perform the manual review before closing Lumine. The wrapper intentionally uses an isolated `LUMINE_DATA_DIR` for this review; the artifact itself remains portable-by-default when launched normally.
 
 After Lumine closes, the wrapper asks the final human-observation questions and writes:
 
