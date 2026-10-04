@@ -3,6 +3,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 namespace Lumine.App;
 
@@ -376,6 +377,130 @@ internal sealed class TagColorEditor : UserControl
 
     internal Color VisualColorForSmoke =>
         _visualPicker.Color;
+
+    internal bool VisualPickerFlyoutOpenForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            return button?.Flyout?.IsOpen
+                == true;
+        }
+    }
+
+    internal bool VisualPickerFlyoutHasSpectrumForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            if (button?.Flyout
+                    is not Flyout
+                    {
+                        Content:
+                            Control content
+                    })
+            {
+                return false;
+            }
+
+            return content
+                .GetVisualDescendants()
+                .OfType<
+                    Avalonia.Controls.Primitives.ColorSpectrum>()
+                .Any(
+                    spectrum =>
+                        spectrum.IsEffectivelyVisible
+                        && spectrum.Bounds.Width > 0
+                        && spectrum.Bounds.Height > 0);
+        }
+    }
+
+    internal bool VisualPickerSpectrumRenderedForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            if (button?.Flyout
+                    is not Flyout
+                    {
+                        Content:
+                            Control content
+                    })
+            {
+                return false;
+            }
+
+            var spectrum =
+                content
+                    .GetVisualDescendants()
+                    .OfType<
+                        Avalonia.Controls.Primitives.ColorSpectrum>()
+                    .FirstOrDefault();
+            if (spectrum is null)
+            {
+                return false;
+            }
+
+            spectrum.ApplyTemplate();
+            var spectrumRectangle =
+                spectrum
+                    .GetVisualDescendants()
+                    .OfType<
+                        Avalonia.Controls.Shapes.Rectangle>()
+                    .FirstOrDefault(
+                        rectangle =>
+                            string.Equals(
+                                rectangle.Name,
+                                "PART_SpectrumRectangle",
+                                StringComparison.Ordinal));
+
+            return spectrumRectangle?.Fill
+                is ImageBrush;
+        }
+    }
+
+    internal void OpenVisualPickerForSmoke()
+    {
+        _visualPicker.ApplyTemplate();
+        var button =
+            _visualPicker
+                .GetVisualDescendants()
+                .OfType<DropDownButton>()
+                .SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                "ColorPicker drop-down button was not realized.");
+
+        if (button.Flyout?.IsOpen
+            == true)
+        {
+            return;
+        }
+
+        button.Flyout?.ShowAt(
+            button);
+    }
+
+    internal void CloseVisualPickerForSmoke()
+    {
+        var button =
+            _visualPicker
+                .GetVisualDescendants()
+                .OfType<DropDownButton>()
+                .SingleOrDefault();
+        button?.Flyout?.Hide();
+    }
 
     internal void SetVisualColorForSmoke(
         Color value)

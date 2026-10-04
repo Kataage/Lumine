@@ -142,7 +142,16 @@ jobs:
         run: dotnet run --project tests/Lumine.Image.Smoke/Lumine.Image.Smoke.csproj -c Release --no-build
 
       - name: App Detail adapter smoke test
-        run: dotnet run --project tests/Lumine.App.Smoke/Lumine.App.Smoke.csproj -c Release --no-build
+        run: dotnet run --project tests/Lumine.App.Smoke/Lumine.App.Smoke.csproj -c Release --no-build -- --visual-output=artifacts/visual-regression
+
+      - name: Upload UI visual regression evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-ui-visual-evidence-${{ github.run_id }}
+          path: artifacts/visual-regression/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Windows filesystem sync smoke test
         run: dotnet run --project tests/Lumine.Filesystem.Smoke/Lumine.Filesystem.Smoke.csproj -c Release --no-build
