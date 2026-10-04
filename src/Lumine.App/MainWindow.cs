@@ -514,6 +514,19 @@ public sealed class MainWindow : Window
                 recovered: false);
     }
 
+    internal void PresentRecoverableErrorForSmoke(
+        string message)
+    {
+        _productShellState =
+            "Error";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateLibraryOpenFailureState(
+                new InvalidOperationException(
+                    message));
+    }
+
     internal void NavigateForSmoke(
         string destination) =>
         OnNavigationRequested(
