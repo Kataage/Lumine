@@ -294,6 +294,30 @@ try
         concurrentTechnicalResults.All(static updated => updated),
         "Concurrent technical metadata persistence rejected a current source revision.");
 
+    await using (var transactionProbe =
+                 new SqliteConnection(
+                     "Data Source=:memory:;Pooling=False"))
+    {
+        await transactionProbe.OpenAsync();
+        using var outer =
+            transactionProbe.BeginTransaction();
+        try
+        {
+            using var second =
+                transactionProbe.BeginTransaction();
+            throw new InvalidOperationException(
+                "SQLite unexpectedly accepted a second active transaction.");
+        }
+        catch (SqliteException exception)
+        {
+            Require(
+                LibraryRepository
+                    .IsRecoverableNestedTransactionStateForSmoke(
+                        exception),
+                "Transaction-state recovery classifier rejected SQLite's nested-transaction error.");
+        }
+    }
+
 
     var userMetadata = await repository.SetUserMetadataAsync(
         library.Id,
