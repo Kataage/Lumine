@@ -76,6 +76,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 Interlocked.Read(ref _maxLatencyBits)),
             Volatile.Read(ref _queueDepth));
 
+    // Manual reconciliation shares the same mutation gate as watcher
+    // batches so an explicit re-scan cannot race incremental DB updates.
     public async Task<LibraryReconcileResult> ReconcileNowAsync(
         CancellationToken cancellationToken = default)
     {
