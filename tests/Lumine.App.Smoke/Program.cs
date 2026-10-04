@@ -1784,6 +1784,8 @@ try
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-create-900x600-text225");
+                compactColorEditor.CloseVisualPickerForSmoke();
+                Dispatcher.UIThread.RunJobs();
 
                 foreach (var navigationWidth in
                          new[]
@@ -1977,6 +1979,8 @@ try
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-edit-900x600-text225");
+                editColor.CloseVisualPickerForSmoke();
+                Dispatcher.UIThread.RunJobs();
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
