@@ -5019,12 +5019,28 @@ try
                         // The Viewer intentionally fades idle chrome, but
                         // acceptance evidence must show the discoverable
                         // controls a first-time user sees on entry.
-                        window.CurrentShell
-                            .RevealFocusedViewerChromeForSmoke();
+                        var detailViewerType =
+                            window.CurrentShell.DetailViewer.GetType();
+                        detailViewerType
+                            .GetMethod(
+                                "RevealChromeForSmoke",
+                                System.Reflection.BindingFlags.Instance
+                                | System.Reflection.BindingFlags.NonPublic)
+                            ?.Invoke(
+                                window.CurrentShell.DetailViewer,
+                                null);
                         Dispatcher.UIThread.RunJobs();
+                        var chromeVisible =
+                            detailViewerType
+                                .GetProperty(
+                                    "IsChromeVisibleForSmoke",
+                                    System.Reflection.BindingFlags.Instance
+                                    | System.Reflection.BindingFlags.NonPublic)
+                                ?.GetValue(
+                                    window.CurrentShell.DetailViewer)
+                            as bool?;
                         Require(
-                            window.CurrentShell
-                                .IsFocusedViewerChromeVisibleForSmoke,
+                            chromeVisible == true,
                             "Focused Viewer acceptance evidence did not expose its primary command chrome.");
                         CaptureVisualEvidence(
                             window,
