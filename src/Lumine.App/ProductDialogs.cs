@@ -46,7 +46,8 @@ internal static class ProductDialogs
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = cancelLabel
+                    Content = cancelLabel,
+                    IsCancel = true
                 });
         cancel.Click +=
             (_, _) => dialog.Close(false);
@@ -56,12 +57,14 @@ internal static class ProductDialogs
                 ? LumineDesign.ConfigureDangerButton(
                     new Button
                     {
-                        Content = confirmLabel
+                        Content = confirmLabel,
+                        IsDefault = true
                     })
                 : LumineDesign.ConfigurePrimaryButton(
                     new Button
                     {
-                        Content = confirmLabel
+                        Content = confirmLabel,
+                        IsDefault = true
                     });
         confirm.Click +=
             (_, _) => dialog.Close(true);
@@ -112,7 +115,9 @@ internal static class ProductDialogs
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = buttonLabel
+                    Content = buttonLabel,
+                    IsDefault = true,
+                    IsCancel = true
                 });
         close.Click +=
             (_, _) => dialog.Close();
