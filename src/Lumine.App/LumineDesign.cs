@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -260,6 +261,32 @@ internal static class LumineDesign
         button.BorderBrush = Border;
         button.BorderThickness = new Thickness(1);
         ConfigureNeutralButtonStateResources(button);
+        return button;
+    }
+
+    public static Button ConfigureDangerButton(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+
+        button.MinHeight = CompactControlHeight;
+        button.Padding =
+            new Thickness(Space12, Space6);
+        button.FontSize = CaptionFontSize;
+        button.CornerRadius =
+            new CornerRadius(ControlRadius);
+        button.Background =
+            new SolidColorBrush(
+                DangerColor,
+                0.10);
+        button.Foreground = Danger;
+        button.BorderBrush = Danger;
+        button.BorderThickness =
+            new Thickness(1);
+        button.FontWeight =
+            FontWeight.SemiBold;
+        ConfigureDangerButtonStateResources(
+            button);
         return button;
     }
 
@@ -683,14 +710,21 @@ internal static class LumineDesign
             {
                 Spacing = 5
             };
+        var destinationButtons =
+            new List<Button>(
+                NavigationItems.Count);
 
         for (var index = 0;
              index < NavigationItems.Count - 1;
              index++)
         {
-            stack.Children.Add(
+            var destination =
                 CreateDestinationButton(
-                    NavigationItems[index]));
+                    NavigationItems[index]);
+            destinationButtons.Add(
+                destination);
+            stack.Children.Add(
+                destination);
         }
 
         var content =
@@ -716,9 +750,46 @@ internal static class LumineDesign
         var settings =
             CreateDestinationButton(
                 NavigationItems[^1]);
+        destinationButtons.Add(
+            settings);
         settings.Margin = new Thickness(6, 4, 6, 8);
         Grid.SetRow(settings, 2);
         content.Children.Add(settings);
+
+        for (var index = 0;
+             index < destinationButtons.Count;
+             index++)
+        {
+            var currentIndex = index;
+            destinationButtons[index].KeyDown +=
+                (_, args) =>
+                {
+                    var target =
+                        args.Key switch
+                        {
+                            Key.Up =>
+                                Math.Max(
+                                    0,
+                                    currentIndex - 1),
+                            Key.Down =>
+                                Math.Min(
+                                    destinationButtons.Count - 1,
+                                    currentIndex + 1),
+                            Key.Home => 0,
+                            Key.End =>
+                                destinationButtons.Count - 1,
+                            _ => currentIndex
+                        };
+                    if (target == currentIndex)
+                    {
+                        return;
+                    }
+
+                    destinationButtons[target]
+                        .Focus();
+                    args.Handled = true;
+                };
+        }
 
         return new Border
         {
