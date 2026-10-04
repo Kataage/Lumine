@@ -280,19 +280,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
 
         _pin =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "固定",
-                    MinHeight = 28,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space2)
-                });
-        ToolTip.SetTip(
-            _pin,
-            "詳細パネルを画像一覧の横に固定");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.PinIconPath,
+                            16)
+                },
+                "詳細パネルをサイドに固定");
         _pin.Click +=
             (_, _) =>
                 PinToggleRequested?.Invoke(
@@ -837,23 +833,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     {
         _pin.IsVisible = available;
         _pin.IsEnabled = available;
-        _pin.Content =
-            pinned
-                ? "固定中"
-                : "固定";
         _pin.Background =
             pinned
-                ? LumineDesign.AccentMuted
-                : LumineDesign.ControlSurface;
+                ? LumineDesign.InteractionSelected
+                : Brushes.Transparent;
         _pin.BorderBrush =
             pinned
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
         ToolTip.SetTip(
             _pin,
             pinned
-                ? "固定を解除して画像一覧の上に重ねる"
-                : "詳細パネルを画像一覧の横に固定");
+                ? "詳細パネルの固定を解除"
+                : "詳細パネルをサイドに固定");
+        AutomationProperties.SetName(
+            _pin,
+            pinned
+                ? "詳細パネルの固定を解除"
+                : "詳細パネルをサイドに固定");
     }
 
     internal int SelectedTabIndex =>
