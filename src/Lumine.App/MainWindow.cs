@@ -438,6 +438,7 @@ public sealed class MainWindow : Window
 
         Opened += OnOpened;
         Closing += OnClosing;
+        KeyDown += OnMainWindowKeyDown;
     }
 
     internal CoreViewerRuntime? CurrentRuntime =>
@@ -2752,6 +2753,27 @@ public sealed class MainWindow : Window
             {
                 _diagnosticsWindow = null;
             }
+        }
+    }
+
+    private void OnMainWindowKeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        if (e.Handled
+            || _lightboxHost.IsVisible)
+        {
+            return;
+        }
+
+        if (e.Key == Key.F
+            && e.KeyModifiers.HasFlag(
+                KeyModifiers.Control)
+            && _browseControls is not null
+            && !_workspacePageHost.IsVisible)
+        {
+            _browseControls.FocusSearch();
+            e.Handled = true;
         }
     }
 
