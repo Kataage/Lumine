@@ -1294,6 +1294,7 @@ try
                     Array.Empty<string>(),
                     static _ => Task.CompletedTask,
                     static (_, _) => Task.CompletedTask,
+                    static (_, _, _) => Task.CompletedTask,
                     static _ => Task.CompletedTask);
             scaleWindow =
                 new Window
@@ -1538,6 +1539,9 @@ try
                     2.25);
 
                 string? createdTagColor = null;
+                long? editedTagId = null;
+                string? editedTagName = null;
+                string? editedTagColor = null;
                 var compactTags =
                     new[]
                     {
@@ -1560,6 +1564,22 @@ try
                         (_, color) =>
                         {
                             createdTagColor = color;
+                            return Task.CompletedTask;
+                        },
+                        (tag, name, color) =>
+                        {
+                            if (string.Equals(
+                                    name,
+                                    "collision",
+                                    StringComparison.Ordinal))
+                            {
+                                throw new InvalidOperationException(
+                                    "Tag 'collision' already exists.");
+                            }
+
+                            editedTagId = tag.Id;
+                            editedTagName = name;
+                            editedTagColor = color;
                             return Task.CompletedTask;
                         },
                         static _ => Task.CompletedTask);
@@ -1768,6 +1788,159 @@ try
                         Button.ClickEvent));
                 Dispatcher.UIThread.RunJobs();
 
+                var editButton =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "編集",
+                                    StringComparison.Ordinal));
+                Require(
+                    !editButton
+                        .GetVisualAncestors()
+                        .OfType<Button>()
+                        .Any(),
+                    "Tag manage mode nested the edit command inside another Button.");
+
+                var editFlyout =
+                    editButton.Flyout as Flyout
+                    ?? throw new InvalidOperationException(
+                        "Tag edit command did not own a Flyout.");
+                editFlyout.ShowAt(
+                    editButton);
+                Dispatcher.UIThread.RunJobs();
+
+                var editSurface =
+                    editFlyout.Content as Border
+                    ?? throw new InvalidOperationException(
+                        "Tag edit Flyout did not expose the expected product surface.");
+                var editName =
+                    editSurface
+                        .GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .First(
+                            box =>
+                                string.Equals(
+                                    box.PlaceholderText,
+                                    "タグ名",
+                                    StringComparison.Ordinal));
+                var editColor =
+                    editSurface
+                        .GetVisualDescendants()
+                        .OfType<TagColorEditor>()
+                        .Single();
+                var saveEdit =
+                    editSurface
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "保存",
+                                    StringComparison.Ordinal));
+                var cancelEdit =
+                    editSurface
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "キャンセル",
+                                    StringComparison.Ordinal));
+
+                Require(
+                    editFlyout.IsOpen
+                    && editName.Text
+                        == compactTags[0].Name
+                    && editColor.SelectedColor
+                        == compactTags[0].Color
+                    && editSurface
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Any(
+                            block =>
+                                string.Equals(
+                                    block.Text,
+                                    "123件の画像で使用",
+                                    StringComparison.Ordinal)),
+                    "Tag edit Flyout did not prefill the current name/color/count.");
+
+                editName.Text =
+                    "renamed-long-tag";
+                editColor.SetCustomTextForSmoke(
+                    "#abcdef80");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    saveEdit.IsEnabled,
+                    "Tag edit save did not enable for a valid renamed tag/color.");
+
+                saveEdit.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                for (var attempt = 0;
+                     attempt < 50
+                     && editedTagName is null;
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+                Require(
+                    editedTagId == compactTags[0].Id
+                    && editedTagName
+                        == "renamed-long-tag"
+                    && editedTagColor
+                        == "#abcdef80"
+                    && !editFlyout.IsOpen,
+                    "Tag edit did not submit the current tag identity/name/color and dismiss on success.");
+
+                editFlyout.ShowAt(
+                    editButton);
+                Dispatcher.UIThread.RunJobs();
+                editName.Text =
+                    "collision";
+                Dispatcher.UIThread.RunJobs();
+                saveEdit.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                for (var attempt = 0;
+                     attempt < 50
+                     && !editSurface
+                         .GetVisualDescendants()
+                         .OfType<TextBlock>()
+                         .Any(
+                             block =>
+                                 block.Text?.Contains(
+                                     "保存できませんでした。",
+                                     StringComparison.Ordinal)
+                                 == true);
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+                Require(
+                    editFlyout.IsOpen
+                    && editSurface
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Any(
+                            block =>
+                                block.Text?.Contains(
+                                    "already exists",
+                                    StringComparison.Ordinal)
+                                == true),
+                    "Tag edit failure did not remain local, visible, and retryable.");
+                cancelEdit.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+
                 var removeButton =
                     compactTagsView
                         .GetVisualDescendants()
@@ -1813,6 +1986,39 @@ try
                             <= compactTagsView.Bounds.Width + 0.5,
                         $"Tag manage row overflowed at {navigationWidth:N0} DIP / 225% text scale.");
                 }
+
+                BrowseFilterState? renamedScopeState = null;
+                var scopeControls =
+                    new BrowseWorkspaceControls(
+                        new BrowseFilterState(
+                            RequiredTags:
+                                ["short"]),
+                        new BrowsePreferences(
+                            BrowseViewMode.Grid,
+                            1,
+                            AssetSortOrder.ModifiedNewest),
+                        compactTags,
+                        new LibraryBrowseFacets(
+                            Array.Empty<string>(),
+                            Array.Empty<string>()),
+                        state =>
+                        {
+                            renamedScopeState = state;
+                            return Task.CompletedTask;
+                        },
+                        static _ => Task.CompletedTask);
+                await scopeControls.ReplaceTagScopeAsync(
+                    "SHORT",
+                    "renamed-short");
+                Require(
+                    scopeControls.State.TagNames.SequenceEqual(
+                        ["renamed-short"],
+                        StringComparer.Ordinal)
+                    && renamedScopeState is not null
+                    && renamedScopeState.TagNames.SequenceEqual(
+                        ["renamed-short"],
+                        StringComparer.Ordinal),
+                    "Active Browse tag scope was not replaced case-insensitively after rename.");
 
                 compactTagsWindow.Close();
                 Dispatcher.UIThread.RunJobs();

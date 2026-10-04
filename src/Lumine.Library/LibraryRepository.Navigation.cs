@@ -304,9 +304,7 @@ public sealed partial class LibraryRepository
                 $name_key,
                 $color,
                 $created)
-            ON CONFLICT(library_id, name_key) DO UPDATE SET
-                name = excluded.name,
-                color = excluded.color
+            ON CONFLICT(library_id, name_key) DO NOTHING
             RETURNING id, name, color;
             """;
         command.Parameters.AddWithValue(
@@ -332,7 +330,7 @@ public sealed partial class LibraryRepository
                 .ConfigureAwait(false))
         {
             throw new InvalidOperationException(
-                "Tag creation returned no row.");
+                $"Tag '{tag.Name}' already exists.");
         }
 
         return new LibraryTagInfo(
@@ -340,6 +338,168 @@ public sealed partial class LibraryRepository
             reader.GetString(1),
             reader.GetString(2),
             0);
+    }
+
+    public async Task<LibraryTagInfo> UpdateTagAsync(
+        long libraryId,
+        long tagId,
+        string name,
+        string color,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tagId);
+
+        var normalized =
+            NormalizeTags([name]);
+        if (normalized.Length != 1)
+        {
+            throw new ArgumentException(
+                "Tag name is required.",
+                nameof(name));
+        }
+
+        var tag = normalized[0];
+        var normalizedColor =
+            NormalizeTagColor(color);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+
+        string currentName;
+        await using (var current =
+            connection.CreateCommand())
+        {
+            current.Transaction = transaction;
+            current.CommandText =
+                """
+                SELECT name
+                FROM tags
+                WHERE library_id = $library_id
+                  AND id = $tag_id;
+                """;
+            current.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            current.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+
+            var value =
+                await current.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            currentName =
+                value as string
+                ?? throw new InvalidOperationException(
+                    $"Tag {tagId} does not belong to library {libraryId}.");
+        }
+
+        var affectedAssetIds =
+            new List<long>();
+        await using (var affected =
+            connection.CreateCommand())
+        {
+            affected.Transaction = transaction;
+            affected.CommandText =
+                """
+                SELECT asset_id
+                FROM asset_tags
+                WHERE tag_id = $tag_id
+                ORDER BY asset_id;
+                """;
+            affected.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+
+            await using var reader =
+                await affected.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                affectedAssetIds.Add(
+                    reader.GetInt64(0));
+            }
+        }
+
+        LibraryTagInfo updated;
+        await using (var command =
+            connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE tags
+                SET name = $name,
+                    name_key = $name_key,
+                    color = $color
+                WHERE library_id = $library_id
+                  AND id = $tag_id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM tags AS other_tag
+                      WHERE other_tag.library_id = $library_id
+                        AND other_tag.name_key = $name_key
+                        AND other_tag.id <> $tag_id
+                  )
+                RETURNING id, name, color;
+                """;
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            command.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+            command.Parameters.AddWithValue(
+                "$name",
+                tag.Name);
+            command.Parameters.AddWithValue(
+                "$name_key",
+                tag.Key);
+            command.Parameters.AddWithValue(
+                "$color",
+                normalizedColor);
+
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                throw new InvalidOperationException(
+                    $"Tag '{tag.Name}' already exists.");
+            }
+
+            updated =
+                new LibraryTagInfo(
+                    reader.GetInt64(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    affectedAssetIds.Count);
+        }
+
+        if (!string.Equals(
+                currentName,
+                updated.Name,
+                StringComparison.Ordinal))
+        {
+            foreach (var assetId in affectedAssetIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await ReindexAssetOnConnectionAsync(
+                    connection,
+                    transaction,
+                    libraryId,
+                    assetId,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        transaction.Commit();
+        return updated;
     }
 
     public async Task<bool> DeleteTagAsync(

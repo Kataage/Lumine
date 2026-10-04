@@ -1529,6 +1529,18 @@ internal sealed class CoreViewerShell : UserControl
         };
     }
 
+    internal async Task SyncTagConsumersAsync()
+    {
+        await RefreshBulkTagChoicesAsync();
+
+        if (_contextSurface.IsVisible
+            && _grid.SelectedAssetIndex >= 0)
+        {
+            await LoadContextDetailAsync(
+                _grid.SelectedAssetIndex);
+        }
+    }
+
     private async Task RefreshBulkTagChoicesAsync()
     {
         try
