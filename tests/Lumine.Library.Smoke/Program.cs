@@ -985,6 +985,71 @@ try
             == first.RelativePath,
         "Publication history did not preserve file/path snapshot after the original asset row was deleted.");
 
+    Require(
+        LibraryRepository.MaxTagListLimit == 10_000,
+        "Product tag-list limit drifted from the 10k navigation acceptance contract.");
+
+    await using (var scaleTagConnection =
+                 new SqliteConnection(
+                     $"Data Source={databasePath};Pooling=False"))
+    {
+        await scaleTagConnection.OpenAsync();
+        await using var scaleTagInsert =
+            scaleTagConnection.CreateCommand();
+        scaleTagInsert.CommandText =
+            """
+            WITH RECURSIVE sequence(value) AS (
+                SELECT 0
+                UNION ALL
+                SELECT value + 1
+                FROM sequence
+                WHERE value < 599
+            )
+            INSERT INTO tags(
+                library_id,
+                name,
+                name_key,
+                color,
+                created_at_utc_ticks)
+            SELECT
+                $library_id,
+                printf('scale-tag-%04d', value),
+                printf('SCALE-TAG-%04d', value),
+                '#123456',
+                $created
+            FROM sequence;
+            """;
+        scaleTagInsert.Parameters.AddWithValue(
+            "$library_id",
+            library.Id);
+        scaleTagInsert.Parameters.AddWithValue(
+            "$created",
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+        Require(
+            await scaleTagInsert.ExecuteNonQueryAsync() == 600,
+            "High-count tag fixture insert did not create 600 tags.");
+    }
+
+    var productionScaleTags =
+        await repository.ListTagsAsync(
+            library.Id);
+    Require(
+        productionScaleTags.Count > 512
+        && productionScaleTags.Any(
+            static tag =>
+                tag.Name == "scale-tag-0599"
+                && tag.Color == "#123456"),
+        "Default production tag listing still truncates at the former 512-tag boundary.");
+
+    var tailTagSearch =
+        await repository.ListTagsAsync(
+            library.Id,
+            "scale-tag-0599");
+    Require(
+        tailTagSearch.Count == 1
+        && tailTagSearch[0].Name == "scale-tag-0599",
+        "DB-backed tag search could not discover a tag beyond the former 512-tag window.");
+
     const int fixtureCount = 2500;
     const int batchSize = 250;
     var batch = new List<AssetUpsert>(batchSize);
