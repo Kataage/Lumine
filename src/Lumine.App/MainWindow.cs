@@ -2915,7 +2915,10 @@ public sealed class MainWindow : Window
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
             "条件を解除するか、フィルターを見直してください。",
-            actions);
+            new Border
+            {
+                Child = actions
+            });
     }
 
     private Control CreateLoadingLibraryState(
