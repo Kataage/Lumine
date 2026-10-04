@@ -16,7 +16,20 @@ internal enum CoreViewerOpenStage
 
 internal sealed record CoreViewerOpenProgress(
     CoreViewerOpenStage Stage,
-    string Message);
+    string Message,
+    LibraryScanProgress? ScanProgress = null);
+
+internal sealed class InlineLibraryScanProgress(
+    Action<LibraryScanProgress> report)
+    : IProgress<LibraryScanProgress>
+{
+    private readonly Action<LibraryScanProgress> _report =
+        report ?? throw new ArgumentNullException(nameof(report));
+
+    public void Report(
+        LibraryScanProgress value) =>
+        _report(value);
+}
 
 internal sealed class CoreViewerRuntime : IAsyncDisposable
 {
@@ -152,6 +165,17 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                     ? "Indexing library for first use…"
                     : "Synchronizing library changes…"));
 
+        var fullScanProgress =
+            progress is null
+                ? null
+                : new InlineLibraryScanProgress(
+                    scan =>
+                        progress.Report(
+                            new CoreViewerOpenProgress(
+                                CoreViewerOpenStage.SynchronizingLibrary,
+                                "Synchronizing library…",
+                                scan)));
+
         WindowsLibrarySyncSession? syncSession = null;
         ThumbnailPipeline? pipeline = null;
         CursorPagedViewerAssetProvider? assetProvider = null;
@@ -163,7 +187,8 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
             syncSession =
                 await libraryService.StartWindowsSyncAsync(
                     library.Id,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    fullScanProgress).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 
