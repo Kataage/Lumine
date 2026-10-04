@@ -2089,19 +2089,22 @@ try
                     .GetVisualDescendants()
                     .OfType<ManagedTagPicker>()
                     .Single();
+            inspectorTagPicker.SetSearchForSmoke(
+                "__inspector_custom_tag__");
+            Dispatcher.UIThread.RunJobs();
+
             var inspectorTagColorEditor =
                 inspectorTagPicker
                     .GetVisualDescendants()
                     .OfType<TagColorEditor>()
                     .Single();
             Require(
-                inspectorTagColorEditor
+                inspectorTagPicker.CreateSurfaceVisibleForSmoke
+                && inspectorTagColorEditor
                     .GetVisualDescendants()
                     .OfType<ColorPicker>()
                     .Count() == 1,
                 "Inspector tag creation did not expose the shared visual ColorPicker.");
-            inspectorTagPicker.SetSearchForSmoke(
-                "__inspector_custom_tag__");
             inspectorTagColorEditor.SetCustomTextForSmoke(
                 "invalid");
             Dispatcher.UIThread.RunJobs();
