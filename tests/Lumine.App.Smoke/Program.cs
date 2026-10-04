@@ -1403,8 +1403,8 @@ try
                     .OfType<Button>()
                     .First(button =>
                         string.Equals(
-                            button.Content as string,
-                            "▶",
+                            AutomationProperties.GetName(button),
+                            "root を開く",
                             StringComparison.Ordinal));
             rootDisclosure.RaiseEvent(
                 new RoutedEventArgs(
@@ -1421,8 +1421,8 @@ try
                     .OfType<Button>()
                     .First(button =>
                         string.Equals(
-                            button.Content as string,
-                            "▶",
+                            AutomationProperties.GetName(button),
+                            "a を開く",
                             StringComparison.Ordinal));
             nestedDisclosure.RaiseEvent(
                 new RoutedEventArgs(
