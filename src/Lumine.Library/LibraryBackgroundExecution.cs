@@ -468,8 +468,12 @@ public sealed class LibraryService
 
     public Task<WindowsLibrarySyncSession> StartWindowsSyncAsync(
         long libraryId,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        IProgress<LibraryScanProgress>? progress = null) =>
         LibraryBackgroundExecution.RunAsync(
-            token => _syncService.StartAsync(libraryId, token),
+            token => _syncService.StartAsync(
+                libraryId,
+                token,
+                progress),
             cancellationToken);
 }
