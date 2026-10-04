@@ -3468,6 +3468,39 @@ try
                             StringComparison.Ordinal),
                         $"Fresh MainWindow did not start in the branded Welcome state: {window.ProductShellState}.");
 
+                    var dialogSize =
+                        ProductDialogs.ResolveDialogSizeForSmoke(
+                            340);
+                    Require(
+                        dialogSize.Width
+                            is >= 500 and <= 640
+                        && dialogSize.Height
+                            is >= 340 and <= 520,
+                        $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
+
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "welcome-1440x900");
+                        window.PresentLoadingStateForSmoke(
+                            "ライブラリを走査中… 検出 1,248 · 登録 1,104");
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            string.Equals(
+                                window.ProductShellState,
+                                "Loading",
+                                StringComparison.Ordinal)
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "Loading state duplicated its central progress through the transient status banner.");
+                        CaptureVisualEvidence(
+                            window,
+                            "loading-1440x900");
+                        window.PresentWelcomeStateForSmoke();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     if (iteration == 0)
                     {
                         var retryableMissingRoot =
@@ -3522,8 +3555,10 @@ try
                                         "別の画像フォルダーを選ぶ",
                                         StringComparison.Ordinal))
                             && errorDetail is
-                                { IsExpanded: false },
-                            "Library-open failure did not expose local retry/reselect recovery actions with secondary technical detail.");
+                                { IsExpanded: false }
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "Library-open failure did not expose local retry/reselect recovery actions with secondary technical detail or duplicated its central error in the status banner.");
 
                         CaptureVisualEvidence(
                             window,
@@ -3776,8 +3811,36 @@ try
                             .GridViewer
                             .SelectedAssetIndex == -1
                         && !window.CurrentShell
-                            .IsContextDetailVisible,
-                        "Filtered zero-result query replaced the Viewer shell or kept stale selection/Inspector state.");
+                            .IsContextDetailVisible
+                        && window.CurrentShell
+                            .IsNoMatchStateVisibleForSmoke
+                        && string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Filtered zero-result query replaced the Viewer shell, kept stale selection/Inspector state, or duplicated No Match in the status banner.");
+
+                    var reviewFilters =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "フィルターを見直す",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "No Match did not expose a direct filter-review action.");
+                    reviewFilters.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.BrowseControlsForSmoke is not null
+                        && window.BrowseControlsForSmoke
+                            .FilterFlyoutIsOpenForSmoke,
+                        "No Match filter-review action did not open the existing Browse filter surface directly.");
+                    window.BrowseControlsForSmoke
+                        .CloseFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
 
                     if (iteration == 0)
                     {
@@ -3786,13 +3849,28 @@ try
                             "no-match-1440x900");
                     }
 
-                    await window.ApplyBrowseFilterForSmokeAsync(
-                        new BrowseFilterState(
-                            SortOrder:
-                                window.SettingsSnapshot
-                                    .ViewerDefaults
-                                    .SortOrder));
-                    Dispatcher.UIThread.RunJobs();
+                    var clearNoMatch =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "条件をすべて解除",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "No Match did not expose a direct clear action.");
+                    clearNoMatch.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    for (var attempt = 0;
+                         attempt < 100
+                         && window.CurrentRuntime!.AssetCount == 0;
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
                     Require(
                         string.Equals(
                             window.ProductShellState,
@@ -3805,8 +3883,10 @@ try
                         && ReferenceEquals(
                             window.CurrentShell.GridViewer,
                             gridBeforeQueryChange)
-                        && window.CurrentRuntime!.AssetCount > 0,
-                        "Clearing the no-match filter rebuilt the Viewer shell/control instead of restoring data in place.");
+                        && window.CurrentRuntime!.AssetCount > 0
+                        && !window.CurrentShell
+                            .IsNoMatchStateVisibleForSmoke,
+                        "Clearing No Match from its primary recovery action rebuilt the Viewer shell/control or failed to restore data in place.");
 
                     await window.OpenLibraryAsync(
                         repeatedEmptyLibraryRoot);
@@ -3817,8 +3897,17 @@ try
                             "EmptyLibrary",
                             StringComparison.Ordinal)
                         && window.CurrentRuntime is not null
-                        && window.CurrentShell is null,
-                        "Truly empty library did not use the EmptyLibrary product state.");
+                        && window.CurrentShell is null
+                        && string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Truly empty library did not use the EmptyLibrary product state or duplicated its empty message in the status banner.");
+
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "empty-library-1440x900");
+                    }
 
                     await window.OpenLibraryAsync(
                         repeatedLibraryRoot);
@@ -4681,6 +4770,8 @@ try
         var expectedVisualEvidence =
             new[]
             {
+                "welcome-1440x900",
+                "loading-1440x900",
                 "browse-900x600",
                 "browse-1440x900",
                 "browse-filter-open-900x600",
@@ -4699,6 +4790,7 @@ try
                 "settings-1440x900",
                 "settings-advanced-1440x900",
                 "settings-900x600",
+                "empty-library-1440x900",
                 "no-match-1440x900",
                 "error-1440x900"
             };
