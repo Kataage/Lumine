@@ -2573,6 +2573,31 @@ try
                         Path.DirectorySeparatorChar),
                     StringComparison.OrdinalIgnoreCase),
                 "Contextual detail panel did not expose image/path context.");
+
+            var inspectorFieldNames =
+                shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Control>()
+                    .Select(
+                        AutomationProperties.GetName)
+                    .Where(
+                        static name =>
+                            !string.IsNullOrWhiteSpace(name))
+                    .ToHashSet(
+                        StringComparer.Ordinal);
+            Require(
+                new[]
+                {
+                    "評価",
+                    "お気に入り",
+                    "状態",
+                    "タグ",
+                    "カラー",
+                    "ノート"
+                }.All(
+                    inspectorFieldNames.Contains),
+                "Inspector visual field labels are not exposed as accessible editor names.");
+
             Require(
                 shell.ContextDetail.RatingText == "★5"
                 && shell.ContextDetail.TagsText.Contains(
@@ -4020,6 +4045,23 @@ try
                                         StringComparison.Ordinal))
                         ?? throw new InvalidOperationException(
                             "Product Settings did not expose the advanced performance/cache disclosure.");
+
+                    var settingsFieldNames =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<ComboBox>()
+                            .Select(
+                                AutomationProperties.GetName)
+                            .Where(
+                                static name =>
+                                    !string.IsNullOrWhiteSpace(name))
+                            .ToHashSet(
+                                StringComparer.Ordinal);
+                    Require(
+                        settingsFieldNames.Contains("表示")
+                        && settingsFieldNames.Contains("密度")
+                        && settingsFieldNames.Contains("並び順"),
+                        "Visible Settings fields lost accessible names tied to their visual labels.");
 
                     Require(
                         settingsText.Any(block =>
