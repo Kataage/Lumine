@@ -1462,10 +1462,14 @@ try
                             return Task.CompletedTask;
                         },
                         static _ => Task.CompletedTask);
+                compactTagsView.Width = 300;
+                compactTagsView.HorizontalAlignment =
+                    HorizontalAlignment.Left;
+
                 var compactTagsWindow =
                     new Window
                     {
-                        Width = 300,
+                        Width = 900,
                         Height = 520,
                         Content = compactTagsView
                     };
@@ -1496,13 +1500,31 @@ try
                                     button.Content as string,
                                     "＋ 新規",
                                     StringComparison.Ordinal));
+                var compactTagList =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<ListBox>()
+                        .Single();
+                var compactCreateFlyout =
+                    newTagButton.Flyout as Flyout
+                    ?? throw new InvalidOperationException(
+                        "Top-level tag create command did not own a Flyout.");
+
                 newTagButton.RaiseEvent(
                     new RoutedEventArgs(
                         Button.ClickEvent));
                 Dispatcher.UIThread.RunJobs();
 
+                Require(
+                    compactCreateFlyout.IsOpen,
+                    "Top-level tag create command did not open its anchored Flyout.");
+
+                var compactCreateSurface =
+                    compactCreateFlyout.Content as Border
+                    ?? throw new InvalidOperationException(
+                        "Tag create Flyout did not expose the expected product surface.");
                 var compactCreateName =
-                    compactTagsView
+                    compactCreateSurface
                         .GetVisualDescendants()
                         .OfType<TextBox>()
                         .First(
@@ -1512,7 +1534,7 @@ try
                                     "新しいタグ名",
                                     StringComparison.Ordinal));
                 var compactColorEditor =
-                    compactTagsView
+                    compactCreateSurface
                         .GetVisualDescendants()
                         .OfType<TagColorEditor>()
                         .Single();
@@ -1521,9 +1543,9 @@ try
                         .GetVisualDescendants()
                         .OfType<ColorPicker>()
                         .Count() == 1,
-                    "Top-level tag create form did not expose exactly one visual ColorPicker.");
+                    "Top-level tag create Flyout did not expose exactly one visual ColorPicker.");
                 var compactCreateButton =
-                    compactTagsView
+                    compactCreateSurface
                         .GetVisualDescendants()
                         .OfType<Button>()
                         .First(
@@ -1532,21 +1554,6 @@ try
                                     button.Content as string,
                                     "作成",
                                     StringComparison.Ordinal));
-                var createHeading =
-                    compactTagsView
-                        .GetVisualDescendants()
-                        .OfType<TextBlock>()
-                        .First(
-                            block =>
-                                string.Equals(
-                                    block.Text,
-                                    "タグを作成",
-                                    StringComparison.Ordinal));
-                var compactCreateSurface =
-                    createHeading
-                        .GetVisualAncestors()
-                        .OfType<Border>()
-                        .First();
 
                 compactCreateName.Text =
                     "custom-color-smoke";
@@ -1562,10 +1569,13 @@ try
                              300d
                          })
                 {
-                    compactTagsWindow.Width =
+                    compactCreateFlyout.Hide();
+                    compactTagsView.Width =
                         navigationWidth;
                     Dispatcher.UIThread.RunJobs();
 
+                    var closedListHeight =
+                        compactTagList.Bounds.Height;
                     Require(
                         compactActionRow.Bounds.Width
                             <= compactTagsView.Bounds.Width + 0.5
@@ -1582,24 +1592,29 @@ try
                                             + 0.5),
                         $"Tags toolbar escaped its available width at {navigationWidth:N0} DIP / 225% text scale.");
 
-                    var compactTagList =
-                        compactTagsView
-                            .GetVisualDescendants()
-                            .OfType<ListBox>()
-                            .Single();
+                    compactCreateFlyout.ShowAt(
+                        newTagButton);
+                    Dispatcher.UIThread.RunJobs();
+
                     Require(
-                        compactCreateButton.IsEnabled
+                        compactCreateFlyout.IsOpen
+                        && compactCreateButton.IsEnabled
                         && compactCreateSurface.Bounds.Width
-                            <= compactTagsView.Bounds.Width + 0.5
+                            is > 0 and <= 360.5
                         && compactColorEditor.Bounds.Width
                             <= compactCreateSurface.Bounds.Width + 0.5
-                        && compactCreateSurface.Bounds.Bottom
-                            <= compactTagsView.Bounds.Height + 0.5
-                        && compactTagList.Bounds.Height > 24,
-                        $"Tag create form overflowed or collapsed the list viewport at {navigationWidth:N0} DIP / 225% text scale.");
+                        && compactTagList.Bounds.Height > 24
+                        && Math.Abs(
+                            compactTagList.Bounds.Height
+                            - closedListHeight) < 1,
+                        $"Tag create Flyout changed pane layout or list viewport at {navigationWidth:N0} DIP / 225% text scale. "
+                        + $"flyoutOpen={compactCreateFlyout.IsOpen}, "
+                        + $"surface={compactCreateSurface.Bounds.Width:N1}x{compactCreateSurface.Bounds.Height:N1}, "
+                        + $"pane={compactTagsView.Bounds.Width:N1}x{compactTagsView.Bounds.Height:N1}, "
+                        + $"listClosed={closedListHeight:N1}, listOpen={compactTagList.Bounds.Height:N1}.");
                 }
 
-                compactTagsWindow.Width = 250;
+                compactTagsView.Width = 250;
                 compactColorEditor.SetCustomTextForSmoke(
                     "broken");
                 Dispatcher.UIThread.RunJobs();
@@ -1629,8 +1644,9 @@ try
                     string.Equals(
                         createdTagColor,
                         "#12345678",
-                        StringComparison.Ordinal),
-                    "Top-level tag creation did not pass the exact validated custom color to the library action.");
+                        StringComparison.Ordinal)
+                    && !compactCreateFlyout.IsOpen,
+                    "Top-level tag creation did not persist the exact validated custom color and dismiss its Flyout.");
 
                 var manageButton =
                     compactActionRow.Children
@@ -1680,7 +1696,7 @@ try
                              300d
                          })
                 {
-                    compactTagsWindow.Width =
+                    compactTagsView.Width =
                         navigationWidth;
                     Dispatcher.UIThread.RunJobs();
 
