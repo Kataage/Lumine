@@ -20,7 +20,10 @@ When enabled it captures the required product surfaces below:
 - `tags-edit-900x600-text225.png`
 - `inspector-900x600.png`
 - `inspector-1440x900-pinned.png`
+- `focused-viewer-900x600.png`
 - `focused-viewer-900x600-text225.png`
+
+Focused Viewer review must confirm that the central zoom/Fit/1:1 group and the right-side Info/Fullscreen/Close group remain visually separate, non-overlapping, and leave the image as the dominant surface.
 - `settings-1440x900.png`
 - `no-match-1440x900.png`
 - `error-1440x900.png`
