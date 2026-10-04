@@ -998,12 +998,18 @@ try
             scaleTagConnection.CreateCommand();
         scaleTagInsert.CommandText =
             """
-            WITH RECURSIVE sequence(value) AS (
+            WITH RECURSIVE hundred(value) AS (
                 SELECT 0
                 UNION ALL
                 SELECT value + 1
-                FROM sequence
-                WHERE value < 599
+                FROM hundred
+                WHERE value < 99
+            ),
+            sequence(value) AS (
+                SELECT high.value * 100 + low.value
+                FROM hundred AS high
+                CROSS JOIN hundred AS low
+                WHERE high.value * 100 + low.value < 9990
             )
             INSERT INTO tags(
                 library_id,
@@ -1026,8 +1032,8 @@ try
             "$created",
             DateTimeOffset.UtcNow.UtcDateTime.Ticks);
         Require(
-            await scaleTagInsert.ExecuteNonQueryAsync() == 600,
-            "High-count tag fixture insert did not create 600 tags.");
+            await scaleTagInsert.ExecuteNonQueryAsync() == 9_990,
+            "High-count tag fixture insert did not create the near-10k production fixture.");
     }
 
     var productionScaleTags =
@@ -1037,17 +1043,17 @@ try
         productionScaleTags.Count > 512
         && productionScaleTags.Any(
             static tag =>
-                tag.Name == "scale-tag-0599"
+                tag.Name == "scale-tag-9989"
                 && tag.Color == "#123456"),
-        "Default production tag listing still truncates at the former 512-tag boundary.");
+        "Default production tag listing did not expose the near-10k production fixture.");
 
     var tailTagSearch =
         await repository.ListTagsAsync(
             library.Id,
-            "scale-tag-0599");
+            "scale-tag-9989");
     Require(
         tailTagSearch.Count == 1
-        && tailTagSearch[0].Name == "scale-tag-0599",
+        && tailTagSearch[0].Name == "scale-tag-9989",
         "DB-backed tag search could not discover a tag beyond the former 512-tag window.");
 
     const int fixtureCount = 2500;
