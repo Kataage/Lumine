@@ -258,6 +258,37 @@ try
                 == explicitPortable.RootPath,
             "LUMINE_PORTABLE=1 did not resolve the portable data root.");
 
+        var productSmokePortable =
+            ProductRuntimeSmoke.ResolveDataPaths(
+                [
+                    ProductRuntimeSmoke.Switch,
+                    $"--library-dir={libraryRoot}"
+                ]);
+        Require(
+            productSmokePortable.IsPortable
+            && productSmokePortable.RootPath
+                == explicitPortable.RootPath,
+            "Product runtime smoke bypassed normal portable data resolution when --data-dir was omitted.");
+
+        var productSmokeCustomRoot =
+            Path.Combine(
+                root,
+                "product-smoke-custom-data");
+        var productSmokeCustom =
+            ProductRuntimeSmoke.ResolveDataPaths(
+                [
+                    ProductRuntimeSmoke.Switch,
+                    $"--data-dir={productSmokeCustomRoot}",
+                    $"--library-dir={libraryRoot}"
+                ]);
+        Require(
+            productSmokeCustom.LocationKind
+                == AppDataLocationKind.Custom
+            && productSmokeCustom.RootPath
+                == Path.GetFullPath(
+                    productSmokeCustomRoot),
+            "Product runtime smoke did not preserve an explicit --data-dir override.");
+
         var customRoot =
             Path.Combine(
                 root,
