@@ -46,6 +46,11 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
 
     public Task Completion => _watcherMonitor;
 
+    public Task<LibraryReconcileResult> ReconcileNowAsync(
+        CancellationToken cancellationToken = default) =>
+        _processor.ReconcileNowAsync(
+            cancellationToken);
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(

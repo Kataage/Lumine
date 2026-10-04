@@ -868,6 +868,7 @@ public sealed class MainWindow : Window
                         _runtime?.Library.Id,
                         ChooseAndOpenLibraryAsync,
                         OpenCatalogLibraryAsync,
+                        RescanLibraryAsync,
                         ToggleLibraryEnabledAsync,
                         RemoveLibraryAsync,
                         ReportNavigationError),
@@ -970,6 +971,85 @@ public sealed class MainWindow : Window
 
         return OpenLibraryAsync(
             library.RootPath);
+    }
+
+    private async Task RescanLibraryAsync(
+        LibraryCatalogItem library)
+    {
+        var runtime = _runtime;
+        if (runtime is null
+            || runtime.Library.Id != library.Id)
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "表示中のライブラリだけ再スキャンできます。";
+            return;
+        }
+
+        var runtimeBefore = runtime;
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            "ライブラリを再スキャンしています…";
+
+        try
+        {
+            var result =
+                await runtime.SyncSession
+                    .ReconcileNowAsync();
+
+            if (!ReferenceEquals(
+                    _runtime,
+                    runtimeBefore))
+            {
+                return;
+            }
+
+            await ApplyBrowseQueryAsync();
+            StartNavigationRefresh();
+
+            _status.Foreground =
+                LumineDesign.MutedForeground;
+            _status.Text =
+                $"再スキャン完了 · {result.Discovered:N0}件確認";
+        }
+        catch (Exception exception)
+        {
+            if (ReferenceEquals(
+                    _runtime,
+                    runtimeBefore))
+            {
+                _status.Foreground =
+                    LumineDesign.Warning;
+                _status.Text =
+                    $"再スキャンできませんでした: {exception.Message}";
+            }
+
+            throw;
+        }
+    }
+
+    internal Task RescanActiveLibraryForSmokeAsync()
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "No active library.");
+        var library =
+            _libraries.FirstOrDefault(
+                item => item.Id == runtime.Library.Id)
+            ?? new LibraryCatalogItem(
+                runtime.Library.Id,
+                runtime.Library.Name,
+                runtime.LibraryRoot,
+                true,
+                LibraryScanState.Complete,
+                runtime.AssetCount,
+                null,
+                null);
+        return RescanLibraryAsync(
+            library);
     }
 
     private async Task ToggleLibraryEnabledAsync(
