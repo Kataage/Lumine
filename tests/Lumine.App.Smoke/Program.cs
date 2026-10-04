@@ -1365,6 +1365,35 @@ try
                 && alphaSmoke.A == 0x78,
                 "#RRGGBBAA tag color parsing drifted from repository storage semantics.");
 
+            colorEditorSmoke.SetVisualColorForSmoke(
+                Color.FromArgb(
+                    0x80,
+                    0x12,
+                    0x34,
+                    0x56));
+            Require(
+                colorEditorSmoke.IsColorValid
+                && string.Equals(
+                    colorEditorSmoke.SelectedColor,
+                    "#12345680",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    colorEditorSmoke.CustomTextForSmoke,
+                    "#12345680",
+                    StringComparison.Ordinal),
+                "Visual tag ColorPicker did not synchronize alpha-aware color selection into the canonical HEX field.");
+
+            colorEditorSmoke.SetCustomTextForSmoke(
+                "#abcdef40");
+            var visualFromHex =
+                colorEditorSmoke.VisualColorForSmoke;
+            Require(
+                visualFromHex.R == 0xab
+                && visualFromHex.G == 0xcd
+                && visualFromHex.B == 0xef
+                && visualFromHex.A == 0x40,
+                "HEX tag color input did not synchronize back into the visual ColorPicker.");
+
             colorEditorSmoke.SetCustomTextForSmoke(
                 "not-a-color");
             Require(
@@ -1487,6 +1516,12 @@ try
                         .GetVisualDescendants()
                         .OfType<TagColorEditor>()
                         .Single();
+                Require(
+                    compactColorEditor
+                        .GetVisualDescendants()
+                        .OfType<ColorPicker>()
+                        .Count() == 1,
+                    "Top-level tag create form did not expose exactly one visual ColorPicker.");
                 var compactCreateButton =
                     compactTagsView
                         .GetVisualDescendants()
@@ -2038,6 +2073,12 @@ try
                     .GetVisualDescendants()
                     .OfType<TagColorEditor>()
                     .Single();
+            Require(
+                inspectorTagColorEditor
+                    .GetVisualDescendants()
+                    .OfType<ColorPicker>()
+                    .Count() == 1,
+                "Inspector tag creation did not expose the shared visual ColorPicker.");
             inspectorTagPicker.SetSearchForSmoke(
                 "__inspector_custom_tag__");
             inspectorTagColorEditor.SetCustomTextForSmoke(
