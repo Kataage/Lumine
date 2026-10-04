@@ -103,8 +103,18 @@ public sealed record PublicationCreate(
     string ExternalUrl = "",
     string PlatformMetadataJson = "{}");
 
+public sealed record PublicationCursor(
+    DateTimeOffset PublishedAtUtc,
+    long Id);
+
+public sealed record PublicationPage(
+    IReadOnlyList<PublicationInfo> Items,
+    PublicationCursor? NextCursor,
+    long TotalCount);
+
 public sealed record AssetCreativeContext(
     IReadOnlyList<WorkInfo> Works,
     IReadOnlyList<GenerationGroupInfo> GenerationGroups,
     IReadOnlyList<AssetRelationInfo> Relations,
-    IReadOnlyList<PublicationInfo> Publications);
+    IReadOnlyList<PublicationInfo> Publications,
+    long PublicationCount = 0);
