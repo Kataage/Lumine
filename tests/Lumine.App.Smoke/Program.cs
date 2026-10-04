@@ -3349,6 +3349,197 @@ try
             await headless.Dispatch(
                 async () =>
                 {
+                    if (iteration == 0)
+                    {
+                        var restoreTextScale =
+                            LumineVisualMetrics.TextScaleFactor;
+                        foreach (var scale in
+                                 new[]
+                                 {
+                                     1.0,
+                                     1.25,
+                                     1.5,
+                                     2.0,
+                                     2.25
+                                 })
+                        {
+                            LumineVisualMetrics.ConfigureTextScaleFactor(
+                                scale);
+
+                            var primary =
+                                LumineDesign.ConfigurePrimaryButton(
+                                    new Button
+                                    {
+                                        Content = "主操作"
+                                    });
+                            var secondary =
+                                LumineDesign.ConfigureSecondaryButton(
+                                    new Button
+                                    {
+                                        Content = "副操作"
+                                    });
+                            var danger =
+                                LumineDesign.ConfigureDangerButton(
+                                    new Button
+                                    {
+                                        Content = "削除"
+                                    });
+                            var icon =
+                                LumineDesign.ConfigureIconButton(
+                                    new Button
+                                    {
+                                        Content =
+                                            LumineDesign.CreateStrokeIcon(
+                                                LumineDesign.SettingsIconPath,
+                                                18)
+                                    },
+                                    "設定");
+                            var input =
+                                LumineDesign.ConfigureTextBox(
+                                    new TextBox
+                                    {
+                                        Text = "検索キーワード"
+                                    });
+                            var combo =
+                                LumineDesign.ConfigureComboBox(
+                                    new ComboBox
+                                    {
+                                        ItemsSource =
+                                            new[]
+                                            {
+                                                "更新日時: 新しい順",
+                                                "ファイル名: A → Z"
+                                            },
+                                        SelectedIndex = 0
+                                    });
+                            var check =
+                                LumineDesign.ConfigureCheckBox(
+                                    new CheckBox
+                                    {
+                                        Content =
+                                            "表示用サムネイルを再利用する",
+                                        IsChecked = true
+                                    });
+
+                            var actions =
+                                new WrapPanel();
+                            foreach (var control in
+                                     new Control[]
+                                     {
+                                         primary,
+                                         secondary,
+                                         danger,
+                                         icon
+                                     })
+                            {
+                                control.Margin =
+                                    new Thickness(
+                                        0,
+                                        0,
+                                        LumineDesign.Space8,
+                                        LumineDesign.Space8);
+                                actions.Children.Add(control);
+                            }
+
+                            var specimenContent =
+                                new StackPanel
+                                {
+                                    Spacing =
+                                        LumineDesign.Space12,
+                                    MaxWidth = 760
+                                };
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        $"Lumine UI {scale:P0}",
+                                    FontSize =
+                                        LumineDesign.EmphasisFontSize,
+                                    FontWeight =
+                                        FontWeight.Bold,
+                                    Foreground =
+                                        LumineDesign.Foreground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap
+                                });
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        "主要操作・補助操作・破壊的操作・フォーム・長い日本語説明が同じ階層と余白規則で読めることを確認します。",
+                                    FontSize =
+                                        LumineDesign.BodyFontSize,
+                                    Foreground =
+                                        LumineDesign.Foreground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap,
+                                    LineHeight =
+                                        LumineDesign.BodyLineHeight
+                                });
+                            specimenContent.Children.Add(actions);
+                            specimenContent.Children.Add(input);
+                            specimenContent.Children.Add(combo);
+                            specimenContent.Children.Add(check);
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        "補足情報は本文より弱く、ただし読み取れるコントラストを維持します。",
+                                    FontSize =
+                                        LumineDesign.CaptionFontSize,
+                                    Foreground =
+                                        LumineDesign.MutedForeground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap
+                                });
+
+                            var specimen =
+                                new Window
+                                {
+                                    Width = 900,
+                                    Height = 600,
+                                    Background =
+                                        LumineDesign.Background,
+                                    Content =
+                                        new ScrollViewer
+                                        {
+                                            Padding =
+                                                new Thickness(
+                                                    LumineDesign.PageGutter),
+                                            Content =
+                                                specimenContent
+                                        }
+                                };
+                            specimen.Show();
+                            Dispatcher.UIThread.RunJobs();
+
+                            var clipped =
+                                specimen
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .FirstOrDefault(
+                                        block =>
+                                            block.IsEffectivelyVisible
+                                            && !string.IsNullOrWhiteSpace(
+                                                block.Text)
+                                            && block.Bounds.Height > 0
+                                            && block.Bounds.Height + 0.5
+                                                < block.FontSize);
+                            Require(
+                                clipped is null,
+                                $"Design-system specimen clipped visible text at {scale:P0}: '{clipped?.Text}'.");
+
+                            CaptureVisualEvidence(
+                                specimen,
+                                $"design-system-scale-{scale * 100:N0}");
+                            specimen.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+
+                        LumineVisualMetrics.ConfigureTextScaleFactor(
+                            restoreTextScale);
+                    }
+
                     var window =
                         new MainWindow(
                             repeatedPaths,
@@ -4867,6 +5058,11 @@ try
         var expectedVisualEvidence =
             new[]
             {
+                "design-system-scale-100",
+                "design-system-scale-125",
+                "design-system-scale-150",
+                "design-system-scale-200",
+                "design-system-scale-225",
                 "welcome-1440x900",
                 "loading-1440x900",
                 "browse-900x600",
