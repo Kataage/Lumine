@@ -440,10 +440,10 @@ public sealed partial class LibraryRepository
                   AND id = $tag_id
                   AND NOT EXISTS (
                       SELECT 1
-                      FROM tags AS conflict
-                      WHERE conflict.library_id = $library_id
-                        AND conflict.name_key = $name_key
-                        AND conflict.id <> $tag_id
+                      FROM tags AS other_tag
+                      WHERE other_tag.library_id = $library_id
+                        AND other_tag.name_key = $name_key
+                        AND other_tag.id <> $tag_id
                   )
                 RETURNING id, name, color;
                 """;
