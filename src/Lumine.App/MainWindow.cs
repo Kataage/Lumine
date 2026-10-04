@@ -1912,12 +1912,14 @@ public sealed class MainWindow : Window
                     existingShell;
                 _productShellState =
                     "Workspace";
+                existingShell.SetNoMatchState(
+                    runtime.AssetCount == 0,
+                    ClearBrowseFiltersAsync,
+                    OpenBrowseFilterPanel);
                 _status.Foreground =
                     LumineDesign.MutedForeground;
                 _status.Text =
-                    runtime.AssetCount == 0
-                        ? "一致する画像がありません。検索・フィルター条件を見直してください。"
-                        : string.Empty;
+                    string.Empty;
             }
             else if (runtime.AssetCount == 0)
             {
@@ -1963,6 +1965,7 @@ public sealed class MainWindow : Window
                             restoredIndices);
                     _shell =
                         existingShell;
+                    existingShell.SetNoMatchState(false);
                     _productShellState =
                         "Workspace";
                 }
@@ -2255,16 +2258,15 @@ public sealed class MainWindow : Window
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text =
-            "ライブラリを準備しています…";
+            string.Empty;
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
         _expandedFolderPaths.Clear();
 
         _viewerHost.Content =
-            LumineDesign.CreateProductState(
-                "ライブラリを開いています",
-                string.Empty);
+            CreateLoadingLibraryState(
+                out var loadingProgress);
 
         var acceptOpenProgress = true;
         var progress =
@@ -2273,7 +2275,7 @@ public sealed class MainWindow : Window
                 {
                     if (acceptOpenProgress)
                     {
-                        _status.Text =
+                        loadingProgress.Text =
                             FormatOpenProgress(update);
                     }
                 });
@@ -2325,10 +2327,20 @@ public sealed class MainWindow : Window
 
             _status.Foreground =
                 LumineDesign.MutedForeground;
-            _status.Text =
-                _runtime.AssetCount == 0
-                    ? "画像は見つかりませんでした。"
-                    : $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+            if (_runtime.AssetCount == 0)
+            {
+                _status.Text =
+                    string.Empty;
+            }
+            else
+            {
+                var openedStatus =
+                    $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+                _status.Text =
+                    openedStatus;
+                _ = ClearTransientStatusAsync(
+                    openedStatus);
+            }
 
             _host?.Log.Write(
                 "library",
@@ -2341,8 +2353,12 @@ public sealed class MainWindow : Window
             if (!_closeStarted)
             {
                 _productShellState = "Welcome";
-                _status.Text =
+                var cancelledStatus =
                     "ライブラリの読み込みをキャンセルしました。";
+                _status.Text =
+                    cancelledStatus;
+                _ = ClearTransientStatusAsync(
+                    cancelledStatus);
                 _viewerHost.Content =
                     CreateWelcomeState(recovered: false);
             }
@@ -2362,7 +2378,7 @@ public sealed class MainWindow : Window
             _status.Foreground =
                 LumineDesign.Danger;
             _status.Text =
-                "ライブラリを開けませんでした。";
+                string.Empty;
             _viewerHost.Content =
                 CreateLibraryOpenFailureState(
                     exception);
@@ -2812,30 +2828,108 @@ public sealed class MainWindow : Window
             add);
     }
 
+    private async Task ClearBrowseFiltersAsync()
+    {
+        _browseFilterState =
+            new BrowseFilterState(
+                SortOrder:
+                    _browsePreferences.SortOrder);
+        EnsureBrowseControls();
+        await ApplyBrowseQueryAsync();
+        RenderNavigationDestination();
+    }
+
+    private void OpenBrowseFilterPanel()
+    {
+        _browseControls?.OpenFilterPanel();
+    }
+
     private Control CreateNoMatchState()
     {
         var clear =
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "検索・フィルターを解除"
+                    Content = "条件をすべて解除"
                 });
         clear.Click +=
             async (_, _) =>
+                await ClearBrowseFiltersAsync();
+
+        var edit =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "フィルターを見直す"
+                });
+        edit.Click +=
+            (_, _) => OpenBrowseFilterPanel();
+
+        var actions =
+            new WrapPanel
             {
-                _browseFilterState =
-                    new BrowseFilterState(
-                        SortOrder:
-                            _browsePreferences.SortOrder);
-                EnsureBrowseControls();
-                await ApplyBrowseQueryAsync();
-                RenderNavigationDestination();
+                HorizontalAlignment =
+                    HorizontalAlignment.Center
             };
+        clear.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        edit.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
+        actions.Children.Add(clear);
+        actions.Children.Add(edit);
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            "検索またはフィルター条件を見直すか、条件を解除してすべての画像へ戻れます。",
-            clear);
+            "条件を解除するか、フィルターを見直してください。",
+            actions);
+    }
+
+    private Control CreateLoadingLibraryState(
+        out TextBlock progressText)
+    {
+        progressText =
+            new TextBlock
+            {
+                Text = "ライブラリを準備しています…",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextAlignment =
+                    TextAlignment.Center,
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+
+        var progress =
+            new ProgressBar
+            {
+                IsIndeterminate = true,
+                MinHeight = 4,
+                MaxHeight = 4
+            };
+
+        var content =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8
+            };
+        content.Children.Add(progress);
+        content.Children.Add(progressText);
+
+        return LumineDesign.CreateProductState(
+            "ライブラリを開いています",
+            "画像一覧を安全に準備しています。",
+            content);
     }
 
     private Control CreateWelcomeState(
