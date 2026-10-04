@@ -1618,6 +1618,32 @@ internal static class ProductNavigationViews
         return root;
     }
 
+    private static string FormatPublicationAssets(
+        PublicationInfo publication,
+        string separator)
+    {
+        var total =
+            publication.AssetCount >= 0
+                ? publication.AssetCount
+                : publication.Assets.Count;
+        var visible =
+            string.Join(
+                separator,
+                publication.Assets.Select(
+                    static asset =>
+                        asset.FileName));
+
+        if (total <= publication.Assets.Count)
+        {
+            return "画像: " + visible;
+        }
+
+        return "画像: "
+            + visible
+            + separator
+            + $"… +{total - publication.Assets.Count:N0}枚";
+    }
+
     public static Control CreateNoLibrary(
         string destination) =>
         CreatePlaceholder(
