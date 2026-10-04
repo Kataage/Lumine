@@ -104,11 +104,15 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Width = 360,
                 MinWidth = 300,
-                MaxWidth = 420,
+                MaxWidth = 400,
                 Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
+                BorderBrush = LumineDesign.BorderStrong,
                 BorderThickness =
-                    new Thickness(1, 0, 0, 0),
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
+                ClipToBounds = true,
                 IsVisible = false,
                 Child = _contextDetail
             };
@@ -457,8 +461,11 @@ internal sealed class CoreViewerShell : UserControl
     private void ApplyInspectorLayout(
         double width)
     {
+        // Below 1200 DIP the Inspector becomes a floating drawer instead of
+        // competing with the image canvas for permanent width. At wider
+        // sizes users may explicitly pin it beside the canvas.
         _compactInspectorLayout =
-            width <= 1080;
+            width < 1200;
 
         var canDock =
             !_compactInspectorLayout
@@ -474,11 +481,21 @@ internal sealed class CoreViewerShell : UserControl
                 1);
             _contextSurface.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
+            _contextSurface.VerticalAlignment =
+                VerticalAlignment.Stretch;
+            _contextSurface.Margin =
+                new Thickness(0);
+            _contextSurface.CornerRadius =
+                new CornerRadius(0);
+            _contextSurface.BorderBrush =
+                LumineDesign.Border;
+            _contextSurface.BorderThickness =
+                new Thickness(1, 0, 0, 0);
             _contextSurface.Width =
                 Math.Clamp(
-                    width * 0.28,
+                    width * 0.26,
                     320,
-                    400);
+                    380);
             _contextSurface.ZIndex = 0;
         }
         else
@@ -490,19 +507,33 @@ internal sealed class CoreViewerShell : UserControl
                 0);
             _contextSurface.HorizontalAlignment =
                 HorizontalAlignment.Right;
+            _contextSurface.VerticalAlignment =
+                VerticalAlignment.Stretch;
+            _contextSurface.Margin =
+                new Thickness(
+                    LumineDesign.Space12);
+            _contextSurface.CornerRadius =
+                new CornerRadius(
+                    LumineDesign.PanelRadius);
+            _contextSurface.BorderBrush =
+                LumineDesign.BorderStrong;
+            _contextSurface.BorderThickness =
+                new Thickness(1);
             _contextSurface.Width =
                 _compactInspectorLayout
                     ? Math.Clamp(
-                        width * 0.44,
+                        width * 0.38,
                         300,
-                        400)
+                        340)
                     : Math.Clamp(
-                        width * 0.28,
+                        width * 0.26,
                         320,
-                        400);
+                        380);
             _contextSurface.ZIndex = 20;
         }
 
+        _contextDetail.SetCompactPresentation(
+            _compactInspectorLayout);
         _contextDetail.SetPinPresentation(
             _inspectorPinned,
             !_compactInspectorLayout);
