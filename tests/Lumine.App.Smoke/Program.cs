@@ -2121,18 +2121,28 @@ try
                     Dispatcher.UIThread.RunJobs();
                     await Task.Delay(1);
                 }
-                Require(
-                    editFlyout.IsOpen
-                    && editSurface
+                var tagEditFailureText =
+                    editSurface
                         .GetVisualDescendants()
                         .OfType<TextBlock>()
-                        .Any(
-                            block =>
-                                block.Text?.Contains(
-                                    "already exists",
-                                    StringComparison.Ordinal)
-                                == true),
-                    "Tag edit failure did not remain local, visible, and retryable.");
+                        .Select(
+                            static block =>
+                                block.Text
+                                ?? string.Empty)
+                        .ToArray();
+                Require(
+                    editFlyout.IsOpen
+                    && tagEditFailureText.Any(
+                        static text =>
+                            text.Contains(
+                                "保存できませんでした。",
+                                StringComparison.Ordinal))
+                    && !tagEditFailureText.Any(
+                        static text =>
+                            text.Contains(
+                                "already exists",
+                                StringComparison.OrdinalIgnoreCase)),
+                    "Tag edit failure did not remain local/retryable or leaked raw technical detail.");
                 cancelEdit.RaiseEvent(
                     new RoutedEventArgs(
                         Button.ClickEvent));
