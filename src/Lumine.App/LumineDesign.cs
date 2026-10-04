@@ -502,6 +502,12 @@ internal static class LumineDesign
             InteractionDangerPressed;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
+        button.Resources["ButtonBackgroundDisabled"] =
+            InteractionDisabled;
+        button.Resources["ButtonBorderBrushDisabled"] =
+            Border;
+        button.Resources["ButtonForegroundDisabled"] =
+            MutedForeground;
     }
 
     private static void ConfigureTextControlStateResources(
