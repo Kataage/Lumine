@@ -1325,6 +1325,289 @@ try
                     < TimeSpan.FromSeconds(2),
                 $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
 
+            var colorEditorSmoke =
+                new TagColorEditor();
+            Require(
+                colorEditorSmoke.IsColorValid
+                && colorEditorSmoke.SelectedColor
+                    == TagColor.Default
+                && colorEditorSmoke.PresetCountForSmoke
+                    == TagColor.Presets.Count,
+                "Reusable tag color editor did not initialize with a valid shared preset.");
+
+            foreach (var customColor in
+                     new[]
+                     {
+                         "#abc",
+                         "#123456",
+                         "#12345678"
+                     })
+            {
+                colorEditorSmoke.SetCustomTextForSmoke(
+                    customColor);
+                Require(
+                    colorEditorSmoke.IsColorValid
+                    && string.Equals(
+                        colorEditorSmoke.SelectedColor,
+                        customColor,
+                        StringComparison.Ordinal)
+                    && !colorEditorSmoke.ValidationVisibleForSmoke,
+                    $"Tag color editor rejected valid custom color {customColor}.");
+            }
+
+            var alphaSmoke =
+                TagColor.ToColor(
+                    "#12345678");
+            Require(
+                alphaSmoke.R == 0x12
+                && alphaSmoke.G == 0x34
+                && alphaSmoke.B == 0x56
+                && alphaSmoke.A == 0x78,
+                "#RRGGBBAA tag color parsing drifted from repository storage semantics.");
+
+            colorEditorSmoke.SetCustomTextForSmoke(
+                "not-a-color");
+            Require(
+                !colorEditorSmoke.IsColorValid
+                && colorEditorSmoke.SelectedColor is null
+                && colorEditorSmoke.ValidationVisibleForSmoke,
+                "Invalid custom tag color did not enter an explicit validation state.");
+
+            colorEditorSmoke.SelectPresetForSmoke(1);
+            Require(
+                colorEditorSmoke.IsColorValid
+                && string.Equals(
+                    colorEditorSmoke.CustomTextForSmoke,
+                    TagColor.Presets[1],
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    colorEditorSmoke.SelectedColor,
+                    TagColor.Presets[1],
+                    StringComparison.Ordinal),
+                "Preset selection did not synchronize the free-entry color field.");
+
+            var previousNavigationTextScale =
+                LumineVisualMetrics.TextScaleFactor;
+            try
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    2.25);
+
+                string? createdTagColor = null;
+                var compactTags =
+                    new[]
+                    {
+                        new LibraryTagInfo(
+                            1,
+                            "a-very-long-tag-name-that-must-trim",
+                            "#12345678",
+                            123),
+                        new LibraryTagInfo(
+                            2,
+                            "short",
+                            "#abc",
+                            4)
+                    };
+                var compactTagsView =
+                    ProductNavigationViews.CreateTags(
+                        compactTags,
+                        Array.Empty<string>(),
+                        static _ => Task.CompletedTask,
+                        (_, color) =>
+                        {
+                            createdTagColor = color;
+                            return Task.CompletedTask;
+                        },
+                        static _ => Task.CompletedTask);
+                var compactTagsWindow =
+                    new Window
+                    {
+                        Width = 300,
+                        Height = 720,
+                        Content = compactTagsView
+                    };
+                compactTagsWindow.Show();
+                Dispatcher.UIThread.RunJobs();
+
+                var compactActionRow =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<WrapPanel>()
+                        .First(
+                            panel =>
+                                panel.Children
+                                    .OfType<Button>()
+                                    .Any(
+                                        button =>
+                                            string.Equals(
+                                                button.Content
+                                                    as string,
+                                                "＋ 新規",
+                                                StringComparison.Ordinal)));
+                Require(
+                    compactActionRow.Bounds.Width
+                        <= compactTagsView.Bounds.Width + 0.5
+                    && compactActionRow.Children
+                        .OfType<Control>()
+                        .Where(
+                            child =>
+                                child.IsVisible)
+                        .All(
+                            child =>
+                                child.Bounds.X >= -0.5
+                                && child.Bounds.Right
+                                    <= compactActionRow.Bounds.Width
+                                        + 0.5),
+                    "Compact Tags toolbar escaped its available width instead of wrapping.");
+
+                var newTagButton =
+                    compactActionRow.Children
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "＋ 新規",
+                                    StringComparison.Ordinal));
+                newTagButton.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+
+                var compactCreateName =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .First(
+                            box =>
+                                string.Equals(
+                                    box.PlaceholderText,
+                                    "新しいタグ名",
+                                    StringComparison.Ordinal));
+                var compactColorEditor =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<TagColorEditor>()
+                        .Single();
+                var compactCreateButton =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "作成",
+                                    StringComparison.Ordinal));
+                var createHeading =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .First(
+                            block =>
+                                string.Equals(
+                                    block.Text,
+                                    "タグを作成",
+                                    StringComparison.Ordinal));
+                var compactCreateSurface =
+                    createHeading
+                        .GetVisualAncestors()
+                        .OfType<Border>()
+                        .First();
+
+                compactCreateName.Text =
+                    "custom-color-smoke";
+                compactColorEditor.SetCustomTextForSmoke(
+                    "broken");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !compactCreateButton.IsEnabled,
+                    "Tag creation remained enabled with an invalid custom color.");
+
+                compactColorEditor.SetCustomTextForSmoke(
+                    "#12345678");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    compactCreateButton.IsEnabled
+                    && compactCreateSurface.Bounds.Width
+                        <= compactTagsView.Bounds.Width + 0.5
+                    && compactColorEditor.Bounds.Width
+                        <= compactCreateSurface.Bounds.Width + 0.5,
+                    "Compact tag create form overflowed or failed to enable a valid custom color.");
+
+                compactCreateButton.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                for (var attempt = 0;
+                     attempt < 50
+                     && createdTagColor is null;
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+                Require(
+                    string.Equals(
+                        createdTagColor,
+                        "#12345678",
+                        StringComparison.Ordinal),
+                    "Top-level tag creation did not pass the exact validated custom color to the library action.");
+
+                var manageButton =
+                    compactActionRow.Children
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "管理",
+                                    StringComparison.Ordinal));
+                manageButton.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+
+                var removeButton =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "削除",
+                                    StringComparison.Ordinal));
+                Require(
+                    !removeButton
+                        .GetVisualAncestors()
+                        .OfType<Button>()
+                        .Any(),
+                    "Tag manage mode still nests the destructive delete button inside another Button.");
+
+                var manageRow =
+                    removeButton
+                        .GetVisualAncestors()
+                        .OfType<Grid>()
+                        .First(
+                            grid =>
+                                grid.Children.Contains(
+                                    removeButton));
+                Require(
+                    removeButton.Bounds.Right
+                        <= manageRow.Bounds.Width + 0.5
+                    && manageRow.Bounds.Width
+                        <= compactTagsView.Bounds.Width + 0.5,
+                    "Compact tag manage row overflowed its navigation surface.");
+
+                compactTagsWindow.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+            finally
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    previousNavigationTextScale);
+            }
+
             var original = await provider.LoadOriginalAsync(
                 asset,
                 8L * 1024 * 1024);
