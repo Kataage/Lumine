@@ -1325,6 +1325,403 @@ try
                     < TimeSpan.FromSeconds(2),
                 $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
 
+            var colorEditorSmoke =
+                new TagColorEditor();
+            Require(
+                colorEditorSmoke.IsColorValid
+                && colorEditorSmoke.SelectedColor
+                    == TagColor.Default
+                && colorEditorSmoke.PresetCountForSmoke
+                    == TagColor.Presets.Count,
+                "Reusable tag color editor did not initialize with a valid shared preset.");
+
+            foreach (var customColor in
+                     new[]
+                     {
+                         "#abc",
+                         "#123456",
+                         "#12345678"
+                     })
+            {
+                colorEditorSmoke.SetCustomTextForSmoke(
+                    customColor);
+                Require(
+                    colorEditorSmoke.IsColorValid
+                    && string.Equals(
+                        colorEditorSmoke.SelectedColor,
+                        customColor,
+                        StringComparison.Ordinal)
+                    && !colorEditorSmoke.ValidationVisibleForSmoke,
+                    $"Tag color editor rejected valid custom color {customColor}.");
+            }
+
+            var alphaSmoke =
+                TagColor.ToColor(
+                    "#12345678");
+            Require(
+                alphaSmoke.R == 0x12
+                && alphaSmoke.G == 0x34
+                && alphaSmoke.B == 0x56
+                && alphaSmoke.A == 0x78,
+                "#RRGGBBAA tag color parsing drifted from repository storage semantics.");
+
+            colorEditorSmoke.SetVisualColorForSmoke(
+                Color.FromArgb(
+                    0x80,
+                    0x12,
+                    0x34,
+                    0x56));
+            Require(
+                colorEditorSmoke.IsColorValid
+                && string.Equals(
+                    colorEditorSmoke.SelectedColor,
+                    "#12345680",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    colorEditorSmoke.CustomTextForSmoke,
+                    "#12345680",
+                    StringComparison.Ordinal),
+                "Visual tag ColorPicker did not synchronize alpha-aware color selection into the canonical HEX field.");
+
+            colorEditorSmoke.SetCustomTextForSmoke(
+                "#abcdef40");
+            var visualFromHex =
+                colorEditorSmoke.VisualColorForSmoke;
+            Require(
+                visualFromHex.R == 0xab
+                && visualFromHex.G == 0xcd
+                && visualFromHex.B == 0xef
+                && visualFromHex.A == 0x40,
+                "HEX tag color input did not synchronize back into the visual ColorPicker.");
+
+            colorEditorSmoke.SetCustomTextForSmoke(
+                "not-a-color");
+            Require(
+                !colorEditorSmoke.IsColorValid
+                && colorEditorSmoke.SelectedColor is null
+                && colorEditorSmoke.ValidationVisibleForSmoke,
+                "Invalid custom tag color did not enter an explicit validation state.");
+
+            colorEditorSmoke.SetCustomTextForSmoke(
+                "  #ABCDEF80  ");
+            Require(
+                colorEditorSmoke.IsColorValid
+                && string.Equals(
+                    colorEditorSmoke.CustomTextForSmoke,
+                    "#abcdef80",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    colorEditorSmoke.SelectedColor,
+                    "#abcdef80",
+                    StringComparison.Ordinal),
+                "Valid custom tag color was not normalized consistently for display/save.");
+
+            colorEditorSmoke.SelectPresetForSmoke(1);
+            Require(
+                colorEditorSmoke.IsColorValid
+                && string.Equals(
+                    colorEditorSmoke.CustomTextForSmoke,
+                    TagColor.Presets[1],
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    colorEditorSmoke.SelectedColor,
+                    TagColor.Presets[1],
+                    StringComparison.Ordinal),
+                "Preset selection did not synchronize the free-entry color field.");
+
+            var previousNavigationTextScale =
+                LumineVisualMetrics.TextScaleFactor;
+            try
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    2.25);
+
+                string? createdTagColor = null;
+                var compactTags =
+                    new[]
+                    {
+                        new LibraryTagInfo(
+                            1,
+                            "a-very-long-tag-name-that-must-trim",
+                            "#12345678",
+                            123),
+                        new LibraryTagInfo(
+                            2,
+                            "short",
+                            "#abc",
+                            4)
+                    };
+                var compactTagsView =
+                    ProductNavigationViews.CreateTags(
+                        compactTags,
+                        Array.Empty<string>(),
+                        static _ => Task.CompletedTask,
+                        (_, color) =>
+                        {
+                            createdTagColor = color;
+                            return Task.CompletedTask;
+                        },
+                        static _ => Task.CompletedTask);
+                compactTagsView.Width = 300;
+                compactTagsView.HorizontalAlignment =
+                    Avalonia.Layout.HorizontalAlignment.Left;
+
+                var compactTagsWindow =
+                    new Window
+                    {
+                        Width = 900,
+                        Height = 520,
+                        Content = compactTagsView
+                    };
+                compactTagsWindow.Show();
+                Dispatcher.UIThread.RunJobs();
+
+                var compactActionRow =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<WrapPanel>()
+                        .First(
+                            panel =>
+                                panel.Children
+                                    .OfType<Button>()
+                                    .Any(
+                                        button =>
+                                            string.Equals(
+                                                button.Content
+                                                    as string,
+                                                "＋ 新規",
+                                                StringComparison.Ordinal)));
+                var newTagButton =
+                    compactActionRow.Children
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "＋ 新規",
+                                    StringComparison.Ordinal));
+                var compactTagList =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<ListBox>()
+                        .Single();
+                var compactCreateFlyout =
+                    newTagButton.Flyout as Flyout
+                    ?? throw new InvalidOperationException(
+                        "Top-level tag create command did not own a Flyout.");
+
+                Require(
+                    ReferenceEquals(
+                        newTagButton.Flyout,
+                        compactCreateFlyout),
+                    "Top-level tag create Button did not own the expected Flyout.");
+
+                compactCreateFlyout.ShowAt(
+                    newTagButton);
+                Dispatcher.UIThread.RunJobs();
+
+                Require(
+                    compactCreateFlyout.IsOpen,
+                    "Top-level tag create Flyout could not be opened at its command anchor.");
+
+                var compactCreateSurface =
+                    compactCreateFlyout.Content as Border
+                    ?? throw new InvalidOperationException(
+                        "Tag create Flyout did not expose the expected product surface.");
+                var compactCreateName =
+                    compactCreateSurface
+                        .GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .First(
+                            box =>
+                                string.Equals(
+                                    box.PlaceholderText,
+                                    "新しいタグ名",
+                                    StringComparison.Ordinal));
+                var compactColorEditor =
+                    compactCreateSurface
+                        .GetVisualDescendants()
+                        .OfType<TagColorEditor>()
+                        .Single();
+                Require(
+                    compactColorEditor
+                        .GetVisualDescendants()
+                        .OfType<ColorPicker>()
+                        .Count() == 1,
+                    "Top-level tag create Flyout did not expose exactly one visual ColorPicker.");
+                var compactCreateButton =
+                    compactCreateSurface
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "作成",
+                                    StringComparison.Ordinal));
+
+                compactCreateName.Text =
+                    "custom-color-smoke";
+                compactColorEditor.SetCustomTextForSmoke(
+                    "#12345678");
+                Dispatcher.UIThread.RunJobs();
+
+                foreach (var navigationWidth in
+                         new[]
+                         {
+                             250d,
+                             280d,
+                             300d
+                         })
+                {
+                    compactCreateFlyout.Hide();
+                    compactTagsView.Width =
+                        navigationWidth;
+                    Dispatcher.UIThread.RunJobs();
+
+                    var closedListHeight =
+                        compactTagList.Bounds.Height;
+                    Require(
+                        compactActionRow.Bounds.Width
+                            <= compactTagsView.Bounds.Width + 0.5
+                        && compactActionRow.Children
+                            .OfType<Control>()
+                            .Where(
+                                child =>
+                                    child.IsVisible)
+                            .All(
+                                child =>
+                                    child.Bounds.X >= -0.5
+                                    && child.Bounds.Right
+                                        <= compactActionRow.Bounds.Width
+                                            + 0.5),
+                        $"Tags toolbar escaped its available width at {navigationWidth:N0} DIP / 225% text scale.");
+
+                    compactCreateFlyout.ShowAt(
+                        newTagButton);
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        compactCreateFlyout.IsOpen
+                        && compactCreateButton.IsEnabled
+                        && compactCreateSurface.Bounds.Width
+                            is > 0 and <= 360.5
+                        && compactColorEditor.Bounds.Width
+                            <= compactCreateSurface.Bounds.Width + 0.5
+                        && compactTagList.Bounds.Height > 24
+                        && Math.Abs(
+                            compactTagList.Bounds.Height
+                            - closedListHeight) < 1,
+                        $"Tag create Flyout changed pane layout or list viewport at {navigationWidth:N0} DIP / 225% text scale. "
+                        + $"flyoutOpen={compactCreateFlyout.IsOpen}, "
+                        + $"surface={compactCreateSurface.Bounds.Width:N1}x{compactCreateSurface.Bounds.Height:N1}, "
+                        + $"pane={compactTagsView.Bounds.Width:N1}x{compactTagsView.Bounds.Height:N1}, "
+                        + $"listClosed={closedListHeight:N1}, listOpen={compactTagList.Bounds.Height:N1}.");
+                }
+
+                compactTagsView.Width = 250;
+                compactColorEditor.SetCustomTextForSmoke(
+                    "broken");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !compactCreateButton.IsEnabled,
+                    "Tag creation remained enabled with an invalid custom color at the minimum navigation width.");
+
+                compactColorEditor.SetCustomTextForSmoke(
+                    "#12345678");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    compactCreateButton.IsEnabled,
+                    "Tag creation did not recover after restoring a valid custom color.");
+
+                compactCreateButton.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                for (var attempt = 0;
+                     attempt < 50
+                     && createdTagColor is null;
+                     attempt++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    await Task.Delay(1);
+                }
+                Require(
+                    string.Equals(
+                        createdTagColor,
+                        "#12345678",
+                        StringComparison.Ordinal)
+                    && !compactCreateFlyout.IsOpen,
+                    "Top-level tag creation did not persist the exact validated custom color and dismiss its Flyout.");
+
+                var manageButton =
+                    compactActionRow.Children
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "管理",
+                                    StringComparison.Ordinal));
+                manageButton.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+
+                var removeButton =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "削除",
+                                    StringComparison.Ordinal));
+                Require(
+                    !removeButton
+                        .GetVisualAncestors()
+                        .OfType<Button>()
+                        .Any(),
+                    "Tag manage mode still nests the destructive delete button inside another Button.");
+
+                var manageRow =
+                    removeButton
+                        .GetVisualAncestors()
+                        .OfType<Grid>()
+                        .First(
+                            grid =>
+                                grid.Children.Contains(
+                                    removeButton));
+
+                foreach (var navigationWidth in
+                         new[]
+                         {
+                             250d,
+                             280d,
+                             300d
+                         })
+                {
+                    compactTagsView.Width =
+                        navigationWidth;
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        removeButton.Bounds.Right
+                            <= manageRow.Bounds.Width + 0.5
+                        && manageRow.Bounds.Width
+                            <= compactTagsView.Bounds.Width + 0.5,
+                        $"Tag manage row overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                }
+
+                compactTagsWindow.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+            finally
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    previousNavigationTextScale);
+            }
+
             var original = await provider.LoadOriginalAsync(
                 asset,
                 8L * 1024 * 1024);
@@ -1686,6 +2083,55 @@ try
                 && shell.ContextDetail.UsesDirectColorControlsForSmoke
                 && !shell.ContextDetail.RetryVisibleForSmoke,
                 "Inspector did not expose direct rating/color controls in the successful loaded state.");
+
+            var inspectorTagPicker =
+                shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<ManagedTagPicker>()
+                    .Single();
+            inspectorTagPicker.SetSearchForSmoke(
+                "__inspector_custom_tag__");
+            Dispatcher.UIThread.RunJobs();
+
+            var inspectorTagColorEditor =
+                inspectorTagPicker
+                    .GetVisualDescendants()
+                    .OfType<TagColorEditor>()
+                    .Single();
+            Require(
+                inspectorTagPicker.CreateSurfaceVisibleForSmoke
+                && inspectorTagColorEditor
+                    .GetVisualDescendants()
+                    .OfType<ColorPicker>()
+                    .Count() == 1,
+                "Inspector tag creation did not expose the shared visual ColorPicker.");
+            inspectorTagColorEditor.SetCustomTextForSmoke(
+                "invalid");
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                inspectorTagPicker.CreateSurfaceVisibleForSmoke
+                && !inspectorTagPicker.CreateButtonEnabledForSmoke
+                && !inspectorTagColorEditor.IsColorValid,
+                "Inspector tag creation did not block an invalid free color.");
+
+            inspectorTagColorEditor.SetCustomTextForSmoke(
+                "  #ABCDEF80  ");
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                inspectorTagPicker.CreateButtonEnabledForSmoke
+                && inspectorTagColorEditor.IsColorValid
+                && string.Equals(
+                    inspectorTagColorEditor.SelectedColor,
+                    "#abcdef80",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    inspectorTagColorEditor.CustomTextForSmoke,
+                    "#abcdef80",
+                    StringComparison.Ordinal),
+                "Inspector tag picker did not use the shared free-color editor or normalize custom input.");
+            inspectorTagPicker.SetSearchForSmoke(
+                string.Empty);
+            Dispatcher.UIThread.RunJobs();
 
             shell.ContextDetail.InvokeRatingForSmoke(4);
             shell.ContextDetail.InvokeColorForSmoke(4);

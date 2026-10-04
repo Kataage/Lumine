@@ -111,6 +111,8 @@ public sealed class App : Application
                     LumineDesign.BackgroundColor
             };
         application.Styles.Add(fluentTheme);
+        application.Styles.Add(
+            new ColorPickerFluentStyles());
     }
 
     public override void OnFrameworkInitializationCompleted()
