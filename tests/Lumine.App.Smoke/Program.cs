@@ -1437,7 +1437,7 @@ try
                     new Window
                     {
                         Width = 300,
-                        Height = 720,
+                        Height = 520,
                         Content = compactTagsView
                     };
                 compactTagsWindow.Show();
@@ -1547,13 +1547,21 @@ try
                                             + 0.5),
                         $"Tags toolbar escaped its available width at {navigationWidth:N0} DIP / 225% text scale.");
 
+                    var compactTagList =
+                        compactTagsView
+                            .GetVisualDescendants()
+                            .OfType<ListBox>()
+                            .Single();
                     Require(
                         compactCreateButton.IsEnabled
                         && compactCreateSurface.Bounds.Width
                             <= compactTagsView.Bounds.Width + 0.5
                         && compactColorEditor.Bounds.Width
-                            <= compactCreateSurface.Bounds.Width + 0.5,
-                        $"Tag create form overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                            <= compactCreateSurface.Bounds.Width + 0.5
+                        && compactCreateSurface.Bounds.Bottom
+                            <= compactTagsView.Bounds.Height + 0.5
+                        && compactTagList.Bounds.Height > 24,
+                        $"Tag create form overflowed or collapsed the list viewport at {navigationWidth:N0} DIP / 225% text scale.");
                 }
 
                 compactTagsWindow.Width = 250;
