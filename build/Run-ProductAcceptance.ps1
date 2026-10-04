@@ -40,6 +40,12 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 }
 
 $exePath = (Resolve-Path -LiteralPath $Exe).Path
+$portableFlagPath =
+    Join-Path (Split-Path -Parent $exePath) "portable.flag"
+if (-not (Test-Path -LiteralPath $portableFlagPath)) {
+    throw "Product acceptance requires the shipped portable artifact; missing marker: $portableFlagPath"
+}
+
 $libraryPath = (Resolve-Path -LiteralPath $Library).Path
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $coreWrapper =
