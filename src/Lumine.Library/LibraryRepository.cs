@@ -180,13 +180,69 @@ public sealed partial class LibraryRepository
 
         var normalizedIdentity =
             FileSourceIdentityProbe.Normalize(metadata.SourceIdentity);
-        var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+        var nowTicks =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
 
-        await using var connection = await _database.OpenConnectionAsync(
-            cancellationToken).ConfigureAwait(false);
-        using var transaction = connection.BeginTransaction();
+        for (var attempt = 0;
+             attempt < 2;
+             attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
 
-        await using var updateAsset = connection.CreateCommand();
+            await using var connection =
+                await _database.OpenConnectionAsync(
+                    cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await UpdateTechnicalMetadataOnConnectionAsync(
+                    connection,
+                    libraryId,
+                    assetId,
+                    expectedSourceRevision,
+                    expectedFileSize,
+                    expectedModifiedAtUtcTicks,
+                    metadata,
+                    normalizedIdentity,
+                    nowTicks,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (SqliteException exception)
+                when (attempt == 0
+                      && IsRecoverableNestedTransactionState(
+                          exception))
+            {
+                // A failed/abandoned SQLite transaction can poison the
+                // underlying pooled handle even though a new managed
+                // SqliteConnection object is created. Do not let that
+                // physical handle return to the pool. The metadata write is
+                // revision-guarded and idempotent, so one fresh-connection
+                // retry is safe; a second failure is surfaced unchanged.
+                SqliteConnection.ClearPool(connection);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Technical metadata retry loop completed unexpectedly.");
+    }
+
+    private static async Task<bool>
+        UpdateTechnicalMetadataOnConnectionAsync(
+            SqliteConnection connection,
+            long libraryId,
+            long assetId,
+            long expectedSourceRevision,
+            long expectedFileSize,
+            long expectedModifiedAtUtcTicks,
+            AssetTechnicalMetadata metadata,
+            string normalizedIdentity,
+            long nowTicks,
+            CancellationToken cancellationToken)
+    {
+        using var transaction =
+            connection.BeginTransaction();
+
+        await using var updateAsset =
+            connection.CreateCommand();
         updateAsset.Transaction = transaction;
         updateAsset.CommandText =
             """
@@ -208,26 +264,47 @@ public sealed partial class LibraryRepository
                     AND tm.source_identity <> $source_identity
               );
             """;
-        updateAsset.Parameters.AddWithValue("$width", metadata.Width);
-        updateAsset.Parameters.AddWithValue("$height", metadata.Height);
-        updateAsset.Parameters.AddWithValue("$format", metadata.Format.Trim());
-        updateAsset.Parameters.AddWithValue("$updated", nowTicks);
-        updateAsset.Parameters.AddWithValue("$library_id", libraryId);
-        updateAsset.Parameters.AddWithValue("$asset_id", assetId);
-        updateAsset.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
-        updateAsset.Parameters.AddWithValue("$file_size", expectedFileSize);
-        updateAsset.Parameters.AddWithValue("$modified", expectedModifiedAtUtcTicks);
+        updateAsset.Parameters.AddWithValue(
+            "$width",
+            metadata.Width);
+        updateAsset.Parameters.AddWithValue(
+            "$height",
+            metadata.Height);
+        updateAsset.Parameters.AddWithValue(
+            "$format",
+            metadata.Format.Trim());
+        updateAsset.Parameters.AddWithValue(
+            "$updated",
+            nowTicks);
+        updateAsset.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        updateAsset.Parameters.AddWithValue(
+            "$asset_id",
+            assetId);
+        updateAsset.Parameters.AddWithValue(
+            "$source_revision",
+            expectedSourceRevision);
+        updateAsset.Parameters.AddWithValue(
+            "$file_size",
+            expectedFileSize);
+        updateAsset.Parameters.AddWithValue(
+            "$modified",
+            expectedModifiedAtUtcTicks);
         updateAsset.Parameters.AddWithValue(
             "$source_identity",
             normalizedIdentity);
 
-        if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        if (await updateAsset.ExecuteNonQueryAsync(
+                cancellationToken).ConfigureAwait(false)
+            != 1)
         {
             transaction.Rollback();
             return false;
         }
 
-        await using var upsertMetadata = connection.CreateCommand();
+        await using var upsertMetadata =
+            connection.CreateCommand();
         upsertMetadata.Transaction = transaction;
         upsertMetadata.CommandText =
             """
@@ -249,19 +326,49 @@ public sealed partial class LibraryRepository
                 has_alpha = excluded.has_alpha,
                 updated_at_utc_ticks = excluded.updated_at_utc_ticks;
             """;
-        upsertMetadata.Parameters.AddWithValue("$asset_id", assetId);
-        upsertMetadata.Parameters.AddWithValue("$source_revision", expectedSourceRevision);
+        upsertMetadata.Parameters.AddWithValue(
+            "$asset_id",
+            assetId);
+        upsertMetadata.Parameters.AddWithValue(
+            "$source_revision",
+            expectedSourceRevision);
         upsertMetadata.Parameters.AddWithValue(
             "$source_identity",
             normalizedIdentity);
-        upsertMetadata.Parameters.AddWithValue("$raw_width", metadata.RawWidth);
-        upsertMetadata.Parameters.AddWithValue("$raw_height", metadata.RawHeight);
-        upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
-        upsertMetadata.Parameters.AddWithValue("$updated", nowTicks);
-        await upsertMetadata.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        upsertMetadata.Parameters.AddWithValue(
+            "$raw_width",
+            metadata.RawWidth);
+        upsertMetadata.Parameters.AddWithValue(
+            "$raw_height",
+            metadata.RawHeight);
+        upsertMetadata.Parameters.AddWithValue(
+            "$has_alpha",
+            metadata.HasAlpha ? 1 : 0);
+        upsertMetadata.Parameters.AddWithValue(
+            "$updated",
+            nowTicks);
+        await upsertMetadata.ExecuteNonQueryAsync(
+            cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
         return true;
+    }
+
+    internal static bool
+        IsRecoverableNestedTransactionStateForSmoke(
+            SqliteException exception) =>
+        IsRecoverableNestedTransactionState(
+            exception);
+
+    private static bool
+        IsRecoverableNestedTransactionState(
+            SqliteException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception.SqliteErrorCode == 1
+            && exception.Message.Contains(
+                "cannot start a transaction within a transaction",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
