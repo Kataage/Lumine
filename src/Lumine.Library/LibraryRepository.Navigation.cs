@@ -342,6 +342,169 @@ public sealed partial class LibraryRepository
             0);
     }
 
+    public async Task<LibraryTagInfo> UpdateTagAsync(
+        long libraryId,
+        long tagId,
+        string name,
+        string color,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tagId);
+
+        var normalized =
+            NormalizeTags([name]);
+        if (normalized.Length != 1)
+        {
+            throw new ArgumentException(
+                "Tag name is required.",
+                nameof(name));
+        }
+
+        var tag = normalized[0];
+        var normalizedColor =
+            NormalizeTagColor(color);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+
+        await using (var collision =
+                     connection.CreateCommand())
+        {
+            collision.Transaction = transaction;
+            collision.CommandText =
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM tags
+                    WHERE library_id = $library_id
+                      AND name_key = $name_key
+                      AND id <> $tag_id
+                );
+                """;
+            collision.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            collision.Parameters.AddWithValue(
+                "$name_key",
+                tag.Key);
+            collision.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+
+            if (Convert.ToInt32(
+                    await collision.ExecuteScalarAsync(
+                        cancellationToken)
+                        .ConfigureAwait(false),
+                    CultureInfo.InvariantCulture) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"同じ名前のタグ「{tag.Name}」が既に存在します。");
+            }
+        }
+
+        int updated;
+        await using (var update =
+                     connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                UPDATE tags
+                SET
+                    name = $name,
+                    name_key = $name_key,
+                    color = $color
+                WHERE library_id = $library_id
+                  AND id = $tag_id;
+                """;
+            update.Parameters.AddWithValue(
+                "$name",
+                tag.Name);
+            update.Parameters.AddWithValue(
+                "$name_key",
+                tag.Key);
+            update.Parameters.AddWithValue(
+                "$color",
+                normalizedColor);
+            update.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            update.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+            updated =
+                await update.ExecuteNonQueryAsync(
+                    cancellationToken)
+                    .ConfigureAwait(false);
+        }
+
+        if (updated != 1)
+        {
+            throw new InvalidOperationException(
+                "編集対象のタグが見つかりませんでした。");
+        }
+
+        await using (var dirty =
+                     connection.CreateCommand())
+        {
+            dirty.Transaction = transaction;
+            dirty.CommandText =
+                """
+                INSERT INTO asset_search_dirty(
+                    asset_id,
+                    library_id)
+                SELECT
+                    at.asset_id,
+                    $library_id
+                FROM asset_tags AS at
+                WHERE at.tag_id = $tag_id
+                ON CONFLICT(asset_id) DO UPDATE SET
+                    library_id = excluded.library_id;
+                """;
+            dirty.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            dirty.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+            await dirty.ExecuteNonQueryAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        long assetCount;
+        await using (var count =
+                     connection.CreateCommand())
+        {
+            count.Transaction = transaction;
+            count.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM asset_tags
+                WHERE tag_id = $tag_id;
+                """;
+            count.Parameters.AddWithValue(
+                "$tag_id",
+                tagId);
+            assetCount = Convert.ToInt64(
+                await count.ExecuteScalarAsync(
+                    cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
+        transaction.Commit();
+        return new LibraryTagInfo(
+            tagId,
+            tag.Name,
+            normalizedColor,
+            assetCount);
+    }
+
     public async Task<bool> DeleteTagAsync(
         long libraryId,
         long tagId,
