@@ -1162,7 +1162,9 @@ internal static class ProductNavigationViews
                                     new ColumnDefinitions(
                                         "*,Auto"),
                                 ColumnSpacing =
-                                    LumineDesign.Space6
+                                    LumineDesign.Space6,
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Stretch
                             };
 
                         var tagSurface =
