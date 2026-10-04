@@ -19,6 +19,7 @@ When enabled it captures the required product surfaces below:
 - `tags-create-900x600-text225.png`
 - `tags-edit-900x600-text225.png`
 - `inspector-900x600.png`
+- `inspector-1440x900-pinned.png`
 - `focused-viewer-900x600-text225.png`
 - `settings-1440x900.png`
 - `no-match-1440x900.png`
