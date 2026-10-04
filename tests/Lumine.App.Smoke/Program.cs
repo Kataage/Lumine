@@ -1510,14 +1510,19 @@ try
                     ?? throw new InvalidOperationException(
                         "Top-level tag create command did not own a Flyout.");
 
-                newTagButton.RaiseEvent(
-                    new RoutedEventArgs(
-                        Button.ClickEvent));
+                Require(
+                    ReferenceEquals(
+                        newTagButton.Flyout,
+                        compactCreateFlyout),
+                    "Top-level tag create Button did not own the expected Flyout.");
+
+                compactCreateFlyout.ShowAt(
+                    newTagButton);
                 Dispatcher.UIThread.RunJobs();
 
                 Require(
                     compactCreateFlyout.IsOpen,
-                    "Top-level tag create command did not open its anchored Flyout.");
+                    "Top-level tag create Flyout could not be opened at its command anchor.");
 
                 var compactCreateSurface =
                     compactCreateFlyout.Content as Border
