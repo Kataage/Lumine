@@ -3996,14 +3996,19 @@ try
 
                         advancedSettings.IsExpanded = true;
                         Dispatcher.UIThread.RunJobs();
+                        var expandedSettingsText =
+                            window.WorkspacePageForSmoke
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .ToArray();
                         Require(
-                            settingsText.Any(block =>
+                            expandedSettingsText.Any(block =>
                                 block.IsEffectivelyVisible
                                 && string.Equals(
                                     block.Text,
                                     "ディスク保持上限",
                                     StringComparison.Ordinal))
-                            && settingsText.Any(block =>
+                            && expandedSettingsText.Any(block =>
                                 block.IsEffectivelyVisible
                                 && string.Equals(
                                     block.Text,
