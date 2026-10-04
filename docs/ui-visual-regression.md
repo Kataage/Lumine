@@ -58,3 +58,5 @@ For now:
 3. the Product Portable real-machine acceptance remains authoritative for final product review.
 
 A golden/tolerance gate can be added later if repeated CI captures demonstrate stable raster output across runner updates.
+
+Design-system review must confirm the shared primary/secondary/danger grammar, keyboard navigation, non-color selection cues, and the 100/125/150/200/225% evidence matrix.
