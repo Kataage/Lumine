@@ -111,7 +111,7 @@ internal static class LumineDesign
     public static FontFamily UiFont { get; } =
         new("Yu Gothic UI, Yu Gothic, Meiryo, Segoe UI");
 
-    public const double NavigationWidth = 64;
+    public const double NavigationWidth = 72;
     public static double BodyFontSize =>
         14 * LumineVisualMetrics.TextScaleFactor;
     public static double CaptionFontSize =>
@@ -174,6 +174,8 @@ internal static class LumineDesign
         "M15.75 5.25L9 12l6.75 6.75";
     public const string MoreIconPath =
         "M6.75 12h.01M12 12h.01M17.25 12h.01";
+    public const string PinIconPath =
+        "M14.25 3.75l6 6-2.25 2.25-2.25-.75-3.75 3.75.75 2.25-1.5 1.5-6-6 1.5-1.5 2.25.75 3.75-3.75-.75-2.25 2.25-2.25z M8.25 15.75l-4.5 4.5";
     public const string GridIconPath =
         "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     public const string ListIconPath =
@@ -576,31 +578,32 @@ internal static class LumineDesign
                     selectedLabel,
                     StringComparison.Ordinal);
 
-            var content =
+            var destination =
                 new StackPanel
                 {
-                    Spacing = 4,
+                    Spacing = 3,
                     HorizontalAlignment =
-                        HorizontalAlignment.Center
+                        HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
                 };
-            content.Children.Add(
+            destination.Children.Add(
                 CreateStrokeIcon(
                     item.IconPath,
                     20,
                     selected
                         ? Foreground
                         : MutedForeground));
-            // At large Windows accessibility text scales, keep the
-            // compact rail icon-first instead of clipping oversized Japanese
-            // labels into an unreadable 56-DIP slot. Tooltip and automation
-            // name preserve the full destination label.
+            // At large Windows accessibility text scales, keep the rail
+            // icon-first instead of squeezing oversized labels into a narrow
+            // destination. Tooltip and automation name keep the full label.
             if (LumineVisualMetrics.TextScaleFactor < 1.75)
             {
-                content.Children.Add(
+                destination.Children.Add(
                     new TextBlock
                     {
                         Text = item.Label,
-                        Width = 56,
+                        Width = 62,
                         FontSize = CompactLabelFontSize,
                         FontWeight =
                             selected
@@ -617,24 +620,48 @@ internal static class LumineDesign
                     });
             }
 
+            var content =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions("3,*")
+                };
+            content.Children.Add(
+                new Border
+                {
+                    Width = 3,
+                    Height = 26,
+                    CornerRadius =
+                        new CornerRadius(2),
+                    Background =
+                        selected
+                            ? Accent
+                            : Brushes.Transparent,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                });
+            Grid.SetColumn(
+                destination,
+                1);
+            content.Children.Add(destination);
+
             var button =
                 new Button
                 {
                     Content = content,
-                    MinHeight = 58,
-                    CornerRadius = new CornerRadius(9),
+                    MinHeight = 56,
+                    CornerRadius = new CornerRadius(8),
                     Background =
                         selected
                             ? AccentMuted
                             : Brushes.Transparent,
-                    BorderBrush =
-                        selected
-                            ? Border
-                            : Brushes.Transparent,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(4, 6),
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(2, 5, 4, 5),
                     HorizontalContentAlignment =
-                        HorizontalAlignment.Center
+                        HorizontalAlignment.Stretch
                 };
             if (selected)
             {
@@ -677,19 +704,19 @@ internal static class LumineDesign
             new Border
             {
                 Height = HeaderHeight,
-                Child = CreateBrandImage(30)
+                Child = CreateBrandImage(28)
             };
         ToolTip.SetTip(brand, "Lumine");
         content.Children.Add(brand);
 
         Grid.SetRow(stack, 1);
-        stack.Margin = new Thickness(5, 5);
+        stack.Margin = new Thickness(6, 4);
         content.Children.Add(stack);
 
         var settings =
             CreateDestinationButton(
                 NavigationItems[^1]);
-        settings.Margin = new Thickness(5, 5, 5, 8);
+        settings.Margin = new Thickness(6, 4, 6, 8);
         Grid.SetRow(settings, 2);
         content.Children.Add(settings);
 
