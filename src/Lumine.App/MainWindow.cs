@@ -1742,7 +1742,7 @@ public sealed class MainWindow : Window
         _status.Text =
             result.FilesDeleted == 0
                 ? "削除する表示用cacheはありませんでした。"
-                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用cacheを削除しました。";
+                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用キャッシュを削除しました。";
 
         StartNavigationRefresh();
     }
