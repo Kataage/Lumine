@@ -3839,10 +3839,9 @@ try
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
-                                        .DirectFiltersAreVisibleForSmoke
-                                    && (viewport.Width < 1440
-                                        || window.BrowseControlsForSmoke
-                                            .DirectFiltersFitWithoutScrollForSmoke)
+                                        .FilterButtonIsVisibleForSmoke
+                                    && !window.BrowseControlsForSmoke
+                                        .FilterFlyoutIsOpenForSmoke
                                     && window.BrowseControlsForSmoke
                                         .SearchPaddingForSmoke.Top <= 4
                                     && (iteration == 2
@@ -3872,6 +3871,43 @@ try
                                         viewport.Width == 900d
                                             ? "browse-900x600"
                                             : "browse-1440x900");
+
+                                    if (viewport.Width == 900d)
+                                    {
+                                        window.BrowseControlsForSmoke
+                                            .OpenFilterFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .FilterFlyoutIsOpenForSmoke
+                                            && window.BrowseControlsForSmoke
+                                                .FilterFlyoutLayoutIsContainedForSmoke,
+                                            "Browse filter Flyout did not remain contained at 900x600.");
+                                        CaptureVisualEvidence(
+                                            window,
+                                            "browse-filter-open-900x600");
+                                        window.BrowseControlsForSmoke
+                                            .CloseFilterFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+
+                                        await window.BrowseControlsForSmoke
+                                            .SetTagScopeAsync(
+                                                "navigation-smoke");
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .FilterButtonTextForSmoke
+                                                .Contains(
+                                                    "1",
+                                                    StringComparison.Ordinal),
+                                            "Browse active-filter count was not surfaced on the collapsed Filter command.");
+                                        CaptureVisualEvidence(
+                                            window,
+                                            "browse-active-filter-900x600");
+                                        await window.BrowseControlsForSmoke
+                                            .ClearTagScopesAsync();
+                                        Dispatcher.UIThread.RunJobs();
+                                    }
                                 }
 
                                 window.CurrentShell.GridViewer.SelectAsset(0);
@@ -4483,6 +4519,8 @@ try
             {
                 "browse-900x600",
                 "browse-1440x900",
+                "browse-filter-open-900x600",
+                "browse-active-filter-900x600",
                 "tags-create-900x600-text225",
                 "tags-edit-900x600-text225",
                 "inspector-900x600",
