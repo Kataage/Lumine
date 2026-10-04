@@ -1573,12 +1573,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             body.Children.Add(
                 CreatePublicationDetail(
-                    "画像: "
-                    + string.Join(
-                        ", ",
-                        publication.Assets.Select(
-                            static asset =>
-                                asset.FileName))));
+                    FormatPublicationAssets(
+                        publication)));
         }
 
         if (!string.IsNullOrWhiteSpace(
