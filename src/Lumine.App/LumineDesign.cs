@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -111,7 +112,7 @@ internal static class LumineDesign
     public static FontFamily UiFont { get; } =
         new("Yu Gothic UI, Yu Gothic, Meiryo, Segoe UI");
 
-    public const double NavigationWidth = 64;
+    public const double NavigationWidth = 72;
     public static double BodyFontSize =>
         14 * LumineVisualMetrics.TextScaleFactor;
     public static double CaptionFontSize =>
@@ -174,6 +175,8 @@ internal static class LumineDesign
         "M15.75 5.25L9 12l6.75 6.75";
     public const string MoreIconPath =
         "M6.75 12h.01M12 12h.01M17.25 12h.01";
+    public const string PinIconPath =
+        "M14.25 3.75l6 6-2.25 2.25-2.25-.75-3.75 3.75.75 2.25-1.5 1.5-6-6 1.5-1.5 2.25.75 3.75-3.75-.75-2.25 2.25-2.25z M8.25 15.75l-4.5 4.5";
     public const string GridIconPath =
         "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     public const string ListIconPath =
@@ -253,11 +256,40 @@ internal static class LumineDesign
         button.FontSize = CaptionFontSize;
         button.CornerRadius =
             new CornerRadius(ControlRadius);
-        button.Background = AccentMuted;
+        // Secondary commands must remain clearly subordinate to the one
+        // primary action in a surface. Accent is reserved for selection and
+        // primary commitment rather than every ordinary command.
+        button.Background = ControlSurface;
         button.Foreground = Foreground;
         button.BorderBrush = Border;
         button.BorderThickness = new Thickness(1);
         ConfigureNeutralButtonStateResources(button);
+        return button;
+    }
+
+    public static Button ConfigureDangerButton(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+
+        button.MinHeight = CompactControlHeight;
+        button.Padding =
+            new Thickness(Space12, Space6);
+        button.FontSize = CaptionFontSize;
+        button.CornerRadius =
+            new CornerRadius(ControlRadius);
+        button.Background =
+            new SolidColorBrush(
+                DangerColor,
+                0.10);
+        button.Foreground = Danger;
+        button.BorderBrush = Danger;
+        button.BorderThickness =
+            new Thickness(1);
+        button.FontWeight =
+            FontWeight.SemiBold;
+        ConfigureDangerButtonStateResources(
+            button);
         return button;
     }
 
@@ -353,7 +385,10 @@ internal static class LumineDesign
                 ? new SolidColorBrush(BackgroundColor)
                 : Foreground;
         button.BorderBrush =
-            primary ? Brushes.Transparent : Border;
+            Brushes.Transparent;
+        // Keep a transparent 1-DIP geometry slot on neutral icon commands so
+        // hover/focus can appear without shifting layout, while the resting
+        // toolbar does not become a wall of boxed buttons.
         button.BorderThickness =
             primary
                 ? new Thickness(0)
@@ -398,6 +433,10 @@ internal static class LumineDesign
         button.Resources["ButtonBackgroundPressed"] =
             InteractionPressed;
         button.Resources["ButtonBorderBrushPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonBackgroundFocused"] =
+            InteractionNeutral;
+        button.Resources["ButtonBorderBrushFocused"] =
             InteractionFocus;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
@@ -447,6 +486,10 @@ internal static class LumineDesign
             InteractionSelected;
         button.Resources["ButtonBorderBrushPressed"] =
             InteractionFocus;
+        button.Resources["ButtonBackgroundFocused"] =
+            InteractionSelected;
+        button.Resources["ButtonBorderBrushFocused"] =
+            InteractionFocus;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
         button.Resources["ButtonBackgroundDisabled"] =
@@ -473,6 +516,12 @@ internal static class LumineDesign
             InteractionDangerPressed;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
+        button.Resources["ButtonBackgroundDisabled"] =
+            InteractionDisabled;
+        button.Resources["ButtonBorderBrushDisabled"] =
+            Border;
+        button.Resources["ButtonForegroundDisabled"] =
+            MutedForeground;
     }
 
     private static void ConfigureTextControlStateResources(
@@ -576,31 +625,32 @@ internal static class LumineDesign
                     selectedLabel,
                     StringComparison.Ordinal);
 
-            var content =
+            var destination =
                 new StackPanel
                 {
-                    Spacing = 4,
+                    Spacing = 3,
                     HorizontalAlignment =
-                        HorizontalAlignment.Center
+                        HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
                 };
-            content.Children.Add(
+            destination.Children.Add(
                 CreateStrokeIcon(
                     item.IconPath,
                     20,
                     selected
                         ? Foreground
                         : MutedForeground));
-            // At large Windows accessibility text scales, keep the
-            // compact rail icon-first instead of clipping oversized Japanese
-            // labels into an unreadable 56-DIP slot. Tooltip and automation
-            // name preserve the full destination label.
+            // At large Windows accessibility text scales, keep the rail
+            // icon-first instead of squeezing oversized labels into a narrow
+            // destination. Tooltip and automation name keep the full label.
             if (LumineVisualMetrics.TextScaleFactor < 1.75)
             {
-                content.Children.Add(
+                destination.Children.Add(
                     new TextBlock
                     {
                         Text = item.Label,
-                        Width = 56,
+                        Width = 62,
                         FontSize = CompactLabelFontSize,
                         FontWeight =
                             selected
@@ -617,24 +667,48 @@ internal static class LumineDesign
                     });
             }
 
+            var content =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions("3,*")
+                };
+            content.Children.Add(
+                new Border
+                {
+                    Width = 3,
+                    Height = 26,
+                    CornerRadius =
+                        new CornerRadius(2),
+                    Background =
+                        selected
+                            ? Accent
+                            : Brushes.Transparent,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                });
+            Grid.SetColumn(
+                destination,
+                1);
+            content.Children.Add(destination);
+
             var button =
                 new Button
                 {
                     Content = content,
-                    MinHeight = 58,
-                    CornerRadius = new CornerRadius(9),
+                    MinHeight = 56,
+                    CornerRadius = new CornerRadius(8),
                     Background =
                         selected
                             ? AccentMuted
                             : Brushes.Transparent,
-                    BorderBrush =
-                        selected
-                            ? Border
-                            : Brushes.Transparent,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(4, 6),
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(2, 5, 4, 5),
                     HorizontalContentAlignment =
-                        HorizontalAlignment.Center
+                        HorizontalAlignment.Stretch
                 };
             if (selected)
             {
@@ -656,14 +730,21 @@ internal static class LumineDesign
             {
                 Spacing = 5
             };
+        var destinationButtons =
+            new List<Button>(
+                NavigationItems.Count);
 
         for (var index = 0;
              index < NavigationItems.Count - 1;
              index++)
         {
-            stack.Children.Add(
+            var destination =
                 CreateDestinationButton(
-                    NavigationItems[index]));
+                    NavigationItems[index]);
+            destinationButtons.Add(
+                destination);
+            stack.Children.Add(
+                destination);
         }
 
         var content =
@@ -677,21 +758,58 @@ internal static class LumineDesign
             new Border
             {
                 Height = HeaderHeight,
-                Child = CreateBrandImage(30)
+                Child = CreateBrandImage(28)
             };
         ToolTip.SetTip(brand, "Lumine");
         content.Children.Add(brand);
 
         Grid.SetRow(stack, 1);
-        stack.Margin = new Thickness(5, 5);
+        stack.Margin = new Thickness(6, 4);
         content.Children.Add(stack);
 
         var settings =
             CreateDestinationButton(
                 NavigationItems[^1]);
-        settings.Margin = new Thickness(5, 5, 5, 8);
+        destinationButtons.Add(
+            settings);
+        settings.Margin = new Thickness(6, 4, 6, 8);
         Grid.SetRow(settings, 2);
         content.Children.Add(settings);
+
+        for (var index = 0;
+             index < destinationButtons.Count;
+             index++)
+        {
+            var currentIndex = index;
+            destinationButtons[index].KeyDown +=
+                (_, args) =>
+                {
+                    var target =
+                        args.Key switch
+                        {
+                            Key.Up =>
+                                Math.Max(
+                                    0,
+                                    currentIndex - 1),
+                            Key.Down =>
+                                Math.Min(
+                                    destinationButtons.Count - 1,
+                                    currentIndex + 1),
+                            Key.Home => 0,
+                            Key.End =>
+                                destinationButtons.Count - 1,
+                            _ => currentIndex
+                        };
+                    if (target == currentIndex)
+                    {
+                        return;
+                    }
+
+                    destinationButtons[target]
+                        .Focus();
+                    args.Handled = true;
+                };
+        }
 
         return new Border
         {
