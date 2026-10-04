@@ -13,7 +13,7 @@ namespace Lumine.Viewer;
 
 public sealed class ThumbnailViewerControl : UserControl
 {
-    private readonly ViewerSession _session;
+    private ViewerSession _session;
     private readonly ListBox _rows;
     private readonly object _bitmapReleaseGate = new();
     private readonly HashSet<Task> _pendingBitmapReleases = [];
@@ -141,6 +141,67 @@ public sealed class ThumbnailViewerControl : UserControl
         _warmPresentations.Clear();
         _warmPresentationLru.Clear();
         ClearSelection();
+    }
+
+    public async Task PrepareForSessionRebindAsync()
+    {
+        CancelPendingAssetFocus();
+        _rows.ItemsSource = null;
+        _warmPresentations.Clear();
+        _warmPresentationLru.Clear();
+        await DrainBitmapReleasesAsync()
+            .ConfigureAwait(true);
+    }
+
+    public void RebindSession(
+        ViewerSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        _session = session;
+        _selection.Clear();
+        _selectedIndex = -1;
+        _selectionAnchor = -1;
+        _columns =
+            CalculateColumns(
+                Math.Max(1, _viewportWidth));
+        RebuildRows();
+    }
+
+    public void RestoreSelection(
+        IReadOnlyList<long> indices,
+        long primaryIndex)
+    {
+        ArgumentNullException.ThrowIfNull(indices);
+
+        _selection.Clear();
+
+        foreach (var index in
+                 indices
+                     .Where(index =>
+                         (ulong)index < (ulong)AssetCount)
+                     .Distinct())
+        {
+            _selection.Toggle(index);
+        }
+
+        _selectedIndex =
+            _selection.Contains(primaryIndex)
+                ? primaryIndex
+                : _selection.IsEmpty
+                    ? -1
+                    : _selection.Min;
+        _selectionAnchor = _selectedIndex;
+
+        SelectedAssetIndexChanged?.Invoke(
+            this,
+            _selectedIndex);
+        PublishSelectionChanged();
+
+        if (_selectedIndex >= 0)
+        {
+            ScrollToAsset(_selectedIndex);
+        }
     }
 
     public void SetLayout(
