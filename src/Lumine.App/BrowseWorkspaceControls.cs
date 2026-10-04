@@ -486,6 +486,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             foreach (var control in new Control[]
                      {
                          _search,
+                         _filterButton,
                          _grid,
                          _list,
                          _density
@@ -517,24 +518,39 @@ internal sealed class BrowseWorkspaceControls : UserControl
         }
     }
 
-    internal bool DirectFiltersAreVisibleForSmoke =>
-        _sort.IsVisible
-        && _rating.IsVisible
-        && _status.IsVisible
-        && _tag.IsVisible
-        && _color.IsVisible
-        && _favorite.IsVisible;
+    internal bool FilterButtonIsVisibleForSmoke =>
+        _filterButton.IsEffectivelyVisible
+        && _filterButton.Bounds.Width > 0
+        && _filterButton.Bounds.Height > 0;
 
-    internal bool DirectFiltersFitWithoutScrollForSmoke =>
-        _directFilterScroll.Viewport.Width > 0
-        && _directFilterScroll.Extent.Width
-            <= _directFilterScroll.Viewport.Width + 0.5;
+    internal bool FilterFlyoutIsOpenForSmoke =>
+        _filterFlyout.IsOpen;
 
-    internal double DirectFilterExtentWidthForSmoke =>
-        _directFilterScroll.Extent.Width;
+    internal bool FilterFlyoutLayoutIsContainedForSmoke =>
+        _filterPanel.Bounds.Width
+            is > 0 and <= 380.5
+        && _filterPanel.Bounds.Height > 0
+        && _sort.Bounds.Right
+            <= _filterPanel.Bounds.Width + 0.5
+        && _rating.Bounds.Right
+            <= _filterPanel.Bounds.Width + 0.5
+        && _status.Bounds.Right
+            <= _filterPanel.Bounds.Width + 0.5
+        && _tag.Bounds.Right
+            <= _filterPanel.Bounds.Width + 0.5
+        && _color.Bounds.Right
+            <= _filterPanel.Bounds.Width + 0.5;
 
-    internal double DirectFilterViewportWidthForSmoke =>
-        _directFilterScroll.Viewport.Width;
+    internal string FilterButtonTextForSmoke =>
+        _filterButtonLabel.Text
+        ?? string.Empty;
+
+    internal void OpenFilterFlyoutForSmoke() =>
+        _filterFlyout.ShowAt(
+            _filterButton);
+
+    internal void CloseFilterFlyoutForSmoke() =>
+        _filterFlyout.Hide();
 
     internal double SearchHeightForSmoke =>
         _search.Bounds.Height;
@@ -1020,16 +1036,31 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private void RenderChips()
     {
         _chips.Children.Clear();
-        _chips.IsVisible = State.HasFilters;
 
-        AddChip(
-            "検索",
-            NormalizeOptional(State.SearchText),
-            () => SetStateAsync(
-                State with
-                {
-                    SearchText = string.Empty
-                }));
+        var flyoutFilterCount =
+            State.TagNames.Count
+            + (State.MinRating.HasValue ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(
+                    State.StatusLabel)
+                ? 1
+                : 0)
+            + (State.FavoriteOnly ? 1 : 0)
+            + (!string.IsNullOrWhiteSpace(
+                    State.ColorLabel)
+                ? 1
+                : 0);
+        _filterButtonLabel.Text =
+            flyoutFilterCount == 0
+                ? "フィルター"
+                : $"フィルター {flyoutFilterCount}";
+        _filterButton.Background =
+            flyoutFilterCount == 0
+                ? LumineDesign.ControlSurface
+                : LumineDesign.AccentMuted;
+        _filterButton.BorderBrush =
+            flyoutFilterCount == 0
+                ? LumineDesign.Border
+                : LumineDesign.BorderStrong;
 
         AddChip(
             "フォルダー",
@@ -1100,13 +1131,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     ColorLabel = null
                 }));
 
-        if (State.HasFilters)
+        if (_chips.Children.Count > 0)
         {
             var clear =
                 LumineDesign.ConfigureSecondaryButton(
                     new Button
                     {
-                        Content = "すべて解除",
+                        Content = "絞り込みを解除",
                         MinHeight = 26,
                         Padding =
                             new Thickness(8, 3),
@@ -1118,10 +1149,15 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 async (_, _) =>
                     await SetStateAsync(
                         new BrowseFilterState(
+                            SearchText:
+                                State.SearchText,
                             SortOrder:
                                 State.SortOrder));
             _chips.Children.Add(clear);
         }
+
+        _chips.IsVisible =
+            _chips.Children.Count > 0;
     }
 
     private void AddChip(
