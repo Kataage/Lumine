@@ -1184,6 +1184,61 @@ try
     var expectedCount = 3L + fixtureCount;
     Require(await repository.CountAssetsAsync(library.Id) == expectedCount, "Fixture insert count mismatch.");
 
+    var publicationSummaryAssets =
+        (await repository.GetAssetPageAsync(
+            library.Id,
+            20))
+            .Items;
+    Require(
+        publicationSummaryAssets.Count == 20,
+        "Publication summary fixture could not resolve 20 assets.");
+
+    var largePublication =
+        await repository.CreatePublicationAsync(
+            library.Id,
+            new PublicationCreate(
+                publicationSummaryAssets
+                    .Select(
+                        static asset =>
+                            asset.Id)
+                    .ToArray(),
+                "Pixiv",
+                new DateTimeOffset(
+                    2028,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    TimeSpan.Zero),
+                Title:
+                    "Large Publication Summary"));
+
+    var largePublicationPage =
+        await repository.ListPublicationsPageAsync(
+            library.Id);
+    var largePublicationSummary =
+        largePublicationPage.Items.Single(
+            item =>
+                item.Id
+                    == largePublication.Id);
+    Require(
+        largePublicationSummary.AssetCount == 20
+        && largePublicationSummary.Assets.Count
+            == LibraryRepository.PublicationSummaryAssetLimit,
+        "Publication history summary did not bound snapshot materialization while preserving the full asset count.");
+
+    var largePublicationDetail =
+        await repository.GetPublicationAsync(
+            library.Id,
+            largePublication.Id)
+        ?? throw new InvalidOperationException(
+            "Large Publication detail could not be reloaded.");
+    Require(
+        largePublicationDetail.AssetCount == 20
+        && largePublicationDetail.Assets.Count == 20,
+        "Publication detail lost the immutable full asset snapshot after summary bounding.");
+
     var seen = new HashSet<long>();
     AssetCursor? cursor = null;
     var traversed = 0;
