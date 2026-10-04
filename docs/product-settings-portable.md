@@ -53,6 +53,16 @@ The Lumine-owned root becomes:
 
 All application-owned state stays inside that directory, so the executable directory can be moved as one portable unit.
 
+The NativeAOT **Product acceptance / portable artifact is packaged with `portable.flag` beside `Lumine.App.exe`**. Therefore the normal extracted-artifact contract is:
+
+1. extract the ZIP,
+2. double-click `Lumine.App.exe`,
+3. Lumine-owned state is created under `<executable directory>\data`.
+
+No command-line switch or environment variable is required for the shipped portable artifact. Removing `portable.flag` intentionally returns launch behavior to the normal Local user data rules unless another explicit override is supplied.
+
+CI validates both halves of this contract: the marker must be present in the publish directory, and the NativeAOT executable is launched without `--data-dir` to prove that it actually creates `<exe>\data\library.db`. The temporary verification data is removed before artifact upload so user/runtime state is never baked into the package.
+
 ### Custom
 
 `LUMINE_DATA_DIR=<path>` overrides the normal default storage root.
@@ -133,6 +143,14 @@ The fatal/bootstrap path still uses Lumine branding and explains the failure wit
 App smoke covers:
 
 - portable/custom path resolution
+- Product runtime smoke fallback to normal portable resolution when `--data-dir` is omitted
+- explicit Product runtime `--data-dir` custom override
+
+CI packaging additionally covers:
+
+- `portable.flag` is present in the NativeAOT publish directory before artifact upload
+- a packaged NativeAOT launch without `--data-dir` creates its database under `<exe>\data`
+- temporary package-verification data is deleted before upload
 - settings persistence across restart
 - product Settings composition
 - distinct NoMatch and EmptyLibrary states
