@@ -295,19 +295,15 @@ public sealed class MainWindow : Window
             };
 
         _navigationPin =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "固定",
-                    MinHeight = 28,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space2)
-                });
-        ToolTip.SetTip(
-            _navigationPin,
-            "ナビゲーションを画像一覧の横に固定");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.PinIconPath,
+                            16)
+                },
+                "サイドに固定");
 
         var collapseNavigation =
             LumineDesign.ConfigureIconButton(
@@ -315,8 +311,8 @@ public sealed class MainWindow : Window
                 {
                     Content =
                         LumineDesign.CreateStrokeIcon(
-                            LumineDesign.ChevronLeftIconPath,
-                            16)
+                            LumineDesign.CloseIconPath,
+                            15)
                 },
                 "ナビゲーションを閉じる");
 
@@ -327,7 +323,7 @@ public sealed class MainWindow : Window
                     new ColumnDefinitions("*,Auto,Auto"),
                 ColumnSpacing =
                     LumineDesign.Space4,
-                Margin = new Thickness(12, 10, 8, 8)
+                Margin = new Thickness(14, 12, 10, 8)
             };
         navigationHeader.Children.Add(
             _navigationTitle);
@@ -366,10 +362,14 @@ public sealed class MainWindow : Window
                 Width = 280,
                 MinWidth = 250,
                 MaxWidth = 320,
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
+                Background = LumineDesign.SurfaceRaised,
+                BorderBrush = LumineDesign.BorderStrong,
                 BorderThickness =
-                    new Thickness(0, 0, 1, 0),
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
+                ClipToBounds = true,
                 Child = navigationLayout
             };
         collapseNavigation.Click +=
@@ -621,6 +621,16 @@ public sealed class MainWindow : Window
     internal Rect NavigationPaneBounds =>
         _navigationPane.Bounds;
 
+    internal bool IsNavigationPaneOverlayForSmoke =>
+        _navigationPane.IsVisible
+        && _navigationPane.ZIndex > 0
+        && Grid.GetColumn(
+            _workspaceHost)
+            == 1;
+
+    internal bool NavigationPinVisibleForSmoke =>
+        _navigationPin.IsVisible;
+
     internal Rect LightboxBounds =>
         _lightboxHost.Bounds;
 
@@ -636,8 +646,10 @@ public sealed class MainWindow : Window
     private void ApplyNavigationLayout(
         double width)
     {
+        // Keep contextual navigation off the permanent canvas until there is
+        // enough desktop width for an explicit pinned layout.
         _compactNavigationLayout =
-            width <= 1040;
+            width < 1200;
 
         var paneCanDock =
             !_compactNavigationLayout
@@ -664,7 +676,17 @@ public sealed class MainWindow : Window
                 2);
             _navigationPane.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
+            _navigationPane.VerticalAlignment =
+                VerticalAlignment.Stretch;
+            _navigationPane.Margin =
+                new Thickness(0);
             _navigationPane.Width = 280;
+            _navigationPane.CornerRadius =
+                new CornerRadius(0);
+            _navigationPane.BorderBrush =
+                LumineDesign.Border;
+            _navigationPane.BorderThickness =
+                new Thickness(0, 0, 1, 0);
             _navigationPane.ZIndex = 0;
             return;
         }
@@ -680,28 +702,36 @@ public sealed class MainWindow : Window
             1);
         _navigationPane.HorizontalAlignment =
             HorizontalAlignment.Left;
+        _navigationPane.VerticalAlignment =
+            VerticalAlignment.Stretch;
+        _navigationPane.Margin =
+            new Thickness(
+                LumineDesign.Space12);
         _navigationPane.Width =
             _compactNavigationLayout
                 ? Math.Clamp(
                     width
                     - LumineDesign.NavigationWidth
-                    - 48,
+                    - 64,
                     250,
                     300)
                 : 280;
+        _navigationPane.CornerRadius =
+            new CornerRadius(
+                LumineDesign.PanelRadius);
+        _navigationPane.BorderBrush =
+            LumineDesign.BorderStrong;
+        _navigationPane.BorderThickness =
+            new Thickness(1);
         _navigationPane.ZIndex = 20;
     }
 
     private void UpdateNavigationPinVisual()
     {
-        _navigationPin.Content =
-            _navigationPinned
-                ? "固定中"
-                : "固定";
         _navigationPin.Background =
             _navigationPinned
                 ? LumineDesign.AccentMuted
-                : LumineDesign.ControlSurface;
+                : Brushes.Transparent;
         _navigationPin.BorderBrush =
             _navigationPinned
                 ? LumineDesign.BorderStrong
@@ -709,8 +739,13 @@ public sealed class MainWindow : Window
         ToolTip.SetTip(
             _navigationPin,
             _navigationPinned
-                ? "固定を解除して画像一覧の上に重ねる"
-                : "ナビゲーションを画像一覧の横に固定");
+                ? "固定を解除"
+                : "サイドに固定");
+        AutomationProperties.SetName(
+            _navigationPin,
+            _navigationPinned
+                ? "ナビゲーションの固定を解除"
+                : "ナビゲーションをサイドに固定");
     }
 
     private void OnNavigationRequested(
