@@ -423,6 +423,54 @@ internal sealed class TagColorEditor : UserControl
         }
     }
 
+    internal bool VisualPickerSpectrumRenderedForSmoke
+    {
+        get
+        {
+            var button =
+                _visualPicker
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .SingleOrDefault();
+            if (button?.Flyout
+                    is not Flyout
+                    {
+                        Content:
+                            Control content
+                    })
+            {
+                return false;
+            }
+
+            var spectrum =
+                content
+                    .GetVisualDescendants()
+                    .OfType<
+                        Avalonia.Controls.Primitives.ColorSpectrum>()
+                    .FirstOrDefault();
+            if (spectrum is null)
+            {
+                return false;
+            }
+
+            spectrum.ApplyTemplate();
+            var spectrumRectangle =
+                spectrum
+                    .GetVisualDescendants()
+                    .OfType<
+                        Avalonia.Controls.Shapes.Rectangle>()
+                    .FirstOrDefault(
+                        rectangle =>
+                            string.Equals(
+                                rectangle.Name,
+                                "PART_SpectrumRectangle",
+                                StringComparison.Ordinal));
+
+            return spectrumRectangle?.Fill
+                is ImageBrush;
+        }
+    }
+
     internal void OpenVisualPickerForSmoke()
     {
         _visualPicker.ApplyTemplate();
