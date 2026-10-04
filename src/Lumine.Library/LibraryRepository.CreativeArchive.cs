@@ -6,6 +6,8 @@ namespace Lumine.Library;
 
 public sealed partial class LibraryRepository
 {
+    public const int PublicationPageSize = 100;
+    public const int InspectorPublicationLimit = 24;
     public async Task<WorkInfo> CreateWorkAsync(
         long libraryId,
         WorkCreate create,
@@ -353,45 +355,127 @@ public sealed partial class LibraryRepository
 
     public async Task<IReadOnlyList<PublicationInfo>> ListPublicationsAsync(
         long libraryId,
-        int limit = 100,
+        int limit = PublicationPageSize,
+        CancellationToken cancellationToken = default) =>
+        (await ListPublicationsPageAsync(
+            libraryId,
+            limit,
+            cursor: null,
+            cancellationToken).ConfigureAwait(false)).Items;
+
+    public async Task<PublicationPage> ListPublicationsPageAsync(
+        long libraryId,
+        int limit = PublicationPageSize,
+        PublicationCursor? cursor = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ValidateListLimit(limit);
+
         await using var connection =
-            await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var ids = new List<long>();
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        long totalCount;
+        await using (var count = connection.CreateCommand())
+        {
+            count.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM publications
+                WHERE library_id = $library_id;
+                """;
+            count.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            totalCount = Convert.ToInt64(
+                await count.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
+        var ids =
+            new List<long>(
+                Math.Min(
+                    limit + 1,
+                    501));
         await using (var command = connection.CreateCommand())
         {
             command.CommandText =
                 """
-                SELECT id
-                FROM publications
-                WHERE library_id = $library_id
-                ORDER BY published_at_utc_ticks DESC, id DESC
+                SELECT p.id
+                FROM publications AS p
+                WHERE p.library_id = $library_id
+                  AND (
+                        $cursor_ticks IS NULL
+                        OR p.published_at_utc_ticks < $cursor_ticks
+                        OR (
+                            p.published_at_utc_ticks = $cursor_ticks
+                            AND p.id < $cursor_id
+                        )
+                      )
+                ORDER BY
+                    p.published_at_utc_ticks DESC,
+                    p.id DESC
                 LIMIT $limit;
                 """;
-            command.Parameters.AddWithValue("$library_id", libraryId);
-            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            command.Parameters.AddWithValue(
+                "$cursor_ticks",
+                cursor is null
+                    ? DBNull.Value
+                    : cursor.PublishedAtUtc.UtcDateTime.Ticks);
+            command.Parameters.AddWithValue(
+                "$cursor_id",
+                cursor?.Id ?? long.MaxValue);
+            command.Parameters.AddWithValue(
+                "$limit",
+                limit + 1);
+
             await using var reader =
-                await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                await command.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
             {
-                ids.Add(reader.GetInt64(0));
+                ids.Add(
+                    reader.GetInt64(0));
             }
         }
 
-        var result = new List<PublicationInfo>(ids.Count);
-        foreach (var id in ids)
+        var hasMore =
+            ids.Count > limit;
+        if (hasMore)
         {
-            var item = await GetPublicationOnConnectionAsync(
-                connection, null, libraryId, id, cancellationToken).ConfigureAwait(false);
-            if (item is not null)
-            {
-                result.Add(item);
-            }
+            ids.RemoveAt(ids.Count - 1);
         }
 
-        return result;
+        var items =
+            await LoadPublicationsByIdsAsync(
+                connection,
+                transaction: null,
+                libraryId,
+                ids,
+                cancellationToken).ConfigureAwait(false);
+
+        PublicationCursor? nextCursor = null;
+        if (hasMore
+            && items.Count > 0)
+        {
+            var last =
+                items[^1];
+            nextCursor =
+                new PublicationCursor(
+                    last.PublishedAtUtc,
+                    last.Id);
+        }
+
+        return new PublicationPage(
+            items,
+            nextCursor,
+            totalCount);
     }
 
     public async Task<AssetCreativeContext> GetAssetCreativeContextAsync(
