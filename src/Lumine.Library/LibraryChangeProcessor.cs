@@ -13,6 +13,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     private readonly LibraryRepository _repository;
     private readonly LibraryReconciler _reconciler;
     private readonly Channel<DirectoryChange> _queue;
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TaskCompletionSource _disposeCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -74,6 +75,29 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             BitConverter.Int64BitsToDouble(
                 Interlocked.Read(ref _maxLatencyBits)),
             Volatile.Read(ref _queueDepth));
+
+    public async Task<LibraryReconcileResult> ReconcileNowAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(
+            Volatile.Read(ref _disposeStarted) != 0,
+            this);
+
+        await _mutationGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            return await ReconcileCoreAsync(
+                cancellationToken,
+                manualRequest: true)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
 
     public void Publish(IReadOnlyList<DirectoryChange> changes)
     {
@@ -268,15 +292,36 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                 }
             }
 
-            var requiresReconcile = await ApplyBatchAsync(
-                coalesced.Values,
-                cancellationToken).ConfigureAwait(false);
+            var requiresReconcile =
+                await ApplyBatchSerializedAsync(
+                    coalesced.Values,
+                    cancellationToken)
+                    .ConfigureAwait(false);
 
             if (requiresReconcile)
             {
                 DrainQueue();
                 await ReconcileAsync(cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task<bool> ApplyBatchSerializedAsync(
+        IEnumerable<DirectoryChange> changes,
+        CancellationToken cancellationToken)
+    {
+        await _mutationGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            return await ApplyBatchAsync(
+                changes,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _mutationGate.Release();
         }
     }
 
@@ -681,7 +726,27 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             ForceSourceRevision: forceSourceRevision);
     }
 
-    private async Task ReconcileAsync(CancellationToken cancellationToken)
+    private async Task ReconcileAsync(
+        CancellationToken cancellationToken)
+    {
+        await _mutationGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            _ = await ReconcileCoreAsync(
+                cancellationToken,
+                manualRequest: false)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    private async Task<LibraryReconcileResult> ReconcileCoreAsync(
+        CancellationToken cancellationToken,
+        bool manualRequest)
     {
         Interlocked.Increment(ref _reconciliations);
 
@@ -689,21 +754,25 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         {
             var result = await _reconciler.ReconcileAsync(
                 _libraryId,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             if (!result.Completed)
             {
-                Interlocked.Increment(ref _reconcileFailures);
                 throw new InvalidOperationException(
                     "Filesystem reconciliation was incomplete; incremental synchronization cannot safely continue.");
             }
+
+            return result;
         }
         catch
         {
             Interlocked.Increment(ref _reconcileFailures);
             await _repository.MarkReconcileRequiredAsync(
                 _libraryId,
-                "Reconciliation failed after watcher overflow or ambiguous directory change.",
+                manualRequest
+                    ? "Manual library reconciliation failed."
+                    : "Reconciliation failed after watcher overflow or ambiguous directory change.",
                 cancellationToken).ConfigureAwait(false);
             throw;
         }
