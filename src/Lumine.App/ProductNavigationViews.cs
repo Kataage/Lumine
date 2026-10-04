@@ -1269,33 +1269,36 @@ internal static class ProductNavigationViews
             (_, _) =>
                 UpdateCreateActionState();
 
-        AttachAsync(
-            createAction,
-            async () =>
+        createAction.Click +=
+            async (_, _) =>
             {
-                var name =
-                    createName.Text?.Trim();
-                var color =
-                    colorEditor.SelectedColor;
-                if (string.IsNullOrWhiteSpace(
-                        name)
-                    || color is null)
-                {
-                    UpdateCreateActionState();
-                    return;
-                }
+                await ExecuteAsync(
+                    createAction,
+                    async () =>
+                    {
+                        var name =
+                            createName.Text?.Trim();
+                        var color =
+                            colorEditor.SelectedColor;
+                        if (string.IsNullOrWhiteSpace(
+                                name)
+                            || color is null)
+                        {
+                            return;
+                        }
 
-                await createTag(
-                    name,
-                    color);
-                createName.Text =
-                    string.Empty;
-                colorEditor.Reset();
-                createSurface.IsVisible =
-                    false;
+                        await createTag(
+                            name,
+                            color);
+                        createName.Text =
+                            string.Empty;
+                        colorEditor.Reset();
+                        createSurface.IsVisible =
+                            false;
+                    },
+                    reportError);
                 UpdateCreateActionState();
-            },
-            reportError);
+            };
 
         manage.Click +=
             (_, _) =>
