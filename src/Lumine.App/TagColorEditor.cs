@@ -117,6 +117,12 @@ internal static class TagColor
         new SolidColorBrush(
             ToColor(value));
 
+    public static string FromColor(
+        Color value) =>
+        value.A == byte.MaxValue
+            ? $"#{value.R:x2}{value.G:x2}{value.B:x2}"
+            : $"#{value.R:x2}{value.G:x2}{value.B:x2}{value.A:x2}";
+
     private static byte ExpandNibble(
         char value)
     {
@@ -132,11 +138,13 @@ internal static class TagColor
 internal sealed class TagColorEditor : UserControl
 {
     private readonly Border _preview;
+    private readonly ColorPicker _visualPicker;
     private readonly TextBox _custom;
     private readonly TextBlock _validation;
     private readonly WrapPanel _presetHost;
     private string? _selectedColor;
     private bool _suppressCustomTextChanged;
+    private bool _suppressVisualPickerChanged;
 
     public TagColorEditor(
         string initialColor = TagColor.Default)
@@ -157,6 +165,29 @@ internal sealed class TagColorEditor : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
+
+        _visualPicker =
+            new ColorPicker
+            {
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                MinHeight =
+                    LumineDesign.CompactCommandHeight,
+                IsAlphaEnabled = true,
+                IsAlphaVisible = true,
+                IsHexInputVisible = false,
+                IsColorPaletteVisible = false,
+                IsColorSpectrumVisible = true,
+                IsColorSpectrumSliderVisible = true,
+                IsColorComponentsVisible = true,
+                IsColorModelVisible = true
+            };
+        AutomationProperties.SetName(
+            _visualPicker,
+            "タグカラーを視覚的に選択");
+        ToolTip.SetTip(
+            _visualPicker,
+            "スペクトラムやRGB/HSVスライダーから自由に色を選択");
 
         _custom =
             LumineDesign.ConfigureTextBox(
@@ -276,7 +307,27 @@ internal sealed class TagColorEditor : UserControl
                     LumineDesign.CaptionFontSize
             });
         root.Children.Add(
+            _visualPicker);
+        root.Children.Add(
+            new TextBlock
+            {
+                Text = "HEX",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            });
+        root.Children.Add(
             customRow);
+        root.Children.Add(
+            new TextBlock
+            {
+                Text = "プリセット",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            });
         root.Children.Add(
             _presetHost);
         root.Children.Add(
@@ -289,6 +340,16 @@ internal sealed class TagColorEditor : UserControl
                 if (!_suppressCustomTextChanged)
                 {
                     ApplyCustomText();
+                }
+            };
+        _visualPicker.ColorChanged +=
+            (_, args) =>
+            {
+                if (!_suppressVisualPickerChanged)
+                {
+                    SetColor(
+                        TagColor.FromColor(
+                            args.NewColor));
                 }
             };
 
@@ -312,6 +373,15 @@ internal sealed class TagColorEditor : UserControl
 
     internal bool ValidationVisibleForSmoke =>
         _validation.IsVisible;
+
+    internal Color VisualColorForSmoke =>
+        _visualPicker.Color;
+
+    internal void SetVisualColorForSmoke(
+        Color value)
+    {
+        _visualPicker.Color = value;
+    }
 
     internal void SetCustomTextForSmoke(
         string value)
@@ -416,10 +486,26 @@ internal sealed class TagColorEditor : UserControl
         string normalized)
     {
         _selectedColor = normalized;
+        var color =
+            TagColor.ToColor(normalized);
         _preview.Background =
-            TagColor.ToBrush(normalized);
+            new SolidColorBrush(color);
         _preview.BorderBrush =
             LumineDesign.BorderStrong;
+
+        if (!_visualPicker.Color.Equals(color))
+        {
+            _suppressVisualPickerChanged = true;
+            try
+            {
+                _visualPicker.Color =
+                    color;
+            }
+            finally
+            {
+                _suppressVisualPickerChanged = false;
+            }
+        }
         _validation.Text =
             string.Empty;
         _validation.IsVisible = false;
