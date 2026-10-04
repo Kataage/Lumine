@@ -3761,6 +3761,20 @@ try
                             StringComparison.Ordinal),
                         "Manual library rescan recreated the active runtime/shell or failed to report its final state.");
 
+                    for (var attempt = 0;
+                         attempt < 180
+                         && !string.IsNullOrWhiteSpace(
+                             window.StatusTextForSmoke);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(10);
+                    }
+                    Require(
+                        string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Completed rescan status remained permanently over the Browse canvas.");
+
                     // App integration must produce a real virtualized thumbnail
                     // surface before downstream interaction/DPI checks. The
                     // standalone Viewer smoke has the same first-frame gate.
@@ -3839,10 +3853,9 @@ try
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
-                                        .DirectFiltersAreVisibleForSmoke
-                                    && (viewport.Width < 1440
-                                        || window.BrowseControlsForSmoke
-                                            .DirectFiltersFitWithoutScrollForSmoke)
+                                        .FilterButtonIsVisibleForSmoke
+                                    && !window.BrowseControlsForSmoke
+                                        .FilterFlyoutIsOpenForSmoke
                                     && window.BrowseControlsForSmoke
                                         .SearchPaddingForSmoke.Top <= 4
                                     && (iteration == 2
@@ -3872,6 +3885,57 @@ try
                                         viewport.Width == 900d
                                             ? "browse-900x600"
                                             : "browse-1440x900");
+
+                                    if (viewport.Width == 900d)
+                                    {
+                                        window.BrowseControlsForSmoke
+                                            .OpenFilterFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .FilterFlyoutIsOpenForSmoke
+                                            && window.BrowseControlsForSmoke
+                                                .FilterFlyoutLayoutIsContainedForSmoke,
+                                            "Browse filter Flyout did not remain contained at 900x600.");
+                                        CaptureVisualEvidence(
+                                            window,
+                                            "browse-filter-open-900x600");
+                                        window.BrowseControlsForSmoke
+                                            .CloseFilterFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+
+                                        var visualFilterAsset =
+                                            await window.CurrentRuntime!
+                                                .ViewerSession
+                                                .GetAssetAsync(0);
+                                        await window.CurrentRuntime
+                                            .LibraryService
+                                            .SetUserMetadataAsync(
+                                                window.CurrentRuntime.Library.Id,
+                                                visualFilterAsset.Id,
+                                                new AssetUserMetadataUpdate(
+                                                    Tags:
+                                                        ["browse-filter-smoke"]));
+                                        await window.BrowseControlsForSmoke
+                                            .SetTagScopeAsync(
+                                                "browse-filter-smoke");
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .FilterButtonTextForSmoke
+                                                .Contains(
+                                                    "1",
+                                                    StringComparison.Ordinal)
+                                            && window.CurrentRuntime.AssetCount
+                                                == 1,
+                                            "Browse active-filter state was not surfaced clearly with a matching result.");
+                                        CaptureVisualEvidence(
+                                            window,
+                                            "browse-active-filter-900x600");
+                                        await window.BrowseControlsForSmoke
+                                            .ClearTagScopesAsync();
+                                        Dispatcher.UIThread.RunJobs();
+                                    }
                                 }
 
                                 window.CurrentShell.GridViewer.SelectAsset(0);
@@ -4483,6 +4547,8 @@ try
             {
                 "browse-900x600",
                 "browse-1440x900",
+                "browse-filter-open-900x600",
+                "browse-active-filter-900x600",
                 "tags-create-900x600-text225",
                 "tags-edit-900x600-text225",
                 "inspector-900x600",
