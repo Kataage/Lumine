@@ -502,6 +502,20 @@ public sealed class ThumbnailViewerControl : UserControl
         return tile.GetActionGeometryForSmoke();
     }
 
+    internal bool IsRealizedTileActionOverlayVisibleForSmoke(
+        long index)
+    {
+        var tile =
+            this.GetVisualDescendants()
+                .OfType<ViewerTileControl>()
+                .FirstOrDefault(
+                    item => item.Index == index)
+            ?? throw new InvalidOperationException(
+                $"Asset {index} is not realized.");
+
+        return tile.IsActionOverlayVisibleForSmoke();
+    }
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
@@ -1750,7 +1764,11 @@ public sealed class ThumbnailViewerControl : UserControl
                 };
 
             var showActions =
-                _hovered;
+                ShouldShowTileActions(
+                    _layoutMode,
+                    IsSelected,
+                    _hovered,
+                    IsKeyboardFocusWithin);
             if (showActions)
             {
                 EnsureActionOverlay();
@@ -1846,6 +1864,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 Grid.SetColumn(actions, 2);
                 _listPanel!.Children.Add(actions);
             }
+        }
+
+        public bool IsActionOverlayVisibleForSmoke()
+        {
+            EnsureActionOverlay();
+            UpdateVisualState();
+            return _actionOverlay!.IsVisible;
         }
 
         public List<ViewerTileActionGeometry>
@@ -2157,6 +2182,27 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal static bool ResolveTileActionVisibilityForSmoke(
+        ViewerLayoutMode layoutMode,
+        bool selected,
+        bool hovered,
+        bool focused) =>
+        ShouldShowTileActions(
+            layoutMode,
+            selected,
+            hovered,
+            focused);
+
+    private static bool ShouldShowTileActions(
+        ViewerLayoutMode layoutMode,
+        bool selected,
+        bool hovered,
+        bool focused) =>
+        layoutMode == ViewerLayoutMode.List
+        || hovered
+        || selected
+        || focused;
+
     internal static string ResolveTileVisualStateForSmoke(
         bool selected,
         bool hovered,

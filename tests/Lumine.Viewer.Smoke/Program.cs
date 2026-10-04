@@ -725,6 +725,34 @@ internal static class Program
         Require(viewer.SelectedAssetIndex == -1, "Viewer unexpectedly started with a selection.");
 
         Require(
+            !ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.Grid,
+                selected: false,
+                hovered: false,
+                focused: false)
+            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.Grid,
+                selected: true,
+                hovered: false,
+                focused: false)
+            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.Grid,
+                selected: false,
+                hovered: true,
+                focused: false)
+            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.Grid,
+                selected: false,
+                hovered: false,
+                focused: true)
+            && ThumbnailViewerControl.ResolveTileActionVisibilityForSmoke(
+                ViewerLayoutMode.List,
+                selected: false,
+                hovered: false,
+                focused: false),
+            "Thumbnail primary actions regressed from v1 selected/focus/list discoverability.");
+
+        Require(
             ThumbnailViewerControl.ResolveTileVisualStateForSmoke(
                 selected: false,
                 hovered: false,
