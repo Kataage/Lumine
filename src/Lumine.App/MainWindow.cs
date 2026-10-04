@@ -2660,15 +2660,59 @@ public sealed class MainWindow : Window
                 cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var text = new TextBox
-        {
-            Text = diagnostics,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
-            Margin = new Thickness(16)
-        };
+        var text =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    Text = diagnostics,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping =
+                        TextWrapping.NoWrap,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    VerticalAlignment =
+                        VerticalAlignment.Stretch
+                });
 
+        var close =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "閉じる",
+                    IsDefault = true,
+                    IsCancel = true
+                });
+
+        var content =
+            new Grid
+            {
+                RowDefinitions =
+                    new RowDefinitions("*,Auto"),
+                RowSpacing =
+                    LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space16)
+            };
+        content.Children.Add(text);
+        Grid.SetRow(
+            close,
+            1);
+        close.HorizontalAlignment =
+            HorizontalAlignment.Right;
+        content.Children.Add(close);
+
+        var dialogWidth =
+            Math.Clamp(
+                Bounds.Width - 64,
+                560,
+                820);
+        var dialogHeight =
+            Math.Clamp(
+                Bounds.Height - 64,
+                360,
+                620);
         var dialog = new Window
         {
             Title = "Lumine 診断情報",
@@ -2676,18 +2720,29 @@ public sealed class MainWindow : Window
             Background = LumineDesign.Background,
             Foreground = LumineDesign.Foreground,
             FontFamily = LumineDesign.UiFont,
-            Width = 820,
-            Height = 620,
-            MinWidth = 640,
-            MinHeight = 420,
-            Content = text
+            Width = dialogWidth,
+            Height = dialogHeight,
+            MinWidth = 520,
+            MinHeight = 340,
+            MaxWidth = 900,
+            MaxHeight = 700,
+            CanResize = true,
+            WindowStartupLocation =
+                WindowStartupLocation.CenterOwner,
+            Content = content
         };
+        close.Click +=
+            (_, _) => dialog.Close();
 
         _diagnosticsWindow = dialog;
+        var focusReturn =
+            FocusManager?.GetFocusedElement()
+                as Control;
 
         try
         {
             await dialog.ShowDialog(this);
+            focusReturn?.Focus();
         }
         finally
         {
