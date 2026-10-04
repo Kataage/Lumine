@@ -2382,6 +2382,46 @@ try
                             shellBeforeSettings),
                         "Returning from Settings did not restore browse navigation without rebuilding the viewer shell.");
 
+                    var shellBeforeQueryChange =
+                        window.CurrentShell!;
+                    var gridBeforeQueryChange =
+                        shellBeforeQueryChange.GridViewer;
+                    gridBeforeQueryChange.SelectAsset(0);
+                    await shellBeforeQueryChange
+                        .ShowContextDetailAsync();
+                    var selectedAssetBeforeQuery =
+                        await window.CurrentRuntime!
+                            .ViewerSession
+                            .GetAssetAsync(0);
+
+                    await window.ApplyBrowseFilterForSmokeAsync(
+                        new BrowseFilterState(
+                            SortOrder:
+                                AssetSortOrder.ModifiedOldest));
+                    Dispatcher.UIThread.RunJobs();
+
+                    var selectedIndexAfterSort =
+                        window.CurrentShell!
+                            .GridViewer
+                            .SelectedAssetIndex;
+                    var selectedAssetAfterSort =
+                        await window.CurrentRuntime!
+                            .ViewerSession
+                            .GetAssetAsync(
+                                selectedIndexAfterSort);
+                    Require(
+                        ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeQueryChange)
+                        && ReferenceEquals(
+                            window.CurrentShell.GridViewer,
+                            gridBeforeQueryChange)
+                        && selectedAssetAfterSort.Id
+                            == selectedAssetBeforeQuery.Id
+                        && window.CurrentShell
+                            .IsContextDetailVisible,
+                        "Browse sort rebuilt the Viewer shell/control or lost a still-matching selected Inspector asset.");
+
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
                             SearchText:
@@ -2390,11 +2430,22 @@ try
                     Require(
                         string.Equals(
                             window.ProductShellState,
-                            "NoMatch",
+                            "Workspace",
                             StringComparison.Ordinal)
                         && window.CurrentRuntime is not null
-                        && window.CurrentShell is null,
-                        "Filtered zero-result workspace did not transition to the distinct NoMatch product state.");
+                        && window.CurrentRuntime.AssetCount == 0
+                        && ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeQueryChange)
+                        && ReferenceEquals(
+                            window.CurrentShell.GridViewer,
+                            gridBeforeQueryChange)
+                        && window.CurrentShell
+                            .GridViewer
+                            .SelectedAssetIndex == -1
+                        && !window.CurrentShell
+                            .IsContextDetailVisible,
+                        "Filtered zero-result query replaced the Viewer shell or kept stale selection/Inspector state.");
 
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
@@ -2408,8 +2459,15 @@ try
                             window.ProductShellState,
                             "Workspace",
                             StringComparison.Ordinal)
-                        && window.CurrentShell is not null,
-                        "Clearing the no-match filter did not restore the Workspace state.");
+                        && window.CurrentShell is not null
+                        && ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeQueryChange)
+                        && ReferenceEquals(
+                            window.CurrentShell.GridViewer,
+                            gridBeforeQueryChange)
+                        && window.CurrentRuntime!.AssetCount > 0,
+                        "Clearing the no-match filter rebuilt the Viewer shell/control instead of restoring data in place.");
 
                     await window.OpenLibraryAsync(
                         repeatedEmptyLibraryRoot);
