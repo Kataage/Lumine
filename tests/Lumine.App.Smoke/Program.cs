@@ -164,8 +164,16 @@ void CaptureVisualEvidence(
         return;
     }
 
-    AvaloniaHeadlessPlatform
-        .ForceRenderTimerTick();
+    // Nested overlay popups can need multiple headless render passes
+    // before Skia paints their full content (not just popup geometry).
+    for (var renderPass = 0;
+         renderPass < 3;
+         renderPass++)
+    {
+        Dispatcher.UIThread.RunJobs();
+        AvaloniaHeadlessPlatform
+            .ForceRenderTimerTick();
+    }
     Dispatcher.UIThread.RunJobs();
 
     using var frame =
@@ -1970,9 +1978,30 @@ try
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
 
+                // The edit popup is freshly mounted here. Give its layout one
+                // render pass before opening the nested shared ColorPicker.
+                AvaloniaHeadlessPlatform
+                    .ForceRenderTimerTick();
+                Dispatcher.UIThread.RunJobs();
+                editColor.OpenVisualPickerForSmoke();
+                for (var renderPass = 0;
+                     renderPass < 3;
+                     renderPass++)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    AvaloniaHeadlessPlatform
+                        .ForceRenderTimerTick();
+                }
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    editColor.VisualPickerFlyoutOpenForSmoke
+                    && editColor.VisualPickerFlyoutHasSpectrumForSmoke,
+                    "Tag edit visual evidence did not open the real ColorPicker spectrum flyout.");
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-edit-900x600-text225");
+                editColor.CloseVisualPickerForSmoke();
+                Dispatcher.UIThread.RunJobs();
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
