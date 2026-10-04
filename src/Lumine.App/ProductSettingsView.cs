@@ -505,9 +505,11 @@ internal static class ProductSettingsView
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
-                        $"保存できませんでした: {exception.Message}";
+                        "保存できませんでした。もう一度お試しください。";
                 }
                 finally
                 {
@@ -537,9 +539,11 @@ internal static class ProductSettingsView
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
-                        $"保存できませんでした: {exception.Message}";
+                        "保存できませんでした。もう一度お試しください。";
                 }
                 finally
                 {
