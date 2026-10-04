@@ -174,7 +174,7 @@ $manualChecks = @(
     [ordered]@{
         id = "accessibilityResponsive"
         title = "Accessibility and responsive polish"
-        prompt = "Does keyboard-only navigation follow the visual order, do compact layouts remain usable, and do large Windows text scale plus selected/destructive states remain clear without relying on color alone?"
+        prompt = "Does keyboard-only navigation follow the visual order; are 900x600, 1024x768, 1440x900 and 1920x1080 usable; and are 100%, 125%, 150%, 200% and 225% Windows text scales clear without clipping or color-only selection/destructive cues?"
         status = "pending"
     },
     [ordered]@{
