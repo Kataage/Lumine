@@ -143,6 +143,8 @@ internal sealed class TagColorEditor : UserControl
     private readonly TextBox _custom;
     private readonly TextBlock _validation;
     private readonly WrapPanel _presetHost;
+    private readonly Button _advancedToggle;
+    private readonly Border _advancedSurface;
     private string? _selectedColor;
     private bool _suppressCustomTextChanged;
     private bool _suppressVisualPickerChanged;
@@ -292,6 +294,73 @@ internal sealed class TagColorEditor : UserControl
         customRow.Children.Add(
             _custom);
 
+        var advancedBody =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space6
+            };
+        advancedBody.Children.Add(
+            _visualPicker);
+        advancedBody.Children.Add(
+            new TextBlock
+            {
+                Text = "HEX",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            });
+        advancedBody.Children.Add(
+            customRow);
+        advancedBody.Children.Add(
+            _validation);
+
+        _advancedSurface =
+            new Border
+            {
+                IsVisible = false,
+                Background =
+                    LumineDesign.Background,
+                BorderBrush =
+                    LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space8),
+                Child =
+                    advancedBody
+            };
+
+        _advancedToggle =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "カスタム…",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        AutomationProperties.SetName(
+            _advancedToggle,
+            "カスタムカラーを開く");
+        ToolTip.SetTip(
+            _advancedToggle,
+            "スペクトラムやHEXで自由に色を指定");
+        _advancedToggle.Click +=
+            (_, _) =>
+                SetAdvancedVisible(
+                    !_advancedSurface.IsVisible);
+
         var root =
             new StackPanel
             {
@@ -308,31 +377,11 @@ internal sealed class TagColorEditor : UserControl
                     LumineDesign.CaptionFontSize
             });
         root.Children.Add(
-            _visualPicker);
-        root.Children.Add(
-            new TextBlock
-            {
-                Text = "HEX",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize
-            });
-        root.Children.Add(
-            customRow);
-        root.Children.Add(
-            new TextBlock
-            {
-                Text = "プリセット",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize
-            });
-        root.Children.Add(
             _presetHost);
         root.Children.Add(
-            _validation);
+            _advancedToggle);
+        root.Children.Add(
+            _advancedSurface);
         Content = root;
 
         _custom.TextChanged +=
@@ -374,6 +423,9 @@ internal sealed class TagColorEditor : UserControl
 
     internal bool ValidationVisibleForSmoke =>
         _validation.IsVisible;
+
+    internal bool AdvancedVisibleForSmoke =>
+        _advancedSurface.IsVisible;
 
     internal Color VisualColorForSmoke =>
         _visualPicker.Color;
@@ -473,6 +525,7 @@ internal sealed class TagColorEditor : UserControl
 
     internal void OpenVisualPickerForSmoke()
     {
+        SetAdvancedVisible(true);
         _visualPicker.ApplyTemplate();
         var button =
             _visualPicker
@@ -529,9 +582,12 @@ internal sealed class TagColorEditor : UserControl
             TagColor.Presets[index]);
     }
 
-    public void Reset() =>
+    public void Reset()
+    {
         SetColor(
             TagColor.Default);
+        SetAdvancedVisible(false);
+    }
 
     public void SetColor(
         string value)
@@ -563,6 +619,26 @@ internal sealed class TagColorEditor : UserControl
 
         ApplyNormalizedColor(
             normalized);
+    }
+
+    internal void SetAdvancedVisibleForSmoke(
+        bool visible) =>
+        SetAdvancedVisible(visible);
+
+    private void SetAdvancedVisible(
+        bool visible)
+    {
+        _advancedSurface.IsVisible =
+            visible;
+        _advancedToggle.Content =
+            visible
+                ? "カスタムを閉じる"
+                : "カスタム…";
+        AutomationProperties.SetName(
+            _advancedToggle,
+            visible
+                ? "カスタムカラーを閉じる"
+                : "カスタムカラーを開く");
     }
 
     private void ApplyCustomText()
