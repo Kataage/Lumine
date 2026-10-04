@@ -713,6 +713,7 @@ internal static class ProductNavigationViews
         IReadOnlyList<string> selectedTags,
         Func<string?, Task> selectTag,
         Func<string, string, Task> createTag,
+        Func<LibraryTagInfo, string, string, Task> updateTag,
         Func<LibraryTagInfo, Task> deleteTag,
         Action<string>? reportError = null)
     {
@@ -720,6 +721,7 @@ internal static class ProductNavigationViews
         ArgumentNullException.ThrowIfNull(selectedTags);
         ArgumentNullException.ThrowIfNull(selectTag);
         ArgumentNullException.ThrowIfNull(createTag);
+        ArgumentNullException.ThrowIfNull(updateTag);
         ArgumentNullException.ThrowIfNull(deleteTag);
 
         var selected =
@@ -1165,7 +1167,7 @@ internal static class ProductNavigationViews
                             {
                                 ColumnDefinitions =
                                     new ColumnDefinitions(
-                                        "*,Auto"),
+                                        "*,Auto,Auto"),
                                 ColumnSpacing =
                                     LumineDesign.Space6,
                                 HorizontalAlignment =
@@ -1197,6 +1199,251 @@ internal static class ProductNavigationViews
                         row.Children.Add(
                             tagSurface);
 
+                        var edit =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "編集",
+                                    MinHeight = 28,
+                                    Padding =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            LumineDesign.Space2),
+                                    FontSize =
+                                        LumineDesign.CaptionFontSize,
+                                    VerticalAlignment =
+                                        VerticalAlignment.Center
+                                });
+
+                        var editName =
+                            LumineDesign.ConfigureTextBox(
+                                new TextBox
+                                {
+                                    PlaceholderText =
+                                        "タグ名",
+                                    Text = tag.Name
+                                });
+                        var editColor =
+                            new TagColorEditor(
+                                tag.Color);
+                        var editStatus =
+                            new TextBlock
+                            {
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize,
+                                TextWrapping =
+                                    TextWrapping.Wrap
+                            };
+                        var saveEdit =
+                            LumineDesign.ConfigurePrimaryButton(
+                                new Button
+                                {
+                                    Content = "保存",
+                                    MinWidth = 68
+                                });
+                        var cancelEdit =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "キャンセル"
+                                });
+                        var editActions =
+                            new WrapPanel
+                            {
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Right
+                            };
+                        cancelEdit.Margin =
+                            new Thickness(
+                                0,
+                                0,
+                                LumineDesign.Space6,
+                                LumineDesign.Space4);
+                        saveEdit.Margin =
+                            new Thickness(
+                                0,
+                                0,
+                                0,
+                                LumineDesign.Space4);
+                        editActions.Children.Add(
+                            cancelEdit);
+                        editActions.Children.Add(
+                            saveEdit);
+
+                        var editBody =
+                            new StackPanel
+                            {
+                                Spacing =
+                                    LumineDesign.Space8
+                            };
+                        editBody.Children.Add(
+                            new TextBlock
+                            {
+                                Text = "タグを編集",
+                                Foreground =
+                                    LumineDesign.Foreground,
+                                FontWeight =
+                                    FontWeight.SemiBold,
+                                FontSize =
+                                    LumineDesign.BodyFontSize
+                            });
+                        editBody.Children.Add(
+                            new TextBlock
+                            {
+                                Text =
+                                    $"{tag.AssetCount:N0}件の画像で使用",
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize
+                            });
+                        editBody.Children.Add(
+                            editName);
+                        editBody.Children.Add(
+                            editColor);
+                        editBody.Children.Add(
+                            editStatus);
+                        editBody.Children.Add(
+                            editActions);
+
+                        var editFlyout =
+                            new Flyout
+                            {
+                                Content =
+                                    new Border
+                                    {
+                                        Width = 320,
+                                        MaxWidth = 360,
+                                        Background =
+                                            LumineDesign.SurfaceRaised,
+                                        BorderBrush =
+                                            LumineDesign.Border,
+                                        BorderThickness =
+                                            new Thickness(1),
+                                        CornerRadius =
+                                            new CornerRadius(
+                                                LumineDesign.PanelRadius),
+                                        Padding =
+                                            new Thickness(
+                                                LumineDesign.Space12),
+                                        Child = editBody
+                                    }
+                            };
+                        edit.Flyout =
+                            editFlyout;
+
+                        var editBusy = false;
+                        void UpdateEditActionState()
+                        {
+                            saveEdit.IsEnabled =
+                                editFlyout.IsOpen
+                                && !editBusy
+                                && !string.IsNullOrWhiteSpace(
+                                    editName.Text)
+                                && editColor.IsColorValid;
+                            cancelEdit.IsEnabled =
+                                !editBusy;
+                            editName.IsEnabled =
+                                !editBusy;
+                            editColor.IsEnabled =
+                                !editBusy;
+                        }
+
+                        editFlyout.Opened +=
+                            (_, _) =>
+                            {
+                                editName.Text =
+                                    tag.Name;
+                                editColor.SetColor(
+                                    tag.Color);
+                                editStatus.Text =
+                                    string.Empty;
+                                editStatus.Foreground =
+                                    LumineDesign.MutedForeground;
+                                editName.Focus();
+                                UpdateEditActionState();
+                            };
+                        editFlyout.Closed +=
+                            (_, _) =>
+                                UpdateEditActionState();
+                        editName.TextChanged +=
+                            (_, _) =>
+                                UpdateEditActionState();
+                        editColor.StateChanged +=
+                            (_, _) =>
+                                UpdateEditActionState();
+                        cancelEdit.Click +=
+                            (_, _) =>
+                            {
+                                if (!editBusy)
+                                {
+                                    editFlyout.Hide();
+                                }
+                            };
+                        saveEdit.Click +=
+                            async (_, _) =>
+                            {
+                                var updatedName =
+                                    editName.Text?.Trim();
+                                var updatedColor =
+                                    editColor.SelectedColor;
+                                if (string.IsNullOrWhiteSpace(
+                                        updatedName)
+                                    || updatedColor is null
+                                    || editBusy)
+                                {
+                                    return;
+                                }
+
+                                editBusy = true;
+                                editStatus.Foreground =
+                                    LumineDesign.MutedForeground;
+                                editStatus.Text =
+                                    "保存しています…";
+                                UpdateEditActionState();
+                                try
+                                {
+                                    await updateTag(
+                                        tag,
+                                        updatedName,
+                                        updatedColor);
+                                    editStatus.Text =
+                                        string.Empty;
+                                    editFlyout.Hide();
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    editStatus.Text =
+                                        "保存をキャンセルしました。";
+                                }
+                                catch (Exception exception)
+                                {
+                                    System.Diagnostics.Trace.TraceError(
+                                        exception.ToString());
+                                    editStatus.Foreground =
+                                        LumineDesign.Warning;
+                                    editStatus.Text =
+                                        "保存できませんでした。"
+                                        + (string.IsNullOrWhiteSpace(
+                                                exception.Message)
+                                            ? string.Empty
+                                            : $" {exception.Message}");
+                                }
+                                finally
+                                {
+                                    editBusy = false;
+                                    UpdateEditActionState();
+                                }
+                            };
+
+                        Grid.SetColumn(
+                            edit,
+                            1);
+                        row.Children.Add(
+                            edit);
+
                         var remove =
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
@@ -1216,13 +1463,14 @@ internal static class ProductNavigationViews
                             LumineDesign.Danger;
                         Grid.SetColumn(
                             remove,
-                            1);
+                            2);
                         row.Children.Add(
                             remove);
                         AttachAsync(
                             remove,
                             () => deleteTag(tag),
                             reportError);
+                        UpdateEditActionState();
                         return row;
                     },
                     supportsRecycling: true);
