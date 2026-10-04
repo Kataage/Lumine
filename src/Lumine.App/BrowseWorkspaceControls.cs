@@ -605,6 +605,53 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     Array.Empty<string>()
             });
 
+    public Task ReplaceTagScopeAsync(
+        string oldTag,
+        string newTag)
+    {
+        var oldNormalized =
+            NormalizeOptional(oldTag)
+            ?? throw new ArgumentException(
+                "Old tag is required.",
+                nameof(oldTag));
+        var newNormalized =
+            NormalizeOptional(newTag)
+            ?? throw new ArgumentException(
+                "New tag is required.",
+                nameof(newTag));
+
+        var tags =
+            State.TagNames
+                .ToList();
+        var index =
+            tags.FindIndex(
+                value =>
+                    string.Equals(
+                        value,
+                        oldNormalized,
+                        StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        tags[index] =
+            newNormalized;
+        var updated =
+            tags.Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    static value => value,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+        return SetStateAsync(
+            State with
+            {
+                RequiredTags = updated
+            });
+    }
+
     public void DisposeTransientWork()
     {
         _searchDebounce?.Cancel();
