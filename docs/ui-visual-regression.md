@@ -10,10 +10,12 @@ The App smoke receives:
 --visual-output=artifacts/visual-regression
 ```
 
-When enabled it captures exactly these product surfaces:
+When enabled it captures the required product surfaces below:
 
 - `browse-900x600.png`
 - `browse-1440x900.png`
+- `browse-filter-open-900x600.png`
+- `browse-active-filter-900x600.png`
 - `tags-create-900x600-text225.png`
 - `tags-edit-900x600-text225.png`
 - `inspector-900x600.png`
