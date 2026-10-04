@@ -3946,9 +3946,12 @@ try
                                 Require(
                                     window.CurrentShell.IsContextDetailVisible
                                     && window.CurrentShell.IsCompactInspectorLayout
-                                        == (viewport.Width <= 1080)
+                                        == (viewport.Width < 1200)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
-                                        is >= 300 and <= 400
+                                        is >= 300 and <= 380
+                                    && window.CurrentShell.ContextDetail
+                                        .IsCompactPresentationForSmoke
+                                        == (viewport.Width < 1200)
                                     && window.CurrentShell.GridViewerBounds.Width
                                         >= 500
                                     && !window.CurrentShell.IsInspectorPinnedForSmoke
@@ -4057,9 +4060,21 @@ try
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
+                                    && !window.CurrentShell.ContextDetail
+                                        .IsCompactPresentationForSmoke
                                     && inspectorPinnedCanvasWidth
                                         < unpinnedClosedCanvasWidth - 250,
                                     $"Pinned Inspector did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-1440x900-pinned");
+                                }
 
                                 window.CurrentShell.SetInspectorPinnedForSmoke(false);
                                 Dispatcher.UIThread.RunJobs();
@@ -4152,7 +4167,9 @@ try
 
                     Require(
                         window.CurrentShell.IsCompactInspectorLayout
-                        && window.CurrentShell.ContextSurfaceBounds.Width <= 400
+                        && window.CurrentShell.ContextSurfaceBounds.Width <= 340
+                        && window.CurrentShell.ContextDetail
+                            .IsCompactPresentationForSmoke
                         && window.CurrentShell.GridViewerBounds.Width >= 500,
                         "Minimum-width workspace did not preserve an image-dominant canvas with overlay inspector.");
 
@@ -4552,6 +4569,7 @@ try
                 "tags-create-900x600-text225",
                 "tags-edit-900x600-text225",
                 "inspector-900x600",
+                "inspector-1440x900-pinned",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
                 "no-match-1440x900",
