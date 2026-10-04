@@ -1317,7 +1317,77 @@ try
                 RealizedNavigationRows(publicationsView) is > 0 and < 128,
                 "2k publication navigation materialized an unbounded visual tree.");
             scaleWindow.Close();
+
+            var publicationLoadMoreCalls = 0;
+            var pagedPublicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    largePublications.Take(100).ToArray(),
+                    totalCount: 150,
+                    hasMore: true,
+                    loadMore:
+                        () =>
+                        {
+                            publicationLoadMoreCalls++;
+                            return Task.FromResult(
+                                new PublicationPage(
+                                    largePublications
+                                        .Skip(100)
+                                        .Take(50)
+                                        .ToArray(),
+                                    NextCursor: null,
+                                    TotalCount: 150));
+                        });
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content = pagedPublicationView
+                };
+            scaleWindow.Show();
             Dispatcher.UIThread.RunJobs();
+
+            var publicationLoadMore =
+                pagedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "さらに読み込む",
+                                StringComparison.Ordinal));
+            publicationLoadMore.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            for (var attempt = 0;
+                 attempt < 50
+                 && publicationLoadMoreCalls == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Dispatcher.UIThread.RunJobs();
+
+            var pagedPublicationList =
+                pagedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .Single();
+            Require(
+                publicationLoadMoreCalls == 1
+                && pagedPublicationList.ItemsSource
+                    ?.Cast<PublicationInfo>()
+                    .Count() == 150
+                && !publicationLoadMore.IsVisible
+                && pagedPublicationList
+                    .GetRealizedContainers()
+                    .Count() < 128,
+                "Publication history load-more did not append older rows while retaining bounded realization.");
+            scaleWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
             navigationScaleWatch.Stop();
 
             Require(
