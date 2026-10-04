@@ -545,9 +545,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButtonLabel.Text
         ?? string.Empty;
 
-    internal void OpenFilterFlyoutForSmoke() =>
+    internal void OpenFilterPanel() =>
         _filterFlyout.ShowAt(
             _filterButton);
+
+    internal void OpenFilterFlyoutForSmoke() =>
+        OpenFilterPanel();
 
     internal void CloseFilterFlyoutForSmoke() =>
         _filterFlyout.Hide();
