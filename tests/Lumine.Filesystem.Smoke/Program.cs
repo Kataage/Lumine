@@ -168,8 +168,16 @@ try
 
     long initialId;
     long initialRevision;
+    var bootstrapProgress =
+        new List<LibraryScanProgress>();
 
-    await using (var sync = await syncService.StartAsync(library.Id))
+    await using (
+        var sync =
+            await syncService.StartAsync(
+                library.Id,
+                progress:
+                    new InlineProgress<LibraryScanProgress>(
+                        bootstrapProgress.Add)))
     {
         var initial = await WaitForAsync(
             () => repository.GetAssetAsync(library.Id, "initial.jpg"),
@@ -178,6 +186,33 @@ try
 
         initialId = initial.Id;
         initialRevision = initial.SourceRevision;
+
+        Require(
+            bootstrapProgress.Any(
+                static update =>
+                    update.Discovered >= 1
+                    && update.Persisted >= 1),
+            "Bootstrap full reconciliation did not propagate scan progress through WindowsLibrarySyncService.");
+
+        var manualProgress =
+            new List<LibraryScanProgress>();
+        var manualReconcile =
+            await sync.ReconcileNowAsync(
+                progress:
+                    new InlineProgress<LibraryScanProgress>(
+                        manualProgress.Add));
+        var finalManualProgress =
+            manualProgress.LastOrDefault();
+        Require(
+            manualReconcile.Completed
+            && manualProgress.Count > 0
+            && finalManualProgress.Discovered
+                == manualReconcile.Discovered
+            && finalManualProgress.Persisted
+                == manualReconcile.Persisted
+            && finalManualProgress.Skipped
+                == manualReconcile.Skipped,
+            "Explicit manual reconciliation did not propagate its final scan counters.");
 
         var livePath = Path.Combine(libraryRoot, "live.jpg");
         var createStarted = DateTime.UtcNow;
@@ -675,4 +710,16 @@ finally
     {
         Directory.Delete(tempRoot, recursive: true);
     }
+}
+
+
+internal sealed class InlineProgress<T>(
+    Action<T> report) : IProgress<T>
+{
+    private readonly Action<T> _report =
+        report
+        ?? throw new ArgumentNullException(nameof(report));
+
+    public void Report(T value) =>
+        _report(value);
 }

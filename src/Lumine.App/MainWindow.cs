@@ -466,6 +466,10 @@ public sealed class MainWindow : Window
     internal BrowseWorkspaceControls? BrowseControlsForSmoke =>
         _browseControls;
 
+    internal string StatusTextForSmoke =>
+        _status.Text
+        ?? string.Empty;
+
     internal bool HasRetryableOpenFailureForSmoke =>
         !string.IsNullOrWhiteSpace(
             _failedLibraryRoot);
@@ -1000,16 +1004,37 @@ public sealed class MainWindow : Window
         }
 
         var runtimeBefore = runtime;
+        var acceptProgress = true;
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text =
             "ライブラリを再スキャンしています…";
 
+        var progress =
+            new Progress<LibraryScanProgress>(
+                scan =>
+                {
+                    if (!acceptProgress
+                        || !ReferenceEquals(
+                            _runtime,
+                            runtimeBefore))
+                    {
+                        return;
+                    }
+
+                    _status.Text =
+                        FormatLibraryScanProgress(
+                            "再スキャン中",
+                            scan);
+                });
+
         try
         {
             var result =
                 await runtime.SyncSession
-                    .ReconcileNowAsync();
+                    .ReconcileNowAsync(
+                        progress: progress);
+            acceptProgress = false;
 
             if (!ReferenceEquals(
                     _runtime,
@@ -1028,6 +1053,7 @@ public sealed class MainWindow : Window
         }
         catch (Exception exception)
         {
+            acceptProgress = false;
             if (ReferenceEquals(
                     _runtime,
                     runtimeBefore))
@@ -2037,10 +2063,17 @@ public sealed class MainWindow : Window
                 "ライブラリを開いています",
                 string.Empty);
 
+        var acceptOpenProgress = true;
         var progress =
             new Progress<CoreViewerOpenProgress>(
-                _ => _status.Text =
-                    "ライブラリを準備しています…");
+                update =>
+                {
+                    if (acceptOpenProgress)
+                    {
+                        _status.Text =
+                            FormatOpenProgress(update);
+                    }
+                });
 
         CoreViewerRuntime? runtime = null;
 
@@ -2056,6 +2089,7 @@ public sealed class MainWindow : Window
                 BuildBrowseQuery());
 
             operationToken.ThrowIfCancellationRequested();
+            acceptOpenProgress = false;
 
             _runtime = runtime;
             runtime = null;
@@ -2086,6 +2120,13 @@ public sealed class MainWindow : Window
             UpdateScopeDisplay();
             StartNavigationRefresh();
 
+            _status.Foreground =
+                LumineDesign.MutedForeground;
+            _status.Text =
+                _runtime.AssetCount == 0
+                    ? "画像は見つかりませんでした。"
+                    : $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+
             _host?.Log.Write(
                 "library",
                 $"Opened {_runtime.LibraryRoot} with {_runtime.AssetCount:N0} assets.");
@@ -2093,6 +2134,7 @@ public sealed class MainWindow : Window
         catch (OperationCanceledException)
             when (operationToken.IsCancellationRequested)
         {
+            acceptOpenProgress = false;
             if (!_closeStarted)
             {
                 _productShellState = "Welcome";
@@ -2104,6 +2146,7 @@ public sealed class MainWindow : Window
         }
         catch (Exception exception)
         {
+            acceptOpenProgress = false;
             _host?.Log.Write(
                 "library",
                 $"Open failed: {exception.Message}");
@@ -2133,6 +2176,42 @@ public sealed class MainWindow : Window
                 _openFolder.IsEnabled = true;
             }
         }
+    }
+
+    private static string FormatOpenProgress(
+        CoreViewerOpenProgress progress) =>
+        progress.Stage switch
+        {
+            CoreViewerOpenStage.InitializingDatabase =>
+                "ライブラリ情報を確認しています…",
+            CoreViewerOpenStage.RegisteringLibrary =>
+                "ライブラリを登録しています…",
+            CoreViewerOpenStage.SynchronizingLibrary
+                when progress.ScanProgress
+                    is { } scan =>
+                FormatLibraryScanProgress(
+                    "ライブラリを走査中",
+                    scan),
+            CoreViewerOpenStage.SynchronizingLibrary =>
+                "ライブラリの変更を同期しています…",
+            CoreViewerOpenStage.CreatingViewer =>
+                "画像一覧を準備しています…",
+            CoreViewerOpenStage.Ready =>
+                "画像一覧を準備できました。",
+            _ =>
+                "ライブラリを準備しています…"
+        };
+
+    private static string FormatLibraryScanProgress(
+        string prefix,
+        LibraryScanProgress progress)
+    {
+        var skipped =
+            progress.Skipped > 0
+                ? $" · スキップ {progress.Skipped:N0}"
+                : string.Empty;
+        return
+            $"{prefix}… 検出 {progress.Discovered:N0} · 登録 {progress.Persisted:N0}{skipped}";
     }
 
     private Control CreateLibraryOpenFailureState(
