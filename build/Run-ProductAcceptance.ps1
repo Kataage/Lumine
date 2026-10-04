@@ -130,21 +130,33 @@ $manualChecks = @(
         status = "pending"
     },
     [ordered]@{
+        id = "navigation"
+        title = "Shell and navigation"
+        prompt = "Do global navigation, contextual Library/Folder/Tag/Publication panes and the image canvas feel like one coherent hierarchy, including overlay behavior at compact width?"
+        status = "pending"
+    },
+    [ordered]@{
         id = "browse"
         title = "Browse usability"
-        prompt = "Are Library/Folder/Tag navigation, Grid/List, density, search/sort/filter and fast direction-reversing scroll responsive without disruptive blanking?"
+        prompt = "Are Grid/List, density, search/sort/filter, tag assignment and fast direction-reversing scroll responsive without disruptive blanking or excessive command chrome?"
         status = "pending"
     },
     [ordered]@{
         id = "organization"
         title = "Organization workflow"
-        prompt = "Do single/Ctrl/Shift selection, metadata editing, bulk actions and destructive confirmations feel clear and dependable?"
+        prompt = "Do single/Ctrl/Shift selection, Inspector metadata editing, bulk actions and destructive confirmations feel clear and dependable?"
         status = "pending"
     },
     [ordered]@{
         id = "viewer"
-        title = "Viewer usability"
-        prompt = "Do contextual detail, focused view, previous/next, Fit, zoom, pan and 1:1 feel comfortable in real use?"
+        title = "Viewer discoverability and comfort"
+        prompt = "Can a first-time user discover how to open an image, and are previous/next, Fit, zoom, 1:1, Info, fullscreen, pan and close/back clear without relying on hidden shortcuts?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "productStates"
+        title = "Product states and feedback"
+        prompt = "Do Welcome, Loading, Empty, No Match and recoverable Error each show one clear message and next action, with success feedback transient and technical detail secondary?"
         status = "pending"
     },
     [ordered]@{
@@ -156,7 +168,13 @@ $manualChecks = @(
     [ordered]@{
         id = "settingsPortable"
         title = "Settings and storage"
-        prompt = "Are Settings, MemoryOnly/PersistentDisk explanations, cache deletion and portable/storage behavior understandable and free of surprising side effects?"
+        prompt = "Are common Settings easy to find, advanced cache/storage/diagnostics progressively disclosed, and portable/storage behavior free of surprising side effects?"
+        status = "pending"
+    },
+    [ordered]@{
+        id = "accessibilityResponsive"
+        title = "Accessibility and responsive polish"
+        prompt = "Does keyboard-only navigation follow the visual order, do compact layouts remain usable, and do large Windows text scale plus selected/destructive states remain clear without relying on color alone?"
         status = "pending"
     },
     [ordered]@{
@@ -196,7 +214,7 @@ function Write-ManualChecklist {
     }
 
     $lines.Add("")
-    $lines.Add("If any item fails, keep #397 open and record a focused follow-up issue before AI work starts.")
+    $lines.Add("If any item fails, keep #443 / #410 / #397 open as applicable and record a focused follow-up issue before AI work starts.")
 
     $lines |
         Set-Content -LiteralPath $manualChecklistPath -Encoding UTF8
