@@ -1320,6 +1320,12 @@ public sealed class MainWindow : Window
                 ? "Lumineの登録情報を削除しました。元画像は変更していません。"
                 : "ライブラリの登録を解除できませんでした。";
 
+        if (removed)
+        {
+            _ = ClearTransientStatusAsync(
+                _status.Text);
+        }
+
         StartNavigationRefresh();
     }
 
@@ -1885,8 +1891,12 @@ public sealed class MainWindow : Window
             "公開履歴");
         _status.Foreground =
             LumineDesign.MutedForeground;
-        _status.Text =
+        const string publicationStatus =
             "Publicationを公開履歴へ保存しました。";
+        _status.Text =
+            publicationStatus;
+        _ = ClearTransientStatusAsync(
+            publicationStatus);
         StartNavigationRefresh();
     }
 
@@ -2023,6 +2033,7 @@ public sealed class MainWindow : Window
                 LumineDesign.Warning;
             _status.Text =
                 $"検索・フィルターを適用できませんでした: {exception.Message}";
+            return;
         }
 
         UpdateScopeDisplay();
