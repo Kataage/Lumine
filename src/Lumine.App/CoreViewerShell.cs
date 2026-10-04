@@ -1550,16 +1550,19 @@ internal sealed class CoreViewerShell : UserControl
             CreateBulkButton(
                 "元ファイルを削除…",
                 DeleteSelectedSourcesAsync);
-        delete.Foreground =
-            LumineDesign.Danger;
+        LumineDesign.ConfigureDangerButton(
+            delete);
+        delete.MinHeight = 28;
+        delete.Padding =
+            new Thickness(
+                LumineDesign.Space8,
+                LumineDesign.Space4);
         delete.Margin =
             new Thickness(
                 LumineDesign.Space8,
                 0,
                 0,
                 0);
-        LumineDesign.ConfigureDangerButtonStateResources(
-            delete);
 
         _cancelBulkOperationButton =
             LumineDesign.ConfigureSecondaryButton(
