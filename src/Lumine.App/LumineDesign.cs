@@ -256,7 +256,10 @@ internal static class LumineDesign
         button.FontSize = CaptionFontSize;
         button.CornerRadius =
             new CornerRadius(ControlRadius);
-        button.Background = AccentMuted;
+        // Secondary commands must remain clearly subordinate to the one
+        // primary action in a surface. Accent is reserved for selection and
+        // primary commitment rather than every ordinary command.
+        button.Background = ControlSurface;
         button.Foreground = Foreground;
         button.BorderBrush = Border;
         button.BorderThickness = new Thickness(1);
@@ -382,7 +385,10 @@ internal static class LumineDesign
                 ? new SolidColorBrush(BackgroundColor)
                 : Foreground;
         button.BorderBrush =
-            primary ? Brushes.Transparent : Border;
+            Brushes.Transparent;
+        // Keep a transparent 1-DIP geometry slot on neutral icon commands so
+        // hover/focus can appear without shifting layout, while the resting
+        // toolbar does not become a wall of boxed buttons.
         button.BorderThickness =
             primary
                 ? new Thickness(0)
@@ -427,6 +433,10 @@ internal static class LumineDesign
         button.Resources["ButtonBackgroundPressed"] =
             InteractionPressed;
         button.Resources["ButtonBorderBrushPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonBackgroundFocused"] =
+            InteractionNeutral;
+        button.Resources["ButtonBorderBrushFocused"] =
             InteractionFocus;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
@@ -475,6 +485,10 @@ internal static class LumineDesign
         button.Resources["ButtonBackgroundPressed"] =
             InteractionSelected;
         button.Resources["ButtonBorderBrushPressed"] =
+            InteractionFocus;
+        button.Resources["ButtonBackgroundFocused"] =
+            InteractionSelected;
+        button.Resources["ButtonBorderBrushFocused"] =
             InteractionFocus;
         button.Resources["ButtonForegroundPressed"] =
             Foreground;
