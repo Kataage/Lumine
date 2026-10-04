@@ -2481,6 +2481,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         string label,
         Control editor)
     {
+        if (string.IsNullOrWhiteSpace(
+                AutomationProperties.GetName(
+                    editor)))
+        {
+            AutomationProperties.SetName(
+                editor,
+                label);
+        }
+
         var labelBlock =
             new TextBlock
             {
