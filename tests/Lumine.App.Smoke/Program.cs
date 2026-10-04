@@ -1464,7 +1464,7 @@ try
                         static _ => Task.CompletedTask);
                 compactTagsView.Width = 300;
                 compactTagsView.HorizontalAlignment =
-                    HorizontalAlignment.Left;
+                    Avalonia.Layout.HorizontalAlignment.Left;
 
                 var compactTagsWindow =
                     new Window
