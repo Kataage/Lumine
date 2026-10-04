@@ -1069,10 +1069,12 @@ internal sealed class CoreViewerShell : UserControl
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     _bulkStatus.Foreground =
                         LumineDesign.Danger;
                     _bulkStatus.Text =
-                        $"操作できませんでした: {exception.Message}";
+                        "操作を完了できませんでした。もう一度お試しください。";
                 }
                 finally
                 {
@@ -1113,8 +1115,10 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Text =
-                $"画像を表示できませんでした: {exception.Message}";
+                "画像を表示できませんでした。もう一度お試しください。";
         }
     }
 
@@ -1136,8 +1140,10 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Text =
-                $"詳細を表示できませんでした: {exception.Message}";
+                "詳細を表示できませんでした。もう一度お試しください。";
         }
     }
 
@@ -1694,10 +1700,12 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Foreground =
                 LumineDesign.Warning;
             _bulkStatus.Text =
-                $"タグ候補を読み込めません: {exception.Message}";
+                "タグ候補を読み込めませんでした。もう一度お試しください。";
         }
     }
 
@@ -2053,8 +2061,10 @@ internal sealed class CoreViewerShell : UserControl
             }
             catch (Exception exception)
             {
+                System.Diagnostics.Trace.TraceError(
+                    exception.ToString());
                 _selectionMetadataSummary.Text =
-                    $"整理情報を取得できません: {exception.Message}";
+                    "整理情報を取得できませんでした。";
             }
         }
 
@@ -2081,8 +2091,10 @@ internal sealed class CoreViewerShell : UserControl
             }
             catch (Exception exception)
             {
+                System.Diagnostics.Trace.TraceError(
+                    exception.ToString());
                 _bulkStatus.Text =
-                    $"詳細を更新できませんでした: {exception.Message}";
+                    "詳細を更新できませんでした。もう一度お試しください。";
             }
         }
     }
