@@ -1725,10 +1725,10 @@ public sealed class MainWindow : Window
         var confirmed =
             await ProductDialogs.ConfirmAsync(
                 this,
-                "表示用cacheを削除しますか？",
+                "表示用キャッシュを削除しますか？",
                 "Lumineが生成した表示用サムネイルだけを削除します。",
                 "元画像、ライブラリ登録、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineage、Publicationは削除しません。",
-                confirmLabel: "cacheを削除");
+                confirmLabel: "キャッシュを削除");
         if (!confirmed)
         {
             return;
