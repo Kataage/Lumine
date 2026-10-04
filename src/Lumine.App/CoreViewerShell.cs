@@ -231,6 +231,12 @@ internal sealed class CoreViewerShell : UserControl
         noMatchActions.Children.Add(
             editNoMatch);
 
+        var noMatchActionHost =
+            new Border
+            {
+                Child = noMatchActions
+            };
+
         _noMatchSurface =
             new ContentControl
             {
@@ -243,7 +249,7 @@ internal sealed class CoreViewerShell : UserControl
                     LumineDesign.CreateProductState(
                         "一致する画像がありません",
                         "条件を解除するか、フィルターを見直してください。",
-                        noMatchActions)
+                        noMatchActionHost)
             };
 
         _grid.SelectionChanged += OnSelectionChanged;
