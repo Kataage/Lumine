@@ -1825,6 +1825,8 @@ internal static class Program
 
         var toolbarBounds =
             detail.ToolbarBoundsInControlForSmoke;
+        var utilityBounds =
+            detail.UtilityBoundsInControlForSmoke;
         var previousBounds =
             detail.PreviousBoundsInControlForSmoke;
         var nextBounds =
@@ -1837,19 +1839,23 @@ internal static class Program
         Require(
             toolbarBounds.Top >= viewportBounds.Top
             && toolbarBounds.Bottom <= viewportBounds.Top + 96
+            && utilityBounds.Top >= viewportBounds.Top
+            && utilityBounds.Bottom <= viewportBounds.Top + 96
+            && utilityBounds.Right <= viewportBounds.Right
+            && toolbarBounds.Right + 4 <= utilityBounds.Left
             && previousBounds.Left >= viewportBounds.Left
             && previousBounds.Right <= viewportBounds.Left + 96
             && nextBounds.Right <= viewportBounds.Right
             && nextBounds.Left >= viewportBounds.Right - 96
-            && closeBounds.Left >= toolbarBounds.Left
-            && closeBounds.Right <= toolbarBounds.Right
-            && closeBounds.Top >= toolbarBounds.Top
-            && closeBounds.Bottom <= toolbarBounds.Bottom
+            && closeBounds.Left >= utilityBounds.Left
+            && closeBounds.Right <= utilityBounds.Right
+            && closeBounds.Top >= utilityBounds.Top
+            && closeBounds.Bottom <= utilityBounds.Bottom
             && zoomSliderBounds.Left >= toolbarBounds.Left
             && zoomSliderBounds.Right <= toolbarBounds.Right
             && zoomSliderBounds.Top >= toolbarBounds.Top
             && zoomSliderBounds.Bottom <= toolbarBounds.Bottom,
-            "Viewer chrome escaped its safe bands or integrated viewer controls escaped the toolbar.");
+            "Viewer command groups escaped their safe bands, overlapped, or mixed window commands into the zoom group.");
 
         detail.FocusCloseForSmoke();
         detail.FadeChromeForSmoke();
