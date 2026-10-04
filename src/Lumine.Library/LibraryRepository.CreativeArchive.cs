@@ -362,7 +362,8 @@ public sealed partial class LibraryRepository
             libraryId,
             limit,
             cursor: null,
-            cancellationToken).ConfigureAwait(false)).Items;
+            cancellationToken: cancellationToken)
+            .ConfigureAwait(false)).Items;
 
     public async Task<PublicationPage> ListPublicationsPageAsync(
         long libraryId,
@@ -457,9 +458,10 @@ public sealed partial class LibraryRepository
             await LoadPublicationsByIdsAsync(
                 connection,
                 transaction: null,
-                libraryId,
-                ids,
-                cancellationToken).ConfigureAwait(false);
+                libraryId: libraryId,
+                publicationIds: ids,
+                cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
         PublicationCursor? nextCursor = null;
         if (hasMore
