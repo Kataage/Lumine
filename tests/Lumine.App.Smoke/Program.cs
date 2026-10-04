@@ -5038,9 +5038,10 @@ try
                                     | System.Reflection.BindingFlags.NonPublic)
                                 ?.GetValue(
                                     window.CurrentShell.DetailViewer)
-                            as bool?;
+                            is bool visible
+                            && visible;
                         Require(
-                            chromeVisible == true,
+                            chromeVisible,
                             "Focused Viewer acceptance evidence did not expose its primary command chrome.");
                         CaptureVisualEvidence(
                             window,
