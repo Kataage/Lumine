@@ -20,7 +20,9 @@ When enabled it captures the required product surfaces below:
 - `welcome-1440x900.png`
 - `loading-1440x900.png`
 - `browse-900x600.png`
+- `browse-1024x768.png`
 - `browse-1440x900.png`
+- `browse-1920x1080.png`
 - `browse-filter-open-900x600.png`
 - `browse-active-filter-900x600.png`
 - `navigation-overlay-900x600.png`
