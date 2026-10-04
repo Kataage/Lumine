@@ -488,6 +488,32 @@ public sealed class MainWindow : Window
         OnBrowseFiltersChangedAsync(
             state);
 
+    internal void PresentLoadingStateForSmoke(
+        string progressText =
+            "画像一覧を準備しています…")
+    {
+        _productShellState =
+            "Loading";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateLoadingLibraryState(
+                out var progress);
+        progress.Text =
+            progressText;
+    }
+
+    internal void PresentWelcomeStateForSmoke()
+    {
+        _productShellState =
+            "Welcome";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateWelcomeState(
+                recovered: false);
+    }
+
     internal void NavigateForSmoke(
         string destination) =>
         OnNavigationRequested(
