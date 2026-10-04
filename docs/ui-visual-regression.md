@@ -26,6 +26,8 @@ When enabled it captures the required product surfaces below:
 - `focused-viewer-900x600.png`
 - `focused-viewer-900x600-text225.png`
 - `settings-1440x900.png`
+- `settings-advanced-1440x900.png`
+- `settings-900x600.png`
 - `no-match-1440x900.png`
 - `error-1440x900.png`
 
