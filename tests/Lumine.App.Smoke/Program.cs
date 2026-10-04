@@ -2645,8 +2645,10 @@ try
                 directRatingButtons.Length == 5
                 && directRatingButtons.All(
                     static button =>
-                        button.FontSize >= 17),
-                "Inspector direct-rating stars regressed to an unreadably small shared caption size.");
+                        button.FontSize >= 17
+                        && button.Padding.Left <= 1
+                        && button.Padding.Right <= 1),
+                "Inspector direct-rating stars regressed to clipped shared caption/padding geometry.");
 
             Require(
                 shell.ContextDetail.UsesDirectRatingControlsForSmoke
