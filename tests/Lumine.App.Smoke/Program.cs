@@ -1984,16 +1984,33 @@ try
                 && !shell.ContextDetail.RetryVisibleForSmoke,
                 "Inspector did not expose direct rating/color controls in the successful loaded state.");
 
-            var inspectorTagColorEditor =
+            var inspectorTagPicker =
                 shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<ManagedTagPicker>()
+                    .Single();
+            var inspectorTagColorEditor =
+                inspectorTagPicker
                     .GetVisualDescendants()
                     .OfType<TagColorEditor>()
                     .Single();
+            inspectorTagPicker.SetSearchForSmoke(
+                "__inspector_custom_tag__");
+            inspectorTagColorEditor.SetCustomTextForSmoke(
+                "invalid");
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                inspectorTagPicker.CreateSurfaceVisibleForSmoke
+                && !inspectorTagPicker.CreateButtonEnabledForSmoke
+                && !inspectorTagColorEditor.IsColorValid,
+                "Inspector tag creation did not block an invalid free color.");
+
             inspectorTagColorEditor.SetCustomTextForSmoke(
                 "  #ABCDEF80  ");
             Dispatcher.UIThread.RunJobs();
             Require(
-                inspectorTagColorEditor.IsColorValid
+                inspectorTagPicker.CreateButtonEnabledForSmoke
+                && inspectorTagColorEditor.IsColorValid
                 && string.Equals(
                     inspectorTagColorEditor.SelectedColor,
                     "#abcdef80",
@@ -2003,6 +2020,9 @@ try
                     "#abcdef80",
                     StringComparison.Ordinal),
                 "Inspector tag picker did not use the shared free-color editor or normalize custom input.");
+            inspectorTagPicker.SetSearchForSmoke(
+                string.Empty);
+            Dispatcher.UIThread.RunJobs();
 
             shell.ContextDetail.InvokeRatingForSmoke(4);
             shell.ContextDetail.InvokeColorForSmoke(4);
