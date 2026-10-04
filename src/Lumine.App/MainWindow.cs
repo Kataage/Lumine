@@ -1308,7 +1308,8 @@ public sealed class MainWindow : Window
                 "ライブラリの登録を解除しますか？",
                 $"「{library.Name}」をLumineのライブラリ一覧から外します。",
                 "元画像ファイルは削除しません。このライブラリに紐づくLumine側の登録情報は解除されます。",
-                confirmLabel: "登録解除");
+                confirmLabel: "登録解除",
+                tone: ProductDialogTone.Danger);
         if (!confirmed)
         {
             return;
