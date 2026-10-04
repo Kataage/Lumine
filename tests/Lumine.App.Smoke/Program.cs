@@ -4118,6 +4118,19 @@ try
                             window,
                             "settings-1440x900");
 
+                        // Resizing can rebuild the responsive Settings surface.
+                        // Reacquire the live Expander so the expanded evidence
+                        // cannot accidentally mutate a detached control.
+                        advancedSettings =
+                            window.WorkspacePageForSmoke
+                                .GetVisualDescendants()
+                                .OfType<Expander>()
+                                .First(
+                                    expander =>
+                                        string.Equals(
+                                            expander.Header as string,
+                                            "詳細設定",
+                                            StringComparison.Ordinal));
                         advancedSettings.IsExpanded = true;
                         advancedSettings.BringIntoView();
                         for (var renderPass = 0;
