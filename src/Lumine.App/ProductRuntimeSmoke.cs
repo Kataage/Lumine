@@ -88,10 +88,18 @@ internal static class ProductRuntimeSmoke
                     prefix,
                     StringComparison.Ordinal));
 
-        return value is null
-            || value.Length == prefix.Length
-                ? null
-                : value[prefix.Length..];
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value.Length == prefix.Length)
+        {
+            throw new ArgumentException(
+                $"Product smoke requires {prefix}<path> when the option is supplied.");
+        }
+
+        return value[prefix.Length..];
     }
 
     private static string GetRequiredValue(
