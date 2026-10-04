@@ -3773,6 +3773,41 @@ try
                             StringComparison.Ordinal),
                         $"Fresh MainWindow did not start in the branded Welcome state: {window.ProductShellState}.");
 
+                    if (iteration == 2
+                        && visualOutputDirectory is not null)
+                    {
+                        window.Width = 900;
+                        window.Height = 600;
+                        window.PresentRecoverableErrorForSmoke(
+                            "選択した画像フォルダーを読み込めませんでした。フォルダーが移動・削除されていないか、アクセス権限が変更されていないかを確認してください。必要であれば別の画像フォルダーを選択できます。");
+                        Dispatcher.UIThread.RunJobs();
+
+                        var scaledErrorDetail =
+                            window.GetVisualDescendants()
+                                .OfType<Expander>()
+                                .FirstOrDefault(
+                                    expander =>
+                                        string.Equals(
+                                            expander.Header as string,
+                                            "エラー詳細",
+                                            StringComparison.Ordinal));
+                        Require(
+                            scaledErrorDetail is
+                                { IsExpanded: false }
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "225% / 900x600 recoverable Error did not keep technical detail collapsed or duplicated its message.");
+
+                        CaptureVisualEvidence(
+                            window,
+                            "error-900x600-text225");
+
+                        window.PresentWelcomeStateForSmoke();
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     var dialogSize =
                         ProductDialogs.ResolveDialogSizeForSmoke(
                             340);
@@ -5147,7 +5182,8 @@ try
                 "settings-900x600",
                 "empty-library-1440x900",
                 "no-match-1440x900",
-                "error-1440x900"
+                "error-1440x900",
+                "error-900x600-text225"
             };
         var missingEvidence =
             expectedVisualEvidence
