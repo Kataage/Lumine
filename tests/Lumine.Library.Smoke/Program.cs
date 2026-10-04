@@ -954,6 +954,175 @@ try
         "Asset creative context did not expose Work/Group/lineage/Publication human context.");
 
 
+    var publicationScaleCreated =
+        DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+    var publicationScaleBase =
+        new DateTimeOffset(
+            2027,
+            1,
+            1,
+            0,
+            0,
+            0,
+            TimeSpan.Zero)
+            .UtcDateTime.Ticks;
+
+    await using (var publicationScaleConnection =
+                 new SqliteConnection(
+                     $"Data Source={databasePath};Pooling=False"))
+    {
+        await publicationScaleConnection.OpenAsync();
+        using var publicationScaleTransaction =
+            publicationScaleConnection.BeginTransaction();
+
+        await using (var insertPublications =
+                     publicationScaleConnection.CreateCommand())
+        {
+            insertPublications.Transaction =
+                publicationScaleTransaction;
+            insertPublications.CommandText =
+                """
+                WITH RECURSIVE sequence(value) AS (
+                    SELECT 0
+                    UNION ALL
+                    SELECT value + 1
+                    FROM sequence
+                    WHERE value < 129
+                )
+                INSERT INTO publications(
+                    library_id,
+                    work_id,
+                    title,
+                    body,
+                    tags_snapshot,
+                    destination,
+                    account,
+                    published_at_utc_ticks,
+                    external_id,
+                    external_url,
+                    platform_metadata_json,
+                    created_at_utc_ticks,
+                    updated_at_utc_ticks)
+                SELECT
+                    $library_id,
+                    NULL,
+                    printf('Scale Publication %03d', value),
+                    'scale body',
+                    'scale',
+                    'Pixiv',
+                    '@scale',
+                    $published_base - value,
+                    '',
+                    '',
+                    '{}',
+                    $created,
+                    $created
+                FROM sequence;
+                """;
+            insertPublications.Parameters.AddWithValue(
+                "$library_id",
+                library.Id);
+            insertPublications.Parameters.AddWithValue(
+                "$published_base",
+                publicationScaleBase);
+            insertPublications.Parameters.AddWithValue(
+                "$created",
+                publicationScaleCreated);
+            Require(
+                await insertPublications
+                    .ExecuteNonQueryAsync() == 130,
+                "Publication scale fixture did not create 130 history rows.");
+        }
+
+        await using (var insertPublicationAssets =
+                     publicationScaleConnection.CreateCommand())
+        {
+            insertPublicationAssets.Transaction =
+                publicationScaleTransaction;
+            insertPublicationAssets.CommandText =
+                """
+                INSERT INTO publication_assets(
+                    publication_id,
+                    asset_id,
+                    sort_order,
+                    file_name_snapshot,
+                    relative_path_snapshot)
+                SELECT
+                    p.id,
+                    $asset_id,
+                    0,
+                    $file_name,
+                    $relative_path
+                FROM publications AS p
+                WHERE p.library_id = $library_id
+                  AND p.created_at_utc_ticks = $created
+                  AND p.title LIKE 'Scale Publication %';
+                """;
+            insertPublicationAssets.Parameters.AddWithValue(
+                "$library_id",
+                library.Id);
+            insertPublicationAssets.Parameters.AddWithValue(
+                "$created",
+                publicationScaleCreated);
+            insertPublicationAssets.Parameters.AddWithValue(
+                "$asset_id",
+                technical.Id);
+            insertPublicationAssets.Parameters.AddWithValue(
+                "$file_name",
+                technical.FileName);
+            insertPublicationAssets.Parameters.AddWithValue(
+                "$relative_path",
+                technical.RelativePath);
+            Require(
+                await insertPublicationAssets
+                    .ExecuteNonQueryAsync() == 130,
+                "Publication scale fixture did not snapshot its asset membership.");
+        }
+
+        publicationScaleTransaction.Commit();
+    }
+
+    var firstPublicationPage =
+        await repository.ListPublicationsPageAsync(
+            library.Id);
+    Require(
+        firstPublicationPage.Items.Count
+            == LibraryRepository.PublicationPageSize
+        && firstPublicationPage.NextCursor is not null
+        && firstPublicationPage.TotalCount >= 131
+        && firstPublicationPage.Items[0].Title
+            == "Scale Publication 000",
+        "Publication history did not expose a bounded first page across the former 100-item cutoff.");
+
+    var secondPublicationPage =
+        await repository.ListPublicationsPageAsync(
+            library.Id,
+            cursor:
+                firstPublicationPage.NextCursor);
+    Require(
+        secondPublicationPage.Items.Count > 0
+        && secondPublicationPage.Items.All(
+            item =>
+                firstPublicationPage.Items.All(
+                    first =>
+                        first.Id != item.Id))
+        && secondPublicationPage.TotalCount
+            == firstPublicationPage.TotalCount
+        && secondPublicationPage.NextCursor is null,
+        "Publication keyset paging did not expose the older history without overlap.");
+
+    var scaleCreativeContext =
+        await repository.GetAssetCreativeContextAsync(
+            library.Id,
+            technical.Id);
+    Require(
+        scaleCreativeContext.PublicationCount >= 131
+        && scaleCreativeContext.Publications.Count
+            == LibraryRepository.InspectorPublicationLimit
+        && scaleCreativeContext.Publications[0].Title
+            == "Scale Publication 000",
+        "Inspector creative context did not bound publication work while preserving the full history count.");
+
     Require(await repository.RemoveAssetAsync(library.Id, "a.jpg"), "Asset removal failed.");
     await repository.UpsertAssetsAsync(
         library.Id,
