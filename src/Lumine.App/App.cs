@@ -1,6 +1,5 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Lumine.Core;
@@ -113,12 +112,7 @@ public sealed class App : Application
             };
         application.Styles.Add(fluentTheme);
         application.Styles.Add(
-            new StyleInclude
-            {
-                Source =
-                    new Uri(
-                        "avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml")
-            });
+            new ColorPickerFluentStyles());
     }
 
     public override void OnFrameworkInitializationCompleted()
