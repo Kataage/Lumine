@@ -10,6 +10,12 @@ using Lumine.Viewer;
 
 namespace Lumine.App;
 
+internal sealed record CoreViewerQueryUiState(
+    IReadOnlyList<long> SelectedAssetIds,
+    long? PrimaryAssetId,
+    bool InspectorVisible,
+    bool FocusedVisible);
+
 internal sealed class CoreViewerShell : UserControl
 {
     private readonly ThumbnailViewerControl _grid;
@@ -500,6 +506,136 @@ internal sealed class CoreViewerShell : UserControl
         _contextDetail.SetPinPresentation(
             _inspectorPinned,
             !_compactInspectorLayout);
+    }
+
+    internal async Task<CoreViewerQueryUiState>
+        PrepareForQueryChangeAsync()
+    {
+        const int preservedSelectionLimit = 256;
+
+        var selectedIndices =
+            _grid.SelectedAssetIndices;
+        IReadOnlyList<long> trackedIndices;
+        if (selectedIndices.Count <= preservedSelectionLimit)
+        {
+            trackedIndices =
+                selectedIndices.ToArray();
+        }
+        else if (_grid.SelectedAssetIndex >= 0)
+        {
+            trackedIndices =
+                [_grid.SelectedAssetIndex];
+        }
+        else
+        {
+            trackedIndices =
+                Array.Empty<long>();
+        }
+
+        IReadOnlyList<long> selectedAssetIds =
+            trackedIndices.Count == 0
+                ? Array.Empty<long>()
+                : await _runtime.ViewerSession
+                    .GetAssetIdsAsync(
+                        trackedIndices);
+
+        long? primaryAssetId = null;
+        if (_grid.SelectedAssetIndex >= 0)
+        {
+            for (var index = 0;
+                 index < trackedIndices.Count;
+                 index++)
+            {
+                if (trackedIndices[index]
+                    == _grid.SelectedAssetIndex)
+                {
+                    primaryAssetId =
+                        selectedAssetIds[index];
+                    break;
+                }
+            }
+        }
+
+        var state =
+            new CoreViewerQueryUiState(
+                selectedAssetIds,
+                primaryAssetId,
+                _contextSurface.IsVisible,
+                _focusedSurface.IsVisible);
+
+        _selectionSummaryCancellation?.Cancel();
+        _selectionSummaryCancellation?.Dispose();
+        _selectionSummaryCancellation = null;
+
+        _grid.SelectionChanged -=
+            OnSelectionChanged;
+        _detail.UnbindGrid();
+        _detail.PrepareForSessionRebind();
+        await _grid.PrepareForSessionRebindAsync();
+
+        return state;
+    }
+
+    internal async Task CompleteQueryChangeAsync(
+        CoreViewerQueryUiState state,
+        IReadOnlyDictionary<long, long> assetIndices)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(assetIndices);
+
+        _grid.RebindSession(
+            _runtime.ViewerSession);
+        _detail.RebindSession(
+            _runtime.DetailSession);
+        _grid.SelectionChanged +=
+            OnSelectionChanged;
+
+        var restoredIndices =
+            state.SelectedAssetIds
+                .Where(assetIndices.ContainsKey)
+                .Select(assetId =>
+                    assetIndices[assetId])
+                .Distinct()
+                .ToArray();
+
+        var primaryIndex =
+            state.PrimaryAssetId is { } primaryAssetId
+            && assetIndices.TryGetValue(
+                primaryAssetId,
+                out var mappedPrimary)
+                ? mappedPrimary
+                : restoredIndices.Length == 0
+                    ? -1
+                    : restoredIndices[0];
+
+        _grid.RestoreSelection(
+            restoredIndices,
+            primaryIndex);
+
+        if (state.InspectorVisible
+            && primaryIndex < 0)
+        {
+            HideContextDetail();
+        }
+
+        if (state.FocusedVisible)
+        {
+            if (primaryIndex < 0)
+            {
+                _focusedViewReturnIndex = -1;
+                CloseFocusedView();
+            }
+            else
+            {
+                _focusedViewReturnIndex =
+                    primaryIndex;
+                _focusedSurface.IsVisible = true;
+                await _detail.SelectAsync(
+                    primaryIndex);
+                _detail.BindGrid(_grid);
+                _detail.Focus();
+            }
+        }
     }
 
     internal bool IsAssetFocusedForSmoke(

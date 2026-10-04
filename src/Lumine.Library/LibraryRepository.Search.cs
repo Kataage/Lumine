@@ -564,6 +564,102 @@ public sealed partial class LibraryRepository
         return ids;
     }
 
+    public async Task<IReadOnlyDictionary<long, long>> GetAssetIndicesAsync(
+        long libraryId,
+        AssetQuery query,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(assetIds);
+        ValidateQuery(query);
+
+        var trackedIds =
+            assetIds
+                .Where(static id => id > 0)
+                .Distinct()
+                .Take(512)
+                .ToArray();
+        if (trackedIds.Length == 0)
+        {
+            return new Dictionary<long, long>();
+        }
+
+        await using var connection =
+            await _database.OpenConnectionAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            await RefreshDirtySearchIndexAsync(
+                connection,
+                libraryId,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using var command = connection.CreateCommand();
+        var where =
+            BuildQueryPredicate(
+                command,
+                libraryId,
+                query,
+                cursor: null);
+        var orderBy =
+            GetOrderBy(query.SortOrder);
+
+        var idParameters =
+            new string[trackedIds.Length];
+        for (var index = 0; index < trackedIds.Length; index++)
+        {
+            var parameterName =
+                $"$tracked_asset_{index}";
+            idParameters[index] =
+                parameterName;
+            command.Parameters.AddWithValue(
+                parameterName,
+                trackedIds[index]);
+        }
+
+        command.CommandText =
+            $"""
+            WITH ranked AS (
+                SELECT
+                    a.id AS asset_id,
+                    ROW_NUMBER() OVER (
+                        ORDER BY {orderBy}
+                    ) - 1 AS asset_index
+                FROM assets AS a
+                LEFT JOIN asset_user_metadata AS um
+                  ON um.asset_id = a.id
+                WHERE {where}
+            )
+            SELECT asset_id, asset_index
+            FROM ranked
+            WHERE asset_id IN (
+                {string.Join(", ", idParameters)}
+            );
+            """;
+
+        var result =
+            new Dictionary<long, long>();
+        await using var reader =
+            await command.ExecuteReaderAsync(
+                cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(
+                   cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            result[reader.GetInt64(0)] =
+                reader.GetInt64(1);
+        }
+
+        return result;
+    }
+
     public async Task<IReadOnlyList<AssetInfo>> GetAssetsByIdsAsync(
         long libraryId,
         IReadOnlyList<long> assetIds,

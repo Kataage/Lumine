@@ -17,7 +17,7 @@ public sealed class DetailViewerControl : UserControl
     private static readonly Cursor PanningCursor =
         new(StandardCursorType.SizeAll);
 
-    private readonly ViewerDetailSession _session;
+    private ViewerDetailSession _session;
     private readonly ScrollViewer _scroll;
     private readonly Image _image;
     private readonly TextBlock _status;
@@ -1219,6 +1219,36 @@ public sealed class DetailViewerControl : UserControl
         _session.StateChanged -= OnStateChanged;
         _session.SelectedIndexChanged -= OnSessionSelectionChanged;
         _sessionEventsAttached = false;
+    }
+
+    public void PrepareForSessionRebind()
+    {
+        DetachGridEvents();
+        DetachSessionEvents();
+        CancelPendingZoomCommands();
+        _image.Source = null;
+        _status.Text = string.Empty;
+        _metadata.Text = string.Empty;
+    }
+
+    public void RebindSession(
+        ViewerDetailSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        DetachSessionEvents();
+        _session = session;
+        _observedSelectionVersion =
+            _session.Snapshot.SelectionVersion;
+        _session.SetOriginalReleaseHandler(
+            ReleaseOriginalAfterCompositionAsync);
+
+        if (_visualAttached)
+        {
+            AttachSessionEvents();
+        }
+
+        ApplySnapshot(_session.Snapshot);
     }
 
     private void OnAttachedToVisualTree(

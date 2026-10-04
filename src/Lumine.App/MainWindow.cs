@@ -1547,26 +1547,54 @@ public sealed class MainWindow : Window
             return;
         }
 
-        var previousShell = _shell;
-        if (previousShell is not null)
-        {
-            _viewerHost.Content = null;
-            _shell = null;
-            await previousShell.DetachAsync();
-        }
-
-        _productShellState = "Loading";
-        _viewerHost.Content =
-            LumineDesign.CreateProductState(
-                "表示を更新しています",
-                string.Empty);
+        var query =
+            BuildBrowseQuery();
+        var existingShell =
+            _shell;
+        CoreViewerQueryUiState? queryUiState =
+            null;
 
         try
         {
-            await runtime.ApplyQueryAsync(
-                BuildBrowseQuery());
+            if (existingShell is not null)
+            {
+                _status.Foreground =
+                    LumineDesign.MutedForeground;
+                _status.Text =
+                    "表示を更新しています…";
+                queryUiState =
+                    await existingShell
+                        .PrepareForQueryChangeAsync();
+            }
 
-            if (runtime.AssetCount == 0)
+            await runtime.ApplyQueryAsync(
+                query);
+
+            if (existingShell is not null
+                && queryUiState is not null)
+            {
+                var assetIndices =
+                    await ResolvePreservedAssetIndicesAsync(
+                        runtime,
+                        query,
+                        queryUiState);
+                await existingShell
+                    .CompleteQueryChangeAsync(
+                        queryUiState,
+                        assetIndices);
+
+                _shell =
+                    existingShell;
+                _productShellState =
+                    "Workspace";
+                _status.Foreground =
+                    LumineDesign.MutedForeground;
+                _status.Text =
+                    runtime.AssetCount == 0
+                        ? "一致する画像がありません。検索・フィルター条件を見直してください。"
+                        : string.Empty;
+            }
+            else if (runtime.AssetCount == 0)
             {
                 var totalAssetCount =
                     await runtime.LibraryService
@@ -1591,31 +1619,79 @@ public sealed class MainWindow : Window
                 _productShellState = "Workspace";
                 nextShell.SelectInitialAsset();
             }
-
-            UpdateScopeDisplay();
         }
         catch (Exception exception)
         {
-            var restored =
-                CreateCoreViewerShell(runtime);
-            _shell = restored;
-            _viewerHost.Content = restored;
-            _productShellState =
-                runtime.AssetCount == 0
-                    ? "EmptyLibrary"
-                    : "Workspace";
+            if (existingShell is not null
+                && queryUiState is not null)
+            {
+                try
+                {
+                    var restoredIndices =
+                        await ResolvePreservedAssetIndicesAsync(
+                            runtime,
+                            runtime.CurrentQuery,
+                            queryUiState);
+                    await existingShell
+                        .CompleteQueryChangeAsync(
+                            queryUiState,
+                            restoredIndices);
+                    _shell =
+                        existingShell;
+                    _productShellState =
+                        "Workspace";
+                }
+                catch
+                {
+                    // Keep the original failure as the user-facing cause.
+                    // Terminal teardown remains owned by the normal library
+                    // close path if even the in-place restore cannot complete.
+                }
+            }
+            else
+            {
+                var restored =
+                    CreateCoreViewerShell(runtime);
+                _shell = restored;
+                _viewerHost.Content = restored;
+                _productShellState =
+                    runtime.AssetCount == 0
+                        ? "EmptyLibrary"
+                        : "Workspace";
+
+                if (runtime.AssetCount > 0)
+                {
+                    restored.SelectInitialAsset();
+                }
+            }
+
             _status.Foreground =
                 LumineDesign.Warning;
             _status.Text =
                 $"検索・フィルターを適用できませんでした: {exception.Message}";
-
-            if (runtime.AssetCount > 0)
-            {
-                restored.SelectInitialAsset();
-            }
         }
 
         UpdateScopeDisplay();
+    }
+
+    private static Task<IReadOnlyDictionary<long, long>>
+        ResolvePreservedAssetIndicesAsync(
+            CoreViewerRuntime runtime,
+            AssetQuery? query,
+            CoreViewerQueryUiState state)
+    {
+        if (state.SelectedAssetIds.Count == 0)
+        {
+            IReadOnlyDictionary<long, long> empty =
+                new Dictionary<long, long>();
+            return Task.FromResult(empty);
+        }
+
+        return runtime.LibraryService
+            .GetAssetIndicesAsync(
+                runtime.Library.Id,
+                query ?? new AssetQuery(),
+                state.SelectedAssetIds);
     }
 
     private void EnsureBrowseControls()

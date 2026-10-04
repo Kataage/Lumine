@@ -347,6 +347,19 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<IReadOnlyDictionary<long, long>> GetAssetIndicesAsync(
+        long libraryId,
+        AssetQuery query,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetAssetIndicesAsync(
+                libraryId,
+                query,
+                assetIds,
+                token),
+            cancellationToken);
+
     public Task<IReadOnlyList<AssetInfo>> GetAssetsByIdsAsync(
         long libraryId,
         IReadOnlyList<long> assetIds,

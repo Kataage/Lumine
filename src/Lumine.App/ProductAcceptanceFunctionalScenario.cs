@@ -264,6 +264,15 @@ internal static class ProductAcceptanceFunctionalScenario
                 cancellationToken);
             metadata["product.viewer"] = "pass";
 
+            var shellBeforeNoMatch =
+                window.CurrentShell
+                ?? throw new InvalidOperationException(
+                    "Product acceptance lost the Viewer shell before no-match coverage.");
+            var gridBeforeNoMatch =
+                shellBeforeNoMatch.GridViewer;
+            gridBeforeNoMatch.SelectAsset(0);
+            await shellBeforeNoMatch.ShowContextDetailAsync();
+
             await window.ApplyBrowseFilterForSmokeAsync(
                 new BrowseFilterState(
                     SearchText:
@@ -272,11 +281,22 @@ internal static class ProductAcceptanceFunctionalScenario
             Require(
                 string.Equals(
                     window.ProductShellState,
-                    "NoMatch",
+                    "Workspace",
                     StringComparison.Ordinal)
                 && window.CurrentRuntime is not null
-                && window.CurrentShell is null,
-                "Filtered zero-result state did not transition to NoMatch.");
+                && window.CurrentRuntime.AssetCount == 0
+                && ReferenceEquals(
+                    window.CurrentShell,
+                    shellBeforeNoMatch)
+                && ReferenceEquals(
+                    window.CurrentShell.GridViewer,
+                    gridBeforeNoMatch)
+                && window.CurrentShell
+                    .GridViewer
+                    .SelectedAssetIndex == -1
+                && !window.CurrentShell
+                    .IsContextDetailVisible,
+                "Filtered zero-result query rebuilt the Viewer surface or retained stale selection/Inspector state.");
 
             await window.ApplyBrowseFilterForSmokeAsync(
                 new BrowseFilterState(
@@ -289,8 +309,16 @@ internal static class ProductAcceptanceFunctionalScenario
                 string.Equals(
                     window.ProductShellState,
                     "Workspace",
-                    StringComparison.Ordinal),
-                "Clearing the product-acceptance filter did not restore Workspace.");
+                    StringComparison.Ordinal)
+                && window.CurrentRuntime is not null
+                && window.CurrentRuntime.AssetCount > 0
+                && ReferenceEquals(
+                    window.CurrentShell,
+                    shellBeforeNoMatch)
+                && ReferenceEquals(
+                    window.CurrentShell.GridViewer,
+                    gridBeforeNoMatch),
+                "Clearing the product-acceptance filter rebuilt the Viewer surface instead of restoring data in place.");
 
             await window.OpenLibraryAsync(
                 emptyLibraryRoot,
