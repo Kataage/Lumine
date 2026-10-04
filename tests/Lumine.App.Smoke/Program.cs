@@ -4366,14 +4366,24 @@ try
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
-                                    && !navigationVisible
-                                    && viewport.Width is 900d or 1440d)
+                                    && !navigationVisible)
                                 {
-                                    CaptureVisualEvidence(
-                                        window,
-                                        viewport.Width == 900d
-                                            ? "browse-900x600"
-                                            : "browse-1440x900");
+                                    var browseEvidenceName =
+                                        viewport.Width switch
+                                        {
+                                            900d => "browse-900x600",
+                                            1024d => "browse-1024x768",
+                                            1440d => "browse-1440x900",
+                                            1920d => "browse-1920x1080",
+                                            _ => string.Empty
+                                        };
+                                    if (!string.IsNullOrWhiteSpace(
+                                            browseEvidenceName))
+                                    {
+                                        CaptureVisualEvidence(
+                                            window,
+                                            browseEvidenceName);
+                                    }
 
                                     if (viewport.Width == 900d)
                                     {
@@ -5071,7 +5081,9 @@ try
                 "welcome-1440x900",
                 "loading-1440x900",
                 "browse-900x600",
+                "browse-1024x768",
                 "browse-1440x900",
+                "browse-1920x1080",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
                 "navigation-overlay-900x600",
