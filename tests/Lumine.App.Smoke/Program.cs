@@ -4182,6 +4182,23 @@ try
                         CaptureVisualEvidence(
                             window,
                             "settings-advanced-1440x900");
+                        if (visualOutputDirectory is not null)
+                        {
+                            var collapsedSettingsEvidence =
+                                File.ReadAllBytes(
+                                    Path.Combine(
+                                        visualOutputDirectory,
+                                        "settings-1440x900.png"));
+                            var expandedSettingsEvidence =
+                                File.ReadAllBytes(
+                                    Path.Combine(
+                                        visualOutputDirectory,
+                                        "settings-advanced-1440x900.png"));
+                            Require(
+                                !collapsedSettingsEvidence.SequenceEqual(
+                                    expandedSettingsEvidence),
+                                "Expanded Settings visual evidence duplicated the collapsed capture.");
+                        }
 
                         advancedSettings.IsExpanded = false;
                         window.Width = 900;
