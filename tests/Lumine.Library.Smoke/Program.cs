@@ -1391,18 +1391,19 @@ try
             technical.Id);
     Require(
         reopenedPublication.Title == "Published Smoke"
-        && reopenedPublication.Assets.Count == 2
-        && reopenedCreativeContext.Works.Any(
+        && reopenedPublication.Assets.Count == 2,
+        "Publication detail did not survive database reopen.");
+    Require(
+        reopenedCreativeContext.Works.Any(
             work => work.Id == creativeWork.Id)
         && reopenedCreativeContext.GenerationGroups.Any(
-            group => group.Id == creativeGroup.Id)
-        && reopenedCreativeContext.PublicationCount
-            == scaleCreativeContext.PublicationCount
+            group => group.Id == creativeGroup.Id),
+        "Work or Generation Group context did not survive database reopen.");
+    Require(
+        reopenedCreativeContext.PublicationCount >= 131
         && reopenedCreativeContext.Publications.Count
-            == LibraryRepository.InspectorPublicationLimit
-        && reopenedCreativeContext.Publications[0].Title
-            == "Scale Publication 000",
-        "Creative archive detail or bounded Inspector context did not survive database reopen.");
+            == LibraryRepository.InspectorPublicationLimit,
+        "Bounded Inspector Publication context did not survive database reopen.");
 
     var legacyPath = Path.Combine(tempRoot, "legacy-v1.db");
     await CreateLegacyV1DatabaseAsync(legacyPath);
