@@ -47,9 +47,11 @@ public sealed class WindowsLibrarySyncSession : IAsyncDisposable
     public Task Completion => _watcherMonitor;
 
     public Task<LibraryReconcileResult> ReconcileNowAsync(
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        IProgress<LibraryScanProgress>? progress = null) =>
         _processor.ReconcileNowAsync(
-            cancellationToken);
+            cancellationToken,
+            progress);
 
     public async ValueTask DisposeAsync()
     {
@@ -173,7 +175,8 @@ public sealed class WindowsLibrarySyncService
 
     public async Task<WindowsLibrarySyncSession> StartAsync(
         long libraryId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<LibraryScanProgress>? progress = null)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -233,6 +236,7 @@ public sealed class WindowsLibrarySyncService
                 {
                     await RequireCompleteReconcileAsync(
                         libraryId,
+                        progress,
                         cancellationToken).ConfigureAwait(false);
                     bootstrapMode = LibrarySyncBootstrapMode.ReconcileFallback;
                 }
@@ -248,6 +252,7 @@ public sealed class WindowsLibrarySyncService
             {
                 await RequireCompleteReconcileAsync(
                     libraryId,
+                    progress,
                     cancellationToken).ConfigureAwait(false);
 
                 bootstrapMode = journalAtStart.Available
@@ -289,11 +294,14 @@ public sealed class WindowsLibrarySyncService
 
     private async Task RequireCompleteReconcileAsync(
         long libraryId,
+        IProgress<LibraryScanProgress>? progress,
         CancellationToken cancellationToken)
     {
         var reconcile = await _reconciler.ReconcileAsync(
             libraryId,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            progress,
+            cancellationToken:
+                cancellationToken).ConfigureAwait(false);
 
         if (!reconcile.Completed)
         {
