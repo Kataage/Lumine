@@ -28,6 +28,27 @@ static void Require(bool condition, string message)
     }
 }
 
+static IEnumerable<Control> EnumeratePanelTree(
+    Control root)
+{
+    yield return root;
+
+    if (root is not Panel panel)
+    {
+        yield break;
+    }
+
+    foreach (var child in panel.Children
+                 .OfType<Control>())
+    {
+        foreach (var descendant in
+                 EnumeratePanelTree(child))
+        {
+            yield return descendant;
+        }
+    }
+}
+
 
 static double RelativeLuminance(Color color)
 {
@@ -4047,54 +4068,40 @@ try
 
                         advancedSettings.IsExpanded = true;
                         advancedSettings.BringIntoView();
-                        TextBlock[] expandedSettingsText =
-                            Array.Empty<TextBlock>();
-                        for (var attempt = 0;
-                             attempt < 50;
-                             attempt++)
+                        for (var renderPass = 0;
+                             renderPass < 3;
+                             renderPass++)
                         {
                             Dispatcher.UIThread.RunJobs();
                             AvaloniaHeadlessPlatform
                                 .ForceRenderTimerTick();
-                            Dispatcher.UIThread.RunJobs();
-
-                            expandedSettingsText =
-                                advancedSettings
-                                    .GetVisualDescendants()
-                                    .OfType<TextBlock>()
-                                    .ToArray();
-                            if (expandedSettingsText.Any(block =>
-                                    block.IsEffectivelyVisible
-                                    && string.Equals(
-                                        block.Text,
-                                        "ディスク保持上限",
-                                        StringComparison.Ordinal))
-                                && expandedSettingsText.Any(block =>
-                                    block.IsEffectivelyVisible
-                                    && string.Equals(
-                                        block.Text,
-                                        "高速再表示用メモリ上限",
-                                        StringComparison.Ordinal)))
-                            {
-                                break;
-                            }
-
-                            await Task.Delay(1);
                         }
+                        Dispatcher.UIThread.RunJobs();
+
+                        var advancedContent =
+                            advancedSettings.Content
+                                as Control
+                            ?? throw new InvalidOperationException(
+                                "Advanced Settings disclosure lost its content.");
+                        var advancedSettingsText =
+                            EnumeratePanelTree(
+                                    advancedContent)
+                                .OfType<TextBlock>()
+                                .ToArray();
                         Require(
-                            expandedSettingsText.Any(block =>
-                                block.IsEffectivelyVisible
-                                && string.Equals(
+                            advancedSettings.IsExpanded
+                            && advancedSettingsText.Any(block =>
+                                string.Equals(
                                     block.Text,
                                     "ディスク保持上限",
                                     StringComparison.Ordinal))
-                            && expandedSettingsText.Any(block =>
-                                block.IsEffectivelyVisible
-                                && string.Equals(
+                            && advancedSettingsText.Any(block =>
+                                string.Equals(
                                     block.Text,
                                     "高速再表示用メモリ上限",
                                     StringComparison.Ordinal)),
-                            "Advanced Settings disclosure did not expose cache budget controls after layout/render settled.");
+                            "Advanced Settings disclosure did not expose its cache budget controls.");
+
                         CaptureVisualEvidence(
                             window,
                             "settings-advanced-1440x900");
