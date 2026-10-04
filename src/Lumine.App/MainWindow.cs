@@ -812,6 +812,7 @@ public sealed class MainWindow : Window
             tags =
                 await _navigationLibraryService.ListTagsAsync(
                     runtime.Library.Id,
+                    limit: LibraryRepository.MaxTagListLimit,
                     cancellationToken: cancellationToken);
             facets =
                 await _navigationLibraryService.GetBrowseFacetsAsync(
