@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -76,8 +77,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _saveStatus;
     private readonly Button _save;
     private readonly Button _reset;
+    private readonly Button _retry;
     private readonly Button _focused;
     private readonly Button _pin;
+    private Button[] _ratingButtons = [];
+    private Button[] _colorButtons = [];
     private readonly Avalonia.Controls.Image _preview;
     private readonly ContentControl _tabContent;
     private readonly Button[] _tabButtons;
@@ -90,6 +94,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private Exception? _previewReleaseFailure;
     private CancellationTokenSource? _loadCancellation;
     private long _assetId;
+    private ViewerAsset? _currentAsset;
     private AssetUserMetadata? _loadedMetadata;
     private bool _loadingEditor;
     private bool _dirty;
@@ -172,6 +177,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     ItemsSource = ColorLabels,
                     MinWidth = 118
                 });
+        _ratingEditor.IsVisible = false;
+        _colorEditor.IsVisible = false;
+        var ratingPicker =
+            CreateRatingPicker();
+        var colorPicker =
+            CreateColorPicker();
+
         _tagPicker =
             new ManagedTagPicker(
                 _runtime,
@@ -221,6 +233,31 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _reset.Click +=
             (_, _) =>
                 ResetEditor();
+
+        _retry =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "再読み込み",
+                    MinHeight = 30,
+                    Padding = new Thickness(10, 5),
+                    IsVisible = false
+                });
+        AutomationProperties.SetName(
+            _retry,
+            "詳細情報を再読み込み");
+        ToolTip.SetTip(
+            _retry,
+            "この画像の整理情報と関連情報を再読み込み");
+        _retry.Click +=
+            async (_, _) =>
+            {
+                if (_currentAsset is not null)
+                {
+                    await ShowAssetAsync(
+                        _currentAsset);
+                }
+            };
 
         _pin =
             LumineDesign.ConfigureSecondaryButton(
@@ -344,7 +381,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             editor,
             0,
             "評価",
-            _ratingEditor);
+            ratingPicker);
         AddEditorRow(
             editor,
             1,
@@ -359,7 +396,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             editor,
             3,
             "カラー",
-            _colorEditor);
+            colorPicker);
         AddEditorRow(
             editor,
             4,
@@ -375,14 +412,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto")
+                    new ColumnDefinitions("*,Auto,Auto,Auto")
             };
         saveRow.Children.Add(_saveStatus);
-        Grid.SetColumn(_reset, 1);
+        Grid.SetColumn(_retry, 1);
+        _retry.Margin =
+            new Thickness(4, 0);
+        saveRow.Children.Add(_retry);
+        Grid.SetColumn(_reset, 2);
         _reset.Margin =
             new Thickness(4, 0);
         saveRow.Children.Add(_reset);
-        Grid.SetColumn(_save, 2);
+        Grid.SetColumn(_save, 3);
         _save.Margin =
             new Thickness(4, 0);
         saveRow.Children.Add(_save);
@@ -647,13 +688,21 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         Content = layout;
 
         _ratingEditor.SelectionChanged +=
-            (_, _) => MarkDirty();
+            (_, _) =>
+            {
+                UpdateRatingPickerVisuals();
+                MarkDirty();
+            };
         _favoriteEditor.Click +=
             (_, _) => MarkDirty();
         _statusEditor.SelectionChanged +=
             (_, _) => MarkDirty();
         _colorEditor.SelectionChanged +=
-            (_, _) => MarkDirty();
+            (_, _) =>
+            {
+                UpdateColorPickerVisuals();
+                MarkDirty();
+            };
         _notesEditor.TextChanged +=
             (_, _) => MarkDirty();
         KeyDown += OnKeyDown;
@@ -677,6 +726,40 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _ratingEditor.SelectedIndex > 0
             ? $"★{_ratingEditor.SelectedIndex}"
             : "未設定";
+
+    internal string ColorLabelForSmoke =>
+        _colorEditor.SelectedIndex >= 0
+        && _colorEditor.SelectedIndex < ColorValues.Length
+            ? ColorValues[_colorEditor.SelectedIndex]
+                ?? string.Empty
+            : string.Empty;
+
+    internal bool UsesDirectRatingControlsForSmoke =>
+        _ratingButtons.Length == 5;
+
+    internal bool UsesDirectColorControlsForSmoke =>
+        _colorButtons.Length
+            == ColorValues.Length;
+
+    internal bool RetryVisibleForSmoke =>
+        _retry.IsVisible;
+
+    internal void InvokeRatingForSmoke(
+        int rating) =>
+        SetRatingFromDirectControl(rating);
+
+    internal void InvokeColorForSmoke(
+        int index) =>
+        SetColorFromDirectControl(index);
+
+    internal void PresentLoadFailureForSmoke() =>
+        PresentLoadFailure(
+            "テスト用の読み込み失敗");
+
+    internal Task InvokeRetryForSmokeAsync() =>
+        _currentAsset is null
+            ? Task.CompletedTask
+            : ShowAssetAsync(_currentAsset);
 
     internal string TagsText =>
         string.Join(
@@ -809,6 +892,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _loadCancellation.Token;
 
         _assetId = asset.Id;
+        _currentAsset = asset;
+        _retry.IsVisible = false;
+        _saveStatus.Foreground =
+            LumineDesign.MutedForeground;
         _title.Text = asset.DisplayName;
         _summary.Text =
             FormatSummary(asset);
@@ -858,6 +945,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 metadata.Tags,
                 token);
             SetEditorEnabled(true);
+            _retry.IsVisible = false;
+            _saveStatus.Foreground =
+                LumineDesign.MutedForeground;
             _saveStatus.Text = "保存済み";
 
             await LoadCreativeContextAsync(
@@ -877,8 +967,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
             _loadedMetadata = null;
             SetEditorEnabled(false);
-            _saveStatus.Text =
-                $"整理情報を取得できませんでした: {exception.Message}";
+            PresentLoadFailure(
+                "整理情報を取得できませんでした。再読み込みできます。");
         }
     }
 
@@ -999,7 +1089,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _loadCancellation?.Dispose();
         _loadCancellation = null;
         _assetId = 0;
+        _currentAsset = null;
         _loadedMetadata = null;
+        _retry.IsVisible = false;
+        _saveStatus.Foreground =
+            LumineDesign.MutedForeground;
         _dirty = false;
         _title.Text =
             "画像を選択してください";
@@ -1317,6 +1411,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _groups.Text = "—";
             _relations.Text = "—";
             _publications.Text = "—";
+            _retry.IsVisible = true;
+            _saveStatus.Foreground =
+                LumineDesign.Warning;
+            _saveStatus.Text =
+                "追加情報の取得に失敗しました。再読み込みできます。";
         }
     }
 
@@ -1353,6 +1452,255 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
     }
 
+    private Control CreateRatingPicker()
+    {
+        var panel =
+            new StackPanel
+            {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space2
+            };
+
+        _ratingButtons =
+            Enumerable.Range(1, 5)
+                .Select(
+                    rating =>
+                    {
+                        var button =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "★",
+                                    Width = 31,
+                                    MinWidth = 31,
+                                    Height = 30,
+                                    MinHeight = 30,
+                                    Padding =
+                                        new Thickness(0),
+                                    FontSize = 17
+                                });
+                        var accessibleName =
+                            $"評価 {rating}";
+                        AutomationProperties.SetName(
+                            button,
+                            accessibleName);
+                        ToolTip.SetTip(
+                            button,
+                            accessibleName);
+                        button.Click +=
+                            (_, _) =>
+                                SetRatingFromDirectControl(
+                                    rating);
+                        panel.Children.Add(button);
+                        return button;
+                    })
+                .ToArray();
+
+        UpdateRatingPickerVisuals();
+        return panel;
+    }
+
+    private Control CreateColorPicker()
+    {
+        var panel =
+            new WrapPanel();
+
+        _colorButtons =
+            ColorValues
+                .Select(
+                    (value, index) =>
+                    {
+                        var swatch =
+                            ResolveColorBrush(value);
+                        var button =
+                            new Button
+                            {
+                                Width = 28,
+                                Height = 28,
+                                MinWidth = 28,
+                                MinHeight = 28,
+                                Padding =
+                                    new Thickness(0),
+                                Margin =
+                                    new Thickness(
+                                        0,
+                                        0,
+                                        LumineDesign.Space4,
+                                        LumineDesign.Space4),
+                                CornerRadius =
+                                    new CornerRadius(14),
+                                Background = swatch,
+                                BorderBrush =
+                                    LumineDesign.Border,
+                                BorderThickness =
+                                    new Thickness(1),
+                                Content =
+                                    value is null
+                                        ? "×"
+                                        : string.Empty,
+                                Foreground =
+                                    LumineDesign.Foreground
+                            };
+                        var accessibleName =
+                            $"カラー {ColorLabels[index]}";
+                        AutomationProperties.SetName(
+                            button,
+                            accessibleName);
+                        ToolTip.SetTip(
+                            button,
+                            ColorLabels[index]);
+                        button.Resources[
+                            "ButtonBackgroundPointerOver"] =
+                            value is null
+                                ? LumineDesign.InteractionHover
+                                : swatch;
+                        button.Resources[
+                            "ButtonBackgroundPressed"] =
+                            value is null
+                                ? LumineDesign.InteractionPressed
+                                : swatch;
+                        button.Resources[
+                            "ButtonBorderBrushPointerOver"] =
+                            LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBorderBrushPressed"] =
+                            LumineDesign.Focus;
+                        button.Click +=
+                            (_, _) =>
+                                SetColorFromDirectControl(
+                                    index);
+                        panel.Children.Add(button);
+                        return button;
+                    })
+                .ToArray();
+
+        UpdateColorPickerVisuals();
+        return panel;
+    }
+
+    private void SetRatingFromDirectControl(
+        int rating)
+    {
+        if (rating is < 1 or > 5)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(rating));
+        }
+
+        _ratingEditor.SelectedIndex =
+            _ratingEditor.SelectedIndex == rating
+                ? 0
+                : rating;
+    }
+
+    private void SetColorFromDirectControl(
+        int index)
+    {
+        if (index < 0
+            || index >= ColorValues.Length)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(index));
+        }
+
+        _colorEditor.SelectedIndex = index;
+    }
+
+    private void UpdateRatingPickerVisuals()
+    {
+        var selected =
+            _ratingEditor.SelectedIndex;
+        for (var index = 0;
+             index < _ratingButtons.Length;
+             index++)
+        {
+            var rating = index + 1;
+            var button = _ratingButtons[index];
+            button.Foreground =
+                rating <= selected
+                    ? LumineDesign.Warning
+                    : LumineDesign.MutedForeground;
+            button.Background =
+                rating == selected
+                    ? LumineDesign.AccentMuted
+                    : LumineDesign.ControlSurface;
+            button.BorderBrush =
+                rating == selected
+                    ? LumineDesign.BorderStrong
+                    : LumineDesign.Border;
+        }
+    }
+
+    private void UpdateColorPickerVisuals()
+    {
+        var selected =
+            _colorEditor.SelectedIndex;
+        for (var index = 0;
+             index < _colorButtons.Length;
+             index++)
+        {
+            var button = _colorButtons[index];
+            var active = index == selected;
+            button.BorderBrush =
+                active
+                    ? LumineDesign.Focus
+                    : LumineDesign.Border;
+            button.BorderThickness =
+                new Thickness(
+                    active
+                        ? 2
+                        : 1);
+
+            if (ColorValues[index] is null)
+            {
+                button.Background =
+                    active
+                        ? LumineDesign.AccentMuted
+                        : LumineDesign.ControlSurface;
+            }
+        }
+    }
+
+    private static IBrush ResolveColorBrush(
+        string? value) =>
+        value switch
+        {
+            "red" =>
+                new SolidColorBrush(
+                    Color.Parse("#EF4444")),
+            "orange" =>
+                new SolidColorBrush(
+                    Color.Parse("#F97316")),
+            "yellow" =>
+                new SolidColorBrush(
+                    Color.Parse("#EAB308")),
+            "green" =>
+                new SolidColorBrush(
+                    Color.Parse("#22C55E")),
+            "blue" =>
+                new SolidColorBrush(
+                    Color.Parse("#3B82F6")),
+            "purple" =>
+                new SolidColorBrush(
+                    Color.Parse("#A855F7")),
+            "gray" =>
+                new SolidColorBrush(
+                    Color.Parse("#6B7280")),
+            _ => LumineDesign.ControlSurface
+        };
+
+    private void PresentLoadFailure(
+        string message)
+    {
+        _retry.IsVisible =
+            _currentAsset is not null;
+        _saveStatus.Foreground =
+            LumineDesign.Danger;
+        _saveStatus.Text = message;
+    }
+
     private void PopulateEditor(
         AssetUserMetadata metadata)
     {
@@ -1375,6 +1723,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 metadata.Tags);
             _notesEditor.Text =
                 metadata.Notes;
+            UpdateRatingPickerVisuals();
+            UpdateColorPickerVisuals();
             _dirty = false;
             _save.IsEnabled = false;
             _reset.IsEnabled = false;
@@ -1416,9 +1766,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         bool enabled)
     {
         _ratingEditor.IsEnabled = enabled;
+        foreach (var button in _ratingButtons)
+        {
+            button.IsEnabled = enabled;
+        }
         _favoriteEditor.IsEnabled = enabled;
         _statusEditor.IsEnabled = enabled;
         _colorEditor.IsEnabled = enabled;
+        foreach (var button in _colorButtons)
+        {
+            button.IsEnabled = enabled;
+        }
         _tagPicker.SetInteractionEnabled(
             enabled);
         _notesEditor.IsEnabled = enabled;
