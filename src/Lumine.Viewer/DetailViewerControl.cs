@@ -88,15 +88,17 @@ public sealed class DetailViewerControl : UserControl
                 CreateViewerIcon(
                     "M5 12h14",
                     15),
-                "縮小",
-                "viewer.zoom-out");
+                "縮小 (-)",
+                "viewer.zoom-out",
+                "-");
         _zoomIn =
             CreateViewerButton(
                 CreateViewerIcon(
                     "M12 5v14 M5 12h14",
                     15),
-                "拡大",
-                "viewer.zoom-in");
+                "拡大 (+)",
+                "viewer.zoom-in",
+                "+");
         _fit =
             CreateViewerButton(
                 "フィット",
@@ -2022,6 +2024,18 @@ public sealed class DetailViewerControl : UserControl
                 break;
             case Key.Right:
                 await MoveAsync(1);
+                e.Handled = true;
+                break;
+            case Key.OemMinus:
+            case Key.Subtract:
+                await ZoomByAsync(
+                    1 / _session.Options.ZoomStep);
+                e.Handled = true;
+                break;
+            case Key.OemPlus:
+            case Key.Add:
+                await ZoomByAsync(
+                    _session.Options.ZoomStep);
                 e.Handled = true;
                 break;
             case Key.D0:
