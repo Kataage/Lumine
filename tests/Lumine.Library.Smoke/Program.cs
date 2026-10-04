@@ -270,6 +270,30 @@ try
         && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
 
+    var concurrentTechnicalWrites =
+        Enumerable.Range(0, 16)
+            .Select(_ =>
+                repository.UpdateTechnicalMetadataAsync(
+                    library.Id,
+                    sameStat.Id,
+                    sameStat.SourceRevision,
+                    sameStat.FileSize,
+                    sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                    new AssetTechnicalMetadata(
+                        640,
+                        480,
+                        640,
+                        480,
+                        true,
+                        "png",
+                        technicalSha)))
+            .ToArray();
+    var concurrentTechnicalResults =
+        await Task.WhenAll(concurrentTechnicalWrites);
+    Require(
+        concurrentTechnicalResults.All(static updated => updated),
+        "Concurrent technical metadata persistence rejected a current source revision.");
+
 
     var userMetadata = await repository.SetUserMetadataAsync(
         library.Id,
