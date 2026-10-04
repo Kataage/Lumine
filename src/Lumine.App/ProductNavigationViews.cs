@@ -956,9 +956,7 @@ internal static class ProductNavigationViews
                 BorderThickness =
                     new Thickness(0),
                 Padding =
-                    new Thickness(0),
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Stretch
+                    new Thickness(0)
             };
 
         var empty =
