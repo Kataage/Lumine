@@ -3421,6 +3421,22 @@ try
                                         IsChecked = true
                                     });
 
+                            Require(
+                                ReferenceEquals(
+                                    secondary.Background,
+                                    LumineDesign.ControlSurface)
+                                && icon.BorderBrush
+                                    == Brushes.Transparent
+                                && ReferenceEquals(
+                                    danger.Resources[
+                                        "ButtonBackgroundPointerOver"],
+                                    LumineDesign.InteractionDangerHover)
+                                && ReferenceEquals(
+                                    secondary.Resources[
+                                        "ButtonBorderBrushFocused"],
+                                    LumineDesign.InteractionFocus),
+                                $"Design-system command hierarchy/state resources regressed at {scale:P0}.");
+
                             var actions =
                                 new WrapPanel();
                             foreach (var control in
