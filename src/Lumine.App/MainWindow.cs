@@ -1126,8 +1126,12 @@ public sealed class MainWindow : Window
 
             _status.Foreground =
                 LumineDesign.MutedForeground;
-            _status.Text =
+            var completionStatus =
                 $"再スキャン完了 · {result.Discovered:N0}件確認";
+            _status.Text =
+                completionStatus;
+            _ = ClearTransientStatusAsync(
+                completionStatus);
         }
         catch (Exception exception)
         {
@@ -1144,6 +1148,27 @@ public sealed class MainWindow : Window
 
             throw;
         }
+    }
+
+    private async Task ClearTransientStatusAsync(
+        string expectedText)
+    {
+        await Task.Delay(
+                TimeSpan.FromMilliseconds(1200))
+            .ConfigureAwait(false);
+
+        await Dispatcher.UIThread.InvokeAsync(
+            () =>
+            {
+                if (string.Equals(
+                        _status.Text,
+                        expectedText,
+                        StringComparison.Ordinal))
+                {
+                    _status.Text =
+                        string.Empty;
+                }
+            });
     }
 
     internal Task RescanActiveLibraryForSmokeAsync()
