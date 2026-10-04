@@ -820,13 +820,20 @@ public sealed class MainWindow : Window
                 await _navigationLibraryService.GetBrowseFacetsAsync(
                     runtime.Library.Id,
                     cancellationToken);
-            publicationPage =
-                await _navigationLibraryService
-                    .ListPublicationsPageAsync(
-                        runtime.Library.Id,
-                        LibraryRepository.PublicationPageSize,
-                        cursor: null,
-                        cancellationToken: cancellationToken);
+            if (string.Equals(
+                    _navigationDestination,
+                    "公開履歴",
+                    StringComparison.Ordinal))
+            {
+                publicationPage =
+                    await _navigationLibraryService
+                        .ListPublicationsPageAsync(
+                            runtime.Library.Id,
+                            LibraryRepository.PublicationPageSize,
+                            cursor: null,
+                            cancellationToken:
+                                cancellationToken);
+            }
         }
 
         var cacheStats =
