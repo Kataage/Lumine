@@ -410,7 +410,7 @@ internal static class ProductSettingsView
             new TextBlock
             {
                 Text =
-                    $"現在のディスクcache: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}（上限 {FormatBytes(snapshot.ThumbnailCacheByteLimit)}）",
+                    $"現在のキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize
@@ -687,38 +687,6 @@ internal static class ProductSettingsView
                 Content = details
             });
 
-        return CreateCard(content);
-    }
-
-    private static Control CreateDiagnostics(
-        Func<Task> showDiagnostics)
-    {
-        var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "診断",
-                "通常操作に診断情報は必要ありません。不具合調査時だけ利用します。"));
-
-        var button =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = "診断情報を開く"
-                });
-        button.Click +=
-            async (_, _) =>
-            {
-                button.IsEnabled = false;
-                try
-                {
-                    await showDiagnostics();
-                }
-                finally
-                {
-                    button.IsEnabled = true;
-                }
-            };
-        content.Children.Add(button);
         return CreateCard(content);
     }
 
