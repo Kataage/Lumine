@@ -2104,6 +2104,13 @@ public sealed class MainWindow : Window
             UpdateScopeDisplay();
             StartNavigationRefresh();
 
+            _status.Foreground =
+                LumineDesign.MutedForeground;
+            _status.Text =
+                _runtime.AssetCount == 0
+                    ? "画像は見つかりませんでした。"
+                    : $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+
             _host?.Log.Write(
                 "library",
                 $"Opened {_runtime.LibraryRoot} with {_runtime.AssetCount:N0} assets.");
