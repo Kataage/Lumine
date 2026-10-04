@@ -119,19 +119,24 @@ var visualOutputArgument =
             argument.StartsWith(
                 VisualOutputPrefix,
                 StringComparison.Ordinal));
-var visualOutputDirectory =
+var visualOutputValue =
     visualOutputArgument is null
         ? null
-        : Path.GetFullPath(
-            visualOutputArgument[
-                VisualOutputPrefix.Length..]);
+        : visualOutputArgument[
+            VisualOutputPrefix.Length..];
 if (visualOutputArgument is not null
     && string.IsNullOrWhiteSpace(
-        visualOutputDirectory))
+        visualOutputValue))
 {
     throw new ArgumentException(
         "--visual-output requires a directory.");
 }
+
+var visualOutputDirectory =
+    visualOutputValue is null
+        ? null
+        : Path.GetFullPath(
+            visualOutputValue);
 
 var visualEvidenceNames =
     new HashSet<string>(
