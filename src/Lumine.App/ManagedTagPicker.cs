@@ -212,6 +212,13 @@ internal sealed class ManagedTagPicker : UserControl
     internal string CustomColorTextForSmoke =>
         _colorEditor.CustomTextForSmoke;
 
+    internal bool CreateButtonEnabledForSmoke =>
+        _create.IsEnabled;
+
+    internal void SetSearchForSmoke(
+        string value) =>
+        _search.Text = value;
+
     internal void SetCustomColorForSmoke(
         string value) =>
         _colorEditor.SetCustomTextForSmoke(
