@@ -85,20 +85,22 @@ public sealed class DetailViewerControl : UserControl
                 "Right Arrow");
         _zoomOut =
             CreateViewerButton(
-                CreateViewerIcon(
-                    "M5 12h14",
-                    15),
+                "−",
                 "縮小 (-)",
                 "viewer.zoom-out",
                 "-");
         _zoomIn =
             CreateViewerButton(
-                CreateViewerIcon(
-                    "M12 5v14 M5 12h14",
-                    15),
+                "+",
                 "拡大 (+)",
                 "viewer.zoom-in",
                 "+");
+        _zoomOut.FontSize = 20;
+        _zoomIn.FontSize = 20;
+        _zoomOut.FontWeight =
+            FontWeight.SemiBold;
+        _zoomIn.FontWeight =
+            FontWeight.SemiBold;
         _fit =
             CreateViewerButton(
                 "フィット",
@@ -1979,6 +1981,16 @@ public sealed class DetailViewerControl : UserControl
     internal void FocusCloseForSmoke() =>
         _close.Focus();
 
+    internal bool ZoomButtonsUseConventionalGlyphsForSmoke =>
+        string.Equals(
+            _zoomOut.Content as string,
+            "−",
+            StringComparison.Ordinal)
+        && string.Equals(
+            _zoomIn.Content as string,
+            "+",
+            StringComparison.Ordinal);
+
     internal bool IsChromeVisibleForSmoke =>
         _toolbarHost.Opacity > 0.9
         && _utilityHost.Opacity > 0.9
@@ -1999,7 +2011,8 @@ public sealed class DetailViewerControl : UserControl
         FadeChrome();
 
     internal void RevealChromeForSmoke() =>
-        RevealChrome();
+        RevealChrome(
+            autoHide: false);
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
