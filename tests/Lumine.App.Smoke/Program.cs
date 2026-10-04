@@ -3408,9 +3408,11 @@ try
                             Key = Key.Down
                         });
                     Dispatcher.UIThread.RunJobs();
-                    Require(
+                    var folderDestination =
                         window.FocusManager.GetFocusedElement()
-                            is Button folderDestination
+                            as Button;
+                    Require(
+                        folderDestination is not null
                         && string.Equals(
                             AutomationProperties.GetName(
                                 folderDestination),
@@ -3418,7 +3420,7 @@ try
                             StringComparison.Ordinal),
                         "Global navigation Down Arrow did not follow visual destination order.");
 
-                    folderDestination.RaiseEvent(
+                    folderDestination!.RaiseEvent(
                         new KeyEventArgs
                         {
                             RoutedEvent =
@@ -3426,9 +3428,11 @@ try
                             Key = Key.End
                         });
                     Dispatcher.UIThread.RunJobs();
-                    Require(
+                    var settingsDestination =
                         window.FocusManager.GetFocusedElement()
-                            is Button settingsDestination
+                            as Button;
+                    Require(
+                        settingsDestination is not null
                         && string.Equals(
                             AutomationProperties.GetName(
                                 settingsDestination),
@@ -3436,7 +3440,7 @@ try
                             StringComparison.Ordinal),
                         "Global navigation End key did not reach the final Settings destination.");
 
-                    settingsDestination.RaiseEvent(
+                    settingsDestination!.RaiseEvent(
                         new KeyEventArgs
                         {
                             RoutedEvent =
