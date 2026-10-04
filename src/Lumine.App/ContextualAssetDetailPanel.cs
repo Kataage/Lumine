@@ -802,12 +802,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal string PublicationsText =>
         _publications.Text ?? string.Empty;
 
-    internal string PublicationCountTextForSmoke =>
-        _publicationCount.Text ?? string.Empty;
-
-    internal int PublicationCardCountForSmoke =>
-        _publicationCards.Children.Count;
-
     internal bool IsDirty => _dirty;
 
     internal bool HasPreview =>
