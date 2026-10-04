@@ -1860,6 +1860,10 @@ internal static class Program
                 - viewportCenterY) <= 1.5,
             "Fit image did not start visually centered in the Viewer viewport.");
 
+        Require(
+            detail.ZoomButtonsUseConventionalGlyphsForSmoke,
+            "Viewer zoom controls lost their visible conventional minus/plus glyphs.");
+
         var toolbarBounds =
             detail.ToolbarBoundsInControlForSmoke;
         var utilityBounds =
