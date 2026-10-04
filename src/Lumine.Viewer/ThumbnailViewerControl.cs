@@ -190,7 +190,8 @@ public sealed class ThumbnailViewerControl : UserControl
                 ? primaryIndex
                 : _selection.IsEmpty
                     ? -1
-                    : _selection.Min;
+                    : indices.First(index =>
+                        _selection.Contains(index));
         _selectionAnchor = _selectedIndex;
 
         SelectedAssetIndexChanged?.Invoke(
