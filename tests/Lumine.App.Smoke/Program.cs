@@ -3904,17 +3904,31 @@ try
                                             .CloseFilterFlyoutForSmoke();
                                         Dispatcher.UIThread.RunJobs();
 
+                                        var visualFilterAsset =
+                                            await window.CurrentRuntime!
+                                                .ViewerSession
+                                                .GetAssetAsync(0);
+                                        await window.CurrentRuntime
+                                            .LibraryService
+                                            .SetUserMetadataAsync(
+                                                window.CurrentRuntime.Library.Id,
+                                                visualFilterAsset.Id,
+                                                new AssetUserMetadataUpdate(
+                                                    Tags:
+                                                        ["browse-filter-smoke"]));
                                         await window.BrowseControlsForSmoke
                                             .SetTagScopeAsync(
-                                                "navigation-smoke");
+                                                "browse-filter-smoke");
                                         Dispatcher.UIThread.RunJobs();
                                         Require(
                                             window.BrowseControlsForSmoke
                                                 .FilterButtonTextForSmoke
                                                 .Contains(
                                                     "1",
-                                                    StringComparison.Ordinal),
-                                            "Browse active-filter count was not surfaced on the collapsed Filter command.");
+                                                    StringComparison.Ordinal)
+                                            && window.CurrentRuntime.AssetCount
+                                                == 1,
+                                            "Browse active-filter state was not surfaced clearly with a matching result.");
                                         CaptureVisualEvidence(
                                             window,
                                             "browse-active-filter-900x600");
