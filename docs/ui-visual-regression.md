@@ -42,6 +42,7 @@ When enabled it captures the required product surfaces below:
 - `empty-library-1440x900.png`
 - `no-match-1440x900.png`
 - `error-1440x900.png`
+- `error-900x600-text225.png`
 
 The tag-create capture explicitly opens the real shared `TagColorEditor` / Avalonia `ColorPicker` drop-down and validates a realized `ColorSpectrum`. The tag-edit capture keeps the edit Flyout itself visible so the prefilled name/color/count and save/cancel layout remain reviewable. Both use Lumine's existing 225% text-scale simulation.
 
