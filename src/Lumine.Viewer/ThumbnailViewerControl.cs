@@ -2463,9 +2463,11 @@ public sealed class ThumbnailViewerControl : UserControl
         bool selected,
         bool hovered,
         bool focused) =>
-        layoutMode == ViewerLayoutMode.List
-        || hovered
-        || selected
+        // Selection must remain visible without permanently covering the
+        // thumbnail with commands. Secondary actions are contextual: reveal
+        // them on pointer hover or keyboard focus, and keep right-click as
+        // the complete accelerator surface in both Grid and List modes.
+        hovered
         || focused;
 
     internal static string ResolveTileVisualStateForSmoke(
