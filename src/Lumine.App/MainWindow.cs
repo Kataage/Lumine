@@ -1157,7 +1157,7 @@ public sealed class MainWindow : Window
                 TimeSpan.FromMilliseconds(1200))
             .ConfigureAwait(false);
 
-        await Dispatcher.UIThread.InvokeAsync(
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
             () =>
             {
                 if (string.Equals(
