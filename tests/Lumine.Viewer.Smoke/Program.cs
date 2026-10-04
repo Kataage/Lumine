@@ -46,6 +46,7 @@ internal static class Program
                         thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyBrowsePresentationParityAsync(thumbnailPath);
+                    await VerifyThumbnailFailureRecoveryAsync(thumbnailPath);
                     await VerifyDetailViewerAsync(thumbnailPath);
                     await VerifyDetailObserverIsolationAsync(
                         thumbnailPath);
@@ -1381,6 +1382,128 @@ internal static class Program
         Dispatcher.UIThread.RunJobs();
     }
 
+    private static async Task VerifyThumbnailFailureRecoveryAsync(
+        string thumbnailPath)
+    {
+        foreach (var layoutMode in
+                 new[]
+                 {
+                     ViewerLayoutMode.Grid,
+                     ViewerLayoutMode.List
+                 })
+        {
+            var thumbnailProvider =
+                new ControlledFailureThumbnailProvider(
+                    thumbnailPath);
+
+            await using var session =
+                new ViewerSession(
+                    new DirectFixtureAssetProvider(1),
+                    thumbnailProvider,
+                    new ViewerOptions
+                    {
+                        TileWidth = 180,
+                        TileHeight = 180,
+                        TileSpacing = 8,
+                        PrefetchRows = 0,
+                        DecodedBitmapEntryLimit = 8,
+                        DecodedBitmapByteLimit =
+                            8L * 1024 * 1024
+                    });
+
+            var viewer =
+                new ThumbnailViewerControl(
+                    session,
+                    layoutMode,
+                    densityLevel: 1);
+            var window =
+                new Window
+                {
+                    Width = 760,
+                    Height = 500,
+                    Content = viewer
+                };
+
+            window.Show();
+
+            for (var attempt = 0;
+                 attempt < 250
+                 && !viewer
+                     .IsRealizedTileFailedForSmoke(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsRealizedTileFailedForSmoke(0)
+                && !viewer.IsAssetReady(0),
+                $"{layoutMode} thumbnail failure did not enter an explicit failed state.");
+
+            var failedPresentation =
+                viewer.GetRealizedTilePresentationForSmoke(
+                    0);
+            var failureReason =
+                viewer.GetRealizedTileFailureReasonForSmoke(
+                    0);
+
+            Require(
+                failedPresentation.Secondary.Contains(
+                    "読み込めません",
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    failureReason,
+                    "画像ファイルを読み込めませんでした。",
+                    StringComparison.Ordinal)
+                && !failureReason.Contains(
+                    "private",
+                    StringComparison.OrdinalIgnoreCase),
+                $"{layoutMode} thumbnail failure exposed raw exception detail or lost the user-facing failure label.");
+
+            viewer.SelectAsset(0);
+            Require(
+                viewer.SelectedAssetIndex == 0,
+                $"{layoutMode} failed tile could not remain selectable.");
+
+            var requestsBeforeRetry =
+                thumbnailProvider.Requests;
+            thumbnailProvider.AllowSuccess();
+            viewer.RetryRealizedTileForSmoke(0);
+
+            for (var attempt = 0;
+                 attempt < 250
+                 && !viewer.IsAssetReady(0);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            Require(
+                viewer.IsAssetReady(0)
+                && !viewer
+                    .IsRealizedTileFailedForSmoke(0)
+                && thumbnailProvider.Requests
+                    == requestsBeforeRetry + 1,
+                $"{layoutMode} thumbnail retry did not recover through exactly one bounded user retry.");
+
+            var recoveredPresentation =
+                viewer.GetRealizedTilePresentationForSmoke(
+                    0);
+            Require(
+                recoveredPresentation.Primary
+                    == "asset-000000.jpg"
+                && recoveredPresentation.ActionCount == 2,
+                $"{layoutMode} thumbnail retry did not restore the normal browse presentation/actions.");
+
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            await viewer.DrainBitmapReleasesAsync()
+                .WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
     private static async Task VerifyDetailViewerAsync(string previewPath)
     {
         var assets = new DirectFixtureAssetProvider(3);
@@ -2686,6 +2809,43 @@ internal sealed class ImmediateThumbnailProvider(string path) : IViewerThumbnail
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        return ValueTask.FromResult(
+            new ViewerThumbnail(
+                $"fixture-{asset.Id}",
+                path,
+                1,
+                1));
+    }
+}
+
+internal sealed class ControlledFailureThumbnailProvider(
+    string path) : IViewerThumbnailProvider
+{
+    private int _requests;
+    private int _allowSuccess;
+
+    public int Requests =>
+        Volatile.Read(ref _requests);
+
+    public void AllowSuccess() =>
+        Interlocked.Exchange(
+            ref _allowSuccess,
+            1);
+
+    public ValueTask<ViewerThumbnail> RequestAsync(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _requests);
+
+        if (Volatile.Read(ref _allowSuccess) == 0)
+        {
+            throw new IOException(
+                @"C:\private\fixture\thumbnail.png could not be decoded.");
+        }
 
         return ValueTask.FromResult(
             new ViewerThumbnail(

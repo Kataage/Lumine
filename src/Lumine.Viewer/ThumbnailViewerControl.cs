@@ -578,6 +578,29 @@ public sealed class ThumbnailViewerControl : UserControl
         return tile.IsActionOverlayVisibleForSmoke();
     }
 
+    internal bool IsRealizedTileFailedForSmoke(
+        long index) =>
+        FindRealizedTileForSmoke(index)?.IsFailed
+        == true;
+
+    internal string? GetRealizedTileFailureReasonForSmoke(
+        long index) =>
+        FindRealizedTileForSmoke(index)?.FailureReason;
+
+    internal void RetryRealizedTileForSmoke(
+        long index) =>
+        (FindRealizedTileForSmoke(index)
+         ?? throw new InvalidOperationException(
+             $"Asset {index} is not realized."))
+        .RetryForSmoke();
+
+    private ViewerTileControl? FindRealizedTileForSmoke(
+        long index) =>
+        this.GetVisualDescendants()
+            .OfType<ViewerTileControl>()
+            .FirstOrDefault(
+                item => item.Index == index);
+
     public event EventHandler<long>? SelectedAssetIndexChanged;
 
     public event EventHandler<ViewerSelectionSnapshot>? SelectionChanged;
@@ -1456,10 +1479,14 @@ public sealed class ThumbnailViewerControl : UserControl
         private readonly Grid? _listPanel;
         private Control? _actionOverlay;
         private Control? _selectionBadge;
+        private Border? _failureOverlay;
+        private Button? _retryButton;
         private CancellationTokenSource? _loadCancellation;
         private DecodedBitmapLease? _bitmapLease;
         private ViewerAsset? _asset;
+        private string? _failureReason;
         private bool _isReady;
+        private bool _isLoading;
         private bool _hovered;
         private bool _pressed;
 
@@ -1665,6 +1692,12 @@ public sealed class ThumbnailViewerControl : UserControl
         public long Index => _index;
 
         public bool IsReady => _isReady;
+
+        public bool IsFailed =>
+            _failureOverlay?.IsVisible == true;
+
+        public string? FailureReason =>
+            _failureReason;
 
         public bool IsSelected { get; private set; }
 
@@ -2048,6 +2081,8 @@ public sealed class ThumbnailViewerControl : UserControl
         private void StartLoad()
         {
             CancelLoad();
+            ClearFailure();
+            _isLoading = true;
             _loadCancellation =
                 new CancellationTokenSource();
             var token =
@@ -2064,6 +2099,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 ApplyPresentation(
                     warmAsset);
                 MarkReady();
+                _isLoading = false;
 
                 var refresh =
                     RefreshWarmPresentationAsync(
@@ -2083,6 +2119,7 @@ public sealed class ThumbnailViewerControl : UserControl
             _loadCancellation?.Cancel();
             _loadCancellation?.Dispose();
             _loadCancellation = null;
+            _isLoading = false;
 
             if (_isReady)
             {
@@ -2092,6 +2129,184 @@ public sealed class ThumbnailViewerControl : UserControl
 
             ReplaceBitmapLease(null);
         }
+
+        private void EnsureFailureOverlay()
+        {
+            if (_failureOverlay is not null)
+            {
+                return;
+            }
+
+            var message =
+                new TextBlock
+                {
+                    Text = "読み込めません",
+                    Foreground =
+                        ViewerVisualTokens.Foreground,
+                    FontSize =
+                        ViewerVisualTokens.CaptionFontSize,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    TextAlignment =
+                        TextAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+
+            var retry =
+                new Button
+                {
+                    Content = "再試行",
+                    MinWidth = 64,
+                    MinHeight = 28,
+                    Padding =
+                        new Thickness(10, 4),
+                    CornerRadius =
+                        new CornerRadius(7),
+                    Background =
+                        ViewerVisualTokens.Surface,
+                    Foreground =
+                        ViewerVisualTokens.Foreground,
+                    BorderBrush =
+                        ViewerVisualTokens.BorderStrong,
+                    BorderThickness =
+                        new Thickness(1)
+                };
+            retry.Click +=
+                (_, _) => RetryLoad();
+
+            var panel =
+                new StackPanel
+                {
+                    Orientation =
+                        _layoutMode
+                            == ViewerLayoutMode.List
+                            ? Orientation.Horizontal
+                            : Orientation.Vertical,
+                    Spacing = 8,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Center,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+            panel.Children.Add(message);
+            panel.Children.Add(retry);
+
+            var overlay =
+                new Border
+                {
+                    Background =
+                        ViewerVisualTokens.Overlay,
+                    Padding =
+                        new Thickness(8),
+                    Child = panel,
+                    IsVisible = false,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    VerticalAlignment =
+                        VerticalAlignment.Stretch
+                };
+
+            _retryButton = retry;
+            _failureOverlay = overlay;
+
+            if (_layoutMode == ViewerLayoutMode.Grid)
+            {
+                _gridLayers!.Children.Add(overlay);
+            }
+            else
+            {
+                Grid.SetColumn(overlay, 1);
+                _listPanel!.Children.Add(overlay);
+            }
+        }
+
+        private void RetryLoad()
+        {
+            if (_isLoading)
+            {
+                return;
+            }
+
+            StartLoad();
+        }
+
+        private void ClearFailure()
+        {
+            _failureReason = null;
+            ToolTip.SetTip(this, null);
+
+            if (_failureOverlay is not null)
+            {
+                _failureOverlay.IsVisible = false;
+            }
+
+            if (_retryButton is not null)
+            {
+                _retryButton.IsEnabled = false;
+            }
+        }
+
+        private void ShowFailure(
+            Exception exception)
+        {
+            _isLoading = false;
+            _failureReason =
+                GetSafeFailureReason(exception);
+            EnsureFailureOverlay();
+
+            _failureOverlay!.IsVisible = true;
+            _retryButton!.IsEnabled = true;
+            ToolTip.SetTip(
+                this,
+                _failureReason);
+            ToolTip.SetTip(
+                _retryButton,
+                $"{_failureReason} 再試行します。");
+
+            if (_label is not null)
+            {
+                _label.Text =
+                    _asset?.DisplayName
+                    ?? "読み込めません";
+                _listSecondary!.Text =
+                    "読み込めません";
+            }
+            else
+            {
+                _captionOverlay!.SetText(
+                    _asset?.DisplayName
+                    ?? "読み込めません",
+                    "読み込めません",
+                    rating:
+                        _asset?.Rating,
+                    favorite:
+                        _asset?.Favorite
+                        ?? false);
+            }
+        }
+
+        private static string GetSafeFailureReason(
+            Exception exception) =>
+            exception switch
+            {
+                FileNotFoundException
+                    or DirectoryNotFoundException =>
+                    "元画像が見つかりません。",
+                UnauthorizedAccessException =>
+                    "画像ファイルを読み取る権限がありません。",
+                NotSupportedException =>
+                    "この画像形式はサムネイル表示に対応していません。",
+                InvalidDataException =>
+                    "画像データをデコードできませんでした。",
+                IOException =>
+                    "画像ファイルを読み込めませんでした。",
+                _ =>
+                    "サムネイルの読み込みに失敗しました。"
+            };
+
+        internal void RetryForSmoke() =>
+            RetryLoad();
 
         private void ReplaceBitmapLease(
             DecodedBitmapLease? next)
@@ -2205,6 +2420,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         var next = lease;
                         lease = null;
                         _asset = asset;
+                        ClearFailure();
                         _owner.RememberWarmPresentation(
                             _index,
                             asset,
@@ -2212,6 +2428,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         ReplaceBitmapLease(next);
                         ApplyPresentation(asset);
                         MarkReady();
+                        _isLoading = false;
                     });
             }
             catch (OperationCanceledException)
@@ -2222,21 +2439,7 @@ public sealed class ThumbnailViewerControl : UserControl
             {
                 _session.NotifyTileLoadFailed(exception);
                 await Dispatcher.UIThread.InvokeAsync(
-                    () =>
-                    {
-                        if (_label is not null)
-                        {
-                            _label.Text = "!";
-                        }
-                        else
-                        {
-                            _captionOverlay!.SetText(
-                                "!",
-                                string.Empty,
-                                rating: null,
-                                favorite: false);
-                        }
-                    });
+                    () => ShowFailure(exception));
             }
             finally
             {
