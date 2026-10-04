@@ -116,7 +116,7 @@ public sealed class LibraryService
     public Task<IReadOnlyList<LibraryTagInfo>> ListTagsAsync(
         long libraryId,
         string? searchText = null,
-        int limit = 512,
+        int limit = LibraryRepository.MaxTagListLimit,
         CancellationToken cancellationToken = default) =>
         LibraryBackgroundExecution.RunAsync(
             token => _repository.ListTagsAsync(
