@@ -88,7 +88,8 @@ public sealed record PublicationInfo(
     string PlatformMetadataJson,
     IReadOnlyList<PublicationAssetSnapshot> Assets,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    long AssetCount = -1);
 
 public sealed record PublicationCreate(
     IReadOnlyList<long> AssetIds,
