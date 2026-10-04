@@ -183,7 +183,7 @@ public sealed partial class LibraryRepository
     public async Task<IReadOnlyList<LibraryTagInfo>> ListTagsAsync(
         long libraryId,
         string? searchText = null,
-        int limit = 512,
+        int limit = MaxTagListLimit,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
