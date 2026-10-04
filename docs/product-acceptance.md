@@ -84,7 +84,7 @@ The final reviewer must confirm all of these:
 6. **Product states / feedback** — Welcome, Loading, Empty, No Match and recoverable Error each have one clear message and next action; success feedback is transient and technical detail stays secondary.
 7. **Creative archive** — Work, Generation Group, directed Relation and Publication are understandable and useful without AI.
 8. **Settings / storage** — Common settings are easy to find, advanced cache/storage/diagnostics are progressively disclosed, and portable/storage behavior has no surprising side effects.
-9. **Accessibility / responsive polish** — Keyboard-only navigation works logically; 900x600 and normal desktop use remain unclipped; large Windows text scale remains usable; selected/destructive states are understandable without color alone.
+9. **Accessibility / responsive polish** — Keyboard-only navigation works logically; explicitly review 900x600, 1024x768, 1440x900 and 1920x1080; explicitly review Windows text scale at 100%, 125%, 150%, 200% and 225%; no required control/text clips or becomes unreachable; selected/destructive states remain understandable without color alone.
 10. **Daily-use product verdict** — No unresolved P0/P1 issue is observed and normal use feels like Lumine rather than a technical prototype.
 
 The last item is intentionally subjective and belongs to the product owner. Automation must not substitute its judgment.
