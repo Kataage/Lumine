@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -1339,22 +1340,67 @@ internal static class ProductNavigationViews
     }
 
     public static Control CreatePublicationEntry(
-        IReadOnlyList<PublicationInfo> publications)
+        IReadOnlyList<PublicationInfo> publications) =>
+        CreatePublicationEntry(
+            publications,
+            publications.Count,
+            hasMore: false,
+            static () =>
+                Task.FromResult(
+                    new PublicationPage(
+                        Array.Empty<PublicationInfo>(),
+                        null,
+                        0)));
+
+    public static Control CreatePublicationEntry(
+        IReadOnlyList<PublicationInfo> publications,
+        long totalCount,
+        bool hasMore,
+        Func<Task<PublicationPage>> loadMore,
+        Action<string>? reportError = null)
     {
-        if (publications.Count == 0)
+        ArgumentNullException.ThrowIfNull(
+            publications);
+        ArgumentNullException.ThrowIfNull(
+            loadMore);
+
+        if (publications.Count == 0
+            && totalCount == 0)
         {
             return CreatePlaceholder(
                 "公開履歴",
                 "公開履歴はまだありません。");
         }
 
+        var items =
+            new ObservableCollection<PublicationInfo>(
+                publications);
+        var knownIds =
+            new HashSet<long>(
+                publications.Select(
+                    static item =>
+                        item.Id));
+
+        var summary =
+            new TextBlock
+            {
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+
         var list =
             new ListBox
             {
-                ItemsSource = publications,
+                ItemsSource = items,
                 Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0)
+                BorderThickness =
+                    new Thickness(0),
+                Padding =
+                    new Thickness(0)
             };
         list.ItemTemplate =
             new FuncDataTemplate<PublicationInfo>(
@@ -1389,7 +1435,8 @@ internal static class ProductNavigationViews
                         content.Children.Add(
                             new TextBlock
                             {
-                                Text = publication.Title,
+                                Text =
+                                    publication.Title,
                                 Foreground =
                                     LumineDesign.Foreground,
                                 FontWeight =
@@ -1407,7 +1454,8 @@ internal static class ProductNavigationViews
                         content.Children.Add(
                             new TextBlock
                             {
-                                Text = publication.Body,
+                                Text =
+                                    publication.Body,
                                 Foreground =
                                     LumineDesign.Foreground,
                                 FontSize =
@@ -1439,12 +1487,9 @@ internal static class ProductNavigationViews
                         new TextBlock
                         {
                             Text =
-                                "画像: "
-                                + string.Join(
-                                    " → ",
-                                    publication.Assets.Select(
-                                        static asset =>
-                                            asset.FileName)),
+                                FormatPublicationAssets(
+                                    publication,
+                                    " → "),
                             Foreground =
                                 LumineDesign.MutedForeground,
                             FontSize =
@@ -1475,7 +1520,128 @@ internal static class ProductNavigationViews
                         selected: false);
                 },
                 supportsRecycling: true);
-        return list;
+
+        var loadMoreButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "さらに読み込む",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    IsVisible = hasMore
+                });
+
+        void UpdateSummary(
+            long count)
+        {
+            summary.Text =
+                count > items.Count
+                    ? $"{items.Count:N0} / {count:N0}件"
+                    : $"{items.Count:N0}件";
+        }
+
+        UpdateSummary(
+            Math.Max(
+                totalCount,
+                items.Count));
+
+        loadMoreButton.Click +=
+            async (_, _) =>
+            {
+                if (!loadMoreButton.IsVisible
+                    || !loadMoreButton.IsEnabled)
+                {
+                    return;
+                }
+
+                loadMoreButton.IsEnabled =
+                    false;
+                loadMoreButton.Content =
+                    "読み込み中…";
+                try
+                {
+                    var page =
+                        await loadMore();
+                    foreach (var publication in
+                             page.Items)
+                    {
+                        if (knownIds.Add(
+                                publication.Id))
+                        {
+                            items.Add(
+                                publication);
+                        }
+                    }
+
+                    loadMoreButton.IsVisible =
+                        page.NextCursor is not null;
+                    UpdateSummary(
+                        page.TotalCount);
+                }
+                catch (Exception exception)
+                {
+                    reportError?.Invoke(
+                        $"公開履歴を追加で読み込めませんでした: {exception.Message}");
+                }
+                finally
+                {
+                    loadMoreButton.Content =
+                        "さらに読み込む";
+                    loadMoreButton.IsEnabled =
+                        loadMoreButton.IsVisible;
+                }
+            };
+
+        var root =
+            new Grid
+            {
+                RowDefinitions =
+                    new RowDefinitions(
+                        "Auto,*,Auto"),
+                RowSpacing =
+                    LumineDesign.Space8
+            };
+        root.Children.Add(
+            summary);
+        Grid.SetRow(
+            list,
+            1);
+        root.Children.Add(
+            list);
+        Grid.SetRow(
+            loadMoreButton,
+            2);
+        root.Children.Add(
+            loadMoreButton);
+        return root;
+    }
+
+    private static string FormatPublicationAssets(
+        PublicationInfo publication,
+        string separator)
+    {
+        var total =
+            publication.AssetCount >= 0
+                ? publication.AssetCount
+                : publication.Assets.Count;
+        var visible =
+            string.Join(
+                separator,
+                publication.Assets.Select(
+                    static asset =>
+                        asset.FileName));
+
+        if (total <= publication.Assets.Count)
+        {
+            return "画像: " + visible;
+        }
+
+        return "画像: "
+            + visible
+            + separator
+            + $"… +{total - publication.Assets.Count:N0}枚";
     }
 
     public static Control CreateNoLibrary(

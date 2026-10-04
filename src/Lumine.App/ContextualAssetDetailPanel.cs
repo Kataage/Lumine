@@ -1424,7 +1424,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                     : $"\n  {publication.TagsSnapshot}")
                                 + $"\n  {string.Join(", ", publication.Assets.Select(static asset => asset.FileName))}"));
             RenderPublicationCards(
-                context.Publications);
+                context.Publications,
+                context.PublicationCount);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -1459,11 +1460,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     }
 
     private void RenderPublicationCards(
-        IReadOnlyList<PublicationInfo> publications)
+        IReadOnlyList<PublicationInfo> publications,
+        long totalCount)
     {
         _publicationCards.Children.Clear();
         _publicationCount.Text =
-            $"{publications.Count:N0}件";
+            $"{totalCount:N0}件";
 
         if (publications.Count == 0)
         {
@@ -1483,6 +1485,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _publicationCards.Children.Add(
                 CreatePublicationCard(
                     publication));
+        }
+
+        if (totalCount > publications.Count)
+        {
+            _publicationCards.Children.Add(
+                CreatePublicationMessageCard(
+                    $"最新{publications.Count:N0}件を表示しています。全{totalCount:N0}件は左の「公開履歴」から確認できます。",
+                    warning: false));
         }
     }
 
@@ -1557,12 +1567,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             body.Children.Add(
                 CreatePublicationDetail(
-                    "画像: "
-                    + string.Join(
-                        ", ",
-                        publication.Assets.Select(
-                            static asset =>
-                                asset.FileName))));
+                    FormatPublicationAssets(
+                        publication)));
         }
 
         if (!string.IsNullOrWhiteSpace(
@@ -1606,6 +1612,30 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     LumineDesign.Space12),
             Child = body
         };
+    }
+
+    private static string FormatPublicationAssets(
+        PublicationInfo publication)
+    {
+        var total =
+            publication.AssetCount >= 0
+                ? publication.AssetCount
+                : publication.Assets.Count;
+        var visible =
+            string.Join(
+                ", ",
+                publication.Assets.Select(
+                    static asset =>
+                        asset.FileName));
+
+        if (total <= publication.Assets.Count)
+        {
+            return "画像: " + visible;
+        }
+
+        return "画像: "
+            + visible
+            + $", … +{total - publication.Assets.Count:N0}枚";
     }
 
     private static TextBlock CreatePublicationDetail(

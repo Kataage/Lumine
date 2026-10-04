@@ -74,6 +74,8 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryTagInfo>();
     private IReadOnlyList<PublicationInfo> _publications =
         Array.Empty<PublicationInfo>();
+    private PublicationCursor? _publicationNextCursor;
+    private long _publicationTotalCount;
     private ProductSettingsSnapshot _settingsSnapshot;
 
     public MainWindow()
@@ -795,8 +797,8 @@ public sealed class MainWindow : Window
             Array.Empty<LibraryFolderInfo>();
         IReadOnlyList<LibraryTagInfo> tags =
             Array.Empty<LibraryTagInfo>();
-        IReadOnlyList<PublicationInfo> publications =
-            Array.Empty<PublicationInfo>();
+        PublicationPage? publicationPage =
+            null;
         var facets =
             new LibraryBrowseFacets(
                 Array.Empty<string>(),
@@ -818,11 +820,20 @@ public sealed class MainWindow : Window
                 await _navigationLibraryService.GetBrowseFacetsAsync(
                     runtime.Library.Id,
                     cancellationToken);
-            publications =
-                await _navigationLibraryService.ListPublicationsAsync(
-                    runtime.Library.Id,
-                    limit: 100,
-                    cancellationToken);
+            if (string.Equals(
+                    _navigationDestination,
+                    "公開履歴",
+                    StringComparison.Ordinal))
+            {
+                publicationPage =
+                    await _navigationLibraryService
+                        .ListPublicationsPageAsync(
+                            runtime.Library.Id,
+                            LibraryRepository.PublicationPageSize,
+                            cursor: null,
+                            cancellationToken:
+                                cancellationToken);
+            }
         }
 
         var cacheStats =
@@ -836,7 +847,14 @@ public sealed class MainWindow : Window
         _libraries = libraries;
         _folders = folders;
         _tags = tags;
-        _publications = publications;
+        _publications =
+            publicationPage?.Items
+            ?? Array.Empty<PublicationInfo>();
+        _publicationNextCursor =
+            publicationPage?.NextCursor;
+        _publicationTotalCount =
+            publicationPage?.TotalCount
+            ?? 0;
         _browseFacets = facets;
         _browseControls?.UpdateFacetData(
             _tags,
@@ -915,11 +933,69 @@ public sealed class MainWindow : Window
                         ? ProductNavigationViews.CreateNoLibrary(
                             "公開履歴")
                         : ProductNavigationViews.CreatePublicationEntry(
-                            _publications),
+                            _publications,
+                            _publicationTotalCount,
+                            _publicationNextCursor is not null,
+                            LoadMorePublicationHistoryAsync,
+                            ReportNavigationError),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
             };
+    }
+
+    private async Task<PublicationPage>
+        LoadMorePublicationHistoryAsync()
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "公開履歴を読み込むにはライブラリを開いてください。");
+        var cursor =
+            _publicationNextCursor;
+        if (cursor is null)
+        {
+            return new PublicationPage(
+                Array.Empty<PublicationInfo>(),
+                null,
+                _publicationTotalCount);
+        }
+
+        var page =
+            await _navigationLibraryService
+                .ListPublicationsPageAsync(
+                    runtime.Library.Id,
+                    LibraryRepository.PublicationPageSize,
+                    cursor);
+
+        if (!ReferenceEquals(
+                _runtime,
+                runtime))
+        {
+            return new PublicationPage(
+                Array.Empty<PublicationInfo>(),
+                null,
+                0);
+        }
+
+        var knownIds =
+            new HashSet<long>(
+                _publications.Select(
+                    static item =>
+                        item.Id));
+        _publications =
+            _publications
+                .Concat(
+                    page.Items.Where(
+                        item =>
+                            knownIds.Add(
+                                item.Id)))
+                .ToArray();
+        _publicationNextCursor =
+            page.NextCursor;
+        _publicationTotalCount =
+            page.TotalCount;
+        return page;
     }
 
     private static bool IsMainWorkspaceDestination(
