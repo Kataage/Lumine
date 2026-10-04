@@ -28,6 +28,27 @@ static void Require(bool condition, string message)
     }
 }
 
+static IEnumerable<Control> EnumeratePanelTree(
+    Control root)
+{
+    yield return root;
+
+    if (root is not Panel panel)
+    {
+        yield break;
+    }
+
+    foreach (var child in panel.Children
+                 .OfType<Control>())
+    {
+        foreach (var descendant in
+                 EnumeratePanelTree(child))
+        {
+            yield return descendant;
+        }
+    }
+}
+
 
 static double RelativeLuminance(Color color)
 {
@@ -3246,9 +3267,15 @@ try
             WindowsTextScale.NormalizeRegistryValue(125)
             - 1.25) < 0.001
         && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(150)
+            - 1.5) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(200)
+            - 2.0) < 0.001
+        && Math.Abs(
             WindowsTextScale.NormalizeRegistryValue(225)
             - 2.25) < 0.001,
-        "Windows registry text-scale percentages were not normalized to 1.0-2.25 factors.");
+        "Windows registry text-scale percentages were not normalized across the 100/125/150/200/225% product matrix.");
 
     var previousTextScaleEnvironment =
         Environment.GetEnvironmentVariable(
@@ -3343,6 +3370,213 @@ try
             await headless.Dispatch(
                 async () =>
                 {
+                    if (iteration == 0)
+                    {
+                        var restoreTextScale =
+                            LumineVisualMetrics.TextScaleFactor;
+                        foreach (var scale in
+                                 new[]
+                                 {
+                                     1.0,
+                                     1.25,
+                                     1.5,
+                                     2.0,
+                                     2.25
+                                 })
+                        {
+                            LumineVisualMetrics.ConfigureTextScaleFactor(
+                                scale);
+
+                            var primary =
+                                LumineDesign.ConfigurePrimaryButton(
+                                    new Button
+                                    {
+                                        Content = "主操作"
+                                    });
+                            var secondary =
+                                LumineDesign.ConfigureSecondaryButton(
+                                    new Button
+                                    {
+                                        Content = "副操作"
+                                    });
+                            var danger =
+                                LumineDesign.ConfigureDangerButton(
+                                    new Button
+                                    {
+                                        Content = "削除"
+                                    });
+                            var icon =
+                                LumineDesign.ConfigureIconButton(
+                                    new Button
+                                    {
+                                        Content =
+                                            LumineDesign.CreateStrokeIcon(
+                                                LumineDesign.SettingsIconPath,
+                                                18)
+                                    },
+                                    "設定");
+                            var input =
+                                LumineDesign.ConfigureTextBox(
+                                    new TextBox
+                                    {
+                                        Text = "検索キーワード"
+                                    });
+                            var combo =
+                                LumineDesign.ConfigureComboBox(
+                                    new ComboBox
+                                    {
+                                        ItemsSource =
+                                            new[]
+                                            {
+                                                "更新日時: 新しい順",
+                                                "ファイル名: A → Z"
+                                            },
+                                        SelectedIndex = 0
+                                    });
+                            var check =
+                                LumineDesign.ConfigureCheckBox(
+                                    new CheckBox
+                                    {
+                                        Content =
+                                            "表示用サムネイルを再利用する",
+                                        IsChecked = true
+                                    });
+
+                            Require(
+                                ReferenceEquals(
+                                    secondary.Background,
+                                    LumineDesign.ControlSurface)
+                                && icon.BorderBrush
+                                    == Brushes.Transparent
+                                && ReferenceEquals(
+                                    danger.Resources[
+                                        "ButtonBackgroundPointerOver"],
+                                    LumineDesign.InteractionDangerHover)
+                                && ReferenceEquals(
+                                    secondary.Resources[
+                                        "ButtonBorderBrushFocused"],
+                                    LumineDesign.InteractionFocus),
+                                $"Design-system command hierarchy/state resources regressed at {scale:P0}.");
+
+                            var actions =
+                                new WrapPanel();
+                            foreach (var control in
+                                     new Control[]
+                                     {
+                                         primary,
+                                         secondary,
+                                         danger,
+                                         icon
+                                     })
+                            {
+                                control.Margin =
+                                    new Thickness(
+                                        0,
+                                        0,
+                                        LumineDesign.Space8,
+                                        LumineDesign.Space8);
+                                actions.Children.Add(control);
+                            }
+
+                            var specimenContent =
+                                new StackPanel
+                                {
+                                    Spacing =
+                                        LumineDesign.Space12,
+                                    MaxWidth = 760
+                                };
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        $"Lumine UI {scale:P0}",
+                                    FontSize =
+                                        LumineDesign.EmphasisFontSize,
+                                    FontWeight =
+                                        FontWeight.Bold,
+                                    Foreground =
+                                        LumineDesign.Foreground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap
+                                });
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        "主要操作・補助操作・破壊的操作・フォーム・長い日本語説明が同じ階層と余白規則で読めることを確認します。",
+                                    FontSize =
+                                        LumineDesign.BodyFontSize,
+                                    Foreground =
+                                        LumineDesign.Foreground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap,
+                                    LineHeight =
+                                        LumineDesign.BodyLineHeight
+                                });
+                            specimenContent.Children.Add(actions);
+                            specimenContent.Children.Add(input);
+                            specimenContent.Children.Add(combo);
+                            specimenContent.Children.Add(check);
+                            specimenContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text =
+                                        "補足情報は本文より弱く、ただし読み取れるコントラストを維持します。",
+                                    FontSize =
+                                        LumineDesign.CaptionFontSize,
+                                    Foreground =
+                                        LumineDesign.MutedForeground,
+                                    TextWrapping =
+                                        TextWrapping.Wrap
+                                });
+
+                            var specimen =
+                                new Window
+                                {
+                                    Width = 900,
+                                    Height = 600,
+                                    Background =
+                                        LumineDesign.Background,
+                                    Content =
+                                        new ScrollViewer
+                                        {
+                                            Padding =
+                                                new Thickness(
+                                                    LumineDesign.PageGutter),
+                                            Content =
+                                                specimenContent
+                                        }
+                                };
+                            specimen.Show();
+                            Dispatcher.UIThread.RunJobs();
+
+                            var clipped =
+                                specimen
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .FirstOrDefault(
+                                        block =>
+                                            block.IsEffectivelyVisible
+                                            && !string.IsNullOrWhiteSpace(
+                                                block.Text)
+                                            && block.Bounds.Height > 0
+                                            && block.Bounds.Height + 0.5
+                                                < block.FontSize);
+                            Require(
+                                clipped is null,
+                                $"Design-system specimen clipped visible text at {scale:P0}: '{clipped?.Text}'.");
+
+                            CaptureVisualEvidence(
+                                specimen,
+                                $"design-system-scale-{scale * 100:N0}");
+                            specimen.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+
+                        LumineVisualMetrics.ConfigureTextScaleFactor(
+                            restoreTextScale);
+                    }
+
                     var window =
                         new MainWindow(
                             repeatedPaths,
@@ -3369,6 +3603,84 @@ try
                         ])
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
+
+                    var libraryDestination =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "ライブラリ",
+                                        StringComparison.Ordinal));
+                    Require(
+                        libraryDestination
+                            .GetVisualDescendants()
+                            .OfType<Border>()
+                            .Any(
+                                indicator =>
+                                    Math.Abs(
+                                        indicator.Width - 3) < 0.01
+                                    && ReferenceEquals(
+                                        indicator.Background,
+                                        LumineDesign.Accent)),
+                        "Selected global navigation lost its non-color accent indicator.");
+
+                    libraryDestination.Focus();
+                    libraryDestination.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.Down
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    var folderDestination =
+                        window.FocusManager.GetFocusedElement()
+                            as Button;
+                    Require(
+                        folderDestination is not null
+                        && string.Equals(
+                            AutomationProperties.GetName(
+                                folderDestination),
+                            "フォルダー",
+                            StringComparison.Ordinal),
+                        "Global navigation Down Arrow did not follow visual destination order.");
+
+                    folderDestination!.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.End
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    var settingsDestination =
+                        window.FocusManager.GetFocusedElement()
+                            as Button;
+                    Require(
+                        settingsDestination is not null
+                        && string.Equals(
+                            AutomationProperties.GetName(
+                                settingsDestination),
+                            "設定",
+                            StringComparison.Ordinal),
+                        "Global navigation End key did not reach the final Settings destination.");
+
+                    settingsDestination!.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.Home
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ReferenceEquals(
+                            window.FocusManager.GetFocusedElement(),
+                            libraryDestination),
+                        "Global navigation Home key did not return to the first destination.");
                     Require(
                         LumineDesign.InteractionNeutralColor
                             != LumineDesign.InteractionHoverColor
@@ -3391,6 +3703,9 @@ try
                     var primaryStateButton =
                         LumineDesign.ConfigurePrimaryButton(
                             new Button());
+                    var dangerStateButton =
+                        LumineDesign.ConfigureDangerButton(
+                            new Button());
                     var textStateControl =
                         LumineDesign.ConfigureTextBox(
                             new TextBox());
@@ -3411,6 +3726,17 @@ try
                             primaryStateButton.Resources[
                                 "ButtonForegroundPointerOver"],
                             LumineDesign.Background)
+                        && ReferenceEquals(
+                            dangerStateButton.Resources[
+                                "ButtonBackgroundPointerOver"],
+                            LumineDesign.InteractionDangerHover)
+                        && ReferenceEquals(
+                            dangerStateButton.Resources[
+                                "ButtonBackgroundPressed"],
+                            LumineDesign.InteractionDangerPressed)
+                        && ReferenceEquals(
+                            dangerStateButton.Foreground,
+                            LumineDesign.Danger)
                         && ReferenceEquals(
                             textStateControl.Resources[
                                 "TextControlBorderBrushFocused"],
@@ -3468,6 +3794,74 @@ try
                             StringComparison.Ordinal),
                         $"Fresh MainWindow did not start in the branded Welcome state: {window.ProductShellState}.");
 
+                    if (iteration == 2
+                        && visualOutputDirectory is not null)
+                    {
+                        window.Width = 900;
+                        window.Height = 600;
+                        window.PresentRecoverableErrorForSmoke(
+                            "選択した画像フォルダーを読み込めませんでした。フォルダーが移動・削除されていないか、アクセス権限が変更されていないかを確認してください。必要であれば別の画像フォルダーを選択できます。");
+                        Dispatcher.UIThread.RunJobs();
+
+                        var scaledErrorDetail =
+                            window.GetVisualDescendants()
+                                .OfType<Expander>()
+                                .FirstOrDefault(
+                                    expander =>
+                                        string.Equals(
+                                            expander.Header as string,
+                                            "エラー詳細",
+                                            StringComparison.Ordinal));
+                        Require(
+                            scaledErrorDetail is
+                                { IsExpanded: false }
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "225% / 900x600 recoverable Error did not keep technical detail collapsed or duplicated its message.");
+
+                        CaptureVisualEvidence(
+                            window,
+                            "error-900x600-text225");
+
+                        window.PresentWelcomeStateForSmoke();
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
+                    var dialogSize =
+                        ProductDialogs.ResolveDialogSizeForSmoke(
+                            340);
+                    Require(
+                        dialogSize.Width
+                            is >= 500 and <= 640
+                        && dialogSize.Height
+                            is >= 340 and <= 520,
+                        $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
+
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "welcome-1440x900");
+                        window.PresentLoadingStateForSmoke(
+                            "ライブラリを走査中… 検出 1,248 · 登録 1,104");
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            string.Equals(
+                                window.ProductShellState,
+                                "Loading",
+                                StringComparison.Ordinal)
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "Loading state duplicated its central progress through the transient status banner.");
+                        CaptureVisualEvidence(
+                            window,
+                            "loading-1440x900");
+                        window.PresentWelcomeStateForSmoke();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     if (iteration == 0)
                     {
                         var retryableMissingRoot =
@@ -3522,8 +3916,10 @@ try
                                         "別の画像フォルダーを選ぶ",
                                         StringComparison.Ordinal))
                             && errorDetail is
-                                { IsExpanded: false },
-                            "Library-open failure did not expose local retry/reselect recovery actions with secondary technical detail.");
+                                { IsExpanded: false }
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "Library-open failure did not expose local retry/reselect recovery actions with secondary technical detail or duplicated its central error in the status banner.");
 
                         CaptureVisualEvidence(
                             window,
@@ -3607,38 +4003,120 @@ try
                                     .EncodedThumbnailMemoryByteLimit),
                         "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
-                    Require(
+                    var settingsText =
                         window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "設定",
-                                    StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
+                            .ToArray();
+                    var advancedSettings =
+                        window.WorkspacePageForSmoke
                             .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
+                            .OfType<Expander>()
+                            .FirstOrDefault(
+                                expander =>
+                                    string.Equals(
+                                        expander.Header as string,
+                                        "詳細設定",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "Product Settings did not expose the advanced performance/cache disclosure.");
+
+                    Require(
+                        settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "設定",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "表示",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "パフォーマンスとキャッシュ",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "ライブラリとデータ",
+                                StringComparison.Ordinal))
+                        && !advancedSettings.IsExpanded
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "ディスク保持上限",
+                                StringComparison.Ordinal))
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "高速再表示用メモリ上限",
+                                StringComparison.Ordinal)),
+                        "Product Settings did not prioritize daily settings or hide advanced cache controls by default.");
+
+                    if (iteration == 0)
+                    {
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-1440x900");
+
+                        advancedSettings.IsExpanded = true;
+                        advancedSettings.BringIntoView();
+                        for (var renderPass = 0;
+                             renderPass < 3;
+                             renderPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform
+                                .ForceRenderTimerTick();
+                        }
+                        Dispatcher.UIThread.RunJobs();
+
+                        var advancedContent =
+                            advancedSettings.Content
+                                as Control
+                            ?? throw new InvalidOperationException(
+                                "Advanced Settings disclosure lost its content.");
+                        var advancedSettingsText =
+                            EnumeratePanelTree(
+                                    advancedContent)
+                                .OfType<TextBlock>()
+                                .ToArray();
+                        Require(
+                            advancedSettings.IsExpanded
+                            && advancedSettingsText.Any(block =>
                                 string.Equals(
                                     block.Text,
                                     "ディスク保持上限",
                                     StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
-                            .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
+                            && advancedSettingsText.Any(block =>
                                 string.Equals(
                                     block.Text,
                                     "高速再表示用メモリ上限",
                                     StringComparison.Ordinal)),
-                        "Product Settings did not expose a readable full-page hierarchy for viewer/cache/storage controls.");
+                            "Advanced Settings disclosure did not expose its cache budget controls.");
 
-                    if (iteration == 0)
-                    {
                         CaptureVisualEvidence(
                             window,
-                            "settings-1440x900");
+                            "settings-advanced-1440x900");
+
+                        advancedSettings.IsExpanded = false;
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-900x600");
+
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
                     }
 
                     window.NavigateForSmoke(
@@ -3714,8 +4192,36 @@ try
                             .GridViewer
                             .SelectedAssetIndex == -1
                         && !window.CurrentShell
-                            .IsContextDetailVisible,
-                        "Filtered zero-result query replaced the Viewer shell or kept stale selection/Inspector state.");
+                            .IsContextDetailVisible
+                        && window.CurrentShell
+                            .IsNoMatchStateVisibleForSmoke
+                        && string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Filtered zero-result query replaced the Viewer shell, kept stale selection/Inspector state, or duplicated No Match in the status banner.");
+
+                    var reviewFilters =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "フィルターを見直す",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "No Match did not expose a direct filter-review action.");
+                    reviewFilters.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.BrowseControlsForSmoke is not null
+                        && window.BrowseControlsForSmoke
+                            .FilterFlyoutIsOpenForSmoke,
+                        "No Match filter-review action did not open the existing Browse filter surface directly.");
+                    window.BrowseControlsForSmoke
+                        .CloseFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
 
                     if (iteration == 0)
                     {
@@ -3724,13 +4230,28 @@ try
                             "no-match-1440x900");
                     }
 
-                    await window.ApplyBrowseFilterForSmokeAsync(
-                        new BrowseFilterState(
-                            SortOrder:
-                                window.SettingsSnapshot
-                                    .ViewerDefaults
-                                    .SortOrder));
-                    Dispatcher.UIThread.RunJobs();
+                    var clearNoMatch =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "条件をすべて解除",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "No Match did not expose a direct clear action.");
+                    clearNoMatch.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    for (var attempt = 0;
+                         attempt < 100
+                         && window.CurrentRuntime!.AssetCount == 0;
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(1);
+                    }
                     Require(
                         string.Equals(
                             window.ProductShellState,
@@ -3743,8 +4264,10 @@ try
                         && ReferenceEquals(
                             window.CurrentShell.GridViewer,
                             gridBeforeQueryChange)
-                        && window.CurrentRuntime!.AssetCount > 0,
-                        "Clearing the no-match filter rebuilt the Viewer shell/control instead of restoring data in place.");
+                        && window.CurrentRuntime!.AssetCount > 0
+                        && !window.CurrentShell
+                            .IsNoMatchStateVisibleForSmoke,
+                        "Clearing No Match from its primary recovery action rebuilt the Viewer shell/control or failed to restore data in place.");
 
                     await window.OpenLibraryAsync(
                         repeatedEmptyLibraryRoot);
@@ -3755,8 +4278,17 @@ try
                             "EmptyLibrary",
                             StringComparison.Ordinal)
                         && window.CurrentRuntime is not null
-                        && window.CurrentShell is null,
-                        "Truly empty library did not use the EmptyLibrary product state.");
+                        && window.CurrentShell is null
+                        && string.IsNullOrWhiteSpace(
+                            window.StatusTextForSmoke),
+                        "Truly empty library did not use the EmptyLibrary product state or duplicated its empty message in the status banner.");
+
+                    if (iteration == 0)
+                    {
+                        CaptureVisualEvidence(
+                            window,
+                            "empty-library-1440x900");
+                    }
 
                     await window.OpenLibraryAsync(
                         repeatedLibraryRoot);
@@ -3878,7 +4410,11 @@ try
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && window.IsCompactNavigationLayout
-                                        == (viewport.Width <= 1040)
+                                        == (viewport.Width < 1200)
+                                    && window.NavigationPinVisibleForSmoke
+                                        == (viewport.Width >= 1200)
+                                    && window.IsNavigationPaneOverlayForSmoke
+                                        == navigationVisible
                                     && window.BrowseControlsForSmoke is not null
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
@@ -3892,6 +4428,16 @@ try
                                         || window.BrowseControlsForSmoke
                                             .SearchHeightForSmoke <= 33.5),
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-overlay-900x600");
+                                }
 
                                 window.CurrentShell.HideContextDetail();
                                 Dispatcher.UIThread.RunJobs();
@@ -3907,14 +4453,24 @@ try
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
-                                    && !navigationVisible
-                                    && viewport.Width is 900d or 1440d)
+                                    && !navigationVisible)
                                 {
-                                    CaptureVisualEvidence(
-                                        window,
-                                        viewport.Width == 900d
-                                            ? "browse-900x600"
-                                            : "browse-1440x900");
+                                    var browseEvidenceName =
+                                        viewport.Width switch
+                                        {
+                                            900d => "browse-900x600",
+                                            1024d => "browse-1024x768",
+                                            1440d => "browse-1440x900",
+                                            1920d => "browse-1920x1080",
+                                            _ => string.Empty
+                                        };
+                                    if (!string.IsNullOrWhiteSpace(
+                                            browseEvidenceName))
+                                    {
+                                        CaptureVisualEvidence(
+                                            window,
+                                            browseEvidenceName);
+                                    }
 
                                     if (viewport.Width == 900d)
                                     {
@@ -4123,12 +4679,23 @@ try
                                     window.CurrentShell.GridViewerBounds.Width;
                                 Require(
                                     window.IsNavigationPinnedForSmoke
+                                    && !window.IsNavigationPaneOverlayForSmoke
+                                    && window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
                                         < unpinnedClosedCanvasWidth - 200,
                                     $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-pinned-1440x900");
+                                }
 
                                 window.SetNavigationPinnedForSmoke(false);
                                 Dispatcher.UIThread.RunJobs();
@@ -4593,10 +5160,21 @@ try
         var expectedVisualEvidence =
             new[]
             {
+                "design-system-scale-100",
+                "design-system-scale-125",
+                "design-system-scale-150",
+                "design-system-scale-200",
+                "design-system-scale-225",
+                "welcome-1440x900",
+                "loading-1440x900",
                 "browse-900x600",
+                "browse-1024x768",
                 "browse-1440x900",
+                "browse-1920x1080",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
+                "navigation-overlay-900x600",
+                "navigation-pinned-1440x900",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
@@ -4607,8 +5185,12 @@ try
                 "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
+                "settings-advanced-1440x900",
+                "settings-900x600",
+                "empty-library-1440x900",
                 "no-match-1440x900",
-                "error-1440x900"
+                "error-1440x900",
+                "error-900x600-text225"
             };
         var missingEvidence =
             expectedVisualEvidence
