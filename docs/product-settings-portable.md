@@ -53,6 +53,10 @@ The Lumine-owned root becomes:
 
 All application-owned state stays inside that directory, so the executable directory can be moved as one portable unit.
 
+The NativeAOT **Product acceptance / portable artifact ships with `portable.flag` already beside `Lumine.App.exe`**. A user who extracts that artifact and double-clicks the executable therefore gets portable behavior without command-line switches or environment variables. CI verifies the marker before the artifact is uploaded.
+
+The Product Acceptance wrapper intentionally sets `LUMINE_DATA_DIR` during its isolated interactive review so acceptance state is kept under the selected output directory. That custom override does not change the default packaging contract of the shipped artifact.
+
 ### Custom
 
 `LUMINE_DATA_DIR=<path>` overrides the normal default storage root.
