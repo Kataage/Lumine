@@ -13,11 +13,23 @@ internal static class ProductRuntimeSmoke
                 StringComparison.Ordinal));
 
     public static AppDataPaths ResolveDataPaths(
-        IReadOnlyList<string> args) =>
-        AppDataPaths.FromRoot(
-            GetRequiredValue(
+        IReadOnlyList<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        var explicitDataDirectory =
+            GetOptionalValue(
                 args,
-                "--data-dir="));
+                "--data-dir=");
+        return explicitDataDirectory is null
+            ? AppDataPaths.Resolve(args)
+            : AppDataPaths.FromRoot(
+                explicitDataDirectory) with
+            {
+                LocationKind =
+                    AppDataLocationKind.Custom
+            };
+    }
 
     public static async Task RunAsync(
         IReadOnlyList<string> args,
@@ -64,6 +76,30 @@ internal static class ProductRuntimeSmoke
             throw new InvalidOperationException(
                 "Product runtime left a non-empty SQLite WAL after coordinated shutdown.");
         }
+    }
+
+    private static string? GetOptionalValue(
+        IReadOnlyList<string> args,
+        string prefix)
+    {
+        var value = args
+            .FirstOrDefault(arg =>
+                arg.StartsWith(
+                    prefix,
+                    StringComparison.Ordinal));
+
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value.Length == prefix.Length)
+        {
+            throw new ArgumentException(
+                $"Product smoke requires {prefix}<path> when the option is supplied.");
+        }
+
+        return value[prefix.Length..];
     }
 
     private static string GetRequiredValue(
