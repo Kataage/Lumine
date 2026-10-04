@@ -522,16 +522,45 @@ public sealed partial class LibraryRepository
             assetId,
             cancellationToken).ConfigureAwait(false);
 
+        long publicationCount;
+        await using (var publicationCountCommand =
+                     connection.CreateCommand())
+        {
+            publicationCountCommand.Transaction =
+                transaction;
+            publicationCountCommand.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM publication_assets AS pa
+                INNER JOIN publications AS p
+                  ON p.id = pa.publication_id
+                WHERE pa.asset_id = $asset_id
+                  AND p.library_id = $library_id;
+                """;
+            publicationCountCommand.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            publicationCountCommand.Parameters.AddWithValue(
+                "$asset_id",
+                assetId);
+            publicationCount = Convert.ToInt64(
+                await publicationCountCommand
+                    .ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
         var publicationIds = await ReadIdListAsync(
             connection,
             transaction,
-            """
+            $"""
             SELECT p.id
             FROM publication_assets AS pa
             INNER JOIN publications AS p ON p.id = pa.publication_id
             WHERE pa.asset_id = $asset_id
               AND p.library_id = $library_id
-            ORDER BY p.published_at_utc_ticks DESC, p.id DESC;
+            ORDER BY p.published_at_utc_ticks DESC, p.id DESC
+            LIMIT {InspectorPublicationLimit};
             """,
             libraryId,
             assetId,
@@ -581,17 +610,21 @@ public sealed partial class LibraryRepository
             }
         }
 
-        var publications = new List<PublicationInfo>(publicationIds.Count);
-        foreach (var id in publicationIds)
-        {
-            var item = await GetPublicationOnConnectionAsync(
-                connection, transaction, libraryId, id, cancellationToken).ConfigureAwait(false);
-            if (item is not null) publications.Add(item);
-        }
+        var publications =
+            await LoadPublicationsByIdsAsync(
+                connection,
+                transaction,
+                libraryId,
+                publicationIds,
+                cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
         return new AssetCreativeContext(
-            works, groups, relations, publications);
+            works,
+            groups,
+            relations,
+            publications,
+            publicationCount);
     }
 
     public Task<WorkInfo?> GetWorkAsync(
