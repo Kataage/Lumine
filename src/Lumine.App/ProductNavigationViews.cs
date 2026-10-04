@@ -1487,12 +1487,9 @@ internal static class ProductNavigationViews
                         new TextBlock
                         {
                             Text =
-                                "画像: "
-                                + string.Join(
-                                    " → ",
-                                    publication.Assets.Select(
-                                        static asset =>
-                                            asset.FileName)),
+                                FormatPublicationAssets(
+                                    publication,
+                                    " → "),
                             Foreground =
                                 LumineDesign.MutedForeground,
                             FontSize =
