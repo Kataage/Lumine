@@ -209,15 +209,23 @@ internal sealed class CoreViewerShell : UserControl
                 _editNoMatchFilters?.Invoke();
 
         var noMatchActions =
-            new StackPanel
+            new WrapPanel
             {
-                Orientation =
-                    Orientation.Horizontal,
-                Spacing =
-                    LumineDesign.Space8,
                 HorizontalAlignment =
                     HorizontalAlignment.Center
             };
+        clearNoMatch.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        editNoMatch.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
         noMatchActions.Children.Add(
             clearNoMatch);
         noMatchActions.Children.Add(
