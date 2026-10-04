@@ -238,12 +238,25 @@ jobs:
         run: |
           Set-Content -LiteralPath "artifacts/native-aot/revision.txt" -Value $env:GITHUB_SHA -NoNewline -Encoding ascii
 
+      - name: Mark NativeAOT product build portable
+        shell: pwsh
+        run: |
+          $flag = Join-Path $PWD "artifacts/native-aot/portable.flag"
+          Set-Content -LiteralPath $flag -Value "portable" -NoNewline -Encoding ascii
+          if (-not (Test-Path -LiteralPath $flag)) {
+            throw "Portable marker was not produced: $flag"
+          }
+
       - name: Verify NativeAOT executable
         shell: pwsh
         run: |
           $exe = Join-Path $PWD "artifacts/native-aot/Lumine.App.exe"
           if (-not (Test-Path $exe)) {
             throw "NativeAOT executable was not produced: $exe"
+          }
+          $portableFlag = Join-Path (Split-Path -Parent $exe) "portable.flag"
+          if (-not (Test-Path -LiteralPath $portableFlag)) {
+            throw "NativeAOT product artifact is not portable by default: $portableFlag"
           }
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
