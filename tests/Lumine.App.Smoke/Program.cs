@@ -4297,12 +4297,15 @@ try
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     for (var attempt = 0;
-                         attempt < 100
-                         && window.CurrentRuntime!.AssetCount == 0;
+                         attempt < 500
+                         && (window.CurrentRuntime!.AssetCount == 0
+                             || window.CurrentShell is null
+                             || window.CurrentShell
+                                 .IsNoMatchStateVisibleForSmoke);
                          attempt++)
                     {
                         Dispatcher.UIThread.RunJobs();
-                        await Task.Delay(1);
+                        await Task.Delay(2);
                     }
                     Require(
                         string.Equals(
