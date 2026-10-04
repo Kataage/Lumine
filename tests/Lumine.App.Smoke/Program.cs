@@ -4012,20 +4012,40 @@ try
 
                         advancedSettings.IsExpanded = true;
                         advancedSettings.BringIntoView();
-                        for (var renderPass = 0;
-                             renderPass < 3;
-                             renderPass++)
+                        TextBlock[] expandedSettingsText =
+                            Array.Empty<TextBlock>();
+                        for (var attempt = 0;
+                             attempt < 50;
+                             attempt++)
                         {
                             Dispatcher.UIThread.RunJobs();
                             AvaloniaHeadlessPlatform
                                 .ForceRenderTimerTick();
+                            Dispatcher.UIThread.RunJobs();
+
+                            expandedSettingsText =
+                                advancedSettings
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .ToArray();
+                            if (expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "ディスク保持上限",
+                                        StringComparison.Ordinal))
+                                && expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "高速再表示用メモリ上限",
+                                        StringComparison.Ordinal)))
+                            {
+                                break;
+                            }
+
+                            await Task.Delay(1);
                         }
-                        Dispatcher.UIThread.RunJobs();
-                        var expandedSettingsText =
-                            window.WorkspacePageForSmoke
-                                .GetVisualDescendants()
-                                .OfType<TextBlock>()
-                                .ToArray();
                         Require(
                             expandedSettingsText.Any(block =>
                                 block.IsEffectivelyVisible
@@ -4039,7 +4059,7 @@ try
                                     block.Text,
                                     "高速再表示用メモリ上限",
                                     StringComparison.Ordinal)),
-                            "Advanced Settings disclosure did not expose cache budget controls.");
+                            "Advanced Settings disclosure did not expose cache budget controls after layout/render settled.");
                         CaptureVisualEvidence(
                             window,
                             "settings-advanced-1440x900");
