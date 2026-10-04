@@ -3246,9 +3246,15 @@ try
             WindowsTextScale.NormalizeRegistryValue(125)
             - 1.25) < 0.001
         && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(150)
+            - 1.5) < 0.001
+        && Math.Abs(
+            WindowsTextScale.NormalizeRegistryValue(200)
+            - 2.0) < 0.001
+        && Math.Abs(
             WindowsTextScale.NormalizeRegistryValue(225)
             - 2.25) < 0.001,
-        "Windows registry text-scale percentages were not normalized to 1.0-2.25 factors.");
+        "Windows registry text-scale percentages were not normalized across the 100/125/150/200/225% product matrix.");
 
     var previousTextScaleEnvironment =
         Environment.GetEnvironmentVariable(
@@ -3369,6 +3375,80 @@ try
                         ])
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
+
+                    var libraryDestination =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "ライブラリ",
+                                        StringComparison.Ordinal));
+                    Require(
+                        libraryDestination
+                            .GetVisualDescendants()
+                            .OfType<Border>()
+                            .Any(
+                                indicator =>
+                                    Math.Abs(
+                                        indicator.Width - 3) < 0.01
+                                    && ReferenceEquals(
+                                        indicator.Background,
+                                        LumineDesign.Accent)),
+                        "Selected global navigation lost its non-color accent indicator.");
+
+                    libraryDestination.Focus();
+                    libraryDestination.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.Down
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.FocusManager.GetFocusedElement()
+                            is Button folderDestination
+                        && string.Equals(
+                            AutomationProperties.GetName(
+                                folderDestination),
+                            "フォルダー",
+                            StringComparison.Ordinal),
+                        "Global navigation Down Arrow did not follow visual destination order.");
+
+                    folderDestination.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.End
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.FocusManager.GetFocusedElement()
+                            is Button settingsDestination
+                        && string.Equals(
+                            AutomationProperties.GetName(
+                                settingsDestination),
+                            "設定",
+                            StringComparison.Ordinal),
+                        "Global navigation End key did not reach the final Settings destination.");
+
+                    settingsDestination.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.Home
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ReferenceEquals(
+                            window.FocusManager.GetFocusedElement(),
+                            libraryDestination),
+                        "Global navigation Home key did not return to the first destination.");
                     Require(
                         LumineDesign.InteractionNeutralColor
                             != LumineDesign.InteractionHoverColor
@@ -3391,6 +3471,9 @@ try
                     var primaryStateButton =
                         LumineDesign.ConfigurePrimaryButton(
                             new Button());
+                    var dangerStateButton =
+                        LumineDesign.ConfigureDangerButton(
+                            new Button());
                     var textStateControl =
                         LumineDesign.ConfigureTextBox(
                             new TextBox());
@@ -3411,6 +3494,17 @@ try
                             primaryStateButton.Resources[
                                 "ButtonForegroundPointerOver"],
                             LumineDesign.Background)
+                        && ReferenceEquals(
+                            dangerStateButton.Resources[
+                                "ButtonBackgroundPointerOver"],
+                            LumineDesign.InteractionDangerHover)
+                        && ReferenceEquals(
+                            dangerStateButton.Resources[
+                                "ButtonBackgroundPressed"],
+                            LumineDesign.InteractionDangerPressed)
+                        && ReferenceEquals(
+                            dangerStateButton.Foreground,
+                            LumineDesign.Danger)
                         && ReferenceEquals(
                             textStateControl.Resources[
                                 "TextControlBorderBrushFocused"],
