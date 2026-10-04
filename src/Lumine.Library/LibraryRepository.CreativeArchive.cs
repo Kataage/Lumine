@@ -6,6 +6,9 @@ namespace Lumine.Library;
 
 public sealed partial class LibraryRepository
 {
+    public const int PublicationPageSize = 100;
+    public const int InspectorPublicationLimit = 24;
+    public const int PublicationSummaryAssetLimit = 12;
     public async Task<WorkInfo> CreateWorkAsync(
         long libraryId,
         WorkCreate create,
@@ -353,45 +356,127 @@ public sealed partial class LibraryRepository
 
     public async Task<IReadOnlyList<PublicationInfo>> ListPublicationsAsync(
         long libraryId,
-        int limit = 100,
+        int limit = PublicationPageSize,
+        CancellationToken cancellationToken = default) =>
+        (await ListPublicationsPageAsync(
+            libraryId,
+            limit,
+            cursor: null,
+            cancellationToken).ConfigureAwait(false)).Items;
+
+    public async Task<PublicationPage> ListPublicationsPageAsync(
+        long libraryId,
+        int limit = PublicationPageSize,
+        PublicationCursor? cursor = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ValidateListLimit(limit);
+
         await using var connection =
-            await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var ids = new List<long>();
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+        long totalCount;
+        await using (var count = connection.CreateCommand())
+        {
+            count.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM publications
+                WHERE library_id = $library_id;
+                """;
+            count.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            totalCount = Convert.ToInt64(
+                await count.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
+        var ids =
+            new List<long>(
+                Math.Min(
+                    limit + 1,
+                    501));
         await using (var command = connection.CreateCommand())
         {
             command.CommandText =
                 """
-                SELECT id
-                FROM publications
-                WHERE library_id = $library_id
-                ORDER BY published_at_utc_ticks DESC, id DESC
+                SELECT p.id
+                FROM publications AS p
+                WHERE p.library_id = $library_id
+                  AND (
+                        $cursor_ticks IS NULL
+                        OR p.published_at_utc_ticks < $cursor_ticks
+                        OR (
+                            p.published_at_utc_ticks = $cursor_ticks
+                            AND p.id < $cursor_id
+                        )
+                      )
+                ORDER BY
+                    p.published_at_utc_ticks DESC,
+                    p.id DESC
                 LIMIT $limit;
                 """;
-            command.Parameters.AddWithValue("$library_id", libraryId);
-            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            command.Parameters.AddWithValue(
+                "$cursor_ticks",
+                cursor is null
+                    ? DBNull.Value
+                    : cursor.PublishedAtUtc.UtcDateTime.Ticks);
+            command.Parameters.AddWithValue(
+                "$cursor_id",
+                cursor?.Id ?? long.MaxValue);
+            command.Parameters.AddWithValue(
+                "$limit",
+                limit + 1);
+
             await using var reader =
-                await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                await command.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
             {
-                ids.Add(reader.GetInt64(0));
+                ids.Add(
+                    reader.GetInt64(0));
             }
         }
 
-        var result = new List<PublicationInfo>(ids.Count);
-        foreach (var id in ids)
+        var hasMore =
+            ids.Count > limit;
+        if (hasMore)
         {
-            var item = await GetPublicationOnConnectionAsync(
-                connection, null, libraryId, id, cancellationToken).ConfigureAwait(false);
-            if (item is not null)
-            {
-                result.Add(item);
-            }
+            ids.RemoveAt(ids.Count - 1);
         }
 
-        return result;
+        var items =
+            await LoadPublicationsByIdsAsync(
+                connection,
+                transaction: null,
+                libraryId,
+                ids,
+                cancellationToken).ConfigureAwait(false);
+
+        PublicationCursor? nextCursor = null;
+        if (hasMore
+            && items.Count > 0)
+        {
+            var last =
+                items[^1];
+            nextCursor =
+                new PublicationCursor(
+                    last.PublishedAtUtc,
+                    last.Id);
+        }
+
+        return new PublicationPage(
+            items,
+            nextCursor,
+            totalCount);
     }
 
     public async Task<AssetCreativeContext> GetAssetCreativeContextAsync(
@@ -438,16 +523,45 @@ public sealed partial class LibraryRepository
             assetId,
             cancellationToken).ConfigureAwait(false);
 
+        long publicationCount;
+        await using (var publicationCountCommand =
+                     connection.CreateCommand())
+        {
+            publicationCountCommand.Transaction =
+                transaction;
+            publicationCountCommand.CommandText =
+                """
+                SELECT COUNT(*)
+                FROM publication_assets AS pa
+                INNER JOIN publications AS p
+                  ON p.id = pa.publication_id
+                WHERE pa.asset_id = $asset_id
+                  AND p.library_id = $library_id;
+                """;
+            publicationCountCommand.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            publicationCountCommand.Parameters.AddWithValue(
+                "$asset_id",
+                assetId);
+            publicationCount = Convert.ToInt64(
+                await publicationCountCommand
+                    .ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        }
+
         var publicationIds = await ReadIdListAsync(
             connection,
             transaction,
-            """
+            $"""
             SELECT p.id
             FROM publication_assets AS pa
             INNER JOIN publications AS p ON p.id = pa.publication_id
             WHERE pa.asset_id = $asset_id
               AND p.library_id = $library_id
-            ORDER BY p.published_at_utc_ticks DESC, p.id DESC;
+            ORDER BY p.published_at_utc_ticks DESC, p.id DESC
+            LIMIT {InspectorPublicationLimit};
             """,
             libraryId,
             assetId,
@@ -497,17 +611,21 @@ public sealed partial class LibraryRepository
             }
         }
 
-        var publications = new List<PublicationInfo>(publicationIds.Count);
-        foreach (var id in publicationIds)
-        {
-            var item = await GetPublicationOnConnectionAsync(
-                connection, transaction, libraryId, id, cancellationToken).ConfigureAwait(false);
-            if (item is not null) publications.Add(item);
-        }
+        var publications =
+            await LoadPublicationsByIdsAsync(
+                connection,
+                transaction,
+                libraryId,
+                publicationIds,
+                cancellationToken).ConfigureAwait(false);
 
         transaction.Commit();
         return new AssetCreativeContext(
-            works, groups, relations, publications);
+            works,
+            groups,
+            relations,
+            publications,
+            publicationCount);
     }
 
     public Task<WorkInfo?> GetWorkAsync(
@@ -721,6 +839,211 @@ public sealed partial class LibraryRepository
             FromTicks(created), FromTicks(updated));
     }
 
+    private static async Task<IReadOnlyList<PublicationInfo>>
+        LoadPublicationsByIdsAsync(
+            SqliteConnection connection,
+            SqliteTransaction? transaction,
+            long libraryId,
+            IReadOnlyList<long> publicationIds,
+            CancellationToken cancellationToken)
+    {
+        if (publicationIds.Count == 0)
+        {
+            return Array.Empty<PublicationInfo>();
+        }
+
+        var parameterNames =
+            new string[publicationIds.Count];
+        await using var publicationsCommand =
+            connection.CreateCommand();
+        publicationsCommand.Transaction =
+            transaction;
+        publicationsCommand.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+
+        for (var index = 0;
+             index < publicationIds.Count;
+             index++)
+        {
+            var parameterName =
+                $"$publication_id_{index}";
+            parameterNames[index] =
+                parameterName;
+            publicationsCommand.Parameters.AddWithValue(
+                parameterName,
+                publicationIds[index]);
+        }
+
+        publicationsCommand.CommandText =
+            $"""
+            SELECT
+                id, work_id,
+                title, body, tags_snapshot,
+                destination, account, published_at_utc_ticks,
+                external_id, external_url, platform_metadata_json,
+                created_at_utc_ticks, updated_at_utc_ticks
+            FROM publications
+            WHERE library_id = $library_id
+              AND id IN ({string.Join(", ", parameterNames)});
+            """;
+
+        var publications =
+            new Dictionary<long, PublicationInfo>();
+        await using (var reader =
+                     await publicationsCommand
+                         .ExecuteReaderAsync(cancellationToken)
+                         .ConfigureAwait(false))
+        {
+            while (await reader
+                       .ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                var id =
+                    reader.GetInt64(0);
+                publications[id] =
+                    new PublicationInfo(
+                        id,
+                        libraryId,
+                        reader.IsDBNull(1)
+                            ? null
+                            : reader.GetInt64(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetString(4),
+                        reader.GetString(5),
+                        reader.GetString(6),
+                        FromTicks(
+                            reader.GetInt64(7)),
+                        reader.GetString(8),
+                        reader.GetString(9),
+                        reader.GetString(10),
+                        Array.Empty<PublicationAssetSnapshot>(),
+                        FromTicks(
+                            reader.GetInt64(11)),
+                        FromTicks(
+                            reader.GetInt64(12)));
+            }
+        }
+
+        var assets =
+            publicationIds.ToDictionary(
+                static id => id,
+                static _ =>
+                    new List<PublicationAssetSnapshot>());
+        var assetCounts =
+            publicationIds.ToDictionary(
+                static id => id,
+                static _ => 0L);
+
+        await using var assetsCommand =
+            connection.CreateCommand();
+        assetsCommand.Transaction =
+            transaction;
+        for (var index = 0;
+             index < publicationIds.Count;
+             index++)
+        {
+            assetsCommand.Parameters.AddWithValue(
+                parameterNames[index],
+                publicationIds[index]);
+        }
+        assetsCommand.Parameters.AddWithValue(
+            "$asset_limit",
+            PublicationSummaryAssetLimit);
+
+        assetsCommand.CommandText =
+            $"""
+            SELECT
+                publication_id,
+                asset_id,
+                file_name_snapshot,
+                relative_path_snapshot,
+                sort_order,
+                asset_count
+            FROM (
+                SELECT
+                    publication_id,
+                    asset_id,
+                    file_name_snapshot,
+                    relative_path_snapshot,
+                    sort_order,
+                    COUNT(*) OVER (
+                        PARTITION BY publication_id
+                    ) AS asset_count,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY publication_id
+                        ORDER BY sort_order ASC
+                    ) AS row_number
+                FROM publication_assets
+                WHERE publication_id IN (
+                    {string.Join(", ", parameterNames)}
+                )
+            )
+            WHERE row_number <= $asset_limit
+            ORDER BY
+                publication_id ASC,
+                sort_order ASC;
+            """;
+
+        await using (var reader =
+                     await assetsCommand
+                         .ExecuteReaderAsync(cancellationToken)
+                         .ConfigureAwait(false))
+        {
+            while (await reader
+                       .ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                var publicationId =
+                    reader.GetInt64(0);
+                if (!assets.TryGetValue(
+                        publicationId,
+                        out var snapshots))
+                {
+                    continue;
+                }
+
+                assetCounts[publicationId] =
+                    reader.GetInt64(5);
+                snapshots.Add(
+                    new PublicationAssetSnapshot(
+                        reader.IsDBNull(1)
+                            ? null
+                            : reader.GetInt64(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetInt32(4)));
+            }
+        }
+
+        var result =
+            new List<PublicationInfo>(
+                publicationIds.Count);
+        foreach (var publicationId in
+                 publicationIds)
+        {
+            if (!publications.TryGetValue(
+                    publicationId,
+                    out var publication))
+            {
+                continue;
+            }
+
+            result.Add(
+                publication with
+                {
+                    Assets =
+                        assets[publicationId]
+                            .ToArray(),
+                    AssetCount =
+                        assetCounts[publicationId]
+                });
+        }
+
+        return result;
+    }
+
     private static async Task<PublicationInfo?> GetPublicationOnConnectionAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -815,7 +1138,8 @@ public sealed partial class LibraryRepository
             title, body, tags,
             destination, account, FromTicks(published),
             externalId, externalUrl, metadata,
-            assets, FromTicks(created), FromTicks(updated));
+            assets, FromTicks(created), FromTicks(updated),
+            assets.Count);
     }
 
     private static AssetRelationInfo ReadRelation(
