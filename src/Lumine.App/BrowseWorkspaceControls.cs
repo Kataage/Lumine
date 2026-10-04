@@ -382,20 +382,22 @@ internal sealed class BrowseWorkspaceControls : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 4,
+                Spacing = LumineDesign.Space6,
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
-            LumineDesign.CreateStrokeIcon(
-                LumineDesign.GridIconPath,
-                13,
-                LumineDesign.MutedForeground));
+            new TextBlock
+            {
+                Text = "サイズ",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        _density.Width = 80;
         densityPanel.Children.Add(_density);
-        densityPanel.Children.Add(
-            LumineDesign.CreateStrokeIcon(
-                LumineDesign.GridIconPath,
-                19,
-                LumineDesign.MutedForeground));
         ToolTip.SetTip(
             densityPanel,
             "サムネイルサイズ");
@@ -545,9 +547,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButtonLabel.Text
         ?? string.Empty;
 
-    internal void OpenFilterFlyoutForSmoke() =>
+    internal void OpenFilterPanel() =>
         _filterFlyout.ShowAt(
             _filterButton);
+
+    internal void OpenFilterFlyoutForSmoke() =>
+        OpenFilterPanel();
 
     internal void CloseFilterFlyoutForSmoke() =>
         _filterFlyout.Hide();
@@ -1018,7 +1023,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _grid.BorderBrush =
             gridSelected
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
 
         var listSelected =
             Preferences.ViewMode
@@ -1030,7 +1035,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _list.BorderBrush =
             listSelected
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
     }
 
     private void RenderChips()
