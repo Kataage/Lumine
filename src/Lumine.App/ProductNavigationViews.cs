@@ -193,6 +193,12 @@ internal static class ProductNavigationViews
                         IsEnabled = canOpen
                     };
 
+                LumineDesign.ConfigureNeutralButtonStateResources(
+                    open);
+                AutomationProperties.SetName(
+                    open,
+                    $"ライブラリを開く: {library.Name}");
+
                 if (canOpen)
                 {
                     AttachAsync(
@@ -378,6 +384,19 @@ internal static class ProductNavigationViews
                 FontSize =
                     LumineDesign.CaptionFontSize
             };
+        if (selectedFolder is null)
+        {
+            LumineDesign.ConfigureSelectedButtonStateResources(
+                all);
+        }
+        else
+        {
+            LumineDesign.ConfigureNeutralButtonStateResources(
+                all);
+        }
+        AutomationProperties.SetName(
+            all,
+            "すべての画像");
         AttachAsync(
             all,
             () => selectFolder(null),
@@ -670,9 +689,22 @@ internal static class ProductNavigationViews
                                     new CornerRadius(
                                         LumineDesign.ControlRadius)
                             };
+                        if (selected)
+                        {
+                            LumineDesign.ConfigureSelectedButtonStateResources(
+                                folderButton);
+                        }
+                        else
+                        {
+                            LumineDesign.ConfigureNeutralButtonStateResources(
+                                folderButton);
+                        }
                         ToolTip.SetTip(
                             folderButton,
                             folder.RelativePath);
+                        AutomationProperties.SetName(
+                            folderButton,
+                            $"フォルダー: {folder.RelativePath}");
                         AttachAsync(
                             folderButton,
                             () => selectFolder(
@@ -1146,6 +1178,19 @@ internal static class ProductNavigationViews
                                         new CornerRadius(
                                             LumineDesign.ControlRadius)
                                 };
+                            if (isSelected)
+                            {
+                                LumineDesign.ConfigureSelectedButtonStateResources(
+                                    button);
+                            }
+                            else
+                            {
+                                LumineDesign.ConfigureNeutralButtonStateResources(
+                                    button);
+                            }
+                            AutomationProperties.SetName(
+                                button,
+                                $"タグ: {tag.Name}");
                             AttachAsync(
                                 button,
                                 async () =>
