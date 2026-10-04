@@ -1360,6 +1360,12 @@ public sealed class MainWindow : Window
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text = status;
+        if (!string.IsNullOrWhiteSpace(
+                status))
+        {
+            _ = ClearTransientStatusAsync(
+                status);
+        }
         _viewerHost.Content =
             CreateWelcomeState(recovered: false);
         _folders = Array.Empty<LibraryFolderInfo>();
