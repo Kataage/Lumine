@@ -1183,11 +1183,15 @@ try
 
             Require(
                 openAttempts == 1
-                && navigationError?.Contains(
+                && string.Equals(
+                    navigationError,
+                    "操作を完了できませんでした。もう一度お試しください。",
+                    StringComparison.Ordinal)
+                && !navigationError.Contains(
                     "navigation-smoke-failure",
-                    StringComparison.Ordinal) == true
+                    StringComparison.Ordinal)
                 && openableButton.IsEnabled,
-                "Async library open failure escaped the navigation error boundary or left the command disabled.");
+                "Async library open failure escaped the navigation error boundary, leaked technical detail, or left the command disabled.");
 
             navigationError = null;
             Require(
@@ -1219,16 +1223,20 @@ try
 
             Require(
                 openAttempts == 2
-                && navigationError?.Contains(
+                && string.Equals(
+                    navigationError,
+                    "操作を完了できませんでした。もう一度お試しください。",
+                    StringComparison.Ordinal)
+                && !navigationError.Contains(
                     "navigation-smoke-failure",
-                    StringComparison.Ordinal) == true
+                    StringComparison.Ordinal)
                 && !offlineButton.Focus(
                     NavigationMethod.Tab,
                     KeyModifiers.None)
                 && !disabledButton.Focus(
                     NavigationMethod.Tab,
                     KeyModifiers.None),
-                "Library row keyboard behavior drifted for openable/offline/disabled states.");
+                "Library row keyboard/error behavior drifted or leaked technical detail for openable/offline/disabled states.");
 
             foreach (var commandPath in
                      new[]
@@ -1254,10 +1262,14 @@ try
 
                 Require(
                     command.IsEnabled
-                    && commandError?.Contains(
+                    && string.Equals(
+                        commandError,
+                        "操作を完了できませんでした。もう一度お試しください。",
+                        StringComparison.Ordinal)
+                    && !commandError.Contains(
                         $"{commandPath}-navigation-smoke-failure",
-                        StringComparison.Ordinal) == true,
-                    $"Async library {commandPath} failure escaped the shared navigation error boundary or left the command disabled.");
+                        StringComparison.Ordinal),
+                    $"Async library {commandPath} failure escaped the shared navigation error boundary, leaked technical detail, or left the command disabled.");
             }
 
             navigationWindow.Close();
