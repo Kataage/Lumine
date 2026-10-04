@@ -6,6 +6,7 @@ namespace Lumine.Library;
 
 public sealed partial class LibraryRepository
 {
+    public const int MaxTagListLimit = 10_000;
     public async Task<IReadOnlyList<LibraryCatalogItem>> ListLibrariesAsync(
         bool includeDisabled = true,
         CancellationToken cancellationToken = default)
@@ -187,7 +188,9 @@ public sealed partial class LibraryRepository
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 4096);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+            limit,
+            MaxTagListLimit);
 
         var search =
             string.IsNullOrWhiteSpace(searchText)
