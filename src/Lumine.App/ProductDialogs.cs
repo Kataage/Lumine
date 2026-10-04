@@ -52,11 +52,10 @@ internal static class ProductDialogs
 
         var confirm =
             tone == ProductDialogTone.Danger
-                ? LumineDesign.ConfigureSecondaryButton(
+                ? LumineDesign.ConfigureDangerButton(
                     new Button
                     {
-                        Content = confirmLabel,
-                        Foreground = LumineDesign.Danger
+                        Content = confirmLabel
                     })
                 : LumineDesign.ConfigurePrimaryButton(
                     new Button
