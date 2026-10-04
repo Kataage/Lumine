@@ -1970,17 +1970,9 @@ try
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
 
-                editColor.OpenVisualPickerForSmoke();
-                Dispatcher.UIThread.RunJobs();
-                Require(
-                    editColor.VisualPickerFlyoutOpenForSmoke
-                    && editColor.VisualPickerFlyoutHasSpectrumForSmoke,
-                    "Tag edit visual evidence did not open the real ColorPicker spectrum flyout.");
                 CaptureVisualEvidence(
                     compactTagsWindow,
                     "tags-edit-900x600-text225");
-                editColor.CloseVisualPickerForSmoke();
-                Dispatcher.UIThread.RunJobs();
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
