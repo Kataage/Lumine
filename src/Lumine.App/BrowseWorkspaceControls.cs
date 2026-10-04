@@ -73,8 +73,10 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly ComboBox _tag;
     private readonly CheckBox _favorite;
     private readonly ComboBox _color;
-    private readonly ScrollViewer _directFilterScroll;
-    private readonly StackPanel _directFilterRow;
+    private readonly Button _filterButton;
+    private readonly TextBlock _filterButtonLabel;
+    private readonly Flyout _filterFlyout;
+    private readonly StackPanel _filterPanel;
     private readonly Button _grid;
     private readonly Button _list;
     private readonly Slider _density;
@@ -211,15 +213,158 @@ internal sealed class BrowseWorkspaceControls : UserControl
             IsVisible = State.HasFilters
         };
 
+        _filterButtonLabel =
+            new TextBlock
+            {
+                Text = "フィルター",
+                VerticalAlignment =
+                    VerticalAlignment.Center,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                FontWeight =
+                    FontWeight.SemiBold
+            };
+        _filterButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = _filterButtonLabel,
+                    MinHeight = 32,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4)
+                });
+        ToolTip.SetTip(
+            _filterButton,
+            "絞り込みと並び替え");
+
+        _filterPanel =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8,
+                MinWidth = 300
+            };
+
+        _filterPanel.Children.Add(
+            new TextBlock
+            {
+                Text = "絞り込みと並び替え",
+                Foreground =
+                    LumineDesign.Foreground,
+                FontWeight =
+                    FontWeight.SemiBold,
+                FontSize =
+                    LumineDesign.BodyFontSize
+            });
+
+        void AddFilterRow(
+            string label,
+            Control control)
+        {
+            control.HorizontalAlignment =
+                HorizontalAlignment.Stretch;
+            control.VerticalAlignment =
+                VerticalAlignment.Center;
+
+            var row =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions(
+                            "76,*"),
+                    ColumnSpacing =
+                        LumineDesign.Space8
+                };
+            row.Children.Add(
+                new TextBlock
+                {
+                    Text = label,
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                });
+            Grid.SetColumn(
+                control,
+                1);
+            row.Children.Add(control);
+            _filterPanel.Children.Add(row);
+        }
+
+        AddFilterRow(
+            "並び替え",
+            _sort);
+        AddFilterRow(
+            "評価",
+            _rating);
+        AddFilterRow(
+            "状態",
+            _status);
+        AddFilterRow(
+            "タグ",
+            _tag);
+        AddFilterRow(
+            "色",
+            _color);
+
+        _favorite.Margin =
+            new Thickness(
+                84,
+                0,
+                0,
+                0);
+        _filterPanel.Children.Add(
+            _favorite);
+
+        _filterFlyout =
+            new Flyout
+            {
+                Placement =
+                    PlacementMode.BottomEdgeAlignedRight,
+                Content =
+                    new Border
+                    {
+                        Width = 340,
+                        MaxWidth = 380,
+                        Background =
+                            LumineDesign.SurfaceRaised,
+                        BorderBrush =
+                            LumineDesign.Border,
+                        BorderThickness =
+                            new Thickness(1),
+                        CornerRadius =
+                            new CornerRadius(
+                                LumineDesign.PanelRadius),
+                        Padding =
+                            new Thickness(
+                                LumineDesign.Space12),
+                        Child =
+                            _filterPanel
+                    }
+            };
+        _filterButton.Flyout =
+            _filterFlyout;
+
         var primaryRow = new Grid
         {
             ColumnDefinitions =
-                new ColumnDefinitions("*,Auto,Auto"),
+                new ColumnDefinitions(
+                    "*,Auto,Auto,Auto"),
             ColumnSpacing = 6,
             VerticalAlignment =
                 VerticalAlignment.Center
         };
         primaryRow.Children.Add(_search);
+
+        Grid.SetColumn(
+            _filterButton,
+            1);
+        primaryRow.Children.Add(
+            _filterButton);
 
         var mode =
             new StackPanel
@@ -230,7 +375,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             };
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
-        Grid.SetColumn(mode, 1);
+        Grid.SetColumn(mode, 2);
         primaryRow.Children.Add(mode);
 
         var densityPanel =
@@ -254,96 +399,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             densityPanel,
             "サムネイルサイズ");
-        Grid.SetColumn(densityPanel, 2);
+        Grid.SetColumn(densityPanel, 3);
         primaryRow.Children.Add(densityPanel);
-
-        _directFilterRow =
-            new StackPanel
-            {
-                Orientation =
-                    Orientation.Horizontal,
-                Spacing =
-                    LumineDesign.Space8,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-
-        void AddDirectFilter(
-            string label,
-            Control control)
-        {
-            control.VerticalAlignment =
-                VerticalAlignment.Center;
-
-            var group =
-                new StackPanel
-                {
-                    Orientation =
-                        Orientation.Horizontal,
-                    Spacing =
-                        LumineDesign.Space4,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                };
-            group.Children.Add(
-                new TextBlock
-                {
-                    Text = label,
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize =
-                        LumineDesign.CaptionFontSize,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                });
-            group.Children.Add(control);
-            _directFilterRow.Children.Add(group);
-        }
-
-        AddDirectFilter(
-            "並び順",
-            _sort);
-        AddDirectFilter(
-            "評価",
-            _rating);
-        AddDirectFilter(
-            "状態",
-            _status);
-        AddDirectFilter(
-            "タグ",
-            _tag);
-        AddDirectFilter(
-            "色",
-            _color);
-
-        _favorite.Margin =
-            new Thickness(
-                LumineDesign.Space2,
-                0,
-                LumineDesign.Space4,
-                0);
-        _directFilterRow.Children.Add(
-            _favorite);
-
-        _directFilterScroll =
-            new ScrollViewer
-            {
-                Content =
-                    _directFilterRow,
-                HorizontalScrollBarVisibility =
-                    ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility =
-                    ScrollBarVisibility.Disabled,
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Left
-            };
 
         var root = new StackPanel
         {
             Spacing = 3
         };
         root.Children.Add(primaryRow);
-        root.Children.Add(_directFilterScroll);
         root.Children.Add(_chips);
 
         Content =
