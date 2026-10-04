@@ -3607,38 +3607,133 @@ try
                                     .EncodedThumbnailMemoryByteLimit),
                         "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
-                    Require(
+                    var settingsText =
                         window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "設定",
-                                    StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
+                            .ToArray();
+                    var advancedSettings =
+                        window.WorkspacePageForSmoke
                             .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "ディスク保持上限",
-                                    StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
-                            .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "高速再表示用メモリ上限",
-                                    StringComparison.Ordinal)),
-                        "Product Settings did not expose a readable full-page hierarchy for viewer/cache/storage controls.");
+                            .OfType<Expander>()
+                            .FirstOrDefault(
+                                expander =>
+                                    string.Equals(
+                                        expander.Header as string,
+                                        "詳細設定",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "Product Settings did not expose the advanced performance/cache disclosure.");
+
+                    Require(
+                        settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "設定",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "表示",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "パフォーマンスとキャッシュ",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "ライブラリとデータ",
+                                StringComparison.Ordinal))
+                        && !advancedSettings.IsExpanded
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "ディスク保持上限",
+                                StringComparison.Ordinal))
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "高速再表示用メモリ上限",
+                                StringComparison.Ordinal)),
+                        "Product Settings did not prioritize daily settings or hide advanced cache controls by default.");
 
                     if (iteration == 0)
                     {
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
                         CaptureVisualEvidence(
                             window,
                             "settings-1440x900");
+
+                        advancedSettings.IsExpanded = true;
+                        TextBlock[] expandedSettingsText =
+                            Array.Empty<TextBlock>();
+                        for (var attempt = 0;
+                             attempt < 50;
+                             attempt++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform
+                                .ForceRenderTimerTick();
+                            Dispatcher.UIThread.RunJobs();
+
+                            expandedSettingsText =
+                                advancedSettings
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .ToArray();
+                            if (expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "ディスク保持上限",
+                                        StringComparison.Ordinal))
+                                && expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "高速再表示用メモリ上限",
+                                        StringComparison.Ordinal)))
+                            {
+                                break;
+                            }
+
+                            await Task.Delay(1);
+                        }
+                        Require(
+                            expandedSettingsText.Any(block =>
+                                block.IsEffectivelyVisible
+                                && string.Equals(
+                                    block.Text,
+                                    "ディスク保持上限",
+                                    StringComparison.Ordinal))
+                            && expandedSettingsText.Any(block =>
+                                block.IsEffectivelyVisible
+                                && string.Equals(
+                                    block.Text,
+                                    "高速再表示用メモリ上限",
+                                    StringComparison.Ordinal)),
+                            "Advanced Settings disclosure did not expose cache budget controls after layout/render settled.");
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-advanced-1440x900");
+
+                        advancedSettings.IsExpanded = false;
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-900x600");
+
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
                     }
 
                     window.NavigateForSmoke(
@@ -3878,7 +3973,11 @@ try
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && window.IsCompactNavigationLayout
-                                        == (viewport.Width <= 1040)
+                                        == (viewport.Width < 1200)
+                                    && window.NavigationPinVisibleForSmoke
+                                        == (viewport.Width >= 1200)
+                                    && window.IsNavigationPaneOverlayForSmoke
+                                        == navigationVisible
                                     && window.BrowseControlsForSmoke is not null
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
@@ -3892,6 +3991,16 @@ try
                                         || window.BrowseControlsForSmoke
                                             .SearchHeightForSmoke <= 33.5),
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-overlay-900x600");
+                                }
 
                                 window.CurrentShell.HideContextDetail();
                                 Dispatcher.UIThread.RunJobs();
@@ -4123,12 +4232,23 @@ try
                                     window.CurrentShell.GridViewerBounds.Width;
                                 Require(
                                     window.IsNavigationPinnedForSmoke
+                                    && !window.IsNavigationPaneOverlayForSmoke
+                                    && window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
                                         < unpinnedClosedCanvasWidth - 200,
                                     $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-pinned-1440x900");
+                                }
 
                                 window.SetNavigationPinnedForSmoke(false);
                                 Dispatcher.UIThread.RunJobs();
@@ -4597,6 +4717,8 @@ try
                 "browse-1440x900",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
+                "navigation-overlay-900x600",
+                "navigation-pinned-1440x900",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
@@ -4607,6 +4729,8 @@ try
                 "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
+                "settings-advanced-1440x900",
+                "settings-900x600",
                 "no-match-1440x900",
                 "error-1440x900"
             };
