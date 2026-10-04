@@ -1865,6 +1865,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                         new Thickness(0),
                                     FontSize = 17
                                 });
+                        // ConfigureSecondaryButton applies the shared
+                        // caption size, so restore the larger star glyph after
+                        // applying the common button chrome.
+                        button.FontSize = 17;
+
                         var accessibleName =
                             $"評価 {rating}";
                         AutomationProperties.SetName(
