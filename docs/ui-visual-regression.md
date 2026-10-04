@@ -12,6 +12,8 @@ The App smoke receives:
 
 When enabled it captures the required product surfaces below:
 
+- `welcome-1440x900.png`
+- `loading-1440x900.png`
 - `browse-900x600.png`
 - `browse-1440x900.png`
 - `browse-filter-open-900x600.png`
@@ -30,6 +32,7 @@ When enabled it captures the required product surfaces below:
 - `settings-1440x900.png`
 - `settings-advanced-1440x900.png`
 - `settings-900x600.png`
+- `empty-library-1440x900.png`
 - `no-match-1440x900.png`
 - `error-1440x900.png`
 
