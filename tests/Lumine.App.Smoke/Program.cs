@@ -898,6 +898,7 @@ try
 
             string? navigationError = null;
             var openAttempts = 0;
+            var rescanAttempts = 0;
             var navigationView =
                 ProductNavigationViews.CreateLibraries(
                     navLibraries,
@@ -911,6 +912,11 @@ try
                                 new InvalidOperationException(
                                     "navigation-smoke-failure"))
                             : Task.CompletedTask;
+                    },
+                    rescanLibrary: _ =>
+                    {
+                        rescanAttempts++;
+                        return Task.CompletedTask;
                     },
                     toggleEnabled: static _ => Task.CompletedTask,
                     removeLibrary: static _ => Task.CompletedTask,
@@ -940,6 +946,33 @@ try
                 FindNavigationTitle("Active library")
                     .FindAncestorOfType<Button>() is null,
                 "Active library still presents as an enabled no-op command.");
+
+            var rescanButton =
+                navigationView.GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "再スキャン",
+                                StringComparison.Ordinal));
+            Require(
+                rescanButton is { IsEnabled: true },
+                "Active library did not expose the direct rescan action.");
+            rescanButton.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            for (var attempt = 0;
+                 attempt < 50
+                 && rescanAttempts == 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Require(
+                rescanAttempts == 1,
+                "Active library rescan action did not invoke its callback.");
 
             var openableButton =
                 FindNavigationTitle("Openable library")
@@ -2630,6 +2663,25 @@ try
                             StringComparison.Ordinal)
                         && window.CurrentShell is not null,
                         "Reopening a populated library after EmptyLibrary did not restore Workspace.");
+
+                    var runtimeBeforeManualRescan =
+                        window.CurrentRuntime;
+                    var shellBeforeManualRescan =
+                        window.CurrentShell;
+                    await window.RescanActiveLibraryForSmokeAsync();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ReferenceEquals(
+                            window.CurrentRuntime,
+                            runtimeBeforeManualRescan)
+                        && ReferenceEquals(
+                            window.CurrentShell,
+                            shellBeforeManualRescan)
+                        && string.Equals(
+                            window.ProductShellState,
+                            "Workspace",
+                            StringComparison.Ordinal),
+                        "Manual library rescan recreated the active runtime/shell or failed to restore Workspace.");
 
                     // App integration must produce a real virtualized thumbnail
                     // surface before downstream interaction/DPI checks. The
