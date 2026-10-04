@@ -77,12 +77,15 @@ After Lumine closes, the wrapper asks the final human-observation questions and 
 The final reviewer must confirm all of these:
 
 1. **Lumine identity** — It clearly looks and feels like Lumine, the dark visual hierarchy is coherent, and normal workflows do not expose generic Core/test-shell UI.
-2. **Browse usability** — Library/Folder/Tag navigation, Grid/List, density, search/sort/filter and direction-reversing fast scrolling feel responsive, without disruptive blanking.
-3. **Organization workflow** — Single/Ctrl/Shift selection, metadata editing, bulk organization and destructive confirmations are understandable and dependable.
-4. **Viewer usability** — Contextual detail, focused view, previous/next, Fit, zoom, pan and 1:1 are comfortable in real use.
-5. **Creative archive** — Work, Generation Group, directed Relation and Publication are understandable and useful without AI.
-6. **Settings and storage** — Settings, MemoryOnly/PersistentDisk explanation, cache deletion and portable/storage behavior are clear and have no surprising side effects.
-7. **Daily-use product verdict** — No unresolved P0/P1 issue is observed and normal use feels like Lumine rather than a technical prototype.
+2. **Shell / navigation** — Global navigation, contextual Library/Folder/Tag/Publication panes and the image canvas read as one coherent hierarchy; 900x600 uses overlays rather than competing permanent sidebars.
+3. **Browse usability** — Grid/List, density, search/sort/filter, tag assignment and direction-reversing fast scrolling feel responsive, without disruptive blanking or excessive command chrome.
+4. **Organization workflow** — Single/Ctrl/Shift selection, Inspector metadata editing, bulk organization and destructive confirmations are understandable and dependable.
+5. **Viewer discoverability and comfort** — A first-time user can discover how to open an image, and previous/next, Fit, zoom, 1:1, Info, fullscreen, pan and close/back are clear and comfortable without relying on hidden shortcuts.
+6. **Product states / feedback** — Welcome, Loading, Empty, No Match and recoverable Error each have one clear message and next action; success feedback is transient and technical detail stays secondary.
+7. **Creative archive** — Work, Generation Group, directed Relation and Publication are understandable and useful without AI.
+8. **Settings / storage** — Common settings are easy to find, advanced cache/storage/diagnostics are progressively disclosed, and portable/storage behavior has no surprising side effects.
+9. **Accessibility / responsive polish** — Keyboard-only navigation works logically; 900x600 and normal desktop use remain unclipped; large Windows text scale remains usable; selected/destructive states are understandable without color alone.
+10. **Daily-use product verdict** — No unresolved P0/P1 issue is observed and normal use feels like Lumine rather than a technical prototype.
 
 The last item is intentionally subjective and belongs to the product owner. Automation must not substitute its judgment.
 
@@ -106,6 +109,6 @@ Possible combined values:
 
 After the real Windows review, provide `product-summary.json` (or paste its contents) plus any observations that should become follow-up issues.
 
-If the result is `pass`, #397 and then #385 can be closed and AI research/integration may start.
+If the result is `pass`, first verify that #443 and #410 have no remaining P0/P1 follow-up, then close the acceptance chain in dependency order (#443 -> #410 -> #397). #385 closes only after its complete Product Epic conditions are confirmed. AI research/integration remains blocked until #397 and #385 are complete.
 
 If any manual item is `fail`, #397 stays open and the failure should become a focused product issue rather than being waived implicitly.
