@@ -4263,7 +4263,6 @@ try
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
-                                    && !navigationVisible
                                     && viewport.Width == 1440d)
                                 {
                                     CaptureVisualEvidence(
