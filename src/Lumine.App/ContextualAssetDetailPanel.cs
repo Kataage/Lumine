@@ -867,11 +867,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal void SelectTabForSmoke(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        if (index >= TabHeaders.Count)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(index));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(
+            index,
+            TabHeaders.Count);
 
         SelectTab(index);
     }
@@ -1000,7 +998,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             when (token.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             if (_assetId != asset.Id)
             {
