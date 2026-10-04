@@ -363,6 +363,16 @@ internal sealed class TagColorEditor : UserControl
                 _custom.Text,
                 out var normalized))
         {
+            if (!string.Equals(
+                    _custom.Text,
+                    normalized,
+                    StringComparison.Ordinal))
+            {
+                _custom.Text =
+                    normalized;
+                return;
+            }
+
             ApplyNormalizedColor(
                 normalized);
             return;
