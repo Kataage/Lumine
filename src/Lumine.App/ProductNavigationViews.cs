@@ -1224,8 +1224,7 @@ internal static class ProductNavigationViews
                                     Text = tag.Name
                                 });
                         var editColor =
-                            new TagColorEditor(
-                                tag.Color);
+                            new TagColorEditor();
                         var editStatus =
                             new TextBlock
                             {
