@@ -55,6 +55,8 @@ public sealed class MainWindow : Window
     private bool _closeCompleted;
     private string _productShellState = "Welcome";
     private string _navigationDestination = "ライブラリ";
+    private string? _failedLibraryRoot;
+    private AppDataPaths? _failedLibraryDataPaths;
     private BrowsePreferences _browsePreferences;
     private BrowseFilterState _browseFilterState;
     private BrowseWorkspaceControls? _browseControls;
@@ -463,6 +465,16 @@ public sealed class MainWindow : Window
 
     internal BrowseWorkspaceControls? BrowseControlsForSmoke =>
         _browseControls;
+
+    internal bool HasRetryableOpenFailureForSmoke =>
+        !string.IsNullOrWhiteSpace(
+            _failedLibraryRoot);
+
+    internal bool OpenFolderCommandEnabledForSmoke =>
+        _openFolder.IsEnabled;
+
+    internal Task RetryFailedLibraryForSmokeAsync() =>
+        RetryFailedLibraryAsync();
 
     internal Task ApplyBrowseFilterForSmokeAsync(
         BrowseFilterState state) =>
@@ -2045,6 +2057,8 @@ public sealed class MainWindow : Window
 
             _runtime = runtime;
             runtime = null;
+            _failedLibraryRoot = null;
+            _failedLibraryDataPaths = null;
 
             if (_runtime.AssetCount == 0)
             {
@@ -2092,16 +2106,18 @@ public sealed class MainWindow : Window
                 "library",
                 $"Open failed: {exception.Message}");
 
+            _failedLibraryRoot =
+                libraryRoot;
+            _failedLibraryDataPaths =
+                dataPaths;
             _productShellState = "Error";
             _status.Foreground =
                 LumineDesign.Danger;
             _status.Text =
                 "ライブラリを開けませんでした。";
-                _viewerHost.Content =
-                LumineDesign.CreateProductState(
-                    "ライブラリを開けませんでした",
-                    "元画像は変更していません。フォルダーの状態を確認して、もう一度追加してください。\n\n"
-                    + exception.Message);
+            _viewerHost.Content =
+                CreateLibraryOpenFailureState(
+                    exception);
         }
         finally
         {
@@ -2115,6 +2131,96 @@ public sealed class MainWindow : Window
                 _openFolder.IsEnabled = true;
             }
         }
+    }
+
+    private Control CreateLibraryOpenFailureState(
+        Exception exception)
+    {
+        var retry =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "もう一度開く"
+                });
+        retry.Click +=
+            async (_, _) =>
+            {
+                retry.IsEnabled = false;
+                try
+                {
+                    await RetryFailedLibraryAsync();
+                }
+                finally
+                {
+                    if (string.Equals(
+                            _productShellState,
+                            "Error",
+                            StringComparison.Ordinal))
+                    {
+                        retry.IsEnabled = true;
+                    }
+                }
+            };
+
+        var choose =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content =
+                        "別の画像フォルダーを選ぶ"
+                });
+        choose.Click +=
+            async (_, _) =>
+                await ChooseAndOpenLibraryAsync();
+
+        var detail =
+            new Expander
+            {
+                Header = "エラー詳細",
+                IsExpanded = false,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                Content =
+                    new TextBlock
+                    {
+                        Text = exception.Message,
+                        Foreground =
+                            LumineDesign.MutedForeground,
+                        FontSize =
+                            LumineDesign.CaptionFontSize,
+                        TextWrapping =
+                            TextWrapping.Wrap
+                    }
+            };
+
+        var actions =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8
+            };
+        actions.Children.Add(retry);
+        actions.Children.Add(choose);
+        actions.Children.Add(detail);
+
+        return LumineDesign.CreateProductState(
+            "ライブラリを開けませんでした",
+            "元画像は変更していません。フォルダーの状態を確認して再試行するか、別のフォルダーを選んでください。",
+            actions);
+    }
+
+    private Task RetryFailedLibraryAsync()
+    {
+        var root =
+            _failedLibraryRoot;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return Task.CompletedTask;
+        }
+
+        return OpenLibraryAsync(
+            root,
+            _failedLibraryDataPaths);
     }
 
     private async void OnOpenFolderClicked(
