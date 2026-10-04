@@ -2049,11 +2049,17 @@ public sealed class MainWindow : Window
                 "ライブラリを開いています",
                 string.Empty);
 
+        var acceptOpenProgress = true;
         var progress =
             new Progress<CoreViewerOpenProgress>(
                 update =>
-                    _status.Text =
-                        FormatOpenProgress(update));
+                {
+                    if (acceptOpenProgress)
+                    {
+                        _status.Text =
+                            FormatOpenProgress(update);
+                    }
+                });
 
         CoreViewerRuntime? runtime = null;
 
@@ -2069,6 +2075,7 @@ public sealed class MainWindow : Window
                 BuildBrowseQuery());
 
             operationToken.ThrowIfCancellationRequested();
+            acceptOpenProgress = false;
 
             _runtime = runtime;
             runtime = null;
@@ -2104,6 +2111,7 @@ public sealed class MainWindow : Window
         catch (OperationCanceledException)
             when (operationToken.IsCancellationRequested)
         {
+            acceptOpenProgress = false;
             if (!_closeStarted)
             {
                 _productShellState = "Welcome";
@@ -2115,6 +2123,7 @@ public sealed class MainWindow : Window
         }
         catch (Exception exception)
         {
+            acceptOpenProgress = false;
             _host?.Log.Write(
                 "library",
                 $"Open failed: {exception.Message}");
