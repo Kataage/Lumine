@@ -838,12 +838,15 @@ public sealed class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _host?.Log.Write(
+                "navigation",
+                $"Navigation refresh failed: {exception.Message}");
             if (!_closeStarted)
             {
                 _status.Foreground =
                     LumineDesign.Warning;
                 _status.Text =
-                    $"ナビゲーションを更新できませんでした: {exception.Message}";
+                    "ナビゲーションを更新できませんでした。もう一度お試しください。";
             }
         }
         finally
@@ -1212,6 +1215,9 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             acceptProgress = false;
+            _host?.Log.Write(
+                "library",
+                $"Rescan failed: {exception.Message}");
             if (ReferenceEquals(
                     _runtime,
                     runtimeBefore))
@@ -1219,7 +1225,7 @@ public sealed class MainWindow : Window
                 _status.Foreground =
                     LumineDesign.Warning;
                 _status.Text =
-                    $"再スキャンできませんでした: {exception.Message}";
+                    "再スキャンできませんでした。フォルダーの状態を確認してもう一度お試しください。";
             }
 
             throw;
@@ -2052,10 +2058,13 @@ public sealed class MainWindow : Window
                 }
             }
 
+            _host?.Log.Write(
+                "browse",
+                $"Browse query failed: {exception.Message}");
             _status.Foreground =
                 LumineDesign.Warning;
             _status.Text =
-                $"検索・フィルターを適用できませんでした: {exception.Message}";
+                "検索・フィルターを適用できませんでした。条件を確認してもう一度お試しください。";
             return;
         }
 
@@ -2912,7 +2921,7 @@ public sealed class MainWindow : Window
                     "window",
                     $"Shutdown error: {shutdownFailure.Message}");
                 _status.Text =
-                    $"Shutdown error: {shutdownFailure.Message}";
+                    "終了処理で問題が発生しました。診断情報を確認してください。";
             }
         }
         finally
