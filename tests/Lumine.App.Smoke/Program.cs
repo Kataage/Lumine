@@ -4357,6 +4357,55 @@ try
                             .GetAssetFocusTarget(0) is not null,
                         "MainWindow workspace did not realize its initial thumbnail surface.");
 
+                    var browseSearch =
+                        window.GetVisualDescendants()
+                            .OfType<TextBox>()
+                            .FirstOrDefault(
+                                control =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            control),
+                                        "画像を検索",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "Browse search did not expose an accessible name.");
+                    Require(
+                        string.Equals(
+                            AutomationProperties.GetAcceleratorKey(
+                                browseSearch),
+                            "Ctrl+F",
+                            StringComparison.Ordinal),
+                        "Browse search did not expose its Ctrl+F accelerator metadata.");
+                    window.RaiseEvent(
+                        new KeyEventArgs
+                        {
+                            RoutedEvent =
+                                InputElement.KeyDownEvent,
+                            Key = Key.F,
+                            KeyModifiers =
+                                KeyModifiers.Control
+                        });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ReferenceEquals(
+                            window.FocusManager.GetFocusedElement(),
+                            browseSearch),
+                        "Ctrl+F did not move focus into Browse search.");
+
+                    var thumbnailDensity =
+                        window.GetVisualDescendants()
+                            .OfType<Slider>()
+                            .FirstOrDefault(
+                                control =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            control),
+                                        "サムネイルサイズ",
+                                        StringComparison.Ordinal));
+                    Require(
+                        thumbnailDensity is not null,
+                        "Thumbnail density slider is missing an accessible name.");
+
                     var viewportMatrix =
                         new[]
                         {
