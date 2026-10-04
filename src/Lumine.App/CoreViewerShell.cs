@@ -2603,7 +2603,7 @@ internal sealed class CoreViewerShell : UserControl
                 owner,
                 "元ファイルを削除しますか？",
                 $"{selectedCount:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
-                "この操作はLumineから元に戻せません。Work / Generation Group / Publication等の履歴は、参照可能なsnapshotを保持する場合があります。",
+                "この操作はLumineから元に戻せません。Work / Generation Group / Publicationなどの履歴には、削除前の参照情報が残る場合があります。",
                 confirmLabel: "元ファイルを削除",
                 tone: ProductDialogTone.Danger);
         if (!confirmed)
