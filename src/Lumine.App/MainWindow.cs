@@ -66,6 +66,8 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryCatalogItem>();
     private IReadOnlyList<LibraryFolderInfo> _folders =
         Array.Empty<LibraryFolderInfo>();
+    private readonly HashSet<string> _expandedFolderPaths =
+        new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<LibraryTagInfo> _tags =
         Array.Empty<LibraryTagInfo>();
     private IReadOnlyList<PublicationInfo> _publications =
@@ -876,6 +878,7 @@ public sealed class MainWindow : Window
                         : ProductNavigationViews.CreateFolders(
                             _folders,
                             _browseFilterState.FolderPath,
+                            _expandedFolderPaths,
                             ApplyFolderScopeAsync,
                             ReportNavigationError),
                 "タグ" =>
@@ -1057,6 +1060,7 @@ public sealed class MainWindow : Window
         _viewerHost.Content =
             CreateWelcomeState(recovered: false);
         _folders = Array.Empty<LibraryFolderInfo>();
+        _expandedFolderPaths.Clear();
         _tags = Array.Empty<LibraryTagInfo>();
         _publications = Array.Empty<PublicationInfo>();
         _browseFacets =
@@ -1932,6 +1936,7 @@ public sealed class MainWindow : Window
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
+        _expandedFolderPaths.Clear();
 
         _viewerHost.Content =
             LumineDesign.CreateProductState(
