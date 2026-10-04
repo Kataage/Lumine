@@ -343,18 +343,17 @@ internal sealed class TagColorEditor : UserControl
                 TagColor.Default;
         }
 
-        if (string.Equals(
+        if (!string.Equals(
                 _custom.Text,
                 normalized,
                 StringComparison.Ordinal))
         {
-            ApplyNormalizedColor(
-                normalized);
-            return;
+            _custom.Text =
+                normalized;
         }
 
-        _custom.Text =
-            normalized;
+        ApplyNormalizedColor(
+            normalized);
     }
 
     private void ApplyCustomText()
@@ -370,7 +369,6 @@ internal sealed class TagColorEditor : UserControl
             {
                 _custom.Text =
                     normalized;
-                return;
             }
 
             ApplyNormalizedColor(
