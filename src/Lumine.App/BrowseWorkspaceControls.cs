@@ -597,6 +597,46 @@ internal sealed class BrowseWorkspaceControls : UserControl
             });
     }
 
+    public Task ReplaceTagScopeAsync(
+        string oldName,
+        string newName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
+
+        if (!State.TagNames.Any(
+                value =>
+                    string.Equals(
+                        value,
+                        oldName,
+                        StringComparison.OrdinalIgnoreCase)))
+        {
+            return Task.CompletedTask;
+        }
+
+        var tags =
+            State.TagNames
+                .Select(value =>
+                    string.Equals(
+                        value,
+                        oldName,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? newName.Trim()
+                        : value)
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    static value => value,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+        return SetStateAsync(
+            State with
+            {
+                RequiredTags = tags
+            });
+    }
+
     public Task ClearTagScopesAsync() =>
         SetStateAsync(
             State with
