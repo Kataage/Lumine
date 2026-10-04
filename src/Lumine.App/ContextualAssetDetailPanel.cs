@@ -802,6 +802,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal string PublicationsText =>
         _publications.Text ?? string.Empty;
 
+    internal string PublicationCountTextForSmoke =>
+        _publicationCount.Text ?? string.Empty;
+
+    internal int PublicationCardCountForSmoke =>
+        _publicationCards.Children.Count;
+
     internal bool IsDirty => _dirty;
 
     internal bool HasPreview =>
@@ -1424,7 +1430,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                     : $"\n  {publication.TagsSnapshot}")
                                 + $"\n  {string.Join(", ", publication.Assets.Select(static asset => asset.FileName))}"));
             RenderPublicationCards(
-                context.Publications);
+                context.Publications,
+                context.PublicationCount);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
@@ -1459,11 +1466,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     }
 
     private void RenderPublicationCards(
-        IReadOnlyList<PublicationInfo> publications)
+        IReadOnlyList<PublicationInfo> publications,
+        long totalCount)
     {
         _publicationCards.Children.Clear();
         _publicationCount.Text =
-            $"{publications.Count:N0}件";
+            $"{totalCount:N0}件";
 
         if (publications.Count == 0)
         {
@@ -1483,6 +1491,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _publicationCards.Children.Add(
                 CreatePublicationCard(
                     publication));
+        }
+
+        if (totalCount > publications.Count)
+        {
+            _publicationCards.Children.Add(
+                CreatePublicationMessageCard(
+                    $"最新{publications.Count:N0}件を表示しています。全{totalCount:N0}件は左の「公開履歴」から確認できます。",
+                    warning: false));
         }
     }
 
