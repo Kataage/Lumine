@@ -926,6 +926,7 @@ public sealed class MainWindow : Window
                             _browseFilterState.TagNames,
                             ApplyTagScopeAsync,
                             CreateTagFromNavigationAsync,
+                            UpdateTagFromNavigationAsync,
                             DeleteTagFromNavigationAsync,
                             ReportNavigationError),
                 "公開履歴" =>
@@ -1350,6 +1351,70 @@ public sealed class MainWindow : Window
             color);
         await RefreshNavigationAsync(
             CancellationToken.None);
+    }
+
+    private async Task UpdateTagFromNavigationAsync(
+        LibraryTagInfo tag,
+        string name,
+        string color)
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "タグを編集するにはライブラリを開いてください。");
+
+        var updated =
+            await _navigationLibraryService.UpdateTagAsync(
+                runtime.Library.Id,
+                tag.Id,
+                name,
+                color);
+
+        if (_browseControls is not null)
+        {
+            await _browseControls.ReplaceTagScopeAsync(
+                tag.Name,
+                updated.Name);
+        }
+        else
+        {
+            var activeTags =
+                _browseFilterState.TagNames
+                    .ToList();
+            var activeIndex =
+                activeTags.FindIndex(
+                    value =>
+                        string.Equals(
+                            value,
+                            tag.Name,
+                            StringComparison.OrdinalIgnoreCase));
+            if (activeIndex >= 0)
+            {
+                activeTags[activeIndex] =
+                    updated.Name;
+                _browseFilterState =
+                    _browseFilterState with
+                    {
+                        RequiredTags =
+                            activeTags
+                                .Distinct(
+                                    StringComparer.OrdinalIgnoreCase)
+                                .OrderBy(
+                                    static value => value,
+                                    StringComparer.OrdinalIgnoreCase)
+                                .ToArray()
+                    };
+                await ApplyBrowseQueryAsync();
+            }
+        }
+
+        await RefreshNavigationAsync(
+            CancellationToken.None);
+
+        if (_shell is not null)
+        {
+            await _shell.SyncTagConsumersAsync();
+        }
     }
 
     private async Task DeleteTagFromNavigationAsync(
