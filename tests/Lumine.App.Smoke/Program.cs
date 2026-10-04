@@ -4978,6 +4978,17 @@ try
                             $"MainWindow responsive/layout virtualization or browse command containment regressed at {scaling:P0} render scaling.");
                     }
 
+                    // The render-scaling matrix above intentionally
+                    // ends at 225% in the baseline iteration. Normalize back
+                    // to 1.0 before named 900x600 Viewer evidence so the
+                    // baseline and text225 captures differ by text scale only.
+                    window.SetRenderScaling(1.0);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        Math.Abs(
+                            window.RenderScaling - 1.0) < 0.001,
+                        "Focused-view visual evidence did not normalize render scaling to 100%.");
+
                     Require(
                         window.CurrentShell.GridViewer.FocusAsset(0)
                         && window.CurrentShell.IsAssetFocusedForSmoke(0),
