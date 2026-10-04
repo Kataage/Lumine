@@ -428,9 +428,8 @@ internal sealed class TagColorEditor : UserControl
             return;
         }
 
-        button.RaiseEvent(
-            new Avalonia.Interactivity.RoutedEventArgs(
-                Button.ClickEvent));
+        button.Flyout?.ShowAt(
+            button);
     }
 
     internal void SetVisualColorForSmoke(
