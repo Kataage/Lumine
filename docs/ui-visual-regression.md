@@ -16,8 +16,11 @@ When enabled it captures the required product surfaces below:
 - `browse-1440x900.png`
 - `browse-filter-open-900x600.png`
 - `browse-active-filter-900x600.png`
+- `tags-assignment-1100x720.png`
 - `tags-create-900x600-text225.png`
+- `tags-create-custom-color-900x600-text225.png`
 - `tags-edit-900x600-text225.png`
+- `tags-edit-custom-color-900x600-text225.png`
 - `inspector-900x600.png`
 - `inspector-1440x900-pinned.png`
 - `focused-viewer-900x600.png`
