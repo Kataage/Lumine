@@ -44,3 +44,5 @@ For now:
 3. the Product Portable real-machine acceptance remains authoritative for final product review.
 
 A golden/tolerance gate can be added later if repeated CI captures demonstrate stable raster output across runner updates.
+
+Tag review must confirm that preset colors remain the default path and the spectrum/HEX editor appears only after explicit custom-color disclosure.
