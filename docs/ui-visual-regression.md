@@ -22,7 +22,7 @@ When enabled it captures exactly these product surfaces:
 - `no-match-1440x900.png`
 - `error-1440x900.png`
 
-The tag captures render the real create/edit Flyout with the shared visual `TagColorEditor` / Avalonia `ColorPicker` open. The 225% cases use Lumine's existing text-scale simulation.
+The tag-create capture explicitly opens the real shared `TagColorEditor` / Avalonia `ColorPicker` drop-down and validates a realized `ColorSpectrum`. The tag-edit capture keeps the edit Flyout itself visible so the prefilled name/color/count and save/cancel layout remain reviewable. Both use Lumine's existing 225% text-scale simulation.
 
 A `manifest.tsv` records each captured surface, pixel dimensions and PNG byte size. CI fails if the required set is incomplete or a rendered frame is empty. Existing geometry, clipping, containment, virtualization and interaction assertions remain the deterministic gate.
 
