@@ -3607,38 +3607,133 @@ try
                                     .EncodedThumbnailMemoryByteLimit),
                         "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
-                    Require(
+                    var settingsText =
                         window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "設定",
-                                    StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
+                            .ToArray();
+                    var advancedSettings =
+                        window.WorkspacePageForSmoke
                             .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "ディスク保持上限",
-                                    StringComparison.Ordinal))
-                        && window.WorkspacePageForSmoke
-                            .GetVisualDescendants()
-                            .OfType<TextBlock>()
-                            .Any(block =>
-                                string.Equals(
-                                    block.Text,
-                                    "高速再表示用メモリ上限",
-                                    StringComparison.Ordinal)),
-                        "Product Settings did not expose a readable full-page hierarchy for viewer/cache/storage controls.");
+                            .OfType<Expander>()
+                            .FirstOrDefault(
+                                expander =>
+                                    string.Equals(
+                                        expander.Header as string,
+                                        "詳細設定",
+                                        StringComparison.Ordinal))
+                        ?? throw new InvalidOperationException(
+                            "Product Settings did not expose the advanced performance/cache disclosure.");
+
+                    Require(
+                        settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "設定",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "表示",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "パフォーマンスとキャッシュ",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "ライブラリとデータ",
+                                StringComparison.Ordinal))
+                        && !advancedSettings.IsExpanded
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "ディスク保持上限",
+                                StringComparison.Ordinal))
+                        && !settingsText.Any(block =>
+                            block.IsEffectivelyVisible
+                            && string.Equals(
+                                block.Text,
+                                "高速再表示用メモリ上限",
+                                StringComparison.Ordinal)),
+                        "Product Settings did not prioritize daily settings or hide advanced cache controls by default.");
 
                     if (iteration == 0)
                     {
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
                         CaptureVisualEvidence(
                             window,
                             "settings-1440x900");
+
+                        advancedSettings.IsExpanded = true;
+                        TextBlock[] expandedSettingsText =
+                            Array.Empty<TextBlock>();
+                        for (var attempt = 0;
+                             attempt < 50;
+                             attempt++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform
+                                .ForceRenderTimerTick();
+                            Dispatcher.UIThread.RunJobs();
+
+                            expandedSettingsText =
+                                advancedSettings
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .ToArray();
+                            if (expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "ディスク保持上限",
+                                        StringComparison.Ordinal))
+                                && expandedSettingsText.Any(block =>
+                                    block.IsEffectivelyVisible
+                                    && string.Equals(
+                                        block.Text,
+                                        "高速再表示用メモリ上限",
+                                        StringComparison.Ordinal)))
+                            {
+                                break;
+                            }
+
+                            await Task.Delay(1);
+                        }
+                        Require(
+                            expandedSettingsText.Any(block =>
+                                block.IsEffectivelyVisible
+                                && string.Equals(
+                                    block.Text,
+                                    "ディスク保持上限",
+                                    StringComparison.Ordinal))
+                            && expandedSettingsText.Any(block =>
+                                block.IsEffectivelyVisible
+                                && string.Equals(
+                                    block.Text,
+                                    "高速再表示用メモリ上限",
+                                    StringComparison.Ordinal)),
+                            "Advanced Settings disclosure did not expose cache budget controls after layout/render settled.");
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-advanced-1440x900");
+
+                        advancedSettings.IsExpanded = false;
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-900x600");
+
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
                     }
 
                     window.NavigateForSmoke(
@@ -4607,6 +4702,8 @@ try
                 "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
+                "settings-advanced-1440x900",
+                "settings-900x600",
                 "no-match-1440x900",
                 "error-1440x900"
             };
