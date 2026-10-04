@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -119,6 +120,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
+        AutomationProperties.SetName(
+            _search,
+            "画像を検索");
+        AutomationProperties.SetAcceleratorKey(
+            _search,
+            "Ctrl+F");
 
         _sort =
             LumineDesign.ConfigureComboBox(
@@ -401,6 +408,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             densityPanel,
             "サムネイルサイズ");
+        AutomationProperties.SetName(
+            _density,
+            "サムネイルサイズ");
         Grid.SetColumn(densityPanel, 3);
         primaryRow.Children.Add(densityPanel);
 
@@ -546,6 +556,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
     internal string FilterButtonTextForSmoke =>
         _filterButtonLabel.Text
         ?? string.Empty;
+
+    internal void FocusSearch()
+    {
+        _search.Focus();
+        _search.SelectAll();
+    }
 
     internal void OpenFilterPanel() =>
         _filterFlyout.ShowAt(
@@ -1058,6 +1074,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
             flyoutFilterCount == 0
                 ? "フィルター"
                 : $"フィルター {flyoutFilterCount}";
+        AutomationProperties.SetName(
+            _filterButton,
+            flyoutFilterCount == 0
+                ? "フィルターを開く"
+                : $"フィルターを開く・{flyoutFilterCount}件適用中");
         _filterButton.Background =
             flyoutFilterCount == 0
                 ? LumineDesign.ControlSurface
