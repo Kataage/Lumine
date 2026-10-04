@@ -1478,11 +1478,7 @@ internal static class ProductNavigationViews
                                     editStatus.Foreground =
                                         LumineDesign.Warning;
                                     editStatus.Text =
-                                        "保存できませんでした。"
-                                        + (string.IsNullOrWhiteSpace(
-                                                exception.Message)
-                                            ? string.Empty
-                                            : $" {exception.Message}");
+                                        "保存できませんでした。内容を確認してもう一度お試しください。";
                                 }
                                 finally
                                 {
@@ -1881,8 +1877,10 @@ internal static class ProductNavigationViews
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     reportError?.Invoke(
-                        $"公開履歴を追加で読み込めませんでした: {exception.Message}");
+                        "公開履歴を追加で読み込めませんでした。もう一度お試しください。");
                 }
                 finally
                 {
@@ -2074,10 +2072,7 @@ internal static class ProductNavigationViews
             System.Diagnostics.Trace.TraceError(
                 exception.ToString());
             reportError?.Invoke(
-                "操作を完了できませんでした。"
-                + (string.IsNullOrWhiteSpace(exception.Message)
-                    ? string.Empty
-                    : $" {exception.Message}"));
+                "操作を完了できませんでした。もう一度お試しください。");
         }
         finally
         {
