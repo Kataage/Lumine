@@ -731,7 +731,8 @@ internal static class ProductNavigationViews
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,Auto,*"),
+                    new RowDefinitions(
+                        "Auto,Auto,Auto,*"),
                 RowSpacing =
                     LumineDesign.Space8
             };
@@ -743,9 +744,23 @@ internal static class ProductNavigationViews
                     LumineDesign.MutedForeground,
                 FontSize =
                     LumineDesign.CaptionFontSize,
-                VerticalAlignment =
-                    VerticalAlignment.Center
+                TextWrapping =
+                    TextWrapping.Wrap
             };
+
+        var clearSelection =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "選択を解除",
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4),
+                    IsVisible = false
+                });
 
         var add =
             LumineDesign.ConfigureSecondaryButton(
@@ -773,20 +788,49 @@ internal static class ProductNavigationViews
                             LumineDesign.Space4)
                 });
 
-        var toolbar =
-            new Grid
+        var actionRow =
+            new WrapPanel
             {
-                ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto"),
-                ColumnSpacing =
-                    LumineDesign.Space6
+                HorizontalAlignment =
+                    HorizontalAlignment.Left
             };
-        toolbar.Children.Add(countText);
-        Grid.SetColumn(add, 1);
-        toolbar.Children.Add(add);
-        Grid.SetColumn(manage, 2);
-        toolbar.Children.Add(manage);
-        root.Children.Add(toolbar);
+        clearSelection.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space6,
+                LumineDesign.Space4);
+        add.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space6,
+                LumineDesign.Space4);
+        manage.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space4);
+        actionRow.Children.Add(
+            clearSelection);
+        actionRow.Children.Add(
+            add);
+        actionRow.Children.Add(
+            manage);
+
+        var toolbar =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space4
+            };
+        toolbar.Children.Add(
+            countText);
+        toolbar.Children.Add(
+            actionRow);
+        root.Children.Add(
+            toolbar);
 
         var search =
             LumineDesign.ConfigureTextBox(
@@ -801,8 +845,11 @@ internal static class ProductNavigationViews
                             LumineDesign.Space8,
                             LumineDesign.Space4)
                 });
-        Grid.SetRow(search, 1);
-        root.Children.Add(search);
+        Grid.SetRow(
+            search,
+            1);
+        root.Children.Add(
+            search);
 
         var createName =
             LumineDesign.ConfigureTextBox(
@@ -812,113 +859,8 @@ internal static class ProductNavigationViews
                         "新しいタグ名"
                 });
 
-        var selectedColor =
-            "#6366f1";
-        var colorPreview =
-            new Border
-            {
-                Width = 24,
-                Height = 24,
-                CornerRadius =
-                    new CornerRadius(12),
-                Background =
-                    new SolidColorBrush(
-                        Color.Parse(
-                            selectedColor)),
-                BorderBrush =
-                    LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1)
-            };
-
-        var palette =
-            new WrapPanel();
-        var paletteColors =
-            new[]
-            {
-                "#6366f1",
-                "#ef4444",
-                "#f97316",
-                "#eab308",
-                "#22c55e",
-                "#06b6d4",
-                "#3b82f6",
-                "#ec4899",
-                "#8b5cf6",
-                "#71717a"
-            };
-        foreach (var color in paletteColors)
-        {
-            var paletteButton =
-                new Button
-                {
-                    Width = 24,
-                    Height = 24,
-                    MinWidth = 24,
-                    MinHeight = 24,
-                    Padding =
-                        new Thickness(3),
-                    Background =
-                        Brushes.Transparent,
-                    BorderBrush =
-                        string.Equals(
-                            color,
-                            selectedColor,
-                            StringComparison.Ordinal)
-                            ? LumineDesign.InteractionFocus
-                            : Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(2),
-                    CornerRadius =
-                        new CornerRadius(12),
-                    Margin =
-                        new Thickness(
-                            0,
-                            0,
-                            LumineDesign.Space4,
-                            LumineDesign.Space4),
-                    Content =
-                        new Border
-                        {
-                            Width = 14,
-                            Height = 14,
-                            CornerRadius =
-                                new CornerRadius(7),
-                            Background =
-                                new SolidColorBrush(
-                                    Color.Parse(color))
-                        }
-                };
-            ToolTip.SetTip(
-                paletteButton,
-                color);
-            var colorValue = color;
-            paletteButton.Click +=
-                (_, _) =>
-                {
-                    selectedColor =
-                        colorValue;
-                    colorPreview.Background =
-                        new SolidColorBrush(
-                            Color.Parse(
-                                selectedColor));
-                    foreach (var child in
-                             palette.Children
-                                 .OfType<Button>())
-                    {
-                        child.BorderBrush =
-                            string.Equals(
-                                ToolTip.GetTip(child)
-                                    as string,
-                                selectedColor,
-                                StringComparison.Ordinal)
-                                ? LumineDesign.InteractionFocus
-                                : Brushes.Transparent;
-                    }
-                };
-            palette.Children.Add(
-                paletteButton);
-        }
+        var colorEditor =
+            new TagColorEditor();
 
         var createAction =
             LumineDesign.ConfigurePrimaryButton(
@@ -936,35 +878,27 @@ internal static class ProductNavigationViews
                 });
 
         var createActions =
-            new StackPanel
+            new WrapPanel
             {
-                Orientation =
-                    Orientation.Horizontal,
-                Spacing =
-                    LumineDesign.Space6,
                 HorizontalAlignment =
                     HorizontalAlignment.Right
             };
+        cancelCreate.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space6,
+                LumineDesign.Space4);
+        createAction.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space4);
         createActions.Children.Add(
             cancelCreate);
         createActions.Children.Add(
             createAction);
-
-        var colorRow =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("Auto,*"),
-                ColumnSpacing =
-                    LumineDesign.Space8
-            };
-        colorRow.Children.Add(
-            colorPreview);
-        Grid.SetColumn(
-            palette,
-            1);
-        colorRow.Children.Add(
-            palette);
 
         var createBody =
             new StackPanel
@@ -986,7 +920,7 @@ internal static class ProductNavigationViews
         createBody.Children.Add(
             createName);
         createBody.Children.Add(
-            colorRow);
+            colorEditor);
         createBody.Children.Add(
             createActions);
 
@@ -1022,7 +956,9 @@ internal static class ProductNavigationViews
                 BorderThickness =
                     new Thickness(0),
                 Padding =
-                    new Thickness(0)
+                    new Thickness(0),
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch
             };
 
         var empty =
@@ -1041,12 +977,23 @@ internal static class ProductNavigationViews
         root.Children.Add(
             empty);
 
+        void UpdateCreateActionState()
+        {
+            createAction.IsEnabled =
+                createSurface.IsVisible
+                && !string.IsNullOrWhiteSpace(
+                    createName.Text)
+                && colorEditor.IsColorValid;
+        }
+
         void UpdateToolbar()
         {
             countText.Text =
                 selected.Count == 0
                     ? $"{tags.Count:N0}件"
                     : $"{selected.Count:N0}件選択 / {tags.Count:N0}件";
+            clearSelection.IsVisible =
+                selected.Count > 0;
             manage.Content =
                 manageMode
                     ? "完了"
@@ -1098,15 +1045,15 @@ internal static class ProductNavigationViews
                             {
                                 Width = 10,
                                 Height = 10,
+                                MinWidth = 10,
+                                MinHeight = 10,
                                 CornerRadius =
                                     new CornerRadius(5),
                                 Background =
-                                    new SolidColorBrush(
-                                        Color.Parse(
-                                            tag.Color)),
+                                    TagColor.ToBrush(
+                                        tag.Color),
                                 VerticalAlignment =
-                                    VerticalAlignment
-                                        .Center
+                                    VerticalAlignment.Center
                             };
 
                         var name =
@@ -1115,19 +1062,14 @@ internal static class ProductNavigationViews
                                 Text = tag.Name,
                                 Foreground =
                                     isSelected
-                                        ? LumineDesign
-                                            .Foreground
-                                        : LumineDesign
-                                            .MutedForeground,
+                                        ? LumineDesign.Foreground
+                                        : LumineDesign.MutedForeground,
                                 FontSize =
-                                    LumineDesign
-                                        .CaptionFontSize,
+                                    LumineDesign.CaptionFontSize,
                                 TextTrimming =
-                                    TextTrimming
-                                        .CharacterEllipsis,
+                                    TextTrimming.CharacterEllipsis,
                                 VerticalAlignment =
-                                    VerticalAlignment
-                                        .Center
+                                    VerticalAlignment.Center
                             };
 
                         var count =
@@ -1137,14 +1079,11 @@ internal static class ProductNavigationViews
                                     tag.AssetCount
                                         .ToString("N0"),
                                 Foreground =
-                                    LumineDesign
-                                        .MutedForeground,
+                                    LumineDesign.MutedForeground,
                                 FontSize =
-                                    LumineDesign
-                                        .CaptionFontSize,
+                                    LumineDesign.CaptionFontSize,
                                 VerticalAlignment =
-                                    VerticalAlignment
-                                        .Center
+                                    VerticalAlignment.Center
                             };
 
                         var content =
@@ -1152,7 +1091,7 @@ internal static class ProductNavigationViews
                             {
                                 ColumnDefinitions =
                                     new ColumnDefinitions(
-                                        "Auto,*,Auto,Auto"),
+                                        "Auto,*,Auto"),
                                 ColumnSpacing =
                                     LumineDesign.Space6
                             };
@@ -1169,70 +1108,34 @@ internal static class ProductNavigationViews
                         content.Children.Add(
                             count);
 
-                        var button =
-                            new Button
-                            {
-                                Content = content,
-                                HorizontalAlignment =
-                                    HorizontalAlignment
-                                        .Stretch,
-                                HorizontalContentAlignment =
-                                    HorizontalAlignment
-                                        .Stretch,
-                                Padding =
-                                    new Thickness(
-                                        LumineDesign.Space8,
-                                        LumineDesign.Space6),
-                                Background =
-                                    isSelected
-                                        ? LumineDesign
-                                            .AccentMuted
-                                        : Brushes.Transparent,
-                                BorderBrush =
-                                    isSelected
-                                        ? LumineDesign
-                                            .BorderStrong
-                                        : Brushes.Transparent,
-                                BorderThickness =
-                                    new Thickness(1),
-                                CornerRadius =
-                                    new CornerRadius(
-                                        LumineDesign
-                                            .ControlRadius)
-                            };
-
-                        if (manageMode)
+                        if (!manageMode)
                         {
-                            var remove =
-                                LumineDesign
-                                    .ConfigureSecondaryButton(
-                                        new Button
-                                        {
-                                            Content =
-                                                "削除",
-                                            MinHeight = 26,
-                                            Padding =
-                                                new Thickness(
-                                                    LumineDesign.Space6,
-                                                    LumineDesign.Space2),
-                                            FontSize =
-                                                LumineDesign
-                                                    .CaptionFontSize
-                                        });
-                            remove.Foreground =
-                                LumineDesign.Danger;
-                            Grid.SetColumn(
-                                remove,
-                                3);
-                            content.Children.Add(
-                                remove);
-                            AttachAsync(
-                                remove,
-                                () => deleteTag(tag),
-                                reportError);
-                        }
-                        else
-                        {
+                            var button =
+                                new Button
+                                {
+                                    Content = content,
+                                    HorizontalAlignment =
+                                        HorizontalAlignment.Stretch,
+                                    HorizontalContentAlignment =
+                                        HorizontalAlignment.Stretch,
+                                    Padding =
+                                        new Thickness(
+                                            LumineDesign.Space8,
+                                            LumineDesign.Space6),
+                                    Background =
+                                        isSelected
+                                            ? LumineDesign.AccentMuted
+                                            : Brushes.Transparent,
+                                    BorderBrush =
+                                        isSelected
+                                            ? LumineDesign.BorderStrong
+                                            : Brushes.Transparent,
+                                    BorderThickness =
+                                        new Thickness(1),
+                                    CornerRadius =
+                                        new CornerRadius(
+                                            LumineDesign.ControlRadius)
+                                };
                             AttachAsync(
                                 button,
                                 async () =>
@@ -1251,9 +1154,71 @@ internal static class ProductNavigationViews
                                         tag.Name);
                                 },
                                 reportError);
+                            return button;
                         }
 
-                        return button;
+                        var row =
+                            new Grid
+                            {
+                                ColumnDefinitions =
+                                    new ColumnDefinitions(
+                                        "*,Auto"),
+                                ColumnSpacing =
+                                    LumineDesign.Space6
+                            };
+
+                        var tagSurface =
+                            new Border
+                            {
+                                Padding =
+                                    new Thickness(
+                                        LumineDesign.Space8,
+                                        LumineDesign.Space6),
+                                Background =
+                                    isSelected
+                                        ? LumineDesign.AccentMuted
+                                        : Brushes.Transparent,
+                                BorderBrush =
+                                    isSelected
+                                        ? LumineDesign.BorderStrong
+                                        : LumineDesign.Border,
+                                BorderThickness =
+                                    new Thickness(1),
+                                CornerRadius =
+                                    new CornerRadius(
+                                        LumineDesign.ControlRadius),
+                                Child = content
+                            };
+                        row.Children.Add(
+                            tagSurface);
+
+                        var remove =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "削除",
+                                    MinHeight = 28,
+                                    Padding =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            LumineDesign.Space2),
+                                    FontSize =
+                                        LumineDesign.CaptionFontSize,
+                                    VerticalAlignment =
+                                        VerticalAlignment.Center
+                                });
+                        remove.Foreground =
+                            LumineDesign.Danger;
+                        Grid.SetColumn(
+                            remove,
+                            1);
+                        row.Children.Add(
+                            remove);
+                        AttachAsync(
+                            remove,
+                            () => deleteTag(tag),
+                            reportError);
+                        return row;
                     },
                     supportsRecycling: true);
 
@@ -1269,12 +1234,21 @@ internal static class ProductNavigationViews
         add.Click +=
             (_, _) =>
             {
+                if (manageMode)
+                {
+                    manageMode = false;
+                    ApplyFilter(
+                        search.Text);
+                }
+
                 createSurface.IsVisible =
                     !createSurface.IsVisible;
                 if (createSurface.IsVisible)
                 {
                     createName.Focus();
                 }
+
+                UpdateCreateActionState();
             };
 
         cancelCreate.Click +=
@@ -1282,9 +1256,18 @@ internal static class ProductNavigationViews
             {
                 createName.Text =
                     string.Empty;
+                colorEditor.Reset();
                 createSurface.IsVisible =
                     false;
+                UpdateCreateActionState();
             };
+
+        createName.TextChanged +=
+            (_, _) =>
+                UpdateCreateActionState();
+        colorEditor.StateChanged +=
+            (_, _) =>
+                UpdateCreateActionState();
 
         AttachAsync(
             createAction,
@@ -1292,20 +1275,25 @@ internal static class ProductNavigationViews
             {
                 var name =
                     createName.Text?.Trim();
+                var color =
+                    colorEditor.SelectedColor;
                 if (string.IsNullOrWhiteSpace(
-                        name))
+                        name)
+                    || color is null)
                 {
-                    createName.Focus();
+                    UpdateCreateActionState();
                     return;
                 }
 
                 await createTag(
                     name,
-                    selectedColor);
+                    color);
                 createName.Text =
                     string.Empty;
+                colorEditor.Reset();
                 createSurface.IsVisible =
                     false;
+                UpdateCreateActionState();
             },
             reportError);
 
@@ -1314,6 +1302,13 @@ internal static class ProductNavigationViews
             {
                 manageMode =
                     !manageMode;
+                if (manageMode)
+                {
+                    createSurface.IsVisible =
+                        false;
+                }
+
+                UpdateCreateActionState();
                 ApplyFilter(
                     search.Text);
             };
@@ -1323,56 +1318,18 @@ internal static class ProductNavigationViews
                 ApplyFilter(
                     search.Text);
 
-        var clearSelection =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = "選択を解除",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
-                });
-        clearSelection.IsVisible =
-            selected.Count > 0;
-        toolbar.ColumnDefinitions =
-            new ColumnDefinitions(
-                "*,Auto,Auto,Auto");
-        Grid.SetColumn(
-            clearSelection,
-            1);
-        Grid.SetColumn(
-            add,
-            2);
-        Grid.SetColumn(
-            manage,
-            3);
-        toolbar.Children.Add(
-            clearSelection);
         clearSelection.Click +=
             async (_, _) =>
             {
                 selected.Clear();
-                clearSelection.IsVisible =
-                    false;
                 UpdateToolbar();
                 ApplyFilter(
                     search.Text);
                 await selectTag(null);
             };
 
-        void RefreshClearVisibility() =>
-            clearSelection.IsVisible =
-                selected.Count > 0;
-
-        list.PropertyChanged +=
-            (_, _) =>
-                RefreshClearVisibility();
-
+        UpdateCreateActionState();
         ApplyFilter(null);
-        RefreshClearVisibility();
         return root;
     }
 
