@@ -63,7 +63,7 @@ internal static class ProductSettingsView
             new StackPanel
             {
                 Spacing = LumineDesign.Space16,
-                MaxWidth = LumineDesign.ReadablePageMaxWidth,
+                MaxWidth = 780,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch
             };
@@ -91,7 +91,7 @@ internal static class ProductSettingsView
             new TextBlock
             {
                 Text =
-                    "Lumineの閲覧・キャッシュ・保存方法を調整します。",
+                    "表示やキャッシュなど、普段の使い方を調整します。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize =
@@ -124,9 +124,7 @@ internal static class ProductSettingsView
                 clearCache));
         root.Children.Add(
             CreateStorageSettings(
-                snapshot));
-        root.Children.Add(
-            CreateDiagnostics(
+                snapshot,
                 showDiagnostics));
 
         var scroll =
@@ -161,8 +159,8 @@ internal static class ProductSettingsView
         var content = CreateCardStack();
         content.Children.Add(
             CreateSectionHeader(
-                "閲覧",
-                "新しくライブラリを開いたときの既定表示です。現在のライブラリにもすぐ反映します。"));
+                "表示",
+                "画像一覧の見え方と既定の並び順です。"));
 
         var view =
             LumineDesign.ConfigureComboBox(
@@ -301,8 +299,8 @@ internal static class ProductSettingsView
         var content = CreateCardStack();
         content.Children.Add(
             CreateSectionHeader(
-                "画像キャッシュ",
-                "通常閲覧はメモリのみが既定です。元画像はLumineへコピーしません。"));
+                "パフォーマンスとキャッシュ",
+                "表示速度と、再起動後にサムネイルを再利用するかを設定します。"));
 
         var persistent =
             LumineDesign.ConfigureCheckBox(
@@ -321,8 +319,8 @@ internal static class ProductSettingsView
             {
                 Text =
                     snapshot.ThumbnailModeEnvironmentOverride
-                        ? $"環境変数による一時上書き中: 実際の動作は {DescribeMode(snapshot.EffectiveThumbnailStorageMode)}。画面の選択は上書き値を保存しません。"
-                        : "変更は次回起動から有効です。メモリのみに戻すと、不要になった表示用キャッシュは安全に削除されます。",
+                        ? $"一時上書き中: 実際の動作は {DescribeMode(snapshot.EffectiveThumbnailStorageMode)}。"
+                        : "変更は次回起動から有効です。",
                 Foreground =
                     snapshot.ThumbnailModeEnvironmentOverride
                         ? LumineDesign.Warning
@@ -330,6 +328,9 @@ internal static class ProductSettingsView
                 FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
+
+        var advanced =
+            CreateCardStack();
 
         var diskBudgets =
             DiskBudgetOptions
@@ -353,15 +354,15 @@ internal static class ProductSettingsView
                             diskBudgets,
                             snapshot.ThumbnailCacheByteLimit)
                 });
-        content.Children.Add(
+        advanced.Children.Add(
             CreateField(
                 "ディスク保持上限",
                 disk));
-        content.Children.Add(
+        advanced.Children.Add(
             new TextBlock
             {
                 Text =
-                    "永続サムネイルを有効にしたときの最大保持量です。上限を超えた古い表示用cacheは自動整理されます。変更は次回起動から有効です。",
+                    "再利用するサムネイルの最大保持量。変更は次回起動から有効です。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
@@ -390,15 +391,15 @@ internal static class ProductSettingsView
                             budgets,
                             snapshot.EncodedThumbnailMemoryByteLimit)
                 });
-        content.Children.Add(
+        advanced.Children.Add(
             CreateField(
                 "高速再表示用メモリ上限",
                 memory));
-        content.Children.Add(
+        advanced.Children.Add(
             new TextBlock
             {
                 Text =
-                    "ディスク保持量とは別の、一時的なメモリcache上限です。大きくすると再読み込みを減らせますが、その分RAMを使います。変更は次回起動から有効です。",
+                    "再表示を速くする一時メモリの上限。変更は次回起動から有効です。",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
@@ -422,7 +423,25 @@ internal static class ProductSettingsView
                 {
                     Content = "表示用キャッシュを削除"
                 });
-        content.Children.Add(clear);
+        advanced.Children.Add(
+            new TextBlock
+            {
+                Text = "メンテナンス",
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize,
+                FontWeight = FontWeight.SemiBold
+            });
+        advanced.Children.Add(clear);
+
+        content.Children.Add(
+            new Expander
+            {
+                Header = "詳細設定",
+                IsExpanded = false,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                Content = advanced
+            });
 
         var status = CreateStatusText();
         content.Children.Add(status);
@@ -552,13 +571,14 @@ internal static class ProductSettingsView
     }
 
     private static Control CreateStorageSettings(
-        ProductSettingsSnapshot snapshot)
+        ProductSettingsSnapshot snapshot,
+        Func<Task> showDiagnostics)
     {
         var content = CreateCardStack();
         content.Children.Add(
             CreateSectionHeader(
-                "保存場所",
-                "元画像は移動・コピーせず、そのままライブラリとして参照します。"));
+                "ライブラリとデータ",
+                "元画像はそのまま参照し、Lumineの管理データだけを保存します。"));
 
         content.Children.Add(
             CreateKeyValue(
@@ -617,10 +637,50 @@ internal static class ProductSettingsView
                 });
         }
 
+        var diagnostics =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "診断情報を開く",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left
+                });
+        diagnostics.Click +=
+            async (_, _) =>
+            {
+                diagnostics.IsEnabled = false;
+                try
+                {
+                    await showDiagnostics();
+                }
+                finally
+                {
+                    diagnostics.IsEnabled = true;
+                }
+            };
+        details.Children.Add(
+            new TextBlock
+            {
+                Text = "不具合調査",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                FontWeight =
+                    FontWeight.SemiBold,
+                Margin =
+                    new Thickness(
+                        0,
+                        LumineDesign.Space8,
+                        0,
+                        0)
+            });
+        details.Children.Add(diagnostics);
+
         content.Children.Add(
             new Expander
             {
-                Header = "詳細な保存場所",
+                Header = "保存場所と診断の詳細",
                 IsExpanded = false,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch,
