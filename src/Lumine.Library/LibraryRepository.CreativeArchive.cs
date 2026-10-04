@@ -838,6 +838,183 @@ public sealed partial class LibraryRepository
             FromTicks(created), FromTicks(updated));
     }
 
+    private static async Task<IReadOnlyList<PublicationInfo>>
+        LoadPublicationsByIdsAsync(
+            SqliteConnection connection,
+            SqliteTransaction? transaction,
+            long libraryId,
+            IReadOnlyList<long> publicationIds,
+            CancellationToken cancellationToken)
+    {
+        if (publicationIds.Count == 0)
+        {
+            return Array.Empty<PublicationInfo>();
+        }
+
+        var parameterNames =
+            new string[publicationIds.Count];
+        await using var publicationsCommand =
+            connection.CreateCommand();
+        publicationsCommand.Transaction =
+            transaction;
+        publicationsCommand.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+
+        for (var index = 0;
+             index < publicationIds.Count;
+             index++)
+        {
+            var parameterName =
+                $"$publication_id_{index}";
+            parameterNames[index] =
+                parameterName;
+            publicationsCommand.Parameters.AddWithValue(
+                parameterName,
+                publicationIds[index]);
+        }
+
+        publicationsCommand.CommandText =
+            $"""
+            SELECT
+                id, work_id,
+                title, body, tags_snapshot,
+                destination, account, published_at_utc_ticks,
+                external_id, external_url, platform_metadata_json,
+                created_at_utc_ticks, updated_at_utc_ticks
+            FROM publications
+            WHERE library_id = $library_id
+              AND id IN ({string.Join(", ", parameterNames)});
+            """;
+
+        var publications =
+            new Dictionary<long, PublicationInfo>();
+        await using (var reader =
+                     await publicationsCommand
+                         .ExecuteReaderAsync(cancellationToken)
+                         .ConfigureAwait(false))
+        {
+            while (await reader
+                       .ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                var id =
+                    reader.GetInt64(0);
+                publications[id] =
+                    new PublicationInfo(
+                        id,
+                        libraryId,
+                        reader.IsDBNull(1)
+                            ? null
+                            : reader.GetInt64(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetString(4),
+                        reader.GetString(5),
+                        reader.GetString(6),
+                        FromTicks(
+                            reader.GetInt64(7)),
+                        reader.GetString(8),
+                        reader.GetString(9),
+                        reader.GetString(10),
+                        Array.Empty<PublicationAssetSnapshot>(),
+                        FromTicks(
+                            reader.GetInt64(11)),
+                        FromTicks(
+                            reader.GetInt64(12)));
+            }
+        }
+
+        var assets =
+            publicationIds.ToDictionary(
+                static id => id,
+                static _ =>
+                    new List<PublicationAssetSnapshot>());
+
+        await using var assetsCommand =
+            connection.CreateCommand();
+        assetsCommand.Transaction =
+            transaction;
+        for (var index = 0;
+             index < publicationIds.Count;
+             index++)
+        {
+            assetsCommand.Parameters.AddWithValue(
+                parameterNames[index],
+                publicationIds[index]);
+        }
+
+        assetsCommand.CommandText =
+            $"""
+            SELECT
+                publication_id,
+                asset_id,
+                file_name_snapshot,
+                relative_path_snapshot,
+                sort_order
+            FROM publication_assets
+            WHERE publication_id IN (
+                {string.Join(", ", parameterNames)}
+            )
+            ORDER BY
+                publication_id ASC,
+                sort_order ASC;
+            """;
+
+        await using (var reader =
+                     await assetsCommand
+                         .ExecuteReaderAsync(cancellationToken)
+                         .ConfigureAwait(false))
+        {
+            while (await reader
+                       .ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                var publicationId =
+                    reader.GetInt64(0);
+                if (!assets.TryGetValue(
+                        publicationId,
+                        out var snapshots))
+                {
+                    continue;
+                }
+
+                snapshots.Add(
+                    new PublicationAssetSnapshot(
+                        reader.IsDBNull(1)
+                            ? null
+                            : reader.GetInt64(1),
+                        reader.GetString(2),
+                        reader.GetString(3),
+                        reader.GetInt32(4)));
+            }
+        }
+
+        var result =
+            new List<PublicationInfo>(
+                publicationIds.Count);
+        foreach (var publicationId in
+                 publicationIds)
+        {
+            if (!publications.TryGetValue(
+                    publicationId,
+                    out var publication))
+            {
+                continue;
+            }
+
+            result.Add(
+                publication with
+                {
+                    Assets =
+                        assets[publicationId]
+                            .ToArray()
+                });
+        }
+
+        return result;
+    }
+
     private static async Task<PublicationInfo?> GetPublicationOnConnectionAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
