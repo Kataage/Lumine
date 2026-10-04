@@ -5016,6 +5016,16 @@ try
 
                     if (iteration is 0 or 2)
                     {
+                        // The Viewer intentionally fades idle chrome, but
+                        // acceptance evidence must show the discoverable
+                        // controls a first-time user sees on entry.
+                        window.CurrentShell.DetailViewer
+                            .RevealChromeForSmoke();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.CurrentShell.DetailViewer
+                                .IsChromeVisibleForSmoke,
+                            "Focused Viewer acceptance evidence did not expose its primary command chrome.");
                         CaptureVisualEvidence(
                             window,
                             iteration == 2
