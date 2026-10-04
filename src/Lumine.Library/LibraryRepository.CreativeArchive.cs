@@ -8,6 +8,7 @@ public sealed partial class LibraryRepository
 {
     public const int PublicationPageSize = 100;
     public const int InspectorPublicationLimit = 24;
+    public const int PublicationSummaryAssetLimit = 12;
     public async Task<WorkInfo> CreateWorkAsync(
         long libraryId,
         WorkCreate create,
@@ -930,6 +931,10 @@ public sealed partial class LibraryRepository
                 static id => id,
                 static _ =>
                     new List<PublicationAssetSnapshot>());
+        var assetCounts =
+            publicationIds.ToDictionary(
+                static id => id,
+                static _ => 0L);
 
         await using var assetsCommand =
             connection.CreateCommand();
@@ -943,6 +948,9 @@ public sealed partial class LibraryRepository
                 parameterNames[index],
                 publicationIds[index]);
         }
+        assetsCommand.Parameters.AddWithValue(
+            "$asset_limit",
+            PublicationSummaryAssetLimit);
 
         assetsCommand.CommandText =
             $"""
@@ -951,11 +959,28 @@ public sealed partial class LibraryRepository
                 asset_id,
                 file_name_snapshot,
                 relative_path_snapshot,
-                sort_order
-            FROM publication_assets
-            WHERE publication_id IN (
-                {string.Join(", ", parameterNames)}
+                sort_order,
+                asset_count
+            FROM (
+                SELECT
+                    publication_id,
+                    asset_id,
+                    file_name_snapshot,
+                    relative_path_snapshot,
+                    sort_order,
+                    COUNT(*) OVER (
+                        PARTITION BY publication_id
+                    ) AS asset_count,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY publication_id
+                        ORDER BY sort_order ASC
+                    ) AS row_number
+                FROM publication_assets
+                WHERE publication_id IN (
+                    {string.Join(", ", parameterNames)}
+                )
             )
+            WHERE row_number <= $asset_limit
             ORDER BY
                 publication_id ASC,
                 sort_order ASC;
@@ -979,6 +1004,8 @@ public sealed partial class LibraryRepository
                     continue;
                 }
 
+                assetCounts[publicationId] =
+                    reader.GetInt64(5);
                 snapshots.Add(
                     new PublicationAssetSnapshot(
                         reader.IsDBNull(1)
@@ -1008,7 +1035,9 @@ public sealed partial class LibraryRepository
                 {
                     Assets =
                         assets[publicationId]
-                            .ToArray()
+                            .ToArray(),
+                    AssetCount =
+                        assetCounts[publicationId]
                 });
         }
 
