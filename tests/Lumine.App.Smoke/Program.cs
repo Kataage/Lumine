@@ -4240,11 +4240,13 @@ try
                         && window.CurrentShell.DetailViewer.SelectedAssetIndex == 0,
                         "Focused image viewer did not mount as a modal MainWindow-level lightbox.");
 
-                    if (iteration == 2)
+                    if (iteration is 0 or 2)
                     {
                         CaptureVisualEvidence(
                             window,
-                            "focused-viewer-900x600-text225");
+                            iteration == 2
+                                ? "focused-viewer-900x600-text225"
+                                : "focused-viewer-900x600");
                     }
 
                     var unnamedIconButton =
@@ -4570,6 +4572,7 @@ try
                 "tags-edit-900x600-text225",
                 "inspector-900x600",
                 "inspector-1440x900-pinned",
+                "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
                 "no-match-1440x900",
