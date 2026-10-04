@@ -272,10 +272,15 @@ internal static class ProductNavigationViews
                 reportError);
             manageMenu.Items.Add(toggle);
 
+            manageMenu.Items.Add(
+                new Separator());
+
             var remove =
                 new MenuItem
                 {
-                    Header = "登録解除…"
+                    Header = "登録解除…",
+                    Foreground =
+                        LumineDesign.Danger
                 };
             AttachAsync(
                 remove,
