@@ -353,12 +353,6 @@ internal sealed class TagColorEditor : UserControl
                             args.NewColor));
                 }
             };
-        _visualPicker.AttachedToVisualTree +=
-            (_, _) =>
-            {
-                Avalonia.Threading.Dispatcher.UIThread.Post(
-                    RefreshVisualPickerAfterAttach);
-            };
 
         SetColor(initialColor);
     }
@@ -450,6 +444,16 @@ internal sealed class TagColorEditor : UserControl
             button);
     }
 
+    internal void CloseVisualPickerForSmoke()
+    {
+        var button =
+            _visualPicker
+                .GetVisualDescendants()
+                .OfType<DropDownButton>()
+                .SingleOrDefault();
+        button?.Flyout?.Hide();
+    }
+
     internal void SetVisualColorForSmoke(
         Color value)
     {
@@ -511,36 +515,6 @@ internal sealed class TagColorEditor : UserControl
 
         ApplyNormalizedColor(
             normalized);
-    }
-
-    private void RefreshVisualPickerAfterAttach()
-    {
-        if (!_visualPicker.IsAttachedToVisualTree()
-            || _selectedColor is null)
-        {
-            return;
-        }
-
-        var target =
-            TagColor.ToColor(
-                _selectedColor);
-        var pulse =
-            target == Colors.Transparent
-                ? Colors.White
-                : Colors.Transparent;
-
-        _suppressVisualPickerChanged = true;
-        try
-        {
-            _visualPicker.Color =
-                pulse;
-            _visualPicker.Color =
-                target;
-        }
-        finally
-        {
-            _suppressVisualPickerChanged = false;
-        }
     }
 
     private void ApplyCustomText()
