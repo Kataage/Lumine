@@ -732,7 +732,7 @@ internal static class ProductNavigationViews
             {
                 RowDefinitions =
                     new RowDefinitions(
-                        "Auto,Auto,Auto,*"),
+                        "Auto,Auto,*"),
                 RowSpacing =
                     LumineDesign.Space8
             };
@@ -927,7 +927,8 @@ internal static class ProductNavigationViews
         var createSurface =
             new Border
             {
-                IsVisible = false,
+                Width = 320,
+                MaxWidth = 360,
                 Background =
                     LumineDesign.SurfaceRaised,
                 BorderBrush =
@@ -942,11 +943,14 @@ internal static class ProductNavigationViews
                         LumineDesign.Space12),
                 Child = createBody
             };
-        Grid.SetRow(
-            createSurface,
-            2);
-        root.Children.Add(
-            createSurface);
+
+        var createFlyout =
+            new Flyout
+            {
+                Content = createSurface
+            };
+        add.Flyout =
+            createFlyout;
 
         var list =
             new ListBox
@@ -966,10 +970,10 @@ internal static class ProductNavigationViews
 
         Grid.SetRow(
             list,
-            3);
+            2);
         Grid.SetRow(
             empty,
-            3);
+            2);
         root.Children.Add(
             list);
         root.Children.Add(
@@ -978,7 +982,7 @@ internal static class ProductNavigationViews
         void UpdateCreateActionState()
         {
             createAction.IsEnabled =
-                createSurface.IsVisible
+                createFlyout.IsOpen
                 && !string.IsNullOrWhiteSpace(
                     createName.Text)
                 && colorEditor.IsColorValid;
@@ -1240,16 +1244,16 @@ internal static class ProductNavigationViews
                     ApplyFilter(
                         search.Text);
                 }
-
-                createSurface.IsVisible =
-                    !createSurface.IsVisible;
-                if (createSurface.IsVisible)
-                {
-                    createName.Focus();
-                }
-
+            };
+        createFlyout.Opened +=
+            (_, _) =>
+            {
+                createName.Focus();
                 UpdateCreateActionState();
             };
+        createFlyout.Closed +=
+            (_, _) =>
+                UpdateCreateActionState();
 
         cancelCreate.Click +=
             (_, _) =>
@@ -1257,8 +1261,7 @@ internal static class ProductNavigationViews
                 createName.Text =
                     string.Empty;
                 colorEditor.Reset();
-                createSurface.IsVisible =
-                    false;
+                createFlyout.Hide();
                 UpdateCreateActionState();
             };
 
@@ -1293,8 +1296,7 @@ internal static class ProductNavigationViews
                         createName.Text =
                             string.Empty;
                         colorEditor.Reset();
-                        createSurface.IsVisible =
-                            false;
+                        createFlyout.Hide();
                     },
                     reportError);
                 UpdateCreateActionState();
@@ -1305,10 +1307,10 @@ internal static class ProductNavigationViews
             {
                 manageMode =
                     !manageMode;
-                if (manageMode)
+                if (manageMode
+                    && createFlyout.IsOpen)
                 {
-                    createSurface.IsVisible =
-                        false;
+                    createFlyout.Hide();
                 }
 
                 UpdateCreateActionState();
