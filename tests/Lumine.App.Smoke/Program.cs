@@ -3940,7 +3940,11 @@ try
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && window.IsCompactNavigationLayout
-                                        == (viewport.Width <= 1040)
+                                        == (viewport.Width < 1200)
+                                    && window.NavigationPinVisibleForSmoke
+                                        == (viewport.Width >= 1200)
+                                    && window.IsNavigationPaneOverlayForSmoke
+                                        == navigationVisible
                                     && window.BrowseControlsForSmoke is not null
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
@@ -3954,6 +3958,16 @@ try
                                         || window.BrowseControlsForSmoke
                                             .SearchHeightForSmoke <= 33.5),
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-overlay-900x600");
+                                }
 
                                 window.CurrentShell.HideContextDetail();
                                 Dispatcher.UIThread.RunJobs();
@@ -4186,12 +4200,23 @@ try
                                     window.CurrentShell.GridViewerBounds.Width;
                                 Require(
                                     window.IsNavigationPinnedForSmoke
+                                    && !window.IsNavigationPaneOverlayForSmoke
+                                    && window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
                                         < unpinnedClosedCanvasWidth - 200,
                                     $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "navigation-pinned-1440x900");
+                                }
 
                                 window.SetNavigationPinnedForSmoke(false);
                                 Dispatcher.UIThread.RunJobs();
@@ -4660,6 +4685,8 @@ try
                 "browse-1440x900",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
+                "navigation-overlay-900x600",
+                "navigation-pinned-1440x900",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
