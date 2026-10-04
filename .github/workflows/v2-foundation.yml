@@ -238,6 +238,15 @@ jobs:
         run: |
           Set-Content -LiteralPath "artifacts/native-aot/revision.txt" -Value $env:GITHUB_SHA -NoNewline -Encoding ascii
 
+      - name: Prepare default-portable product package
+        shell: pwsh
+        run: |
+          $flag = Join-Path $PWD "artifacts/native-aot/portable.flag"
+          New-Item -ItemType File -Force -Path $flag | Out-Null
+          if (-not (Test-Path -LiteralPath $flag -PathType Leaf)) {
+            throw "Portable package marker was not created: $flag"
+          }
+
       - name: Verify NativeAOT executable
         shell: pwsh
         run: |
@@ -274,6 +283,51 @@ jobs:
             $wal = Join-Path $data "library.db-wal"
             if ((Test-Path $wal) -and ((Get-Item $wal).Length -ne 0)) {
               throw "Clean product smoke left a non-empty SQLite WAL after launch $launch."
+            }
+          }
+
+      - name: Verify NativeAOT package is portable by default
+        shell: pwsh
+        run: |
+          $publish = Join-Path $PWD "artifacts/native-aot"
+          $exe = Join-Path $publish "Lumine.App.exe"
+          $flag = Join-Path $publish "portable.flag"
+          $portableData = Join-Path $publish "data"
+          $library = Join-Path $env:RUNNER_TEMP "lumine-packaged-portable-library-$env:GITHUB_RUN_ID"
+
+          if (-not (Test-Path -LiteralPath $flag -PathType Leaf)) {
+            throw "Packaged product is missing portable.flag."
+          }
+
+          if (Test-Path -LiteralPath $portableData) {
+            Remove-Item -LiteralPath $portableData -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path $library | Out-Null
+
+          try {
+            & $exe --product-smoke "--library-dir=$library"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+
+            $database = Join-Path $portableData "library.db"
+            if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
+              throw "Default packaged launch did not create its database under <exe>\data."
+            }
+
+            $marker = Join-Path $portableData "runtime.unclean"
+            if (Test-Path -LiteralPath $marker) {
+              throw "Default packaged portable smoke left an unclean-shutdown marker."
+            }
+
+            $wal = "$database-wal"
+            if ((Test-Path -LiteralPath $wal) -and ((Get-Item -LiteralPath $wal).Length -ne 0)) {
+              throw "Default packaged portable smoke left a non-empty SQLite WAL."
+            }
+          }
+          finally {
+            if (Test-Path -LiteralPath $portableData) {
+              Remove-Item -LiteralPath $portableData -Recurse -Force
             }
           }
 
