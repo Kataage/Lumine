@@ -1947,6 +1947,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         button.Resources[
                             "ButtonBorderBrushPressed"] =
                             LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBorderBrushFocused"] =
+                            LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBackgroundFocused"] =
+                            value is null
+                                ? LumineDesign.InteractionNeutral
+                                : swatch;
                         button.Click +=
                             (_, _) =>
                                 SetColorFromDirectControl(
@@ -2002,14 +2010,26 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 rating <= selected
                     ? LumineDesign.Warning
                     : LumineDesign.MutedForeground;
+            var active =
+                rating == selected;
             button.Background =
-                rating == selected
+                active
                     ? LumineDesign.AccentMuted
                     : LumineDesign.ControlSurface;
             button.BorderBrush =
-                rating == selected
+                active
                     ? LumineDesign.BorderStrong
                     : LumineDesign.Border;
+            if (active)
+            {
+                LumineDesign.ConfigureSelectedButtonStateResources(
+                    button);
+            }
+            else
+            {
+                LumineDesign.ConfigureNeutralButtonStateResources(
+                    button);
+            }
         }
     }
 
