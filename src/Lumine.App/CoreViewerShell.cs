@@ -354,6 +354,12 @@ internal sealed class CoreViewerShell : UserControl
     internal bool IsFocusedViewVisible =>
         _focusedSurface.IsVisible;
 
+    internal bool IsFocusedViewerChromeVisibleForSmoke =>
+        _detail.IsChromeVisibleForSmoke;
+
+    internal void RevealFocusedViewerChromeForSmoke() =>
+        _detail.RevealChromeForSmoke();
+
     internal bool IsNoMatchStateVisibleForSmoke =>
         _noMatchSurface.IsVisible;
 
