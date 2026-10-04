@@ -1138,7 +1138,8 @@ public sealed partial class LibraryRepository
             title, body, tags,
             destination, account, FromTicks(published),
             externalId, externalUrl, metadata,
-            assets, FromTicks(created), FromTicks(updated));
+            assets, FromTicks(created), FromTicks(updated),
+            assets.Count);
     }
 
     private static AssetRelationInfo ReadRelation(
