@@ -161,7 +161,7 @@ internal sealed class TagColorEditor : UserControl
             LumineDesign.ConfigureTextBox(
                 new TextBox
                 {
-                    Watermark = "#RRGGBB",
+                    PlaceholderText = "#RRGGBB",
                     MinHeight =
                         LumineDesign.CompactCommandHeight,
                     HorizontalAlignment =
