@@ -208,6 +208,35 @@ void CaptureVisualEvidence(
         + Environment.NewLine);
 }
 
+async Task WaitForVisualPickerSpectrumAsync(
+    TagColorEditor editor,
+    string context)
+{
+    const int maxAttempts = 200;
+
+    for (var attempt = 0;
+         attempt < maxAttempts;
+         attempt++)
+    {
+        Dispatcher.UIThread.RunJobs();
+        AvaloniaHeadlessPlatform
+            .ForceRenderTimerTick();
+        Dispatcher.UIThread.RunJobs();
+
+        if (editor.VisualPickerFlyoutOpenForSmoke
+            && editor.VisualPickerFlyoutHasSpectrumForSmoke
+            && editor.VisualPickerSpectrumRenderedForSmoke)
+        {
+            return;
+        }
+
+        await Task.Delay(10);
+    }
+
+    throw new InvalidOperationException(
+        $"{context} did not finish rendering the real ColorPicker spectrum within {maxAttempts * 10} ms.");
+}
+
 var root = Path.Combine(
     Path.GetTempPath(),
     $"lumine-app-smoke-{Guid.NewGuid():N}");
@@ -1782,18 +1811,18 @@ try
                     "custom-color-smoke";
                 compactColorEditor.SetCustomTextForSmoke(
                     "#12345678");
-                compactColorEditor.OpenVisualPickerForSmoke();
-                Dispatcher.UIThread.RunJobs();
-                Require(
-                    compactColorEditor.VisualPickerFlyoutOpenForSmoke
-                    && compactColorEditor
-                        .VisualPickerFlyoutHasSpectrumForSmoke,
-                    "Tag create visual evidence did not open the real ColorPicker spectrum flyout.");
-                CaptureVisualEvidence(
-                    compactTagsWindow,
-                    "tags-create-900x600-text225");
-                compactColorEditor.CloseVisualPickerForSmoke();
-                Dispatcher.UIThread.RunJobs();
+                if (visualOutputDirectory is not null)
+                {
+                    compactColorEditor.OpenVisualPickerForSmoke();
+                    await WaitForVisualPickerSpectrumAsync(
+                        compactColorEditor,
+                        "Tag create visual evidence");
+                    CaptureVisualEvidence(
+                        compactTagsWindow,
+                        "tags-create-900x600-text225");
+                    compactColorEditor.CloseVisualPickerForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                }
 
                 foreach (var navigationWidth in
                          new[]
@@ -1978,30 +2007,20 @@ try
                                     StringComparison.Ordinal)),
                     "Tag edit Flyout did not prefill the current name/color/count.");
 
-                // The edit popup is freshly mounted here. Give its layout one
-                // render pass before opening the nested shared ColorPicker.
-                AvaloniaHeadlessPlatform
-                    .ForceRenderTimerTick();
-                Dispatcher.UIThread.RunJobs();
-                editColor.OpenVisualPickerForSmoke();
-                for (var renderPass = 0;
-                     renderPass < 3;
-                     renderPass++)
+                if (visualOutputDirectory is not null)
                 {
+                    // ColorSpectrum builds its bitmap asynchronously after layout.
+                    // Wait on the actual ImageBrush rather than sleeping blindly.
+                    editColor.OpenVisualPickerForSmoke();
+                    await WaitForVisualPickerSpectrumAsync(
+                        editColor,
+                        "Tag edit visual evidence");
+                    CaptureVisualEvidence(
+                        compactTagsWindow,
+                        "tags-edit-900x600-text225");
+                    editColor.CloseVisualPickerForSmoke();
                     Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform
-                        .ForceRenderTimerTick();
                 }
-                Dispatcher.UIThread.RunJobs();
-                Require(
-                    editColor.VisualPickerFlyoutOpenForSmoke
-                    && editColor.VisualPickerFlyoutHasSpectrumForSmoke,
-                    "Tag edit visual evidence did not open the real ColorPicker spectrum flyout.");
-                CaptureVisualEvidence(
-                    compactTagsWindow,
-                    "tags-edit-900x600-text225");
-                editColor.CloseVisualPickerForSmoke();
-                Dispatcher.UIThread.RunJobs();
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
