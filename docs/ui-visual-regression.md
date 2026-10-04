@@ -16,6 +16,8 @@ When enabled it captures the required product surfaces below:
 - `browse-1440x900.png`
 - `browse-filter-open-900x600.png`
 - `browse-active-filter-900x600.png`
+- `navigation-overlay-900x600.png`
+- `navigation-pinned-1440x900.png`
 - `tags-assignment-1100x720.png`
 - `tags-create-900x600-text225.png`
 - `tags-create-custom-color-900x600-text225.png`
@@ -25,9 +27,9 @@ When enabled it captures the required product surfaces below:
 - `inspector-1440x900-pinned.png`
 - `focused-viewer-900x600.png`
 - `focused-viewer-900x600-text225.png`
-
-Focused Viewer review must confirm that the central zoom/Fit/1:1 group and the right-side Info/Fullscreen/Close group remain visually separate, non-overlapping, and leave the image as the dominant surface.
 - `settings-1440x900.png`
+- `settings-advanced-1440x900.png`
+- `settings-900x600.png`
 - `no-match-1440x900.png`
 - `error-1440x900.png`
 
@@ -47,4 +49,4 @@ For now:
 
 A golden/tolerance gate can be added later if repeated CI captures demonstrate stable raster output across runner updates.
 
-Tag review must confirm that preset colors remain the default path and the spectrum/HEX editor appears only after explicit custom-color disclosure.
+Navigation review must confirm that contextual panes overlay the canvas below 1200 DIP and only consume permanent width when explicitly pinned on wide layouts.
