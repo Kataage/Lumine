@@ -270,6 +270,15 @@ internal sealed class BrowseWorkspaceControls : UserControl
             string label,
             Control control)
         {
+            if (string.IsNullOrWhiteSpace(
+                    AutomationProperties.GetName(
+                        control)))
+            {
+                AutomationProperties.SetName(
+                    control,
+                    label);
+            }
+
             control.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
             control.VerticalAlignment =
