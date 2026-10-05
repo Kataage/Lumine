@@ -770,8 +770,11 @@ public sealed class MainWindow : Window
 
     private void DismissCompactNavigationOverlayForBlockingState()
     {
-        if (!_compactNavigationLayout
-            || !_navigationPane.IsVisible)
+        // A blocking product state owns the workspace. Do not leave
+        // contextual navigation covering its recovery actions; this also
+        // avoids relying on SizeChanged having already recomputed the compact
+        // layout after a window resize.
+        if (!_navigationPane.IsVisible)
         {
             return;
         }
