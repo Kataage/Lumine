@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
@@ -64,6 +65,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _title;
     private readonly TextBlock _summary;
     private readonly TextBlock _path;
+    private readonly Button _copyPath;
     private readonly TextBlock _technical;
     private readonly TextBlock _works;
     private readonly TextBlock _groups;
@@ -146,6 +148,23 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 MaxHeight = 168
             };
         _path = CreateValue(wrap: true);
+        _copyPath =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "パスをコピー",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    IsEnabled = false
+                });
+        AutomationProperties.SetName(
+            _copyPath,
+            "画像のフルパスをコピー");
+        _copyPath.Click +=
+            async (_, _) =>
+            {
+                await CopyCurrentPathAsync();
+            };
         _technical = CreateValue(wrap: true);
         _works = CreateValue(wrap: true);
         _groups = CreateValue(wrap: true);
@@ -671,10 +690,19 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space12,
                         LumineDesign.Space16)
             };
+        var pathBody =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        pathBody.Children.Add(
+            _path);
+        pathBody.Children.Add(
+            _copyPath);
         AddSection(
             informationBody,
             "場所",
-            _path);
+            pathBody);
         AddSection(
             informationBody,
             "技術情報",
@@ -805,6 +833,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal string PathText =>
         _path.Text ?? string.Empty;
+
+    internal bool PathCopyEnabledForSmoke =>
+        _copyPath.IsEnabled;
+
+    internal string PathCopyValueForSmoke =>
+        _copyPath.IsEnabled
+            ? _path.Text ?? string.Empty
+            : string.Empty;
 
     internal string TechnicalText =>
         _technical.Text ?? string.Empty;
@@ -1007,11 +1043,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _summary.Text =
             FormatSummary(asset);
         _path.Text =
-            Path.Combine(
-                _runtime.LibraryRoot,
-                asset.RelativePath.Replace(
-                    '/',
-                    Path.DirectorySeparatorChar));
+            Path.GetFullPath(
+                Path.Combine(
+                    _runtime.LibraryRoot,
+                    asset.RelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar)));
+        _copyPath.Content =
+            "パスをコピー";
+        _copyPath.IsEnabled = true;
         _technical.Text =
             FormatTechnical(asset);
         _focused.IsEnabled = true;
@@ -1209,6 +1249,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _summary.Text =
             "選択した画像の情報をここに表示します。";
         _path.Text = "—";
+        _copyPath.Content =
+            "パスをコピー";
+        _copyPath.IsEnabled = false;
         _technical.Text = "—";
         _works.Text = "—";
         _groups.Text = "—";
@@ -1245,6 +1288,85 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
 
         SetEditorEnabled(false);
+    }
+
+    private async Task CopyCurrentPathAsync()
+    {
+        if (!_copyPath.IsEnabled)
+        {
+            return;
+        }
+
+        var path =
+            _path.Text;
+        if (string.IsNullOrWhiteSpace(path)
+            || string.Equals(
+                path,
+                "—",
+                StringComparison.Ordinal))
+        {
+            _copyPath.IsEnabled = false;
+            return;
+        }
+
+        var clipboard =
+            TopLevel.GetTopLevel(this)
+                ?.Clipboard;
+        if (clipboard is null)
+        {
+            _saveStatus.Foreground =
+                LumineDesign.Warning;
+            _saveStatus.Text =
+                "パスをコピーできませんでした。";
+            return;
+        }
+
+        _copyPath.IsEnabled = false;
+        try
+        {
+            await clipboard.SetTextAsync(path);
+            await clipboard.FlushAsync();
+            _copyPath.Content =
+                "コピー済み";
+            _saveStatus.Foreground =
+                LumineDesign.MutedForeground;
+            _saveStatus.Text =
+                "画像のフルパスをコピーしました。";
+
+            await Task.Delay(
+                TimeSpan.FromMilliseconds(1500));
+
+            if (string.Equals(
+                    _copyPath.Content as string,
+                    "コピー済み",
+                    StringComparison.Ordinal))
+            {
+                _copyPath.Content =
+                    "パスをコピー";
+            }
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
+            _copyPath.Content =
+                "パスをコピー";
+            _saveStatus.Foreground =
+                LumineDesign.Warning;
+            _saveStatus.Text =
+                "パスをコピーできませんでした。もう一度お試しください。";
+        }
+        finally
+        {
+            _copyPath.IsEnabled =
+                _assetId > 0
+                && !string.IsNullOrWhiteSpace(
+                    _path.Text)
+                && !string.Equals(
+                    _path.Text,
+                    "—",
+                    StringComparison.Ordinal);
+        }
     }
 
     public void PrepareForDetach()
