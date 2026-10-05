@@ -1656,8 +1656,10 @@ internal static class ProductNavigationViews
         IReadOnlyList<PublicationDestinationInfo>? destinations = null,
         IReadOnlyList<PublicationAccountInfo>? accounts = null,
         Func<string, string, Task<PublicationDestinationInfo?>>? createDestination = null,
+        Func<PublicationDestinationInfo, string, string, Task<PublicationDestinationInfo?>>? updateDestination = null,
         Func<PublicationDestinationInfo, Task<bool>>? deleteDestination = null,
         Func<long, string, string, Task<PublicationAccountInfo?>>? createAccount = null,
+        Func<PublicationAccountInfo, long, string, string, Task<PublicationAccountInfo?>>? updateAccount = null,
         Func<PublicationAccountInfo, Task<bool>>? deleteAccount = null,
         Func<PublicationInfo, Task<bool>>? deletePublication = null)
     {
@@ -1713,8 +1715,10 @@ internal static class ProductNavigationViews
         Control? CreateProfileSettings()
         {
             if (createDestination is null
+                && updateDestination is null
                 && deleteDestination is null
                 && createAccount is null
+                && updateAccount is null
                 && deleteAccount is null)
             {
                 return null;
@@ -1769,6 +1773,11 @@ internal static class ProductNavigationViews
                 {
                     Spacing = LumineDesign.Space4
                 };
+            long? editingDestinationId =
+                null;
+            long? editingAccountId =
+                null;
+
             var feedback =
                 new TextBlock
                 {
@@ -1789,6 +1798,18 @@ internal static class ProductNavigationViews
                         "Misskey" => "misskey",
                         "Bluesky" => "bluesky",
                         _ => "other"
+                    };
+
+            static string KindLabel(
+                string kind) =>
+                kind.ToLowerInvariant()
+                    switch
+                    {
+                        "pixiv" => "Pixiv",
+                        "twitter" => "X",
+                        "misskey" => "Misskey",
+                        "bluesky" => "Bluesky",
+                        _ => "その他"
                     };
 
             void RefreshAccountDestinations()
@@ -1819,7 +1840,7 @@ internal static class ProductNavigationViews
                         {
                             ColumnDefinitions =
                                 new ColumnDefinitions(
-                                    "*,Auto")
+                                    "*,Auto,Auto")
                         };
                     row.Children.Add(
                         new TextBlock
@@ -1835,6 +1856,46 @@ internal static class ProductNavigationViews
                             VerticalAlignment =
                                 VerticalAlignment.Center
                         });
+                    if (updateDestination is not null)
+                    {
+                        var edit =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "編集",
+                                    MinWidth = 56,
+                                    Margin =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            0,
+                                            0,
+                                            0)
+                                });
+                        AutomationProperties.SetName(
+                            edit,
+                            $"公開先を編集: {destinationItem.Name}");
+                        edit.Click +=
+                            (_, _) =>
+                            {
+                                editingDestinationId =
+                                    destinationItem.Id;
+                                destinationName.Text =
+                                    destinationItem.Name;
+                                destinationKind.SelectedItem =
+                                    KindLabel(
+                                        destinationItem.Kind);
+                                addDestination.Content =
+                                    "公開先を更新";
+                                feedback.Text =
+                                    "公開先を編集中です。";
+                            };
+                        Grid.SetColumn(
+                            edit,
+                            1);
+                        row.Children.Add(
+                            edit);
+                    }
+
                     if (deleteDestination is not null)
                     {
                         var remove =
@@ -1899,7 +1960,7 @@ internal static class ProductNavigationViews
                             };
                         Grid.SetColumn(
                             remove,
-                            1);
+                            2);
                         row.Children.Add(
                             remove);
                     }
@@ -1928,7 +1989,7 @@ internal static class ProductNavigationViews
                         {
                             ColumnDefinitions =
                                 new ColumnDefinitions(
-                                    "*,Auto")
+                                    "*,Auto,Auto")
                         };
                     row.Children.Add(
                         new TextBlock
@@ -1948,6 +2009,55 @@ internal static class ProductNavigationViews
                             VerticalAlignment =
                                 VerticalAlignment.Center
                         });
+                    if (updateAccount is not null)
+                    {
+                        var edit =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content = "編集",
+                                    MinWidth = 56,
+                                    Margin =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            0,
+                                            0,
+                                            0)
+                                });
+                        AutomationProperties.SetName(
+                            edit,
+                            $"公開アカウントを編集: {accountItem.DisplayName}");
+                        edit.Click +=
+                            (_, _) =>
+                            {
+                                editingAccountId =
+                                    accountItem.Id;
+                                var destinationIndex =
+                                    destinationItems
+                                        .Select(
+                                            static item =>
+                                                item.Id)
+                                        .ToList()
+                                        .IndexOf(
+                                            accountItem.DestinationId);
+                                accountDestination.SelectedIndex =
+                                    destinationIndex;
+                                accountName.Text =
+                                    accountItem.DisplayName;
+                                accountIdentifier.Text =
+                                    accountItem.AccountIdentifier;
+                                addAccount.Content =
+                                    "アカウントを更新";
+                                feedback.Text =
+                                    "公開アカウントを編集中です。";
+                            };
+                        Grid.SetColumn(
+                            edit,
+                            1);
+                        row.Children.Add(
+                            edit);
+                    }
+
                     if (deleteAccount is not null)
                     {
                         var remove =
@@ -1998,7 +2108,7 @@ internal static class ProductNavigationViews
                             };
                         Grid.SetColumn(
                             remove,
-                            1);
+                            2);
                         row.Children.Add(
                             remove);
                     }
@@ -2019,7 +2129,10 @@ internal static class ProductNavigationViews
             addDestination.Click +=
                 async (_, _) =>
                 {
-                    if (createDestination is null
+                    if ((editingDestinationId is null
+                            && createDestination is null)
+                        || (editingDestinationId is not null
+                            && updateDestination is null)
                         || string.IsNullOrWhiteSpace(
                             destinationName.Text))
                     {
@@ -2031,18 +2144,59 @@ internal static class ProductNavigationViews
                     addDestination.IsEnabled = false;
                     try
                     {
-                        var created =
-                            await createDestination(
-                                destinationName.Text.Trim(),
-                                ResolveKind());
-                        if (created is not null)
+                        PublicationDestinationInfo? saved;
+                        if (editingDestinationId is long destinationId)
                         {
-                            destinationItems.Add(
-                                created);
+                            var existing =
+                                destinationItems
+                                    .FirstOrDefault(
+                                        item =>
+                                            item.Id
+                                            == destinationId);
+                            saved =
+                                existing is null
+                                || updateDestination is null
+                                    ? null
+                                    : await updateDestination(
+                                        existing,
+                                        destinationName.Text.Trim(),
+                                        ResolveKind());
+                            if (saved is not null
+                                && existing is not null)
+                            {
+                                var index =
+                                    destinationItems.IndexOf(
+                                        existing);
+                                destinationItems[index] =
+                                    saved;
+                            }
+                        }
+                        else
+                        {
+                            saved =
+                                await createDestination(
+                                    destinationName.Text.Trim(),
+                                    ResolveKind());
+                            if (saved is not null)
+                            {
+                                destinationItems.Add(
+                                    saved);
+                            }
+                        }
+
+                        if (saved is not null)
+                        {
+                            editingDestinationId =
+                                null;
                             destinationName.Text =
                                 string.Empty;
+                            destinationKind.SelectedIndex =
+                                4;
+                            addDestination.Content =
+                                "公開先を追加";
                             RefreshAccountDestinations();
                             RenderDestinations();
+                            RenderAccounts();
                             feedback.Text =
                                 "公開先を保存しました。";
                         }
@@ -2059,7 +2213,9 @@ internal static class ProductNavigationViews
                     finally
                     {
                         addDestination.IsEnabled =
-                            createDestination is not null;
+                            editingDestinationId is null
+                                ? createDestination is not null
+                                : updateDestination is not null;
                     }
                 };
 
@@ -2074,7 +2230,10 @@ internal static class ProductNavigationViews
             addAccount.Click +=
                 async (_, _) =>
                 {
-                    if (createAccount is null
+                    if ((editingAccountId is null
+                            && createAccount is null)
+                        || (editingAccountId is not null
+                            && updateAccount is null)
                         || accountDestination.SelectedIndex < 0
                         || accountDestination.SelectedIndex
                             >= destinationItems.Count)
@@ -2098,21 +2257,62 @@ internal static class ProductNavigationViews
                         var destinationItem =
                             destinationItems[
                                 accountDestination.SelectedIndex];
-                        var created =
-                            await createAccount(
-                                destinationItem.Id,
-                                accountName.Text.Trim(),
-                                accountIdentifier.Text
-                                    ?.Trim()
-                                ?? string.Empty);
-                        if (created is not null)
+                        PublicationAccountInfo? saved;
+                        if (editingAccountId is long accountId)
                         {
-                            accountItems.Add(
-                                created);
+                            var existing =
+                                accountItems
+                                    .FirstOrDefault(
+                                        item =>
+                                            item.Id
+                                            == accountId);
+                            saved =
+                                existing is null
+                                || updateAccount is null
+                                    ? null
+                                    : await updateAccount(
+                                        existing,
+                                        destinationItem.Id,
+                                        accountName.Text.Trim(),
+                                        accountIdentifier.Text
+                                            ?.Trim()
+                                        ?? string.Empty);
+                            if (saved is not null
+                                && existing is not null)
+                            {
+                                var index =
+                                    accountItems.IndexOf(
+                                        existing);
+                                accountItems[index] =
+                                    saved;
+                            }
+                        }
+                        else
+                        {
+                            saved =
+                                await createAccount(
+                                    destinationItem.Id,
+                                    accountName.Text.Trim(),
+                                    accountIdentifier.Text
+                                        ?.Trim()
+                                    ?? string.Empty);
+                            if (saved is not null)
+                            {
+                                accountItems.Add(
+                                    saved);
+                            }
+                        }
+
+                        if (saved is not null)
+                        {
+                            editingAccountId =
+                                null;
                             accountName.Text =
                                 string.Empty;
                             accountIdentifier.Text =
                                 string.Empty;
+                            addAccount.Content =
+                                "アカウントを追加";
                             RenderAccounts();
                             feedback.Text =
                                 "アカウントを保存しました。";
@@ -2130,7 +2330,9 @@ internal static class ProductNavigationViews
                     finally
                     {
                         addAccount.IsEnabled =
-                            createAccount is not null;
+                            editingAccountId is null
+                                ? createAccount is not null
+                                : updateAccount is not null;
                     }
                 };
 
