@@ -144,10 +144,6 @@ internal static class ScanExtensionPreference
             return LibraryFileTypes.DefaultExtensions.ToArray();
         }
 
-        var allowed =
-            LibraryFileTypes.DefaultExtensions
-                .ToHashSet(
-                    StringComparer.OrdinalIgnoreCase);
         var normalized =
             new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
@@ -157,8 +153,7 @@ internal static class ScanExtensionPreference
         {
             if (!LibraryFileTypes.TryNormalizeExtension(
                     raw,
-                    out var extension)
-                || !allowed.Contains(extension))
+                    out var extension))
             {
                 ignored++;
                 continue;
@@ -170,18 +165,17 @@ internal static class ScanExtensionPreference
         if (normalized.Count == 0)
         {
             warning =
-                "Saved scan extensions were empty or unsupported; Lumine restored the default image extensions.";
+                "Saved scan extensions were empty or invalid; Lumine restored the default image extensions.";
             return LibraryFileTypes.DefaultExtensions.ToArray();
         }
 
         warning =
             ignored > 0
-                ? $"{ignored:N0} unsupported scan extension setting(s) were ignored."
+                ? $"{ignored:N0} invalid scan extension setting(s) were ignored."
                 : null;
 
-        return LibraryFileTypes.DefaultExtensions
-            .Where(normalized.Contains)
-            .ToArray();
+        return OrderForProduct(
+            normalized);
     }
 
     public static AppSettingsDocument Apply(
@@ -191,30 +185,42 @@ internal static class ScanExtensionPreference
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(extensions);
 
-        var allowed =
-            LibraryFileTypes.DefaultExtensions
-                .ToHashSet(
-                    StringComparer.OrdinalIgnoreCase);
         var normalized =
             LibraryFileTypePolicy
-                .NormalizeExtensions(extensions)
-                .Where(allowed.Contains)
-                .ToHashSet(
-                    StringComparer.OrdinalIgnoreCase);
-        if (normalized.Count == 0)
-        {
-            throw new ArgumentException(
-                "At least one supported scan extension is required.",
-                nameof(extensions));
-        }
+                .NormalizeExtensions(extensions);
 
         return settings with
         {
             ScanExtensions =
-                LibraryFileTypes.DefaultExtensions
-                    .Where(normalized.Contains)
+                OrderForProduct(
+                    normalized)
                     .ToArray()
         };
+    }
+
+    private static IReadOnlyList<string> OrderForProduct(
+        IEnumerable<string> extensions)
+    {
+        var normalized =
+            extensions.ToHashSet(
+                StringComparer.OrdinalIgnoreCase);
+        var defaults =
+            LibraryFileTypes.DefaultExtensions
+                .Where(normalized.Contains);
+        var custom =
+            normalized
+                .Where(
+                    extension =>
+                        !LibraryFileTypes.DefaultExtensions.Contains(
+                            extension,
+                            StringComparer.OrdinalIgnoreCase))
+                .OrderBy(
+                    static extension => extension,
+                    StringComparer.Ordinal);
+
+        return defaults
+            .Concat(custom)
+            .ToArray();
     }
 }
 
