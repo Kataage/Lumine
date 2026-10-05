@@ -3049,6 +3049,10 @@ try
                         static (_, _) =>
                             Task.FromResult<PublicationDestinationInfo?>(
                                 null),
+                    updateDestination:
+                        static (destination, _, _) =>
+                            Task.FromResult<PublicationDestinationInfo?>(
+                                destination),
                     deleteDestination:
                         static _ =>
                             Task.FromResult(false),
@@ -3056,6 +3060,10 @@ try
                         static (_, _, _) =>
                             Task.FromResult<PublicationAccountInfo?>(
                                 null),
+                    updateAccount:
+                        static (account, _, _, _) =>
+                            Task.FromResult<PublicationAccountInfo?>(
+                                account),
                     deleteAccount:
                         static _ =>
                             Task.FromResult(false),
