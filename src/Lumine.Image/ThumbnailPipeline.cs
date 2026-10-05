@@ -245,29 +245,36 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             WorkItem? item;
             lock (_queueGate)
             {
-                if (_interactive.TryDequeue(out var interactive))
+                var nextPriority =
+                    SelectNextPriority(
+                        _interactive.Count,
+                        _foreground.Count,
+                        _background.Count,
+                        foregroundBurst,
+                        MaxForegroundBurst);
+
+                switch (nextPriority)
                 {
-                    item = interactive;
-                }
-                else if (_foreground.Count > 0
-                    && (_background.Count == 0 || foregroundBurst < MaxForegroundBurst))
-                {
-                    item = _foreground.Dequeue();
-                    foregroundBurst++;
-                }
-                else if (_background.TryDequeue(out var background))
-                {
-                    item = background;
-                    foregroundBurst = 0;
-                }
-                else if (_foreground.TryDequeue(out var foreground))
-                {
-                    item = foreground;
-                    foregroundBurst = 1;
-                }
-                else
-                {
-                    continue;
+                    case ThumbnailPriority.Interactive:
+                        item = _interactive.Dequeue();
+                        break;
+
+                    case ThumbnailPriority.Foreground:
+                        item = _foreground.Dequeue();
+                        foregroundBurst++;
+                        break;
+
+                    case ThumbnailPriority.Background:
+                        item = _background.Dequeue();
+                        foregroundBurst = 0;
+                        break;
+
+                    case null:
+                        continue;
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unknown thumbnail queue priority: {nextPriority}.");
                 }
 
                 _activeWorkItems++;
@@ -325,6 +332,38 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                     IsIdleForMaintenance);
             }
         }
+    }
+
+    private static ThumbnailPriority? SelectNextPriority(
+        int interactiveCount,
+        int foregroundCount,
+        int backgroundCount,
+        int foregroundBurst,
+        int maxForegroundBurst)
+    {
+        if (interactiveCount > 0)
+        {
+            return ThumbnailPriority.Interactive;
+        }
+
+        if (foregroundCount > 0
+            && (backgroundCount == 0
+                || foregroundBurst < maxForegroundBurst))
+        {
+            return ThumbnailPriority.Foreground;
+        }
+
+        if (backgroundCount > 0)
+        {
+            return ThumbnailPriority.Background;
+        }
+
+        if (foregroundCount > 0)
+        {
+            return ThumbnailPriority.Foreground;
+        }
+
+        return null;
     }
 
     private bool IsIdleForMaintenance()
