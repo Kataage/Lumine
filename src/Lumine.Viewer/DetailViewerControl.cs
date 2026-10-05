@@ -599,6 +599,9 @@ public sealed class DetailViewerControl : UserControl
             "zoom slider");
 
 
+    internal bool HasImageSourceForSmoke =>
+        _image.Source is not null;
+
     internal Rect ImageBoundsInControlForSmoke
     {
         get
