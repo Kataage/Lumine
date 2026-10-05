@@ -5525,7 +5525,36 @@ finally
 
     if (Directory.Exists(root))
     {
-        Directory.Delete(root, recursive: true);
+        Exception? cleanupFailure = null;
+        for (var cleanupAttempt = 0;
+             cleanupAttempt < 40;
+             cleanupAttempt++)
+        {
+            try
+            {
+                Directory.Delete(
+                    root,
+                    recursive: true);
+                cleanupFailure = null;
+                break;
+            }
+            catch (IOException exception)
+                when (cleanupAttempt < 39)
+            {
+                cleanupFailure = exception;
+                LibraryDatabase.ClearPools();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                await Task.Delay(25);
+            }
+        }
+
+        if (Directory.Exists(root))
+        {
+            throw new IOException(
+                "App smoke temporary database handles remained locked after the bounded cleanup grace period.",
+                cleanupFailure);
+        }
     }
 }
 
