@@ -81,6 +81,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Button _grid;
     private readonly Button _list;
     private readonly Slider _density;
+    private readonly Border _displayControlsHost;
     private readonly WrapPanel _chips;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
@@ -436,7 +437,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             });
         displayControls.Children.Add(densityPanel);
 
-        var displayControlsHost =
+        _displayControlsHost =
             new Border
             {
                 Background = LumineDesign.SurfaceRaised,
@@ -451,8 +452,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
                         LumineDesign.Space2),
                 Child = displayControls
             };
-        Grid.SetColumn(displayControlsHost, 2);
-        primaryRow.Children.Add(displayControlsHost);
+        Grid.SetColumn(_displayControlsHost, 2);
+        primaryRow.Children.Add(_displayControlsHost);
 
         var root = new StackPanel
         {
@@ -574,6 +575,19 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButton.IsEffectivelyVisible
         && _filterButton.Bounds.Width > 0
         && _filterButton.Bounds.Height > 0;
+
+    internal bool DisplayControlsGroupedForSmoke =>
+        _displayControlsHost.Child is StackPanel display
+        && display.Children.Count == 3
+        && display.Children[0] is StackPanel mode
+        && mode.Children.Contains(_grid)
+        && mode.Children.Contains(_list)
+        && display.Children[2] is StackPanel density
+        && density.Children.Contains(_density)
+        && ReferenceEquals(
+            _displayControlsHost.Background,
+            LumineDesign.SurfaceRaised);
+
 
     internal bool FilterFlyoutIsOpenForSmoke =>
         _filterFlyout.IsOpen;
