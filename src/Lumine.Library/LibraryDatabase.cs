@@ -533,6 +533,35 @@ public sealed class LibraryDatabase
                         NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
                     );
             END;
+            """),
+        new(
+            10,
+            "lazy-exif-metadata",
+            """
+            CREATE TABLE asset_exif_metadata (
+                asset_id INTEGER PRIMARY KEY,
+                source_revision INTEGER NOT NULL CHECK(source_revision > 0),
+                camera_model TEXT NULL
+                    CHECK(camera_model IS NULL OR length(camera_model) <= 512),
+                lens_model TEXT NULL
+                    CHECK(lens_model IS NULL OR length(lens_model) <= 512),
+                focal_length TEXT NULL
+                    CHECK(focal_length IS NULL OR length(focal_length) <= 128),
+                aperture TEXT NULL
+                    CHECK(aperture IS NULL OR length(aperture) <= 128),
+                shutter_speed TEXT NULL
+                    CHECK(shutter_speed IS NULL OR length(shutter_speed) <= 128),
+                iso INTEGER NULL
+                    CHECK(iso IS NULL OR iso BETWEEN 0 AND 10000000),
+                captured_at TEXT NULL
+                    CHECK(captured_at IS NULL OR length(captured_at) <= 128),
+                gps_latitude TEXT NULL
+                    CHECK(gps_latitude IS NULL OR length(gps_latitude) <= 256),
+                gps_longitude TEXT NULL
+                    CHECK(gps_longitude IS NULL OR length(gps_longitude) <= 256),
+                probed_at_utc_ticks INTEGER NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+            );
             """)
     ];
 
