@@ -182,8 +182,56 @@ public sealed partial class LibraryRepository
             FileSourceIdentityProbe.Normalize(metadata.SourceIdentity);
         var nowTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks;
 
-        await using var connection = await _database.OpenConnectionAsync(
-            cancellationToken).ConfigureAwait(false);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await using var connection = await _database.OpenConnectionAsync(
+                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await UpdateTechnicalMetadataOnConnectionAsync(
+                    connection,
+                    libraryId,
+                    assetId,
+                    expectedSourceRevision,
+                    expectedFileSize,
+                    expectedModifiedAtUtcTicks,
+                    metadata,
+                    normalizedIdentity,
+                    nowTicks,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (SqliteException exception)
+                when (attempt == 0
+                      && IsRecoverableNestedTransactionState(exception))
+            {
+                // A failed/abandoned SQLite transaction can poison the
+                // underlying pooled handle even when a new managed
+                // SqliteConnection object is created. Do not return that
+                // physical handle to the pool. The metadata write is
+                // revision-guarded and idempotent, so one retry on a fresh
+                // connection is safe; a second failure is surfaced.
+                SqliteConnection.ClearPool(connection);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Technical metadata retry loop completed unexpectedly.");
+    }
+
+    private static async Task<bool> UpdateTechnicalMetadataOnConnectionAsync(
+        SqliteConnection connection,
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        AssetTechnicalMetadata metadata,
+        string normalizedIdentity,
+        long nowTicks,
+        CancellationToken cancellationToken)
+    {
         using var transaction = connection.BeginTransaction();
 
         await using var updateAsset = connection.CreateCommand();
@@ -262,6 +310,20 @@ public sealed partial class LibraryRepository
 
         transaction.Commit();
         return true;
+    }
+
+    internal static bool IsRecoverableNestedTransactionStateForSmoke(
+        SqliteException exception) =>
+        IsRecoverableNestedTransactionState(exception);
+
+    private static bool IsRecoverableNestedTransactionState(
+        SqliteException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception.SqliteErrorCode == 1
+            && exception.Message.Contains(
+                "cannot start a transaction within a transaction",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     internal async Task<IReadOnlyDictionary<string, TrackedSourceIdentity>>
