@@ -1128,6 +1128,204 @@ public sealed class MainWindow : Window
         return page;
     }
 
+    private async Task<PublicationDestinationInfo?>
+        CreatePublicationDestinationFromNavigationAsync(
+            string name,
+            string kind)
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "公開先を保存するにはライブラリを開いてください。");
+        var created =
+            await _navigationLibraryService
+                .CreatePublicationDestinationAsync(
+                    runtime.Library.Id,
+                    new PublicationDestinationCreate(
+                        name,
+                        kind));
+        _publicationDestinations =
+            _publicationDestinations
+                .Append(created)
+                .OrderBy(
+                    static item =>
+                        item.Name,
+                    StringComparer.Ordinal)
+                .ToArray();
+        return created;
+    }
+
+    private async Task<bool>
+        DeletePublicationDestinationFromNavigationAsync(
+            PublicationDestinationInfo destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "公開先を削除するにはライブラリを開いてください。");
+
+        var approved =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "公開先を削除しますか？",
+                $"「{destination.Name}」を再利用リストから削除します。",
+                "この公開先に保存したアカウント設定も削除されます。既存のPublication履歴はsnapshotのため変更されません。",
+                confirmLabel: "公開先を削除",
+                tone: ProductDialogTone.Danger);
+        if (!approved)
+        {
+            return false;
+        }
+
+        var deleted =
+            await _navigationLibraryService
+                .DeletePublicationDestinationAsync(
+                    runtime.Library.Id,
+                    destination.Id);
+        if (deleted)
+        {
+            _publicationDestinations =
+                _publicationDestinations
+                    .Where(
+                        item =>
+                            item.Id != destination.Id)
+                    .ToArray();
+            _publicationAccounts =
+                _publicationAccounts
+                    .Where(
+                        item =>
+                            item.DestinationId
+                            != destination.Id)
+                    .ToArray();
+        }
+
+        return deleted;
+    }
+
+    private async Task<PublicationAccountInfo?>
+        CreatePublicationAccountFromNavigationAsync(
+            long destinationId,
+            string displayName,
+            string identifier)
+    {
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "アカウントを保存するにはライブラリを開いてください。");
+        var created =
+            await _navigationLibraryService
+                .CreatePublicationAccountAsync(
+                    runtime.Library.Id,
+                    new PublicationAccountCreate(
+                        destinationId,
+                        displayName,
+                        identifier));
+        _publicationAccounts =
+            _publicationAccounts
+                .Append(created)
+                .OrderBy(
+                    static item =>
+                        item.DestinationId)
+                .ThenBy(
+                    static item =>
+                        item.DisplayName,
+                    StringComparer.Ordinal)
+                .ToArray();
+        return created;
+    }
+
+    private async Task<bool>
+        DeletePublicationAccountFromNavigationAsync(
+            PublicationAccountInfo account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "アカウントを削除するにはライブラリを開いてください。");
+
+        var approved =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "公開アカウントを削除しますか？",
+                $"「{account.DisplayName}」を再利用リストから削除します。",
+                "既存のPublication履歴に保存済みのアカウントsnapshotは変更されません。",
+                confirmLabel: "アカウントを削除",
+                tone: ProductDialogTone.Danger);
+        if (!approved)
+        {
+            return false;
+        }
+
+        var deleted =
+            await _navigationLibraryService
+                .DeletePublicationAccountAsync(
+                    runtime.Library.Id,
+                    account.Id);
+        if (deleted)
+        {
+            _publicationAccounts =
+                _publicationAccounts
+                    .Where(
+                        item =>
+                            item.Id != account.Id)
+                    .ToArray();
+        }
+
+        return deleted;
+    }
+
+    private async Task<bool>
+        DeletePublicationFromNavigationAsync(
+            PublicationInfo publication)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "Publication履歴を削除するにはライブラリを開いてください。");
+
+        var label =
+            string.IsNullOrWhiteSpace(
+                publication.Title)
+                ? $"{publication.PublishedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm} · {publication.Destination}"
+                : publication.Title;
+        var approved =
+            await ProductDialogs.ConfirmAsync(
+                this,
+                "Publication履歴を削除しますか？",
+                $"「{label}」の公開記録snapshotを削除します。",
+                "元画像、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineageは削除・変更しません。この履歴削除はLumineから元に戻せません。",
+                confirmLabel: "履歴を削除",
+                tone: ProductDialogTone.Danger);
+        if (!approved)
+        {
+            return false;
+        }
+
+        var deleted =
+            await _navigationLibraryService
+                .DeletePublicationAsync(
+                    runtime.Library.Id,
+                    publication.Id);
+        if (deleted)
+        {
+            _publications =
+                _publications
+                    .Where(
+                        item =>
+                            item.Id != publication.Id)
+                    .ToArray();
+            _publicationTotalCount =
+                Math.Max(
+                    0,
+                    _publicationTotalCount - 1);
+        }
+
+        return deleted;
+    }
+
     private static bool IsMainWorkspaceDestination(
         string destination) =>
         string.Equals(
