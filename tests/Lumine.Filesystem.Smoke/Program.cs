@@ -259,6 +259,38 @@ try
                 asset.FileSize == 5,
             "Incremental change processing did not index a re-enabled extension.");
 
+        fileTypes.Update(
+            LibraryFileTypes.DefaultExtensions
+                .Concat(
+                    new[] { ".jfif" }));
+        var customPath =
+            Path.Combine(
+                libraryRoot,
+                "custom-live.jfif");
+        await File.WriteAllBytesAsync(
+            customPath,
+            [9, 7, 5, 3]);
+        _ = await WaitForAsync(
+            () => repository.GetAssetAsync(
+                library.Id,
+                "custom-live.jfif"),
+            static asset =>
+                asset.FileSize == 4,
+            "Incremental change processing did not index an explicitly enabled custom extension.");
+
+        fileTypes.Update(
+            LibraryFileTypes.DefaultExtensions);
+        var customRemoval =
+            await sync.ReconcileNowAsync();
+        Require(
+            customRemoval.Completed
+            && await repository.GetAssetAsync(
+                library.Id,
+                "custom-live.jfif") is null
+            && File.Exists(
+                customPath),
+            "Reconcile did not remove the disabled custom extension from the index while preserving the source file.");
+
         var livePath = Path.Combine(libraryRoot, "live.jpg");
         var createStarted = DateTime.UtcNow;
         await File.WriteAllBytesAsync(livePath, [10, 20, 30, 40]);
