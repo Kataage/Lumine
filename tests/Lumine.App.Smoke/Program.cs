@@ -1580,11 +1580,192 @@ try
             Dispatcher.UIThread.RunJobs();
 
             navigationScaleWatch.Stop();
-
             Require(
                 navigationScaleWatch.Elapsed
                     < TimeSpan.FromSeconds(2),
                 $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
+
+            var publicationDetailSummaryAssets =
+                Enumerable.Range(
+                        0,
+                        LibraryRepository.PublicationSummaryAssetLimit)
+                    .Select(
+                        index =>
+                            new PublicationAssetSnapshot(
+                                index + 1,
+                                $"publish-{index:D3}.png",
+                                $"publish-{index:D3}.png",
+                                index))
+                    .ToArray();
+            var publicationDetailFullAssets =
+                Enumerable.Range(0, 20)
+                    .Select(
+                        index =>
+                            new PublicationAssetSnapshot(
+                                index + 1,
+                                $"publish-{index:D3}.png",
+                                $"publish-{index:D3}.png",
+                                index))
+                    .ToArray();
+            var publicationDetailSummary =
+                new PublicationInfo(
+                    90_001,
+                    1,
+                    null,
+                    "Expandable Publication",
+                    new string('B', 420),
+                    "tag-one tag-two",
+                    "Pixiv",
+                    "Smoke Creator",
+                    now,
+                    "external-only",
+                    string.Empty,
+                    "{\"aiGenerated\":true,\"ageRestriction\":\"r18\"}",
+                    publicationDetailSummaryAssets,
+                    now,
+                    now,
+                    AssetCount: 20);
+            var publicationDetailFull =
+                publicationDetailSummary with
+                {
+                    Assets =
+                        publicationDetailFullAssets
+                };
+            var publicationDetailLoadCalls =
+                0;
+            var expandablePublicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    new[]
+                    {
+                        publicationDetailSummary
+                    },
+                    totalCount: 1,
+                    hasMore: false,
+                    loadMore:
+                        static () =>
+                            Task.FromResult(
+                                new PublicationPage(
+                                    Array.Empty<PublicationInfo>(),
+                                    null,
+                                    1)),
+                    loadPublicationDetail:
+                        publication =>
+                        {
+                            publicationDetailLoadCalls++;
+                            return Task.FromResult<PublicationInfo?>(
+                                publication.Id
+                                    == publicationDetailFull.Id
+                                        ? publicationDetailFull
+                                        : null);
+                        });
+            scaleWindow =
+                new Window
+                {
+                    Width = 420,
+                    Height = 600,
+                    Content =
+                        expandablePublicationView
+                };
+            scaleWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var collapsedPublicationText =
+                string.Join(
+                    "\n",
+                    expandablePublicationView
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Select(
+                            static text =>
+                                text.Text));
+            Require(
+                collapsedPublicationText.Contains(
+                    "外部ID: external-only",
+                    StringComparison.Ordinal),
+                "Publication summary hid External ID when External URL was empty.");
+
+            var publicationExpand =
+                expandablePublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "投稿内容をすべて表示",
+                                StringComparison.Ordinal));
+            publicationExpand.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            for (var attempt = 0;
+                 attempt < 100
+                 && !string.Equals(
+                     publicationExpand.Content as string,
+                     "詳細を閉じる",
+                     StringComparison.Ordinal);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Dispatcher.UIThread.RunJobs();
+
+            var expandedPublicationText =
+                string.Join(
+                    "\n",
+                    expandablePublicationView
+                        .GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .Select(
+                            static text =>
+                                text.Text));
+            Require(
+                publicationDetailLoadCalls == 1
+                && string.Equals(
+                    publicationExpand.Content as string,
+                    "詳細を閉じる",
+                    StringComparison.Ordinal)
+                && expandedPublicationText.Contains(
+                    "20. publish-019.png",
+                    StringComparison.Ordinal)
+                && expandedPublicationText.Contains(
+                    "AI生成: はい",
+                    StringComparison.Ordinal)
+                && expandedPublicationText.Contains(
+                    "年齢制限: R-18",
+                    StringComparison.Ordinal),
+                "Publication history did not lazily expose the complete ordered snapshot and human-readable platform metadata.");
+
+            publicationExpand.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                string.Equals(
+                    publicationExpand.Content as string,
+                    "投稿内容をすべて表示",
+                    StringComparison.Ordinal),
+                "Publication detail did not collapse back to the bounded summary.");
+
+            publicationExpand.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            for (var attempt = 0;
+                 attempt < 100
+                 && !string.Equals(
+                     publicationExpand.Content as string,
+                     "詳細を閉じる",
+                     StringComparison.Ordinal);
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Require(
+                publicationDetailLoadCalls == 1,
+                "Publication detail reloaded the full snapshot after collapse instead of reusing the card-local detail.");
+            scaleWindow.Close();
+            Dispatcher.UIThread.RunJobs();
 
             var colorEditorSmoke =
                 new TagColorEditor();

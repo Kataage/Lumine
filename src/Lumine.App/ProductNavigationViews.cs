@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
@@ -1661,6 +1662,7 @@ internal static class ProductNavigationViews
         Func<long, string, string, Task<PublicationAccountInfo?>>? createAccount = null,
         Func<PublicationAccountInfo, long, string, string, Task<PublicationAccountInfo?>>? updateAccount = null,
         Func<PublicationAccountInfo, Task<bool>>? deleteAccount = null,
+        Func<PublicationInfo, Task<PublicationInfo?>>? loadPublicationDetail = null,
         Func<PublicationInfo, Task<bool>>? deletePublication = null)
     {
         ArgumentNullException.ThrowIfNull(
@@ -2542,13 +2544,13 @@ internal static class ProductNavigationViews
                         });
 
                     if (!string.IsNullOrWhiteSpace(
-                            publication.ExternalUrl))
+                            publication.ExternalId))
                     {
                         content.Children.Add(
                             new TextBlock
                             {
                                 Text =
-                                    publication.ExternalUrl,
+                                    $"外部ID: {publication.ExternalId}",
                                 Foreground =
                                     LumineDesign.MutedForeground,
                                 FontSize =
@@ -2556,6 +2558,150 @@ internal static class ProductNavigationViews
                                 TextWrapping =
                                     TextWrapping.Wrap
                             });
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(
+                            publication.ExternalUrl))
+                    {
+                        content.Children.Add(
+                            new TextBlock
+                            {
+                                Text =
+                                    $"URL: {publication.ExternalUrl}",
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize,
+                                TextWrapping =
+                                    TextWrapping.Wrap
+                            });
+                    }
+
+                    foreach (var flag in
+                             ExtractPublicationFlags(
+                                 publication.PlatformMetadataJson))
+                    {
+                        content.Children.Add(
+                            new TextBlock
+                            {
+                                Text = flag,
+                                Foreground =
+                                    LumineDesign.MutedForeground,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize,
+                                TextWrapping =
+                                    TextWrapping.Wrap
+                            });
+                    }
+
+                    if (loadPublicationDetail is not null)
+                    {
+                        PublicationInfo? fullDetail =
+                            null;
+                        var expanded =
+                            false;
+                        var detailHost =
+                            new ContentControl
+                            {
+                                IsVisible = false
+                            };
+                        var detailStatus =
+                            new TextBlock
+                            {
+                                Foreground =
+                                    LumineDesign.Warning,
+                                FontSize =
+                                    LumineDesign.CaptionFontSize,
+                                TextWrapping =
+                                    TextWrapping.Wrap,
+                                IsVisible = false
+                            };
+                        var expand =
+                            LumineDesign.ConfigureSecondaryButton(
+                                new Button
+                                {
+                                    Content =
+                                        "投稿内容をすべて表示",
+                                    HorizontalAlignment =
+                                        HorizontalAlignment.Left
+                                });
+                        AutomationProperties.SetName(
+                            expand,
+                            $"Publication詳細を表示: {publication.Title}");
+                        expand.Click +=
+                            async (_, _) =>
+                            {
+                                if (expanded)
+                                {
+                                    expanded =
+                                        false;
+                                    detailHost.IsVisible =
+                                        false;
+                                    detailStatus.IsVisible =
+                                        false;
+                                    expand.Content =
+                                        "投稿内容をすべて表示";
+                                    AutomationProperties.SetName(
+                                        expand,
+                                        $"Publication詳細を表示: {publication.Title}");
+                                    return;
+                                }
+
+                                expand.IsEnabled =
+                                    false;
+                                expand.Content =
+                                    "読み込み中…";
+                                detailStatus.IsVisible =
+                                    false;
+                                try
+                                {
+                                    fullDetail ??=
+                                        await loadPublicationDetail(
+                                            publication);
+                                    if (fullDetail is null)
+                                    {
+                                        throw new InvalidOperationException(
+                                            "Publication detail was not found.");
+                                    }
+
+                                    detailHost.Content =
+                                        CreateExpandedPublicationDetail(
+                                            fullDetail);
+                                    detailHost.IsVisible =
+                                        true;
+                                    expanded =
+                                        true;
+                                    expand.Content =
+                                        "詳細を閉じる";
+                                    AutomationProperties.SetName(
+                                        expand,
+                                        $"Publication詳細を閉じる: {publication.Title}");
+                                }
+                                catch (Exception exception)
+                                {
+                                    System.Diagnostics.Trace.TraceError(
+                                        exception.ToString());
+                                    detailStatus.Text =
+                                        "Publicationの詳細を読み込めませんでした。もう一度お試しください。";
+                                    detailStatus.IsVisible =
+                                        true;
+                                    expand.Content =
+                                        "再試行";
+                                    reportError?.Invoke(
+                                        "Publicationの詳細を読み込めませんでした。");
+                                }
+                                finally
+                                {
+                                    expand.IsEnabled =
+                                        true;
+                                }
+                            };
+                        content.Children.Add(
+                            detailHost);
+                        content.Children.Add(
+                            detailStatus);
+                        content.Children.Add(
+                            expand);
                     }
 
                     if (deletePublication is not null)
@@ -2750,6 +2896,274 @@ internal static class ProductNavigationViews
         root.Children.Add(
             loadMoreButton);
         return root;
+    }
+
+    private static Control CreateExpandedPublicationDetail(
+        PublicationInfo publication)
+    {
+        var detail =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space6,
+                Margin =
+                    new Thickness(
+                        0,
+                        LumineDesign.Space6,
+                        0,
+                        0)
+            };
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.Body))
+        {
+            detail.Children.Add(
+                CreatePublicationDetailText(
+                    publication.Body));
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.TagsSnapshot))
+        {
+            detail.Children.Add(
+                CreatePublicationDetailText(
+                    $"タグ: {publication.TagsSnapshot}",
+                    accent: true));
+        }
+
+        if (publication.Assets.Count > 0)
+        {
+            var assets =
+                new StackPanel
+                {
+                    Spacing =
+                        LumineDesign.Space4
+                };
+            foreach (var asset in
+                     publication.Assets
+                         .OrderBy(
+                             static item =>
+                                 item.SortOrder))
+            {
+                assets.Children.Add(
+                    CreatePublicationDetailText(
+                        $"{asset.SortOrder + 1}. {asset.FileName}"));
+            }
+
+            detail.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        $"画像 {publication.Assets.Count:N0}枚",
+                    Foreground =
+                        LumineDesign.Foreground,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    FontSize =
+                        LumineDesign.CaptionFontSize
+                });
+            detail.Children.Add(
+                assets);
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.ExternalId))
+        {
+            detail.Children.Add(
+                CreatePublicationDetailText(
+                    $"外部ID: {publication.ExternalId}"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                publication.ExternalUrl))
+        {
+            detail.Children.Add(
+                CreatePublicationDetailText(
+                    $"URL: {publication.ExternalUrl}"));
+        }
+
+        foreach (var flag in
+                 ExtractPublicationFlags(
+                     publication.PlatformMetadataJson))
+        {
+            detail.Children.Add(
+                CreatePublicationDetailText(
+                    flag));
+        }
+
+        return new Border
+        {
+            Background =
+                LumineDesign.Background,
+            BorderBrush =
+                LumineDesign.Border,
+            BorderThickness =
+                new Thickness(1),
+            CornerRadius =
+                new CornerRadius(
+                    LumineDesign.ControlRadius),
+            Padding =
+                new Thickness(
+                    LumineDesign.Space8),
+            Child = detail
+        };
+    }
+
+    private static TextBlock CreatePublicationDetailText(
+        string text,
+        bool accent = false) =>
+        new()
+        {
+            Text = text,
+            Foreground =
+                accent
+                    ? LumineDesign.Accent
+                    : LumineDesign.MutedForeground,
+            FontSize =
+                LumineDesign.CaptionFontSize,
+            TextWrapping =
+                TextWrapping.Wrap
+        };
+
+    private static IReadOnlyList<string>
+        ExtractPublicationFlags(
+            string? platformMetadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(
+                platformMetadataJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            using var document =
+                JsonDocument.Parse(
+                    platformMetadataJson);
+            if (document.RootElement.ValueKind
+                != JsonValueKind.Object)
+            {
+                return Array.Empty<string>();
+            }
+
+            var flags =
+                new List<string>();
+            foreach (var property in
+                     document.RootElement
+                         .EnumerateObject())
+            {
+                var normalized =
+                    property.Name
+                        .Replace(
+                            "_",
+                            string.Empty,
+                            StringComparison.Ordinal)
+                        .Replace(
+                            "-",
+                            string.Empty,
+                            StringComparison.Ordinal)
+                        .ToLowerInvariant();
+
+                if (normalized is not
+                    ("aigenerated"
+                    or "isgeneratedbyai"
+                    or "generatedbyai"
+                    or "agerestriction"
+                    or "agegate"
+                    or "adult"
+                    or "isadult"
+                    or "r18"
+                    or "isr18"))
+                {
+                    continue;
+                }
+
+                var value =
+                    property.Value.ValueKind
+                    is JsonValueKind.String
+                        ? property.Value.GetString()
+                        : property.Value.GetRawText();
+                if (string.IsNullOrWhiteSpace(
+                        value))
+                {
+                    continue;
+                }
+
+                if (normalized is
+                    "aigenerated"
+                    or "isgeneratedbyai"
+                    or "generatedbyai")
+                {
+                    flags.Add(
+                        $"AI生成: {FormatPublicationBoolean(value)}");
+                    continue;
+                }
+
+                if (normalized is
+                    "agerestriction"
+                    or "agegate")
+                {
+                    flags.Add(
+                        $"年齢制限: {FormatPublicationAgeRestriction(value)}");
+                    continue;
+                }
+
+                flags.Add(
+                    $"年齢制限: {FormatPublicationBoolean(value, true)}");
+            }
+
+            return flags;
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static string FormatPublicationBoolean(
+        string value,
+        bool adultMeaning = false)
+    {
+        if (bool.TryParse(
+                value,
+                out var parsed))
+        {
+            if (adultMeaning)
+            {
+                return parsed
+                    ? "R-18"
+                    : "全年齢";
+            }
+
+            return parsed
+                ? "はい"
+                : "いいえ";
+        }
+
+        return value;
+    }
+
+    private static string FormatPublicationAgeRestriction(
+        string value)
+    {
+        var normalized =
+            value.Trim()
+                .Replace(
+                    "_",
+                    string.Empty,
+                    StringComparison.Ordinal)
+                .Replace(
+                    "-",
+                    string.Empty,
+                    StringComparison.Ordinal)
+                .ToLowerInvariant();
+        return normalized is
+            "r18"
+            or "adult"
+            or "18plus"
+            or "18+"
+                ? "R-18"
+                : value;
     }
 
     private static string FormatPublicationAssets(

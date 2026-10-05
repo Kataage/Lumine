@@ -1069,6 +1069,7 @@ public sealed class MainWindow : Window
                             CreatePublicationAccountFromNavigationAsync,
                             UpdatePublicationAccountFromNavigationAsync,
                             DeletePublicationAccountFromNavigationAsync,
+                            LoadPublicationDetailFromNavigationAsync,
                             DeletePublicationFromNavigationAsync),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
@@ -1357,6 +1358,32 @@ public sealed class MainWindow : Window
         }
 
         return deleted;
+    }
+
+    private async Task<PublicationInfo?>
+        LoadPublicationDetailFromNavigationAsync(
+            PublicationInfo publication)
+    {
+        ArgumentNullException.ThrowIfNull(
+            publication);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "Publication詳細を読み込むにはライブラリを開いてください。");
+
+        var detail =
+            await _navigationLibraryService
+                .GetPublicationAsync(
+                    runtime.Library.Id,
+                    publication.Id);
+        if (!ReferenceEquals(
+                _runtime,
+                runtime))
+        {
+            return null;
+        }
+
+        return detail;
     }
 
     private async Task<bool>

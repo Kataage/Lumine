@@ -1708,6 +1708,21 @@ try
     await service.InitializeAsync();
     var servicePage = await service.GetAssetPageAsync(library.Id, 10);
     Require(servicePage.Items.Count == 10, "LibraryService background query boundary failed.");
+    var servicePublicationDetail =
+        await service.GetPublicationAsync(
+            library.Id,
+            largePublication.Id)
+        ?? throw new InvalidOperationException(
+            "LibraryService could not load a full Publication detail.");
+    Require(
+        servicePublicationDetail.Assets.Count == 20
+        && servicePublicationDetail.Assets
+            .Select(
+                static asset =>
+                    asset.SortOrder)
+            .SequenceEqual(
+                Enumerable.Range(0, 20)),
+        "LibraryService full Publication detail did not preserve all ordered snapshot assets.");
 
     var previousCompletedAt = (await repository.GetLibraryAsync(library.Id))!.LastScanCompletedAtUtc;
     Directory.Delete(libraryRoot, recursive: true);
