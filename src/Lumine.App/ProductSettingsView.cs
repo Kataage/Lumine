@@ -17,6 +17,8 @@ internal sealed record ProductSettingsSnapshot(
     long EncodedThumbnailMemoryByteLimit,
     AppDataPaths DataPaths,
     ThumbnailCacheStats CacheStats,
+    IReadOnlyList<string> ScanExtensions,
+    bool HasActiveLibrary,
     string? SettingsWarning,
     bool ThumbnailModeEnvironmentOverride);
 
@@ -49,6 +51,8 @@ internal static class ProductSettingsView
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
         Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
+        Func<IReadOnlyList<string>, Task> saveScanExtensions,
+        Func<Task> rescanCurrentLibrary,
         Func<Task> clearCache,
         Func<Task> showDiagnostics)
     {
@@ -57,6 +61,8 @@ internal static class ProductSettingsView
         ArgumentNullException.ThrowIfNull(saveThumbnailMode);
         ArgumentNullException.ThrowIfNull(saveDiskBudget);
         ArgumentNullException.ThrowIfNull(saveMemoryBudget);
+        ArgumentNullException.ThrowIfNull(saveScanExtensions);
+        ArgumentNullException.ThrowIfNull(rescanCurrentLibrary);
         ArgumentNullException.ThrowIfNull(clearCache);
         ArgumentNullException.ThrowIfNull(showDiagnostics);
 
@@ -116,6 +122,11 @@ internal static class ProductSettingsView
             CreateViewerDefaults(
                 snapshot,
                 saveViewerDefaults));
+        root.Children.Add(
+            CreateScanExtensionSettings(
+                snapshot,
+                saveScanExtensions,
+                rescanCurrentLibrary));
         root.Children.Add(
             CreateCacheSettings(
                 snapshot,
@@ -290,6 +301,214 @@ internal static class ProductSettingsView
             async (_, _) => await SaveAsync();
 
         return CreateCard(content);
+    }
+
+    private static Control CreateScanExtensionSettings(
+        ProductSettingsSnapshot snapshot,
+        Func<IReadOnlyList<string>, Task> save,
+        Func<Task> rescan)
+    {
+        var content =
+            CreateCardStack();
+        content.Children.Add(
+            CreateSectionHeader(
+                "読み込み対象",
+                "ライブラリへ取り込む画像形式を選びます。元画像ファイル自体は変更・削除しません。"));
+
+        var selected =
+            snapshot.ScanExtensions
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+        var controls =
+            new List<(string Extension, CheckBox Control)>();
+        var options =
+            new WrapPanel
+            {
+                Orientation =
+                    Orientation.Horizontal
+            };
+
+        foreach (var extension in
+                 LibraryFileTypes.DefaultExtensions)
+        {
+            var check =
+                LumineDesign.ConfigureCheckBox(
+                    new CheckBox
+                    {
+                        Content =
+                            extension,
+                        IsChecked =
+                            selected.Contains(
+                                extension),
+                        Margin =
+                            new Thickness(
+                                0,
+                                0,
+                                LumineDesign.Space12,
+                                LumineDesign.Space6)
+                    });
+            AutomationProperties.SetName(
+                check,
+                $"読み込み対象 {extension}");
+            controls.Add(
+                (extension, check));
+            options.Children.Add(
+                check);
+        }
+
+        content.Children.Add(
+            options);
+
+        content.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "変更は今後のスキャン・同期に反映されます。既に登録済みの対象外ファイルを一覧から外す場合は、保存後に現在のライブラリを再スキャンしてください。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            });
+
+        var status =
+            CreateStatusText();
+        content.Children.Add(
+            status);
+
+        var actions =
+            new WrapPanel
+            {
+                Orientation =
+                    Orientation.Horizontal
+            };
+        var saveButton =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content =
+                        "読み込み対象を保存",
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space8,
+                            LumineDesign.Space6)
+                });
+        AutomationProperties.SetName(
+            saveButton,
+            "読み込み対象を保存");
+
+        var rescanButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content =
+                        "現在のライブラリを再スキャン",
+                    IsEnabled =
+                        snapshot.HasActiveLibrary,
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            0,
+                            LumineDesign.Space6)
+                });
+        AutomationProperties.SetName(
+            rescanButton,
+            "現在のライブラリを再スキャン");
+
+        saveButton.Click +=
+            async (_, _) =>
+            {
+                var enabled =
+                    controls
+                        .Where(
+                            static item =>
+                                item.Control.IsChecked
+                                == true)
+                        .Select(
+                            static item =>
+                                item.Extension)
+                        .ToArray();
+                if (enabled.Length == 0)
+                {
+                    status.Foreground =
+                        LumineDesign.Warning;
+                    status.Text =
+                        "少なくとも1つの画像形式を有効にしてください。";
+                    return;
+                }
+
+                saveButton.IsEnabled =
+                    false;
+                status.Foreground =
+                    LumineDesign.MutedForeground;
+                status.Text =
+                    "保存しています…";
+                try
+                {
+                    await save(
+                        enabled);
+                    status.Text =
+                        "読み込み対象を保存しました。既存indexを更新する場合は再スキャンしてください。";
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    status.Foreground =
+                        LumineDesign.Danger;
+                    status.Text =
+                        "読み込み対象を保存できませんでした。もう一度お試しください。";
+                }
+                finally
+                {
+                    saveButton.IsEnabled =
+                        true;
+                }
+            };
+
+        rescanButton.Click +=
+            async (_, _) =>
+            {
+                rescanButton.IsEnabled =
+                    false;
+                status.Foreground =
+                    LumineDesign.MutedForeground;
+                status.Text =
+                    "ライブラリを再スキャンしています…";
+                try
+                {
+                    await rescan();
+                    status.Text =
+                        "再スキャンが完了しました。";
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    status.Foreground =
+                        LumineDesign.Danger;
+                    status.Text =
+                        "再スキャンを完了できませんでした。もう一度お試しください。";
+                }
+                finally
+                {
+                    rescanButton.IsEnabled =
+                        snapshot.HasActiveLibrary;
+                }
+            };
+
+        actions.Children.Add(
+            saveButton);
+        actions.Children.Add(
+            rescanButton);
+        content.Children.Add(
+            actions);
+        return CreateCard(
+            content);
     }
 
     private static Control CreateCacheSettings(
