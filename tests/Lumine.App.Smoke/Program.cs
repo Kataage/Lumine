@@ -507,6 +507,29 @@ try
                 == AssetSortOrder.ModifiedNewest,
             "Fresh browse preferences did not resolve to the product defaults.");
 
+        var initialScanExtensions =
+            ScanExtensionPreference.Resolve(
+                lifecycleHost.Settings,
+                out var initialScanExtensionWarning);
+        Require(
+            initialScanExtensionWarning is null
+            && initialScanExtensions.SequenceEqual(
+                LibraryFileTypes.DefaultExtensions,
+                StringComparer.Ordinal),
+            "Fresh scan-extension preference did not resolve to the product defaults.");
+
+        await lifecycleHost.SaveScanExtensionsAsync(
+            [".JPG", "png"]);
+        Require(
+            ScanExtensionPreference.Resolve(
+                    lifecycleHost.Settings,
+                    out var savedScanExtensionWarning)
+                .SequenceEqual(
+                    new[] { ".jpg", ".png" },
+                    StringComparer.Ordinal)
+            && savedScanExtensionWarning is null,
+            "Scan-extension preference was not normalized before persistence.");
+
         await lifecycleHost.SaveBrowsePreferencesAsync(
             new BrowsePreferences(
                 BrowseViewMode.List,
@@ -566,6 +589,17 @@ try
             && restoredBrowse.SortOrder
                 == AssetSortOrder.FileNameDescending,
             "Browse view/density/sort preferences did not persist across restart.");
+
+        var restoredScanExtensions =
+            ScanExtensionPreference.Resolve(
+                cleanRestart.Settings,
+                out var restoredScanExtensionWarning);
+        Require(
+            restoredScanExtensionWarning is null
+            && restoredScanExtensions.SequenceEqual(
+                new[] { ".jpg", ".png" },
+                StringComparer.Ordinal),
+            "Scan-extension preference did not persist across restart.");
 
         Require(
             cleanRestart.ResourcePolicy
@@ -4492,7 +4526,14 @@ try
                             == (iteration == 0
                                 ? 512L * 1024 * 1024
                                 : appHost.ResourcePolicy
-                                    .EncodedThumbnailMemoryByteLimit),
+                                    .EncodedThumbnailMemoryByteLimit)
+                        && window.SettingsSnapshot.ScanExtensions.Count > 0
+                        && window.SettingsSnapshot.ScanExtensions.All(
+                            extension =>
+                                LibraryFileTypes.DefaultExtensions.Contains(
+                                    extension,
+                                    StringComparer.OrdinalIgnoreCase))
+                        && window.SettingsSnapshot.HasActiveLibrary,
                         "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
                     var settingsText =
@@ -4530,6 +4571,41 @@ try
                         && settingsFieldNames.Contains("並び順"),
                         "Visible Settings fields lost accessible names tied to their visual labels.");
 
+                    var scanExtensionControls =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<CheckBox>()
+                            .Where(
+                                check =>
+                                    (AutomationProperties.GetName(
+                                        check)
+                                    ?? string.Empty)
+                                    .StartsWith(
+                                        "読み込み対象 .",
+                                        StringComparison.Ordinal))
+                            .ToArray();
+                    Require(
+                        scanExtensionControls.Length
+                            == LibraryFileTypes.DefaultExtensions.Count
+                        && scanExtensionControls.Any(
+                            check =>
+                                string.Equals(
+                                    check.Content as string,
+                                    ".bmp",
+                                    StringComparison.Ordinal))
+                        && window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "現在のライブラリを再スキャン",
+                                        StringComparison.Ordinal)
+                                    && button.IsEnabled),
+                        "Product Settings did not expose the bounded scan-extension filters and active-library rescan action.");
+
                     Require(
                         settingsText.Any(block =>
                             string.Equals(
@@ -4540,6 +4616,11 @@ try
                             string.Equals(
                                 block.Text,
                                 "表示",
+                                StringComparison.Ordinal))
+                        && settingsText.Any(block =>
+                            string.Equals(
+                                block.Text,
+                                "読み込み対象",
                                 StringComparison.Ordinal))
                         && settingsText.Any(block =>
                             string.Equals(
