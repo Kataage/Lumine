@@ -89,7 +89,8 @@ jobs:
             "./build/Run-RealLibraryAcceptance.ps1",
             "./build/Run-ProductAcceptance.ps1",
             "./build/Compare-ThumbnailStoragePolicies.ps1",
-            "./build/Test-RealLibraryAcceptanceWrapper.ps1"
+            "./build/Test-RealLibraryAcceptanceWrapper.ps1",
+            "./build/Sanitize-AcceptancePackage.ps1"
           )) {
             $tokens = $null
             $errors = $null
@@ -372,6 +373,11 @@ jobs:
           if ($env:DEFAULT_RESULT -ne "success") {
             throw "Default NativeAOT acceptance path failed; A/B outcomes are printed above."
           }
+
+      # Acceptance probes execute the distributable tree; restore a first-run-clean package before upload.
+      - name: Sanitize NativeAOT acceptance package
+        shell: pwsh
+        run: ./build/Sanitize-AcceptancePackage.ps1 -NativeAotDirectory "./artifacts/native-aot" -ExpectedRevision $env:GITHUB_SHA
 
       - name: Upload NativeAOT Core acceptance build
         uses: actions/upload-artifact@v7
