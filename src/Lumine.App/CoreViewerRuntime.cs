@@ -315,6 +315,157 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         }
     }
 
+    public async Task<AssetExifMetadata> GetExifMetadataAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+
+        var current =
+            await LibraryService.GetAssetAsync(
+                Library.Id,
+                asset.RelativePath,
+                cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "Selected asset no longer exists in the active library.");
+
+        if (current.Id != asset.Id)
+        {
+            throw new InvalidOperationException(
+                "Selected asset identity no longer matches the active library.");
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var persisted =
+                await LibraryService.GetExifMetadataAsync(
+                    Library.Id,
+                    current.Id,
+                    current.SourceRevision,
+                    cancellationToken).ConfigureAwait(false);
+            if (persisted is not null)
+            {
+                return persisted;
+            }
+
+            var sourcePath =
+                ResolveLibrarySourcePath(
+                    current.RelativePath);
+            try
+            {
+                var exif =
+                    await ImageExifMetadataProbe.ProbeAsync(
+                        sourcePath,
+                        current.FileSize,
+                        current.ModifiedAtUtc.UtcDateTime.Ticks,
+                        cancellationToken).ConfigureAwait(false);
+
+                var saved =
+                    await LibraryService.UpsertExifMetadataAsync(
+                        Library.Id,
+                        current.Id,
+                        current.SourceRevision,
+                        current.FileSize,
+                        current.ModifiedAtUtc.UtcDateTime.Ticks,
+                        new AssetExifMetadataUpdate(
+                            exif.CameraModel,
+                            exif.LensModel,
+                            exif.FocalLength,
+                            exif.Aperture,
+                            exif.ShutterSpeed,
+                            exif.Iso,
+                            exif.CapturedAt,
+                            exif.GpsLatitude,
+                            exif.GpsLongitude),
+                        cancellationToken).ConfigureAwait(false);
+                if (saved)
+                {
+                    return new AssetExifMetadata(
+                        current.Id,
+                        current.SourceRevision,
+                        exif.CameraModel,
+                        exif.LensModel,
+                        exif.FocalLength,
+                        exif.Aperture,
+                        exif.ShutterSpeed,
+                        exif.Iso,
+                        exif.CapturedAt,
+                        exif.GpsLatitude,
+                        exif.GpsLongitude);
+                }
+            }
+            catch (ImageSourceChangedException)
+                when (attempt == 0)
+            {
+                var info =
+                    new FileInfo(
+                        ResolveLibrarySourcePath(
+                            current.RelativePath));
+                info.Refresh();
+                if (!info.Exists)
+                {
+                    throw;
+                }
+
+                await LibraryService.RefreshAssetSourceAsync(
+                    Library.Id,
+                    current.RelativePath,
+                    info.Length,
+                    info.LastWriteTimeUtc.Ticks,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            current =
+                await LibraryService.GetAssetAsync(
+                    Library.Id,
+                    asset.RelativePath,
+                    cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "Selected asset disappeared while EXIF metadata was being refreshed.");
+
+            if (current.Id != asset.Id)
+            {
+                throw new InvalidOperationException(
+                    "Selected asset identity changed while EXIF metadata was being refreshed.");
+            }
+        }
+
+        throw new ImageSourceChangedException(
+            ResolveLibrarySourcePath(asset.RelativePath),
+            "Source changed repeatedly before EXIF metadata could be persisted.");
+    }
+
+    private string ResolveLibrarySourcePath(
+        string relativePath)
+    {
+        var relative =
+            relativePath.Replace(
+                '/',
+                Path.DirectorySeparatorChar);
+        var sourcePath =
+            Path.GetFullPath(
+                Path.Combine(
+                    LibraryRoot,
+                    relative));
+        var rootPrefix =
+            LibraryRoot.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+
+        if (!sourcePath.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Asset escaped registered library root: {relativePath}");
+        }
+
+        return sourcePath;
+    }
+
     public async Task ApplyQueryAsync(
         AssetQuery? query,
         CancellationToken cancellationToken = default)

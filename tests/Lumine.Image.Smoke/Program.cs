@@ -58,6 +58,12 @@ static Task WriteAnimatedGifAsync(string path) =>
         Convert.FromBase64String(
             "R0lGODlhMAAgAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAMAAgAAAIQQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmQEBACH5BAEKAAEALAAAAAAwACAAgQAA/wAAAAAAAAAAAAhBAAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMmypcuXMGPKnEmzps2ZAQEAOw=="));
 
+static Task WriteExifFixtureAsync(string path) =>
+    File.WriteAllBytesAsync(
+        path,
+        Convert.FromBase64String(
+            "/9j/4QE8RXhpZgAASUkqAAgAAAADABABAgAQAAAAtgAAAGmHBAABAAAAMgAAACWIBAABAAAAgAAAAAAAAAAGAJqCBQABAAAAxgAAAJ2CBQABAAAAzgAAACeIAwABAAAAkAEAAAOQAgAUAAAA1gAAAAqSBQABAAAA6gAAADSkAgARAAAA8gAAAAAAAAAEAAEAAgACAAAATgAAAAIABQADAAAABAEAAAMAAgACAAAARQAAAAQABQADAAAAHAEAAAAAAABMdW1pbmUgQ2FtZXJhIFgAAQAAAH0AAAAcAAAACgAAADIwMjY6MTA6MDUgMjM6NDU6MDAAMgAAAAEAAABMdW1pbmUgTGVucyA1MG1tAAAjAAAAAQAAACkAAAABAAAA0gQAAGQAAACLAAAAAQAAACkAAAABAAAALhYAAGQAAAD/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAGAAgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDo6KKK/WD8yP/Z"));
+
 static void WriteP3ProfileJpeg(string path)
 {
     using var blank = NetVips.Image.Black(96, 64, bands: 3);
@@ -634,6 +640,7 @@ try
     var gifPath = Path.Combine(sourceRoot, "sample.gif");
     var tiffPath = Path.Combine(sourceRoot, "sample.tiff");
     var orientedPath = Path.Combine(sourceRoot, "oriented.jpg");
+    var exifPath = Path.Combine(sourceRoot, "exif.jpg");
     var corruptSourcePath = Path.Combine(sourceRoot, "corrupt-source.jpg");
     var changedPath = Path.Combine(sourceRoot, "changed.jpg");
     var identityPath = Path.Combine(sourceRoot, "identity.jpg");
@@ -666,6 +673,7 @@ try
     WriteRgb(webpPath);
     await WriteAnimatedGifAsync(gifPath);
     WriteRgb(tiffPath);
+    await WriteExifFixtureAsync(exifPath);
     WriteRgb(corruptSourcePath);
     WriteRgb(changedPath, 800, 600);
     WriteRgb(concurrentPath, 1200, 800);
@@ -735,6 +743,75 @@ try
         orientedPath,
         FullResolutionAccessPolicy.Random,
         "EXIF-oriented JPEG");
+
+    var exifFile = new FileInfo(exifPath);
+    var exif =
+        await ImageExifMetadataProbe.ProbeAsync(
+            exifPath,
+            exifFile.Length,
+            exifFile.LastWriteTimeUtc.Ticks);
+    Require(
+        string.Equals(
+            exif.CameraModel,
+            "Lumine Camera X",
+            StringComparison.Ordinal)
+        && string.Equals(
+            exif.LensModel,
+            "Lumine Lens 50mm",
+            StringComparison.Ordinal)
+        && exif.FocalLength is not null
+        && exif.FocalLength.Contains(
+            "50",
+            StringComparison.Ordinal)
+        && exif.Aperture is not null
+        && exif.Aperture.Contains(
+            "2.8",
+            StringComparison.Ordinal)
+        && exif.ShutterSpeed is not null
+        && exif.ShutterSpeed.Contains(
+            "125",
+            StringComparison.Ordinal)
+        && exif.Iso == 400
+        && string.Equals(
+            exif.CapturedAt,
+            "2026:10:05 23:45:00",
+            StringComparison.Ordinal)
+        && exif.GpsLatitude is not null
+        && exif.GpsLatitude.Contains(
+            "N",
+            StringComparison.Ordinal)
+        && exif.GpsLongitude is not null
+        && exif.GpsLongitude.Contains(
+            "E",
+            StringComparison.Ordinal),
+        $"EXIF probe did not recover the representative metadata fixture: {exif}");
+
+    var noExifFile = new FileInfo(jpgPath);
+    var noExif =
+        await ImageExifMetadataProbe.ProbeAsync(
+            jpgPath,
+            noExifFile.Length,
+            noExifFile.LastWriteTimeUtc.Ticks);
+    Require(
+        !noExif.HasValues,
+        "Non-EXIF image produced fabricated EXIF values.");
+
+    var staleExifRejected = false;
+    try
+    {
+        _ = await ImageExifMetadataProbe.ProbeAsync(
+            exifPath,
+            exifFile.Length + 1,
+            exifFile.LastWriteTimeUtc.Ticks);
+    }
+    catch (ImageSourceChangedException)
+    {
+        staleExifRejected = true;
+    }
+
+    Require(
+        staleExifRejected,
+        "EXIF probe accepted a stale source stat instead of preserving source-snapshot validation.");
 
     var disguisedInfo = new FileInfo(disguisedPngPath);
     using (var disguisedSnapshot = await ImageSourceSnapshot.OpenAsync(

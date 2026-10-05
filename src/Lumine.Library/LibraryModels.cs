@@ -50,6 +50,42 @@ public sealed record AssetTechnicalMetadata(
     string Format,
     string SourceIdentity);
 
+public sealed record AssetExifMetadata(
+    long AssetId,
+    long SourceRevision,
+    string? CameraModel,
+    string? LensModel,
+    string? FocalLength,
+    string? Aperture,
+    string? ShutterSpeed,
+    int? Iso,
+    string? CapturedAt,
+    string? GpsLatitude,
+    string? GpsLongitude)
+{
+    public bool HasValues =>
+        !string.IsNullOrWhiteSpace(CameraModel)
+        || !string.IsNullOrWhiteSpace(LensModel)
+        || !string.IsNullOrWhiteSpace(FocalLength)
+        || !string.IsNullOrWhiteSpace(Aperture)
+        || !string.IsNullOrWhiteSpace(ShutterSpeed)
+        || Iso.HasValue
+        || !string.IsNullOrWhiteSpace(CapturedAt)
+        || !string.IsNullOrWhiteSpace(GpsLatitude)
+        || !string.IsNullOrWhiteSpace(GpsLongitude);
+}
+
+public sealed record AssetExifMetadataUpdate(
+    string? CameraModel = null,
+    string? LensModel = null,
+    string? FocalLength = null,
+    string? Aperture = null,
+    string? ShutterSpeed = null,
+    int? Iso = null,
+    string? CapturedAt = null,
+    string? GpsLatitude = null,
+    string? GpsLongitude = null);
+
 public readonly record struct AssetCursor(long ModifiedAtUtcTicks, long Id)
 {
     public static AssetCursor From(AssetInfo asset) =>

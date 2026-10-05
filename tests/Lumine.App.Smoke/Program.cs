@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Automation;
@@ -6288,6 +6289,85 @@ try
                 ", ",
                 missingEvidence));
     }
+
+    var formatExif =
+        typeof(ContextualAssetDetailPanel).GetMethod(
+            "FormatExif",
+            BindingFlags.NonPublic
+            | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "Inspector EXIF formatter was not found.");
+
+    var formattedExif =
+        formatExif.Invoke(
+            null,
+            [
+                new AssetExifMetadata(
+                    1,
+                    3,
+                    "Lumine Camera X",
+                    "Lumine Lens 50mm",
+                    "50.0 mm",
+                    "f/2.8",
+                    "1/125 sec.",
+                    400,
+                    "2026:10:05 23:45:00",
+                    "N 35/1 41/1 1234/100",
+                    "E 139/1 41/1 5678/100")
+            ]) as string
+        ?? throw new InvalidOperationException(
+            "Inspector EXIF formatter returned no text.");
+
+    Require(
+        formattedExif.Contains(
+            "カメラ: Lumine Camera X",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "レンズ: Lumine Lens 50mm",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "焦点距離: 50.0 mm",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "絞り: f/2.8",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "シャッター: 1/125 sec.",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "ISO: 400",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "撮影日時: 2026:10:05 23:45:00",
+            StringComparison.Ordinal)
+        && formattedExif.Contains(
+            "GPS: N ",
+            StringComparison.Ordinal),
+        "Inspector did not present representative EXIF metadata with the restored information hierarchy.");
+
+    var emptyExifText =
+        formatExif.Invoke(
+            null,
+            [
+                new AssetExifMetadata(
+                    1,
+                    3,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null)
+            ]) as string;
+    Require(
+        string.Equals(
+            emptyExifText,
+            "EXIF情報はありません。",
+            StringComparison.Ordinal),
+        "Inspector did not render probed/no-EXIF state without noisy placeholder rows.");
 
     Console.WriteLine(
         "MainWindow lifecycle smoke: branded shell / Welcome-to-Workspace / repeated launch-close / rapid original-navigation close / diagnostics / handle release OK");

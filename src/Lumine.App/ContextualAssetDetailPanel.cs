@@ -67,6 +67,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _path;
     private readonly Button _copyPath;
     private readonly TextBlock _technical;
+    private readonly TextBlock _exif;
+    private readonly Button _exifRetry;
     private readonly TextBlock _works;
     private readonly TextBlock _groups;
     private readonly TextBlock _relations;
@@ -108,6 +110,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private bool _dirty;
     private bool _saving;
     private int _selectedTabIndex;
+    private long _exifLoadedAssetId;
+    private long _exifLoadingAssetId;
 
     public ContextualAssetDetailPanel(
         CoreViewerRuntime runtime,
@@ -166,6 +170,31 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 await CopyCurrentPathAsync();
             };
         _technical = CreateValue(wrap: true);
+        _exif = CreateValue(wrap: true);
+        _exifRetry =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "EXIFを再読み込み",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    IsVisible = false
+                });
+        AutomationProperties.SetName(
+            _exifRetry,
+            "EXIF情報を再読み込み");
+        _exifRetry.Click +=
+            async (_, _) =>
+            {
+                if (_currentAsset is not null)
+                {
+                    _exifLoadedAssetId = 0;
+                    await LoadExifAsync(
+                        _currentAsset,
+                        _loadCancellation?.Token
+                        ?? CancellationToken.None);
+                }
+            };
         _works = CreateValue(wrap: true);
         _groups = CreateValue(wrap: true);
         _relations = CreateValue(wrap: true);
@@ -707,6 +736,20 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             informationBody,
             "技術情報",
             _technical);
+        var exifBody =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space6
+            };
+        exifBody.Children.Add(
+            _exif);
+        exifBody.Children.Add(
+            _exifRetry);
+        AddSection(
+            informationBody,
+            "撮影情報 (EXIF)",
+            exifBody);
 
         _tabPages =
         [
@@ -844,6 +887,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal string TechnicalText =>
         _technical.Text ?? string.Empty;
+
+    internal string ExifTextForSmoke =>
+        _exif.Text ?? string.Empty;
+
+    internal bool ExifRetryVisibleForSmoke =>
+        _exifRetry.IsVisible;
 
     internal string RatingText =>
         _ratingEditor.SelectedIndex > 0
@@ -1054,6 +1103,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _copyPath.IsEnabled = true;
         _technical.Text =
             FormatTechnical(asset);
+        _exifLoadedAssetId = 0;
+        _exifLoadingAssetId = 0;
+        _exif.Text =
+            _selectedTabIndex == 3
+                ? "EXIF情報を読み込んでいます…"
+                : "「情報」タブを開くとEXIF情報を読み込みます。";
+        _exifRetry.IsVisible = false;
         _focused.IsEnabled = true;
 
         SetEditorEnabled(false);
@@ -1100,6 +1156,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             await LoadCreativeContextAsync(
                 asset.Id,
                 token);
+
+            if (_selectedTabIndex == 3)
+            {
+                await LoadExifAsync(
+                    asset,
+                    token);
+            }
         }
         catch (OperationCanceledException)
             when (token.IsCancellationRequested)
@@ -1116,6 +1179,65 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             SetEditorEnabled(false);
             PresentLoadFailure(
                 "整理情報を取得できませんでした。再読み込みできます。");
+        }
+    }
+
+    private async Task LoadExifAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken)
+    {
+        if (_exifLoadedAssetId == asset.Id
+            || _exifLoadingAssetId == asset.Id)
+        {
+            return;
+        }
+
+        _exifLoadingAssetId = asset.Id;
+        _exifRetry.IsVisible = false;
+        _exif.Text =
+            "EXIF情報を読み込んでいます…";
+
+        try
+        {
+            var metadata =
+                await _runtime.GetExifMetadataAsync(
+                    asset,
+                    cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_assetId != asset.Id)
+            {
+                return;
+            }
+
+            _exif.Text =
+                FormatExif(metadata);
+            _exifLoadedAssetId = asset.Id;
+            _exifRetry.IsVisible = false;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (_assetId != asset.Id)
+            {
+                return;
+            }
+
+            System.Diagnostics.Trace.TraceWarning(
+                $"EXIF metadata load failed for asset {asset.Id}: {exception}");
+            _exif.Text =
+                "EXIF情報を読み込めませんでした。画像の表示や整理情報には影響しません。";
+            _exifRetry.IsVisible = true;
+        }
+        finally
+        {
+            if (_exifLoadingAssetId == asset.Id)
+            {
+                _exifLoadingAssetId = 0;
+            }
         }
     }
 
@@ -1253,6 +1375,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "パスをコピー";
         _copyPath.IsEnabled = false;
         _technical.Text = "—";
+        _exif.Text = "—";
+        _exifRetry.IsVisible = false;
+        _exifLoadedAssetId = 0;
+        _exifLoadingAssetId = 0;
         _works.Text = "—";
         _groups.Text = "—";
         _relations.Text = "—";
@@ -2595,6 +2721,65 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             + $"source revision: {asset.SourceRevision}";
     }
 
+    private static string FormatExif(
+        AssetExifMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        if (!metadata.HasValues)
+        {
+            return "EXIF情報はありません。";
+        }
+
+        var lines =
+            new List<string>(9);
+
+        static void Add(
+            List<string> target,
+            string label,
+            string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                target.Add(
+                    $"{label}: {value}");
+            }
+        }
+
+        Add(lines, "カメラ", metadata.CameraModel);
+        Add(lines, "レンズ", metadata.LensModel);
+        Add(lines, "焦点距離", metadata.FocalLength);
+        Add(lines, "絞り", metadata.Aperture);
+        Add(lines, "シャッター", metadata.ShutterSpeed);
+        if (metadata.Iso.HasValue)
+        {
+            lines.Add(
+                $"ISO: {metadata.Iso.Value}");
+        }
+
+        Add(lines, "撮影日時", metadata.CapturedAt);
+
+        var gps =
+            new[]
+            {
+                metadata.GpsLatitude,
+                metadata.GpsLongitude
+            }
+            .Where(
+                static value =>
+                    !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        if (gps.Length > 0)
+        {
+            lines.Add(
+                $"GPS: {string.Join(", ", gps)}");
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            lines);
+    }
+
     private static string FormatBytes(
         long bytes)
     {
@@ -2737,6 +2922,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     .ConfigureNeutralButtonStateResources(
                         button);
             }
+        }
+
+        if (index == 3
+            && _currentAsset is { } asset
+            && _exifLoadedAssetId != asset.Id
+            && _exifLoadingAssetId != asset.Id)
+        {
+            _ = LoadExifAsync(
+                asset,
+                _loadCancellation?.Token
+                ?? CancellationToken.None);
         }
     }
 
