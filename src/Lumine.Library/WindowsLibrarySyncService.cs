@@ -165,12 +165,18 @@ public sealed class WindowsLibrarySyncService
 {
     private readonly LibraryRepository _repository;
     private readonly LibraryReconciler _reconciler;
+    private readonly LibraryFileTypePolicy _fileTypes;
 
-    public WindowsLibrarySyncService(LibraryDatabase database)
+    public WindowsLibrarySyncService(
+        LibraryDatabase database,
+        LibraryFileTypePolicy? fileTypes = null)
     {
         ArgumentNullException.ThrowIfNull(database);
+        _fileTypes = fileTypes ?? new LibraryFileTypePolicy();
         _repository = new LibraryRepository(database);
-        _reconciler = new LibraryReconciler(_repository);
+        _reconciler = new LibraryReconciler(
+            _repository,
+            _fileTypes);
     }
 
     public async Task<WindowsLibrarySyncSession> StartAsync(
@@ -200,7 +206,8 @@ public sealed class WindowsLibrarySyncService
             libraryId,
             library,
             _repository,
-            _reconciler);
+            _reconciler,
+            _fileTypes);
         var watcher = new WindowsDirectoryChangeWatcher(library.RootPath);
         var router = new BootstrapChangeRouter();
 
