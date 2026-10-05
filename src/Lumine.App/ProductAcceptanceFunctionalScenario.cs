@@ -228,7 +228,12 @@ internal static class ProductAcceptanceFunctionalScenario
                             TimeSpan.Zero),
                         "product-acceptance",
                         "https://example.invalid/product-acceptance",
-                        "{\"ageRestriction\":\"all\"}"));
+                        "{\"ageRestriction\":\"all\"}",
+                        new[]
+                        {
+                            first.Id,
+                            second.Id
+                        }));
 
             Require(
                 publication is not null

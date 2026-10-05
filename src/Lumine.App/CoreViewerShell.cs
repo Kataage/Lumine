@@ -2252,6 +2252,62 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectedAssetIndices,
             cancellationToken);
 
+    private async Task<IReadOnlyList<
+        CreativePublicationAssetOption>>
+        CreatePublicationAssetOrderAsync(
+            CancellationToken cancellationToken = default)
+    {
+        var assetIds =
+            await ResolveSelectedAssetIdsAsync(
+                cancellationToken);
+        if (assetIds.Count == 0)
+        {
+            return Array.Empty<
+                CreativePublicationAssetOption>();
+        }
+
+        var result =
+            new List<CreativePublicationAssetOption>(
+                assetIds.Count);
+        const int batchSize = 1000;
+
+        for (var offset = 0;
+             offset < assetIds.Count;
+             offset += batchSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count =
+                Math.Min(
+                    batchSize,
+                    assetIds.Count - offset);
+            var batch =
+                assetIds
+                    .Skip(offset)
+                    .Take(count)
+                    .ToArray();
+            var assets =
+                await _runtime.LibraryService
+                    .GetAssetsByIdsAsync(
+                        _runtime.Library.Id,
+                        batch,
+                        cancellationToken);
+            if (assets.Count != batch.Length)
+            {
+                throw new InvalidOperationException(
+                    "Publication selection changed while preparing image order.");
+            }
+
+            result.AddRange(
+                assets.Select(
+                    static asset =>
+                        new CreativePublicationAssetOption(
+                            asset.Id,
+                            asset.FileName)));
+        }
+
+        return result;
+    }
+
     private Task ApplyPatchAsync(
         AssetUserMetadataPatch patch) =>
         RunBulkOperationAsync(
@@ -2483,11 +2539,35 @@ internal sealed class CoreViewerShell : UserControl
             "Publicationを保存しています…",
             async cancellationToken =>
             {
-                var assetIds =
+                var selectedAssetIds =
                     await ResolveSelectedAssetIdsAsync(
                         cancellationToken);
-                if (assetIds.Count == 0)
+                var orderedAssetIds =
+                    input.OrderedAssetIds
+                        ?.ToArray()
+                    ?? Array.Empty<long>();
+                if (selectedAssetIds.Count == 0
+                    || orderedAssetIds.Length == 0)
                 {
+                    _bulkStatus.Text =
+                        "Publicationの画像順が空です。選択し直してください。";
+                    return null;
+                }
+
+                var selectedSet =
+                    selectedAssetIds.ToHashSet();
+                if (orderedAssetIds.Length
+                        != selectedAssetIds.Count
+                    || orderedAssetIds
+                        .Distinct()
+                        .Count()
+                        != orderedAssetIds.Length
+                    || orderedAssetIds.Any(
+                        id =>
+                            !selectedSet.Contains(id)))
+                {
+                    _bulkStatus.Text =
+                        "Publicationの画像順が現在の選択と一致しません。もう一度Publicationを開いてください。";
                     return null;
                 }
 
@@ -2496,7 +2576,7 @@ internal sealed class CoreViewerShell : UserControl
                         .CreatePublicationAsync(
                             _runtime.Library.Id,
                             new PublicationCreate(
-                                assetIds,
+                                orderedAssetIds,
                                 input.Destination,
                                 input.PublishedAtUtc,
                                 WorkId: input.WorkId,
@@ -2760,12 +2840,22 @@ internal sealed class CoreViewerShell : UserControl
 
     private async Task ShowCreatePublicationDialogAsync()
     {
-        var selection =
-            await CreateSelectionPreviewAsync();
-        if (selection.Count == 0)
+        var publicationAssets =
+            await CreatePublicationAssetOrderAsync();
+        if (publicationAssets.Count == 0)
         {
             return;
         }
+
+        var selection =
+            new CreativeSelectionPreview(
+                publicationAssets.Count,
+                publicationAssets
+                    .Take(8)
+                    .Select(
+                        static item =>
+                            item.DisplayName)
+                    .ToArray());
 
         var owner =
             TopLevel.GetTopLevel(this)
@@ -2791,6 +2881,7 @@ internal sealed class CoreViewerShell : UserControl
                 .ShowPublicationAsync(
                     owner,
                     selection,
+                    publicationAssets,
                     works,
                     destinations,
                     accounts);
