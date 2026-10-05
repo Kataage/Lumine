@@ -312,10 +312,6 @@ public sealed partial class LibraryRepository
         return true;
     }
 
-    internal static bool IsRecoverableNestedTransactionStateForSmoke(
-        SqliteException exception) =>
-        IsRecoverableNestedTransactionState(exception);
-
     private static bool IsRecoverableNestedTransactionState(
         SqliteException exception)
     {
