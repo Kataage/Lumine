@@ -1415,13 +1415,6 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             try
             {
-                if (_session.Options.PrefetchDelay > TimeSpan.Zero)
-                {
-                    await Task.Delay(
-                        _session.Options.PrefetchDelay,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -1437,6 +1430,25 @@ public sealed class ThumbnailViewerControl : UserControl
                     await Task.Delay(
                         TimeSpan.FromMilliseconds(25),
                         cancellationToken).ConfigureAwait(false);
+                }
+
+                // Prefetch is useful only after the visible viewport has
+                // remained stable. A row that detaches during a fast scroll
+                // cancels this delay before any background decode is started.
+                if (_session.Options.PrefetchDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(
+                        _session.Options.PrefetchDelay,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                var stableDiagnostics =
+                    _session.Diagnostics;
+                if (!ShouldStartBackgroundPrefetch(
+                        stableDiagnostics.AttachedTiles,
+                        stableDiagnostics.ReadyTiles))
+                {
+                    return;
                 }
 
                 var rows = _session.Options.PrefetchRows;
