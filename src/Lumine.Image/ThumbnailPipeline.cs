@@ -5,10 +5,12 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly ThumbnailGenerator _generator;
     private readonly ThumbnailCacheMaintenance? _maintenance;
     private readonly object _queueGate = new();
+    private readonly Queue<WorkItem> _interactive = new();
     private readonly Queue<WorkItem> _foreground = new();
     private readonly Queue<WorkItem> _background = new();
     private readonly SemaphoreSlim _queuedItems = new(0);
     private readonly SemaphoreSlim _queueSlots;
+    private readonly SemaphoreSlim _interactiveQueueSlots;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TaskCompletionSource _disposeCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -25,6 +27,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         options ??= new ThumbnailPipelineOptions();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.WorkerCount);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.QueueCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            options.InteractiveQueueCapacity);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxForegroundBurst);
         if (options.CacheMaintenanceQuietPeriod < TimeSpan.Zero)
         {
@@ -38,10 +42,19 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         WorkerCount = options.WorkerCount;
         QueueCapacity = options.QueueCapacity;
+        InteractiveQueueCapacity =
+            options.InteractiveQueueCapacity;
         MaxForegroundBurst = options.MaxForegroundBurst;
         StorageMode = options.StorageMode;
         EncodedMemoryByteLimit = options.EncodedMemoryByteLimit;
-        _queueSlots = new SemaphoreSlim(options.QueueCapacity, options.QueueCapacity);
+        _queueSlots =
+            new SemaphoreSlim(
+                options.QueueCapacity,
+                options.QueueCapacity);
+        _interactiveQueueSlots =
+            new SemaphoreSlim(
+                options.InteractiveQueueCapacity,
+                options.InteractiveQueueCapacity);
         _generator = new ThumbnailGenerator(
             cache,
             options.StorageMode,
@@ -60,6 +73,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     public int WorkerCount { get; }
 
     public int QueueCapacity { get; }
+
+    public int InteractiveQueueCapacity { get; }
 
     public int MaxForegroundBurst { get; }
 
@@ -85,10 +100,21 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
+        var immediate =
+            _generator.TryGetMemoryCached(
+                source,
+                profile,
+                cancellationToken);
+        if (immediate is not null)
+        {
+            return immediate;
+        }
+
         if (_maintenance is not null)
         {
             await _maintenance.PauseForRequestAsync(
-                priority == ThumbnailPriority.Foreground)
+                priority is ThumbnailPriority.Interactive
+                    or ThumbnailPriority.Foreground)
                 .ConfigureAwait(false);
         }
 
@@ -99,9 +125,16 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             cancellationToken,
             _shutdown.Token);
 
+        var admissionSlots =
+            priority == ThumbnailPriority.Interactive
+                ? _interactiveQueueSlots
+                : _queueSlots;
+
         try
         {
-            await _queueSlots.WaitAsync(enqueueCancellation.Token).ConfigureAwait(false);
+            await admissionSlots
+                .WaitAsync(enqueueCancellation.Token)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (
             _shutdown.IsCancellationRequested
@@ -112,23 +145,39 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
         var completion = new TaskCompletionSource<ThumbnailResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var item = new WorkItem(source, profile, completion, cancellationToken);
+        var item =
+            new WorkItem(
+                source,
+                profile,
+                priority,
+                completion,
+                cancellationToken);
 
         lock (_queueGate)
         {
             if (_disposed)
             {
-                _queueSlots.Release();
+                admissionSlots.Release();
                 throw new ObjectDisposedException(nameof(ThumbnailPipeline));
             }
 
-            if (priority == ThumbnailPriority.Foreground)
+            switch (priority)
             {
-                _foreground.Enqueue(item);
-            }
-            else
-            {
-                _background.Enqueue(item);
+                case ThumbnailPriority.Interactive:
+                    _interactive.Enqueue(item);
+                    break;
+                case ThumbnailPriority.Foreground:
+                    _foreground.Enqueue(item);
+                    break;
+                case ThumbnailPriority.Background:
+                    _background.Enqueue(item);
+                    break;
+                default:
+                    admissionSlots.Release();
+                    throw new ArgumentOutOfRangeException(
+                        nameof(priority),
+                        priority,
+                        "Unknown thumbnail priority.");
             }
         }
 
@@ -149,7 +198,14 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 _disposed = true;
                 ownsShutdown = true;
                 abandoned = new List<WorkItem>(
-                    _foreground.Count + _background.Count);
+                    _interactive.Count
+                    + _foreground.Count
+                    + _background.Count);
+
+                while (_interactive.TryDequeue(out var interactive))
+                {
+                    abandoned.Add(interactive);
+                }
 
                 while (_foreground.TryDequeue(out var foreground))
                 {
@@ -181,7 +237,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
 
             foreach (var item in abandoned!)
             {
-                _queueSlots.Release();
+                ReleaseAdmissionSlot(
+                    item.Priority);
                 item.Completion.TrySetException(
                     new ObjectDisposedException(nameof(ThumbnailPipeline)));
             }
@@ -203,6 +260,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             _shutdown.Dispose();
             _queuedItems.Dispose();
             _queueSlots.Dispose();
+            _interactiveQueueSlots.Dispose();
             _disposeCompletion.TrySetResult();
         }
         catch (Exception exception)
@@ -210,6 +268,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             _shutdown.Dispose();
             _queuedItems.Dispose();
             _queueSlots.Dispose();
+            _interactiveQueueSlots.Dispose();
             _disposeCompletion.TrySetException(exception);
             throw;
         }
@@ -226,31 +285,43 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             WorkItem? item;
             lock (_queueGate)
             {
-                if (_foreground.Count > 0
-                    && (_background.Count == 0 || foregroundBurst < MaxForegroundBurst))
+                var nextPriority =
+                    SelectNextPriority(
+                        _interactive.Count,
+                        _foreground.Count,
+                        _background.Count,
+                        foregroundBurst,
+                        MaxForegroundBurst);
+
+                switch (nextPriority)
                 {
-                    item = _foreground.Dequeue();
-                    foregroundBurst++;
-                }
-                else if (_background.TryDequeue(out var background))
-                {
-                    item = background;
-                    foregroundBurst = 0;
-                }
-                else if (_foreground.TryDequeue(out var foreground))
-                {
-                    item = foreground;
-                    foregroundBurst = 1;
-                }
-                else
-                {
-                    continue;
+                    case ThumbnailPriority.Interactive:
+                        item = _interactive.Dequeue();
+                        break;
+
+                    case ThumbnailPriority.Foreground:
+                        item = _foreground.Dequeue();
+                        foregroundBurst++;
+                        break;
+
+                    case ThumbnailPriority.Background:
+                        item = _background.Dequeue();
+                        foregroundBurst = 0;
+                        break;
+
+                    case null:
+                        continue;
+
+                    default:
+                        throw new InvalidOperationException(
+                            $"Unknown thumbnail queue priority: {nextPriority}.");
                 }
 
                 _activeWorkItems++;
             }
 
-            _queueSlots.Release();
+            ReleaseAdmissionSlot(
+                item.Priority);
 
             ThumbnailResult? result = null;
 
@@ -304,12 +375,57 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         }
     }
 
+    private static ThumbnailPriority? SelectNextPriority(
+        int interactiveCount,
+        int foregroundCount,
+        int backgroundCount,
+        int foregroundBurst,
+        int maxForegroundBurst)
+    {
+        if (interactiveCount > 0)
+        {
+            return ThumbnailPriority.Interactive;
+        }
+
+        if (foregroundCount > 0
+            && (backgroundCount == 0
+                || foregroundBurst < maxForegroundBurst))
+        {
+            return ThumbnailPriority.Foreground;
+        }
+
+        if (backgroundCount > 0)
+        {
+            return ThumbnailPriority.Background;
+        }
+
+        if (foregroundCount > 0)
+        {
+            return ThumbnailPriority.Foreground;
+        }
+
+        return null;
+    }
+
+    private void ReleaseAdmissionSlot(
+        ThumbnailPriority priority)
+    {
+        if (priority == ThumbnailPriority.Interactive)
+        {
+            _interactiveQueueSlots.Release();
+            return;
+        }
+
+        _queueSlots.Release();
+    }
+
     private bool IsIdleForMaintenance()
     {
         lock (_queueGate)
         {
             return !_disposed
                 && _activeWorkItems == 0
+                && _interactive.Count == 0
                 && _foreground.Count == 0
                 && _background.Count == 0;
         }
@@ -326,6 +442,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private sealed record WorkItem(
         ThumbnailSource Source,
         ThumbnailProfile Profile,
+        ThumbnailPriority Priority,
         TaskCompletionSource<ThumbnailResult> Completion,
         CancellationToken CancellationToken);
 }

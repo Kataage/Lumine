@@ -12,6 +12,50 @@ static void Require(bool condition, string message)
     }
 }
 
+static void VerifyThumbnailPriorityScheduler()
+{
+    var method =
+        typeof(ThumbnailPipeline).GetMethod(
+            "SelectNextPriority",
+            BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "ThumbnailPipeline.SelectNextPriority was not found.");
+
+    static ThumbnailPriority? Invoke(
+        MethodInfo method,
+        int interactive,
+        int foreground,
+        int background,
+        int foregroundBurst,
+        int maxForegroundBurst) =>
+        (ThumbnailPriority?)method.Invoke(
+            null,
+            [
+                interactive,
+                foreground,
+                background,
+                foregroundBurst,
+                maxForegroundBurst
+            ]);
+
+    Require(
+        Invoke(method, 1, 32, 32, 8, 8)
+            == ThumbnailPriority.Interactive,
+        "Interactive preview work did not outrank queued grid/background work.");
+    Require(
+        Invoke(method, 0, 3, 2, 0, 8)
+            == ThumbnailPriority.Foreground,
+        "Foreground grid work lost normal priority ahead of background work.");
+    Require(
+        Invoke(method, 0, 3, 2, 8, 8)
+            == ThumbnailPriority.Background,
+        "Foreground burst fairness stopped yielding to background work.");
+    Require(
+        Invoke(method, 0, 3, 0, 99, 8)
+            == ThumbnailPriority.Foreground,
+        "Foreground-only work was incorrectly blocked by the burst counter.");
+}
+
 static void VerifyUnreadableOrientationIsUnsafe()
 {
     using var blank = NetVips.Image.Black(
@@ -705,6 +749,7 @@ try
         FullResolutionDecoder.ProductionAccessPolicy
             == FullResolutionAccessPolicy.Adaptive,
         "Production full-resolution access policy is not Adaptive.");
+    VerifyThumbnailPriorityScheduler();
     VerifyUnreadableOrientationIsUnsafe();
     await VerifyRecommendedAccessPolicyAsync(
         jpgPath,
@@ -1004,6 +1049,9 @@ try
     Require(
         pipeline.QueueCapacity == imagePolicy.ThumbnailQueueCapacity,
         "Queue bound was not mapped from the Core policy.");
+    Require(
+        pipeline.InteractiveQueueCapacity == 16,
+        "Interactive preview queue lost its independent bounded admission capacity.");
     Require(
         pipeline.MaxForegroundBurst
             == imagePolicy.ThumbnailForegroundBurst,
@@ -2118,11 +2166,14 @@ try
                     persistentAlphaBytes),
             "Memory-only and PersistentDisk storage policies produced different encoded pixels for the same source/profile.");
 
+        var opensBeforeMemoryHit =
+            memoryPipeline.Diagnostics.SourceOpens;
         var secondMemory =
             await memoryPipeline.RequestAsync(
                 memorySource.WithMetadata(
                     firstMemory.SourceMetadata!),
-                ThumbnailProfiles.GridSmall);
+                ThumbnailProfiles.GridSmall,
+                ThumbnailPriority.Interactive);
 
         Require(
             secondMemory.CacheHit
@@ -2130,7 +2181,11 @@ try
                 is { Length: > 0 }
             && string.IsNullOrEmpty(
                 secondMemory.CachePath),
-            "Memory-only second thumbnail did not reuse the bounded encoded-memory cache.");
+            "Memory-only Interactive thumbnail did not reuse the bounded encoded-memory cache.");
+        Require(
+            memoryPipeline.Diagnostics.SourceOpens
+                == opensBeforeMemoryHit,
+            "Memory-only Interactive cache hit reopened the source instead of completing before queue admission.");
 
         var memoryStats =
             memoryPipeline.MemoryCacheStats;

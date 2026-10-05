@@ -78,6 +78,51 @@ internal sealed class ThumbnailGenerator
             Interlocked.Read(ref _metadataWindowsFileIdIdentityHits),
             Interlocked.Read(ref _metadataFullHashFallbacks));
 
+    public ThumbnailResult? TryGetMemoryCached(
+        ThumbnailSource source,
+        ThumbnailProfile profile,
+        CancellationToken cancellationToken)
+    {
+        if (_storageMode != ThumbnailStorageMode.MemoryOnly)
+        {
+            return null;
+        }
+
+        ThumbnailCache.ValidateSource(source);
+        ThumbnailCache.ValidateProfile(profile);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var metadata =
+            source.PersistedMetadata
+            ?? TryGetRememberedMetadata(source);
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        var prepared =
+            source.WithMetadata(metadata);
+        var cacheKey =
+            ThumbnailCache.GetCacheKey(
+                prepared,
+                profile);
+        var cached =
+            TryOpenValid(
+                cacheKey,
+                cancellationToken);
+        if (cached is null)
+        {
+            return null;
+        }
+
+        Interlocked.Increment(
+            ref _cacheHits);
+        return cached with
+        {
+            SourceMetadata = metadata
+        };
+    }
+
     public ThumbnailResult GetOrCreate(
         ThumbnailSource source,
         ThumbnailProfile profile,

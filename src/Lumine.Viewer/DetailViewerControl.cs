@@ -674,7 +674,7 @@ public sealed class DetailViewerControl : UserControl
 
     public event EventHandler? CloseRequested;
 
-    public Task SelectAsync(
+    public async Task SelectAsync(
         long index,
         CancellationToken cancellationToken = default)
     {
@@ -687,7 +687,9 @@ public sealed class DetailViewerControl : UserControl
                 || before.State is ViewerDetailLoadState.Empty
                     or ViewerDetailLoadState.Error);
 
-        var task = _session.SelectAsync(index, cancellationToken);
+        var task = _session.SelectAsync(
+            index,
+            cancellationToken);
 
         if (shouldReset)
         {
@@ -701,7 +703,19 @@ public sealed class DetailViewerControl : UserControl
             }
         }
 
-        return task;
+        await task.ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // StateChanged uses a Render-priority post so ordinary asynchronous
+        // session changes do not re-enter controls. A direct selection
+        // command has a stronger contract: when SelectAsync completes, the
+        // selected bitmap must already be reflected by the visual. Otherwise
+        // heavy Grid rendering can leave Snapshot=PreviewReady while the
+        // focused Image.Source is still null.
+        await Dispatcher.UIThread.InvokeAsync(
+            () => ApplySnapshot(
+                _session.Snapshot),
+            DispatcherPriority.Render);
     }
 
     public void BindGrid(ThumbnailViewerControl grid)

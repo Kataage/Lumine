@@ -34,6 +34,7 @@ internal static class Program
             VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
             await VerifyBackgroundForegroundCoalescingAsync(thumbnailPath);
+            await VerifyInteractivePromotionAsync(thumbnailPath);
             await VerifyRequestCoalescingAndCancellationAsync(thumbnailPath);
             await VerifyViewerSessionShutdownAsync(thumbnailPath);
 
@@ -439,6 +440,73 @@ internal static class Program
         Require(
             thumbnailProvider.Active == 0,
             "Background-to-foreground coalesced request did not drain.");
+    }
+
+    private static async Task VerifyInteractivePromotionAsync(
+        string thumbnailPath)
+    {
+        var assetProvider =
+            new DirectFixtureAssetProvider(100);
+        var thumbnailProvider =
+            new PriorityGatedThumbnailProvider(
+                thumbnailPath);
+
+        await using var session =
+            new ViewerSession(
+                assetProvider,
+                thumbnailProvider,
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 8,
+                    DecodedBitmapByteLimit =
+                        8 * 1024 * 1024,
+                    PrefetchRows = 0
+                });
+
+        var asset =
+            await session.GetAssetAsync(11);
+        var foreground =
+            session.GetThumbnailAsync(
+                asset,
+                ViewerThumbnailPriority.Foreground)
+                .AsTask();
+
+        await thumbnailProvider.ForegroundStarted
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        var interactive =
+            session.GetThumbnailAsync(
+                asset,
+                ViewerThumbnailPriority.Interactive)
+                .AsTask();
+
+        await thumbnailProvider.InteractiveStarted
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        Require(
+            session.Diagnostics.ThumbnailRequests == 2,
+            "Interactive selection incorrectly inherited the queued Grid request.");
+        Require(
+            thumbnailProvider.ForegroundRequests == 1
+            && thumbnailProvider.InteractiveRequests == 1,
+            "ViewerSession did not issue distinct Grid and Interactive provider requests.");
+
+        thumbnailProvider.Release();
+
+        var results =
+            await Task.WhenAll(
+                foreground,
+                interactive);
+
+        Require(
+            string.Equals(
+                results[0].CacheKey,
+                results[1].CacheKey,
+                StringComparison.Ordinal),
+            "Interactive promotion changed the selected asset thumbnail identity.");
+        Require(
+            thumbnailProvider.Cancelled == 0,
+            "Interactive promotion cancelled useful existing Grid work.");
     }
 
     private static async Task VerifyRequestCoalescingAndCancellationAsync(
@@ -3083,6 +3151,75 @@ internal sealed class ControlledFailureThumbnailProvider(
                 path,
                 1,
                 1));
+    }
+}
+
+internal sealed class PriorityGatedThumbnailProvider(
+    string path) : IViewerThumbnailProvider
+{
+    private readonly TaskCompletionSource _foregroundStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _interactiveStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _foregroundRequests;
+    private int _interactiveRequests;
+    private int _cancelled;
+
+    public Task ForegroundStarted =>
+        _foregroundStarted.Task;
+
+    public Task InteractiveStarted =>
+        _interactiveStarted.Task;
+
+    public int ForegroundRequests =>
+        Volatile.Read(ref _foregroundRequests);
+
+    public int InteractiveRequests =>
+        Volatile.Read(ref _interactiveRequests);
+
+    public int Cancelled =>
+        Volatile.Read(ref _cancelled);
+
+    public void Release() =>
+        _release.TrySetResult();
+
+    public async ValueTask<ViewerThumbnail> RequestAsync(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority,
+        CancellationToken cancellationToken = default)
+    {
+        if (priority == ViewerThumbnailPriority.Interactive)
+        {
+            Interlocked.Increment(
+                ref _interactiveRequests);
+            _interactiveStarted.TrySetResult();
+        }
+        else if (priority == ViewerThumbnailPriority.Foreground)
+        {
+            Interlocked.Increment(
+                ref _foregroundRequests);
+            _foregroundStarted.TrySetResult();
+        }
+
+        try
+        {
+            await _release.Task.WaitAsync(
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Interlocked.Increment(
+                ref _cancelled);
+            throw;
+        }
+
+        return new ViewerThumbnail(
+            $"priority-gate-{asset.Id}",
+            path,
+            1,
+            1);
     }
 }
 

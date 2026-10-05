@@ -4,8 +4,9 @@ namespace Lumine.Image;
 
 public enum ThumbnailPriority
 {
-    Foreground = 0,
-    Background = 1
+    Interactive = 0,
+    Foreground = 1,
+    Background = 2
 }
 
 public enum ThumbnailStorageMode
@@ -154,6 +155,8 @@ public sealed class ThumbnailPipelineOptions
 
     public int QueueCapacity { get; init; } =
         CoreResourcePolicy.Default.ThumbnailQueueCapacity;
+
+    public int InteractiveQueueCapacity { get; init; } = 16;
 
     public int MaxForegroundBurst { get; init; } =
         CoreResourcePolicy.Default.ThumbnailForegroundBurst;
