@@ -14,6 +14,7 @@ internal sealed class ManagedTagPicker : UserControl
     private readonly TextBox _search;
     private readonly TextBlock _summary;
     private readonly StackPanel _candidateHost;
+    private readonly Border _candidateSurface;
     private readonly Border _createSurface;
     private readonly TextBlock _createLabel;
     private readonly TagColorEditor _colorEditor;
@@ -152,7 +153,7 @@ internal sealed class ManagedTagPicker : UserControl
                 Child = createBody
             };
 
-        var candidateSurface =
+        _candidateSurface =
             new Border
             {
                 Background =
@@ -178,7 +179,7 @@ internal sealed class ManagedTagPicker : UserControl
         root.Children.Add(_assignedHost);
         root.Children.Add(_search);
         root.Children.Add(_summary);
-        root.Children.Add(candidateSurface);
+        root.Children.Add(_candidateSurface);
         root.Children.Add(_createSurface);
         Content = root;
 
@@ -439,9 +440,13 @@ internal sealed class ManagedTagPicker : UserControl
                 .ToArray();
 
         _summary.Text =
-            query.Length == 0
-                ? $"未付与 {candidates.Length:N0}件"
-                : $"「{query}」の候補 {candidates.Length:N0}件";
+            candidates.Length == 0
+                ? query.Length == 0
+                    ? "追加できるタグはありません。"
+                    : $"「{query}」に一致する未付与タグはありません。"
+                : query.Length == 0
+                    ? $"追加候補 {candidates.Length:N0}件"
+                    : $"「{query}」の候補 {candidates.Length:N0}件";
 
         foreach (var tag in visible)
         {
@@ -545,24 +550,12 @@ internal sealed class ManagedTagPicker : UserControl
                 : string.Empty;
         UpdateCreateButtonState();
 
-        if (visible.Length == 0
-            && !_createSurface.IsVisible)
+        _candidateSurface.IsVisible =
+            visible.Length > 0;
+
+        if (visible.Length == 0)
         {
-            _candidateHost.Children.Add(
-                new TextBlock
-                {
-                    Text =
-                        query.Length == 0
-                            ? "追加できるタグはありません。"
-                            : "一致する未付与タグはありません。",
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize =
-                        LumineDesign.CaptionFontSize,
-                    Margin =
-                        new Thickness(
-                            LumineDesign.Space6)
-                });
+            _candidateHost.Children.Clear();
         }
     }
 
