@@ -2930,8 +2930,19 @@ try
                     StringComparison.Ordinal)
                 && shell.ContextDetail.RelationsText.Contains(
                     "img2img",
-                    StringComparison.Ordinal),
-                "Contextual detail did not render human-readable creative archive context.");
+                    StringComparison.Ordinal)
+                && shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        button =>
+                            (AutomationProperties.GetName(
+                                 button)
+                             ?? string.Empty)
+                            .StartsWith(
+                                "Lineageを削除:",
+                                StringComparison.Ordinal)),
+                "Contextual detail did not render human-readable creative archive context with lineage maintenance.");
 
             Require(
                 shell.ContextDetail.SelectedTabHeader == "制作",
@@ -3074,6 +3085,40 @@ try
                 && singlePublication.Assets[0].AssetId
                     == firstContextAsset.Id,
                 "Single-image Publication creation is not semantically reachable.");
+
+            shell.GridViewer.SelectAsset(1);
+            Dispatcher.UIThread.RunJobs();
+            var expandedSingleWork =
+                await shell.AddSelectionToExistingWorkAsync(
+                    singleWork.Id);
+            var expandedSingleGroup =
+                await shell
+                    .AddSelectionToExistingGenerationGroupAsync(
+                        singleGroup!.Id);
+            Require(
+                expandedSingleWork is not null
+                && expandedSingleWork.Assets
+                    .Select(
+                        static asset =>
+                            asset.Id)
+                    .SequenceEqual(
+                        new[]
+                        {
+                            firstContextAsset.Id,
+                            secondCreativeAsset.Id
+                        })
+                && expandedSingleGroup is not null
+                && expandedSingleGroup.Assets
+                    .Select(
+                        static asset =>
+                            asset.Id)
+                    .SequenceEqual(
+                        new[]
+                        {
+                            firstContextAsset.Id,
+                            secondCreativeAsset.Id
+                        }),
+                "Existing Work/Generation Group maintenance did not append the selected asset while preserving membership order.");
 
             var editedQueryPage =
                 await shellRuntime.LibraryService.GetAssetPageAsync(

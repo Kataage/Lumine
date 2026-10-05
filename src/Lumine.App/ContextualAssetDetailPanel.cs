@@ -68,6 +68,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _works;
     private readonly TextBlock _groups;
     private readonly TextBlock _relations;
+    private readonly StackPanel _relationCards;
+    private readonly Func<AssetRelationInfo, Task>? _deleteRelationRequested;
     private readonly TextBlock _publications;
     private readonly TextBlock _publicationCount;
     private readonly StackPanel _publicationCards;
@@ -112,7 +114,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         Func<Task>? metadataChanged = null,
         Func<Task>? createWorkRequested = null,
         Func<Task>? createGroupRequested = null,
-        Func<Task>? createPublicationRequested = null)
+        Func<Task>? createPublicationRequested = null,
+        Func<Task>? addToWorkRequested = null,
+        Func<Task>? addToGroupRequested = null,
+        Func<AssetRelationInfo, Task>? deleteRelationRequested = null)
     {
         _runtime = runtime
             ?? throw new ArgumentNullException(nameof(runtime));
@@ -121,6 +126,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _focusedViewRequested = focusedViewRequested
             ?? throw new ArgumentNullException(nameof(focusedViewRequested));
         _metadataChanged = metadataChanged;
+        _deleteRelationRequested =
+            deleteRelationRequested;
 
         Focusable = true;
 
@@ -143,6 +150,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _works = CreateValue(wrap: true);
         _groups = CreateValue(wrap: true);
         _relations = CreateValue(wrap: true);
+        _relationCards =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
         _publications = CreateValue(wrap: true);
         _publications.IsVisible = false;
         _publicationCount =
@@ -548,9 +560,64 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     }));
         }
 
+        if (addToWorkRequested is not null
+            || addToGroupRequested is not null)
+        {
+            var additionPanel =
+                new StackPanel
+                {
+                    Width = 240,
+                    Spacing = 6,
+                    Margin = new Thickness(4)
+                };
+            if (addToWorkRequested is not null)
+            {
+                additionPanel.Children.Add(
+                    CreateContextAction(
+                        "既存Workへ追加",
+                        addToWorkRequested));
+            }
+
+            if (addToGroupRequested is not null)
+            {
+                additionPanel.Children.Add(
+                    CreateContextAction(
+                        "既存Generation Groupへ追加",
+                        addToGroupRequested));
+            }
+
+            creative.Children.Add(
+                LumineDesign.ConfigureSecondaryButton(
+                    new DropDownButton
+                    {
+                        Content = "既存へ追加",
+                        Flyout =
+                            new Flyout
+                            {
+                                Content =
+                                    new Border
+                                    {
+                                        Background =
+                                            LumineDesign.SurfaceRaised,
+                                        Padding =
+                                            new Thickness(10),
+                                        Child =
+                                            additionPanel
+                                    }
+                            }
+                    }));
+        }
+
         AddSection(creative, "Work", _works);
         AddSection(creative, "Generation Group", _groups);
-        AddSection(creative, "Lineage", _relations);
+        var lineage =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        lineage.Children.Add(_relations);
+        lineage.Children.Add(_relationCards);
+        AddSection(creative, "Lineage", lineage);
 
         var creativeBody =
             new StackPanel
@@ -1146,6 +1213,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _works.Text = "—";
         _groups.Text = "—";
         _relations.Text = "—";
+        _relations.IsVisible = true;
+        _relationCards.Children.Clear();
         _publications.Text = "—";
         _publicationCount.Text = "0件";
         _publicationCards.Children.Clear();
@@ -1363,6 +1432,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _works.Text = "読み込み中…";
         _groups.Text = "読み込み中…";
         _relations.Text = "読み込み中…";
+        _relations.IsVisible = true;
+        _relationCards.Children.Clear();
         _publications.Text = "読み込み中…";
         _publicationCount.Text =
             "読み込み中…";
@@ -1424,6 +1495,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                 + (string.IsNullOrWhiteSpace(relation.Note)
                                     ? string.Empty
                                     : $" · {relation.Note}")));
+            RenderRelationCards(
+                context.Relations);
 
             _publications.Text =
                 context.Publications.Count == 0
@@ -1466,6 +1539,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _works.Text = message;
             _groups.Text = "—";
             _relations.Text = "—";
+            _relations.IsVisible = true;
+            _relationCards.Children.Clear();
             _publications.Text = "—";
             _publicationCount.Text =
                 "取得できませんでした";
@@ -1479,6 +1554,97 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 LumineDesign.Warning;
             _saveStatus.Text =
                 "追加情報の取得に失敗しました。再読み込みできます。";
+        }
+    }
+
+    private void RenderRelationCards(
+        IReadOnlyList<AssetRelationInfo> relations)
+    {
+        _relationCards.Children.Clear();
+        _relations.IsVisible =
+            relations.Count == 0
+            || _deleteRelationRequested is null;
+        _relationCards.IsVisible =
+            relations.Count > 0
+            && _deleteRelationRequested is not null;
+
+        if (!_relationCards.IsVisible
+            || _deleteRelationRequested is null)
+        {
+            return;
+        }
+
+        foreach (var relation in relations)
+        {
+            var description =
+                $"{relation.Parent.FileName} → {relation.Child.FileName}"
+                + $" · {relation.RelationType}"
+                + (string.IsNullOrWhiteSpace(
+                        relation.Note)
+                    ? string.Empty
+                    : $" · {relation.Note}");
+            var text =
+                new TextBlock
+                {
+                    Text = description,
+                    Foreground =
+                        LumineDesign.Foreground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    TextWrapping =
+                        TextWrapping.Wrap,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+            var remove =
+                LumineDesign.ConfigureDangerButton(
+                    new Button
+                    {
+                        Content = "削除…",
+                        MinWidth = 68
+                    });
+            AutomationProperties.SetName(
+                remove,
+                $"Lineageを削除: {description}");
+            remove.Click +=
+                async (_, _) =>
+                {
+                    remove.IsEnabled = false;
+                    try
+                    {
+                        await _deleteRelationRequested(
+                            relation);
+                    }
+                    catch (Exception exception)
+                    {
+                        System.Diagnostics.Trace.TraceError(
+                            exception.ToString());
+                        _saveStatus.Foreground =
+                            LumineDesign.Warning;
+                        _saveStatus.Text =
+                            "Lineageを削除できませんでした。もう一度お試しください。";
+                    }
+                    finally
+                    {
+                        remove.IsEnabled = true;
+                    }
+                };
+
+            var row =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions(
+                            "*,Auto"),
+                    ColumnSpacing =
+                        LumineDesign.Space8
+                };
+            row.Children.Add(text);
+            Grid.SetColumn(
+                remove,
+                1);
+            row.Children.Add(remove);
+            _relationCards.Children.Add(row);
         }
     }
 
