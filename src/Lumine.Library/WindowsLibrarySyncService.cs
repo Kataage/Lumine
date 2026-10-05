@@ -237,6 +237,7 @@ public sealed class WindowsLibrarySyncService
                     state.UsnJournalId!,
                     state.NextUsn!.Value,
                     journalAtStart.NextUsn,
+                    _fileTypes,
                     cancellationToken);
 
                 if (catchUp.RequiresReconcile)
