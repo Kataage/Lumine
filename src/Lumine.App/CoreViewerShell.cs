@@ -2563,11 +2563,35 @@ internal sealed class CoreViewerShell : UserControl
             "Publicationを保存しています…",
             async cancellationToken =>
             {
-                var assetIds =
+                var selectedAssetIds =
                     await ResolveSelectedAssetIdsAsync(
                         cancellationToken);
-                if (assetIds.Count == 0)
+                var orderedAssetIds =
+                    input.OrderedAssetIds
+                        ?.ToArray()
+                    ?? Array.Empty<long>();
+                if (selectedAssetIds.Count == 0
+                    || orderedAssetIds.Length == 0)
                 {
+                    _bulkStatus.Text =
+                        "Publicationの画像順が空です。選択し直してください。";
+                    return null;
+                }
+
+                var selectedSet =
+                    selectedAssetIds.ToHashSet();
+                if (orderedAssetIds.Length
+                        != selectedAssetIds.Count
+                    || orderedAssetIds
+                        .Distinct()
+                        .Count()
+                        != orderedAssetIds.Length
+                    || orderedAssetIds.Any(
+                        id =>
+                            !selectedSet.Contains(id)))
+                {
+                    _bulkStatus.Text =
+                        "Publicationの画像順が現在の選択と一致しません。もう一度Publicationを開いてください。";
                     return null;
                 }
 
