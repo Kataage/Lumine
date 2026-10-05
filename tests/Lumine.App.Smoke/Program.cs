@@ -2918,8 +2918,10 @@ try
             Require(
                 shell.IsContextDetailVisible
                 && shell.ContextDetail.AssetId
-                    == firstContextAsset.Id,
-                "Contextual detail panel did not open for the primary selection.");
+                    == firstContextAsset.Id
+                && shell.ContextDetail.HasPreview
+                && !shell.ContextDetail.PreviewStatusVisibleForSmoke,
+                "Contextual detail panel did not render the selected image preview.");
             var expectedContextPath =
                 Path.GetFullPath(
                     Path.Combine(
@@ -3678,8 +3680,9 @@ try
                 shell.IsFocusedViewVisible
                 && shell.DetailViewer.SelectedAssetIndex == 0
                 && shell.DetailViewer.LoadState
-                    == ViewerDetailLoadState.PreviewReady,
-                "Focused viewer did not reuse the Detail engine for the selected asset.");
+                    == ViewerDetailLoadState.PreviewReady
+                && shell.DetailViewer.HasImageSourceForSmoke,
+                "Focused viewer reached PreviewReady without rendering the selected image.");
 
             shell.CloseFocusedView();
             Require(
@@ -3691,8 +3694,9 @@ try
 
             Require(
                 shell.DetailViewer.LoadState
-                    == ViewerDetailLoadState.PreviewReady,
-                $"Real App shell Detail preview did not become ready: {shell.DetailViewer.LoadState}.");
+                    == ViewerDetailLoadState.PreviewReady
+                && shell.DetailViewer.HasImageSourceForSmoke,
+                $"Real App shell Detail preview did not render: state={shell.DetailViewer.LoadState}, image={shell.DetailViewer.HasImageSourceForSmoke}.");
 
             await shell.DetailViewer.ActualSizeAsync();
             Dispatcher.UIThread.RunJobs();
