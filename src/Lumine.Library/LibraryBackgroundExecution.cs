@@ -607,6 +607,17 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<PublicationInfo?> GetPublicationAsync(
+        long libraryId,
+        long publicationId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetPublicationAsync(
+                libraryId,
+                publicationId,
+                token),
+            cancellationToken);
+
     public Task<PublicationPage> ListPublicationsPageAsync(
         long libraryId,
         int limit = LibraryRepository.PublicationPageSize,
