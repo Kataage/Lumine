@@ -1047,6 +1047,28 @@ try
                 library.Id,
                 first.Id)),
         "Deleting Publication history touched source assets or user metadata.");
+    await using (var publicationDeleteConnection =
+                 new SqliteConnection(
+                     $"Data Source={databasePath};Pooling=False"))
+    {
+        await publicationDeleteConnection.OpenAsync();
+        await using var deletedMembership =
+            publicationDeleteConnection.CreateCommand();
+        deletedMembership.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM publication_assets
+            WHERE publication_id = $publication_id;
+            """;
+        deletedMembership.Parameters.AddWithValue(
+            "$publication_id",
+            profilePublication.Id);
+        Require(
+            Convert.ToInt32(
+                await deletedMembership.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 0,
+            "Deleting Publication history left orphaned publication_assets rows.");
+    }
 
     var metadataSummary =
         await repository.GetUserMetadataSelectionSummaryAsync(
