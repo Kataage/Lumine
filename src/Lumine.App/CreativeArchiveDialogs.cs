@@ -409,19 +409,42 @@ internal static class CreativeArchiveDialogs
     public static Task<CreativePublicationDialogResult?> ShowPublicationAsync(
         Window owner,
         CreativeSelectionPreview selection,
-        IReadOnlyList<WorkInfo> works)
+        IReadOnlyList<WorkInfo> works,
+        IReadOnlyList<PublicationDestinationInfo>? destinations = null,
+        IReadOnlyList<PublicationAccountInfo>? accounts = null)
     {
+        destinations ??=
+            Array.Empty<PublicationDestinationInfo>();
+        accounts ??=
+            Array.Empty<PublicationAccountInfo>();
+
+        var destinationProfiles =
+            destinations.ToArray();
         var destination =
             new ComboBox
             {
                 ItemsSource =
-                    new[]
-                    {
-                        "Pixiv",
-                        "X",
-                        "Custom"
-                    },
+                    destinationProfiles
+                        .Select(
+                            static item =>
+                                item.Name)
+                        .Append(
+                            "一時入力（保存しない）")
+                        .ToArray(),
                 SelectedIndex = 0
+            };
+        if (destinationProfiles.Length == 0)
+        {
+            destination.SelectedIndex = 0;
+        }
+
+        var customDestination =
+            new TextBox
+            {
+                PlaceholderText =
+                    "公開先名（例: 個人サイト）",
+                IsVisible =
+                    destinationProfiles.Length == 0
             };
         var work =
             new ComboBox
@@ -433,10 +456,14 @@ internal static class CreativeArchiveDialogs
                         .ToArray(),
                 SelectedIndex = 0
             };
-        var account = new TextBox
-        {
-            PlaceholderText = "アカウント名 / ID"
-        };
+        var account =
+            new ComboBox();
+        var customAccount =
+            new TextBox
+            {
+                PlaceholderText =
+                    "アカウント名 / ID"
+            };
         var title = new TextBox
         {
             PlaceholderText = "タイトル"
@@ -485,55 +512,151 @@ internal static class CreativeArchiveDialogs
             {
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
                 TextWrapping =
                     Avalonia.Media.TextWrapping.Wrap
             };
 
+        PublicationDestinationInfo? SelectedDestinationProfile() =>
+            destination.SelectedIndex >= 0
+            && destination.SelectedIndex
+                < destinationProfiles.Length
+                ? destinationProfiles[
+                    destination.SelectedIndex]
+                : null;
+
+        PublicationAccountInfo[] selectedAccounts = [];
+
+        void RenderAccountChoices()
+        {
+            var profile =
+                SelectedDestinationProfile();
+            selectedAccounts =
+                profile is null
+                    ? []
+                    : accounts
+                        .Where(
+                            item =>
+                                item.DestinationId
+                                == profile.Id)
+                        .OrderBy(
+                            static item =>
+                                item.DisplayName,
+                            StringComparer.Ordinal)
+                        .ThenBy(
+                            static item =>
+                                item.AccountIdentifier,
+                            StringComparer.Ordinal)
+                        .ToArray();
+
+            account.ItemsSource =
+                new[] { "アカウントなし" }
+                    .Concat(
+                        selectedAccounts.Select(
+                            static item =>
+                                string.IsNullOrWhiteSpace(
+                                    item.AccountIdentifier)
+                                    ? item.DisplayName
+                                    : $"{item.DisplayName} · {item.AccountIdentifier}"))
+                    .Append(
+                        "一時入力（保存しない）")
+                    .ToArray();
+            account.SelectedIndex =
+                selectedAccounts.Length > 0
+                    ? 1
+                    : selectedAccounts.Length + 1;
+            account.IsVisible =
+                profile is not null;
+            customAccount.IsVisible =
+                profile is null
+                || account.SelectedIndex
+                    == selectedAccounts.Length + 1;
+        }
+
         void RenderDestination()
         {
-            var value =
-                destination.SelectedItem as string
-                ?? "Custom";
+            var profile =
+                SelectedDestinationProfile();
+            var isCustom =
+                profile is null;
+            customDestination.IsVisible =
+                isCustom;
+
+            var kind =
+                profile?.Kind
+                ?? "other";
             var pixiv =
                 string.Equals(
-                    value,
+                    kind,
+                    "pixiv",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    profile?.Name,
                     "Pixiv",
                     StringComparison.Ordinal);
-            var custom =
+            var twitter =
                 string.Equals(
-                    value,
-                    "Custom",
+                    kind,
+                    "twitter",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    profile?.Name,
+                    "X",
                     StringComparison.Ordinal);
+            var custom =
+                isCustom
+                || string.Equals(
+                    kind,
+                    "other",
+                    StringComparison.OrdinalIgnoreCase);
+
             pixivR18.IsVisible = pixiv;
             pixivAi.IsVisible = pixiv;
             customMetadata.IsVisible = custom;
             destinationHint.Text =
-                value switch
-                {
-                    "Pixiv" =>
-                        "Pixiv向け: title / caption / tags / age restriction / AI生成フラグをsnapshot化します。",
-                    "X" =>
-                        "X向け: body / hashtags / ordered imagesを中心にsnapshot化します。",
-                    _ =>
-                        "Custom向け: 共通項目に加え、任意のplatform metadata JSONを保存できます。"
-                };
+                pixiv
+                    ? "Pixiv向け: title / caption / tags / age restriction / AI生成フラグをsnapshot化します。"
+                    : twitter
+                        ? "X向け: body / hashtags / ordered imagesを中心にsnapshot化します。"
+                        : isCustom
+                            ? "この記録だけの公開先を入力します。プロフィールには保存されません。"
+                            : $"{profile!.Name}向けのPublication snapshotを保存します。";
+
+            RenderAccountChoices();
         }
 
         destination.SelectionChanged +=
             (_, _) => RenderDestination();
+        account.SelectionChanged +=
+            (_, _) =>
+            {
+                customAccount.IsVisible =
+                    SelectedDestinationProfile()
+                        is null
+                    || account.SelectedIndex
+                        == selectedAccounts.Length + 1;
+            };
         RenderDestination();
 
         var dialog = CreateDialog(
             "Publicationを記録",
             620,
-            760);
+            800);
         var stack = CreateFormStack(
             $"選択した{selection.Count:N0}枚の「実際に公開した内容」を、現在のローカルmetadataとは独立したsnapshotとして保存します。");
         AddField(stack, "公開先", destination);
+        AddField(
+            stack,
+            "一時公開先",
+            customDestination);
         stack.Children.Add(destinationHint);
         AddField(stack, "Work", work);
         AddField(stack, "アカウント", account);
+        AddField(
+            stack,
+            "一時アカウント",
+            customAccount);
         AddField(stack, "タイトル", title);
         AddField(stack, "本文", body);
         AddField(stack, "タグ", tags);
@@ -543,7 +666,9 @@ internal static class CreativeArchiveDialogs
         stack.Children.Add(pixivR18);
         stack.Children.Add(pixivAi);
         AddField(stack, "Platform metadata", customMetadata);
-        stack.Children.Add(CreateAssetSummary(selection));
+        stack.Children.Add(
+            CreateAssetSummary(
+                selection));
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -552,11 +677,17 @@ internal static class CreativeArchiveDialogs
                 dialog,
                 () =>
                 {
+                    var destinationProfile =
+                        SelectedDestinationProfile();
                     var destinationValue =
-                        destination.SelectedItem as string;
-                    if (string.IsNullOrWhiteSpace(destinationValue))
+                        destinationProfile?.Name
+                        ?? customDestination.Text
+                            ?.Trim();
+                    if (string.IsNullOrWhiteSpace(
+                            destinationValue))
                     {
-                        status.Text = "公開先を選択してください。";
+                        status.Text =
+                            "公開先を入力してください。";
                         return null;
                     }
 
@@ -566,34 +697,93 @@ internal static class CreativeArchiveDialogs
                             DateTimeStyles.AllowWhiteSpaces,
                             out var publishedAt))
                     {
-                        status.Text = "公開日時を読み取れません。";
+                        status.Text =
+                            "公開日時を読み取れません。";
                         return null;
                     }
 
                     long? workId =
                         work.SelectedIndex > 0
-                        && work.SelectedIndex <= works.Count
-                            ? works[work.SelectedIndex - 1].Id
+                        && work.SelectedIndex
+                            <= works.Count
+                            ? works[
+                                work.SelectedIndex - 1]
+                                .Id
                             : null;
+
+                    string accountValue;
+                    if (destinationProfile is null)
+                    {
+                        accountValue =
+                            customAccount.Text
+                                ?.Trim()
+                            ?? string.Empty;
+                    }
+                    else if (account.SelectedIndex
+                             > 0
+                             && account.SelectedIndex
+                                <= selectedAccounts.Length)
+                    {
+                        var selected =
+                            selectedAccounts[
+                                account.SelectedIndex - 1];
+                        accountValue =
+                            string.IsNullOrWhiteSpace(
+                                selected.AccountIdentifier)
+                                ? selected.DisplayName
+                                : $"{selected.DisplayName} · {selected.AccountIdentifier}";
+                    }
+                    else if (account.SelectedIndex
+                             == selectedAccounts.Length + 1)
+                    {
+                        accountValue =
+                            customAccount.Text
+                                ?.Trim()
+                            ?? string.Empty;
+                    }
+                    else
+                    {
+                        accountValue =
+                            string.Empty;
+                    }
+
+                    var kind =
+                        destinationProfile?.Kind
+                        ?? "other";
+                    var isPixiv =
+                        string.Equals(
+                            kind,
+                            "pixiv",
+                            StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(
+                            destinationValue,
+                            "Pixiv",
+                            StringComparison.Ordinal);
+                    var isTwitter =
+                        string.Equals(
+                            kind,
+                            "twitter",
+                            StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(
+                            destinationValue,
+                            "X",
+                            StringComparison.Ordinal);
                     var platformMetadata =
-                        destinationValue switch
-                        {
-                            "Pixiv" =>
-                                pixivR18.IsChecked == true
-                                    ? $"{{\"ageRestriction\":\"r18\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}"
-                                    : $"{{\"ageRestriction\":\"all\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}",
-                            "X" => "{}",
-                            _ =>
-                                string.IsNullOrWhiteSpace(
+                        isPixiv
+                            ? pixivR18.IsChecked == true
+                                ? $"{{\"ageRestriction\":\"r18\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}"
+                                : $"{{\"ageRestriction\":\"all\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}"
+                            : isTwitter
+                                ? "{}"
+                                : string.IsNullOrWhiteSpace(
                                     customMetadata.Text)
                                     ? "{}"
-                                    : customMetadata.Text
-                        };
+                                    : customMetadata.Text;
 
                     return new CreativePublicationDialogResult(
                         workId,
                         destinationValue,
-                        account.Text ?? string.Empty,
+                        accountValue,
                         title.Text ?? string.Empty,
                         body.Text ?? string.Empty,
                         tags.Text ?? string.Empty,
@@ -602,8 +792,11 @@ internal static class CreativeArchiveDialogs
                         externalUrl.Text ?? string.Empty,
                         platformMetadata);
                 }));
-        dialog.Content = CreateScroll(stack);
-        return dialog.ShowDialog<CreativePublicationDialogResult?>(owner);
+        dialog.Content =
+            CreateScroll(
+                stack);
+        return dialog.ShowDialog<CreativePublicationDialogResult?>(
+            owner);
     }
 
     private static Window CreateDialog(
