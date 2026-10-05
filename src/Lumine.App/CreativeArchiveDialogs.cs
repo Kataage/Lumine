@@ -47,6 +47,138 @@ internal sealed record CreativePublicationDialogResult(
     string PlatformMetadataJson,
     IReadOnlyList<long> OrderedAssetIds);
 
+internal sealed class CreativePublicationPixivMetadataEditor
+    : StackPanel
+{
+    private static readonly string[] AgeRestrictionLabels =
+    [
+        "全年齢",
+        "R-18",
+        "R-18G"
+    ];
+
+    private readonly ComboBox _ageRestriction;
+    private readonly CheckBox _aiGenerated;
+
+    public CreativePublicationPixivMetadataEditor()
+    {
+        Spacing =
+            LumineDesign.Space6;
+
+        Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "Pixiv投稿情報",
+                Foreground =
+                    LumineDesign.Foreground,
+                FontWeight =
+                    Avalonia.Media.FontWeight.SemiBold,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            });
+
+        Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "年齢制限",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize
+            });
+
+        _ageRestriction =
+            LumineDesign.ConfigureComboBox(
+                new ComboBox
+                {
+                    ItemsSource =
+                        AgeRestrictionLabels,
+                    SelectedIndex = 0,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch
+                });
+        AutomationProperties.SetName(
+            _ageRestriction,
+            "Pixiv年齢制限");
+        Children.Add(
+            _ageRestriction);
+
+        _aiGenerated =
+            LumineDesign.ConfigureCheckBox(
+                new CheckBox
+                {
+                    Content =
+                        "Pixiv: AI生成"
+                });
+        AutomationProperties.SetName(
+            _aiGenerated,
+            "Pixiv AI生成作品");
+        Children.Add(
+            _aiGenerated);
+    }
+
+    public string PlatformMetadataJson
+    {
+        get
+        {
+            var ageRestriction =
+                _ageRestriction.SelectedIndex
+                    switch
+                    {
+                        1 => "r18",
+                        2 => "r18g",
+                        _ => "all"
+                    };
+            return
+                $"{{\"ageRestriction\":\"{ageRestriction}\",\"aiGenerated\":{(_aiGenerated.IsChecked == true ? "true" : "false")}}}";
+        }
+    }
+
+    internal IReadOnlyList<string>
+        AgeRestrictionOptionsForSmoke =>
+        AgeRestrictionLabels;
+
+    internal string SelectedAgeRestrictionForSmoke =>
+        _ageRestriction.SelectedItem as string
+        ?? string.Empty;
+
+    internal bool AgeRestrictionAccessibleForSmoke =>
+        string.Equals(
+            AutomationProperties.GetName(
+                _ageRestriction),
+            "Pixiv年齢制限",
+            StringComparison.Ordinal);
+
+    internal bool AiGeneratedForSmoke
+    {
+        get =>
+            _aiGenerated.IsChecked == true;
+        set =>
+            _aiGenerated.IsChecked = value;
+    }
+
+    internal void SelectAgeRestrictionForSmoke(
+        string value)
+    {
+        var index =
+            Array.IndexOf(
+                AgeRestrictionLabels,
+                value);
+        if (index < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Unknown Pixiv age restriction.");
+        }
+
+        _ageRestriction.SelectedIndex =
+            index;
+    }
+}
+
 internal sealed record CreativePublicationAssetOption(
     long AssetId,
     string DisplayName)
@@ -712,18 +844,11 @@ internal static class CreativeArchiveDialogs
             PlaceholderText = "https://..."
         };
 
-        var pixivR18 =
-            LumineDesign.ConfigureCheckBox(
-                new CheckBox
-                {
-                    Content = "Pixiv: R-18"
-                });
-        var pixivAi =
-            LumineDesign.ConfigureCheckBox(
-                new CheckBox
-                {
-                    Content = "Pixiv: AI生成"
-                });
+        var pixivMetadata =
+            new CreativePublicationPixivMetadataEditor
+            {
+                IsVisible = false
+            };
         var customMetadata = CreateMultiline(
             "Custom platform metadata JSON");
         customMetadata.Text = "{}";
@@ -833,8 +958,7 @@ internal static class CreativeArchiveDialogs
                     "other",
                     StringComparison.OrdinalIgnoreCase);
 
-            pixivR18.IsVisible = pixiv;
-            pixivAi.IsVisible = pixiv;
+            pixivMetadata.IsVisible = pixiv;
             customMetadata.IsVisible = custom;
             destinationHint.Text =
                 pixiv
@@ -885,8 +1009,8 @@ internal static class CreativeArchiveDialogs
         AddField(stack, "公開日時", published);
         AddField(stack, "External ID", externalId);
         AddField(stack, "External URL", externalUrl);
-        stack.Children.Add(pixivR18);
-        stack.Children.Add(pixivAi);
+        stack.Children.Add(
+            pixivMetadata);
         AddField(stack, "Platform metadata", customMetadata);
         var orderEditor =
             new CreativePublicationOrderEditor(
@@ -996,9 +1120,7 @@ internal static class CreativeArchiveDialogs
                             StringComparison.Ordinal);
                     var platformMetadata =
                         isPixiv
-                            ? pixivR18.IsChecked == true
-                                ? $"{{\"ageRestriction\":\"r18\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}"
-                                : $"{{\"ageRestriction\":\"all\",\"aiGenerated\":{(pixivAi.IsChecked == true ? "true" : "false")}}}"
+                            ? pixivMetadata.PlatformMetadataJson
                             : isTwitter
                                 ? "{}"
                                 : string.IsNullOrWhiteSpace(
