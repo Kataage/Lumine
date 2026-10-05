@@ -105,7 +105,8 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
         CancellationToken cancellationToken = default,
         ThumbnailStorageMode thumbnailStorageMode =
             ThumbnailStorageMode.MemoryOnly,
-        AssetQuery? initialQuery = null)
+        AssetQuery? initialQuery = null,
+        LibraryFileTypePolicy? fileTypePolicy = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
         ArgumentNullException.ThrowIfNull(dataPaths);
@@ -138,7 +139,9 @@ internal sealed class CoreViewerRuntime : IAsyncDisposable
                 "Initializing Lumine v2 library database…"));
 
         var libraryService =
-            new LibraryService(dataPaths.DatabasePath);
+            new LibraryService(
+                dataPaths.DatabasePath,
+                fileTypePolicy);
         await libraryService.InitializeAsync(
             cancellationToken).ConfigureAwait(false);
 
