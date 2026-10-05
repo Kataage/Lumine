@@ -1422,6 +1422,23 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken).ConfigureAwait(false);
                 }
 
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var diagnostics = _session.Diagnostics;
+                    if (ShouldStartBackgroundPrefetch(
+                            diagnostics.AttachedTiles,
+                            diagnostics.ReadyTiles))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(25),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 var rows = _session.Options.PrefetchRows;
 
                 var beforeStartRow = Math.Max(0, _rowIndex - rows);
@@ -2447,6 +2464,19 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal static bool ShouldStartBackgroundPrefetchForSmoke(
+        int attachedTiles,
+        int readyTiles) =>
+        ShouldStartBackgroundPrefetch(
+            attachedTiles,
+            readyTiles);
+
+    private static bool ShouldStartBackgroundPrefetch(
+        int attachedTiles,
+        int readyTiles) =>
+        attachedTiles > 0
+        && readyTiles >= attachedTiles;
+
     internal static bool ResolveTileActionVisibilityForSmoke(
         ViewerLayoutMode layoutMode,
         bool selected,
