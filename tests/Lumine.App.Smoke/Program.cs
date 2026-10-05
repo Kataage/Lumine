@@ -659,6 +659,45 @@ try
         await degradedSettingsHost.CompleteCleanShutdownAsync();
     }
 
+    var scanExtensionSettingsPaths =
+        AppDataPaths.FromRoot(
+            Path.Combine(
+                root,
+                "scan-extension-settings-host"));
+    var scanExtensionSettingsStore =
+        new AppSettingsStore(
+            scanExtensionSettingsPaths.SettingsPath);
+    await scanExtensionSettingsStore.SaveAsync(
+        new AppSettingsDocument
+        {
+            ScanExtensions =
+            [
+                ".JPG",
+                "png",
+                ".PNG",
+                ".exe",
+                ""
+            ]
+        });
+    await using (var normalizedScanSettingsHost =
+                 await AppHost.StartAsync(
+                     scanExtensionSettingsPaths))
+    {
+        var normalizedScanExtensions =
+            ScanExtensionPreference.Resolve(
+                normalizedScanSettingsHost.Settings,
+                out var normalizedScanWarning);
+        Require(
+            normalizedScanWarning is null
+            && normalizedScanExtensions.SequenceEqual(
+                new[] { ".jpg", ".png" },
+                StringComparer.Ordinal)
+            && !string.IsNullOrWhiteSpace(
+                normalizedScanSettingsHost.SettingsWarning),
+            "Invalid persisted scan extensions were not normalized with a startup warning.");
+        await normalizedScanSettingsHost.CompleteCleanShutdownAsync();
+    }
+
     var storagePolicyPaths =
         AppDataPaths.FromRoot(
             Path.Combine(root, "thumbnail-storage-policy-host"));
