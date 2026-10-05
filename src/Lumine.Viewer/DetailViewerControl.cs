@@ -141,8 +141,8 @@ public sealed class DetailViewerControl : UserControl
             {
                 Minimum = 0,
                 Maximum = 100,
-                Width = 104,
-                MinWidth = 84,
+                Width = 96,
+                MinWidth = 80,
                 VerticalAlignment =
                     VerticalAlignment.Center,
                 SmallChange = 1,
@@ -159,7 +159,7 @@ public sealed class DetailViewerControl : UserControl
         _zoomText = new TextBlock
         {
             Text = "100%",
-            MinWidth = 52,
+            MinWidth = 46,
             Foreground = ViewerVisualTokens.Foreground,
             FontSize = ViewerVisualTokens.CaptionFontSize,
             TextAlignment = TextAlignment.Center,
@@ -169,8 +169,8 @@ public sealed class DetailViewerControl : UserControl
         var toolbar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 4,
-            Margin = new Thickness(6, 4),
+            Spacing = 2,
+            Margin = new Thickness(4, 3),
             HorizontalAlignment = HorizontalAlignment.Center
         };
         toolbar.Children.Add(_zoomOut);
@@ -193,8 +193,8 @@ public sealed class DetailViewerControl : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 4,
-                Margin = new Thickness(4)
+                Spacing = 2,
+                Margin = new Thickness(3)
             };
         utilityBar.Children.Add(_info);
         utilityBar.Children.Add(_fullScreen);
@@ -305,39 +305,43 @@ public sealed class DetailViewerControl : UserControl
         };
         stage.Children.Add(_scroll);
 
-        _previous.Width = 44;
-        _previous.Height = 56;
-        _previous.MinWidth = 44;
-        _previous.MinHeight = 56;
+        _previous.Width = 38;
+        _previous.Height = 50;
+        _previous.MinWidth = 38;
+        _previous.MinHeight = 50;
         _previous.Padding = new Thickness(0);
         _previous.HorizontalAlignment =
             HorizontalAlignment.Left;
         _previous.VerticalAlignment =
             VerticalAlignment.Center;
-        _previous.Margin = new Thickness(14, 0);
+        _previous.Margin = new Thickness(10, 0);
+        _previous.Background = ViewerVisualTokens.OverlaySoft;
+        _previous.BorderBrush = Brushes.Transparent;
         stage.Children.Add(_previous);
 
-        _next.Width = 44;
-        _next.Height = 56;
-        _next.MinWidth = 44;
-        _next.MinHeight = 56;
+        _next.Width = 38;
+        _next.Height = 50;
+        _next.MinWidth = 38;
+        _next.MinHeight = 50;
         _next.Padding = new Thickness(0);
         _next.HorizontalAlignment =
             HorizontalAlignment.Right;
         _next.VerticalAlignment =
             VerticalAlignment.Center;
-        _next.Margin = new Thickness(14, 0);
+        _next.Margin = new Thickness(10, 0);
+        _next.Background = ViewerVisualTokens.OverlaySoft;
+        _next.BorderBrush = Brushes.Transparent;
         stage.Children.Add(_next);
 
         _toolbarHost =
             new Border
             {
-                Background = ViewerVisualTokens.Overlay,
-                BorderBrush = ViewerVisualTokens.Border,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
+                Background = ViewerVisualTokens.OverlaySoft,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(2),
-                Margin = new Thickness(10),
+                Margin = new Thickness(12),
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
                 VerticalAlignment =
@@ -347,12 +351,12 @@ public sealed class DetailViewerControl : UserControl
         _utilityHost =
             new Border
             {
-                Background = ViewerVisualTokens.Overlay,
-                BorderBrush = ViewerVisualTokens.Border,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
+                Background = ViewerVisualTokens.OverlaySoft,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(2),
-                Margin = new Thickness(10),
+                Margin = new Thickness(12),
                 HorizontalAlignment =
                     HorizontalAlignment.Right,
                 VerticalAlignment =
@@ -427,7 +431,7 @@ public sealed class DetailViewerControl : UserControl
                 _info.Background =
                     _metadataHost.IsVisible
                         ? ViewerVisualTokens.SelectedSurface
-                        : ViewerVisualTokens.Overlay;
+                        : Brushes.Transparent;
                 RevealChrome(
                     autoHide: false);
             };
@@ -516,20 +520,32 @@ public sealed class DetailViewerControl : UserControl
             new Button
             {
                 Content = content,
-                MinWidth = 36,
-                MinHeight = 32,
-                Padding = new Thickness(9, 5),
+                MinWidth = 32,
+                MinHeight = 30,
+                Padding = new Thickness(7, 4),
                 FontSize = ViewerVisualTokens.CaptionFontSize,
-                CornerRadius = new CornerRadius(7),
-                Background = ViewerVisualTokens.Overlay,
+                CornerRadius = new CornerRadius(6),
+                Background = Brushes.Transparent,
                 Foreground = ViewerVisualTokens.Foreground,
-                BorderBrush = ViewerVisualTokens.Border,
+                BorderBrush = Brushes.Transparent,
                 BorderThickness = new Thickness(1),
                 HorizontalContentAlignment =
                     HorizontalAlignment.Center,
                 VerticalContentAlignment =
                     VerticalAlignment.Center
             };
+        button.Resources["ButtonBackgroundPointerOver"] =
+            ViewerVisualTokens.Overlay;
+        button.Resources["ButtonBackgroundPressed"] =
+            ViewerVisualTokens.SelectedSurface;
+        button.Resources["ButtonBackgroundFocused"] =
+            ViewerVisualTokens.Overlay;
+        button.Resources["ButtonBorderBrushPointerOver"] =
+            ViewerVisualTokens.Border;
+        button.Resources["ButtonBorderBrushPressed"] =
+            ViewerVisualTokens.BorderStrong;
+        button.Resources["ButtonBorderBrushFocused"] =
+            ViewerVisualTokens.Focus;
         ToolTip.SetTip(button, tooltip);
         ViewerVisualTokens.Name(
             button,
