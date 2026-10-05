@@ -3428,10 +3428,19 @@ try
 
         // Product evidence requires deterministic 100% and 225%
         // text-scale runs regardless of the runner's inherited setting.
-        LumineVisualMetrics.ConfigureTextScaleFactor(
+        // Use the same override WindowsTextScale.Resolve() consumes so any
+        // theme re-application inside the headless UI session preserves the
+        // requested scale instead of silently resetting it to the host value.
+        var iterationTextScale =
             iteration == 2
                 ? 2.25
-                : 1.0);
+                : 1.0;
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            iterationTextScale.ToString(
+                System.Globalization.CultureInfo.InvariantCulture));
+        LumineVisualMetrics.ConfigureTextScaleFactor(
+            iterationTextScale);
 
         await using (var appHost =
                      await AppHost.StartAsync(
@@ -5523,6 +5532,9 @@ try
             repeatedEmptyLibraryRoot,
             recursive: true);
 
+        Environment.SetEnvironmentVariable(
+            "LUMINE_TEXT_SCALE",
+            previousTextScaleEnvironment);
         LumineVisualMetrics.ConfigureTextScaleFactor(
             baselineTextScale);
     }
