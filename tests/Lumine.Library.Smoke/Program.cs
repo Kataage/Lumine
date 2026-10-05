@@ -966,6 +966,35 @@ try
             .SequenceEqual([first.Id, technical.Id]),
         "Work did not preserve ordered asset membership.");
 
+    var creativeThird =
+        await repository.GetAssetAsync(
+            library.Id,
+            "nested/c.webp")
+        ?? throw new InvalidOperationException(
+            "Creative membership fixture disappeared.");
+    var expandedWork =
+        await repository.AddAssetsToWorkAsync(
+            library.Id,
+            creativeWork.Id,
+            [first.Id, creativeThird.Id]);
+    Require(
+        expandedWork.Assets
+            .Select(static asset => asset.Id)
+            .SequenceEqual(
+                [first.Id, technical.Id, creativeThird.Id]),
+        "Adding assets to an existing Work did not preserve existing order and append only missing assets.");
+    var idempotentWork =
+        await repository.AddAssetsToWorkAsync(
+            library.Id,
+            creativeWork.Id,
+            [creativeThird.Id, first.Id]);
+    Require(
+        idempotentWork.Assets
+            .Select(static asset => asset.Id)
+            .SequenceEqual(
+                [first.Id, technical.Id, creativeThird.Id]),
+        "Duplicate Work membership changed order or created duplicate rows.");
+
     var creativeGroup =
         await repository.CreateGenerationGroupAsync(
             library.Id,
@@ -990,6 +1019,29 @@ try
         && creativeGroup.Steps == 28
         && Math.Abs(creativeGroup.CfgScale - 5.5) < 0.001,
         "Generation Group lost ordered membership or generation context.");
+
+    var expandedGroup =
+        await repository.AddAssetsToGenerationGroupAsync(
+            library.Id,
+            creativeGroup.Id,
+            [technical.Id, creativeThird.Id]);
+    Require(
+        expandedGroup.Assets
+            .Select(static asset => asset.Id)
+            .SequenceEqual(
+                [technical.Id, first.Id, creativeThird.Id]),
+        "Adding assets to an existing Generation Group did not preserve existing order and append only missing assets.");
+    var listedGroups =
+        await repository.ListGenerationGroupsAsync(
+            library.Id);
+    Require(
+        listedGroups.Any(
+            group =>
+                group.Id == creativeGroup.Id
+                && group.Assets.Select(static asset => asset.Id)
+                    .SequenceEqual(
+                        [technical.Id, first.Id, creativeThird.Id])),
+        "Generation Group listing did not expose updated ordered membership.");
 
     var relation =
         await repository.CreateAssetRelationAsync(
@@ -1063,6 +1115,32 @@ try
             item => item.Id == publication.Id),
         "Asset creative context did not expose Work/Group/lineage/Publication human context.");
 
+    var foreignCreativeLibrary =
+        await repository.RegisterLibraryAsync(
+            "Creative Foreign",
+            secondaryRoot);
+    Require(
+        !await repository.DeleteAssetRelationAsync(
+            foreignCreativeLibrary.Id,
+            relation.Id),
+        "Lineage deletion crossed library ownership.");
+    Require(
+        await repository.DeleteAssetRelationAsync(
+            library.Id,
+            relation.Id),
+        "Lineage deletion did not remove the owned relation.");
+    var creativeContextAfterRelationDelete =
+        await repository.GetAssetCreativeContextAsync(
+            library.Id,
+            technical.Id);
+    Require(
+        creativeContextAfterRelationDelete.Relations.All(
+            item => item.Id != relation.Id),
+        "Deleted lineage remained visible in creative context.");
+    Require(
+        await repository.RemoveLibraryRegistrationAsync(
+            foreignCreativeLibrary.Id),
+        "Creative foreign-library fixture could not be removed.");
 
     var publicationScaleCreated =
         DateTimeOffset.UtcNow.UtcDateTime.Ticks;
