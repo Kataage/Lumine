@@ -2578,14 +2578,34 @@ public sealed class MainWindow : Window
                     }
             };
 
+        var recoveryActions =
+            new WrapPanel
+            {
+                HorizontalAlignment =
+                    HorizontalAlignment.Center
+            };
+        retry.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        choose.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
+        recoveryActions.Children.Add(retry);
+        recoveryActions.Children.Add(choose);
+
         var actions =
             new StackPanel
             {
                 Spacing =
                     LumineDesign.Space8
             };
-        actions.Children.Add(retry);
-        actions.Children.Add(choose);
+        actions.Children.Add(recoveryActions);
         actions.Children.Add(detail);
 
         return LumineDesign.CreateProductState(
