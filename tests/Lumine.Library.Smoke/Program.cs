@@ -1119,6 +1119,38 @@ try
         await repository.RegisterLibraryAsync(
             "Creative Foreign",
             secondaryRoot);
+    try
+    {
+        await repository.AddAssetsToWorkAsync(
+            foreignCreativeLibrary.Id,
+            creativeWork.Id,
+            Array.Empty<long>());
+        throw new InvalidOperationException(
+            "Cross-library Work maintenance unexpectedly succeeded.");
+    }
+    catch (InvalidOperationException exception)
+        when (exception.Message.Contains(
+            "does not belong",
+            StringComparison.Ordinal))
+    {
+    }
+
+    try
+    {
+        await repository.AddAssetsToGenerationGroupAsync(
+            foreignCreativeLibrary.Id,
+            creativeGroup.Id,
+            Array.Empty<long>());
+        throw new InvalidOperationException(
+            "Cross-library Generation Group maintenance unexpectedly succeeded.");
+    }
+    catch (InvalidOperationException exception)
+        when (exception.Message.Contains(
+            "does not belong",
+            StringComparison.Ordinal))
+    {
+    }
+
     Require(
         !await repository.DeleteAssetRelationAsync(
             foreignCreativeLibrary.Id,
