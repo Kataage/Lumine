@@ -12,6 +12,50 @@ static void Require(bool condition, string message)
     }
 }
 
+static void VerifyThumbnailPriorityScheduler()
+{
+    var method =
+        typeof(ThumbnailPipeline).GetMethod(
+            "SelectNextPriority",
+            BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException(
+            "ThumbnailPipeline.SelectNextPriority was not found.");
+
+    static ThumbnailPriority? Invoke(
+        MethodInfo method,
+        int interactive,
+        int foreground,
+        int background,
+        int foregroundBurst,
+        int maxForegroundBurst) =>
+        (ThumbnailPriority?)method.Invoke(
+            null,
+            [
+                interactive,
+                foreground,
+                background,
+                foregroundBurst,
+                maxForegroundBurst
+            ]);
+
+    Require(
+        Invoke(method, 1, 32, 32, 8, 8)
+            == ThumbnailPriority.Interactive,
+        "Interactive preview work did not outrank queued grid/background work.");
+    Require(
+        Invoke(method, 0, 3, 2, 0, 8)
+            == ThumbnailPriority.Foreground,
+        "Foreground grid work lost normal priority ahead of background work.");
+    Require(
+        Invoke(method, 0, 3, 2, 8, 8)
+            == ThumbnailPriority.Background,
+        "Foreground burst fairness stopped yielding to background work.");
+    Require(
+        Invoke(method, 0, 3, 0, 99, 8)
+            == ThumbnailPriority.Foreground,
+        "Foreground-only work was incorrectly blocked by the burst counter.");
+}
+
 static void VerifyUnreadableOrientationIsUnsafe()
 {
     using var blank = NetVips.Image.Black(
@@ -705,6 +749,7 @@ try
         FullResolutionDecoder.ProductionAccessPolicy
             == FullResolutionAccessPolicy.Adaptive,
         "Production full-resolution access policy is not Adaptive.");
+    VerifyThumbnailPriorityScheduler();
     VerifyUnreadableOrientationIsUnsafe();
     await VerifyRecommendedAccessPolicyAsync(
         jpgPath,
