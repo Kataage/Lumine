@@ -269,6 +269,7 @@ public sealed partial class LibraryRepository
         }
 
         var added = 0;
+        long? firstAddedAssetId = null;
         await using (var insert = connection.CreateCommand())
         {
             insert.Transaction = transaction;
@@ -307,6 +308,7 @@ public sealed partial class LibraryRepository
                 await insert.ExecuteNonQueryAsync(
                         cancellationToken)
                     .ConfigureAwait(false);
+                firstAddedAssetId ??= assetId;
                 added++;
             }
         }
@@ -319,13 +321,21 @@ public sealed partial class LibraryRepository
             update.CommandText =
                 """
                 UPDATE works
-                SET updated_at_utc_ticks = $updated
+                SET updated_at_utc_ticks = $updated,
+                    cover_asset_id =
+                        COALESCE(
+                            cover_asset_id,
+                            $cover_asset_id)
                 WHERE id = $work_id
                   AND library_id = $library_id;
                 """;
             update.Parameters.AddWithValue(
                 "$updated",
                 DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+            update.Parameters.AddWithValue(
+                "$cover_asset_id",
+                (object?) firstAddedAssetId
+                ?? DBNull.Value);
             update.Parameters.AddWithValue(
                 "$work_id",
                 workId);
