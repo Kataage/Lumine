@@ -2159,11 +2159,12 @@ try
             v8Connection.CreateCommand();
         downgrade.CommandText =
             """
+            DROP TABLE asset_exif_metadata;
             DROP TRIGGER IF EXISTS libraries_ai_publication_defaults;
             DROP TABLE publication_accounts;
             DROP TABLE publication_destinations;
             DELETE FROM schema_migrations
-            WHERE version = 9;
+            WHERE version >= 9;
             """;
         await downgrade.ExecuteNonQueryAsync();
     }
