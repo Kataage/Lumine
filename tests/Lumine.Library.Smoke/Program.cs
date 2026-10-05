@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using Lumine.Library;
 using Microsoft.Data.Sqlite;
 
@@ -387,10 +388,15 @@ try
         }
         catch (SqliteException exception)
         {
+            var classifier = typeof(LibraryRepository).GetMethod(
+                "IsRecoverableNestedTransactionState",
+                BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new InvalidOperationException(
+                    "Nested-transaction recovery classifier was not found.");
             Require(
-                LibraryRepository
-                    .IsRecoverableNestedTransactionStateForSmoke(
-                        exception),
+                classifier.Invoke(
+                    null,
+                    new object?[] { exception }) is true,
                 "Transaction-state recovery classifier rejected SQLite's nested-transaction error.");
         }
     }
