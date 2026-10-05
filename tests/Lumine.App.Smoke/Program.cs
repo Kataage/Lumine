@@ -3037,6 +3037,16 @@ try
                 !inspectorTagColorEditor.AdvancedVisibleForSmoke,
                 "Frequent Inspector tagging unexpectedly expanded custom color controls.");
 
+            Require(
+                inspectorTagPicker.CandidateCountForSmoke == 0
+                && !inspectorTagPicker.CandidateSurfaceVisibleForSmoke
+                && string.Equals(
+                    inspectorTagPicker.SummaryTextForSmoke,
+                    "追加できるタグはありません。",
+                    StringComparison.Ordinal),
+                "Inspector empty tag candidates still rendered a redundant boxed empty state.");
+
+
             if (visualOutputDirectory is not null)
             {
                 CaptureVisualEvidence(
