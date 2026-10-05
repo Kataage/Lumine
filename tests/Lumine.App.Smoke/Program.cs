@@ -3062,6 +3062,16 @@ try
                     deletePublication:
                         static _ =>
                             Task.FromResult(false));
+            var managedPublicationWindow =
+                new Window
+                {
+                    Width = 360,
+                    Height = 620,
+                    Content =
+                        managedPublicationView
+                };
+            managedPublicationWindow.Show();
+            Dispatcher.UIThread.RunJobs();
             Require(
                 managedPublicationView
                     .GetVisualDescendants()
@@ -3082,6 +3092,8 @@ try
                                 "履歴を削除…",
                                 StringComparison.Ordinal)),
                 "Publication navigation did not expose reusable profile management and history maintenance.");
+            managedPublicationWindow.Close();
+            Dispatcher.UIThread.RunJobs();
 
             // Single-image creative workflows must be reachable without
             // entering bulk-selection mode.
