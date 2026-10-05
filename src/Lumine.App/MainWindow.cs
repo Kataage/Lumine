@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -295,19 +296,15 @@ public sealed class MainWindow : Window
             };
 
         _navigationPin =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "固定",
-                    MinHeight = 28,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space2)
-                });
-        ToolTip.SetTip(
-            _navigationPin,
-            "ナビゲーションを画像一覧の横に固定");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.PinIconPath,
+                            16)
+                },
+                "サイドに固定");
 
         var collapseNavigation =
             LumineDesign.ConfigureIconButton(
@@ -315,8 +312,8 @@ public sealed class MainWindow : Window
                 {
                     Content =
                         LumineDesign.CreateStrokeIcon(
-                            LumineDesign.ChevronLeftIconPath,
-                            16)
+                            LumineDesign.CloseIconPath,
+                            15)
                 },
                 "ナビゲーションを閉じる");
 
@@ -327,7 +324,7 @@ public sealed class MainWindow : Window
                     new ColumnDefinitions("*,Auto,Auto"),
                 ColumnSpacing =
                     LumineDesign.Space4,
-                Margin = new Thickness(12, 10, 8, 8)
+                Margin = new Thickness(14, 12, 10, 8)
             };
         navigationHeader.Children.Add(
             _navigationTitle);
@@ -366,10 +363,14 @@ public sealed class MainWindow : Window
                 Width = 280,
                 MinWidth = 250,
                 MaxWidth = 320,
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
+                Background = LumineDesign.SurfaceRaised,
+                BorderBrush = LumineDesign.BorderStrong,
                 BorderThickness =
-                    new Thickness(0, 0, 1, 0),
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.PanelRadius),
+                ClipToBounds = true,
                 Child = navigationLayout
             };
         collapseNavigation.Click +=
@@ -437,6 +438,7 @@ public sealed class MainWindow : Window
 
         Opened += OnOpened;
         Closing += OnClosing;
+        KeyDown += OnMainWindowKeyDown;
     }
 
     internal CoreViewerRuntime? CurrentRuntime =>
@@ -486,6 +488,46 @@ public sealed class MainWindow : Window
         BrowseFilterState state) =>
         OnBrowseFiltersChangedAsync(
             state);
+
+    internal void PresentLoadingStateForSmoke(
+        string progressText =
+            "画像一覧を準備しています…")
+    {
+        _productShellState =
+            "Loading";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateLoadingLibraryState(
+                out var progress);
+        progress.Text =
+            progressText;
+    }
+
+    internal void PresentWelcomeStateForSmoke()
+    {
+        _productShellState =
+            "Welcome";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateWelcomeState(
+                recovered: false);
+    }
+
+    internal void PresentRecoverableErrorForSmoke(
+        string message)
+    {
+        DismissCompactNavigationOverlayForBlockingState();
+        _productShellState =
+            "Error";
+        _status.Text =
+            string.Empty;
+        _viewerHost.Content =
+            CreateLibraryOpenFailureState(
+                new InvalidOperationException(
+                    message));
+    }
 
     internal void NavigateForSmoke(
         string destination) =>
@@ -621,6 +663,16 @@ public sealed class MainWindow : Window
     internal Rect NavigationPaneBounds =>
         _navigationPane.Bounds;
 
+    internal bool IsNavigationPaneOverlayForSmoke =>
+        _navigationPane.IsVisible
+        && _navigationPane.ZIndex > 0
+        && Grid.GetColumn(
+            _workspaceHost)
+            == 1;
+
+    internal bool NavigationPinVisibleForSmoke =>
+        _navigationPin.IsVisible;
+
     internal Rect LightboxBounds =>
         _lightboxHost.Bounds;
 
@@ -636,8 +688,10 @@ public sealed class MainWindow : Window
     private void ApplyNavigationLayout(
         double width)
     {
+        // Keep contextual navigation off the permanent canvas until there is
+        // enough desktop width for an explicit pinned layout.
         _compactNavigationLayout =
-            width <= 1040;
+            width < 1200;
 
         var paneCanDock =
             !_compactNavigationLayout
@@ -664,7 +718,17 @@ public sealed class MainWindow : Window
                 2);
             _navigationPane.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
+            _navigationPane.VerticalAlignment =
+                VerticalAlignment.Stretch;
+            _navigationPane.Margin =
+                new Thickness(0);
             _navigationPane.Width = 280;
+            _navigationPane.CornerRadius =
+                new CornerRadius(0);
+            _navigationPane.BorderBrush =
+                LumineDesign.Border;
+            _navigationPane.BorderThickness =
+                new Thickness(0, 0, 1, 0);
             _navigationPane.ZIndex = 0;
             return;
         }
@@ -680,37 +744,66 @@ public sealed class MainWindow : Window
             1);
         _navigationPane.HorizontalAlignment =
             HorizontalAlignment.Left;
+        _navigationPane.VerticalAlignment =
+            VerticalAlignment.Stretch;
+        _navigationPane.Margin =
+            new Thickness(
+                LumineDesign.Space12);
         _navigationPane.Width =
             _compactNavigationLayout
                 ? Math.Clamp(
                     width
                     - LumineDesign.NavigationWidth
-                    - 48,
+                    - 64,
                     250,
                     300)
                 : 280;
+        _navigationPane.CornerRadius =
+            new CornerRadius(
+                LumineDesign.PanelRadius);
+        _navigationPane.BorderBrush =
+            LumineDesign.BorderStrong;
+        _navigationPane.BorderThickness =
+            new Thickness(1);
         _navigationPane.ZIndex = 20;
+    }
+
+    private void DismissCompactNavigationOverlayForBlockingState()
+    {
+        // A blocking product state owns the workspace. Do not leave
+        // contextual navigation covering its recovery actions; this also
+        // avoids relying on SizeChanged having already recomputed the compact
+        // layout after a window resize.
+        if (!_navigationPane.IsVisible)
+        {
+            return;
+        }
+
+        _navigationPane.IsVisible = false;
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
     }
 
     private void UpdateNavigationPinVisual()
     {
-        _navigationPin.Content =
-            _navigationPinned
-                ? "固定中"
-                : "固定";
         _navigationPin.Background =
             _navigationPinned
                 ? LumineDesign.AccentMuted
-                : LumineDesign.ControlSurface;
+                : Brushes.Transparent;
         _navigationPin.BorderBrush =
             _navigationPinned
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
         ToolTip.SetTip(
             _navigationPin,
             _navigationPinned
-                ? "固定を解除して画像一覧の上に重ねる"
-                : "ナビゲーションを画像一覧の横に固定");
+                ? "固定を解除"
+                : "サイドに固定");
+        AutomationProperties.SetName(
+            _navigationPin,
+            _navigationPinned
+                ? "ナビゲーションの固定を解除"
+                : "ナビゲーションをサイドに固定");
     }
 
     private void OnNavigationRequested(
@@ -762,12 +855,15 @@ public sealed class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _host?.Log.Write(
+                "navigation",
+                $"Navigation refresh failed: {exception.Message}");
             if (!_closeStarted)
             {
                 _status.Foreground =
                     LumineDesign.Warning;
                 _status.Text =
-                    $"ナビゲーションを更新できませんでした: {exception.Message}";
+                    "ナビゲーションを更新できませんでした。もう一度お試しください。";
             }
         }
         finally
@@ -1136,6 +1232,9 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             acceptProgress = false;
+            _host?.Log.Write(
+                "library",
+                $"Rescan failed: {exception.Message}");
             if (ReferenceEquals(
                     _runtime,
                     runtimeBefore))
@@ -1143,7 +1242,7 @@ public sealed class MainWindow : Window
                 _status.Foreground =
                     LumineDesign.Warning;
                 _status.Text =
-                    $"再スキャンできませんでした: {exception.Message}";
+                    "再スキャンできませんでした。フォルダーの状態を確認してもう一度お試しください。";
             }
 
             throw;
@@ -1232,7 +1331,8 @@ public sealed class MainWindow : Window
                 "ライブラリの登録を解除しますか？",
                 $"「{library.Name}」をLumineのライブラリ一覧から外します。",
                 "元画像ファイルは削除しません。このライブラリに紐づくLumine側の登録情報は解除されます。",
-                confirmLabel: "登録解除");
+                confirmLabel: "登録解除",
+                tone: ProductDialogTone.Danger);
         if (!confirmed)
         {
             return;
@@ -1258,6 +1358,12 @@ public sealed class MainWindow : Window
                 ? "Lumineの登録情報を削除しました。元画像は変更していません。"
                 : "ライブラリの登録を解除できませんでした。";
 
+        if (removed)
+        {
+            _ = ClearTransientStatusAsync(
+                _status.Text);
+        }
+
         StartNavigationRefresh();
     }
 
@@ -1278,6 +1384,12 @@ public sealed class MainWindow : Window
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text = status;
+        if (!string.IsNullOrWhiteSpace(
+                status))
+        {
+            _ = ClearTransientStatusAsync(
+                status);
+        }
         _viewerHost.Content =
             CreateWelcomeState(recovered: false);
         _folders = Array.Empty<LibraryFolderInfo>();
@@ -1588,9 +1700,9 @@ public sealed class MainWindow : Window
             var confirmed =
                 await ProductDialogs.ConfirmAsync(
                     this,
-                    "永続サムネイルcacheを有効にしますか？",
-                    "表示用サムネイルをLumineのデータフォルダーへ保存します。初回表示後の再利用は速くなりますが、ディスク使用量が増えます。",
-                    "元画像やユーザーメタデータはcacheとは別に管理されます。cacheはいつでも安全に削除できます。",
+                    "サムネイルを次回起動後も再利用しますか？",
+                    "表示用サムネイルをLumineのデータフォルダーへ保存します。次回以降の表示が速くなりますが、ディスク使用量が増えます。",
+                    "元画像や評価・お気に入り・タグなどの整理情報は変更されません。キャッシュはいつでも安全に削除できます。",
                     confirmLabel: "有効にする");
             if (!confirmed)
             {
@@ -1657,10 +1769,10 @@ public sealed class MainWindow : Window
         var confirmed =
             await ProductDialogs.ConfirmAsync(
                 this,
-                "表示用cacheを削除しますか？",
+                "表示用キャッシュを削除しますか？",
                 "Lumineが生成した表示用サムネイルだけを削除します。",
                 "元画像、ライブラリ登録、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineage、Publicationは削除しません。",
-                confirmLabel: "cacheを削除");
+                confirmLabel: "キャッシュを削除");
         if (!confirmed)
         {
             return;
@@ -1673,8 +1785,10 @@ public sealed class MainWindow : Window
             LumineDesign.MutedForeground;
         _status.Text =
             result.FilesDeleted == 0
-                ? "削除する表示用cacheはありませんでした。"
-                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用cacheを削除しました。";
+                ? "削除する表示用キャッシュはありませんでした。"
+                : $"{result.FilesDeleted:N0}ファイル / {FormatBytes(result.BytesDeleted)} の表示用キャッシュを削除しました。";
+        _ = ClearTransientStatusAsync(
+            _status.Text);
 
         StartNavigationRefresh();
     }
@@ -1823,8 +1937,12 @@ public sealed class MainWindow : Window
             "公開履歴");
         _status.Foreground =
             LumineDesign.MutedForeground;
-        _status.Text =
+        const string publicationStatus =
             "Publicationを公開履歴へ保存しました。";
+        _status.Text =
+            publicationStatus;
+        _ = ClearTransientStatusAsync(
+            publicationStatus);
         StartNavigationRefresh();
     }
 
@@ -1876,12 +1994,14 @@ public sealed class MainWindow : Window
                     existingShell;
                 _productShellState =
                     "Workspace";
+                existingShell.SetNoMatchState(
+                    runtime.AssetCount == 0,
+                    ClearBrowseFiltersAsync,
+                    OpenBrowseFilterPanel);
                 _status.Foreground =
                     LumineDesign.MutedForeground;
                 _status.Text =
-                    runtime.AssetCount == 0
-                        ? "一致する画像がありません。検索・フィルター条件を見直してください。"
-                        : string.Empty;
+                    string.Empty;
             }
             else if (runtime.AssetCount == 0)
             {
@@ -1927,6 +2047,7 @@ public sealed class MainWindow : Window
                             restoredIndices);
                     _shell =
                         existingShell;
+                    existingShell.SetNoMatchState(false);
                     _productShellState =
                         "Workspace";
                 }
@@ -1954,10 +2075,14 @@ public sealed class MainWindow : Window
                 }
             }
 
+            _host?.Log.Write(
+                "browse",
+                $"Browse query failed: {exception.Message}");
             _status.Foreground =
                 LumineDesign.Warning;
             _status.Text =
-                $"検索・フィルターを適用できませんでした: {exception.Message}";
+                "検索・フィルターを適用できませんでした。条件を確認してもう一度お試しください。";
+            return;
         }
 
         UpdateScopeDisplay();
@@ -2219,16 +2344,15 @@ public sealed class MainWindow : Window
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text =
-            "ライブラリを準備しています…";
+            string.Empty;
 
         await DisposeCurrentRuntimeAsync()
             .ConfigureAwait(true);
         _expandedFolderPaths.Clear();
 
         _viewerHost.Content =
-            LumineDesign.CreateProductState(
-                "ライブラリを開いています",
-                string.Empty);
+            CreateLoadingLibraryState(
+                out var loadingProgress);
 
         var acceptOpenProgress = true;
         var progress =
@@ -2237,7 +2361,7 @@ public sealed class MainWindow : Window
                 {
                     if (acceptOpenProgress)
                     {
-                        _status.Text =
+                        loadingProgress.Text =
                             FormatOpenProgress(update);
                     }
                 });
@@ -2289,10 +2413,20 @@ public sealed class MainWindow : Window
 
             _status.Foreground =
                 LumineDesign.MutedForeground;
-            _status.Text =
-                _runtime.AssetCount == 0
-                    ? "画像は見つかりませんでした。"
-                    : $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+            if (_runtime.AssetCount == 0)
+            {
+                _status.Text =
+                    string.Empty;
+            }
+            else
+            {
+                var openedStatus =
+                    $"{_runtime.AssetCount:N0}件の画像を表示しています。";
+                _status.Text =
+                    openedStatus;
+                _ = ClearTransientStatusAsync(
+                    openedStatus);
+            }
 
             _host?.Log.Write(
                 "library",
@@ -2305,8 +2439,12 @@ public sealed class MainWindow : Window
             if (!_closeStarted)
             {
                 _productShellState = "Welcome";
-                _status.Text =
+                var cancelledStatus =
                     "ライブラリの読み込みをキャンセルしました。";
+                _status.Text =
+                    cancelledStatus;
+                _ = ClearTransientStatusAsync(
+                    cancelledStatus);
                 _viewerHost.Content =
                     CreateWelcomeState(recovered: false);
             }
@@ -2322,11 +2460,12 @@ public sealed class MainWindow : Window
                 libraryRoot;
             _failedLibraryDataPaths =
                 dataPaths;
+            DismissCompactNavigationOverlayForBlockingState();
             _productShellState = "Error";
             _status.Foreground =
                 LumineDesign.Danger;
             _status.Text =
-                "ライブラリを開けませんでした。";
+                string.Empty;
             _viewerHost.Content =
                 CreateLibraryOpenFailureState(
                     exception);
@@ -2457,14 +2596,37 @@ public sealed class MainWindow : Window
                     }
             };
 
+        var recoveryActions =
+            new WrapPanel
+            {
+                // Stretch to the product-state content width so high text
+                // scales wrap actions instead of centering an over-wide row
+                // beyond the card/overlay boundary.
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch
+            };
+        retry.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        choose.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
+        recoveryActions.Children.Add(retry);
+        recoveryActions.Children.Add(choose);
+
         var actions =
             new StackPanel
             {
                 Spacing =
                     LumineDesign.Space8
             };
-        actions.Children.Add(retry);
-        actions.Children.Add(choose);
+        actions.Children.Add(recoveryActions);
         actions.Children.Add(detail);
 
         return LumineDesign.CreateProductState(
@@ -2556,15 +2718,59 @@ public sealed class MainWindow : Window
                 cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var text = new TextBox
-        {
-            Text = diagnostics,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
-            Margin = new Thickness(16)
-        };
+        var text =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    Text = diagnostics,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping =
+                        TextWrapping.NoWrap,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    VerticalAlignment =
+                        VerticalAlignment.Stretch
+                });
 
+        var close =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "閉じる",
+                    IsDefault = true,
+                    IsCancel = true
+                });
+
+        var content =
+            new Grid
+            {
+                RowDefinitions =
+                    new RowDefinitions("*,Auto"),
+                RowSpacing =
+                    LumineDesign.Space12,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space16)
+            };
+        content.Children.Add(text);
+        Grid.SetRow(
+            close,
+            1);
+        close.HorizontalAlignment =
+            HorizontalAlignment.Right;
+        content.Children.Add(close);
+
+        var dialogWidth =
+            Math.Clamp(
+                Bounds.Width - 64,
+                560,
+                820);
+        var dialogHeight =
+            Math.Clamp(
+                Bounds.Height - 64,
+                360,
+                620);
         var dialog = new Window
         {
             Title = "Lumine 診断情報",
@@ -2572,18 +2778,29 @@ public sealed class MainWindow : Window
             Background = LumineDesign.Background,
             Foreground = LumineDesign.Foreground,
             FontFamily = LumineDesign.UiFont,
-            Width = 820,
-            Height = 620,
-            MinWidth = 640,
-            MinHeight = 420,
-            Content = text
+            Width = dialogWidth,
+            Height = dialogHeight,
+            MinWidth = 520,
+            MinHeight = 340,
+            MaxWidth = 900,
+            MaxHeight = 700,
+            CanResize = true,
+            WindowStartupLocation =
+                WindowStartupLocation.CenterOwner,
+            Content = content
         };
+        close.Click +=
+            (_, _) => dialog.Close();
 
         _diagnosticsWindow = dialog;
+        var focusReturn =
+            FocusManager?.GetFocusedElement()
+                as Control;
 
         try
         {
             await dialog.ShowDialog(this);
+            focusReturn?.Focus();
         }
         finally
         {
@@ -2593,6 +2810,27 @@ public sealed class MainWindow : Window
             {
                 _diagnosticsWindow = null;
             }
+        }
+    }
+
+    private void OnMainWindowKeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        if (e.Handled
+            || _lightboxHost.IsVisible)
+        {
+            return;
+        }
+
+        if (e.Key == Key.F
+            && e.KeyModifiers.HasFlag(
+                KeyModifiers.Control)
+            && _browseControls is not null
+            && !_workspacePageHost.IsVisible)
+        {
+            _browseControls.FocusSearch();
+            e.Handled = true;
         }
     }
 
@@ -2724,7 +2962,7 @@ public sealed class MainWindow : Window
                     "window",
                     $"Shutdown error: {shutdownFailure.Message}");
                 _status.Text =
-                    $"Shutdown error: {shutdownFailure.Message}";
+                    "終了処理で問題が発生しました。診断情報を確認してください。";
             }
         }
         finally
@@ -2776,30 +3014,111 @@ public sealed class MainWindow : Window
             add);
     }
 
+    private async Task ClearBrowseFiltersAsync()
+    {
+        _browseFilterState =
+            new BrowseFilterState(
+                SortOrder:
+                    _browsePreferences.SortOrder);
+        EnsureBrowseControls();
+        await ApplyBrowseQueryAsync();
+        RenderNavigationDestination();
+    }
+
+    private void OpenBrowseFilterPanel()
+    {
+        _browseControls?.OpenFilterPanel();
+    }
+
     private Control CreateNoMatchState()
     {
         var clear =
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "検索・フィルターを解除"
+                    Content = "条件をすべて解除"
                 });
         clear.Click +=
             async (_, _) =>
+                await ClearBrowseFiltersAsync();
+
+        var edit =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "フィルターを見直す"
+                });
+        edit.Click +=
+            (_, _) => OpenBrowseFilterPanel();
+
+        var actions =
+            new WrapPanel
             {
-                _browseFilterState =
-                    new BrowseFilterState(
-                        SortOrder:
-                            _browsePreferences.SortOrder);
-                EnsureBrowseControls();
-                await ApplyBrowseQueryAsync();
-                RenderNavigationDestination();
+                HorizontalAlignment =
+                    HorizontalAlignment.Center
             };
+        clear.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        edit.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
+        actions.Children.Add(clear);
+        actions.Children.Add(edit);
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            "検索またはフィルター条件を見直すか、条件を解除してすべての画像へ戻れます。",
-            clear);
+            "条件を解除するか、フィルターを見直してください。",
+            new Border
+            {
+                Child = actions
+            });
+    }
+
+    private Control CreateLoadingLibraryState(
+        out TextBlock progressText)
+    {
+        progressText =
+            new TextBlock
+            {
+                Text = "ライブラリを準備しています…",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextAlignment =
+                    TextAlignment.Center,
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+
+        var progress =
+            new ProgressBar
+            {
+                IsIndeterminate = true,
+                MinHeight = 4,
+                MaxHeight = 4
+            };
+
+        var content =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space8
+            };
+        content.Children.Add(progress);
+        content.Children.Add(progressText);
+
+        return LumineDesign.CreateProductState(
+            "ライブラリを開いています",
+            "画像一覧を安全に準備しています。",
+            content);
     }
 
     private Control CreateWelcomeState(

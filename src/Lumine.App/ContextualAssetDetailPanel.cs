@@ -280,19 +280,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
 
         _pin =
-            LumineDesign.ConfigureSecondaryButton(
+            LumineDesign.ConfigureIconButton(
                 new Button
                 {
-                    Content = "固定",
-                    MinHeight = 28,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space2)
-                });
-        ToolTip.SetTip(
-            _pin,
-            "詳細パネルを画像一覧の横に固定");
+                    Content =
+                        LumineDesign.CreateStrokeIcon(
+                            LumineDesign.PinIconPath,
+                            16)
+                },
+                "詳細パネルをサイドに固定");
         _pin.Click +=
             (_, _) =>
                 PinToggleRequested?.Invoke(
@@ -485,8 +481,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     }
                     catch (Exception exception)
                     {
+                        System.Diagnostics.Trace.TraceError(
+                            exception.ToString());
                         _saveStatus.Text =
-                            $"操作を完了できませんでした: {exception.Message}";
+                            "操作を完了できませんでした。もう一度お試しください。";
                     }
                     finally
                     {
@@ -837,23 +835,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     {
         _pin.IsVisible = available;
         _pin.IsEnabled = available;
-        _pin.Content =
-            pinned
-                ? "固定中"
-                : "固定";
         _pin.Background =
             pinned
-                ? LumineDesign.AccentMuted
-                : LumineDesign.ControlSurface;
+                ? LumineDesign.InteractionSelected
+                : Brushes.Transparent;
         _pin.BorderBrush =
             pinned
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
         ToolTip.SetTip(
             _pin,
             pinned
-                ? "固定を解除して画像一覧の上に重ねる"
-                : "詳細パネルを画像一覧の横に固定");
+                ? "詳細パネルの固定を解除"
+                : "詳細パネルをサイドに固定");
+        AutomationProperties.SetName(
+            _pin,
+            pinned
+                ? "詳細パネルの固定を解除"
+                : "詳細パネルをサイドに固定");
     }
 
     internal int SelectedTabIndex =>
@@ -868,11 +867,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal void SelectTabForSmoke(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        if (index >= TabHeaders.Count)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(index));
-        }
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(
+            index,
+            TabHeaders.Count);
 
         SelectTab(index);
     }
@@ -1001,7 +998,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             when (token.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             if (_assetId != asset.Id)
             {
@@ -1113,8 +1110,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _saveStatus.Text =
-                $"保存できませんでした: {exception.Message}";
+                "保存できませんでした。もう一度お試しください。";
             _save.IsEnabled = true;
             _reset.IsEnabled =
                 _loadedMetadata is not null;
@@ -1460,8 +1459,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 return;
             }
 
-            var message =
-                $"制作コンテキストを取得できませんでした: {exception.Message}";
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
+            const string message =
+                "制作コンテキストを取得できませんでした。再読み込みしてください。";
             _works.Text = message;
             _groups.Text = "—";
             _relations.Text = "—";
@@ -1864,6 +1865,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                         new Thickness(0),
                                     FontSize = 17
                                 });
+                        // ConfigureSecondaryButton applies shared
+                        // caption sizing and horizontal padding. Restore the
+                        // compact direct-rating geometry after common chrome
+                        // so the star glyph is not clipped inside 31 DIP.
+                        button.FontSize = 17;
+                        button.Padding =
+                            new Thickness(0);
+
                         var accessibleName =
                             $"評価 {rating}";
                         AutomationProperties.SetName(
@@ -1950,6 +1959,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         button.Resources[
                             "ButtonBorderBrushPressed"] =
                             LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBorderBrushFocused"] =
+                            LumineDesign.Focus;
+                        button.Resources[
+                            "ButtonBackgroundFocused"] =
+                            value is null
+                                ? LumineDesign.InteractionNeutral
+                                : swatch;
                         button.Click +=
                             (_, _) =>
                                 SetColorFromDirectControl(
@@ -2005,14 +2022,26 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 rating <= selected
                     ? LumineDesign.Warning
                     : LumineDesign.MutedForeground;
+            var active =
+                rating == selected;
             button.Background =
-                rating == selected
+                active
                     ? LumineDesign.AccentMuted
                     : LumineDesign.ControlSurface;
             button.BorderBrush =
-                rating == selected
+                active
                     ? LumineDesign.BorderStrong
                     : LumineDesign.Border;
+            if (active)
+            {
+                LumineDesign.ConfigureSelectedButtonStateResources(
+                    button);
+            }
+            else
+            {
+                LumineDesign.ConfigureNeutralButtonStateResources(
+                    button);
+            }
         }
     }
 
@@ -2464,6 +2493,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         string label,
         Control editor)
     {
+        if (string.IsNullOrWhiteSpace(
+                AutomationProperties.GetName(
+                    editor)))
+        {
+            AutomationProperties.SetName(
+                editor,
+                label);
+        }
+
         var labelBlock =
             new TextBlock
             {

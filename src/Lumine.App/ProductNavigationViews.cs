@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
@@ -193,6 +194,12 @@ internal static class ProductNavigationViews
                         IsEnabled = canOpen
                     };
 
+                LumineDesign.ConfigureNeutralButtonStateResources(
+                    open);
+                AutomationProperties.SetName(
+                    open,
+                    $"ライブラリを開く: {library.Name}");
+
                 if (canOpen)
                 {
                     AttachAsync(
@@ -272,10 +279,15 @@ internal static class ProductNavigationViews
                 reportError);
             manageMenu.Items.Add(toggle);
 
+            manageMenu.Items.Add(
+                new Separator());
+
             var remove =
                 new MenuItem
                 {
-                    Header = "登録解除…"
+                    Header = "登録解除…",
+                    Foreground =
+                        LumineDesign.Danger
                 };
             AttachAsync(
                 remove,
@@ -373,6 +385,19 @@ internal static class ProductNavigationViews
                 FontSize =
                     LumineDesign.CaptionFontSize
             };
+        if (selectedFolder is null)
+        {
+            LumineDesign.ConfigureSelectedButtonStateResources(
+                all);
+        }
+        else
+        {
+            LumineDesign.ConfigureNeutralButtonStateResources(
+                all);
+        }
+        AutomationProperties.SetName(
+            all,
+            "すべての画像");
         AttachAsync(
             all,
             () => selectFolder(null),
@@ -586,10 +611,12 @@ internal static class ProductNavigationViews
                                 {
                                     Content =
                                         hasChildren
-                                            ? expanded
-                                                ? "▼"
-                                                : "▶"
-                                            : string.Empty,
+                                            ? LumineDesign.CreateStrokeIcon(
+                                                expanded
+                                                    ? LumineDesign.ChevronDownIconPath
+                                                    : LumineDesign.ChevronRightIconPath,
+                                                14)
+                                            : null,
                                     Width = 26,
                                     Height = 28,
                                     MinWidth = 26,
@@ -665,9 +692,22 @@ internal static class ProductNavigationViews
                                     new CornerRadius(
                                         LumineDesign.ControlRadius)
                             };
+                        if (selected)
+                        {
+                            LumineDesign.ConfigureSelectedButtonStateResources(
+                                folderButton);
+                        }
+                        else
+                        {
+                            LumineDesign.ConfigureNeutralButtonStateResources(
+                                folderButton);
+                        }
                         ToolTip.SetTip(
                             folderButton,
                             folder.RelativePath);
+                        AutomationProperties.SetName(
+                            folderButton,
+                            $"フォルダー: {folder.RelativePath}");
                         AttachAsync(
                             folderButton,
                             () => selectFolder(
@@ -1141,6 +1181,19 @@ internal static class ProductNavigationViews
                                         new CornerRadius(
                                             LumineDesign.ControlRadius)
                                 };
+                            if (isSelected)
+                            {
+                                LumineDesign.ConfigureSelectedButtonStateResources(
+                                    button);
+                            }
+                            else
+                            {
+                                LumineDesign.ConfigureNeutralButtonStateResources(
+                                    button);
+                            }
+                            AutomationProperties.SetName(
+                                button,
+                                $"タグ: {tag.Name}");
                             AttachAsync(
                                 button,
                                 async () =>
@@ -1425,11 +1478,7 @@ internal static class ProductNavigationViews
                                     editStatus.Foreground =
                                         LumineDesign.Warning;
                                     editStatus.Text =
-                                        "保存できませんでした。"
-                                        + (string.IsNullOrWhiteSpace(
-                                                exception.Message)
-                                            ? string.Empty
-                                            : $" {exception.Message}");
+                                        "保存できませんでした。内容を確認してもう一度お試しください。";
                                 }
                                 finally
                                 {
@@ -1445,7 +1494,7 @@ internal static class ProductNavigationViews
                             edit);
 
                         var remove =
-                            LumineDesign.ConfigureSecondaryButton(
+                            LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
                                     Content = "削除",
@@ -1459,8 +1508,6 @@ internal static class ProductNavigationViews
                                     VerticalAlignment =
                                         VerticalAlignment.Center
                                 });
-                        remove.Foreground =
-                            LumineDesign.Danger;
                         Grid.SetColumn(
                             remove,
                             2);
@@ -1830,8 +1877,10 @@ internal static class ProductNavigationViews
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     reportError?.Invoke(
-                        $"公開履歴を追加で読み込めませんでした: {exception.Message}");
+                        "公開履歴を追加で読み込めませんでした。もう一度お試しください。");
                 }
                 finally
                 {
@@ -2023,10 +2072,7 @@ internal static class ProductNavigationViews
             System.Diagnostics.Trace.TraceError(
                 exception.ToString());
             reportError?.Invoke(
-                "操作を完了できませんでした。"
-                + (string.IsNullOrWhiteSpace(exception.Message)
-                    ? string.Empty
-                    : $" {exception.Message}"));
+                "操作を完了できませんでした。もう一度お試しください。");
         }
         finally
         {

@@ -37,6 +37,9 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Border _contextSurface;
     private readonly Grid _browseViewer;
     private readonly Border _focusedSurface;
+    private readonly ContentControl _noMatchSurface;
+    private Func<Task>? _clearNoMatchFilters;
+    private Action? _editNoMatchFilters;
     private CancellationTokenSource? _selectionSummaryCancellation;
     private CancellationTokenSource? _bulkOperationCancellation;
     private Button? _cancelBulkOperationButton;
@@ -180,6 +183,75 @@ internal sealed class CoreViewerShell : UserControl
         _selectionBar = CreateSelectionBar();
         _selectionBar.IsVisible = false;
 
+        var clearNoMatch =
+            LumineDesign.ConfigurePrimaryButton(
+                new Button
+                {
+                    Content = "条件をすべて解除"
+                });
+        clearNoMatch.Click +=
+            async (_, _) =>
+            {
+                if (_clearNoMatchFilters is not null)
+                {
+                    await _clearNoMatchFilters();
+                }
+            };
+
+        var editNoMatch =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "フィルターを見直す"
+                });
+        editNoMatch.Click +=
+            (_, _) =>
+                _editNoMatchFilters?.Invoke();
+
+        var noMatchActions =
+            new WrapPanel
+            {
+                HorizontalAlignment =
+                    HorizontalAlignment.Center
+            };
+        clearNoMatch.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space8,
+                LumineDesign.Space8);
+        editNoMatch.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
+        noMatchActions.Children.Add(
+            clearNoMatch);
+        noMatchActions.Children.Add(
+            editNoMatch);
+
+        var noMatchActionHost =
+            new Border
+            {
+                Child = noMatchActions
+            };
+
+        _noMatchSurface =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Stretch,
+                Content =
+                    LumineDesign.CreateProductState(
+                        "一致する画像がありません",
+                        "条件を解除するか、フィルターを見直してください。",
+                        noMatchActionHost)
+            };
+
         _grid.SelectionChanged += OnSelectionChanged;
         _grid.AssetInvoked += OnAssetInvoked;
         _detail.FullScreenToggleRequested +=
@@ -219,6 +291,12 @@ internal sealed class CoreViewerShell : UserControl
             };
         _browseViewer.Children.Add(
             gridSurface);
+        Grid.SetColumn(
+            _noMatchSurface,
+            0);
+        _noMatchSurface.ZIndex = 10;
+        _browseViewer.Children.Add(
+            _noMatchSurface);
         Grid.SetColumn(_contextSurface, 0);
         _contextSurface.ZIndex = 20;
         _browseViewer.Children.Add(
@@ -275,6 +353,34 @@ internal sealed class CoreViewerShell : UserControl
 
     internal bool IsFocusedViewVisible =>
         _focusedSurface.IsVisible;
+
+    internal bool IsNoMatchStateVisibleForSmoke =>
+        _noMatchSurface.IsVisible;
+
+    internal void SetNoMatchState(
+        bool visible,
+        Func<Task>? clearFilters = null,
+        Action? editFilters = null)
+    {
+        _clearNoMatchFilters =
+            visible
+                ? clearFilters
+                : null;
+        _editNoMatchFilters =
+            visible
+                ? editFilters
+                : null;
+        _noMatchSurface.IsVisible =
+            visible;
+        _grid.IsHitTestVisible =
+            !visible;
+
+        if (visible)
+        {
+            HideContextDetail();
+            _grid.ClearSelection();
+        }
+    }
 
     internal bool IsBulkSelectionBarVisible =>
         _selectionBar.IsVisible;
@@ -963,10 +1069,12 @@ internal sealed class CoreViewerShell : UserControl
                 }
                 catch (Exception exception)
                 {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
                     _bulkStatus.Foreground =
                         LumineDesign.Danger;
                     _bulkStatus.Text =
-                        $"操作できませんでした: {exception.Message}";
+                        "操作を完了できませんでした。もう一度お試しください。";
                 }
                 finally
                 {
@@ -1007,8 +1115,10 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Text =
-                $"画像を表示できませんでした: {exception.Message}";
+                "画像を表示できませんでした。もう一度お試しください。";
         }
     }
 
@@ -1030,8 +1140,10 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Text =
-                $"詳細を表示できませんでした: {exception.Message}";
+                "詳細を表示できませんでした。もう一度お試しください。";
         }
     }
 
@@ -1444,16 +1556,19 @@ internal sealed class CoreViewerShell : UserControl
             CreateBulkButton(
                 "元ファイルを削除…",
                 DeleteSelectedSourcesAsync);
-        delete.Foreground =
-            LumineDesign.Danger;
+        LumineDesign.ConfigureDangerButton(
+            delete);
+        delete.MinHeight = 28;
+        delete.Padding =
+            new Thickness(
+                LumineDesign.Space8,
+                LumineDesign.Space4);
         delete.Margin =
             new Thickness(
                 LumineDesign.Space8,
                 0,
                 0,
                 0);
-        LumineDesign.ConfigureDangerButtonStateResources(
-            delete);
 
         _cancelBulkOperationButton =
             LumineDesign.ConfigureSecondaryButton(
@@ -1585,10 +1700,12 @@ internal sealed class CoreViewerShell : UserControl
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                exception.ToString());
             _bulkStatus.Foreground =
                 LumineDesign.Warning;
             _bulkStatus.Text =
-                $"タグ候補を読み込めません: {exception.Message}";
+                "タグ候補を読み込めませんでした。もう一度お試しください。";
         }
     }
 
@@ -1944,8 +2061,10 @@ internal sealed class CoreViewerShell : UserControl
             }
             catch (Exception exception)
             {
+                System.Diagnostics.Trace.TraceError(
+                    exception.ToString());
                 _selectionMetadataSummary.Text =
-                    $"整理情報を取得できません: {exception.Message}";
+                    "整理情報を取得できませんでした。";
             }
         }
 
@@ -1972,8 +2091,10 @@ internal sealed class CoreViewerShell : UserControl
             }
             catch (Exception exception)
             {
+                System.Diagnostics.Trace.TraceError(
+                    exception.ToString());
                 _bulkStatus.Text =
-                    $"詳細を更新できませんでした: {exception.Message}";
+                    "詳細を更新できませんでした。もう一度お試しください。";
             }
         }
     }
@@ -2494,7 +2615,7 @@ internal sealed class CoreViewerShell : UserControl
                 owner,
                 "元ファイルを削除しますか？",
                 $"{selectedCount:N0}件の元画像ファイルをディスクから削除します。これはLumineの登録解除ではなく、実ファイルの削除です。",
-                "この操作はLumineから元に戻せません。Work / Generation Group / Publication等の履歴は、参照可能なsnapshotを保持する場合があります。",
+                "この操作はLumineから元に戻せません。Work / Generation Group / Publicationなどの履歴には、削除前の参照情報が残る場合があります。",
                 confirmLabel: "元ファイルを削除",
                 tone: ProductDialogTone.Danger);
         if (!confirmed)

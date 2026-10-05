@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -119,6 +120,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
+        AutomationProperties.SetName(
+            _search,
+            "画像を検索");
+        AutomationProperties.SetAcceleratorKey(
+            _search,
+            "Ctrl+F");
 
         _sort =
             LumineDesign.ConfigureComboBox(
@@ -263,6 +270,15 @@ internal sealed class BrowseWorkspaceControls : UserControl
             string label,
             Control control)
         {
+            if (string.IsNullOrWhiteSpace(
+                    AutomationProperties.GetName(
+                        control)))
+            {
+                AutomationProperties.SetName(
+                    control,
+                    label);
+            }
+
             control.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
             control.VerticalAlignment =
@@ -382,22 +398,27 @@ internal sealed class BrowseWorkspaceControls : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 4,
+                Spacing = LumineDesign.Space6,
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
-            LumineDesign.CreateStrokeIcon(
-                LumineDesign.GridIconPath,
-                13,
-                LumineDesign.MutedForeground));
+            new TextBlock
+            {
+                Text = "サイズ",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        _density.Width = 80;
         densityPanel.Children.Add(_density);
-        densityPanel.Children.Add(
-            LumineDesign.CreateStrokeIcon(
-                LumineDesign.GridIconPath,
-                19,
-                LumineDesign.MutedForeground));
         ToolTip.SetTip(
             densityPanel,
+            "サムネイルサイズ");
+        AutomationProperties.SetName(
+            _density,
             "サムネイルサイズ");
         Grid.SetColumn(densityPanel, 3);
         primaryRow.Children.Add(densityPanel);
@@ -545,9 +566,18 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButtonLabel.Text
         ?? string.Empty;
 
-    internal void OpenFilterFlyoutForSmoke() =>
+    internal void FocusSearch()
+    {
+        _search.Focus();
+        _search.SelectAll();
+    }
+
+    internal void OpenFilterPanel() =>
         _filterFlyout.ShowAt(
             _filterButton);
+
+    internal void OpenFilterFlyoutForSmoke() =>
+        OpenFilterPanel();
 
     internal void CloseFilterFlyoutForSmoke() =>
         _filterFlyout.Hide();
@@ -1018,7 +1048,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _grid.BorderBrush =
             gridSelected
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
 
         var listSelected =
             Preferences.ViewMode
@@ -1030,7 +1060,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _list.BorderBrush =
             listSelected
                 ? LumineDesign.BorderStrong
-                : LumineDesign.Border;
+                : Brushes.Transparent;
     }
 
     private void RenderChips()
@@ -1053,6 +1083,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
             flyoutFilterCount == 0
                 ? "フィルター"
                 : $"フィルター {flyoutFilterCount}";
+        AutomationProperties.SetName(
+            _filterButton,
+            flyoutFilterCount == 0
+                ? "フィルターを開く"
+                : $"フィルターを開く・{flyoutFilterCount}件適用中");
         _filterButton.Background =
             flyoutFilterCount == 0
                 ? LumineDesign.ControlSurface

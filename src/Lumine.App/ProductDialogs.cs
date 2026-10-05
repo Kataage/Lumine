@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lumine.Core;
 
 namespace Lumine.App;
 
@@ -13,7 +14,7 @@ internal enum ProductDialogTone
 
 internal static class ProductDialogs
 {
-    public static Task<bool> ConfirmAsync(
+    public static async Task<bool> ConfirmAsync(
         Window owner,
         string title,
         string description,
@@ -45,23 +46,25 @@ internal static class ProductDialogs
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = cancelLabel
+                    Content = cancelLabel,
+                    IsCancel = true
                 });
         cancel.Click +=
             (_, _) => dialog.Close(false);
 
         var confirm =
             tone == ProductDialogTone.Danger
-                ? LumineDesign.ConfigureSecondaryButton(
+                ? LumineDesign.ConfigureDangerButton(
                     new Button
                     {
                         Content = confirmLabel,
-                        Foreground = LumineDesign.Danger
+                        IsDefault = true
                     })
                 : LumineDesign.ConfigurePrimaryButton(
                     new Button
                     {
-                        Content = confirmLabel
+                        Content = confirmLabel,
+                        IsDefault = true
                     });
         confirm.Click +=
             (_, _) => dialog.Close(true);
@@ -72,10 +75,16 @@ internal static class ProductDialogs
                 confirm));
         dialog.Content = panel;
 
-        return dialog.ShowDialog<bool>(owner);
+        var focusReturn =
+            owner.FocusManager?.GetFocusedElement()
+                as Control;
+        var result =
+            await dialog.ShowDialog<bool>(owner);
+        focusReturn?.Focus();
+        return result;
     }
 
-    public static Task NotifyAsync(
+    public static async Task NotifyAsync(
         Window owner,
         string title,
         string description,
@@ -106,7 +115,9 @@ internal static class ProductDialogs
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = buttonLabel
+                    Content = buttonLabel,
+                    IsDefault = true,
+                    IsCancel = true
                 });
         close.Click +=
             (_, _) => dialog.Close();
@@ -115,20 +126,48 @@ internal static class ProductDialogs
             CreateButtons(close));
         dialog.Content = panel;
 
-        return dialog.ShowDialog(owner);
+        var focusReturn =
+            owner.FocusManager?.GetFocusedElement()
+                as Control;
+        await dialog.ShowDialog(owner);
+        focusReturn?.Focus();
+    }
+
+    internal static Size ResolveDialogSizeForSmoke(
+        double baseHeight)
+    {
+        var scale =
+            Math.Clamp(
+                LumineVisualMetrics.TextScaleFactor,
+                1,
+                2.25);
+        return new Size(
+            Math.Min(
+                640,
+                500
+                + ((scale - 1) * 120)),
+            Math.Min(
+                520,
+                baseHeight
+                + ((scale - 1) * 120)));
     }
 
     private static Window CreateDialog(
         string title,
-        double height) =>
-        new()
+        double height)
+    {
+        var resolved =
+            ResolveDialogSizeForSmoke(height);
+        return new Window
         {
             Title = title,
             Icon = LumineDesign.CreateWindowIcon(),
-            Width = 500,
-            Height = height,
-            MinWidth = 420,
+            Width = resolved.Width,
+            Height = resolved.Height,
+            MinWidth = 380,
             MinHeight = 220,
+            MaxWidth = 680,
+            MaxHeight = 540,
             CanResize = true,
             WindowStartupLocation =
                 WindowStartupLocation.CenterOwner,
@@ -136,6 +175,7 @@ internal static class ProductDialogs
             Foreground = LumineDesign.Foreground,
             FontFamily = LumineDesign.UiFont
         };
+    }
 
     private static StackPanel CreateContent(
         string title,
@@ -190,7 +230,8 @@ internal static class ProductDialogs
                 Text = title,
                 Foreground = LumineDesign.Foreground,
                 FontWeight = FontWeight.SemiBold,
-                FontSize = LumineDesign.DialogTitleFontSize
+                FontSize = LumineDesign.DialogTitleFontSize,
+                TextWrapping = TextWrapping.Wrap
             });
 
         panel.Children.Add(
@@ -215,7 +256,13 @@ internal static class ProductDialogs
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(10),
-                    MaxHeight = 120,
+                    MaxHeight =
+                        Math.Min(
+                            180,
+                            120
+                            * Math.Max(
+                                1,
+                                LumineVisualMetrics.TextScaleFactor)),
                     Child =
                         new ScrollViewer
                         {

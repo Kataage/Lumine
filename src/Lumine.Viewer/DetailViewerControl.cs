@@ -519,6 +519,7 @@ public sealed class DetailViewerControl : UserControl
                 MinWidth = 36,
                 MinHeight = 32,
                 Padding = new Thickness(9, 5),
+                FontSize = ViewerVisualTokens.CaptionFontSize,
                 CornerRadius = new CornerRadius(7),
                 Background = ViewerVisualTokens.Overlay,
                 Foreground = ViewerVisualTokens.Foreground,
