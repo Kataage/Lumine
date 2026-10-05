@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Lumine.Library;
@@ -42,7 +44,218 @@ internal sealed record CreativePublicationDialogResult(
     DateTimeOffset PublishedAtUtc,
     string ExternalId,
     string ExternalUrl,
-    string PlatformMetadataJson);
+    string PlatformMetadataJson,
+    IReadOnlyList<long> OrderedAssetIds);
+
+internal sealed record CreativePublicationAssetOption(
+    long AssetId,
+    string DisplayName)
+{
+    public override string ToString() =>
+        DisplayName;
+}
+
+internal sealed class CreativePublicationOrderEditor
+    : StackPanel
+{
+    private readonly ObservableCollection<
+        CreativePublicationAssetOption> _items;
+    private readonly ListBox _list;
+    private readonly Button _moveUp;
+    private readonly Button _moveDown;
+    private readonly TextBlock _status;
+
+    public CreativePublicationOrderEditor(
+        IReadOnlyList<CreativePublicationAssetOption> assets)
+    {
+        ArgumentNullException.ThrowIfNull(assets);
+        if (assets.Count == 0)
+        {
+            throw new ArgumentException(
+                "Publication order requires at least one asset.",
+                nameof(assets));
+        }
+
+        if (assets.Any(
+                static asset =>
+                    asset.AssetId <= 0
+                    || string.IsNullOrWhiteSpace(
+                        asset.DisplayName))
+            || assets.Select(
+                    static asset =>
+                        asset.AssetId)
+                .Distinct()
+                .Count()
+                != assets.Count)
+        {
+            throw new ArgumentException(
+                "Publication order assets must have unique positive IDs and display names.",
+                nameof(assets));
+        }
+
+        Spacing =
+            LumineDesign.Space6;
+
+        _items =
+            new ObservableCollection<
+                CreativePublicationAssetOption>(
+                assets);
+        Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "上から順に公開された画像です。画像を選び、上へ / 下へで実際の投稿順に並べ替えます。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    Avalonia.Media.TextWrapping.Wrap
+            });
+
+        _list =
+            new ListBox
+            {
+                ItemsSource =
+                    _items,
+                MinHeight = 150,
+                MaxHeight = 220,
+                SelectedIndex = 0
+            };
+        AutomationProperties.SetName(
+            _list,
+            "Publication画像順");
+        _list.SelectionChanged +=
+            (_, _) => UpdateState();
+        Children.Add(
+            _list);
+
+        var actions =
+            new StackPanel
+            {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space6
+            };
+        _moveUp =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "↑ 上へ"
+                });
+        AutomationProperties.SetName(
+            _moveUp,
+            "選択画像を上へ移動");
+        _moveUp.Click +=
+            (_, _) => MoveSelected(-1);
+
+        _moveDown =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "↓ 下へ"
+                });
+        AutomationProperties.SetName(
+            _moveDown,
+            "選択画像を下へ移動");
+        _moveDown.Click +=
+            (_, _) => MoveSelected(1);
+
+        actions.Children.Add(
+            _moveUp);
+        actions.Children.Add(
+            _moveDown);
+        Children.Add(
+            actions);
+
+        _status =
+            new TextBlock
+            {
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    Avalonia.Media.TextWrapping.Wrap
+            };
+        Children.Add(
+            _status);
+        UpdateState();
+    }
+
+    public IReadOnlyList<long> OrderedAssetIds =>
+        _items
+            .Select(
+                static item =>
+                    item.AssetId)
+            .ToArray();
+
+    internal IReadOnlyList<long>
+        OrderedAssetIdsForSmoke =>
+        OrderedAssetIds;
+
+    internal void SelectForSmoke(
+        int index)
+    {
+        _list.SelectedIndex =
+            index;
+        UpdateState();
+    }
+
+    internal bool MoveSelectedUpForSmoke() =>
+        MoveSelected(-1);
+
+    internal bool MoveSelectedDownForSmoke() =>
+        MoveSelected(1);
+
+    internal bool MoveUpEnabledForSmoke =>
+        _moveUp.IsEnabled;
+
+    internal bool MoveDownEnabledForSmoke =>
+        _moveDown.IsEnabled;
+
+    private bool MoveSelected(
+        int delta)
+    {
+        var index =
+            _list.SelectedIndex;
+        var next =
+            index + delta;
+        if (index < 0
+            || next < 0
+            || next >= _items.Count)
+        {
+            UpdateState();
+            return false;
+        }
+
+        _items.Move(
+            index,
+            next);
+        _list.SelectedIndex =
+            next;
+        UpdateState();
+        return true;
+    }
+
+    private void UpdateState()
+    {
+        var index =
+            _list.SelectedIndex;
+        _moveUp.IsEnabled =
+            index > 0;
+        _moveDown.IsEnabled =
+            index >= 0
+            && index < _items.Count - 1;
+
+        _status.Text =
+            index >= 0
+            && index < _items.Count
+                ? $"公開順 {index + 1:N0} / {_items.Count:N0} · {_items[index].DisplayName}"
+                : $"公開順 {_items.Count:N0}枚";
+    }
+}
 
 internal sealed record CreativeSelectionPreview(
     int Count,
@@ -409,10 +622,19 @@ internal static class CreativeArchiveDialogs
     public static Task<CreativePublicationDialogResult?> ShowPublicationAsync(
         Window owner,
         CreativeSelectionPreview selection,
+        IReadOnlyList<CreativePublicationAssetOption> publicationAssets,
         IReadOnlyList<WorkInfo> works,
         IReadOnlyList<PublicationDestinationInfo>? destinations = null,
         IReadOnlyList<PublicationAccountInfo>? accounts = null)
     {
+        ArgumentNullException.ThrowIfNull(publicationAssets);
+        if (publicationAssets.Count != selection.Count)
+        {
+            throw new ArgumentException(
+                "Publication asset order must match the selected asset count.",
+                nameof(publicationAssets));
+        }
+
         destinations ??=
             Array.Empty<PublicationDestinationInfo>();
         accounts ??=
@@ -666,9 +888,13 @@ internal static class CreativeArchiveDialogs
         stack.Children.Add(pixivR18);
         stack.Children.Add(pixivAi);
         AddField(stack, "Platform metadata", customMetadata);
-        stack.Children.Add(
-            CreateAssetSummary(
-                selection));
+        var orderEditor =
+            new CreativePublicationOrderEditor(
+                publicationAssets);
+        AddField(
+            stack,
+            "画像の公開順",
+            orderEditor);
 
         var status = CreateStatus();
         stack.Children.Add(status);
@@ -790,7 +1016,8 @@ internal static class CreativeArchiveDialogs
                         publishedAt.ToUniversalTime(),
                         externalId.Text ?? string.Empty,
                         externalUrl.Text ?? string.Empty,
-                        platformMetadata);
+                        platformMetadata,
+                        orderEditor.OrderedAssetIds);
                 }));
         dialog.Content =
             CreateScroll(
