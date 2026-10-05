@@ -1007,6 +1007,12 @@ public sealed class MainWindow : Window
         if (IsMainWorkspaceDestination(
                 _navigationDestination))
         {
+            _settingsSnapshot =
+                _settingsSnapshot with
+                {
+                    HasActiveLibrary =
+                        _runtime is not null
+                };
             _navigationContent.Content = null;
             _workspacePageHost.Content =
                 ProductSettingsView.Create(
