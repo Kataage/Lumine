@@ -2382,8 +2382,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                     new Thickness(
                                         0,
                                         0,
-                                        LumineDesign.Space4,
-                                        LumineDesign.Space4),
+                                        LumineDesign.Space2,
+                                        LumineDesign.Space2),
                                 CornerRadius =
                                     new CornerRadius(14),
                                 Background = swatch,
@@ -2490,11 +2490,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             button.Background =
                 active
                     ? LumineDesign.AccentMuted
-                    : LumineDesign.ControlSurface;
+                    : Brushes.Transparent;
             button.BorderBrush =
                 active
                     ? LumineDesign.BorderStrong
-                    : LumineDesign.Border;
+                    : Brushes.Transparent;
             if (active)
             {
                 LumineDesign.ConfigureSelectedButtonStateResources(
