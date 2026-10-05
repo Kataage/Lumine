@@ -3902,7 +3902,7 @@ try
                                             StringComparison.Ordinal));
                         static bool IsVisibleInsideWindow(
                             Control? control,
-                            Window owner)
+                            MainWindow owner)
                         {
                             if (control is null
                                 || !control.IsEffectivelyVisible
