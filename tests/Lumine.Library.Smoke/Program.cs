@@ -188,7 +188,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 8, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 9, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -203,6 +203,20 @@ try
 
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Smoke", libraryRoot);
+    var defaultPublicationDestinations =
+        await repository.ListPublicationDestinationsAsync(
+            library.Id);
+    Require(
+        new[] { "Pixiv", "X", "Misskey", "Bluesky", "その他" }
+            .All(
+                name =>
+                    defaultPublicationDestinations.Any(
+                        destination =>
+                            string.Equals(
+                                destination.Name,
+                                name,
+                                StringComparison.Ordinal))),
+        "Publication profile migration/default trigger did not seed the expected local destinations.");
     var scanner = new LibraryScanner(repository);
     var scan = await scanner.ScanAsync(library.Id, batchSize: 2);
 
@@ -933,6 +947,104 @@ try
         && patchedTechnical.Tags.Contains("推し")
         && patchedTechnical.Tags.Contains("bulk-tag"),
         "Bulk patch overwrote unspecified metadata on the existing tagged asset.");
+
+    var smokeDestination =
+        await repository.CreatePublicationDestinationAsync(
+            library.Id,
+            new PublicationDestinationCreate(
+                "Smoke Social",
+                "other"));
+    var smokeAccount =
+        await repository.CreatePublicationAccountAsync(
+            library.Id,
+            new PublicationAccountCreate(
+                smokeDestination.Id,
+                "Smoke Creator",
+                "@smoke-profile"));
+    var profilePublication =
+        await repository.CreatePublicationAsync(
+            library.Id,
+            new PublicationCreate(
+                [first.Id],
+                smokeDestination.Name,
+                new DateTimeOffset(
+                    2026, 10, 4, 0, 0, 0, TimeSpan.Zero),
+                Title: "Profile Snapshot",
+                Account:
+                    $"{smokeAccount.DisplayName} {smokeAccount.AccountIdentifier}"));
+    var renamedDestination =
+        await repository.UpdatePublicationDestinationAsync(
+            library.Id,
+            smokeDestination.Id,
+            new PublicationDestinationCreate(
+                "Renamed Social",
+                "other"));
+    var renamedAccount =
+        await repository.UpdatePublicationAccountAsync(
+            library.Id,
+            smokeAccount.Id,
+            new PublicationAccountCreate(
+                smokeDestination.Id,
+                "Renamed Creator",
+                "@renamed"));
+    Require(
+        renamedDestination?.Name == "Renamed Social"
+        && renamedAccount?.DisplayName == "Renamed Creator",
+        "Publication destination/account update did not round-trip.");
+    var immutableProfilePublication =
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication profile snapshot disappeared after profile rename.");
+    Require(
+        immutableProfilePublication.Destination == "Smoke Social"
+        && immutableProfilePublication.Account
+            == "Smoke Creator @smoke-profile",
+        "Publication snapshot was rewritten when its reusable profile changed.");
+    Require(
+        await repository.DeletePublicationAccountAsync(
+            library.Id,
+            smokeAccount.Id)
+        && await repository.DeletePublicationDestinationAsync(
+            library.Id,
+            smokeDestination.Id),
+        "Reusable publication profile deletion failed.");
+    var afterProfileDelete =
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication snapshot was cascaded by profile deletion.");
+    Require(
+        afterProfileDelete.Destination == "Smoke Social"
+        && afterProfileDelete.Account
+            == "Smoke Creator @smoke-profile",
+        "Deleting a reusable profile modified the immutable Publication snapshot.");
+    var firstBeforePublicationDelete =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            first.Id);
+    Require(
+        await repository.DeletePublicationAsync(
+            library.Id,
+            profilePublication.Id),
+        "Publication history deletion did not remove the selected snapshot.");
+    Require(
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+            is null
+        && await repository.GetAssetAsync(
+            library.Id,
+            first.RelativePath)
+            is not null
+        && Equals(
+            firstBeforePublicationDelete,
+            await repository.GetUserMetadataAsync(
+                library.Id,
+                first.Id)),
+        "Deleting Publication history touched source assets or user metadata.");
 
     var metadataSummary =
         await repository.GetUserMetadataSelectionSummaryAsync(
