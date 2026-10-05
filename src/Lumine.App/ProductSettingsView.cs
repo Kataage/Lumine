@@ -319,6 +319,18 @@ internal static class ProductSettingsView
             snapshot.ScanExtensions
                 .ToHashSet(
                     StringComparer.OrdinalIgnoreCase);
+        var builtIn =
+            LibraryFileTypes.DefaultExtensions
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+        var customExtensions =
+            selected
+                .Where(
+                    extension =>
+                        !builtIn.Contains(
+                            extension))
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
         var controls =
             new List<(string Extension, CheckBox Control)>();
         var options =
@@ -359,6 +371,197 @@ internal static class ProductSettingsView
         content.Children.Add(
             options);
 
+        var status =
+            CreateStatusText();
+
+        content.Children.Add(
+            new TextBlock
+            {
+                Text =
+                    "独自拡張子は検索対象を追加するための上級設定です。画像として実際に表示できるかはImage Coreの対応状況に依存します。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            });
+
+        var customOptions =
+            new WrapPanel
+            {
+                Orientation =
+                    Orientation.Horizontal
+            };
+
+        void RefreshCustomOptions()
+        {
+            customOptions.Children.Clear();
+
+            foreach (var extension in
+                     customExtensions
+                         .OrderBy(
+                             static item => item,
+                             StringComparer.Ordinal))
+            {
+                var remove =
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content =
+                                $"{extension} ×",
+                            Margin =
+                                new Thickness(
+                                    0,
+                                    0,
+                                    LumineDesign.Space8,
+                                    LumineDesign.Space6)
+                        });
+                AutomationProperties.SetName(
+                    remove,
+                    $"独自読み込み対象 {extension} を削除");
+                remove.Click +=
+                    (_, _) =>
+                    {
+                        customExtensions.Remove(
+                            extension);
+                        RefreshCustomOptions();
+                        status.Foreground =
+                            LumineDesign.MutedForeground;
+                        status.Text =
+                            $"{extension} を削除候補にしました。保存すると反映されます。";
+                    };
+                customOptions.Children.Add(
+                    remove);
+            }
+
+            if (customExtensions.Count == 0)
+            {
+                customOptions.Children.Add(
+                    new TextBlock
+                    {
+                        Text =
+                            "独自拡張子はありません",
+                        Foreground =
+                            LumineDesign.MutedForeground,
+                        FontSize =
+                            LumineDesign.CaptionFontSize,
+                        Margin =
+                            new Thickness(
+                                0,
+                                LumineDesign.Space4,
+                                0,
+                                LumineDesign.Space6)
+                    });
+            }
+        }
+
+        RefreshCustomOptions();
+        content.Children.Add(
+            customOptions);
+
+        var customInput =
+            LumineDesign.ConfigureTextBox(
+                new TextBox
+                {
+                    Watermark =
+                        "例: .jfif",
+                    Width = 180,
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space8,
+                            LumineDesign.Space6)
+                });
+        AutomationProperties.SetName(
+            customInput,
+            "独自読み込み対象を入力");
+
+        var addCustom =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content =
+                        "独自拡張子を追加",
+                    Margin =
+                        new Thickness(
+                            0,
+                            0,
+                            0,
+                            LumineDesign.Space6)
+                });
+        AutomationProperties.SetName(
+            addCustom,
+            "独自読み込み対象を追加");
+
+        addCustom.Click +=
+            (_, _) =>
+            {
+                if (!LibraryFileTypes.TryNormalizeExtension(
+                        customInput.Text,
+                        out var extension))
+                {
+                    status.Foreground =
+                        LumineDesign.Warning;
+                    status.Text =
+                        "拡張子は . の後に英数字を指定してください（最大16文字）。";
+                    return;
+                }
+
+                if (builtIn.Contains(
+                        extension))
+                {
+                    var builtInControl =
+                        controls.First(
+                            item =>
+                                string.Equals(
+                                    item.Extension,
+                                    extension,
+                                    StringComparison.OrdinalIgnoreCase));
+                    builtInControl.Control.IsChecked =
+                        true;
+                    customInput.Text =
+                        string.Empty;
+                    status.Foreground =
+                        LumineDesign.MutedForeground;
+                    status.Text =
+                        $"{extension} は既定形式です。有効にしました。";
+                    return;
+                }
+
+                if (!customExtensions.Add(
+                        extension))
+                {
+                    status.Foreground =
+                        LumineDesign.MutedForeground;
+                    status.Text =
+                        $"{extension} は既に追加されています。";
+                    return;
+                }
+
+                customInput.Text =
+                    string.Empty;
+                RefreshCustomOptions();
+                status.Foreground =
+                    LumineDesign.MutedForeground;
+                status.Text =
+                    $"{extension} を追加候補にしました。保存すると反映されます。";
+            };
+
+        var customActions =
+            new WrapPanel
+            {
+                Orientation =
+                    Orientation.Horizontal
+            };
+        customActions.Children.Add(
+            customInput);
+        customActions.Children.Add(
+            addCustom);
+        content.Children.Add(
+            customActions);
+
         content.Children.Add(
             new TextBlock
             {
@@ -372,8 +575,6 @@ internal static class ProductSettingsView
                     TextWrapping.Wrap
             });
 
-        var status =
-            CreateStatusText();
         content.Children.Add(
             status);
 
@@ -431,6 +632,8 @@ internal static class ProductSettingsView
                         .Select(
                             static item =>
                                 item.Extension)
+                        .Concat(
+                            customExtensions)
                         .ToArray();
                 if (enabled.Length == 0)
                 {
