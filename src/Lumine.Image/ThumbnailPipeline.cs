@@ -5,6 +5,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
     private readonly ThumbnailGenerator _generator;
     private readonly ThumbnailCacheMaintenance? _maintenance;
     private readonly object _queueGate = new();
+    private readonly Queue<WorkItem> _interactive = new();
     private readonly Queue<WorkItem> _foreground = new();
     private readonly Queue<WorkItem> _background = new();
     private readonly SemaphoreSlim _queuedItems = new(0);
@@ -88,7 +89,8 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         if (_maintenance is not null)
         {
             await _maintenance.PauseForRequestAsync(
-                priority == ThumbnailPriority.Foreground)
+                priority is ThumbnailPriority.Interactive
+                    or ThumbnailPriority.Foreground)
                 .ConfigureAwait(false);
         }
 
@@ -122,13 +124,23 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 throw new ObjectDisposedException(nameof(ThumbnailPipeline));
             }
 
-            if (priority == ThumbnailPriority.Foreground)
+            switch (priority)
             {
-                _foreground.Enqueue(item);
-            }
-            else
-            {
-                _background.Enqueue(item);
+                case ThumbnailPriority.Interactive:
+                    _interactive.Enqueue(item);
+                    break;
+                case ThumbnailPriority.Foreground:
+                    _foreground.Enqueue(item);
+                    break;
+                case ThumbnailPriority.Background:
+                    _background.Enqueue(item);
+                    break;
+                default:
+                    _queueSlots.Release();
+                    throw new ArgumentOutOfRangeException(
+                        nameof(priority),
+                        priority,
+                        "Unknown thumbnail priority.");
             }
         }
 
@@ -149,7 +161,14 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
                 _disposed = true;
                 ownsShutdown = true;
                 abandoned = new List<WorkItem>(
-                    _foreground.Count + _background.Count);
+                    _interactive.Count
+                    + _foreground.Count
+                    + _background.Count);
+
+                while (_interactive.TryDequeue(out var interactive))
+                {
+                    abandoned.Add(interactive);
+                }
 
                 while (_foreground.TryDequeue(out var foreground))
                 {
@@ -226,7 +245,11 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
             WorkItem? item;
             lock (_queueGate)
             {
-                if (_foreground.Count > 0
+                if (_interactive.TryDequeue(out var interactive))
+                {
+                    item = interactive;
+                }
+                else if (_foreground.Count > 0
                     && (_background.Count == 0 || foregroundBurst < MaxForegroundBurst))
                 {
                     item = _foreground.Dequeue();
@@ -310,6 +333,7 @@ public sealed class ThumbnailPipeline : IAsyncDisposable
         {
             return !_disposed
                 && _activeWorkItems == 0
+                && _interactive.Count == 0
                 && _foreground.Count == 0
                 && _background.Count == 0;
         }
