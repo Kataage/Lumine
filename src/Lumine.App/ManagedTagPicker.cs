@@ -201,6 +201,13 @@ internal sealed class ManagedTagPicker : UserControl
     internal int CandidateCountForSmoke =>
         _candidateHost.Children.Count;
 
+    internal bool CandidateSurfaceVisibleForSmoke =>
+        _candidateSurface.IsVisible;
+
+    internal string SummaryTextForSmoke =>
+        _summary.Text ?? string.Empty;
+
+
     internal bool CreateSurfaceVisibleForSmoke =>
         _createSurface.IsVisible;
 
