@@ -2581,8 +2581,11 @@ public sealed class MainWindow : Window
         var recoveryActions =
             new WrapPanel
             {
+                // Stretch to the product-state content width so high text
+                // scales wrap actions instead of centering an over-wide row
+                // beyond the card/overlay boundary.
                 HorizontalAlignment =
-                    HorizontalAlignment.Center
+                    HorizontalAlignment.Stretch
             };
         retry.Margin =
             new Thickness(
