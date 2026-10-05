@@ -75,6 +75,12 @@ public sealed class MainWindow : Window
         Array.Empty<LibraryTagInfo>();
     private IReadOnlyList<PublicationInfo> _publications =
         Array.Empty<PublicationInfo>();
+    private IReadOnlyList<PublicationDestinationInfo>
+        _publicationDestinations =
+            Array.Empty<PublicationDestinationInfo>();
+    private IReadOnlyList<PublicationAccountInfo>
+        _publicationAccounts =
+            Array.Empty<PublicationAccountInfo>();
     private PublicationCursor? _publicationNextCursor;
     private long _publicationTotalCount;
     private ProductSettingsSnapshot _settingsSnapshot;
@@ -895,6 +901,12 @@ public sealed class MainWindow : Window
             Array.Empty<LibraryTagInfo>();
         PublicationPage? publicationPage =
             null;
+        IReadOnlyList<PublicationDestinationInfo>
+            publicationDestinations =
+                Array.Empty<PublicationDestinationInfo>();
+        IReadOnlyList<PublicationAccountInfo>
+            publicationAccounts =
+                Array.Empty<PublicationAccountInfo>();
         var facets =
             new LibraryBrowseFacets(
                 Array.Empty<string>(),
@@ -929,6 +941,16 @@ public sealed class MainWindow : Window
                             cursor: null,
                             cancellationToken:
                                 cancellationToken);
+                publicationDestinations =
+                    await _navigationLibraryService
+                        .ListPublicationDestinationsAsync(
+                            runtime.Library.Id,
+                            cancellationToken);
+                publicationAccounts =
+                    await _navigationLibraryService
+                        .ListPublicationAccountsAsync(
+                            runtime.Library.Id,
+                            cancellationToken);
             }
         }
 
@@ -951,6 +973,10 @@ public sealed class MainWindow : Window
         _publicationTotalCount =
             publicationPage?.TotalCount
             ?? 0;
+        _publicationDestinations =
+            publicationDestinations;
+        _publicationAccounts =
+            publicationAccounts;
         _browseFacets = facets;
         _browseControls?.UpdateFacetData(
             _tags,
@@ -1034,7 +1060,14 @@ public sealed class MainWindow : Window
                             _publicationTotalCount,
                             _publicationNextCursor is not null,
                             LoadMorePublicationHistoryAsync,
-                            ReportNavigationError),
+                            ReportNavigationError,
+                            _publicationDestinations,
+                            _publicationAccounts,
+                            CreatePublicationDestinationFromNavigationAsync,
+                            DeletePublicationDestinationFromNavigationAsync,
+                            CreatePublicationAccountFromNavigationAsync,
+                            DeletePublicationAccountFromNavigationAsync,
+                            DeletePublicationFromNavigationAsync),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
@@ -1396,6 +1429,12 @@ public sealed class MainWindow : Window
         _expandedFolderPaths.Clear();
         _tags = Array.Empty<LibraryTagInfo>();
         _publications = Array.Empty<PublicationInfo>();
+        _publicationDestinations =
+            Array.Empty<PublicationDestinationInfo>();
+        _publicationAccounts =
+            Array.Empty<PublicationAccountInfo>();
+        _publicationNextCursor = null;
+        _publicationTotalCount = 0;
         _browseFacets =
             new LibraryBrowseFacets(
                 Array.Empty<string>(),
