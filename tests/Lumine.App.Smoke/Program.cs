@@ -1683,20 +1683,20 @@ try
                 && string.Equals(
                     pixivMetadataEditor
                         .PlatformMetadataJson,
-                    "{\"ageRestriction\":\"all\",\"aiGenerated\":false}",
+                    "{\"ageRestriction\":\"all\",\"aiGenerated\":true}",
                     StringComparison.Ordinal),
-                "Pixiv Publication metadata editor did not restore the three-state age restriction with a canonical all-age default.");
+                "Pixiv Publication metadata editor did not restore the v1 all-age / AI-generated defaults.");
 
             pixivMetadataEditor
                 .SelectAgeRestrictionForSmoke(
                     "R-18G");
             pixivMetadataEditor
-                .AiGeneratedForSmoke = true;
+                .AiGeneratedForSmoke = false;
             Require(
                 string.Equals(
                     pixivMetadataEditor
                         .PlatformMetadataJson,
-                    "{\"ageRestriction\":\"r18g\",\"aiGenerated\":true}",
+                    "{\"ageRestriction\":\"r18g\",\"aiGenerated\":false}",
                     StringComparison.Ordinal),
                 "Pixiv R-18G authoring did not persist the canonical r18g value independently from AI-generated state.");
 
