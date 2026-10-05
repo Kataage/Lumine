@@ -542,6 +542,454 @@ public sealed partial class LibraryRepository
             == 1;
     }
 
+    public async Task<IReadOnlyList<PublicationDestinationInfo>>
+        ListPublicationDestinationsAsync(
+            long libraryId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, name, kind,
+                   created_at_utc_ticks, updated_at_utc_ticks
+            FROM publication_destinations
+            WHERE library_id = $library_id
+            ORDER BY name_key ASC, id ASC;
+            """;
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        var result =
+            new List<PublicationDestinationInfo>();
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            result.Add(
+                new PublicationDestinationInfo(
+                    reader.GetInt64(0),
+                    libraryId,
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    FromTicks(reader.GetInt64(3)),
+                    FromTicks(reader.GetInt64(4))));
+        }
+
+        return result;
+    }
+
+    public async Task<PublicationDestinationInfo>
+        CreatePublicationDestinationAsync(
+            long libraryId,
+            PublicationDestinationCreate create,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentNullException.ThrowIfNull(create);
+        var name =
+            RequireText(
+                create.Name,
+                nameof(create.Name),
+                128);
+        var kind =
+            RequireText(
+                    create.Kind,
+                    nameof(create.Kind),
+                    64)
+                .ToLowerInvariant();
+        var nameKey =
+            name.ToLowerInvariant();
+        var now =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO publication_destinations(
+                library_id, name, name_key, kind,
+                created_at_utc_ticks, updated_at_utc_ticks)
+            VALUES(
+                $library_id, $name, $name_key, $kind,
+                $created, $updated)
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        command.Parameters.AddWithValue(
+            "$name",
+            name);
+        command.Parameters.AddWithValue(
+            "$name_key",
+            nameKey);
+        command.Parameters.AddWithValue(
+            "$kind",
+            kind);
+        command.Parameters.AddWithValue(
+            "$created",
+            now);
+        command.Parameters.AddWithValue(
+            "$updated",
+            now);
+        var id =
+            Convert.ToInt64(
+                await command.ExecuteScalarAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        return new PublicationDestinationInfo(
+            id,
+            libraryId,
+            name,
+            kind,
+            FromTicks(now),
+            FromTicks(now));
+    }
+
+    public async Task<PublicationDestinationInfo?>
+        UpdatePublicationDestinationAsync(
+            long libraryId,
+            long destinationId,
+            PublicationDestinationCreate update,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(destinationId);
+        ArgumentNullException.ThrowIfNull(update);
+        var name =
+            RequireText(
+                update.Name,
+                nameof(update.Name),
+                128);
+        var kind =
+            RequireText(
+                    update.Kind,
+                    nameof(update.Kind),
+                    64)
+                .ToLowerInvariant();
+        var now =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE publication_destinations
+            SET name = $name,
+                name_key = $name_key,
+                kind = $kind,
+                updated_at_utc_ticks = $updated
+            WHERE id = $id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue(
+            "$name_key",
+            name.ToLowerInvariant());
+        command.Parameters.AddWithValue("$kind", kind);
+        command.Parameters.AddWithValue("$updated", now);
+        command.Parameters.AddWithValue("$id", destinationId);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false)
+            != 1)
+        {
+            return null;
+        }
+
+        return (await ListPublicationDestinationsAsync(
+                libraryId,
+                cancellationToken)
+            .ConfigureAwait(false))
+            .Single(
+                item => item.Id == destinationId);
+    }
+
+    public async Task<bool> DeletePublicationDestinationAsync(
+        long libraryId,
+        long destinationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(destinationId);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM publication_destinations
+            WHERE id = $id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$id", destinationId);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        return await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false)
+            == 1;
+    }
+
+    public async Task<IReadOnlyList<PublicationAccountInfo>>
+        ListPublicationAccountsAsync(
+            long libraryId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, destination_id,
+                   display_name, account_identifier,
+                   created_at_utc_ticks, updated_at_utc_ticks
+            FROM publication_accounts
+            WHERE library_id = $library_id
+            ORDER BY destination_id ASC, display_name ASC, id ASC;
+            """;
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        var result =
+            new List<PublicationAccountInfo>();
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            result.Add(
+                new PublicationAccountInfo(
+                    reader.GetInt64(0),
+                    libraryId,
+                    reader.GetInt64(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    FromTicks(reader.GetInt64(4)),
+                    FromTicks(reader.GetInt64(5))));
+        }
+
+        return result;
+    }
+
+    public async Task<PublicationAccountInfo>
+        CreatePublicationAccountAsync(
+            long libraryId,
+            PublicationAccountCreate create,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentNullException.ThrowIfNull(create);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            create.DestinationId);
+        var displayName =
+            RequireText(
+                create.DisplayName,
+                nameof(create.DisplayName),
+                128);
+        var identifier =
+            (create.AccountIdentifier ?? string.Empty)
+                .Trim();
+        if (identifier.Length > 256)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(create.AccountIdentifier),
+                "Account identifier must be at most 256 characters.");
+        }
+
+        var now =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+        await EnsurePublicationDestinationBelongsToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            create.DestinationId,
+            cancellationToken).ConfigureAwait(false);
+
+        await using var command =
+            connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO publication_accounts(
+                library_id, destination_id,
+                display_name, account_identifier,
+                created_at_utc_ticks, updated_at_utc_ticks)
+            VALUES(
+                $library_id, $destination_id,
+                $display_name, $identifier,
+                $created, $updated)
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        command.Parameters.AddWithValue("$destination_id", create.DestinationId);
+        command.Parameters.AddWithValue("$display_name", displayName);
+        command.Parameters.AddWithValue("$identifier", identifier);
+        command.Parameters.AddWithValue("$created", now);
+        command.Parameters.AddWithValue("$updated", now);
+        var id =
+            Convert.ToInt64(
+                await command.ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        transaction.Commit();
+        return new PublicationAccountInfo(
+            id,
+            libraryId,
+            create.DestinationId,
+            displayName,
+            identifier,
+            FromTicks(now),
+            FromTicks(now));
+    }
+
+    public async Task<PublicationAccountInfo?>
+        UpdatePublicationAccountAsync(
+            long libraryId,
+            long accountId,
+            PublicationAccountCreate update,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(accountId);
+        ArgumentNullException.ThrowIfNull(update);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            update.DestinationId);
+        var displayName =
+            RequireText(
+                update.DisplayName,
+                nameof(update.DisplayName),
+                128);
+        var identifier =
+            (update.AccountIdentifier ?? string.Empty)
+                .Trim();
+        if (identifier.Length > 256)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(update.AccountIdentifier),
+                "Account identifier must be at most 256 characters.");
+        }
+
+        var now =
+            DateTimeOffset.UtcNow.UtcDateTime.Ticks;
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+        await EnsurePublicationDestinationBelongsToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            update.DestinationId,
+            cancellationToken).ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE publication_accounts
+            SET destination_id = $destination_id,
+                display_name = $display_name,
+                account_identifier = $identifier,
+                updated_at_utc_ticks = $updated
+            WHERE id = $id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$destination_id", update.DestinationId);
+        command.Parameters.AddWithValue("$display_name", displayName);
+        command.Parameters.AddWithValue("$identifier", identifier);
+        command.Parameters.AddWithValue("$updated", now);
+        command.Parameters.AddWithValue("$id", accountId);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false)
+            != 1)
+        {
+            return null;
+        }
+
+        transaction.Commit();
+        return (await ListPublicationAccountsAsync(
+                libraryId,
+                cancellationToken)
+            .ConfigureAwait(false))
+            .Single(
+                item => item.Id == accountId);
+    }
+
+    public async Task<bool> DeletePublicationAccountAsync(
+        long libraryId,
+        long accountId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(accountId);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM publication_accounts
+            WHERE id = $id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$id", accountId);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        return await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false)
+            == 1;
+    }
+
+    public async Task<bool> DeletePublicationAsync(
+        long libraryId,
+        long publicationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(publicationId);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM publications
+            WHERE id = $id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue("$id", publicationId);
+        command.Parameters.AddWithValue("$library_id", libraryId);
+        return await command.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false)
+            == 1;
+    }
+
     public async Task<PublicationInfo> CreatePublicationAsync(
         long libraryId,
         PublicationCreate create,
@@ -1766,6 +2214,44 @@ public sealed partial class LibraryRepository
         {
             throw new InvalidOperationException(
                 $"Generation Group {groupId} does not belong to library {libraryId}.");
+        }
+    }
+
+    private static async Task
+        EnsurePublicationDestinationBelongsToLibraryAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            long libraryId,
+            long destinationId,
+            CancellationToken cancellationToken)
+    {
+        await using var command =
+            connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM publication_destinations
+                WHERE id = $destination_id
+                  AND library_id = $library_id);
+            """;
+        command.Parameters.AddWithValue(
+            "$destination_id",
+            destinationId);
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        var exists =
+            Convert.ToInt32(
+                await command.ExecuteScalarAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        if (exists != 1)
+        {
+            throw new InvalidOperationException(
+                $"Publication destination {destinationId} does not belong to library {libraryId}.");
         }
     }
 

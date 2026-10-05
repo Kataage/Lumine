@@ -457,6 +457,111 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<IReadOnlyList<PublicationDestinationInfo>>
+        ListPublicationDestinationsAsync(
+            long libraryId,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListPublicationDestinationsAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
+    public Task<PublicationDestinationInfo>
+        CreatePublicationDestinationAsync(
+            long libraryId,
+            PublicationDestinationCreate create,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreatePublicationDestinationAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<PublicationDestinationInfo?>
+        UpdatePublicationDestinationAsync(
+            long libraryId,
+            long destinationId,
+            PublicationDestinationCreate update,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdatePublicationDestinationAsync(
+                libraryId,
+                destinationId,
+                update,
+                token),
+            cancellationToken);
+
+    public Task<bool> DeletePublicationDestinationAsync(
+        long libraryId,
+        long destinationId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.DeletePublicationDestinationAsync(
+                libraryId,
+                destinationId,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<PublicationAccountInfo>>
+        ListPublicationAccountsAsync(
+            long libraryId,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListPublicationAccountsAsync(
+                libraryId,
+                token),
+            cancellationToken);
+
+    public Task<PublicationAccountInfo>
+        CreatePublicationAccountAsync(
+            long libraryId,
+            PublicationAccountCreate create,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.CreatePublicationAccountAsync(
+                libraryId,
+                create,
+                token),
+            cancellationToken);
+
+    public Task<PublicationAccountInfo?>
+        UpdatePublicationAccountAsync(
+            long libraryId,
+            long accountId,
+            PublicationAccountCreate update,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdatePublicationAccountAsync(
+                libraryId,
+                accountId,
+                update,
+                token),
+            cancellationToken);
+
+    public Task<bool> DeletePublicationAccountAsync(
+        long libraryId,
+        long accountId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.DeletePublicationAccountAsync(
+                libraryId,
+                accountId,
+                token),
+            cancellationToken);
+
+    public Task<bool> DeletePublicationAsync(
+        long libraryId,
+        long publicationId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.DeletePublicationAsync(
+                libraryId,
+                publicationId,
+                token),
+            cancellationToken);
+
     public Task<PublicationInfo> CreatePublicationAsync(
         long libraryId,
         PublicationCreate create,

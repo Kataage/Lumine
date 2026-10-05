@@ -67,6 +67,32 @@ public sealed record AssetRelationCreate(
     string RelationType,
     string Note = "");
 
+public sealed record PublicationDestinationInfo(
+    long Id,
+    long LibraryId,
+    string Name,
+    string Kind,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record PublicationDestinationCreate(
+    string Name,
+    string Kind);
+
+public sealed record PublicationAccountInfo(
+    long Id,
+    long LibraryId,
+    long DestinationId,
+    string DisplayName,
+    string AccountIdentifier,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record PublicationAccountCreate(
+    long DestinationId,
+    string DisplayName,
+    string AccountIdentifier = "");
+
 public sealed record PublicationAssetSnapshot(
     long? AssetId,
     string FileName,

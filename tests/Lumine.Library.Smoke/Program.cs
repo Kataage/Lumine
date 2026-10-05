@@ -138,7 +138,9 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (5, 'user-metadata-and-local-search', 5),
             (6, 'product-navigation-library-state', 6),
             (7, 'creative-archive-domain', 7),
-            (8, 'future-schema', 8);
+            (8, 'tag-color-and-management-parity', 8),
+            (9, 'publication-destination-and-account-profiles', 9),
+            (10, 'future-schema', 10);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -188,7 +190,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 8, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 9, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -203,6 +205,20 @@ try
 
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Smoke", libraryRoot);
+    var defaultPublicationDestinations =
+        await repository.ListPublicationDestinationsAsync(
+            library.Id);
+    Require(
+        new[] { "Pixiv", "X", "Misskey", "Bluesky", "その他" }
+            .All(
+                name =>
+                    defaultPublicationDestinations.Any(
+                        destination =>
+                            string.Equals(
+                                destination.Name,
+                                name,
+                                StringComparison.Ordinal))),
+        "Publication profile migration/default trigger did not seed the expected local destinations.");
     var scanner = new LibraryScanner(repository);
     var scan = await scanner.ScanAsync(library.Id, batchSize: 2);
 
@@ -934,6 +950,140 @@ try
         && patchedTechnical.Tags.Contains("bulk-tag"),
         "Bulk patch overwrote unspecified metadata on the existing tagged asset.");
 
+    var smokeDestination =
+        await repository.CreatePublicationDestinationAsync(
+            library.Id,
+            new PublicationDestinationCreate(
+                "Smoke Social",
+                "other"));
+    var smokeAccount =
+        await repository.CreatePublicationAccountAsync(
+            library.Id,
+            new PublicationAccountCreate(
+                smokeDestination.Id,
+                "Smoke Creator",
+                "@smoke-profile"));
+    var profilePublication =
+        await repository.CreatePublicationAsync(
+            library.Id,
+            new PublicationCreate(
+                [first.Id],
+                smokeDestination.Name,
+                new DateTimeOffset(
+                    2026, 10, 4, 0, 0, 0, TimeSpan.Zero),
+                Title: "Profile Snapshot",
+                Account:
+                    $"{smokeAccount.DisplayName} {smokeAccount.AccountIdentifier}"));
+    var renamedDestination =
+        await repository.UpdatePublicationDestinationAsync(
+            library.Id,
+            smokeDestination.Id,
+            new PublicationDestinationCreate(
+                "Renamed Social",
+                "other"));
+    var renamedAccount =
+        await repository.UpdatePublicationAccountAsync(
+            library.Id,
+            smokeAccount.Id,
+            new PublicationAccountCreate(
+                smokeDestination.Id,
+                "Renamed Creator",
+                "@renamed"));
+    Require(
+        renamedDestination?.Name == "Renamed Social"
+        && renamedAccount?.DisplayName == "Renamed Creator",
+        "Publication destination/account update did not round-trip.");
+    var immutableProfilePublication =
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication profile snapshot disappeared after profile rename.");
+    Require(
+        immutableProfilePublication.Destination == "Smoke Social"
+        && immutableProfilePublication.Account
+            == "Smoke Creator @smoke-profile",
+        "Publication snapshot was rewritten when its reusable profile changed.");
+    Require(
+        await repository.DeletePublicationAccountAsync(
+            library.Id,
+            smokeAccount.Id)
+        && await repository.DeletePublicationDestinationAsync(
+            library.Id,
+            smokeDestination.Id),
+        "Reusable publication profile deletion failed.");
+    var afterProfileDelete =
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+        ?? throw new InvalidOperationException(
+            "Publication snapshot was cascaded by profile deletion.");
+    Require(
+        afterProfileDelete.Destination == "Smoke Social"
+        && afterProfileDelete.Account
+            == "Smoke Creator @smoke-profile",
+        "Deleting a reusable profile modified the immutable Publication snapshot.");
+    var firstBeforePublicationDelete =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            first.Id);
+    Require(
+        await repository.DeletePublicationAsync(
+            library.Id,
+            profilePublication.Id),
+        "Publication history deletion did not remove the selected snapshot.");
+    var firstAfterPublicationDelete =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            first.Id);
+    Require(
+        await repository.GetPublicationAsync(
+            library.Id,
+            profilePublication.Id)
+            is null
+        && await repository.GetAssetAsync(
+            library.Id,
+            first.RelativePath)
+            is not null
+        && firstBeforePublicationDelete is not null
+        && firstAfterPublicationDelete is not null
+        && firstBeforePublicationDelete.Rating
+            == firstAfterPublicationDelete.Rating
+        && firstBeforePublicationDelete.Favorite
+            == firstAfterPublicationDelete.Favorite
+        && firstBeforePublicationDelete.StatusLabel
+            == firstAfterPublicationDelete.StatusLabel
+        && firstBeforePublicationDelete.ColorLabel
+            == firstAfterPublicationDelete.ColorLabel
+        && firstBeforePublicationDelete.Notes
+            == firstAfterPublicationDelete.Notes
+        && firstBeforePublicationDelete.Tags.SequenceEqual(
+            firstAfterPublicationDelete.Tags,
+            StringComparer.Ordinal),
+        "Deleting Publication history touched source assets or user metadata.");
+    await using (var publicationDeleteConnection =
+                 new SqliteConnection(
+                     $"Data Source={databasePath};Pooling=False"))
+    {
+        await publicationDeleteConnection.OpenAsync();
+        await using var deletedMembership =
+            publicationDeleteConnection.CreateCommand();
+        deletedMembership.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM publication_assets
+            WHERE publication_id = $publication_id;
+            """;
+        deletedMembership.Parameters.AddWithValue(
+            "$publication_id",
+            profilePublication.Id);
+        Require(
+            Convert.ToInt32(
+                await deletedMembership.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 0,
+            "Deleting Publication history left orphaned publication_assets rows.");
+    }
+
     var metadataSummary =
         await repository.GetUserMetadataSelectionSummaryAsync(
             library.Id,
@@ -1635,7 +1785,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 8, "v1 database did not migrate to v8.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 9, "v1 database did not migrate to v9.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
@@ -1653,7 +1803,118 @@ try
                 await enabled.ExecuteScalarAsync(),
                 CultureInfo.InvariantCulture) == 1,
             "Navigation migration did not enable an existing library by default.");
+
+        await using var publicationDefaults =
+            legacyConnection.CreateCommand();
+        publicationDefaults.CommandText =
+            "SELECT COUNT(*) FROM publication_destinations WHERE library_id = 1;";
+        Require(
+            Convert.ToInt32(
+                await publicationDefaults.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 5,
+            "Publication profile migration did not seed existing libraries.");
     }
+
+    var v8CompatPath =
+        Path.Combine(
+            tempRoot,
+            "publication-v8-compat.db");
+    var v8CompatRoot =
+        Path.Combine(
+            tempRoot,
+            "publication-v8-library");
+    Directory.CreateDirectory(v8CompatRoot);
+    var v8CompatDatabase =
+        new LibraryDatabase(
+            v8CompatPath);
+    await v8CompatDatabase.InitializeAsync();
+    var v8CompatRepository =
+        new LibraryRepository(
+            v8CompatDatabase);
+    var v8CompatLibrary =
+        await v8CompatRepository.RegisterLibraryAsync(
+            "Publication v8",
+            v8CompatRoot);
+    long v8PublicationId;
+    await using (var v8Connection =
+                 new SqliteConnection(
+                     $"Data Source={v8CompatPath};Pooling=False"))
+    {
+        await v8Connection.OpenAsync();
+        await using var insert =
+            v8Connection.CreateCommand();
+        insert.CommandText =
+            """
+            INSERT INTO publications(
+                library_id, work_id,
+                title, body, tags_snapshot,
+                destination, account,
+                published_at_utc_ticks,
+                external_id, external_url,
+                platform_metadata_json,
+                created_at_utc_ticks,
+                updated_at_utc_ticks)
+            VALUES(
+                $library_id, NULL,
+                'Legacy v8 Publication',
+                'legacy body',
+                'legacy-tags',
+                'Pixiv',
+                'legacy-account',
+                638950000000000000,
+                'legacy-external',
+                'https://example.invalid/legacy-v8',
+                '{"legacy":true}',
+                638950000000000000,
+                638950000000000000)
+            RETURNING id;
+            """;
+        insert.Parameters.AddWithValue(
+            "$library_id",
+            v8CompatLibrary.Id);
+        v8PublicationId =
+            Convert.ToInt64(
+                await insert.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture);
+
+        await using var downgrade =
+            v8Connection.CreateCommand();
+        downgrade.CommandText =
+            """
+            DROP TRIGGER IF EXISTS libraries_ai_publication_defaults;
+            DROP TABLE publication_accounts;
+            DROP TABLE publication_destinations;
+            DELETE FROM schema_migrations
+            WHERE version = 9;
+            """;
+        await downgrade.ExecuteNonQueryAsync();
+    }
+
+    var migratedV8Database =
+        new LibraryDatabase(
+            v8CompatPath);
+    await migratedV8Database.InitializeAsync();
+    var migratedV8Repository =
+        new LibraryRepository(
+            migratedV8Database);
+    var migratedV8Publication =
+        await migratedV8Repository.GetPublicationAsync(
+            v8CompatLibrary.Id,
+            v8PublicationId)
+        ?? throw new InvalidOperationException(
+            "Existing v8 Publication disappeared during the v9 profile migration.");
+    Require(
+        migratedV8Publication.Title
+            == "Legacy v8 Publication"
+        && migratedV8Publication.Destination
+            == "Pixiv"
+        && migratedV8Publication.Account
+            == "legacy-account"
+        && (await migratedV8Repository
+                .ListPublicationDestinationsAsync(
+                    v8CompatLibrary.Id))
+            .Count == 5,
+        "v9 migration changed an existing Publication snapshot or failed to seed profiles.");
 
     var futurePath = Path.Combine(tempRoot, "future.db");
     await CreateFutureSchemaDatabaseAsync(futurePath);

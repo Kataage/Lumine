@@ -3007,6 +3007,102 @@ try
                 && publicationView is not null,
                 "Publication navigation did not render persisted publication history.");
 
+            var appPublicationDestinations =
+                await shellRuntime.LibraryService
+                    .ListPublicationDestinationsAsync(
+                        shellRuntime.Library.Id);
+            var appPixivDestination =
+                appPublicationDestinations.Single(
+                    destination =>
+                        string.Equals(
+                            destination.Name,
+                            "Pixiv",
+                            StringComparison.Ordinal));
+            var appPublicationAccount =
+                await shellRuntime.LibraryService
+                    .CreatePublicationAccountAsync(
+                        shellRuntime.Library.Id,
+                        new PublicationAccountCreate(
+                            appPixivDestination.Id,
+                            "App Smoke Account",
+                            "@app-smoke-profile"));
+            var managedPublicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    publicationHistory,
+                    publicationHistory.Count,
+                    hasMore: false,
+                    static () =>
+                        Task.FromResult(
+                            new PublicationPage(
+                                Array.Empty<PublicationInfo>(),
+                                null,
+                                0)),
+                    reportError: null,
+                    destinations:
+                        appPublicationDestinations,
+                    accounts:
+                        new[]
+                        {
+                            appPublicationAccount
+                        },
+                    createDestination:
+                        static (_, _) =>
+                            Task.FromResult<PublicationDestinationInfo?>(
+                                null),
+                    updateDestination:
+                        static (destination, _, _) =>
+                            Task.FromResult<PublicationDestinationInfo?>(
+                                destination),
+                    deleteDestination:
+                        static _ =>
+                            Task.FromResult(false),
+                    createAccount:
+                        static (_, _, _) =>
+                            Task.FromResult<PublicationAccountInfo?>(
+                                null),
+                    updateAccount:
+                        static (account, _, _, _) =>
+                            Task.FromResult<PublicationAccountInfo?>(
+                                account),
+                    deleteAccount:
+                        static _ =>
+                            Task.FromResult(false),
+                    deletePublication:
+                        static _ =>
+                            Task.FromResult(false));
+            var managedPublicationWindow =
+                new Window
+                {
+                    Width = 360,
+                    Height = 620,
+                    Content =
+                        managedPublicationView
+                };
+            managedPublicationWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                managedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .Any(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "投稿先設定",
+                                StringComparison.Ordinal))
+                && managedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        button =>
+                            string.Equals(
+                                button.Content as string,
+                                "履歴を削除…",
+                                StringComparison.Ordinal)),
+                "Publication navigation did not expose reusable profile management and history maintenance.");
+            managedPublicationWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
             // Single-image creative workflows must be reachable without
             // entering bulk-selection mode.
             shell.GridViewer.SelectAsset(0);

@@ -438,6 +438,101 @@ public sealed class LibraryDatabase
             ALTER TABLE tags
                 ADD COLUMN color TEXT NOT NULL DEFAULT '#6366f1'
                     CHECK(length(color) BETWEEN 4 AND 32);
+            """),
+        new(
+            9,
+            "publication-destination-and-account-profiles",
+            """
+            CREATE TABLE publication_destinations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 128),
+                name_key TEXT NOT NULL CHECK(length(name_key) BETWEEN 1 AND 128),
+                kind TEXT NOT NULL CHECK(length(kind) BETWEEN 1 AND 64),
+                created_at_utc_ticks INTEGER NOT NULL,
+                updated_at_utc_ticks INTEGER NOT NULL,
+                UNIQUE(library_id, name_key),
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX idx_publication_destinations_library
+                ON publication_destinations(library_id, name_key, id);
+
+            CREATE TABLE publication_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                destination_id INTEGER NOT NULL,
+                display_name TEXT NOT NULL
+                    CHECK(length(display_name) BETWEEN 1 AND 128),
+                account_identifier TEXT NOT NULL DEFAULT ''
+                    CHECK(length(account_identifier) <= 256),
+                created_at_utc_ticks INTEGER NOT NULL,
+                updated_at_utc_ticks INTEGER NOT NULL,
+                UNIQUE(destination_id, display_name, account_identifier),
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE,
+                FOREIGN KEY(destination_id)
+                    REFERENCES publication_destinations(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX idx_publication_accounts_destination
+                ON publication_accounts(destination_id, display_name, id);
+
+            INSERT INTO publication_destinations(
+                library_id, name, name_key, kind,
+                created_at_utc_ticks, updated_at_utc_ticks)
+            SELECT id, 'Pixiv', 'pixiv', 'pixiv',
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000,
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000
+            FROM libraries
+            UNION ALL
+            SELECT id, 'X', 'x', 'twitter',
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000,
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000
+            FROM libraries
+            UNION ALL
+            SELECT id, 'Misskey', 'misskey', 'misskey',
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000,
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000
+            FROM libraries
+            UNION ALL
+            SELECT id, 'Bluesky', 'bluesky', 'bluesky',
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000,
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000
+            FROM libraries
+            UNION ALL
+            SELECT id, 'その他', 'その他', 'other',
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000,
+                   CAST(strftime('%s','now') AS INTEGER) * 10000000 + 621355968000000000
+            FROM libraries;
+
+            CREATE TRIGGER libraries_ai_publication_defaults
+            AFTER INSERT ON libraries
+            BEGIN
+                INSERT INTO publication_destinations(
+                    library_id, name, name_key, kind,
+                    created_at_utc_ticks, updated_at_utc_ticks)
+                VALUES
+                    (
+                        NEW.id, 'Pixiv', 'pixiv', 'pixiv',
+                        NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
+                    ),
+                    (
+                        NEW.id, 'X', 'x', 'twitter',
+                        NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
+                    ),
+                    (
+                        NEW.id, 'Misskey', 'misskey', 'misskey',
+                        NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
+                    ),
+                    (
+                        NEW.id, 'Bluesky', 'bluesky', 'bluesky',
+                        NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
+                    ),
+                    (
+                        NEW.id, 'その他', 'その他', 'other',
+                        NEW.created_at_utc_ticks, NEW.created_at_utc_ticks
+                    );
+            END;
             """)
     ];
 

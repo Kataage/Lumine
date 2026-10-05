@@ -2778,12 +2778,22 @@ internal sealed class CoreViewerShell : UserControl
         var works =
             await _runtime.LibraryService.ListWorksAsync(
                 _runtime.Library.Id);
+        var destinations =
+            await _runtime.LibraryService
+                .ListPublicationDestinationsAsync(
+                    _runtime.Library.Id);
+        var accounts =
+            await _runtime.LibraryService
+                .ListPublicationAccountsAsync(
+                    _runtime.Library.Id);
         var input =
             await CreativeArchiveDialogs
                 .ShowPublicationAsync(
                     owner,
                     selection,
-                    works);
+                    works,
+                    destinations,
+                    accounts);
         if (input is not null)
         {
             await CreatePublicationFromSelectionAsync(
