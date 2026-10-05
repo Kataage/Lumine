@@ -70,7 +70,7 @@ internal static class ProductSettingsView
             new StackPanel
             {
                 Spacing = LumineDesign.Space16,
-                MaxWidth = 780,
+                MaxWidth = 720,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch
             };
@@ -178,6 +178,7 @@ internal static class ProductSettingsView
             LumineDesign.ConfigureComboBox(
                 new ComboBox
                 {
+                    MinWidth = 120,
                     ItemsSource =
                         new[]
                         {
@@ -194,6 +195,7 @@ internal static class ProductSettingsView
             LumineDesign.ConfigureComboBox(
                 new ComboBox
                 {
+                    MinWidth = 120,
                     ItemsSource =
                         new[]
                         {
@@ -208,6 +210,7 @@ internal static class ProductSettingsView
             LumineDesign.ConfigureComboBox(
                 new ComboBox
                 {
+                    MinWidth = 210,
                     ItemsSource =
                         new[]
                         {
@@ -230,18 +233,52 @@ internal static class ProductSettingsView
                 });
         var status = CreateStatusText();
 
-        content.Children.Add(
+        var fields =
+            new WrapPanel
+            {
+                Orientation =
+                    Orientation.Horizontal
+            };
+        var viewField =
             CreateField(
                 "表示",
-                view));
-        content.Children.Add(
+                view);
+        viewField.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space12,
+                LumineDesign.Space6);
+        fields.Children.Add(viewField);
+
+        var densityField =
             CreateField(
                 "密度",
-                density));
-        content.Children.Add(
+                density);
+        densityField.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space12,
+                LumineDesign.Space6);
+        fields.Children.Add(densityField);
+
+        var sortField =
             CreateField(
                 "並び順",
-                sort));
+                sort);
+        sortField.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space6);
+        fields.Children.Add(sortField);
+        AutomationProperties.SetName(
+            fields,
+            "表示設定グループ");
+
+        content.Children.Add(fields);
         content.Children.Add(status);
 
         var updating = false;
