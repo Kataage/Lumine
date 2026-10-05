@@ -373,6 +373,7 @@ jobs:
             throw "Default NativeAOT acceptance path failed; A/B outcomes are printed above."
           }
 
+      # Acceptance probes execute the distributable tree; restore a first-run-clean package before upload.
       - name: Sanitize NativeAOT acceptance package
         shell: pwsh
         run: |
