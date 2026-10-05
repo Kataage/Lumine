@@ -3681,7 +3681,10 @@ try
                 && shell.DetailViewer.SelectedAssetIndex == 0
                 && shell.DetailViewer.LoadState
                     == ViewerDetailLoadState.PreviewReady
-                && shell.DetailViewer.HasImageSourceForSmoke,
+                && shell.DetailViewer
+                    .GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Image>()
+                    .Any(static image => image.Source is not null),
                 "Focused viewer reached PreviewReady without rendering the selected image.");
 
             shell.CloseFocusedView();
@@ -3695,8 +3698,11 @@ try
             Require(
                 shell.DetailViewer.LoadState
                     == ViewerDetailLoadState.PreviewReady
-                && shell.DetailViewer.HasImageSourceForSmoke,
-                $"Real App shell Detail preview did not render: state={shell.DetailViewer.LoadState}, image={shell.DetailViewer.HasImageSourceForSmoke}.");
+                && shell.DetailViewer
+                    .GetVisualDescendants()
+                    .OfType<Avalonia.Controls.Image>()
+                    .Any(static image => image.Source is not null),
+                $"Real App shell Detail preview did not render: state={shell.DetailViewer.LoadState}.");
 
             await shell.DetailViewer.ActualSizeAsync();
             Dispatcher.UIThread.RunJobs();
