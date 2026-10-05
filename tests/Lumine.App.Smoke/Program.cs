@@ -3882,12 +3882,61 @@ try
                                             expander.Header as string,
                                             "エラー詳細",
                                             StringComparison.Ordinal));
+                        var scaledRetry =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .FirstOrDefault(
+                                    button =>
+                                        string.Equals(
+                                            button.Content as string,
+                                            "もう一度開く",
+                                            StringComparison.Ordinal));
+                        var scaledChoose =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .FirstOrDefault(
+                                    button =>
+                                        string.Equals(
+                                            button.Content as string,
+                                            "別の画像フォルダーを選ぶ",
+                                            StringComparison.Ordinal));
+                        static bool IsVisibleInsideWindow(
+                            Control? control,
+                            Window owner)
+                        {
+                            if (control is null
+                                || !control.IsEffectivelyVisible
+                                || control.Bounds.Width <= 0
+                                || control.Bounds.Height <= 0)
+                            {
+                                return false;
+                            }
+
+                            var origin =
+                                control.TranslatePoint(
+                                    new Point(0, 0),
+                                    owner);
+                            return origin is { } point
+                                && point.X >= -0.5
+                                && point.Y >= -0.5
+                                && point.X + control.Bounds.Width
+                                    <= owner.ClientSize.Width + 0.5
+                                && point.Y + control.Bounds.Height
+                                    <= owner.ClientSize.Height + 0.5;
+                        }
+
                         Require(
                             scaledErrorDetail is
                                 { IsExpanded: false }
+                            && IsVisibleInsideWindow(
+                                scaledRetry,
+                                window)
+                            && IsVisibleInsideWindow(
+                                scaledChoose,
+                                window)
                             && string.IsNullOrWhiteSpace(
                                 window.StatusTextForSmoke),
-                            "225% / 900x600 recoverable Error did not keep technical detail collapsed or duplicated its message.");
+                            "225% / 900x600 recoverable Error did not keep both recovery actions visible, keep technical detail collapsed, or avoid duplicate status text.");
 
                         CaptureVisualEvidence(
                             window,
