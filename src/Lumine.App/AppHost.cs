@@ -118,7 +118,9 @@ internal sealed class AppHost : IAsyncDisposable
                         BrowseDensity =
                             settings.BrowseDensity,
                         BrowseSortOrder =
-                            settings.BrowseSortOrder
+                            settings.BrowseSortOrder,
+                        ScanExtensions =
+                            settings.ScanExtensions
                     };
                 resourcePolicy =
                     CoreResourcePolicy.Resolve(
@@ -160,6 +162,23 @@ internal sealed class AppHost : IAsyncDisposable
                 BrowsePreferenceResolver.Apply(
                     settings,
                     browsePreferences);
+
+            var scanExtensions =
+                ScanExtensionPreference.Resolve(
+                    settings,
+                    out var scanExtensionWarning);
+            if (!string.IsNullOrWhiteSpace(
+                    scanExtensionWarning))
+            {
+                warning = AppendWarning(
+                    warning,
+                    scanExtensionWarning);
+            }
+
+            settings =
+                ScanExtensionPreference.Apply(
+                    settings,
+                    scanExtensions);
 
             var thumbnailStorageMode =
                 ThumbnailStoragePreference.ResolveEffective(
@@ -238,6 +257,32 @@ internal sealed class AppHost : IAsyncDisposable
         Log.Write(
             "settings",
             "Settings saved; resource-policy changes take effect on the next launch.");
+    }
+
+    public async Task SaveScanExtensionsAsync(
+        IEnumerable<string> extensions,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(
+            extensions);
+
+        var next =
+            ScanExtensionPreference.Apply(
+                Settings,
+                extensions);
+
+        await _settingsStore.SaveAsync(
+            next,
+            cancellationToken).ConfigureAwait(false);
+
+        Settings = next;
+        Log.Write(
+            "settings",
+            "Scan extension preference saved: "
+            + string.Join(
+                ", ",
+                next.ScanExtensions
+                ?? Array.Empty<string>()));
     }
 
     public async Task SaveThumbnailStorageModeAsync(
