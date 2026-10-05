@@ -377,14 +377,17 @@ try
                      "Data Source=:memory:;Pooling=False"))
     {
         await transactionProbe.OpenAsync();
-        using var outer =
-            transactionProbe.BeginTransaction();
+        await using var begin = transactionProbe.CreateCommand();
+        begin.CommandText = "BEGIN;";
+        await begin.ExecuteNonQueryAsync();
+
         try
         {
-            using var second =
-                transactionProbe.BeginTransaction();
+            await using var nestedBegin = transactionProbe.CreateCommand();
+            nestedBegin.CommandText = "BEGIN;";
+            await nestedBegin.ExecuteNonQueryAsync();
             throw new InvalidOperationException(
-                "SQLite unexpectedly accepted a second active transaction.");
+                "SQLite unexpectedly accepted a nested BEGIN.");
         }
         catch (SqliteException exception)
         {
@@ -398,6 +401,12 @@ try
                     null,
                     new object?[] { exception }) is true,
                 "Transaction-state recovery classifier rejected SQLite's nested-transaction error.");
+        }
+        finally
+        {
+            await using var rollback = transactionProbe.CreateCommand();
+            rollback.CommandText = "ROLLBACK;";
+            await rollback.ExecuteNonQueryAsync();
         }
     }
 
