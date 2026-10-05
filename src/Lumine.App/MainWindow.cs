@@ -518,6 +518,7 @@ public sealed class MainWindow : Window
     internal void PresentRecoverableErrorForSmoke(
         string message)
     {
+        DismissCompactNavigationOverlayForBlockingState();
         _productShellState =
             "Error";
         _status.Text =
@@ -765,6 +766,19 @@ public sealed class MainWindow : Window
         _navigationPane.BorderThickness =
             new Thickness(1);
         _navigationPane.ZIndex = 20;
+    }
+
+    private void DismissCompactNavigationOverlayForBlockingState()
+    {
+        if (!_compactNavigationLayout
+            || !_navigationPane.IsVisible)
+        {
+            return;
+        }
+
+        _navigationPane.IsVisible = false;
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
     }
 
     private void UpdateNavigationPinVisual()
@@ -2443,6 +2457,7 @@ public sealed class MainWindow : Window
                 libraryRoot;
             _failedLibraryDataPaths =
                 dataPaths;
+            DismissCompactNavigationOverlayForBlockingState();
             _productShellState = "Error";
             _status.Foreground =
                 LumineDesign.Danger;
