@@ -521,16 +521,16 @@ try
             "Fresh scan-extension preference did not resolve to the product defaults.");
 
         await lifecycleHost.SaveScanExtensionsAsync(
-            [".JPG", "png"]);
+            [".JPG", "png", "JFIF"]);
         Require(
             ScanExtensionPreference.Resolve(
                     lifecycleHost.Settings,
                     out var savedScanExtensionWarning)
                 .SequenceEqual(
-                    new[] { ".jpg", ".png" },
+                    new[] { ".jpg", ".png", ".jfif" },
                     StringComparer.Ordinal)
             && savedScanExtensionWarning is null,
-            "Scan-extension preference was not normalized before persistence.");
+            "Built-in/custom scan-extension preference was not normalized before persistence.");
 
         await lifecycleHost.SaveBrowsePreferencesAsync(
             new BrowsePreferences(
@@ -599,9 +599,9 @@ try
         Require(
             restoredScanExtensionWarning is null
             && restoredScanExtensions.SequenceEqual(
-                new[] { ".jpg", ".png" },
+                new[] { ".jpg", ".png", ".jfif" },
                 StringComparer.Ordinal),
-            "Scan-extension preference did not persist across restart.");
+            "Built-in/custom scan-extension preference did not persist across restart.");
 
         Require(
             cleanRestart.ResourcePolicy
@@ -677,7 +677,8 @@ try
                 ".JPG",
                 "png",
                 ".PNG",
-                ".exe",
+                "JFIF",
+                ".bad-ext",
                 ""
             ]
         });
@@ -692,11 +693,11 @@ try
         Require(
             normalizedScanWarning is null
             && normalizedScanExtensions.SequenceEqual(
-                new[] { ".jpg", ".png" },
+                new[] { ".jpg", ".png", ".jfif" },
                 StringComparer.Ordinal)
             && !string.IsNullOrWhiteSpace(
                 normalizedScanSettingsHost.SettingsWarning),
-            "Invalid persisted scan extensions were not normalized with a startup warning.");
+            "Valid custom scan extensions or invalid-entry startup normalization drifted.");
         await normalizedScanSettingsHost.CompleteCleanShutdownAsync();
     }
 
@@ -4720,9 +4721,9 @@ try
                         && window.SettingsSnapshot.ScanExtensions.Count > 0
                         && window.SettingsSnapshot.ScanExtensions.All(
                             extension =>
-                                LibraryFileTypes.DefaultExtensions.Contains(
+                                LibraryFileTypes.TryNormalizeExtension(
                                     extension,
-                                    StringComparer.OrdinalIgnoreCase))
+                                    out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
                         "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
 
@@ -4774,6 +4775,39 @@ try
                                         "読み込み対象 .",
                                         StringComparison.Ordinal))
                             .ToArray();
+                    var customExtensionInput =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<TextBox>()
+                            .FirstOrDefault(
+                                input =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            input),
+                                        "独自読み込み対象を入力",
+                                        StringComparison.Ordinal));
+                    var addCustomExtension =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "独自読み込み対象を追加",
+                                        StringComparison.Ordinal));
+                    var customExtensionList =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<WrapPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "独自読み込み対象一覧",
+                                        StringComparison.Ordinal));
                     Require(
                         scanExtensionControls.Length
                             == LibraryFileTypes.DefaultExtensions.Count
@@ -4783,6 +4817,9 @@ try
                                     check.Content as string,
                                     ".bmp",
                                     StringComparison.Ordinal))
+                        && customExtensionInput is not null
+                        && addCustomExtension is not null
+                        && customExtensionList is not null
                         && window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<Button>()
@@ -4794,7 +4831,47 @@ try
                                         "現在のライブラリを再スキャン",
                                         StringComparison.Ordinal)
                                     && button.IsEnabled),
-                        "Product Settings did not expose the bounded scan-extension filters and active-library rescan action.");
+                        "Product Settings did not expose built-in/custom scan-extension controls and the active-library rescan action.");
+
+                    customExtensionInput!.Text =
+                        "JFIF";
+                    addCustomExtension!.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.IsNullOrEmpty(
+                            customExtensionInput.Text),
+                        "Custom scan-extension editor did not normalize and stage JFIF.");
+
+                    var customRemoval =
+                        customExtensionList!.Children
+                            .OfType<Button>()
+                            .FirstOrDefault(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "独自読み込み対象 .jfif を削除",
+                                        StringComparison.Ordinal));
+                    Require(
+                        customRemoval is not null,
+                        "Custom scan-extension editor did not expose the staged JFIF removal action.");
+                    customRemoval!.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !customExtensionList.Children
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "独自読み込み対象 .jfif を削除",
+                                        StringComparison.Ordinal)),
+                        "Custom scan-extension removal did not update the staged Settings state.");
 
                     Require(
                         settingsText.Any(block =>

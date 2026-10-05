@@ -185,7 +185,8 @@ Directory.CreateDirectory(secondaryRoot);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "a.jpg"), [1, 2, 3]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "b.png"), [4, 5]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "c.webp"), [6]);
-await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "ignored.txt"), [7]);
+await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "custom.jfif"), [7, 8]);
+await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "ignored.txt"), [9]);
 
 try
 {
@@ -245,6 +246,46 @@ try
             library.Id,
             "b.png") is null,
         "Scanner did not honor the configured extension policy.");
+
+    Require(
+        await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is null,
+        "Scanner indexed a custom extension before it was explicitly enabled.");
+
+    scanFileTypes.Update(
+        [".jpg", ".webp", "JFIF"]);
+    var customScan =
+        await scanner.ScanAsync(
+            library.Id,
+            batchSize: 2);
+    Require(
+        customScan.Completed
+        && await repository.CountAssetsAsync(library.Id) == 3
+        && await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is not null,
+        "Scanner did not honor an explicitly enabled normalized custom extension.");
+
+    var customReconciler =
+        new LibraryReconciler(
+            repository,
+            scanFileTypes);
+    scanFileTypes.Update(
+        [".jpg", ".webp"]);
+    var customRemoval =
+        await customReconciler.ReconcileAsync(
+            library.Id);
+    Require(
+        customRemoval.Completed
+        && await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is null
+        && File.Exists(
+            Path.Combine(
+                libraryRoot,
+                "custom.jfif")),
+        "Reconcile did not remove the custom-extension asset from the index while preserving its source file.");
 
     scanFileTypes.Update(
         LibraryFileTypes.DefaultExtensions);
