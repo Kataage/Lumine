@@ -1777,6 +1777,10 @@ internal static class ProductNavigationViews
                 null;
             long? editingAccountId =
                 null;
+            Button addDestination =
+                null!;
+            Button addAccount =
+                null!;
 
             var feedback =
                 new TextBlock
@@ -2118,7 +2122,7 @@ internal static class ProductNavigationViews
                 }
             }
 
-            var addDestination =
+            addDestination =
                 LumineDesign.ConfigurePrimaryButton(
                     new Button
                     {
@@ -2219,7 +2223,7 @@ internal static class ProductNavigationViews
                     }
                 };
 
-            var addAccount =
+            addAccount =
                 LumineDesign.ConfigurePrimaryButton(
                     new Button
                     {
