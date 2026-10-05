@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lumine.Core;
 using Lumine.Image;
+using Lumine.Library;
 
 namespace Lumine.App;
 
