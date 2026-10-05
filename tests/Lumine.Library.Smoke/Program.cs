@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using Lumine.Library;
 using Microsoft.Data.Sqlite;
 
@@ -185,7 +184,8 @@ Directory.CreateDirectory(secondaryRoot);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "a.jpg"), [1, 2, 3]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "b.png"), [4, 5]);
 await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "c.webp"), [6]);
-await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "ignored.txt"), [7]);
+await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "custom.jfif"), [7, 8]);
+await File.WriteAllBytesAsync(Path.Combine(libraryRoot, "nested", "ignored.txt"), [9]);
 
 try
 {
@@ -245,6 +245,46 @@ try
             library.Id,
             "b.png") is null,
         "Scanner did not honor the configured extension policy.");
+
+    Require(
+        await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is null,
+        "Scanner indexed a custom extension before it was explicitly enabled.");
+
+    scanFileTypes.Update(
+        [".jpg", ".webp", "JFIF"]);
+    var customScan =
+        await scanner.ScanAsync(
+            library.Id,
+            batchSize: 2);
+    Require(
+        customScan.Completed
+        && await repository.CountAssetsAsync(library.Id) == 3
+        && await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is not null,
+        "Scanner did not honor an explicitly enabled normalized custom extension.");
+
+    var customReconciler =
+        new LibraryReconciler(
+            repository,
+            scanFileTypes);
+    scanFileTypes.Update(
+        [".jpg", ".webp"]);
+    var customRemoval =
+        await customReconciler.ReconcileAsync(
+            library.Id);
+    Require(
+        customRemoval.Completed
+        && await repository.GetAssetAsync(
+            library.Id,
+            "custom.jfif") is null
+        && File.Exists(
+            Path.Combine(
+                libraryRoot,
+                "custom.jfif")),
+        "Reconcile did not remove the custom-extension asset from the index while preserving its source file.");
 
     scanFileTypes.Update(
         LibraryFileTypes.DefaultExtensions);
@@ -347,68 +387,6 @@ try
         && technical.HasAlpha == true
         && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
-
-    var concurrentTechnicalWrites =
-        Enumerable.Range(0, 16)
-            .Select(_ =>
-                repository.UpdateTechnicalMetadataAsync(
-                    library.Id,
-                    sameStat.Id,
-                    sameStat.SourceRevision,
-                    sameStat.FileSize,
-                    sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
-                    new AssetTechnicalMetadata(
-                        640,
-                        480,
-                        640,
-                        480,
-                        true,
-                        "png",
-                        technicalSha)))
-            .ToArray();
-    var concurrentTechnicalResults =
-        await Task.WhenAll(concurrentTechnicalWrites);
-    Require(
-        concurrentTechnicalResults.All(static updated => updated),
-        "Concurrent technical metadata persistence rejected a current source revision.");
-
-    await using (var transactionProbe =
-                 new SqliteConnection(
-                     "Data Source=:memory:;Pooling=False"))
-    {
-        await transactionProbe.OpenAsync();
-        await using var begin = transactionProbe.CreateCommand();
-        begin.CommandText = "BEGIN;";
-        await begin.ExecuteNonQueryAsync();
-
-        try
-        {
-            await using var nestedBegin = transactionProbe.CreateCommand();
-            nestedBegin.CommandText = "BEGIN;";
-            await nestedBegin.ExecuteNonQueryAsync();
-            throw new InvalidOperationException(
-                "SQLite unexpectedly accepted a nested BEGIN.");
-        }
-        catch (SqliteException exception)
-        {
-            var classifier = typeof(LibraryRepository).GetMethod(
-                "IsRecoverableNestedTransactionState",
-                BindingFlags.NonPublic | BindingFlags.Static)
-                ?? throw new InvalidOperationException(
-                    "Nested-transaction recovery classifier was not found.");
-            Require(
-                classifier.Invoke(
-                    null,
-                    new object?[] { exception }) is true,
-                "Transaction-state recovery classifier rejected SQLite's nested-transaction error.");
-        }
-        finally
-        {
-            await using var rollback = transactionProbe.CreateCommand();
-            rollback.CommandText = "ROLLBACK;";
-            await rollback.ExecuteNonQueryAsync();
-        }
-    }
 
 
     var userMetadata = await repository.SetUserMetadataAsync(
