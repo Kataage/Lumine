@@ -1997,6 +1997,19 @@ public sealed class DetailViewerControl : UserControl
             _close,
             "close button");
 
+    internal bool UsesLightweightChromeForSmoke =>
+        _toolbarHost.BorderThickness == new Thickness(0)
+        && _utilityHost.BorderThickness == new Thickness(0)
+        && _previous.Width <= 40
+        && _next.Width <= 40
+        && ReferenceEquals(
+            _zoomOut.Background,
+            Brushes.Transparent)
+        && ReferenceEquals(
+            _zoomIn.Background,
+            Brushes.Transparent);
+
+
     internal bool HasPanCursorForSmoke =>
         !ReferenceEquals(
             _surface.Cursor,
