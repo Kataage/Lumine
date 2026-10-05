@@ -110,7 +110,8 @@ internal sealed class CreativePublicationPixivMetadataEditor
                 new CheckBox
                 {
                     Content =
-                        "Pixiv: AI生成"
+                        "Pixiv: AI生成",
+                    IsChecked = true
                 });
         AutomationProperties.SetName(
             _aiGenerated,
