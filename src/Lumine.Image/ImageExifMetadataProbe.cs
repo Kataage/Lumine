@@ -28,7 +28,11 @@ public sealed record ImageExifMetadata(
 
 public static class ImageExifMetadataProbe
 {
-    public static Task<ImageExifMetadata> ProbeAsync(
+    private const int MaxConcurrentProbes = 2;
+    private static readonly SemaphoreSlim ProbeGate =
+        new(MaxConcurrentProbes, MaxConcurrentProbes);
+
+    public static async Task<ImageExifMetadata> ProbeAsync(
         string sourcePath,
         long expectedFileSize,
         long expectedModifiedAtUtcTicks,
@@ -37,13 +41,22 @@ public static class ImageExifMetadataProbe
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
         ArgumentOutOfRangeException.ThrowIfNegative(expectedFileSize);
 
-        return Task.Run(
-            () => ProbeCore(
-                sourcePath,
-                expectedFileSize,
-                expectedModifiedAtUtcTicks,
-                cancellationToken),
-            cancellationToken);
+        await ProbeGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(
+                () => ProbeCore(
+                    sourcePath,
+                    expectedFileSize,
+                    expectedModifiedAtUtcTicks,
+                    cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ProbeGate.Release();
+        }
     }
 
     private static ImageExifMetadata ProbeCore(
@@ -256,7 +269,9 @@ public static class ImageExifMetadataProbe
             return null;
         }
 
-        var trimmed = raw.Trim();
+        var trimmed =
+            raw.Trim()
+                .TrimEnd('\0');
         var metadataStart =
             trimmed.IndexOf(
                 " (",
@@ -361,4 +376,7 @@ public static class ImageExifMetadataProbe
     internal static int? ParseIsoForSmoke(
         string? raw) =>
         ParseIso(raw);
+
+    internal static int MaxConcurrentProbesForSmoke =>
+        MaxConcurrentProbes;
 }
