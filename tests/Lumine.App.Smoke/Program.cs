@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
-using Avalonia.LogicalTree;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -4798,6 +4797,17 @@ try
                                             button),
                                         "独自読み込み対象を追加",
                                         StringComparison.Ordinal));
+                    var customExtensionList =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<WrapPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "独自読み込み対象一覧",
+                                        StringComparison.Ordinal));
                     Require(
                         scanExtensionControls.Length
                             == LibraryFileTypes.DefaultExtensions.Count
@@ -4809,6 +4819,7 @@ try
                                     StringComparison.Ordinal))
                         && customExtensionInput is not null
                         && addCustomExtension is not null
+                        && customExtensionList is not null
                         && window.WorkspacePageForSmoke
                             .GetVisualDescendants()
                             .OfType<Button>()
@@ -4834,8 +4845,7 @@ try
                         "Custom scan-extension editor did not normalize and stage JFIF.");
 
                     var customRemoval =
-                        window.WorkspacePageForSmoke
-                            .GetLogicalDescendants()
+                        customExtensionList!.Children
                             .OfType<Button>()
                             .FirstOrDefault(
                                 button =>
@@ -4846,14 +4856,13 @@ try
                                         StringComparison.Ordinal));
                     Require(
                         customRemoval is not null,
-                        "Custom scan-extension editor did not expose the staged JFIF removal action in the logical tree.");
+                        "Custom scan-extension editor did not expose the staged JFIF removal action.");
                     customRemoval!.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
                     Require(
-                        !window.WorkspacePageForSmoke
-                            .GetLogicalDescendants()
+                        !customExtensionList.Children
                             .OfType<Button>()
                             .Any(
                                 button =>
