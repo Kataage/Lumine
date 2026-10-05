@@ -4747,6 +4747,31 @@ try
                                     .ShowContextDetailAsync();
                                 Dispatcher.UIThread.RunJobs();
 
+                                // Avalonia can finalize the overlay width one
+                                // render pass after async preview/metadata work,
+                                // especially at 225% text scale. Wait for the
+                                // same strict product geometry to settle rather
+                                // than sampling a transient arrange state.
+                                for (var inspectorSettleAttempt = 0;
+                                     inspectorSettleAttempt < 40
+                                     && (!window.CurrentShell.IsContextDetailVisible
+                                         || window.CurrentShell.IsCompactInspectorLayout
+                                             != (viewport.Width < 1200)
+                                         || window.CurrentShell.ContextSurfaceBounds.Width
+                                             is < 300 or > 380
+                                         || window.CurrentShell.ContextDetail
+                                             .IsCompactPresentationForSmoke
+                                             != (viewport.Width < 1200)
+                                         || !window.CurrentShell.ContextDetail.HasPreview);
+                                     inspectorSettleAttempt++)
+                                {
+                                    Dispatcher.UIThread.RunJobs();
+                                    AvaloniaHeadlessPlatform
+                                        .ForceRenderTimerTick();
+                                    await Task.Delay(1);
+                                }
+                                Dispatcher.UIThread.RunJobs();
+
                                 Require(
                                     window.CurrentShell.IsContextDetailVisible
                                     && window.CurrentShell.IsCompactInspectorLayout
