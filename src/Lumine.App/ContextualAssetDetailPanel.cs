@@ -474,7 +474,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 RowDefinitions =
                     new RowDefinitions(
                         "Auto,Auto,Auto,Auto,Auto,Auto"),
-                RowSpacing = LumineDesign.Space10
+                RowSpacing = LumineDesign.Space8
             };
         AddEditorRow(
             editor,
