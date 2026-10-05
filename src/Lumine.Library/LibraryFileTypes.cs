@@ -21,7 +21,7 @@ public static class LibraryFileTypes
         var candidate =
             value.Trim().ToLowerInvariant();
         if (!candidate.StartsWith(
-                '.',
+                ".",
                 StringComparison.Ordinal))
         {
             candidate =
