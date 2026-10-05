@@ -719,7 +719,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         Interlocked.Increment(ref _upserts);
     }
 
-    private static AssetUpsert CreateUpsert(
+    private AssetUpsert CreateUpsert(
         string relativePath,
         string fullPath,
         bool forceSourceRevision = false)
