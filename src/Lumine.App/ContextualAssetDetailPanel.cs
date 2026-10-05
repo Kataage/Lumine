@@ -67,6 +67,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _path;
     private readonly Button _copyPath;
     private readonly TextBlock _technical;
+    private readonly TextBlock _exif;
+    private readonly Button _exifRetry;
     private readonly TextBlock _works;
     private readonly TextBlock _groups;
     private readonly TextBlock _relations;
@@ -166,6 +168,30 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 await CopyCurrentPathAsync();
             };
         _technical = CreateValue(wrap: true);
+        _exif = CreateValue(wrap: true);
+        _exifRetry =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "EXIFを再読み込み",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
+                    IsVisible = false
+                });
+        AutomationProperties.SetName(
+            _exifRetry,
+            "EXIF情報を再読み込み");
+        _exifRetry.Click +=
+            async (_, _) =>
+            {
+                if (_currentAsset is not null)
+                {
+                    await LoadExifAsync(
+                        _currentAsset,
+                        _loadCancellation?.Token
+                        ?? CancellationToken.None);
+                }
+            };
         _works = CreateValue(wrap: true);
         _groups = CreateValue(wrap: true);
         _relations = CreateValue(wrap: true);
@@ -707,6 +733,20 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             informationBody,
             "技術情報",
             _technical);
+        var exifBody =
+            new StackPanel
+            {
+                Spacing =
+                    LumineDesign.Space6
+            };
+        exifBody.Children.Add(
+            _exif);
+        exifBody.Children.Add(
+            _exifRetry);
+        AddSection(
+            informationBody,
+            "撮影情報 (EXIF)",
+            exifBody);
 
         _tabPages =
         [
@@ -844,6 +884,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal string TechnicalText =>
         _technical.Text ?? string.Empty;
+
+    internal string ExifTextForSmoke =>
+        _exif.Text ?? string.Empty;
+
+    internal bool ExifRetryVisibleForSmoke =>
+        _exifRetry.IsVisible;
 
     internal string RatingText =>
         _ratingEditor.SelectedIndex > 0
@@ -1054,6 +1100,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _copyPath.IsEnabled = true;
         _technical.Text =
             FormatTechnical(asset);
+        _exif.Text =
+            "EXIF情報を読み込んでいます…";
+        _exifRetry.IsVisible = false;
         _focused.IsEnabled = true;
 
         SetEditorEnabled(false);
@@ -1097,9 +1146,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 LumineDesign.MutedForeground;
             _saveStatus.Text = "保存済み";
 
-            await LoadCreativeContextAsync(
-                asset.Id,
-                token);
+            await Task.WhenAll(
+                LoadCreativeContextAsync(
+                    asset.Id,
+                    token),
+                LoadExifAsync(
+                    asset,
+                    token));
         }
         catch (OperationCanceledException)
             when (token.IsCancellationRequested)
@@ -1116,6 +1169,51 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             SetEditorEnabled(false);
             PresentLoadFailure(
                 "整理情報を取得できませんでした。再読み込みできます。");
+        }
+    }
+
+    private async Task LoadExifAsync(
+        ViewerAsset asset,
+        CancellationToken cancellationToken)
+    {
+        _exifRetry.IsVisible = false;
+        _exif.Text =
+            "EXIF情報を読み込んでいます…";
+
+        try
+        {
+            var metadata =
+                await _runtime.GetExifMetadataAsync(
+                    asset,
+                    cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_assetId != asset.Id)
+            {
+                return;
+            }
+
+            _exif.Text =
+                FormatExif(metadata);
+            _exifRetry.IsVisible = false;
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            if (_assetId != asset.Id)
+            {
+                return;
+            }
+
+            System.Diagnostics.Trace.TraceWarning(
+                $"EXIF metadata load failed for asset {asset.Id}: {exception}");
+            _exif.Text =
+                "EXIF情報を読み込めませんでした。画像の表示や整理情報には影響しません。";
+            _exifRetry.IsVisible = true;
         }
     }
 
@@ -1253,6 +1351,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "パスをコピー";
         _copyPath.IsEnabled = false;
         _technical.Text = "—";
+        _exif.Text = "—";
+        _exifRetry.IsVisible = false;
         _works.Text = "—";
         _groups.Text = "—";
         _relations.Text = "—";
@@ -2593,6 +2693,65 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             + $"アルファ: {(asset.HasAlpha == true ? "あり" : asset.HasAlpha == false ? "なし" : "未取得")}\n"
             + $"更新日時: {modified:yyyy-MM-dd HH:mm:ss}\n"
             + $"source revision: {asset.SourceRevision}";
+    }
+
+    private static string FormatExif(
+        AssetExifMetadata metadata)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        if (!metadata.HasValues)
+        {
+            return "EXIF情報はありません。";
+        }
+
+        var lines =
+            new List<string>(9);
+
+        static void Add(
+            List<string> target,
+            string label,
+            string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                target.Add(
+                    $"{label}: {value}");
+            }
+        }
+
+        Add(lines, "カメラ", metadata.CameraModel);
+        Add(lines, "レンズ", metadata.LensModel);
+        Add(lines, "焦点距離", metadata.FocalLength);
+        Add(lines, "絞り", metadata.Aperture);
+        Add(lines, "シャッター", metadata.ShutterSpeed);
+        if (metadata.Iso.HasValue)
+        {
+            lines.Add(
+                $"ISO: {metadata.Iso.Value}");
+        }
+
+        Add(lines, "撮影日時", metadata.CapturedAt);
+
+        var gps =
+            new[]
+            {
+                metadata.GpsLatitude,
+                metadata.GpsLongitude
+            }
+            .Where(
+                static value =>
+                    !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        if (gps.Length > 0)
+        {
+            lines.Add(
+                $"GPS: {string.Join(", ", gps)}");
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            lines);
     }
 
     private static string FormatBytes(
