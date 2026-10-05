@@ -2031,6 +2031,10 @@ internal static class Program
             detail.ZoomSliderBoundsInControlForSmoke;
 
         Require(
+            detail.UsesLightweightChromeForSmoke,
+            "Focused Viewer chrome regressed to heavy bordered command blocks.");
+
+        Require(
             toolbarBounds.Top >= viewportBounds.Top
             && toolbarBounds.Bottom <= viewportBounds.Top + 96
             && utilityBounds.Top >= viewportBounds.Top
