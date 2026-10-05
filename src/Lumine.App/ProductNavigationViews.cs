@@ -3025,6 +3025,12 @@ internal static class ProductNavigationViews
                 TextWrapping.Wrap
         };
 
+    internal static IReadOnlyList<string>
+        ExtractPublicationFlagsForSmoke(
+            string? platformMetadataJson) =>
+        ExtractPublicationFlags(
+            platformMetadataJson);
+
     private static IReadOnlyList<string>
         ExtractPublicationFlags(
             string? platformMetadataJson)
@@ -3157,13 +3163,25 @@ internal static class ProductNavigationViews
                     string.Empty,
                     StringComparison.Ordinal)
                 .ToLowerInvariant();
-        return normalized is
+        return normalized switch
+        {
+            "all"
+                or "allage"
+                or "allages"
+                or "general"
+                or "全年齢" =>
+                "全年齢",
+            "r18g"
+                or "18g" =>
+                "R-18G",
             "r18"
-            or "adult"
-            or "18plus"
-            or "18+"
-                ? "R-18"
-                : value;
+                or "adult"
+                or "18plus"
+                or "18+" =>
+                "R-18",
+            _ =>
+                value.Trim()
+        };
     }
 
     private static string FormatPublicationAssets(
