@@ -217,14 +217,9 @@ public sealed partial class LibraryRepository
         }
 
         var trimmed = value.Trim();
-        if (trimmed.Length > maxLength)
-        {
-            throw new ArgumentException(
-                $"EXIF value '{parameterName}' exceeds {maxLength} characters.",
-                parameterName);
-        }
-
-        return trimmed;
+        return trimmed.Length <= maxLength
+            ? trimmed
+            : trimmed[..maxLength];
     }
 
     private static string? ReadOptionalString(
