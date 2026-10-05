@@ -211,6 +211,38 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<AssetExifMetadata?> GetExifMetadataAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.GetExifMetadataAsync(
+                libraryId,
+                assetId,
+                expectedSourceRevision,
+                token),
+            cancellationToken);
+
+    public Task<bool> UpsertExifMetadataAsync(
+        long libraryId,
+        long assetId,
+        long expectedSourceRevision,
+        long expectedFileSize,
+        long expectedModifiedAtUtcTicks,
+        AssetExifMetadataUpdate metadata,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpsertExifMetadataAsync(
+                libraryId,
+                assetId,
+                expectedSourceRevision,
+                expectedFileSize,
+                expectedModifiedAtUtcTicks,
+                metadata,
+                token),
+            cancellationToken);
+
     public Task<int> RefreshAssetSourceAsync(
         long libraryId,
         string relativePath,
