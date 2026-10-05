@@ -3083,12 +3083,33 @@ internal static class ProductNavigationViews
                     is JsonValueKind.String
                         ? property.Value.GetString()
                         : property.Value.GetRawText();
-                if (!string.IsNullOrWhiteSpace(
+                if (string.IsNullOrWhiteSpace(
                         value))
                 {
-                    flags.Add(
-                        $"{property.Name}: {value}");
+                    continue;
                 }
+
+                if (normalized is
+                    "aigenerated"
+                    or "isgeneratedbyai"
+                    or "generatedbyai")
+                {
+                    flags.Add(
+                        $"AI生成: {FormatPublicationBoolean(value)}");
+                    continue;
+                }
+
+                if (normalized is
+                    "agerestriction"
+                    or "agegate")
+                {
+                    flags.Add(
+                        $"年齢制限: {FormatPublicationAgeRestriction(value)}");
+                    continue;
+                }
+
+                flags.Add(
+                    $"年齢制限: {FormatPublicationBoolean(value, true)}");
             }
 
             return flags;
@@ -3097,6 +3118,52 @@ internal static class ProductNavigationViews
         {
             return Array.Empty<string>();
         }
+    }
+
+    private static string FormatPublicationBoolean(
+        string value,
+        bool adultMeaning = false)
+    {
+        if (bool.TryParse(
+                value,
+                out var parsed))
+        {
+            if (adultMeaning)
+            {
+                return parsed
+                    ? "R-18"
+                    : "全年齢";
+            }
+
+            return parsed
+                ? "はい"
+                : "いいえ";
+        }
+
+        return value;
+    }
+
+    private static string FormatPublicationAgeRestriction(
+        string value)
+    {
+        var normalized =
+            value.Trim()
+                .Replace(
+                    "_",
+                    string.Empty,
+                    StringComparison.Ordinal)
+                .Replace(
+                    "-",
+                    string.Empty,
+                    StringComparison.Ordinal)
+                .ToLowerInvariant();
+        return normalized is
+            "r18"
+            or "adult"
+            or "18plus"
+            or "18+"
+                ? "R-18"
+                : value;
     }
 
     private static string FormatPublicationAssets(
