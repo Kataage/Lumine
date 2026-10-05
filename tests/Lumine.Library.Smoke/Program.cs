@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using Lumine.Library;
 using Microsoft.Data.Sqlite;
 
@@ -346,6 +347,68 @@ try
         && technical.HasAlpha == true
         && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
+
+    var concurrentTechnicalWrites =
+        Enumerable.Range(0, 16)
+            .Select(_ =>
+                repository.UpdateTechnicalMetadataAsync(
+                    library.Id,
+                    sameStat.Id,
+                    sameStat.SourceRevision,
+                    sameStat.FileSize,
+                    sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                    new AssetTechnicalMetadata(
+                        640,
+                        480,
+                        640,
+                        480,
+                        true,
+                        "png",
+                        technicalSha)))
+            .ToArray();
+    var concurrentTechnicalResults =
+        await Task.WhenAll(concurrentTechnicalWrites);
+    Require(
+        concurrentTechnicalResults.All(static updated => updated),
+        "Concurrent technical metadata persistence rejected a current source revision.");
+
+    await using (var transactionProbe =
+                 new SqliteConnection(
+                     "Data Source=:memory:;Pooling=False"))
+    {
+        await transactionProbe.OpenAsync();
+        await using var begin = transactionProbe.CreateCommand();
+        begin.CommandText = "BEGIN;";
+        await begin.ExecuteNonQueryAsync();
+
+        try
+        {
+            await using var nestedBegin = transactionProbe.CreateCommand();
+            nestedBegin.CommandText = "BEGIN;";
+            await nestedBegin.ExecuteNonQueryAsync();
+            throw new InvalidOperationException(
+                "SQLite unexpectedly accepted a nested BEGIN.");
+        }
+        catch (SqliteException exception)
+        {
+            var classifier = typeof(LibraryRepository).GetMethod(
+                "IsRecoverableNestedTransactionState",
+                BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new InvalidOperationException(
+                    "Nested-transaction recovery classifier was not found.");
+            Require(
+                classifier.Invoke(
+                    null,
+                    new object?[] { exception }) is true,
+                "Transaction-state recovery classifier rejected SQLite's nested-transaction error.");
+        }
+        finally
+        {
+            await using var rollback = transactionProbe.CreateCommand();
+            rollback.CommandText = "ROLLBACK;";
+            await rollback.ExecuteNonQueryAsync();
+        }
+    }
 
 
     var userMetadata = await repository.SetUserMetadataAsync(
