@@ -947,8 +947,9 @@ try
     Require(
         !ThumbnailProfiles.GridSmall.LinearLight
         && !ThumbnailProfiles.GridMedium.LinearLight
-        && ThumbnailProfiles.DetailPreview.LinearLight,
-        "Thumbnail quality profiles lost the grid shrink-on-load / Detail linear-light contract.");
+        && !ThumbnailProfiles.DetailPreview.LinearLight
+        && ThumbnailProfiles.DetailPreview.Version >= 2,
+        "Thumbnail profiles lost shrink-on-load for a user-visible grid/detail path.");
 
     var cacheModeSource = SourceFor(900, 1, jpgPath);
     var nonLinearCacheKey = ThumbnailCache.GetCacheKey(
