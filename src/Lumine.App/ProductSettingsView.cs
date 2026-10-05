@@ -393,6 +393,9 @@ internal static class ProductSettingsView
                 Orientation =
                     Orientation.Horizontal
             };
+        AutomationProperties.SetName(
+            customOptions,
+            "独自読み込み対象一覧");
 
         void RefreshCustomOptions()
         {
