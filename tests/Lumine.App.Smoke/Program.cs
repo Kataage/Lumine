@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -4827,9 +4828,14 @@ try
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.IsNullOrEmpty(
+                            customExtensionInput.Text),
+                        "Custom scan-extension editor did not normalize and stage JFIF.");
+
                     var customRemoval =
                         window.WorkspacePageForSmoke
-                            .GetVisualDescendants()
+                            .GetLogicalDescendants()
                             .OfType<Button>()
                             .FirstOrDefault(
                                 button =>
@@ -4839,17 +4845,15 @@ try
                                         "独自読み込み対象 .jfif を削除",
                                         StringComparison.Ordinal));
                     Require(
-                        customRemoval is not null
-                        && string.IsNullOrEmpty(
-                            customExtensionInput.Text),
-                        "Custom scan-extension editor did not normalize and stage JFIF.");
+                        customRemoval is not null,
+                        "Custom scan-extension editor did not expose the staged JFIF removal action in the logical tree.");
                     customRemoval!.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.WorkspacePageForSmoke
-                            .GetVisualDescendants()
+                            .GetLogicalDescendants()
                             .OfType<Button>()
                             .Any(
                                 button =>
