@@ -3916,8 +3916,12 @@ try
                                 control.TranslatePoint(
                                     new Point(0, 0),
                                     owner);
+                            var minimumVisibleX =
+                                owner.IsNavigationPaneOverlayForSmoke
+                                    ? owner.NavigationPaneBounds.Right
+                                    : 0;
                             return origin is { } point
-                                && point.X >= -0.5
+                                && point.X >= minimumVisibleX - 0.5
                                 && point.Y >= -0.5
                                 && point.X + control.Bounds.Width
                                     <= owner.ClientSize.Width + 0.5
