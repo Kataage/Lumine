@@ -365,9 +365,19 @@ internal sealed class ImageViewerThumbnailProvider : IViewerThumbnailProvider
                 asset,
                 sourcePath,
                 ThumbnailProfiles.GridSmall,
-                priority == ViewerThumbnailPriority.Foreground
-                    ? ThumbnailPriority.Foreground
-                    : ThumbnailPriority.Background,
+                priority switch
+                {
+                    ViewerThumbnailPriority.Interactive =>
+                        ThumbnailPriority.Interactive,
+                    ViewerThumbnailPriority.Foreground =>
+                        ThumbnailPriority.Foreground,
+                    ViewerThumbnailPriority.Background =>
+                        ThumbnailPriority.Background,
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(priority),
+                        priority,
+                        "Unknown Viewer thumbnail priority.")
+                },
                 cancellationToken).ConfigureAwait(false);
 
         return new ViewerThumbnail(
@@ -439,7 +449,7 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
                 asset,
                 sourcePath,
                 ThumbnailProfiles.DetailPreview,
-                ThumbnailPriority.Foreground,
+                ThumbnailPriority.Interactive,
                 cancellationToken).ConfigureAwait(false);
 
         return new ViewerThumbnail(
