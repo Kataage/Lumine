@@ -12,6 +12,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
     private readonly LibraryInfo _library;
     private readonly LibraryRepository _repository;
     private readonly LibraryReconciler _reconciler;
+    private readonly LibraryFileTypePolicy _fileTypes;
     private readonly Channel<DirectoryChange> _queue;
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
@@ -38,12 +39,14 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
         long libraryId,
         LibraryInfo library,
         LibraryRepository repository,
-        LibraryReconciler reconciler)
+        LibraryReconciler reconciler,
+        LibraryFileTypePolicy? fileTypes = null)
     {
         _libraryId = libraryId;
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _reconciler = reconciler ?? throw new ArgumentNullException(nameof(reconciler));
+        _fileTypes = fileTypes ?? new LibraryFileTypePolicy();
 
         _queue = Channel.CreateBounded<DirectoryChange>(
             new BoundedChannelOptions(QueueCapacity)
@@ -414,7 +417,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                         continue;
                     }
 
-                    if (LibraryFileTypes.IsSupportedPath(change.RelativePath)
+                    if (_fileTypes.IsSupportedPath(change.RelativePath)
                         && File.Exists(fullPath))
                     {
                         try
@@ -456,7 +459,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                         return true;
                     }
 
-                    if (LibraryFileTypes.IsSupportedPath(change.RelativePath))
+                    if (_fileTypes.IsSupportedPath(change.RelativePath))
                     {
                         deletes.Add((change.RelativePath, change));
                     }
@@ -539,7 +542,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     return true;
                 }
 
-                if (LibraryFileTypes.IsSupportedPath(change.RelativePath)
+                if (_fileTypes.IsSupportedPath(change.RelativePath)
                     && File.Exists(fullPath))
                 {
                     await UpsertPathAsync(
@@ -557,7 +560,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     break;
                 }
 
-                if (LibraryFileTypes.IsSupportedPath(change.RelativePath)
+                if (_fileTypes.IsSupportedPath(change.RelativePath)
                     && File.Exists(fullPath))
                 {
                     await UpsertPathAsync(
@@ -581,7 +584,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
                     return true;
                 }
 
-                if (LibraryFileTypes.IsSupportedPath(change.RelativePath))
+                if (_fileTypes.IsSupportedPath(change.RelativePath))
                 {
                     if (await _repository.RemoveAssetAsync(
                             _libraryId,
@@ -630,8 +633,8 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             return true;
         }
 
-        var oldSupported = LibraryFileTypes.IsSupportedPath(oldPath);
-        var newSupported = LibraryFileTypes.IsSupportedPath(change.RelativePath);
+        var oldSupported = _fileTypes.IsSupportedPath(oldPath);
+        var newSupported = _fileTypes.IsSupportedPath(change.RelativePath);
 
         if (newSupported && File.Exists(newFullPath))
         {
@@ -726,7 +729,7 @@ public sealed class LibraryChangeProcessor : IAsyncDisposable
             relativePath,
             info.Length,
             new DateTimeOffset(info.LastWriteTimeUtc),
-            Format: LibraryFileTypes.GetFormat(relativePath),
+            Format: _fileTypes.GetFormat(relativePath),
             ForceSourceRevision: forceSourceRevision);
     }
 
