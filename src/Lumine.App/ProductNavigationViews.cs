@@ -1652,29 +1652,40 @@ internal static class ProductNavigationViews
         long totalCount,
         bool hasMore,
         Func<Task<PublicationPage>> loadMore,
-        Action<string>? reportError = null)
+        Action<string>? reportError = null,
+        IReadOnlyList<PublicationDestinationInfo>? destinations = null,
+        IReadOnlyList<PublicationAccountInfo>? accounts = null,
+        Func<string, string, Task<PublicationDestinationInfo?>>? createDestination = null,
+        Func<PublicationDestinationInfo, Task<bool>>? deleteDestination = null,
+        Func<long, string, string, Task<PublicationAccountInfo?>>? createAccount = null,
+        Func<PublicationAccountInfo, Task<bool>>? deleteAccount = null,
+        Func<PublicationInfo, Task<bool>>? deletePublication = null)
     {
         ArgumentNullException.ThrowIfNull(
             publications);
         ArgumentNullException.ThrowIfNull(
             loadMore);
 
-        if (publications.Count == 0
-            && totalCount == 0)
-        {
-            return CreatePlaceholder(
-                "公開履歴",
-                "公開履歴はまだありません。");
-        }
-
         var items =
             new ObservableCollection<PublicationInfo>(
                 publications);
+        var destinationItems =
+            new ObservableCollection<PublicationDestinationInfo>(
+                destinations
+                ?? Array.Empty<PublicationDestinationInfo>());
+        var accountItems =
+            new ObservableCollection<PublicationAccountInfo>(
+                accounts
+                ?? Array.Empty<PublicationAccountInfo>());
         var knownIds =
             new HashSet<long>(
                 publications.Select(
                     static item =>
                         item.Id));
+        var displayedTotal =
+            Math.Max(
+                totalCount,
+                items.Count);
 
         var summary =
             new TextBlock
@@ -1684,8 +1695,539 @@ internal static class ProductNavigationViews
                 FontSize =
                     LumineDesign.CaptionFontSize,
                 TextWrapping =
-                    TextWrapping.Wrap
+                    TextWrapping.Wrap,
+                VerticalAlignment =
+                    VerticalAlignment.Center
             };
+
+        void UpdateSummary()
+        {
+            summary.Text =
+                displayedTotal > items.Count
+                    ? $"{items.Count:N0} / {displayedTotal:N0}件"
+                    : $"{items.Count:N0}件";
+        }
+
+        UpdateSummary();
+
+        Control? CreateProfileSettings()
+        {
+            if (createDestination is null
+                && deleteDestination is null
+                && createAccount is null
+                && deleteAccount is null)
+            {
+                return null;
+            }
+
+            var destinationName =
+                LumineDesign.ConfigureTextBox(
+                    new TextBox
+                    {
+                        PlaceholderText =
+                            "公開先名"
+                    });
+            var destinationKind =
+                LumineDesign.ConfigureComboBox(
+                    new ComboBox
+                    {
+                        ItemsSource =
+                            new[]
+                            {
+                                "Pixiv",
+                                "X",
+                                "Misskey",
+                                "Bluesky",
+                                "その他"
+                            },
+                        SelectedIndex = 4
+                    });
+            var destinationList =
+                new StackPanel
+                {
+                    Spacing = LumineDesign.Space4
+                };
+            var accountDestination =
+                LumineDesign.ConfigureComboBox(
+                    new ComboBox());
+            var accountName =
+                LumineDesign.ConfigureTextBox(
+                    new TextBox
+                    {
+                        PlaceholderText =
+                            "表示名"
+                    });
+            var accountIdentifier =
+                LumineDesign.ConfigureTextBox(
+                    new TextBox
+                    {
+                        PlaceholderText =
+                            "@ID / 識別子（任意）"
+                    });
+            var accountList =
+                new StackPanel
+                {
+                    Spacing = LumineDesign.Space4
+                };
+            var feedback =
+                new TextBlock
+                {
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    TextWrapping =
+                        TextWrapping.Wrap
+                };
+
+            string ResolveKind() =>
+                destinationKind.SelectedItem as string
+                    switch
+                    {
+                        "Pixiv" => "pixiv",
+                        "X" => "twitter",
+                        "Misskey" => "misskey",
+                        "Bluesky" => "bluesky",
+                        _ => "other"
+                    };
+
+            void RefreshAccountDestinations()
+            {
+                accountDestination.ItemsSource =
+                    destinationItems
+                        .Select(
+                            static item =>
+                                item.Name)
+                        .ToArray();
+                accountDestination.SelectedIndex =
+                    destinationItems.Count > 0
+                        ? Math.Clamp(
+                            accountDestination.SelectedIndex,
+                            0,
+                            destinationItems.Count - 1)
+                        : -1;
+            }
+
+            void RenderDestinations()
+            {
+                destinationList.Children.Clear();
+                foreach (var destinationItem in
+                         destinationItems)
+                {
+                    var row =
+                        new Grid
+                        {
+                            ColumnDefinitions =
+                                new ColumnDefinitions(
+                                    "*,Auto")
+                        };
+                    row.Children.Add(
+                        new TextBlock
+                        {
+                            Text =
+                                $"{destinationItem.Name} · {destinationItem.Kind}",
+                            Foreground =
+                                LumineDesign.Foreground,
+                            FontSize =
+                                LumineDesign.CaptionFontSize,
+                            TextWrapping =
+                                TextWrapping.Wrap,
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        });
+                    if (deleteDestination is not null)
+                    {
+                        var remove =
+                            LumineDesign.ConfigureDangerButton(
+                                new Button
+                                {
+                                    Content = "削除",
+                                    MinWidth = 56,
+                                    Margin =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            0,
+                                            0,
+                                            0)
+                                });
+                        AutomationProperties.SetName(
+                            remove,
+                            $"公開先を削除: {destinationItem.Name}");
+                        remove.Click +=
+                            async (_, _) =>
+                            {
+                                remove.IsEnabled = false;
+                                try
+                                {
+                                    if (await deleteDestination(
+                                            destinationItem))
+                                    {
+                                        destinationItems.Remove(
+                                            destinationItem);
+                                        foreach (var linked in
+                                                 accountItems
+                                                     .Where(
+                                                         item =>
+                                                             item.DestinationId
+                                                             == destinationItem.Id)
+                                                     .ToArray())
+                                        {
+                                            accountItems.Remove(
+                                                linked);
+                                        }
+
+                                        RefreshAccountDestinations();
+                                        RenderDestinations();
+                                        RenderAccounts();
+                                        feedback.Text =
+                                            "公開先を削除しました。過去のPublication snapshotは変更していません。";
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    System.Diagnostics.Trace.TraceError(
+                                        exception.ToString());
+                                    feedback.Text =
+                                        "公開先を削除できませんでした。";
+                                    reportError?.Invoke(
+                                        "公開先を削除できませんでした。もう一度お試しください。");
+                                }
+                                finally
+                                {
+                                    remove.IsEnabled = true;
+                                }
+                            };
+                        Grid.SetColumn(
+                            remove,
+                            1);
+                        row.Children.Add(
+                            remove);
+                    }
+
+                    destinationList.Children.Add(
+                        row);
+                }
+            }
+
+            void RenderAccounts()
+            {
+                accountList.Children.Clear();
+                foreach (var accountItem in
+                         accountItems)
+                {
+                    var destinationLabel =
+                        destinationItems
+                            .FirstOrDefault(
+                                item =>
+                                    item.Id
+                                    == accountItem.DestinationId)
+                            ?.Name
+                        ?? "削除済み公開先";
+                    var row =
+                        new Grid
+                        {
+                            ColumnDefinitions =
+                                new ColumnDefinitions(
+                                    "*,Auto")
+                        };
+                    row.Children.Add(
+                        new TextBlock
+                        {
+                            Text =
+                                $"{destinationLabel} · {accountItem.DisplayName}"
+                                + (string.IsNullOrWhiteSpace(
+                                        accountItem.AccountIdentifier)
+                                    ? string.Empty
+                                    : $" · {accountItem.AccountIdentifier}"),
+                            Foreground =
+                                LumineDesign.Foreground,
+                            FontSize =
+                                LumineDesign.CaptionFontSize,
+                            TextWrapping =
+                                TextWrapping.Wrap,
+                            VerticalAlignment =
+                                VerticalAlignment.Center
+                        });
+                    if (deleteAccount is not null)
+                    {
+                        var remove =
+                            LumineDesign.ConfigureDangerButton(
+                                new Button
+                                {
+                                    Content = "削除",
+                                    MinWidth = 56,
+                                    Margin =
+                                        new Thickness(
+                                            LumineDesign.Space6,
+                                            0,
+                                            0,
+                                            0)
+                                });
+                        AutomationProperties.SetName(
+                            remove,
+                            $"公開アカウントを削除: {accountItem.DisplayName}");
+                        remove.Click +=
+                            async (_, _) =>
+                            {
+                                remove.IsEnabled = false;
+                                try
+                                {
+                                    if (await deleteAccount(
+                                            accountItem))
+                                    {
+                                        accountItems.Remove(
+                                            accountItem);
+                                        RenderAccounts();
+                                        feedback.Text =
+                                            "アカウントを削除しました。過去のPublication snapshotは変更していません。";
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    System.Diagnostics.Trace.TraceError(
+                                        exception.ToString());
+                                    feedback.Text =
+                                        "アカウントを削除できませんでした。";
+                                    reportError?.Invoke(
+                                        "公開アカウントを削除できませんでした。もう一度お試しください。");
+                                }
+                                finally
+                                {
+                                    remove.IsEnabled = true;
+                                }
+                            };
+                        Grid.SetColumn(
+                            remove,
+                            1);
+                        row.Children.Add(
+                            remove);
+                    }
+
+                    accountList.Children.Add(
+                        row);
+                }
+            }
+
+            var addDestination =
+                LumineDesign.ConfigurePrimaryButton(
+                    new Button
+                    {
+                        Content = "公開先を追加",
+                        IsEnabled =
+                            createDestination is not null
+                    });
+            addDestination.Click +=
+                async (_, _) =>
+                {
+                    if (createDestination is null
+                        || string.IsNullOrWhiteSpace(
+                            destinationName.Text))
+                    {
+                        feedback.Text =
+                            "公開先名を入力してください。";
+                        return;
+                    }
+
+                    addDestination.IsEnabled = false;
+                    try
+                    {
+                        var created =
+                            await createDestination(
+                                destinationName.Text.Trim(),
+                                ResolveKind());
+                        if (created is not null)
+                        {
+                            destinationItems.Add(
+                                created);
+                            destinationName.Text =
+                                string.Empty;
+                            RefreshAccountDestinations();
+                            RenderDestinations();
+                            feedback.Text =
+                                "公開先を保存しました。";
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        System.Diagnostics.Trace.TraceError(
+                            exception.ToString());
+                        feedback.Text =
+                            "公開先を保存できませんでした。";
+                        reportError?.Invoke(
+                            "公開先を保存できませんでした。名前の重複などを確認してください。");
+                    }
+                    finally
+                    {
+                        addDestination.IsEnabled =
+                            createDestination is not null;
+                    }
+                };
+
+            var addAccount =
+                LumineDesign.ConfigurePrimaryButton(
+                    new Button
+                    {
+                        Content = "アカウントを追加",
+                        IsEnabled =
+                            createAccount is not null
+                    });
+            addAccount.Click +=
+                async (_, _) =>
+                {
+                    if (createAccount is null
+                        || accountDestination.SelectedIndex < 0
+                        || accountDestination.SelectedIndex
+                            >= destinationItems.Count)
+                    {
+                        feedback.Text =
+                            "公開先を選択してください。";
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(
+                            accountName.Text))
+                    {
+                        feedback.Text =
+                            "アカウント表示名を入力してください。";
+                        return;
+                    }
+
+                    addAccount.IsEnabled = false;
+                    try
+                    {
+                        var destinationItem =
+                            destinationItems[
+                                accountDestination.SelectedIndex];
+                        var created =
+                            await createAccount(
+                                destinationItem.Id,
+                                accountName.Text.Trim(),
+                                accountIdentifier.Text
+                                    ?.Trim()
+                                ?? string.Empty);
+                        if (created is not null)
+                        {
+                            accountItems.Add(
+                                created);
+                            accountName.Text =
+                                string.Empty;
+                            accountIdentifier.Text =
+                                string.Empty;
+                            RenderAccounts();
+                            feedback.Text =
+                                "アカウントを保存しました。";
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        System.Diagnostics.Trace.TraceError(
+                            exception.ToString());
+                        feedback.Text =
+                            "アカウントを保存できませんでした。";
+                        reportError?.Invoke(
+                            "公開アカウントを保存できませんでした。重複などを確認してください。");
+                    }
+                    finally
+                    {
+                        addAccount.IsEnabled =
+                            createAccount is not null;
+                    }
+                };
+
+            RefreshAccountDestinations();
+            RenderDestinations();
+            RenderAccounts();
+
+            var form =
+                new StackPanel
+                {
+                    Width = 330,
+                    Spacing =
+                        LumineDesign.Space8,
+                    Margin =
+                        new Thickness(
+                            LumineDesign.Space12)
+                };
+            form.Children.Add(
+                new TextBlock
+                {
+                    Text = "投稿先",
+                    Foreground =
+                        LumineDesign.Foreground,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    FontSize =
+                        LumineDesign.BodyFontSize
+                });
+            form.Children.Add(
+                destinationName);
+            form.Children.Add(
+                destinationKind);
+            form.Children.Add(
+                addDestination);
+            form.Children.Add(
+                destinationList);
+            form.Children.Add(
+                new Border
+                {
+                    Height = 1,
+                    Background =
+                        LumineDesign.Border,
+                    Margin =
+                        new Thickness(
+                            0,
+                            LumineDesign.Space6)
+                });
+            form.Children.Add(
+                new TextBlock
+                {
+                    Text = "アカウント",
+                    Foreground =
+                        LumineDesign.Foreground,
+                    FontWeight =
+                        FontWeight.SemiBold,
+                    FontSize =
+                        LumineDesign.BodyFontSize
+                });
+            form.Children.Add(
+                accountDestination);
+            form.Children.Add(
+                accountName);
+            form.Children.Add(
+                accountIdentifier);
+            form.Children.Add(
+                addAccount);
+            form.Children.Add(
+                accountList);
+            form.Children.Add(
+                feedback);
+
+            var button =
+                LumineDesign.ConfigureSecondaryButton(
+                    new DropDownButton
+                    {
+                        Content = "投稿先設定",
+                        Flyout =
+                            new Flyout
+                            {
+                                Content =
+                                    new ScrollViewer
+                                    {
+                                        Content =
+                                            form,
+                                        MaxHeight = 520,
+                                        HorizontalScrollBarVisibility =
+                                            Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                                        VerticalScrollBarVisibility =
+                                            Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+                                    }
+                            }
+                    });
+            AutomationProperties.SetName(
+                button,
+                "公開先とアカウントを管理");
+            return button;
+        }
 
         var list =
             new ListBox
@@ -1810,6 +2352,55 @@ internal static class ProductNavigationViews
                             });
                     }
 
+                    if (deletePublication is not null)
+                    {
+                        var remove =
+                            LumineDesign.ConfigureDangerButton(
+                                new Button
+                                {
+                                    Content = "履歴を削除…",
+                                    HorizontalAlignment =
+                                        HorizontalAlignment.Left
+                                });
+                        AutomationProperties.SetName(
+                            remove,
+                            $"Publication履歴を削除: {publication.Title}");
+                        remove.Click +=
+                            async (_, _) =>
+                            {
+                                remove.IsEnabled = false;
+                                try
+                                {
+                                    if (await deletePublication(
+                                            publication))
+                                    {
+                                        items.Remove(
+                                            publication);
+                                        knownIds.Remove(
+                                            publication.Id);
+                                        displayedTotal =
+                                            Math.Max(
+                                                0,
+                                                displayedTotal - 1);
+                                        UpdateSummary();
+                                    }
+                                }
+                                catch (Exception exception)
+                                {
+                                    System.Diagnostics.Trace.TraceError(
+                                        exception.ToString());
+                                    reportError?.Invoke(
+                                        "Publication履歴を削除できませんでした。もう一度お試しください。");
+                                }
+                                finally
+                                {
+                                    remove.IsEnabled = true;
+                                }
+                            };
+                        content.Children.Add(
+                            remove);
+                    }
+
                     return CreateCard(
                         content,
                         selected: false);
@@ -1827,20 +2418,6 @@ internal static class ProductNavigationViews
                         LumineDesign.CompactCommandHeight,
                     IsVisible = hasMore
                 });
-
-        void UpdateSummary(
-            long count)
-        {
-            summary.Text =
-                count > items.Count
-                    ? $"{items.Count:N0} / {count:N0}件"
-                    : $"{items.Count:N0}件";
-        }
-
-        UpdateSummary(
-            Math.Max(
-                totalCount,
-                items.Count));
 
         loadMoreButton.Click +=
             async (_, _) =>
@@ -1872,8 +2449,9 @@ internal static class ProductNavigationViews
 
                     loadMoreButton.IsVisible =
                         page.NextCursor is not null;
-                    UpdateSummary(
-                        page.TotalCount);
+                    displayedTotal =
+                        page.TotalCount;
+                    UpdateSummary();
                 }
                 catch (Exception exception)
                 {
@@ -1891,6 +2469,59 @@ internal static class ProductNavigationViews
                 }
             };
 
+        var settings =
+            CreateProfileSettings();
+        var header =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions(
+                        settings is null
+                            ? "*"
+                            : "*,Auto")
+            };
+        header.Children.Add(
+            summary);
+        if (settings is not null)
+        {
+            Grid.SetColumn(
+                settings,
+                1);
+            header.Children.Add(
+                settings);
+        }
+
+        var empty =
+            new TextBlock
+            {
+                Text =
+                    "公開履歴はまだありません。",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextAlignment =
+                    TextAlignment.Center,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12),
+                IsVisible =
+                    items.Count == 0
+            };
+        items.CollectionChanged +=
+            (_, _) =>
+            {
+                empty.IsVisible =
+                    items.Count == 0;
+            };
+
+        var listHost =
+            new Grid();
+        listHost.Children.Add(
+            list);
+        listHost.Children.Add(
+            empty);
+
         var root =
             new Grid
             {
@@ -1901,12 +2532,12 @@ internal static class ProductNavigationViews
                     LumineDesign.Space8
             };
         root.Children.Add(
-            summary);
+            header);
         Grid.SetRow(
-            list,
+            listHost,
             1);
         root.Children.Add(
-            list);
+            listHost);
         Grid.SetRow(
             loadMoreButton,
             2);
