@@ -28,7 +28,11 @@ internal static class ProductNavigationViews
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "画像フォルダーを追加"
+                    Content = "画像フォルダーを追加",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center
                 });
         AttachAsync(add, addLibrary, reportError);
         stack.Children.Add(add);
@@ -59,7 +63,7 @@ internal static class ProductNavigationViews
                         isActive
                             ? FontWeight.Bold
                             : FontWeight.SemiBold,
-                    FontSize = LumineDesign.CaptionFontSize,
+                    FontSize = LumineDesign.BodyFontSize,
                     TextTrimming =
                         TextTrimming.CharacterEllipsis,
                     VerticalAlignment =
@@ -91,7 +95,9 @@ internal static class ProductNavigationViews
                             ? "表示中"
                             : string.Empty,
                     Foreground =
-                        LumineDesign.MutedForeground,
+                        isActive
+                            ? LumineDesign.Accent
+                            : LumineDesign.MutedForeground,
                     FontSize = LumineDesign.CaptionFontSize,
                     FontWeight =
                         FontWeight.SemiBold,
@@ -125,6 +131,9 @@ internal static class ProductNavigationViews
                     Margin =
                         new Thickness(15, 2, 0, 0)
                 };
+            ToolTip.SetTip(
+                path,
+                library.RootPath);
 
             var detail =
                 new TextBlock
@@ -162,16 +171,13 @@ internal static class ProductNavigationViews
                     new Border
                     {
                         Child = primaryContent,
-                        Background =
-                            LumineDesign.AccentMuted,
-                        BorderBrush =
-                            LumineDesign.BorderStrong,
+                        Background = Brushes.Transparent,
+                        BorderBrush = Brushes.Transparent,
                         BorderThickness =
-                            new Thickness(1),
-                        CornerRadius =
-                            new CornerRadius(LumineDesign.PanelRadius),
+                            new Thickness(0),
                         Padding =
-                            new Thickness(LumineDesign.Space8)
+                            new Thickness(
+                                LumineDesign.Space8)
                     };
             }
             else
@@ -182,16 +188,16 @@ internal static class ProductNavigationViews
                         Content = primaryContent,
                         HorizontalContentAlignment =
                             HorizontalAlignment.Stretch,
-                        Background =
-                            LumineDesign.SurfaceRaised,
-                        BorderBrush =
-                            LumineDesign.Border,
+                        Background = Brushes.Transparent,
+                        BorderBrush = Brushes.Transparent,
                         BorderThickness =
-                            new Thickness(1),
+                            new Thickness(0),
                         CornerRadius =
-                            new CornerRadius(LumineDesign.PanelRadius),
+                            new CornerRadius(
+                                LumineDesign.ControlRadius),
                         Padding =
-                            new Thickness(LumineDesign.Space8),
+                            new Thickness(
+                                LumineDesign.Space8),
                         IsEnabled = canOpen
                     };
 
@@ -301,7 +307,29 @@ internal static class ProductNavigationViews
                     manageMenu.Open(manageButton);
             Grid.SetColumn(manageButton, 2);
             libraryRow.Children.Add(manageButton);
-            stack.Children.Add(libraryRow);
+
+            var libraryCard =
+                new Border
+                {
+                    Background =
+                        isActive
+                            ? LumineDesign.InteractionSelected
+                            : LumineDesign.SurfaceRaised,
+                    BorderBrush =
+                        isActive
+                            ? LumineDesign.BorderStrong
+                            : LumineDesign.Border,
+                    BorderThickness =
+                        new Thickness(1),
+                    CornerRadius =
+                        new CornerRadius(
+                            LumineDesign.PanelRadius),
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space2),
+                    Child = libraryRow
+                };
+            stack.Children.Add(libraryCard);
 
             if (!string.IsNullOrWhiteSpace(
                     library.SyncError))
