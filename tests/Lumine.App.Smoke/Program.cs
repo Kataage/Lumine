@@ -5135,6 +5135,34 @@ try
                         Require(
                             chromeVisible,
                             "Focused Viewer acceptance evidence did not expose its primary command chrome.");
+
+                        var viewerFitButton =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .FirstOrDefault(
+                                    button =>
+                                        string.Equals(
+                                            AutomationProperties.GetAutomationId(
+                                                button),
+                                            "viewer.fit",
+                                            StringComparison.Ordinal));
+                        var expectedViewerCaptionSize =
+                            12d
+                            * (iteration == 2
+                                ? 2.25
+                                : 1.0);
+                        Require(
+                            viewerFitButton is not null
+                            && Math.Abs(
+                                viewerFitButton.FontSize
+                                - expectedViewerCaptionSize) < 0.01
+                            && Math.Abs(
+                                LumineVisualMetrics.TextScaleFactor
+                                - (iteration == 2
+                                    ? 2.25
+                                    : 1.0)) < 0.001,
+                            $"Focused Viewer did not inherit the expected text scale: iteration={iteration}, metric={LumineVisualMetrics.TextScaleFactor:N2}, fitFont={viewerFitButton?.FontSize:N2}.");
+
                         CaptureVisualEvidence(
                             window,
                             iteration == 2
