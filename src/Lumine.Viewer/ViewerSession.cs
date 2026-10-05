@@ -191,12 +191,30 @@ public sealed class ViewerSession : IAsyncDisposable
 
             if (_inFlight.TryGetValue(asset.Id, out var existing))
             {
-                // Reuse work already in flight for this asset even when a
-                // background prefetch becomes visible. Cancelling and
+                if (priority == ViewerThumbnailPriority.Interactive
+                    && existing.Priority
+                        != ViewerThumbnailPriority.Interactive)
+                {
+                    // User-selected preview work must not inherit the queue
+                    // position of an older Grid/prefetch request. Keep the
+                    // old request alive for its existing waiters, but publish
+                    // a new Interactive request as the shared request for
+                    // subsequent waiters. Image Core's cache-key gate
+                    // prevents duplicate generation for the same profile.
+                    request = CreateRequestLocked(
+                        asset,
+                        priority);
+                    _inFlight[asset.Id] = request;
+                    return AwaitSharedAsync(
+                        asset.Id,
+                        request,
+                        cancellationToken);
+                }
+
+                // Reuse work already in flight for ordinary
+                // Background -> Foreground transitions. Cancelling and
                 // restarting the same source decode discards useful native
-                // work and increases cold-scroll latency. If the background
-                // waiter later disappears, the foreground waiter keeps the
-                // shared request alive.
+                // work and increases cold-scroll latency.
                 existing.Waiters++;
                 Interlocked.Increment(
                     ref _thumbnailRequestsCoalesced);
@@ -207,32 +225,46 @@ public sealed class ViewerSession : IAsyncDisposable
                     cancellationToken);
             }
 
-            var requestCancellation =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    _shutdown.Token);
-            var task = RequestCoreAsync(
+            request = CreateRequestLocked(
                 asset,
-                priority,
-                requestCancellation.Token);
-            request = new InFlightRequest(
-                requestCancellation,
-                task)
-            {
-                Waiters = 1
-            };
+                priority);
             _inFlight[asset.Id] = request;
-            _activeRequests.Add(request);
-            request.CleanupTask =
-                ObserveRequestCompletionAsync(
-                    asset.Id,
-                    request);
-            Interlocked.Increment(ref _thumbnailRequests);
         }
 
         return AwaitSharedAsync(
             asset.Id,
             request,
             cancellationToken);
+    }
+
+    private InFlightRequest CreateRequestLocked(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority)
+    {
+        var requestCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                _shutdown.Token);
+        var task =
+            RequestCoreAsync(
+                asset,
+                priority,
+                requestCancellation.Token);
+        var request =
+            new InFlightRequest(
+                requestCancellation,
+                task,
+                priority)
+            {
+                Waiters = 1
+            };
+        _activeRequests.Add(request);
+        request.CleanupTask =
+            ObserveRequestCompletionAsync(
+                asset.Id,
+                request);
+        Interlocked.Increment(
+            ref _thumbnailRequests);
+        return request;
     }
 
     public async Task PrefetchAsync(
@@ -551,11 +583,14 @@ public sealed class ViewerSession : IAsyncDisposable
 
     private sealed class InFlightRequest(
         CancellationTokenSource cancellation,
-        Task<ViewerThumbnail> task)
+        Task<ViewerThumbnail> task,
+        ViewerThumbnailPriority priority)
     {
         private int _cancellationDisposed;
 
         public Task<ViewerThumbnail> Task { get; } = task;
+
+        public ViewerThumbnailPriority Priority { get; } = priority;
 
         public Task CleanupTask { get; set; } =
             System.Threading.Tasks.Task.CompletedTask;
