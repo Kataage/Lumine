@@ -222,32 +222,20 @@ internal static class ProductNavigationViews
                 new Grid
                 {
                     RowDefinitions =
-                        new RowDefinitions("Auto,Auto")
+                        new RowDefinitions("Auto,Auto"),
+                    ColumnDefinitions =
+                        new ColumnDefinitions("*,Auto"),
+                    ColumnSpacing =
+                        LumineDesign.Space4
                 };
             libraryRow.Children.Add(primary);
 
-            var actions =
-                new StackPanel
-                {
-                    Orientation =
-                        Orientation.Horizontal,
-                    Spacing =
-                        LumineDesign.Space4,
-                    HorizontalAlignment =
-                        HorizontalAlignment.Right,
-                    Margin =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            0,
-                            LumineDesign.Space6,
-                            LumineDesign.Space6)
-                };
-
+            Button? rescan = null;
             if (isActive
                 && library.IsEnabled
                 && rootAvailable)
             {
-                var rescan =
+                rescan =
                     LumineDesign.ConfigureSecondaryButton(
                         new Button
                         {
@@ -258,8 +246,16 @@ internal static class ProductNavigationViews
                                 new Thickness(
                                     LumineDesign.Space8,
                                     LumineDesign.Space4),
+                            HorizontalAlignment =
+                                HorizontalAlignment.Right,
                             VerticalAlignment =
-                                VerticalAlignment.Center
+                                VerticalAlignment.Center,
+                            Margin =
+                                new Thickness(
+                                    LumineDesign.Space8,
+                                    0,
+                                    LumineDesign.Space6,
+                                    LumineDesign.Space6)
                         });
                 ToolTip.SetTip(
                     rescan,
@@ -268,7 +264,6 @@ internal static class ProductNavigationViews
                     rescan,
                     () => rescanLibrary(library),
                     reportError);
-                actions.Children.Add(rescan);
             }
 
             var manageButton =
@@ -282,7 +277,13 @@ internal static class ProductNavigationViews
                     },
                     "ライブラリを管理");
             manageButton.VerticalAlignment =
-                VerticalAlignment.Center;
+                VerticalAlignment.Top;
+            manageButton.Margin =
+                new Thickness(
+                    0,
+                    LumineDesign.Space6,
+                    LumineDesign.Space4,
+                    0);
 
             var manageMenu =
                 new ContextMenu();
@@ -320,9 +321,15 @@ internal static class ProductNavigationViews
             manageButton.Click +=
                 (_, _) =>
                     manageMenu.Open(manageButton);
-            actions.Children.Add(manageButton);
-            Grid.SetRow(actions, 1);
-            libraryRow.Children.Add(actions);
+            Grid.SetColumn(manageButton, 1);
+            libraryRow.Children.Add(manageButton);
+
+            if (rescan is not null)
+            {
+                Grid.SetRow(rescan, 1);
+                Grid.SetColumnSpan(rescan, 2);
+                libraryRow.Children.Add(rescan);
+            }
 
             var libraryCard =
                 new Border
