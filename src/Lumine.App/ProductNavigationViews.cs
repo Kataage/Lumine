@@ -329,6 +329,12 @@ internal static class ProductNavigationViews
                             LumineDesign.Space2),
                     Child = libraryRow
                 };
+            AutomationProperties.SetAutomationId(
+                libraryCard,
+                $"library-card-{library.Id}");
+            AutomationProperties.SetName(
+                libraryCard,
+                $"ライブラリ: {library.Name}");
             stack.Children.Add(libraryCard);
 
             if (!string.IsNullOrWhiteSpace(
