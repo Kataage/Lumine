@@ -1032,6 +1032,10 @@ try
             library.Id,
             profilePublication.Id),
         "Publication history deletion did not remove the selected snapshot.");
+    var firstAfterPublicationDelete =
+        await repository.GetUserMetadataAsync(
+            library.Id,
+            first.Id);
     Require(
         await repository.GetPublicationAsync(
             library.Id,
@@ -1041,11 +1045,21 @@ try
             library.Id,
             first.RelativePath)
             is not null
-        && Equals(
-            firstBeforePublicationDelete,
-            await repository.GetUserMetadataAsync(
-                library.Id,
-                first.Id)),
+        && firstBeforePublicationDelete is not null
+        && firstAfterPublicationDelete is not null
+        && firstBeforePublicationDelete.Rating
+            == firstAfterPublicationDelete.Rating
+        && firstBeforePublicationDelete.Favorite
+            == firstAfterPublicationDelete.Favorite
+        && firstBeforePublicationDelete.StatusLabel
+            == firstAfterPublicationDelete.StatusLabel
+        && firstBeforePublicationDelete.ColorLabel
+            == firstAfterPublicationDelete.ColorLabel
+        && firstBeforePublicationDelete.Notes
+            == firstAfterPublicationDelete.Notes
+        && firstBeforePublicationDelete.Tags.SequenceEqual(
+            firstAfterPublicationDelete.Tags,
+            StringComparer.Ordinal),
         "Deleting Publication history touched source assets or user metadata.");
     await using (var publicationDeleteConnection =
                  new SqliteConnection(
