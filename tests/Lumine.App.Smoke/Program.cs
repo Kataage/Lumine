@@ -1660,6 +1660,77 @@ try
                     < TimeSpan.FromSeconds(2),
                 $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
 
+            var pixivMetadataEditor =
+                new CreativePublicationPixivMetadataEditor();
+            Require(
+                pixivMetadataEditor
+                    .AgeRestrictionOptionsForSmoke
+                    .SequenceEqual(
+                        new[]
+                        {
+                            "全年齢",
+                            "R-18",
+                            "R-18G"
+                        },
+                        StringComparer.Ordinal)
+                && string.Equals(
+                    pixivMetadataEditor
+                        .SelectedAgeRestrictionForSmoke,
+                    "全年齢",
+                    StringComparison.Ordinal)
+                && pixivMetadataEditor
+                    .AgeRestrictionAccessibleForSmoke
+                && string.Equals(
+                    pixivMetadataEditor
+                        .PlatformMetadataJson,
+                    "{\"ageRestriction\":\"all\",\"aiGenerated\":true}",
+                    StringComparison.Ordinal),
+                "Pixiv Publication metadata editor did not restore the v1 all-age / AI-generated defaults.");
+
+            pixivMetadataEditor
+                .SelectAgeRestrictionForSmoke(
+                    "R-18G");
+            pixivMetadataEditor
+                .AiGeneratedForSmoke = false;
+            Require(
+                string.Equals(
+                    pixivMetadataEditor
+                        .PlatformMetadataJson,
+                    "{\"ageRestriction\":\"r18g\",\"aiGenerated\":false}",
+                    StringComparison.Ordinal),
+                "Pixiv R-18G authoring did not persist the canonical r18g value independently from AI-generated state.");
+
+            var allAgeFlags =
+                ProductNavigationViews
+                    .ExtractPublicationFlagsForSmoke(
+                        "{\"ageRestriction\":\"all\"}");
+            var r18Flags =
+                ProductNavigationViews
+                    .ExtractPublicationFlagsForSmoke(
+                        "{\"ageRestriction\":\"r18\"}");
+            var r18gFlags =
+                ProductNavigationViews
+                    .ExtractPublicationFlagsForSmoke(
+                        "{\"ageRestriction\":\"r18g\"}");
+            var legacyR18gFlags =
+                ProductNavigationViews
+                    .ExtractPublicationFlagsForSmoke(
+                        "{\"ageRestriction\":\"R-18G\"}");
+            Require(
+                allAgeFlags.Contains(
+                    "年齢制限: 全年齢",
+                    StringComparer.Ordinal)
+                && r18Flags.Contains(
+                    "年齢制限: R-18",
+                    StringComparer.Ordinal)
+                && r18gFlags.Contains(
+                    "年齢制限: R-18G",
+                    StringComparer.Ordinal)
+                && legacyR18gFlags.Contains(
+                    "年齢制限: R-18G",
+                    StringComparer.Ordinal),
+                "Publication history did not humanize canonical and legacy Pixiv age restrictions.");
+
             var publicationDetailSummaryAssets =
                 Enumerable.Range(
                         0,
