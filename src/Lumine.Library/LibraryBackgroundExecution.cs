@@ -419,6 +419,44 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    public Task<WorkInfo> AddAssetsToWorkAsync(
+        long libraryId,
+        long workId,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.AddAssetsToWorkAsync(
+                libraryId,
+                workId,
+                assetIds,
+                token),
+            cancellationToken);
+
+    public Task<GenerationGroupInfo>
+        AddAssetsToGenerationGroupAsync(
+            long libraryId,
+            long groupId,
+            IReadOnlyList<long> assetIds,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.AddAssetsToGenerationGroupAsync(
+                libraryId,
+                groupId,
+                assetIds,
+                token),
+            cancellationToken);
+
+    public Task<bool> DeleteAssetRelationAsync(
+        long libraryId,
+        long relationId,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.DeleteAssetRelationAsync(
+                libraryId,
+                relationId,
+                token),
+            cancellationToken);
+
     public Task<PublicationInfo> CreatePublicationAsync(
         long libraryId,
         PublicationCreate create,
@@ -436,6 +474,18 @@ public sealed class LibraryService
         CancellationToken cancellationToken = default) =>
         LibraryBackgroundExecution.RunAsync(
             token => _repository.ListWorksAsync(
+                libraryId,
+                limit,
+                token),
+            cancellationToken);
+
+    public Task<IReadOnlyList<GenerationGroupInfo>>
+        ListGenerationGroupsAsync(
+            long libraryId,
+            int limit = 100,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.ListGenerationGroupsAsync(
                 libraryId,
                 limit,
                 token),
