@@ -31,7 +31,7 @@ public static class ThumbnailProfiles
         new("grid-medium", 512, 512, 82, 2, LinearLight: false);
 
     public static ThumbnailProfile DetailPreview { get; } =
-        new("detail-preview", 1600, 1600, 85, 1, LinearLight: true);
+        new("detail-preview", 1600, 1600, 85, 2, LinearLight: false);
 
     public static IReadOnlyList<ThumbnailProfile> All { get; } =
         [GridSmall, GridMedium, DetailPreview];

@@ -44,6 +44,8 @@ internal static class Program
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
                     await VerifyDecodedCacheAsyncShutdown(
                         thumbnailPath);
+                    await VerifyPrefetchWaitsForVisibleTilesAsync(
+                        thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyBrowsePresentationParityAsync(thumbnailPath);
                     await VerifyThumbnailFailureRecoveryAsync(thumbnailPath);
@@ -679,6 +681,93 @@ internal static class Program
         Require(
             shutdownCache.Diagnostics.ActiveDecodes == 0,
             "ViewerSession.DisposeAsync did not drain active bitmap decode.");
+    }
+
+    private static async Task VerifyPrefetchWaitsForVisibleTilesAsync(
+        string thumbnailPath)
+    {
+        var provider =
+            new GatedPriorityThumbnailProvider(
+                thumbnailPath);
+        await using var session =
+            new ViewerSession(
+                new DirectFixtureAssetProvider(1_000),
+                provider,
+                new ViewerOptions
+                {
+                    TileWidth = 120,
+                    TileHeight = 120,
+                    TileSpacing = 8,
+                    PrefetchRows = 1,
+                    PrefetchDelay =
+                        TimeSpan.FromMilliseconds(1),
+                    DecodedBitmapEntryLimit = 64,
+                    DecodedBitmapByteLimit =
+                        32L * 1024 * 1024
+                });
+
+        var viewer =
+            new ThumbnailViewerControl(session);
+        var window =
+            new Window
+            {
+                Width = 900,
+                Height = 600,
+                Content = viewer
+            };
+
+        window.Show();
+
+        for (var attempt = 0;
+             attempt < 500
+             && provider.ForegroundRequests == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.ForegroundRequests > 0,
+            "Prefetch scheduling smoke never started visible foreground work.");
+
+        for (var attempt = 0;
+             attempt < 75;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            provider.BackgroundRequests == 0,
+            "Background prefetch started while visible tiles were still loading.");
+
+        provider.ReleaseForeground();
+
+        for (var attempt = 0;
+             attempt < 1_000
+             && (viewer.Diagnostics.AttachedTiles == 0
+                 || viewer.Diagnostics.ReadyTiles
+                    < viewer.Diagnostics.AttachedTiles
+                 || provider.BackgroundRequests == 0);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.Diagnostics.AttachedTiles > 0
+            && viewer.Diagnostics.ReadyTiles
+                >= viewer.Diagnostics.AttachedTiles,
+            "Visible tiles did not reach ready state after foreground release.");
+        Require(
+            provider.BackgroundRequests > 0,
+            "Background prefetch did not resume after visible tiles became ready.");
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
@@ -2894,6 +2983,51 @@ internal sealed class DirectFixtureAssetProvider(
                         : null,
                 Favorite:
                     organizationMetadata));
+    }
+}
+
+internal sealed class GatedPriorityThumbnailProvider(
+    string path) : IViewerThumbnailProvider
+{
+    private readonly TaskCompletionSource _foregroundRelease =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _foregroundRequests;
+    private int _backgroundRequests;
+
+    public int ForegroundRequests =>
+        Volatile.Read(ref _foregroundRequests);
+
+    public int BackgroundRequests =>
+        Volatile.Read(ref _backgroundRequests);
+
+    public void ReleaseForeground() =>
+        _foregroundRelease.TrySetResult();
+
+    public async ValueTask<ViewerThumbnail> RequestAsync(
+        ViewerAsset asset,
+        ViewerThumbnailPriority priority,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (priority == ViewerThumbnailPriority.Foreground)
+        {
+            Interlocked.Increment(
+                ref _foregroundRequests);
+            await _foregroundRelease.Task
+                .WaitAsync(cancellationToken);
+        }
+        else
+        {
+            Interlocked.Increment(
+                ref _backgroundRequests);
+        }
+
+        return new ViewerThumbnail(
+            $"prefetch-gate-{asset.Id}",
+            path,
+            1,
+            1);
     }
 }
 

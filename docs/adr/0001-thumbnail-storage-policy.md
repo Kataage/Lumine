@@ -79,6 +79,36 @@ The synthetic Windows CI comparison also favored MemoryOnly for in-process work:
 
 The large Warm advantage of PersistentDisk on the representative run is expected: it reuses display thumbnails across processes. MemoryOnly intentionally does not.
 
+## 2026-10-06 revalidation note (#536)
+
+The final product-owner acceptance on merged develop
+`9a9b30603f3d3c7e79800c6ef103ed6cb6d8f883` exposed a true cold-path
+failure on the same representative Windows library family:
+
+- 3,685 assets;
+- MemoryOnly Cold first viewport: 1,661.186 ms;
+- MemoryOnly Cold max fast-scroll: **4,593.624 ms**;
+- MemoryOnly Cold Detail preview: **18,534.723 ms**;
+- following Warm max fast-scroll: 853.165 ms;
+- zero thumbnail failures and zero metadata full-file hash fallbacks.
+
+The original #388 A/D runner always executed `PersistentDisk` first and
+`MemoryOnly` second. Therefore the reported MemoryOnly "Cold" result was
+application-cache cold, but could benefit from the OS filesystem/page cache
+populated by the preceding PersistentDisk run. It was not a symmetric
+machine-level cold comparison.
+
+#536 corrects that benchmark interpretation and revalidates the product
+default under the current canvas-first UI, which also exposes a substantially
+larger image viewport than the earlier split Core shell.
+
+The product default remains `MemoryOnly` while #536 is being fixed. This
+note does **not** authorize silently switching ordinary browsing back to a
+persistent display-thumbnail corpus. The first remediation is to make visible
+work outrank background prefetch and restore shrink-on-load for Detail
+preview. A hybrid or default-policy change still requires new representative
+evidence and product-owner approval.
+
 ## Decision
 
 **MemoryOnly is the Lumine v2 product default.**

@@ -21,6 +21,9 @@ param(
 
     [string]$Revision = "",
 
+    [ValidateSet("MemoryFirst", "PersistentFirst")]
+    [string]$PolicyOrder = "MemoryFirst",
+
     [ValidateSet("Default", "RedirectionSurface")]
     [string]$Win32CompositionMode = "Default",
 
@@ -254,13 +257,37 @@ function Build-RunSummary {
     }
 }
 
-Write-Host ""
-Write-Host "=== Thumbnail storage policy comparison: PersistentDisk ==="
-Invoke-PolicyRun -StorageMode "PersistentDisk" -PolicyOutput $persistentRoot
+$runOrder =
+    if ($PolicyOrder -eq "MemoryFirst") {
+        @(
+            [pscustomobject]@{
+                Mode = "MemoryOnly"
+                Output = $memoryRoot
+            },
+            [pscustomobject]@{
+                Mode = "PersistentDisk"
+                Output = $persistentRoot
+            }
+        )
+    }
+    else {
+        @(
+            [pscustomobject]@{
+                Mode = "PersistentDisk"
+                Output = $persistentRoot
+            },
+            [pscustomobject]@{
+                Mode = "MemoryOnly"
+                Output = $memoryRoot
+            }
+        )
+    }
 
-Write-Host ""
-Write-Host "=== Thumbnail storage policy comparison: MemoryOnly ==="
-Invoke-PolicyRun -StorageMode "MemoryOnly" -PolicyOutput $memoryRoot
+foreach ($run in $runOrder) {
+    Write-Host ""
+    Write-Host "=== Thumbnail storage policy comparison: $($run.Mode) ==="
+    Invoke-PolicyRun -StorageMode $run.Mode -PolicyOutput $run.Output
+}
 
 $persistent = Read-PolicyResult -PolicyRoot $persistentRoot
 $memory = Read-PolicyResult -PolicyRoot $memoryRoot
@@ -277,7 +304,8 @@ $memoryCold = Build-RunSummary -Result $memory.Cold
 $memoryWarm = Build-RunSummary -Result $memory.Warm
 
 $comparison = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
+    runOrder = @($runOrder | ForEach-Object { $_.Mode })
     appRevision = [string]$persistent.Summary.appRevision
     hardwareId = [string]$persistent.Summary.hardwareId
     libraryPathSha256 = [string]$persistent.Summary.libraryPathSha256
@@ -322,6 +350,8 @@ $comparison = [ordered]@{
     }
     interpretation = @(
         "MemoryOnly must report zero persistent thumbnail files and bytes.",
+        "The first policy run is the only candidate for a machine-level cold read. The second policy can benefit from OS filesystem/page cache populated by the first run, so cross-policy Cold numbers are not symmetric unless the machine cache is reset between runs.",
+        "PolicyOrder defaults to MemoryFirst because MemoryOnly is the product default; use PersistentFirst only for an intentional reverse-order diagnostic.",
         "PersistentDisk Warm measures cross-process persistent reuse; MemoryOnly Warm intentionally starts with no thumbnail persistence and therefore measures a fresh in-process memory-cache lifecycle on a warm library database.",
         "Both policies use the same libvips thumbnail profiles, source-identity rules, foreground/background scheduling, Viewer decoded-bitmap bounds and acceptance interaction sequence.",
         "The comparison runner collects with a permissive fast-scroll ceiling so both policies finish; targetFastScrollPass evaluates each run against TargetMaxFastScrollMs.",

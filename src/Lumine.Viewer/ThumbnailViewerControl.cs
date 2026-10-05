@@ -1415,11 +1415,40 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             try
             {
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var diagnostics = _session.Diagnostics;
+                    if (ShouldStartBackgroundPrefetch(
+                            diagnostics.AttachedTiles,
+                            diagnostics.ReadyTiles))
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(25),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                // Prefetch is useful only after the visible viewport has
+                // remained stable. A row that detaches during a fast scroll
+                // cancels this delay before any background decode is started.
                 if (_session.Options.PrefetchDelay > TimeSpan.Zero)
                 {
                     await Task.Delay(
                         _session.Options.PrefetchDelay,
                         cancellationToken).ConfigureAwait(false);
+                }
+
+                var stableDiagnostics =
+                    _session.Diagnostics;
+                if (!ShouldStartBackgroundPrefetch(
+                        stableDiagnostics.AttachedTiles,
+                        stableDiagnostics.ReadyTiles))
+                {
+                    return;
                 }
 
                 var rows = _session.Options.PrefetchRows;
@@ -2447,6 +2476,19 @@ public sealed class ThumbnailViewerControl : UserControl
             }
         }
     }
+    internal static bool ShouldStartBackgroundPrefetchForSmoke(
+        int attachedTiles,
+        int readyTiles) =>
+        ShouldStartBackgroundPrefetch(
+            attachedTiles,
+            readyTiles);
+
+    private static bool ShouldStartBackgroundPrefetch(
+        int attachedTiles,
+        int readyTiles) =>
+        attachedTiles > 0
+        && readyTiles >= attachedTiles;
+
     internal static bool ResolveTileActionVisibilityForSmoke(
         ViewerLayoutMode layoutMode,
         bool selected,
