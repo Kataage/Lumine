@@ -81,6 +81,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Button _grid;
     private readonly Button _list;
     private readonly Slider _density;
+    private readonly Border _displayControlsHost;
     private readonly WrapPanel _chips;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
@@ -369,8 +370,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
         {
             ColumnDefinitions =
                 new ColumnDefinitions(
-                    "*,Auto,Auto,Auto"),
-            ColumnSpacing = 6,
+                    "*,Auto,Auto"),
+            ColumnSpacing = LumineDesign.Space6,
             VerticalAlignment =
                 VerticalAlignment.Center
         };
@@ -386,19 +387,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 4,
-                Margin = new Thickness(0)
+                Spacing = LumineDesign.Space2
             };
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
-        Grid.SetColumn(mode, 2);
-        primaryRow.Children.Add(mode);
 
         var densityPanel =
             new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = LumineDesign.Space6,
+                Spacing = LumineDesign.Space4,
                 VerticalAlignment = VerticalAlignment.Center
             };
         densityPanel.Children.Add(
@@ -412,7 +410,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
-        _density.Width = 80;
+        _density.Width = 76;
         densityPanel.Children.Add(_density);
         ToolTip.SetTip(
             densityPanel,
@@ -420,8 +418,42 @@ internal sealed class BrowseWorkspaceControls : UserControl
         AutomationProperties.SetName(
             _density,
             "サムネイルサイズ");
-        Grid.SetColumn(densityPanel, 3);
-        primaryRow.Children.Add(densityPanel);
+
+        var displayControls =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = LumineDesign.Space6,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        displayControls.Children.Add(mode);
+        displayControls.Children.Add(
+            new Border
+            {
+                Width = 1,
+                Height = 20,
+                Background = LumineDesign.Border,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        displayControls.Children.Add(densityPanel);
+
+        _displayControlsHost =
+            new Border
+            {
+                Background = LumineDesign.SurfaceRaised,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space4,
+                        LumineDesign.Space2),
+                Child = displayControls
+            };
+        Grid.SetColumn(_displayControlsHost, 2);
+        primaryRow.Children.Add(_displayControlsHost);
 
         var root = new StackPanel
         {
@@ -543,6 +575,19 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButton.IsEffectivelyVisible
         && _filterButton.Bounds.Width > 0
         && _filterButton.Bounds.Height > 0;
+
+    internal bool DisplayControlsGroupedForSmoke =>
+        _displayControlsHost.Child is StackPanel display
+        && display.Children.Count == 3
+        && display.Children[0] is StackPanel mode
+        && mode.Children.Contains(_grid)
+        && mode.Children.Contains(_list)
+        && display.Children[2] is StackPanel density
+        && density.Children.Contains(_density)
+        && ReferenceEquals(
+            _displayControlsHost.Background,
+            LumineDesign.SurfaceRaised);
+
 
     internal bool FilterFlyoutIsOpenForSmoke =>
         _filterFlyout.IsOpen;
@@ -1043,24 +1088,20 @@ internal sealed class BrowseWorkspaceControls : UserControl
             == BrowseViewMode.Grid;
         _grid.Background =
             gridSelected
-                ? LumineDesign.AccentMuted
+                ? LumineDesign.InteractionSelected
                 : Brushes.Transparent;
         _grid.BorderBrush =
-            gridSelected
-                ? LumineDesign.BorderStrong
-                : Brushes.Transparent;
+            Brushes.Transparent;
 
         var listSelected =
             Preferences.ViewMode
             == BrowseViewMode.List;
         _list.Background =
             listSelected
-                ? LumineDesign.AccentMuted
+                ? LumineDesign.InteractionSelected
                 : Brushes.Transparent;
         _list.BorderBrush =
-            listSelected
-                ? LumineDesign.BorderStrong
-                : Brushes.Transparent;
+            Brushes.Transparent;
     }
 
     private void RenderChips()
@@ -1091,11 +1132,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _filterButton.Background =
             flyoutFilterCount == 0
                 ? LumineDesign.ControlSurface
-                : LumineDesign.AccentMuted;
+                : LumineDesign.InteractionSelected;
         _filterButton.BorderBrush =
             flyoutFilterCount == 0
                 ? LumineDesign.Border
-                : LumineDesign.BorderStrong;
+                : LumineDesign.Focus;
 
         AddChip(
             "フォルダー",

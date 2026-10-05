@@ -28,7 +28,11 @@ internal static class ProductNavigationViews
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "画像フォルダーを追加"
+                    Content = "画像フォルダーを追加",
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center
                 });
         AttachAsync(add, addLibrary, reportError);
         stack.Children.Add(add);
@@ -59,7 +63,7 @@ internal static class ProductNavigationViews
                         isActive
                             ? FontWeight.Bold
                             : FontWeight.SemiBold,
-                    FontSize = LumineDesign.CaptionFontSize,
+                    FontSize = LumineDesign.BodyFontSize,
                     TextTrimming =
                         TextTrimming.CharacterEllipsis,
                     VerticalAlignment =
@@ -91,7 +95,9 @@ internal static class ProductNavigationViews
                             ? "表示中"
                             : string.Empty,
                     Foreground =
-                        LumineDesign.MutedForeground,
+                        isActive
+                            ? LumineDesign.Accent
+                            : LumineDesign.MutedForeground,
                     FontSize = LumineDesign.CaptionFontSize,
                     FontWeight =
                         FontWeight.SemiBold,
@@ -125,6 +131,9 @@ internal static class ProductNavigationViews
                     Margin =
                         new Thickness(15, 2, 0, 0)
                 };
+            ToolTip.SetTip(
+                path,
+                library.RootPath);
 
             var detail =
                 new TextBlock
@@ -162,16 +171,13 @@ internal static class ProductNavigationViews
                     new Border
                     {
                         Child = primaryContent,
-                        Background =
-                            LumineDesign.AccentMuted,
-                        BorderBrush =
-                            LumineDesign.BorderStrong,
+                        Background = Brushes.Transparent,
+                        BorderBrush = Brushes.Transparent,
                         BorderThickness =
-                            new Thickness(1),
-                        CornerRadius =
-                            new CornerRadius(LumineDesign.PanelRadius),
+                            new Thickness(0),
                         Padding =
-                            new Thickness(LumineDesign.Space8)
+                            new Thickness(
+                                LumineDesign.Space8)
                     };
             }
             else
@@ -182,16 +188,16 @@ internal static class ProductNavigationViews
                         Content = primaryContent,
                         HorizontalContentAlignment =
                             HorizontalAlignment.Stretch,
-                        Background =
-                            LumineDesign.SurfaceRaised,
-                        BorderBrush =
-                            LumineDesign.Border,
+                        Background = Brushes.Transparent,
+                        BorderBrush = Brushes.Transparent,
                         BorderThickness =
-                            new Thickness(1),
+                            new Thickness(0),
                         CornerRadius =
-                            new CornerRadius(LumineDesign.PanelRadius),
+                            new CornerRadius(
+                                LumineDesign.ControlRadius),
                         Padding =
-                            new Thickness(LumineDesign.Space8),
+                            new Thickness(
+                                LumineDesign.Space8),
                         IsEnabled = canOpen
                     };
 
@@ -215,17 +221,21 @@ internal static class ProductNavigationViews
             var libraryRow =
                 new Grid
                 {
+                    RowDefinitions =
+                        new RowDefinitions("Auto,Auto"),
                     ColumnDefinitions =
-                        new ColumnDefinitions("*,Auto,Auto"),
-                    ColumnSpacing = LumineDesign.Space6
+                        new ColumnDefinitions("*,Auto"),
+                    ColumnSpacing =
+                        LumineDesign.Space4
                 };
             libraryRow.Children.Add(primary);
 
+            Button? rescan = null;
             if (isActive
                 && library.IsEnabled
                 && rootAvailable)
             {
-                var rescan =
+                rescan =
                     LumineDesign.ConfigureSecondaryButton(
                         new Button
                         {
@@ -236,8 +246,16 @@ internal static class ProductNavigationViews
                                 new Thickness(
                                     LumineDesign.Space8,
                                     LumineDesign.Space4),
+                            HorizontalAlignment =
+                                HorizontalAlignment.Right,
                             VerticalAlignment =
-                                VerticalAlignment.Center
+                                VerticalAlignment.Center,
+                            Margin =
+                                new Thickness(
+                                    LumineDesign.Space8,
+                                    0,
+                                    LumineDesign.Space6,
+                                    LumineDesign.Space6)
                         });
                 ToolTip.SetTip(
                     rescan,
@@ -246,8 +264,6 @@ internal static class ProductNavigationViews
                     rescan,
                     () => rescanLibrary(library),
                     reportError);
-                Grid.SetColumn(rescan, 1);
-                libraryRow.Children.Add(rescan);
             }
 
             var manageButton =
@@ -261,7 +277,13 @@ internal static class ProductNavigationViews
                     },
                     "ライブラリを管理");
             manageButton.VerticalAlignment =
-                VerticalAlignment.Center;
+                VerticalAlignment.Top;
+            manageButton.Margin =
+                new Thickness(
+                    0,
+                    LumineDesign.Space6,
+                    LumineDesign.Space4,
+                    0);
 
             var manageMenu =
                 new ContextMenu();
@@ -299,9 +321,44 @@ internal static class ProductNavigationViews
             manageButton.Click +=
                 (_, _) =>
                     manageMenu.Open(manageButton);
-            Grid.SetColumn(manageButton, 2);
+            Grid.SetColumn(manageButton, 1);
             libraryRow.Children.Add(manageButton);
-            stack.Children.Add(libraryRow);
+
+            if (rescan is not null)
+            {
+                Grid.SetRow(rescan, 1);
+                Grid.SetColumnSpan(rescan, 2);
+                libraryRow.Children.Add(rescan);
+            }
+
+            var libraryCard =
+                new Border
+                {
+                    Background =
+                        isActive
+                            ? LumineDesign.InteractionSelected
+                            : LumineDesign.SurfaceRaised,
+                    BorderBrush =
+                        isActive
+                            ? LumineDesign.BorderStrong
+                            : LumineDesign.Border,
+                    BorderThickness =
+                        new Thickness(1),
+                    CornerRadius =
+                        new CornerRadius(
+                            LumineDesign.PanelRadius),
+                    Padding =
+                        new Thickness(
+                            LumineDesign.Space2),
+                    Child = libraryRow
+                };
+            AutomationProperties.SetAutomationId(
+                libraryCard,
+                $"library-card-{library.Id}");
+            AutomationProperties.SetName(
+                libraryCard,
+                $"ライブラリ: {library.Name}");
+            stack.Children.Add(libraryCard);
 
             if (!string.IsNullOrWhiteSpace(
                     library.SyncError))

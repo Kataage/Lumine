@@ -632,7 +632,7 @@ internal static class LumineDesign
             var destination =
                 new StackPanel
                 {
-                    Spacing = 3,
+                    Spacing = 2,
                     HorizontalAlignment =
                         HorizontalAlignment.Center,
                     VerticalAlignment =
@@ -702,15 +702,15 @@ internal static class LumineDesign
                 new Button
                 {
                     Content = content,
-                    MinHeight = 56,
-                    CornerRadius = new CornerRadius(8),
+                    MinHeight = 52,
+                    CornerRadius = new CornerRadius(7),
                     Background =
                         selected
-                            ? AccentMuted
+                            ? InteractionSelected
                             : Brushes.Transparent,
                     BorderBrush = Brushes.Transparent,
                     BorderThickness = new Thickness(0),
-                    Padding = new Thickness(2, 5, 4, 5),
+                    Padding = new Thickness(2, 4, 4, 4),
                     HorizontalContentAlignment =
                         HorizontalAlignment.Stretch
                 };
@@ -732,7 +732,7 @@ internal static class LumineDesign
         var stack =
             new StackPanel
             {
-                Spacing = 5
+                Spacing = 3
             };
         var destinationButtons =
             new List<Button>(
@@ -768,7 +768,7 @@ internal static class LumineDesign
         content.Children.Add(brand);
 
         Grid.SetRow(stack, 1);
-        stack.Margin = new Thickness(6, 4);
+        stack.Margin = new Thickness(5, 4);
         content.Children.Add(stack);
 
         var settings =
@@ -776,7 +776,7 @@ internal static class LumineDesign
                 NavigationItems[^1]);
         destinationButtons.Add(
             settings);
-        settings.Margin = new Thickness(6, 4, 6, 8);
+        settings.Margin = new Thickness(5, 4, 5, 8);
         Grid.SetRow(settings, 2);
         content.Children.Add(settings);
 
