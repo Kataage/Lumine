@@ -141,7 +141,8 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (7, 'creative-archive-domain', 7),
             (8, 'tag-color-and-management-parity', 8),
             (9, 'publication-destination-and-account-profiles', 9),
-            (10, 'future-schema', 10);
+            (10, 'lazy-exif-metadata', 10),
+            (11, 'future-schema', 11);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -192,7 +193,7 @@ try
 {
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
-    Require(LibraryDatabase.SupportedSchemaVersion == 9, "Unexpected Library schema version.");
+    Require(LibraryDatabase.SupportedSchemaVersion == 10, "Unexpected Library schema version.");
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
@@ -388,6 +389,86 @@ try
         && technical.HasAlpha == true
         && technical.SourceIdentity == technicalSha,
         "Persistent source technical metadata did not round-trip.");
+
+    Require(
+        await repository.GetExifMetadataAsync(
+            library.Id,
+            technical.Id,
+            technical.SourceRevision) is null,
+        "Unprobed EXIF metadata unexpectedly had a persisted row.");
+
+    Require(
+        await repository.UpsertExifMetadataAsync(
+            library.Id,
+            technical.Id,
+            technical.SourceRevision,
+            technical.FileSize,
+            technical.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetExifMetadataUpdate(
+                "Lumine Camera X",
+                "Lumine Lens 50mm",
+                "50.0 mm",
+                "f/2.8",
+                "1/125 sec.",
+                400,
+                "2026:10:05 23:45:00",
+                "N 35/1 41/1 1234/100",
+                "E 139/1 41/1 5678/100")),
+        "Current-revision EXIF metadata was not persisted.");
+
+    var persistedExif =
+        await repository.GetExifMetadataAsync(
+            library.Id,
+            technical.Id,
+            technical.SourceRevision)
+        ?? throw new InvalidOperationException(
+            "Persisted EXIF metadata did not round-trip.");
+    Require(
+        persistedExif.HasValues
+        && persistedExif.CameraModel == "Lumine Camera X"
+        && persistedExif.LensModel == "Lumine Lens 50mm"
+        && persistedExif.Iso == 400
+        && persistedExif.GpsLatitude is not null
+        && persistedExif.GpsLongitude is not null,
+        "Persisted EXIF metadata values changed during round-trip.");
+
+    Require(
+        await repository.UpsertExifMetadataAsync(
+            library.Id,
+            enriched.Id,
+            enriched.SourceRevision,
+            enriched.FileSize,
+            enriched.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetExifMetadataUpdate()),
+        "Empty/probed EXIF state could not be persisted.");
+    var emptyExif =
+        await repository.GetExifMetadataAsync(
+            library.Id,
+            enriched.Id,
+            enriched.SourceRevision)
+        ?? throw new InvalidOperationException(
+            "Empty/probed EXIF state was indistinguishable from unprobed state.");
+    Require(
+        !emptyExif.HasValues,
+        "Empty/probed EXIF state fabricated metadata values.");
+
+    LibraryDatabase.ClearPools();
+    var exifRestartDatabase =
+        new LibraryDatabase(databasePath);
+    await exifRestartDatabase.InitializeAsync();
+    var exifRestartRepository =
+        new LibraryRepository(exifRestartDatabase);
+    var exifAfterRestart =
+        await exifRestartRepository.GetExifMetadataAsync(
+            library.Id,
+            technical.Id,
+            technical.SourceRevision)
+        ?? throw new InvalidOperationException(
+            "Persisted EXIF metadata was not reusable after database restart.");
+    Require(
+        exifAfterRestart.Iso == 400
+        && exifAfterRestart.CameraModel == "Lumine Camera X",
+        "EXIF metadata changed after database restart.");
 
     var concurrentTechnicalWrites =
         Enumerable.Range(0, 16)
@@ -979,6 +1060,23 @@ try
         && forcedRevision.HasAlpha is null
         && forcedRevision.SourceIdentity is null,
         "Explicit same-stat source change retained stale technical metadata.");
+
+    Require(
+        await repository.GetExifMetadataAsync(
+            library.Id,
+            forcedRevision.Id,
+            forcedRevision.SourceRevision) is null,
+        "Source revision advance reused stale EXIF metadata.");
+    Require(
+        !await repository.UpsertExifMetadataAsync(
+            library.Id,
+            forcedRevision.Id,
+            technical.SourceRevision,
+            forcedRevision.FileSize,
+            forcedRevision.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetExifMetadataUpdate(
+                CameraModel: "stale")),
+        "Stale source revision was allowed to overwrite EXIF metadata.");
 
     var userMetadataAfterSourceRevision =
         await repository.GetUserMetadataAsync(
@@ -1965,7 +2063,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 9, "v1 database did not migrate to v9.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 10, "v1 database did not migrate to v10.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
