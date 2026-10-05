@@ -3426,10 +3426,12 @@ try
             width: 1280,
             height: 900);
 
+        // Product evidence requires deterministic 100% and 225%
+        // text-scale runs regardless of the runner's inherited setting.
         LumineVisualMetrics.ConfigureTextScaleFactor(
             iteration == 2
                 ? 2.25
-                : baselineTextScale);
+                : 1.0);
 
         await using (var appHost =
                      await AppHost.StartAsync(
@@ -5048,6 +5050,25 @@ try
                             iteration == 2
                                 ? "focused-viewer-900x600-text225"
                                 : "focused-viewer-900x600");
+
+                        if (iteration == 2
+                            && visualOutputDirectory is not null)
+                        {
+                            var baselineViewerEvidence =
+                                File.ReadAllBytes(
+                                    Path.Combine(
+                                        visualOutputDirectory,
+                                        "focused-viewer-900x600.png"));
+                            var scaledViewerEvidence =
+                                File.ReadAllBytes(
+                                    Path.Combine(
+                                        visualOutputDirectory,
+                                        "focused-viewer-900x600-text225.png"));
+                            Require(
+                                !baselineViewerEvidence.SequenceEqual(
+                                    scaledViewerEvidence),
+                                "225% Focused Viewer visual evidence duplicated the 100% capture.");
+                        }
                     }
 
                     var unnamedIconButton =
