@@ -138,7 +138,9 @@ static async Task CreateFutureSchemaDatabaseAsync(string path)
             (5, 'user-metadata-and-local-search', 5),
             (6, 'product-navigation-library-state', 6),
             (7, 'creative-archive-domain', 7),
-            (8, 'future-schema', 8);
+            (8, 'tag-color-and-management-parity', 8),
+            (9, 'publication-destination-and-account-profiles', 9),
+            (10, 'future-schema', 10);
         """;
     await command.ExecuteNonQueryAsync();
 }
@@ -1747,7 +1749,7 @@ try
         await legacyConnection.OpenAsync();
         await using var migration = legacyConnection.CreateCommand();
         migration.CommandText = "SELECT MAX(version) FROM schema_migrations;";
-        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 8, "v1 database did not migrate to v8.");
+        Require(Convert.ToInt32(await migration.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 9, "v1 database did not migrate to v9.");
 
         await using var asset = legacyConnection.CreateCommand();
         asset.CommandText = "SELECT id, source_revision, width, height, observed_generation FROM assets WHERE relative_path = 'legacy.jpg';";
@@ -1765,7 +1767,118 @@ try
                 await enabled.ExecuteScalarAsync(),
                 CultureInfo.InvariantCulture) == 1,
             "Navigation migration did not enable an existing library by default.");
+
+        await using var publicationDefaults =
+            legacyConnection.CreateCommand();
+        publicationDefaults.CommandText =
+            "SELECT COUNT(*) FROM publication_destinations WHERE library_id = 1;";
+        Require(
+            Convert.ToInt32(
+                await publicationDefaults.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 5,
+            "Publication profile migration did not seed existing libraries.");
     }
+
+    var v8CompatPath =
+        Path.Combine(
+            tempRoot,
+            "publication-v8-compat.db");
+    var v8CompatRoot =
+        Path.Combine(
+            tempRoot,
+            "publication-v8-library");
+    Directory.CreateDirectory(v8CompatRoot);
+    var v8CompatDatabase =
+        new LibraryDatabase(
+            v8CompatPath);
+    await v8CompatDatabase.InitializeAsync();
+    var v8CompatRepository =
+        new LibraryRepository(
+            v8CompatDatabase);
+    var v8CompatLibrary =
+        await v8CompatRepository.RegisterLibraryAsync(
+            "Publication v8",
+            v8CompatRoot);
+    long v8PublicationId;
+    await using (var v8Connection =
+                 new SqliteConnection(
+                     $"Data Source={v8CompatPath};Pooling=False"))
+    {
+        await v8Connection.OpenAsync();
+        await using var insert =
+            v8Connection.CreateCommand();
+        insert.CommandText =
+            """
+            INSERT INTO publications(
+                library_id, work_id,
+                title, body, tags_snapshot,
+                destination, account,
+                published_at_utc_ticks,
+                external_id, external_url,
+                platform_metadata_json,
+                created_at_utc_ticks,
+                updated_at_utc_ticks)
+            VALUES(
+                $library_id, NULL,
+                'Legacy v8 Publication',
+                'legacy body',
+                'legacy-tags',
+                'Pixiv',
+                'legacy-account',
+                638950000000000000,
+                'legacy-external',
+                'https://example.invalid/legacy-v8',
+                '{"legacy":true}',
+                638950000000000000,
+                638950000000000000)
+            RETURNING id;
+            """;
+        insert.Parameters.AddWithValue(
+            "$library_id",
+            v8CompatLibrary.Id);
+        v8PublicationId =
+            Convert.ToInt64(
+                await insert.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture);
+
+        await using var downgrade =
+            v8Connection.CreateCommand();
+        downgrade.CommandText =
+            """
+            DROP TRIGGER IF EXISTS libraries_ai_publication_defaults;
+            DROP TABLE publication_accounts;
+            DROP TABLE publication_destinations;
+            DELETE FROM schema_migrations
+            WHERE version = 9;
+            """;
+        await downgrade.ExecuteNonQueryAsync();
+    }
+
+    var migratedV8Database =
+        new LibraryDatabase(
+            v8CompatPath);
+    await migratedV8Database.InitializeAsync();
+    var migratedV8Repository =
+        new LibraryRepository(
+            migratedV8Database);
+    var migratedV8Publication =
+        await migratedV8Repository.GetPublicationAsync(
+            v8CompatLibrary.Id,
+            v8PublicationId)
+        ?? throw new InvalidOperationException(
+            "Existing v8 Publication disappeared during the v9 profile migration.");
+    Require(
+        migratedV8Publication.Title
+            == "Legacy v8 Publication"
+        && migratedV8Publication.Destination
+            == "Pixiv"
+        && migratedV8Publication.Account
+            == "legacy-account"
+        && (await migratedV8Repository
+                .ListPublicationDestinationsAsync(
+                    v8CompatLibrary.Id))
+            .Count == 5,
+        "v9 migration changed an existing Publication snapshot or failed to seed profiles.");
 
     var futurePath = Path.Combine(tempRoot, "future.db");
     await CreateFutureSchemaDatabaseAsync(futurePath);
