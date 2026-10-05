@@ -156,6 +156,8 @@ public sealed class ThumbnailPipelineOptions
     public int QueueCapacity { get; init; } =
         CoreResourcePolicy.Default.ThumbnailQueueCapacity;
 
+    public int InteractiveQueueCapacity { get; init; } = 16;
+
     public int MaxForegroundBurst { get; init; } =
         CoreResourcePolicy.Default.ThumbnailForegroundBurst;
 
