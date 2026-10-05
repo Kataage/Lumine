@@ -29,6 +29,9 @@ internal sealed record CreativeRelationDialogResult(
     string RelationType,
     string Note);
 
+internal sealed record CreativeArchiveTargetDialogResult(
+    long Id);
+
 internal sealed record CreativePublicationDialogResult(
     long? WorkId,
     string Destination,
@@ -222,6 +225,107 @@ internal static class CreativeArchiveDialogs
                 }));
         dialog.Content = CreateScroll(stack);
         return dialog.ShowDialog<CreativeGroupDialogResult?>(owner);
+    }
+
+    public static Task<CreativeArchiveTargetDialogResult?>
+        ShowExistingWorkAsync(
+            Window owner,
+            CreativeSelectionPreview selection,
+            IReadOnlyList<WorkInfo> works) =>
+        ShowExistingTargetAsync(
+            owner,
+            "既存Workへ追加",
+            "追加先のWork",
+            selection,
+            works.Select(
+                    static work =>
+                        (
+                            work.Id,
+                            $"{work.Title} · {work.Assets.Count:N0}枚"))
+                .ToArray());
+
+    public static Task<CreativeArchiveTargetDialogResult?>
+        ShowExistingGenerationGroupAsync(
+            Window owner,
+            CreativeSelectionPreview selection,
+            IReadOnlyList<GenerationGroupInfo> groups) =>
+        ShowExistingTargetAsync(
+            owner,
+            "既存Generation Groupへ追加",
+            "追加先のGeneration Group",
+            selection,
+            groups.Select(
+                    static group =>
+                        (
+                            group.Id,
+                            $"{group.Name} · {group.Assets.Count:N0}枚"))
+                .ToArray());
+
+    private static Task<CreativeArchiveTargetDialogResult?>
+        ShowExistingTargetAsync(
+            Window owner,
+            string title,
+            string fieldLabel,
+            CreativeSelectionPreview selection,
+            IReadOnlyList<(long Id, string Label)> targets)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(targets);
+
+        var target =
+            new ComboBox
+            {
+                ItemsSource =
+                    targets.Select(
+                            static item =>
+                                item.Label)
+                        .ToArray(),
+                SelectedIndex =
+                    targets.Count > 0
+                        ? 0
+                        : -1
+            };
+        var status =
+            CreateStatus();
+        var dialog =
+            CreateDialog(
+                title,
+                520,
+                380);
+        var stack =
+            CreateFormStack(
+                "既存の制作コンテキストへ選択画像を末尾追加します。既に含まれている画像は重複追加しません。");
+        stack.Children.Add(
+            CreateAssetSummary(
+                selection));
+        AddField(
+            stack,
+            fieldLabel,
+            target);
+        stack.Children.Add(status);
+        stack.Children.Add(
+            CreateButtons(
+                dialog,
+                () =>
+                {
+                    if (target.SelectedIndex < 0
+                        || target.SelectedIndex
+                            >= targets.Count)
+                    {
+                        status.Text =
+                            "追加先を選択してください。";
+                        return null;
+                    }
+
+                    return new CreativeArchiveTargetDialogResult(
+                        targets[target.SelectedIndex].Id);
+                }));
+        dialog.Content =
+            CreateScroll(
+                stack);
+        return dialog.ShowDialog<CreativeArchiveTargetDialogResult?>(
+            owner);
     }
 
     public static Task<CreativeRelationDialogResult?> ShowRelationAsync(
