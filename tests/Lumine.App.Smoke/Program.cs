@@ -1579,6 +1579,12 @@ try
             scaleWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
+            navigationScaleWatch.Stop();
+            Require(
+                navigationScaleWatch.Elapsed
+                    < TimeSpan.FromSeconds(2),
+                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
+
             var publicationDetailSummaryAssets =
                 Enumerable.Range(
                         0,
@@ -1760,13 +1766,6 @@ try
                 "Publication detail reloaded the full snapshot after collapse instead of reusing the card-local detail.");
             scaleWindow.Close();
             Dispatcher.UIThread.RunJobs();
-
-            navigationScaleWatch.Stop();
-
-            Require(
-                navigationScaleWatch.Elapsed
-                    < TimeSpan.FromSeconds(2),
-                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
 
             var colorEditorSmoke =
                 new TagColorEditor();
