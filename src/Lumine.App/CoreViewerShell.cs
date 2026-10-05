@@ -87,7 +87,10 @@ internal sealed class CoreViewerShell : UserControl
                 _afterBulkMutation,
                 ShowCreateWorkDialogAsync,
                 ShowCreateGenerationGroupDialogAsync,
-                ShowCreatePublicationDialogAsync);
+                ShowCreatePublicationDialogAsync,
+                ShowAddToExistingWorkDialogAsync,
+                ShowAddToExistingGenerationGroupDialogAsync,
+                DeleteRelationFromInspectorAsync);
         _contextDetail.PinToggleRequested +=
             (_, _) =>
             {
@@ -2313,6 +2316,39 @@ internal sealed class CoreViewerShell : UserControl
             });
     }
 
+    internal Task<WorkInfo?>
+        AddSelectionToExistingWorkAsync(
+            long workId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            workId);
+
+        return RunBulkOperationAsync<WorkInfo?>(
+            "既存Workへ追加しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var updated =
+                    await _runtime.LibraryService
+                        .AddAssetsToWorkAsync(
+                            _runtime.Library.Id,
+                            workId,
+                            assetIds,
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Work「{updated.Title}」へ追加しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return updated;
+            });
+    }
+
     internal Task<GenerationGroupInfo?>
         CreateGenerationGroupFromSelectionAsync(
             CreativeGroupDialogResult input)
@@ -2355,6 +2391,39 @@ internal sealed class CoreViewerShell : UserControl
                     $"Generation Group「{created.Name}」を作成しました。";
                 await RefreshContextAfterCreativeMutationAsync();
                 return created;
+            });
+    }
+
+    internal Task<GenerationGroupInfo?>
+        AddSelectionToExistingGenerationGroupAsync(
+            long groupId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            groupId);
+
+        return RunBulkOperationAsync<GenerationGroupInfo?>(
+            "既存Generation Groupへ追加しています…",
+            async cancellationToken =>
+            {
+                var assetIds =
+                    await ResolveSelectedAssetIdsAsync(
+                        cancellationToken);
+                if (assetIds.Count == 0)
+                {
+                    return null;
+                }
+
+                var updated =
+                    await _runtime.LibraryService
+                        .AddAssetsToGenerationGroupAsync(
+                            _runtime.Library.Id,
+                            groupId,
+                            assetIds,
+                            cancellationToken);
+                _bulkStatus.Text =
+                    $"Generation Group「{updated.Name}」へ追加しました。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return updated;
             });
     }
 
@@ -2520,6 +2589,136 @@ internal sealed class CoreViewerShell : UserControl
             await CreateGenerationGroupFromSelectionAsync(
                 input);
         }
+    }
+
+    private async Task ShowAddToExistingWorkDialogAsync()
+    {
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
+        {
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var works =
+            await _runtime.LibraryService.ListWorksAsync(
+                _runtime.Library.Id);
+        if (works.Count == 0)
+        {
+            _bulkStatus.Text =
+                "追加できる既存Workがありません。";
+            return;
+        }
+
+        var target =
+            await CreativeArchiveDialogs
+                .ShowExistingWorkAsync(
+                    owner,
+                    selection,
+                    works);
+        if (target is not null)
+        {
+            await AddSelectionToExistingWorkAsync(
+                target.Id);
+        }
+    }
+
+    private async Task
+        ShowAddToExistingGenerationGroupDialogAsync()
+    {
+        var selection =
+            await CreateSelectionPreviewAsync();
+        if (selection.Count == 0)
+        {
+            return;
+        }
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var groups =
+            await _runtime.LibraryService
+                .ListGenerationGroupsAsync(
+                    _runtime.Library.Id);
+        if (groups.Count == 0)
+        {
+            _bulkStatus.Text =
+                "追加できる既存Generation Groupがありません。";
+            return;
+        }
+
+        var target =
+            await CreativeArchiveDialogs
+                .ShowExistingGenerationGroupAsync(
+                    owner,
+                    selection,
+                    groups);
+        if (target is not null)
+        {
+            await AddSelectionToExistingGenerationGroupAsync(
+                target.Id);
+        }
+    }
+
+    private async Task DeleteRelationFromInspectorAsync(
+        AssetRelationInfo relation)
+    {
+        ArgumentNullException.ThrowIfNull(relation);
+
+        var owner =
+            TopLevel.GetTopLevel(this)
+                as Window;
+        if (owner is null)
+        {
+            return;
+        }
+
+        var approved =
+            await ProductDialogs.ConfirmAsync(
+                owner,
+                "Lineageを削除しますか？",
+                $"{relation.Parent.FileName} → {relation.Child.FileName} の関係を削除します。",
+                string.IsNullOrWhiteSpace(
+                    relation.Note)
+                    ? $"種類: {relation.RelationType}"
+                    : $"種類: {relation.RelationType}\nメモ: {relation.Note}",
+                confirmLabel: "Lineageを削除",
+                tone: ProductDialogTone.Danger);
+        if (!approved)
+        {
+            return;
+        }
+
+        await RunBulkOperationAsync(
+            "Lineageを削除しています…",
+            async cancellationToken =>
+            {
+                var deleted =
+                    await _runtime.LibraryService
+                        .DeleteAssetRelationAsync(
+                            _runtime.Library.Id,
+                            relation.Id,
+                            cancellationToken);
+                _bulkStatus.Text =
+                    deleted
+                        ? "Lineageを削除しました。"
+                        : "Lineageは既に削除されています。";
+                await RefreshContextAfterCreativeMutationAsync();
+                return deleted;
+            });
     }
 
     private async Task ShowCreateRelationDialogAsync()
