@@ -2544,6 +2544,11 @@ try
                 !shell.IsContextDetailVisible
                 && !shell.IsFocusedViewVisible,
                 "Context/focused surfaces should not consume the initial browse workspace.");
+            Require(
+                !shell.ContextDetail.PathCopyEnabledForSmoke
+                && string.IsNullOrEmpty(
+                    shell.ContextDetail.PathCopyValueForSmoke),
+                "Inspector exposed a stale source-path copy action before an asset was loaded.");
 
             Require(
                 shell.ContextDetail.PublicationCardCountForSmoke == 1
@@ -2586,15 +2591,26 @@ try
                 && shell.ContextDetail.AssetId
                     == firstContextAsset.Id,
                 "Contextual detail panel did not open for the primary selection.");
+            var expectedContextPath =
+                Path.GetFullPath(
+                    Path.Combine(
+                        shellLibraryRoot,
+                        firstContextAsset.RelativePath.Replace(
+                            '/',
+                            Path.DirectorySeparatorChar)));
             Require(
                 shell.ContextDetail.TitleText
                     == firstContextAsset.DisplayName
-                && shell.ContextDetail.PathText.Contains(
-                    firstContextAsset.RelativePath.Replace(
-                        '/',
-                        Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase),
-                "Contextual detail panel did not expose image/path context.");
+                && string.Equals(
+                    shell.ContextDetail.PathText,
+                    expectedContextPath,
+                    StringComparison.OrdinalIgnoreCase)
+                && shell.ContextDetail.PathCopyEnabledForSmoke
+                && string.Equals(
+                    shell.ContextDetail.PathCopyValueForSmoke,
+                    shell.ContextDetail.PathText,
+                    StringComparison.Ordinal),
+                "Contextual detail panel did not expose one exact source path for display and copy.");
 
             var inspectorFieldNames =
                 shell.ContextDetail
@@ -2765,12 +2781,22 @@ try
             Require(
                 shell.ContextDetail.SelectedTabIndex == 3
                 && shell.ContextDetail.SelectedTabHeader == "情報"
-                && shell.ContextDetail.PathText.Contains(
-                    firstContextAsset.RelativePath.Replace(
-                        '/',
-                        Path.DirectorySeparatorChar),
-                    StringComparison.OrdinalIgnoreCase),
-                "Inspector information tab did not remain reachable after the tabbed redesign.");
+                && string.Equals(
+                    shell.ContextDetail.PathText,
+                    expectedContextPath,
+                    StringComparison.OrdinalIgnoreCase)
+                && shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "画像のフルパスをコピー",
+                                StringComparison.Ordinal)
+                            && button.IsEnabled),
+                "Inspector information tab did not expose the keyboard-reachable source-path copy action.");
 
             shell.ContextDetail.SelectTabForSmoke(0);
             Dispatcher.UIThread.RunJobs();
