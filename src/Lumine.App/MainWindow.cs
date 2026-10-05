@@ -1064,8 +1064,10 @@ public sealed class MainWindow : Window
                             _publicationDestinations,
                             _publicationAccounts,
                             CreatePublicationDestinationFromNavigationAsync,
+                            UpdatePublicationDestinationFromNavigationAsync,
                             DeletePublicationDestinationFromNavigationAsync,
                             CreatePublicationAccountFromNavigationAsync,
+                            UpdatePublicationAccountFromNavigationAsync,
                             DeletePublicationAccountFromNavigationAsync,
                             DeletePublicationFromNavigationAsync),
                 _ =>
@@ -1155,6 +1157,44 @@ public sealed class MainWindow : Window
         return created;
     }
 
+    private async Task<PublicationDestinationInfo?>
+        UpdatePublicationDestinationFromNavigationAsync(
+            PublicationDestinationInfo destination,
+            string name,
+            string kind)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "公開先を更新するにはライブラリを開いてください。");
+        var updated =
+            await _navigationLibraryService
+                .UpdatePublicationDestinationAsync(
+                    runtime.Library.Id,
+                    destination.Id,
+                    new PublicationDestinationCreate(
+                        name,
+                        kind));
+        if (updated is not null)
+        {
+            _publicationDestinations =
+                _publicationDestinations
+                    .Select(
+                        item =>
+                            item.Id == updated.Id
+                                ? updated
+                                : item)
+                    .OrderBy(
+                        static item =>
+                            item.Name,
+                        StringComparer.Ordinal)
+                    .ToArray();
+        }
+
+        return updated;
+    }
+
     private async Task<bool>
         DeletePublicationDestinationFromNavigationAsync(
             PublicationDestinationInfo destination)
@@ -1233,6 +1273,49 @@ public sealed class MainWindow : Window
                     StringComparer.Ordinal)
                 .ToArray();
         return created;
+    }
+
+    private async Task<PublicationAccountInfo?>
+        UpdatePublicationAccountFromNavigationAsync(
+            PublicationAccountInfo account,
+            long destinationId,
+            string displayName,
+            string identifier)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        var runtime =
+            _runtime
+            ?? throw new InvalidOperationException(
+                "アカウントを更新するにはライブラリを開いてください。");
+        var updated =
+            await _navigationLibraryService
+                .UpdatePublicationAccountAsync(
+                    runtime.Library.Id,
+                    account.Id,
+                    new PublicationAccountCreate(
+                        destinationId,
+                        displayName,
+                        identifier));
+        if (updated is not null)
+        {
+            _publicationAccounts =
+                _publicationAccounts
+                    .Select(
+                        item =>
+                            item.Id == updated.Id
+                                ? updated
+                                : item)
+                    .OrderBy(
+                        static item =>
+                            item.DestinationId)
+                    .ThenBy(
+                        static item =>
+                            item.DisplayName,
+                        StringComparer.Ordinal)
+                    .ToArray();
+        }
+
+        return updated;
     }
 
     private async Task<bool>
