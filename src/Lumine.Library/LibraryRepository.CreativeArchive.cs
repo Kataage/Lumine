@@ -205,6 +205,333 @@ public sealed partial class LibraryRepository
             ?? throw new InvalidOperationException("Created asset relation could not be reloaded.");
     }
 
+    public async Task<WorkInfo> AddAssetsToWorkAsync(
+        long libraryId,
+        long workId,
+        IReadOnlyList<long> assetIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(workId);
+        var orderedAssetIds =
+            ValidateOrderedAssetIds(
+                assetIds,
+                nameof(assetIds));
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+
+        await EnsureAssetsBelongToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            orderedAssetIds,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureWorkBelongsToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            workId,
+            cancellationToken).ConfigureAwait(false);
+
+        var existing =
+            new HashSet<long>();
+        var nextOrder = 0;
+        await using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText =
+                """
+                SELECT asset_id, sort_order
+                FROM work_assets
+                WHERE work_id = $work_id
+                ORDER BY sort_order ASC;
+                """;
+            read.Parameters.AddWithValue(
+                "$work_id",
+                workId);
+            await using var reader =
+                await read.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                existing.Add(
+                    reader.GetInt64(0));
+                nextOrder =
+                    Math.Max(
+                        nextOrder,
+                        reader.GetInt32(1) + 1);
+            }
+        }
+
+        var added = 0;
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText =
+                """
+                INSERT INTO work_assets(
+                    work_id, asset_id, sort_order, role)
+                VALUES(
+                    $work_id, $asset_id, $sort_order, 'member');
+                """;
+            insert.Parameters.AddWithValue(
+                "$work_id",
+                workId);
+            var assetParameter =
+                insert.Parameters.Add(
+                    "$asset_id",
+                    SqliteType.Integer);
+            var orderParameter =
+                insert.Parameters.Add(
+                    "$sort_order",
+                    SqliteType.Integer);
+            insert.Prepare();
+
+            foreach (var assetId in
+                     orderedAssetIds)
+            {
+                if (!existing.Add(assetId))
+                {
+                    continue;
+                }
+
+                assetParameter.Value =
+                    assetId;
+                orderParameter.Value =
+                    nextOrder++;
+                await insert.ExecuteNonQueryAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            await using var update =
+                connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                UPDATE works
+                SET updated_at_utc_ticks = $updated
+                WHERE id = $work_id
+                  AND library_id = $library_id;
+                """;
+            update.Parameters.AddWithValue(
+                "$updated",
+                DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+            update.Parameters.AddWithValue(
+                "$work_id",
+                workId);
+            update.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            await update.ExecuteNonQueryAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        transaction.Commit();
+        return await GetWorkAsync(
+                libraryId,
+                workId,
+                cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "Updated work could not be reloaded.");
+    }
+
+    public async Task<GenerationGroupInfo>
+        AddAssetsToGenerationGroupAsync(
+            long libraryId,
+            long groupId,
+            IReadOnlyList<long> assetIds,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(groupId);
+        var orderedAssetIds =
+            ValidateOrderedAssetIds(
+                assetIds,
+                nameof(assetIds));
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        using var transaction =
+            connection.BeginTransaction();
+
+        await EnsureAssetsBelongToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            orderedAssetIds,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureGenerationGroupBelongsToLibraryAsync(
+            connection,
+            transaction,
+            libraryId,
+            groupId,
+            cancellationToken).ConfigureAwait(false);
+
+        var existing =
+            new HashSet<long>();
+        var nextOrder = 0;
+        await using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText =
+                """
+                SELECT asset_id, sort_order
+                FROM generation_group_assets
+                WHERE generation_group_id = $group_id
+                ORDER BY sort_order ASC;
+                """;
+            read.Parameters.AddWithValue(
+                "$group_id",
+                groupId);
+            await using var reader =
+                await read.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                existing.Add(
+                    reader.GetInt64(0));
+                nextOrder =
+                    Math.Max(
+                        nextOrder,
+                        reader.GetInt32(1) + 1);
+            }
+        }
+
+        var added = 0;
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText =
+                """
+                INSERT INTO generation_group_assets(
+                    generation_group_id, asset_id,
+                    sort_order, is_primary)
+                VALUES(
+                    $group_id, $asset_id,
+                    $sort_order, $is_primary);
+                """;
+            insert.Parameters.AddWithValue(
+                "$group_id",
+                groupId);
+            var assetParameter =
+                insert.Parameters.Add(
+                    "$asset_id",
+                    SqliteType.Integer);
+            var orderParameter =
+                insert.Parameters.Add(
+                    "$sort_order",
+                    SqliteType.Integer);
+            var primaryParameter =
+                insert.Parameters.Add(
+                    "$is_primary",
+                    SqliteType.Integer);
+            insert.Prepare();
+
+            foreach (var assetId in
+                     orderedAssetIds)
+            {
+                if (!existing.Add(assetId))
+                {
+                    continue;
+                }
+
+                assetParameter.Value =
+                    assetId;
+                orderParameter.Value =
+                    nextOrder;
+                primaryParameter.Value =
+                    nextOrder == 0
+                        ? 1
+                        : 0;
+                nextOrder++;
+                await insert.ExecuteNonQueryAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            await using var update =
+                connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText =
+                """
+                UPDATE generation_groups
+                SET updated_at_utc_ticks = $updated
+                WHERE id = $group_id
+                  AND library_id = $library_id;
+                """;
+            update.Parameters.AddWithValue(
+                "$updated",
+                DateTimeOffset.UtcNow.UtcDateTime.Ticks);
+            update.Parameters.AddWithValue(
+                "$group_id",
+                groupId);
+            update.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            await update.ExecuteNonQueryAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        transaction.Commit();
+        return await GetGenerationGroupAsync(
+                libraryId,
+                groupId,
+                cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "Updated generation group could not be reloaded.");
+    }
+
+    public async Task<bool> DeleteAssetRelationAsync(
+        long libraryId,
+        long relationId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(relationId);
+
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        await using var command =
+            connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM asset_relations
+            WHERE id = $relation_id
+              AND library_id = $library_id;
+            """;
+        command.Parameters.AddWithValue(
+            "$relation_id",
+            relationId);
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        return await command.ExecuteNonQueryAsync(
+                cancellationToken)
+            .ConfigureAwait(false)
+            == 1;
+    }
+
     public async Task<PublicationInfo> CreatePublicationAsync(
         long libraryId,
         PublicationCreate create,
@@ -345,6 +672,69 @@ public sealed partial class LibraryRepository
         {
             var item = await GetWorkOnConnectionAsync(
                 connection, null, libraryId, id, cancellationToken).ConfigureAwait(false);
+            if (item is not null)
+            {
+                result.Add(item);
+            }
+        }
+
+        return result;
+    }
+
+    public async Task<IReadOnlyList<GenerationGroupInfo>>
+        ListGenerationGroupsAsync(
+            long libraryId,
+            int limit = 100,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
+        ValidateListLimit(limit);
+        await using var connection =
+            await _database.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+        var ids =
+            new List<long>();
+        await using (var command =
+                     connection.CreateCommand())
+        {
+            command.CommandText =
+                """
+                SELECT id
+                FROM generation_groups
+                WHERE library_id = $library_id
+                ORDER BY updated_at_utc_ticks DESC, id DESC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue(
+                "$library_id",
+                libraryId);
+            command.Parameters.AddWithValue(
+                "$limit",
+                limit);
+            await using var reader =
+                await command.ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken)
+                       .ConfigureAwait(false))
+            {
+                ids.Add(
+                    reader.GetInt64(0));
+            }
+        }
+
+        var result =
+            new List<GenerationGroupInfo>(
+                ids.Count);
+        foreach (var id in ids)
+        {
+            var item =
+                await GetGenerationGroupOnConnectionAsync(
+                    connection,
+                    null,
+                    libraryId,
+                    id,
+                    cancellationToken)
+                    .ConfigureAwait(false);
             if (item is not null)
             {
                 result.Add(item);
@@ -1328,6 +1718,44 @@ public sealed partial class LibraryRepository
         {
             throw new InvalidOperationException(
                 $"Work {workId.Value} does not belong to library {libraryId}.");
+        }
+    }
+
+    private static async Task EnsureGenerationGroupBelongsToLibraryAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long libraryId,
+        long groupId,
+        CancellationToken cancellationToken)
+    {
+        await using var command =
+            connection.CreateCommand();
+        command.Transaction =
+            transaction;
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM generation_groups
+                WHERE library_id = $library_id
+                  AND id = $group_id);
+            """;
+        command.Parameters.AddWithValue(
+            "$library_id",
+            libraryId);
+        command.Parameters.AddWithValue(
+            "$group_id",
+            groupId);
+        var exists =
+            Convert.ToInt32(
+                await command.ExecuteScalarAsync(
+                        cancellationToken)
+                    .ConfigureAwait(false),
+                CultureInfo.InvariantCulture);
+        if (exists != 1)
+        {
+            throw new InvalidOperationException(
+                $"Generation Group {groupId} does not belong to library {libraryId}.");
         }
     }
 
