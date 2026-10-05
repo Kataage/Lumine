@@ -978,6 +978,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal bool HasPreview =>
         _preview.Source is not null;
 
+    internal string PreviewStatusForSmoke =>
+        _previewStatus.Text ?? string.Empty;
+
+    internal bool PreviewStatusVisibleForSmoke =>
+        _previewStatus.IsVisible;
+
+
     internal event EventHandler? PinToggleRequested;
 
     internal bool IsCompactPresentationForSmoke =>
