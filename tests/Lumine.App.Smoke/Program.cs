@@ -3929,6 +3929,18 @@ try
                                     <= owner.ClientSize.Height + 0.5;
                         }
 
+                        CaptureVisualEvidence(
+                            window,
+                            "error-900x600-text225");
+
+                        var retryOrigin =
+                            scaledRetry?.TranslatePoint(
+                                new Point(0, 0),
+                                window);
+                        var chooseOrigin =
+                            scaledChoose?.TranslatePoint(
+                                new Point(0, 0),
+                                window);
                         Require(
                             scaledErrorDetail is
                                 { IsExpanded: false }
@@ -3940,11 +3952,11 @@ try
                                 window)
                             && string.IsNullOrWhiteSpace(
                                 window.StatusTextForSmoke),
-                            "225% / 900x600 recoverable Error did not keep both recovery actions visible, keep technical detail collapsed, or avoid duplicate status text.");
-
-                        CaptureVisualEvidence(
-                            window,
-                            "error-900x600-text225");
+                            $"225% / 900x600 recoverable Error visibility failed. "
+                            + $"navOverlay={window.IsNavigationPaneOverlayForSmoke}, nav={window.NavigationPaneBounds}, "
+                            + $"retryVisible={scaledRetry?.IsEffectivelyVisible}, retryOrigin={retryOrigin}, retryBounds={scaledRetry?.Bounds}, "
+                            + $"chooseVisible={scaledChoose?.IsEffectivelyVisible}, chooseOrigin={chooseOrigin}, chooseBounds={scaledChoose?.Bounds}, "
+                            + $"detailCollapsed={scaledErrorDetail is { IsExpanded: false }}, status='{window.StatusTextForSmoke}'.");
 
                         window.PresentWelcomeStateForSmoke();
                         window.Width = 1440;
