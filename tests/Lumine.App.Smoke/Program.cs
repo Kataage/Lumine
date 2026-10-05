@@ -5448,9 +5448,37 @@ try
                 $"MainWindow lifecycle iteration {iteration} returned before all source handles were released.",
                 exception);
         }
-        Directory.Delete(
-            repeatedDataRoot,
-            recursive: true);
+        Exception? dataCleanupFailure = null;
+        for (var dataCleanupAttempt = 0;
+             dataCleanupAttempt < 40;
+             dataCleanupAttempt++)
+        {
+            try
+            {
+                Directory.Delete(
+                    repeatedDataRoot,
+                    recursive: true);
+                dataCleanupFailure = null;
+                break;
+            }
+            catch (IOException exception)
+                when (dataCleanupAttempt < 39)
+            {
+                dataCleanupFailure = exception;
+                LibraryDatabase.ClearPools();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                await Task.Delay(25);
+            }
+        }
+
+        if (Directory.Exists(repeatedDataRoot))
+        {
+            throw new InvalidOperationException(
+                $"MainWindow lifecycle iteration {iteration} kept SQLite data handles locked beyond the bounded cleanup grace period.",
+                dataCleanupFailure);
+        }
+
         Directory.Delete(
             repeatedEmptyLibraryRoot,
             recursive: true);
