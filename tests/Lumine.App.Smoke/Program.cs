@@ -29,6 +29,26 @@ static void Require(bool condition, string message)
     }
 }
 
+static bool DetailImageHasSource(
+    DetailViewerControl detail)
+{
+    var field =
+        typeof(DetailViewerControl).GetField(
+            "_image",
+            BindingFlags.Instance
+            | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException(
+            "DetailViewerControl._image was not found.");
+
+    var image =
+        field.GetValue(detail)
+            as Avalonia.Controls.Image
+        ?? throw new InvalidOperationException(
+            "DetailViewerControl._image was not an Avalonia Image.");
+
+    return image.Source is not null;
+}
+
 static IEnumerable<Control> EnumeratePanelTree(
     Control root)
 {
@@ -3681,11 +3701,9 @@ try
                 && shell.DetailViewer.SelectedAssetIndex == 0
                 && shell.DetailViewer.LoadState
                     == ViewerDetailLoadState.PreviewReady
-                && shell.DetailViewer
-                    .GetVisualDescendants()
-                    .OfType<Avalonia.Controls.Image>()
-                    .Any(static image => image.Source is not null),
-                "Focused viewer reached PreviewReady without rendering the selected image.");
+                && DetailImageHasSource(
+                    shell.DetailViewer),
+                "Focused viewer reached PreviewReady while its actual Image.Source was null.");
 
             shell.CloseFocusedView();
             Require(
@@ -3698,11 +3716,9 @@ try
             Require(
                 shell.DetailViewer.LoadState
                     == ViewerDetailLoadState.PreviewReady
-                && shell.DetailViewer
-                    .GetVisualDescendants()
-                    .OfType<Avalonia.Controls.Image>()
-                    .Any(static image => image.Source is not null),
-                $"Real App shell Detail preview did not render: state={shell.DetailViewer.LoadState}.");
+                && DetailImageHasSource(
+                    shell.DetailViewer),
+                $"Real App shell Detail preview did not populate Image.Source: state={shell.DetailViewer.LoadState}.");
 
             await shell.DetailViewer.ActualSizeAsync();
             Dispatcher.UIThread.RunJobs();
