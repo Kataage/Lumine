@@ -256,7 +256,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             LumineDesign.ConfigureCheckBox(
                 new CheckBox
                 {
-                    Content = "お気に入り"
+                    Content = null,
+                    MinWidth = LumineDesign.CompactCommandHeight,
+                    MinHeight = LumineDesign.CompactCommandHeight,
+                    HorizontalAlignment = HorizontalAlignment.Left
                 });
         _statusEditor =
             LumineDesign.ConfigureComboBox(
@@ -432,7 +435,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var summaryBody =
             new StackPanel
             {
-                Spacing = LumineDesign.Space8,
+                Spacing = LumineDesign.Space6,
                 Margin =
                     new Thickness(
                         LumineDesign.Space12,
@@ -467,11 +470,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("72,*"),
+                    new ColumnDefinitions("64,*"),
                 RowDefinitions =
                     new RowDefinitions(
                         "Auto,Auto,Auto,Auto,Auto,Auto"),
-                RowSpacing = 7
+                RowSpacing = LumineDesign.Space10
             };
         AddEditorRow(
             editor,
@@ -508,20 +511,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 ColumnDefinitions =
-                    new ColumnDefinitions("*,Auto,Auto,Auto")
+                    new ColumnDefinitions("*,Auto,Auto,Auto"),
+                ColumnSpacing = LumineDesign.Space6
             };
         saveRow.Children.Add(_saveStatus);
         Grid.SetColumn(_retry, 1);
-        _retry.Margin =
-            new Thickness(4, 0);
         saveRow.Children.Add(_retry);
         Grid.SetColumn(_reset, 2);
-        _reset.Margin =
-            new Thickness(4, 0);
         saveRow.Children.Add(_reset);
         Grid.SetColumn(_save, 3);
-        _save.Margin =
-            new Thickness(4, 0);
         saveRow.Children.Add(_save);
 
         var organizeBody =
@@ -539,7 +537,19 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             organizeBody,
             "整理情報",
             editor);
-        organizeBody.Children.Add(saveRow);
+        organizeBody.Children.Add(
+            new Border
+            {
+                Background = LumineDesign.SurfaceRaised,
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space8,
+                        LumineDesign.Space6),
+                Child = saveRow
+            });
 
         Button CreateContextAction(
             string label,
@@ -828,11 +838,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     new Thickness(
                         LumineDesign.Space2),
                 Background =
-                    LumineDesign.ControlSurface,
+                    LumineDesign.SurfaceRaised,
                 BorderBrush =
-                    LumineDesign.Border,
+                    Brushes.Transparent,
                 BorderThickness =
-                    new Thickness(1),
+                    new Thickness(0),
                 CornerRadius =
                     new CornerRadius(8),
                 Child = tabStrip
@@ -2871,9 +2881,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 new Button
                 {
                     Content = header,
-                    MinHeight = 30,
+                    MinHeight =
+                        LumineDesign.CompactCommandHeight,
                     Padding =
-                        new Thickness(8, 4),
+                        new Thickness(
+                            LumineDesign.Space8,
+                            LumineDesign.Space4),
                     CornerRadius =
                         new CornerRadius(6),
                     HorizontalAlignment =
@@ -3032,8 +3045,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    editor is TextBox
+                        or ManagedTagPicker
+                        ? VerticalAlignment.Top
+                        : VerticalAlignment.Center,
                 Margin =
-                    new Thickness(0, 5, 10, 2)
+                    editor is TextBox
+                        or ManagedTagPicker
+                        ? new Thickness(
+                            0,
+                            LumineDesign.Space6,
+                            LumineDesign.Space8,
+                            0)
+                        : new Thickness(
+                            0,
+                            0,
+                            LumineDesign.Space8,
+                            0)
             };
         Grid.SetRow(labelBlock, row);
         grid.Children.Add(labelBlock);
