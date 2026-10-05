@@ -4313,8 +4313,12 @@ try
                                         indicator.Width - 3) < 0.01
                                     && ReferenceEquals(
                                         indicator.Background,
-                                        LumineDesign.Accent)),
-                        "Selected global navigation lost its non-color accent indicator.");
+                                        LumineDesign.Accent))
+                        && ReferenceEquals(
+                            libraryDestination.Background,
+                            LumineDesign.InteractionSelected)
+                        && libraryDestination.MinHeight <= 52.5,
+                        "Selected global navigation lost its lightweight shared selection treatment or non-color accent indicator.");
 
                     libraryDestination.Focus();
                     libraryDestination.RaiseEvent(
@@ -5054,6 +5058,32 @@ try
                             shellBeforeSettings),
                         "Returning from Settings did not restore browse navigation without rebuilding the viewer shell.");
 
+                    var activeLibraryCard =
+                        window.NavigationContentForSmoke?
+                            .GetVisualDescendants()
+                            .OfType<Border>()
+                            .FirstOrDefault(
+                                card =>
+                                    string.Equals(
+                                        AutomationProperties.GetAutomationId(
+                                            card),
+                                        $"library-card-{window.CurrentRuntime!.Library.Id}",
+                                        StringComparison.Ordinal));
+                    Require(
+                        activeLibraryCard is not null
+                        && activeLibraryCard
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "再スキャン",
+                                        StringComparison.Ordinal)),
+                        "Active Library navigation card did not keep its rescan action inside the unified card surface.");
+
+
+
                     var shellBeforeQueryChange =
                         window.CurrentShell!;
                     var gridBeforeQueryChange =
@@ -5396,6 +5426,8 @@ try
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
                                         .FilterButtonIsVisibleForSmoke
+                                    && window.BrowseControlsForSmoke
+                                        .DisplayControlsGroupedForSmoke
                                     && !window.BrowseControlsForSmoke
                                         .FilterFlyoutIsOpenForSmoke
                                     && window.BrowseControlsForSmoke
@@ -5751,6 +5783,8 @@ try
                         window.BrowseControlsForSmoke is not null
                         && window.BrowseControlsForSmoke
                             .PrimaryToolbarIsContainedForSmoke
+                        && window.BrowseControlsForSmoke
+                            .DisplayControlsGroupedForSmoke
                         && window.BrowseControlsForSmoke
                             .SearchPaddingForSmoke.Top <= 4
                         && (iteration == 2
