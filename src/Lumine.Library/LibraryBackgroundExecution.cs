@@ -40,13 +40,23 @@ public sealed class LibraryService
 
     public string DatabasePath => _database.DatabasePath;
 
-    public LibraryService(string databasePath)
+    public LibraryService(
+        string databasePath,
+        LibraryFileTypePolicy? fileTypes = null)
     {
+        var policy =
+            fileTypes ?? new LibraryFileTypePolicy();
         _database = new LibraryDatabase(databasePath);
         _repository = new LibraryRepository(_database);
-        _scanner = new LibraryScanner(_repository);
-        _reconciler = new LibraryReconciler(_repository);
-        _syncService = new WindowsLibrarySyncService(_database);
+        _scanner = new LibraryScanner(
+            _repository,
+            policy);
+        _reconciler = new LibraryReconciler(
+            _repository,
+            policy);
+        _syncService = new WindowsLibrarySyncService(
+            _database,
+            policy);
     }
 
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
