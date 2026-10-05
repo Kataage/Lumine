@@ -3154,6 +3154,48 @@ try
                     == secondCreativeAsset.Id,
                 "App selection organizer did not preserve explicit lineage direction.");
 
+            var publicationOrderEditor =
+                new CreativePublicationOrderEditor(
+                    new[]
+                    {
+                        new CreativePublicationAssetOption(
+                            firstContextAsset.Id,
+                            firstContextAsset.DisplayName),
+                        new CreativePublicationAssetOption(
+                            secondCreativeAsset.Id,
+                            secondCreativeAsset.DisplayName)
+                    });
+            Require(
+                publicationOrderEditor
+                    .OrderedAssetIdsForSmoke
+                    .SequenceEqual(
+                        new[]
+                        {
+                            firstContextAsset.Id,
+                            secondCreativeAsset.Id
+                        })
+                && !publicationOrderEditor
+                    .MoveUpEnabledForSmoke
+                && publicationOrderEditor
+                    .MoveDownEnabledForSmoke,
+                "Publication order editor did not preserve the default selected order and endpoint controls.");
+
+            publicationOrderEditor.SelectForSmoke(1);
+            Require(
+                publicationOrderEditor
+                    .MoveSelectedUpForSmoke()
+                && publicationOrderEditor
+                    .OrderedAssetIdsForSmoke
+                    .SequenceEqual(
+                        new[]
+                        {
+                            secondCreativeAsset.Id,
+                            firstContextAsset.Id
+                        })
+                && !publicationOrderEditor
+                    .MoveUpEnabledForSmoke,
+                "Publication order editor did not move the selected image upward.");
+
             var smokePublication =
                 await shell.CreatePublicationFromSelectionAsync(
                     new CreativePublicationDialogResult(
@@ -3173,15 +3215,47 @@ try
                             TimeSpan.Zero),
                         "external-smoke",
                         "https://example.invalid/app-smoke",
-                        "{\"ageRestriction\":\"all\",\"aiGenerated\":true}"));
+                        "{\"ageRestriction\":\"all\",\"aiGenerated\":true}",
+                        publicationOrderEditor
+                            .OrderedAssetIdsForSmoke));
             Require(
                 smokePublication is not null
                 && smokePublication.Assets.Count == 2
                 && smokePublication.Assets[0].AssetId
-                    == firstContextAsset.Id
+                    == secondCreativeAsset.Id
+                && smokePublication.Assets[0].SortOrder == 0
                 && smokePublication.Assets[1].AssetId
-                    == secondCreativeAsset.Id,
-                "App selection organizer did not create an ordered Publication snapshot.");
+                    == firstContextAsset.Id
+                && smokePublication.Assets[1].SortOrder == 1,
+                "App selection organizer did not persist the user-edited Publication image order.");
+
+            var mismatchedPublication =
+                await shell.CreatePublicationFromSelectionAsync(
+                    new CreativePublicationDialogResult(
+                        smokeWork.Id,
+                        "Pixiv",
+                        "@app-smoke",
+                        "Invalid Publication",
+                        string.Empty,
+                        string.Empty,
+                        new DateTimeOffset(
+                            2026,
+                            10,
+                            2,
+                            6,
+                            31,
+                            0,
+                            TimeSpan.Zero),
+                        string.Empty,
+                        string.Empty,
+                        "{}",
+                        new[]
+                        {
+                            firstContextAsset.Id
+                        }));
+            Require(
+                mismatchedPublication is null,
+                "Publication save did not reject an ordered-ID list that no longer matched the current selection.");
 
             var creativeContext =
                 await shellRuntime.LibraryService
@@ -3456,7 +3530,11 @@ try
                             TimeSpan.Zero),
                         "single-acceptance",
                         "https://example.invalid/single",
-                        "{}"));
+                        "{}",
+                        new[]
+                        {
+                            firstContextAsset.Id
+                        }));
             Require(
                 singlePublication is not null
                 && singlePublication.Assets.Count == 1
