@@ -1050,6 +1050,9 @@ try
         pipeline.QueueCapacity == imagePolicy.ThumbnailQueueCapacity,
         "Queue bound was not mapped from the Core policy.");
     Require(
+        pipeline.InteractiveQueueCapacity == 16,
+        "Interactive preview queue lost its independent bounded admission capacity.");
+    Require(
         pipeline.MaxForegroundBurst
             == imagePolicy.ThumbnailForegroundBurst,
         "Foreground fairness bound was not mapped from the Core policy.");
@@ -2163,11 +2166,14 @@ try
                     persistentAlphaBytes),
             "Memory-only and PersistentDisk storage policies produced different encoded pixels for the same source/profile.");
 
+        var opensBeforeMemoryHit =
+            memoryPipeline.Diagnostics.SourceOpens;
         var secondMemory =
             await memoryPipeline.RequestAsync(
                 memorySource.WithMetadata(
                     firstMemory.SourceMetadata!),
-                ThumbnailProfiles.GridSmall);
+                ThumbnailProfiles.GridSmall,
+                ThumbnailPriority.Interactive);
 
         Require(
             secondMemory.CacheHit
@@ -2175,7 +2181,11 @@ try
                 is { Length: > 0 }
             && string.IsNullOrEmpty(
                 secondMemory.CachePath),
-            "Memory-only second thumbnail did not reuse the bounded encoded-memory cache.");
+            "Memory-only Interactive thumbnail did not reuse the bounded encoded-memory cache.");
+        Require(
+            memoryPipeline.Diagnostics.SourceOpens
+                == opensBeforeMemoryHit,
+            "Memory-only Interactive cache hit reopened the source instead of completing before queue admission.");
 
         var memoryStats =
             memoryPipeline.MemoryCacheStats;
