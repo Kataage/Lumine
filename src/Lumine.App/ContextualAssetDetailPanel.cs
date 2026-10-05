@@ -92,6 +92,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private Button[] _ratingButtons = [];
     private Button[] _colorButtons = [];
     private readonly Avalonia.Controls.Image _preview;
+    private readonly TextBlock _previewStatus;
     private readonly Border _previewSurface;
     private readonly ContentControl _tabContent;
     private readonly Button[] _tabButtons;
@@ -150,6 +151,20 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center,
                 MaxHeight = 168
+            };
+        _previewStatus =
+            new TextBlock
+            {
+                Text = string.Empty,
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(12),
+                IsVisible = false,
+                IsHitTestVisible = false
             };
         _path = CreateValue(wrap: true);
         _copyPath =
@@ -426,6 +441,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space8)
             };
 
+        var previewStage =
+            new Grid();
+        previewStage.Children.Add(_preview);
+        previewStage.Children.Add(_previewStatus);
+
         _previewSurface =
             new Border
             {
@@ -437,7 +457,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     new CornerRadius(
                         LumineDesign.PanelRadius),
                 ClipToBounds = true,
-                Child = _preview
+                Child = previewStage
             };
         summaryBody.Children.Add(_previewSurface);
         summaryBody.Children.Add(_title);
@@ -1111,6 +1131,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 : "「情報」タブを開くとEXIF情報を読み込みます。";
         _exifRetry.IsVisible = false;
         _focused.IsEnabled = true;
+        _previewStatus.Text = "プレビューを読み込んでいます…";
+        _previewStatus.IsVisible = true;
 
         SetEditorEnabled(false);
         _saveStatus.Text = "整理情報を読み込んでいます…";
@@ -1393,6 +1415,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 warning: false));
         _saveStatus.Text = "—";
         _focused.IsEnabled = false;
+        _previewStatus.Text = string.Empty;
+        _previewStatus.IsVisible = false;
         SelectTab(0);
         ReplacePreviewLease(null);
 
@@ -1553,7 +1577,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 await _runtime.ViewerSession
                     .GetThumbnailAsync(
                         asset,
-                        ViewerThumbnailPriority.Foreground,
+                        ViewerThumbnailPriority.Interactive,
                         cancellationToken);
             lease =
                 await _runtime.ViewerSession.BitmapCache
@@ -1570,16 +1594,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             var next = lease;
             lease = null;
             ReplacePreviewLease(next);
+            _previewStatus.Text = string.Empty;
+            _previewStatus.IsVisible = false;
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch
+        catch (Exception exception)
         {
+            System.Diagnostics.Trace.TraceError(
+                $"Inspector preview load failed for asset {asset.Id}: {exception}");
+
             if (_assetId == asset.Id)
             {
                 ReplacePreviewLease(null);
+                _previewStatus.Text =
+                    "プレビューを表示できません。再選択すると再試行します。";
+                _previewStatus.IsVisible = true;
             }
         }
         finally
