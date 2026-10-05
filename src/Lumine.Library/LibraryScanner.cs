@@ -5,10 +5,14 @@ public sealed class LibraryScanner
     private const int MaxFailureSamples = 32;
 
     private readonly LibraryRepository _repository;
+    private readonly LibraryFileTypePolicy _fileTypes;
 
-    public LibraryScanner(LibraryRepository repository)
+    public LibraryScanner(
+        LibraryRepository repository,
+        LibraryFileTypePolicy? fileTypes = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _fileTypes = fileTypes ?? new LibraryFileTypePolicy();
     }
 
     public Task<LibraryScanResult> ScanAsync(
@@ -90,7 +94,7 @@ public sealed class LibraryScanner
                         continue;
                     }
 
-                    if (!LibraryFileTypes.IsSupportedPath(entry))
+                    if (!_fileTypes.IsSupportedPath(entry))
                     {
                         continue;
                     }
@@ -100,7 +104,7 @@ public sealed class LibraryScanner
                         var info = new FileInfo(entry);
                         current = LibraryPaths.NormalizeRelativePath(
                             Path.GetRelativePath(library.RootPath, entry));
-                        var extension = LibraryFileTypes.GetFormat(entry);
+                        var extension = _fileTypes.GetFormat(entry);
 
                         batch.Add(new AssetUpsert(
                             current,

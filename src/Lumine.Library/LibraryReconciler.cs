@@ -7,10 +7,14 @@ public sealed class LibraryReconciler
     private const int MaxFailureSamples = 32;
 
     private readonly LibraryRepository _repository;
+    private readonly LibraryFileTypePolicy _fileTypes;
 
-    public LibraryReconciler(LibraryRepository repository)
+    public LibraryReconciler(
+        LibraryRepository repository,
+        LibraryFileTypePolicy? fileTypes = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _fileTypes = fileTypes ?? new LibraryFileTypePolicy();
     }
 
     public Task<LibraryReconcileResult> ReconcileAsync(
@@ -98,7 +102,7 @@ public sealed class LibraryReconciler
                         continue;
                     }
 
-                    if (!LibraryFileTypes.IsSupportedPath(entry))
+                    if (!_fileTypes.IsSupportedPath(entry))
                     {
                         continue;
                     }
@@ -114,7 +118,7 @@ public sealed class LibraryReconciler
                                 current,
                                 info.Length,
                                 new DateTimeOffset(info.LastWriteTimeUtc),
-                                Format: LibraryFileTypes.GetFormat(entry),
+                                Format: _fileTypes.GetFormat(entry),
                                 ObservationGeneration: generation));
                         discovered++;
 

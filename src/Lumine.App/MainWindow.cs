@@ -19,6 +19,7 @@ public sealed class MainWindow : Window
     private readonly AppDataPaths _defaultDataPaths;
     private readonly CoreResourcePolicy _resourcePolicy;
     private readonly ThumbnailStorageMode _thumbnailStorageMode;
+    private readonly LibraryFileTypePolicy _fileTypePolicy;
     private readonly AppHost? _host;
     private readonly Button _openFolder;
     private readonly Button _diagnostics;
@@ -110,6 +111,14 @@ public sealed class MainWindow : Window
             host?.ThumbnailStorageMode
             ?? Program.ThumbnailStorageMode;
         _host = host;
+        var scanExtensions =
+            ScanExtensionPreference.Resolve(
+                host?.Settings
+                    ?? new AppSettingsDocument(),
+                out _);
+        _fileTypePolicy =
+            new LibraryFileTypePolicy(
+                scanExtensions);
         _browsePreferences =
             BrowsePreferenceResolver.Resolve(
                 host?.Settings
@@ -127,7 +136,8 @@ public sealed class MainWindow : Window
                     0));
         _navigationLibraryService =
             new LibraryService(
-                _defaultDataPaths.DatabasePath);
+                _defaultDataPaths.DatabasePath,
+                _fileTypePolicy);
         _navigationInitialization =
             _navigationLibraryService.InitializeAsync();
 
@@ -997,6 +1007,12 @@ public sealed class MainWindow : Window
         if (IsMainWorkspaceDestination(
                 _navigationDestination))
         {
+            _settingsSnapshot =
+                _settingsSnapshot with
+                {
+                    HasActiveLibrary =
+                        _runtime is not null
+                };
             _navigationContent.Content = null;
             _workspacePageHost.Content =
                 ProductSettingsView.Create(
@@ -1005,6 +1021,8 @@ public sealed class MainWindow : Window
                     SaveThumbnailModeFromSettingsAsync,
                     SaveDiskCacheBudgetFromSettingsAsync,
                     SaveMemoryBudgetFromSettingsAsync,
+                    SaveScanExtensionsFromSettingsAsync,
+                    RescanCurrentLibraryFromSettingsAsync,
                     ClearThumbnailCacheFromSettingsAsync,
                     ShowDiagnosticsFromNavigationAsync);
             _workspacePageHost.IsVisible = true;
@@ -2031,6 +2049,44 @@ public sealed class MainWindow : Window
         StartNavigationRefresh();
     }
 
+    private async Task SaveScanExtensionsFromSettingsAsync(
+        IReadOnlyList<string> extensions)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        await _host.SaveScanExtensionsAsync(
+            extensions);
+        _fileTypePolicy.Update(
+            extensions);
+
+        _status.Foreground =
+            LumineDesign.MutedForeground;
+        _status.Text =
+            "読み込み対象を保存しました。今後の同期に反映されます。";
+        _ = ClearTransientStatusAsync(
+            _status.Text);
+        StartNavigationRefresh();
+    }
+
+    private async Task RescanCurrentLibraryFromSettingsAsync()
+    {
+        if (_runtime is null)
+        {
+            _status.Foreground =
+                LumineDesign.Warning;
+            _status.Text =
+                "再スキャンするライブラリを開いてください。";
+            return;
+        }
+
+        await RescanActiveLibraryForSmokeAsync();
+        StartNavigationRefresh();
+    }
+
     private async Task SaveThumbnailModeFromSettingsAsync(
         ThumbnailStorageMode mode)
     {
@@ -2210,6 +2266,8 @@ public sealed class MainWindow : Window
             memoryLimit,
             _defaultDataPaths,
             cacheStats,
+            _fileTypePolicy.Extensions,
+            _runtime is not null,
             _host?.SettingsWarning,
             !string.IsNullOrWhiteSpace(
                 Environment.GetEnvironmentVariable(
@@ -2724,7 +2782,8 @@ public sealed class MainWindow : Window
                 progress,
                 operationToken,
                 _thumbnailStorageMode,
-                BuildBrowseQuery());
+                BuildBrowseQuery(),
+                _fileTypePolicy);
 
             operationToken.ThrowIfCancellationRequested();
             acceptOpenProgress = false;

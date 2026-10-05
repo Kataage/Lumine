@@ -163,7 +163,12 @@ try
         !WindowsFilesystemSemantics.IsCaseSensitiveDirectory(libraryRoot),
         "CI temporary library unexpectedly uses per-directory case sensitivity.");
 
-    var syncService = new WindowsLibrarySyncService(database);
+    var fileTypes =
+        new LibraryFileTypePolicy();
+    var syncService =
+        new WindowsLibrarySyncService(
+            database,
+            fileTypes);
     var journalBefore = WindowsUsnJournal.Query(libraryRoot);
 
     long initialId;
@@ -213,6 +218,46 @@ try
             && finalManualProgress.Skipped
                 == manualReconcile.Skipped,
             "Explicit manual reconciliation did not propagate its final scan counters.");
+
+        var observedBeforeFilter =
+            sync.Diagnostics.EventsObserved;
+        fileTypes.Update(
+            [".png"]);
+        var filteredPath =
+            Path.Combine(
+                libraryRoot,
+                "filtered.jpg");
+        await File.WriteAllBytesAsync(
+            filteredPath,
+            [8, 8, 8, 8]);
+        await WaitUntilAsync(
+            () =>
+                Task.FromResult(
+                    sync.Diagnostics.EventsObserved
+                    > observedBeforeFilter),
+            "Watcher did not observe the filtered-extension create event.");
+        await Task.Delay(100);
+        Require(
+            await repository.GetAssetAsync(
+                library.Id,
+                "filtered.jpg") is null,
+            "Incremental change processing indexed a disabled extension.");
+
+        fileTypes.Update(
+            LibraryFileTypes.DefaultExtensions);
+        await File.WriteAllBytesAsync(
+            filteredPath,
+            [8, 8, 8, 8, 8]);
+        File.SetLastWriteTimeUtc(
+            filteredPath,
+            DateTime.UtcNow.AddSeconds(1));
+        _ = await WaitForAsync(
+            () => repository.GetAssetAsync(
+                library.Id,
+                "filtered.jpg"),
+            static asset =>
+                asset.FileSize == 5,
+            "Incremental change processing did not index a re-enabled extension.");
 
         var livePath = Path.Combine(libraryRoot, "live.jpg");
         var createStarted = DateTime.UtcNow;

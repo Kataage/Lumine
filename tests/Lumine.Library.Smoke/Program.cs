@@ -219,13 +219,74 @@ try
                                 name,
                                 StringComparison.Ordinal))),
         "Publication profile migration/default trigger did not seed the expected local destinations.");
-    var scanner = new LibraryScanner(repository);
+    var scanFileTypes =
+        new LibraryFileTypePolicy(
+            [".JPG", "webp"]);
+    Require(
+        scanFileTypes.Extensions.SequenceEqual(
+            new[] { ".jpg", ".webp" },
+            StringComparer.Ordinal),
+        "Scan extension policy did not normalize case/leading dots deterministically.");
+    var scanner =
+        new LibraryScanner(
+            repository,
+            scanFileTypes);
+    var filteredScan =
+        await scanner.ScanAsync(
+            library.Id,
+            batchSize: 2);
+
+    Require(filteredScan.Completed, "Filtered initial scan did not complete.");
+    Require(
+        filteredScan.Discovered == 2
+        && await repository.CountAssetsAsync(library.Id) == 2
+        && await repository.GetAssetAsync(
+            library.Id,
+            "b.png") is null,
+        "Scanner did not honor the configured extension policy.");
+
+    scanFileTypes.Update(
+        LibraryFileTypes.DefaultExtensions);
     var scan = await scanner.ScanAsync(library.Id, batchSize: 2);
 
     Require(scan.Completed, "Initial scan did not complete.");
     Require(scan.Skipped == 0 && scan.FailureSamples.Count == 0, "Clean scan reported failures.");
     Require(scan.Discovered == 3, $"Expected 3 image assets, got {scan.Discovered}.");
     Require(await repository.CountAssetsAsync(library.Id) == 3, "Initial asset count mismatch.");
+
+    var policyReconciler =
+        new LibraryReconciler(
+            repository,
+            scanFileTypes);
+    scanFileTypes.Update(
+        [".jpg", ".webp"]);
+    var filteredReconcile =
+        await policyReconciler.ReconcileAsync(
+            library.Id);
+    Require(
+        filteredReconcile.Completed
+        && await repository.GetAssetAsync(
+            library.Id,
+            "b.png") is null
+        && await repository.GetAssetAsync(
+            library.Id,
+            "a.jpg") is not null
+        && await repository.GetAssetAsync(
+            library.Id,
+            "nested/c.webp") is not null,
+        "Reconcile did not remove an asset excluded by the live extension policy.");
+
+    scanFileTypes.Update(
+        LibraryFileTypes.DefaultExtensions);
+    var restoredReconcile =
+        await policyReconciler.ReconcileAsync(
+            library.Id);
+    Require(
+        restoredReconcile.Completed
+        && await repository.GetAssetAsync(
+            library.Id,
+            "b.png") is not null,
+        "Reconcile did not restore a re-enabled extension.");
 
     var scannedLibrary = await repository.GetLibraryAsync(library.Id)
         ?? throw new InvalidOperationException("Library disappeared after scan.");

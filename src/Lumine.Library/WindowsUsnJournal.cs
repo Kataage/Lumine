@@ -221,9 +221,25 @@ public sealed class WindowsUsnJournal
         string expectedJournalId,
         long startUsn,
         long endUsn,
+        CancellationToken cancellationToken = default) =>
+        ReadChanges(
+            libraryRoot,
+            expectedJournalId,
+            startUsn,
+            endUsn,
+            new LibraryFileTypePolicy(),
+            cancellationToken);
+
+    public static UsnCatchUpResult ReadChanges(
+        string libraryRoot,
+        string expectedJournalId,
+        long startUsn,
+        long endUsn,
+        LibraryFileTypePolicy fileTypes,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedJournalId);
+        ArgumentNullException.ThrowIfNull(fileTypes);
 
         var snapshot = Query(libraryRoot);
         if (!snapshot.Available || snapshot.JournalId is null)
@@ -476,7 +492,7 @@ public sealed class WindowsUsnJournal
                             $"Directory journal change requires reconciliation: {relativePath}.");
                     }
 
-                    if (!LibraryFileTypes.IsSupportedPath(relativePath))
+                    if (!fileTypes.IsSupportedPath(relativePath))
                     {
                         offset += recordLength;
                         continue;

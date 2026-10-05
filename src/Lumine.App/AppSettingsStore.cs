@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lumine.Core;
 using Lumine.Image;
+using Lumine.Library;
 
 namespace Lumine.App;
 
@@ -25,6 +26,8 @@ internal sealed record AppSettingsDocument
 
     public string BrowseSortOrder { get; init; } =
         nameof(Lumine.Library.AssetSortOrder.ModifiedNewest);
+
+    public string[]? ScanExtensions { get; init; }
 }
 
 internal enum BrowseViewMode
@@ -123,6 +126,94 @@ internal static class BrowsePreferenceResolver
                 preferences.Density,
             BrowseSortOrder =
                 preferences.SortOrder.ToString()
+        };
+    }
+}
+
+internal static class ScanExtensionPreference
+{
+    public static IReadOnlyList<string> Resolve(
+        AppSettingsDocument settings,
+        out string? warning)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (settings.ScanExtensions is null)
+        {
+            warning = null;
+            return LibraryFileTypes.DefaultExtensions.ToArray();
+        }
+
+        var allowed =
+            LibraryFileTypes.DefaultExtensions
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+        var normalized =
+            new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+        var ignored = 0;
+
+        foreach (var raw in settings.ScanExtensions)
+        {
+            if (!LibraryFileTypes.TryNormalizeExtension(
+                    raw,
+                    out var extension)
+                || !allowed.Contains(extension))
+            {
+                ignored++;
+                continue;
+            }
+
+            normalized.Add(extension);
+        }
+
+        if (normalized.Count == 0)
+        {
+            warning =
+                "Saved scan extensions were empty or unsupported; Lumine restored the default image extensions.";
+            return LibraryFileTypes.DefaultExtensions.ToArray();
+        }
+
+        warning =
+            ignored > 0
+                ? $"{ignored:N0} unsupported scan extension setting(s) were ignored."
+                : null;
+
+        return LibraryFileTypes.DefaultExtensions
+            .Where(normalized.Contains)
+            .ToArray();
+    }
+
+    public static AppSettingsDocument Apply(
+        AppSettingsDocument settings,
+        IEnumerable<string> extensions)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(extensions);
+
+        var allowed =
+            LibraryFileTypes.DefaultExtensions
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+        var normalized =
+            LibraryFileTypePolicy
+                .NormalizeExtensions(extensions)
+                .Where(allowed.Contains)
+                .ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+        if (normalized.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one supported scan extension is required.",
+                nameof(extensions));
+        }
+
+        return settings with
+        {
+            ScanExtensions =
+                LibraryFileTypes.DefaultExtensions
+                    .Where(normalized.Contains)
+                    .ToArray()
         };
     }
 }
