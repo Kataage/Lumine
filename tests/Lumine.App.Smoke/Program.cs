@@ -3296,6 +3296,34 @@ try
                 && shell.ContextDetail.TabPagesHaveIndependentScrollStateForSmoke,
                 "Inspector did not expose the selected image preview, four-destination Lumine tab strip, and independent scroll ownership.");
 
+            if (visualOutputDirectory is not null)
+            {
+                shell.ContextDetail.SelectTabForSmoke(1);
+                Dispatcher.UIThread.RunJobs();
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-creative-1100x720");
+
+                shell.ContextDetail.SelectTabForSmoke(2);
+                Dispatcher.UIThread.RunJobs();
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-publication-1100x720");
+
+                shell.ContextDetail.SelectTabForSmoke(3);
+                Dispatcher.UIThread.RunJobs();
+                for (var attempt = 0;
+                     attempt < 10;
+                     attempt++)
+                {
+                    await Task.Delay(10);
+                    Dispatcher.UIThread.RunJobs();
+                }
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-information-1100x720");
+            }
+
             shell.ContextDetail.SelectTabForSmoke(3);
             Dispatcher.UIThread.RunJobs();
             Require(
@@ -6646,6 +6674,9 @@ try
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
                 "inspector-organize-1100x720",
+                "inspector-creative-1100x720",
+                "inspector-publication-1100x720",
+                "inspector-information-1100x720",
                 "inspector-900x600",
                 "inspector-900x600-text225",
                 "inspector-1440x900-drawer",
