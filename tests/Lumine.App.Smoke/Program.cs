@@ -4268,6 +4268,10 @@ try
                         {
                             LumineVisualMetrics.ConfigureTextScaleFactor(
                                 scale);
+                            App.RefreshScaledProductResources(
+                                Application.Current
+                                ?? throw new InvalidOperationException(
+                                    "Design-system smoke has no current Avalonia application."));
 
                             var primary =
                                 LumineDesign.ConfigurePrimaryButton(
@@ -4456,9 +4460,18 @@ try
                                     primary.MinHeight
                                     - LumineDesign.CompactControlHeight) < 0.001
                                 && Math.Abs(
+                                    primary.FontSize
+                                    - LumineDesign.CaptionFontSize) < 0.001
+                                && Math.Abs(
+                                    input.FontSize
+                                    - LumineDesign.BodyFontSize) < 0.001
+                                && Math.Abs(
+                                    combo.FontSize
+                                    - LumineDesign.CaptionFontSize) < 0.001
+                                && Math.Abs(
                                     input.Padding.Left
                                     - LumineDesign.Space12) < 0.001,
-                                $"Shared Lumine XAML styles did not resolve to the expected quiet resting geometry at {scale:P0}.");
+                                $"Shared Lumine XAML styles did not resolve to the expected quiet, scale-aware resting geometry at {scale:P0}.");
 
                             var clipped =
                                 specimen
@@ -4485,6 +4498,10 @@ try
 
                         LumineVisualMetrics.ConfigureTextScaleFactor(
                             restoreTextScale);
+                        App.RefreshScaledProductResources(
+                            Application.Current
+                            ?? throw new InvalidOperationException(
+                                "Design-system smoke has no current Avalonia application."));
                     }
 
                     var window =
