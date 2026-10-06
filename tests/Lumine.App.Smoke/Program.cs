@@ -5087,6 +5087,48 @@ try
                         && viewerDefaultsGroup.Children.Count == 3,
                         "Settings did not open at the top with capped content width and one grouped display-preference form.");
 
+                    var settingsSections =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .Where(
+                                panel =>
+                                    (AutomationProperties.GetName(
+                                        panel)
+                                    ?? string.Empty)
+                                    .StartsWith(
+                                        "設定セクション ",
+                                        StringComparison.Ordinal))
+                            .ToArray();
+                    var settingsGroups =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<Border>()
+                            .Where(
+                                border =>
+                                    (AutomationProperties.GetName(
+                                        border)
+                                    ?? string.Empty)
+                                    .StartsWith(
+                                        "設定グループ ",
+                                        StringComparison.Ordinal))
+                            .ToArray();
+                    Require(
+                        settingsSections.Length == 4
+                        && settingsGroups.Length == 4
+                        && settingsSections.All(
+                            static section =>
+                                section.Children.Count == 2
+                                && section.Spacing
+                                    >= LumineDesign.Space8)
+                        && settingsGroups.All(
+                            static group =>
+                                group.Classes.Contains(
+                                    "lumine-settings-group")
+                                && group.BorderThickness
+                                    == new Thickness(0)),
+                        "Settings regressed from four quiet grouped sections back to card-heavy or ad-hoc surfaces.");
+
 
                     var scanExtensionControls =
                         window.WorkspacePageForSmoke
