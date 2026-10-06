@@ -5967,8 +5967,10 @@ try
                                                     "1",
                                                     StringComparison.Ordinal)
                                             && window.CurrentRuntime.AssetCount
-                                                == 1,
-                                            "Browse active-filter state was not surfaced clearly with a matching result.");
+                                                == 1
+                                            && window.BrowseControlsForSmoke
+                                                .ActiveChipsUseSharedThemeForSmoke,
+                                            "Browse active-filter state was not surfaced with the shared chip design and a matching result.");
                                         CaptureVisualEvidence(
                                             window,
                                             "browse-active-filter-900x600");
