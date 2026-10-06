@@ -5889,6 +5889,16 @@ try
                                         "inspector-900x600");
                                 }
 
+                                if (iteration == 2
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-900x600-text225");
+                                }
+
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
                                     && !navigationVisible
@@ -6637,6 +6647,7 @@ try
                 "tags-edit-custom-color-900x600-text225",
                 "inspector-organize-1100x720",
                 "inspector-900x600",
+                "inspector-900x600-text225",
                 "inspector-1440x900-drawer",
                 "inspector-1920x1080-pinned",
                 "focused-viewer-900x600",
