@@ -78,6 +78,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly TextBlock _filterButtonLabel;
     private readonly Flyout _filterFlyout;
     private readonly StackPanel _filterPanel;
+    private readonly Button _displayButton;
+    private readonly Flyout _displayFlyout;
     private readonly Button _grid;
     private readonly Button _list;
     private readonly Slider _density;
@@ -111,13 +113,6 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     MinWidth = 260,
                     Text = State.SearchText
                 });
-        var searchHeight =
-            Math.Max(
-                32,
-                LumineDesign.BodyLineHeight + 8);
-        _search.MinHeight = searchHeight;
-        _search.Height = searchHeight;
-        _search.Padding = new Thickness(10, 4);
         ToolTip.SetTip(
             _search,
             "ファイル名・パス・ノート・タグを検索");
@@ -172,35 +167,39 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     MinWidth = 112
                 });
 
-        _grid = LumineDesign.ConfigureIconButton(
+        _grid =
             new Button
             {
                 Content =
                     LumineDesign.CreateStrokeIcon(
                         LumineDesign.GridIconPath,
                         17)
-            },
+            };
+        _grid.Classes.Add("lumine-segment");
+        _grid.Classes.Add("icon-only");
+        ToolTip.SetTip(
+            _grid,
+            "グリッド表示");
+        AutomationProperties.SetName(
+            _grid,
             "グリッド表示");
 
-        _list = LumineDesign.ConfigureIconButton(
+        _list =
             new Button
             {
                 Content =
                     LumineDesign.CreateStrokeIcon(
                         LumineDesign.ListIconPath,
                         17)
-            },
+            };
+        _list.Classes.Add("lumine-segment");
+        _list.Classes.Add("icon-only");
+        ToolTip.SetTip(
+            _list,
             "リスト表示");
-
-        foreach (var button in new[] { _grid, _list })
-        {
-            button.Width = 32;
-            button.Height = 32;
-            button.MinWidth = 32;
-            button.MinHeight = 32;
-            button.Padding = new Thickness(6);
-            button.CornerRadius = new CornerRadius(7);
-        }
+        AutomationProperties.SetName(
+            _list,
+            "リスト表示");
 
         _density = new Slider
         {
@@ -236,12 +235,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = _filterButtonLabel,
-                    MinHeight = 32,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
+                    Content = _filterButtonLabel
                 });
         ToolTip.SetTip(
             _filterButton,
@@ -343,45 +337,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 Placement =
                     PlacementMode.BottomEdgeAlignedRight,
                 Content =
-                    new Border
-                    {
-                        Width = 340,
-                        MaxWidth = 380,
-                        Background =
-                            LumineDesign.SurfaceRaised,
-                        BorderBrush =
-                            LumineDesign.Border,
-                        BorderThickness =
-                            new Thickness(1),
-                        CornerRadius =
-                            new CornerRadius(
-                                LumineDesign.PanelRadius),
-                        Padding =
-                            new Thickness(
-                                LumineDesign.Space12),
-                        Child =
-                            _filterPanel
-                    }
+                    CreatePopoverHost(
+                        _filterPanel,
+                        width: 340,
+                        maxWidth: 380)
             };
         _filterButton.Flyout =
             _filterFlyout;
-
-        var primaryRow = new Grid
-        {
-            ColumnDefinitions =
-                new ColumnDefinitions(
-                    "*,Auto,Auto"),
-            ColumnSpacing = LumineDesign.Space6,
-            VerticalAlignment =
-                VerticalAlignment.Center
-        };
-        primaryRow.Children.Add(_search);
-
-        Grid.SetColumn(
-            _filterButton,
-            1);
-        primaryRow.Children.Add(
-            _filterButton);
 
         var mode =
             new StackPanel
@@ -392,14 +354,69 @@ internal sealed class BrowseWorkspaceControls : UserControl
         mode.Children.Add(_grid);
         mode.Children.Add(_list);
 
-        var densityPanel =
+        var modeHost =
+            new Border
+            {
+                Child = mode
+            };
+        modeHost.Classes.Add(
+            "lumine-segmented-host");
+
+        _density.Width = 150;
+        AutomationProperties.SetName(
+            _density,
+            "サムネイルサイズ");
+
+        var displayPanel =
             new StackPanel
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = LumineDesign.Space4,
-                VerticalAlignment = VerticalAlignment.Center
+                Spacing = LumineDesign.Space10,
+                MinWidth = 240
             };
-        densityPanel.Children.Add(
+        displayPanel.Children.Add(
+            new TextBlock
+            {
+                Text = "表示オプション",
+                Foreground =
+                    LumineDesign.Foreground,
+                FontWeight =
+                    FontWeight.SemiBold,
+                FontSize =
+                    LumineDesign.BodyFontSize
+            });
+
+        var modeRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("76,*"),
+                ColumnSpacing =
+                    LumineDesign.Space8
+            };
+        modeRow.Children.Add(
+            new TextBlock
+            {
+                Text = "レイアウト",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        Grid.SetColumn(modeHost, 1);
+        modeRow.Children.Add(modeHost);
+        displayPanel.Children.Add(modeRow);
+
+        var densityRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("76,*"),
+                ColumnSpacing =
+                    LumineDesign.Space8
+            };
+        densityRow.Children.Add(
             new TextBlock
             {
                 Text = "サイズ",
@@ -410,72 +427,101 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             });
-        _density.Width = 76;
-        densityPanel.Children.Add(_density);
-        ToolTip.SetTip(
-            densityPanel,
-            "サムネイルサイズ");
-        AutomationProperties.SetName(
-            _density,
-            "サムネイルサイズ");
-
-        var displayControls =
-            new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = LumineDesign.Space6,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-        displayControls.Children.Add(mode);
-        displayControls.Children.Add(
-            new Border
-            {
-                Width = 1,
-                Height = 20,
-                Background = LumineDesign.Border,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-        displayControls.Children.Add(densityPanel);
+        Grid.SetColumn(_density, 1);
+        densityRow.Children.Add(_density);
+        displayPanel.Children.Add(densityRow);
 
         _displayControlsHost =
-            new Border
-            {
-                Background = LumineDesign.SurfaceRaised,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space4,
-                        LumineDesign.Space2),
-                Child = displayControls
-            };
-        Grid.SetColumn(_displayControlsHost, 2);
-        primaryRow.Children.Add(_displayControlsHost);
+            CreatePopoverHost(
+                displayPanel,
+                width: 280,
+                maxWidth: 320);
 
-        var root = new StackPanel
-        {
-            Spacing = 3
-        };
+        _displayFlyout =
+            new Flyout
+            {
+                Placement =
+                    PlacementMode.BottomEdgeAlignedRight,
+                Content =
+                    _displayControlsHost
+            };
+
+        _displayButton =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "表示"
+                });
+        ToolTip.SetTip(
+            _displayButton,
+            "表示方法とサムネイルサイズ");
+        AutomationProperties.SetName(
+            _displayButton,
+            "表示オプションを開く");
+        _displayButton.Flyout =
+            _displayFlyout;
+
+        var primaryRow =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions(
+                        "*,Auto,Auto"),
+                ColumnSpacing = LumineDesign.Space6,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        primaryRow.Children.Add(_search);
+
+        Grid.SetColumn(
+            _filterButton,
+            1);
+        primaryRow.Children.Add(
+            _filterButton);
+
+        Grid.SetColumn(
+            _displayButton,
+            2);
+        primaryRow.Children.Add(
+            _displayButton);
+
+        var root =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space4
+            };
         root.Children.Add(primaryRow);
         root.Children.Add(_chips);
 
-        Content =
+        var commandBar =
             new Border
             {
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(10, 5),
                 Child = root
             };
+        commandBar.Classes.Add(
+            "lumine-command-bar");
+        Content = commandBar;
 
         UpdateFacetData(tags, facets);
         SynchronizeControls();
         AttachHandlers();
+    }
+
+    private static Border CreatePopoverHost(
+        Control content,
+        double width,
+        double maxWidth)
+    {
+        var host =
+            new Border
+            {
+                Width = width,
+                MaxWidth = maxWidth,
+                Child = content
+            };
+        host.Classes.Add(
+            "lumine-popover");
+        return host;
     }
 
     private void AttachHandlers()
@@ -1086,22 +1132,56 @@ internal sealed class BrowseWorkspaceControls : UserControl
         var gridSelected =
             Preferences.ViewMode
             == BrowseViewMode.Grid;
-        _grid.Background =
-            gridSelected
-                ? LumineDesign.InteractionSelected
-                : Brushes.Transparent;
-        _grid.BorderBrush =
-            Brushes.Transparent;
+        SetSelectedClass(
+            _grid,
+            gridSelected);
 
         var listSelected =
             Preferences.ViewMode
             == BrowseViewMode.List;
-        _list.Background =
-            listSelected
-                ? LumineDesign.InteractionSelected
-                : Brushes.Transparent;
-        _list.BorderBrush =
-            Brushes.Transparent;
+        SetSelectedClass(
+            _list,
+            listSelected);
+    }
+
+    private static void SetSelectedClass(
+        StyledElement element,
+        bool selected)
+    {
+        if (selected)
+        {
+            if (!element.Classes.Contains(
+                    "selected"))
+            {
+                element.Classes.Add(
+                    "selected");
+            }
+        }
+        else
+        {
+            element.Classes.Remove(
+                "selected");
+        }
+    }
+
+    private static void SetActiveClass(
+        StyledElement element,
+        bool active)
+    {
+        if (active)
+        {
+            if (!element.Classes.Contains(
+                    "active"))
+            {
+                element.Classes.Add(
+                    "active");
+            }
+        }
+        else
+        {
+            element.Classes.Remove(
+                "active");
+        }
     }
 
     private void RenderChips()
@@ -1129,14 +1209,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
             flyoutFilterCount == 0
                 ? "フィルターを開く"
                 : $"フィルターを開く・{flyoutFilterCount}件適用中");
-        _filterButton.Background =
-            flyoutFilterCount == 0
-                ? LumineDesign.ControlSurface
-                : LumineDesign.InteractionSelected;
-        _filterButton.BorderBrush =
-            flyoutFilterCount == 0
-                ? LumineDesign.Border
-                : LumineDesign.Focus;
+        SetActiveClass(
+            _filterButton,
+            flyoutFilterCount > 0);
 
         AddChip(
             "フォルダー",
