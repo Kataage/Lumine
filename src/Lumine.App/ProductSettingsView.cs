@@ -69,7 +69,7 @@ internal static class ProductSettingsView
         var root =
             new StackPanel
             {
-                Spacing = LumineDesign.Space16,
+                Spacing = LumineDesign.Space24,
                 MaxWidth = 720,
                 HorizontalAlignment =
                     HorizontalAlignment.Center
@@ -176,10 +176,6 @@ internal static class ProductSettingsView
         Func<BrowsePreferences, Task> save)
     {
         var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "表示",
-                "画像一覧の見え方と既定の並び順です。"));
 
         var view =
             LumineDesign.ConfigureComboBox(
@@ -344,7 +340,10 @@ internal static class ProductSettingsView
         sort.SelectionChanged +=
             async (_, _) => await SaveAsync();
 
-        return CreateCard(content);
+        return CreateSettingsSection(
+            "表示",
+            "画像一覧の見え方と既定の並び順です。",
+            content);
     }
 
     private static Control CreateScanExtensionSettings(
@@ -354,10 +353,6 @@ internal static class ProductSettingsView
     {
         var content =
             CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "読み込み対象",
-                "ライブラリへ取り込む画像形式を選びます。元画像ファイル自体は変更・削除しません。"));
 
         var selected =
             snapshot.ScanExtensions
@@ -420,23 +415,7 @@ internal static class ProductSettingsView
                 FontSize = LumineDesign.CaptionFontSize,
                 FontWeight = FontWeight.SemiBold
             });
-        content.Children.Add(
-            new Border
-            {
-                Background = LumineDesign.Surface,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8,
-                        LumineDesign.Space8,
-                        LumineDesign.Space2,
-                        LumineDesign.Space2),
-                Child = options
-            });
+        content.Children.Add(options);
 
         var status =
             CreateStatusText();
@@ -801,21 +780,12 @@ internal static class ProductSettingsView
         actionFooter.Children.Add(actions);
 
         content.Children.Add(
-            new Border
-            {
-                Background = LumineDesign.Surface,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8,
-                        LumineDesign.Space8),
-                Child = actionFooter
-            });
-        return CreateCard(
+            CreateSettingsDivider());
+        content.Children.Add(
+            actionFooter);
+        return CreateSettingsSection(
+            "読み込み対象",
+            "ライブラリへ取り込む画像形式を選びます。元画像ファイル自体は変更・削除しません。",
             content);
     }
 
@@ -827,10 +797,6 @@ internal static class ProductSettingsView
         Func<Task> clearCache)
     {
         var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "パフォーマンスとキャッシュ",
-                "表示速度と、再起動後にサムネイルを再利用するかを設定します。"));
 
         var persistent =
             LumineDesign.ConfigureCheckBox(
@@ -879,20 +845,7 @@ internal static class ProductSettingsView
         basicCache.Children.Add(persistent);
         basicCache.Children.Add(cacheModeStatus);
         basicCache.Children.Add(diskStats);
-        content.Children.Add(
-            new Border
-            {
-                Background = LumineDesign.Surface,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8),
-                Child = basicCache
-            });
+        content.Children.Add(basicCache);
 
         var advanced =
             CreateCardStack();
@@ -1002,20 +955,7 @@ internal static class ProductSettingsView
                 IsExpanded = false,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch,
-                Content =
-                    new Border
-                    {
-                        Background = LumineDesign.Surface,
-                        BorderBrush = Brushes.Transparent,
-                        BorderThickness = new Thickness(0),
-                        CornerRadius =
-                            new CornerRadius(
-                                LumineDesign.ControlRadius),
-                        Padding =
-                            new Thickness(
-                                LumineDesign.Space8),
-                        Child = advanced
-                    }
+                Content = advanced
             });
 
         var status = CreateStatusText();
@@ -1150,7 +1090,10 @@ internal static class ProductSettingsView
                 }
             };
 
-        return CreateCard(content);
+        return CreateSettingsSection(
+            "パフォーマンスとキャッシュ",
+            "表示速度と、再起動後にサムネイルを再利用するかを設定します。",
+            content);
     }
 
     private static Control CreateStorageSettings(
@@ -1158,10 +1101,6 @@ internal static class ProductSettingsView
         Func<Task> showDiagnostics)
     {
         var content = CreateCardStack();
-        content.Children.Add(
-            CreateSectionHeader(
-                "ライブラリとデータ",
-                "元画像はそのまま参照し、Lumineの管理データだけを保存します。"));
 
         content.Children.Add(
             CreateKeyValue(
@@ -1270,7 +1209,10 @@ internal static class ProductSettingsView
                 Content = details
             });
 
-        return CreateCard(content);
+        return CreateSettingsSection(
+            "ライブラリとデータ",
+            "元画像はそのまま参照し、Lumineの管理データだけを保存します。",
+            content);
     }
 
     private static StackPanel CreateCardStack() =>
@@ -1279,21 +1221,45 @@ internal static class ProductSettingsView
             Spacing = LumineDesign.Space8
         };
 
-    private static Border CreateCard(
-        Control content) =>
-        new()
-        {
-            Background = LumineDesign.SurfaceRaised,
-            BorderBrush = LumineDesign.Border,
-            BorderThickness = new Thickness(1),
-            CornerRadius =
-                new CornerRadius(
-                    LumineDesign.PanelRadius),
-            Padding =
-                new Thickness(
-                    LumineDesign.Space16),
-            Child = content
-        };
+    private static Control CreateSettingsSection(
+        string title,
+        string description,
+        Control content)
+    {
+        var group =
+            new Border
+            {
+                Child = content
+            };
+        group.Classes.Add(
+            "lumine-settings-group");
+        AutomationProperties.SetName(
+            group,
+            $"設定グループ {title}");
+
+        var section =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space8
+            };
+        AutomationProperties.SetName(
+            section,
+            $"設定セクション {title}");
+        section.Children.Add(
+            CreateSectionHeader(
+                title,
+                description));
+        section.Children.Add(group);
+        return section;
+    }
+
+    private static Border CreateSettingsDivider()
+    {
+        var divider = new Border();
+        divider.Classes.Add(
+            "lumine-settings-divider");
+        return divider;
+    }
 
     private static Control CreateSectionHeader(
         string title,
@@ -1433,7 +1399,17 @@ internal static class ProductSettingsView
                 FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
-        return CreateCard(content);
+        var notice =
+            new Border
+            {
+                Child = content
+            };
+        notice.Classes.Add(
+            "lumine-settings-notice");
+        AutomationProperties.SetName(
+            notice,
+            title);
+        return notice;
     }
 
     private static TextBlock CreateStatusText() =>

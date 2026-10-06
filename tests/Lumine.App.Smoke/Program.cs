@@ -5087,6 +5087,48 @@ try
                         && viewerDefaultsGroup.Children.Count == 3,
                         "Settings did not open at the top with capped content width and one grouped display-preference form.");
 
+                    var settingsSections =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .Where(
+                                panel =>
+                                    (AutomationProperties.GetName(
+                                        panel)
+                                    ?? string.Empty)
+                                    .StartsWith(
+                                        "設定セクション ",
+                                        StringComparison.Ordinal))
+                            .ToArray();
+                    var settingsGroups =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<Border>()
+                            .Where(
+                                border =>
+                                    (AutomationProperties.GetName(
+                                        border)
+                                    ?? string.Empty)
+                                    .StartsWith(
+                                        "設定グループ ",
+                                        StringComparison.Ordinal))
+                            .ToArray();
+                    Require(
+                        settingsSections.Length == 4
+                        && settingsGroups.Length == 4
+                        && settingsSections.All(
+                            static section =>
+                                section.Children.Count == 2
+                                && section.Spacing
+                                    >= LumineDesign.Space8)
+                        && settingsGroups.All(
+                            static group =>
+                                group.Classes.Contains(
+                                    "lumine-settings-group")
+                                && group.BorderThickness
+                                    == new Thickness(0)),
+                        "Settings regressed from four quiet grouped sections back to card-heavy or ad-hoc surfaces.");
+
 
                     var scanExtensionControls =
                         window.WorkspacePageForSmoke
@@ -5293,6 +5335,30 @@ try
                                 "高速再表示用メモリ上限",
                                 StringComparison.Ordinal)),
                         "Product Settings did not prioritize daily settings or hide advanced cache controls by default.");
+
+                    if (iteration == 2)
+                    {
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        settingsScroll =
+                            window.WorkspacePageForSmoke
+                                .GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .First(
+                                    scroll =>
+                                        string.Equals(
+                                            AutomationProperties.GetName(
+                                                scroll),
+                                            "設定スクロール",
+                                            StringComparison.Ordinal));
+                        settingsScroll.Offset =
+                            new Vector(0, 0);
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-900x600-text225");
+                    }
 
                     if (iteration == 0)
                     {
@@ -6723,6 +6789,7 @@ try
                 "settings-1440x900",
                 "settings-advanced-1440x900",
                 "settings-900x600",
+                "settings-900x600-text225",
                 "empty-library-1440x900",
                 "no-match-1440x900",
                 "error-1440x900",

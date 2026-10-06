@@ -192,6 +192,28 @@
     <Setter Property="Padding" Value="2" />
   </Style>
 
+  <Style Selector="Border.lumine-settings-group">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="14" />
+  </Style>
+
+  <Style Selector="Border.lumine-settings-notice">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Warning}" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="12" />
+  </Style>
+
+  <Style Selector="Border.lumine-settings-divider">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="Margin" Value="0,4" />
+  </Style>
+
   <Style Selector="Border.lumine-card">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
     <Setter Property="BorderBrush" Value="Transparent" />
