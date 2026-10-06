@@ -5092,8 +5092,8 @@ try
                             ?? throw new InvalidOperationException(
                                 "Advanced Settings disclosure lost its content.");
                         var advancedSettingsText =
-                            EnumeratePanelTree(
-                                    advancedContent)
+                            advancedContent
+                                .GetVisualDescendants()
                                 .OfType<TextBlock>()
                                 .ToArray();
                         Require(
