@@ -4730,6 +4730,22 @@ try
                         && window.CurrentShell is not null,
                         "MainWindow did not compose the production Core Viewer runtime/shell.");
 
+                    if (iteration == 0)
+                    {
+                        await window.NavigationRefreshForSmokeAsync();
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.IsNavigationPinnedForSmoke
+                            && window.IsNavigationPaneVisibleForSmoke
+                            && window.PinnedNavigationUsesUnifiedSidebarForSmoke,
+                            "Wide default workspace did not present the unified desktop sidebar.");
+                        CaptureVisualEvidence(
+                            window,
+                            "browse-1440x900-sidebar");
+                    }
+
                     var shellBeforeSettings =
                         window.CurrentShell;
 
@@ -4740,7 +4756,8 @@ try
                         window.WorkspacePageForSmoke
                             is Border
                         && window.IsWorkspacePageVisibleForSmoke
-                        && !window.IsNavigationPaneVisibleForSmoke
+                        && window.IsNavigationPaneVisibleForSmoke
+                        && window.PinnedNavigationUsesUnifiedSidebarForSmoke
                         && !window.StatusSurfaceVisibleForSmoke
                         && window.WorkspacePageBoundsForSmoke.Width >= 500
                         && ReferenceEquals(
@@ -4767,7 +4784,7 @@ try
                                     extension,
                                     out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
-                        "Product Settings did not open as a clean main-workspace page without browse status chrome while preserving the active viewer runtime.");
+                        "Product Settings did not keep the unified desktop sidebar while opening as a clean main-workspace page without browse status chrome.");
 
                     var settingsText =
                         window.WorkspacePageForSmoke
@@ -5161,6 +5178,7 @@ try
 
                     window.NavigateForSmoke(
                         "ライブラリ");
+                    await window.NavigationRefreshForSmokeAsync();
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.IsWorkspacePageVisibleForSmoke
@@ -5658,12 +5676,12 @@ try
                                      inspectorSettleAttempt < 40
                                      && (!window.CurrentShell.IsContextDetailVisible
                                          || window.CurrentShell.IsCompactInspectorLayout
-                                             != (viewport.Width < 1200)
+                                             != (window.CurrentShell.Bounds.Width < 1600)
                                          || window.CurrentShell.ContextSurfaceBounds.Width
                                              is < 300 or > 380
                                          || window.CurrentShell.ContextDetail
                                              .IsCompactPresentationForSmoke
-                                             != (viewport.Width < 1200)
+                                             != (window.CurrentShell.Bounds.Width < 1600)
                                          || !window.CurrentShell.ContextDetail.HasPreview);
                                      inspectorSettleAttempt++)
                                 {
@@ -5677,12 +5695,12 @@ try
                                 Require(
                                     window.CurrentShell.IsContextDetailVisible
                                     && window.CurrentShell.IsCompactInspectorLayout
-                                        == (viewport.Width < 1200)
+                                        == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
                                         is >= 300 and <= 380
                                     && window.CurrentShell.ContextDetail
                                         .IsCompactPresentationForSmoke
-                                        == (viewport.Width < 1200)
+                                        == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.GridViewerBounds.Width
                                         >= 500
                                     && !window.CurrentShell.IsInspectorPinnedForSmoke
@@ -5710,6 +5728,16 @@ try
                                     CaptureVisualEvidence(
                                         window,
                                         "inspector-900x600");
+                                }
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-1440x900-drawer");
                                 }
 
                                 for (var tabIndex = 0;
@@ -5777,7 +5805,7 @@ try
                                     $"Leaving bulk selection shifted the image canvas or retained its bottom safe area at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                             }
 
-                            if (viewport.Width >= 1440)
+                            if (window.CurrentShell.Bounds.Width >= 1600)
                             {
                                 window.CurrentShell.GridViewer.SelectAsset(0);
                                 await window.CurrentShell.ShowContextDetailAsync();
@@ -5799,11 +5827,11 @@ try
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
-                                    && viewport.Width == 1440d)
+                                    && viewport.Width == 1920d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "inspector-1440x900-pinned");
+                                        "inspector-1920x1080-pinned");
                                 }
 
                                 window.CurrentShell.SetInspectorPinnedForSmoke(false);
@@ -5815,7 +5843,10 @@ try
                                         - unpinnedClosedCanvasWidth) < 1,
                                     $"Unpinning Inspector did not restore overlay canvas width at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                                 window.CurrentShell.HideContextDetail();
+                            }
 
+                            if (viewport.Width >= 1440)
+                            {
                                 window.SetNavigationPaneVisibleForSmoke(true);
                                 window.SetNavigationPinnedForSmoke(true);
                                 Dispatcher.UIThread.RunJobs();
@@ -5825,13 +5856,14 @@ try
                                 Require(
                                     window.IsNavigationPinnedForSmoke
                                     && !window.IsNavigationPaneOverlayForSmoke
+                                    && window.PinnedNavigationUsesUnifiedSidebarForSmoke
                                     && window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
-                                        < unpinnedClosedCanvasWidth - 200,
-                                    $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                        < unpinnedClosedCanvasWidth - 180,
+                                    $"Pinned navigation did not become a unified sidebar beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
@@ -6433,6 +6465,7 @@ try
                 "browse-900x600",
                 "browse-1024x768",
                 "browse-1440x900",
+                "browse-1440x900-sidebar",
                 "browse-1920x1080",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
@@ -6444,7 +6477,8 @@ try
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
                 "inspector-900x600",
-                "inspector-1440x900-pinned",
+                "inspector-1440x900-drawer",
+                "inspector-1920x1080-pinned",
                 "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",

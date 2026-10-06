@@ -35,8 +35,11 @@ public sealed class MainWindow : Window
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
+    private readonly ContentControl _wideNavigationHost;
+    private readonly ContentControl _wideSettingsHost;
     private readonly Border _navigationPane;
     private readonly Button _navigationPin;
+    private readonly Grid _navigationContextHeader;
     private readonly TextBlock _navigationTitle;
     private readonly ContentControl _navigationContent;
     private CancellationTokenSource? _openCancellation;
@@ -298,6 +301,35 @@ public sealed class MainWindow : Window
                 _navigationDestination,
                 OnNavigationRequested);
 
+        _wideNavigationHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Top
+            };
+
+        _wideSettingsHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Bottom
+            };
+
+        var expandedNavigation =
+            LumineDesign.CreateExpandedNavigationBands(
+                _navigationDestination,
+                OnNavigationRequested);
+        _wideNavigationHost.Content =
+            expandedNavigation.Primary;
+        _wideSettingsHost.Content =
+            expandedNavigation.Settings;
+
         _navigationTitle =
             new TextBlock
             {
@@ -331,7 +363,7 @@ public sealed class MainWindow : Window
                 },
                 "ナビゲーションを閉じる");
 
-        var navigationHeader =
+        _navigationContextHeader =
             new Grid
             {
                 ColumnDefinitions =
@@ -340,13 +372,13 @@ public sealed class MainWindow : Window
                     LumineDesign.Space4,
                 Margin = new Thickness(14, 12, 10, 8)
             };
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             _navigationTitle);
         Grid.SetColumn(_navigationPin, 1);
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             _navigationPin);
         Grid.SetColumn(collapseNavigation, 2);
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             collapseNavigation);
 
         _navigationContent =
@@ -363,20 +395,26 @@ public sealed class MainWindow : Window
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                    new RowDefinitions("Auto,Auto,*,Auto")
             };
         navigationLayout.Children.Add(
-            navigationHeader);
-        Grid.SetRow(_navigationContent, 1);
+            _wideNavigationHost);
+        Grid.SetRow(_navigationContextHeader, 1);
+        navigationLayout.Children.Add(
+            _navigationContextHeader);
+        Grid.SetRow(_navigationContent, 2);
         navigationLayout.Children.Add(
             _navigationContent);
+        Grid.SetRow(_wideSettingsHost, 3);
+        navigationLayout.Children.Add(
+            _wideSettingsHost);
 
         _navigationPane =
             new Border
             {
                 Width = 280,
-                MinWidth = 250,
-                MaxWidth = 320,
+                MinWidth = 220,
+                MaxWidth = 300,
                 Background = LumineDesign.SurfaceRaised,
                 BorderBrush = LumineDesign.BorderStrong,
                 BorderThickness =
@@ -425,6 +463,11 @@ public sealed class MainWindow : Window
             (_, e) =>
                 ApplyNavigationLayout(
                     e.NewSize.Width);
+
+        // A normal desktop launch should present one coherent sidebar rather
+        // than a tiny rail plus an immediately separate floating pane.
+        _navigationPinned =
+            Width >= 1200;
         UpdateNavigationPinVisual();
         ApplyNavigationLayout(Width);
 
@@ -551,6 +594,9 @@ public sealed class MainWindow : Window
         string destination) =>
         OnNavigationRequested(
             destination);
+
+    internal Task NavigationRefreshForSmokeAsync() =>
+        _navigationOperation;
 
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
@@ -706,17 +752,27 @@ public sealed class MainWindow : Window
     private void ApplyNavigationLayout(
         double width)
     {
-        // Keep contextual navigation off the permanent canvas until there is
-        // enough desktop width for an explicit pinned layout.
+        // Compact windows keep the icon rail and use contextual navigation as
+        // a temporary drawer. Wide pinned navigation becomes one actual
+        // sidebar: expanded global destinations above contextual content.
         _compactNavigationLayout =
             width < 1200;
+
+        var mainWorkspaceDestination =
+            IsMainWorkspaceDestination(
+                _navigationDestination);
+
+        if (mainWorkspaceDestination)
+        {
+            _navigationPane.IsVisible =
+                !_compactNavigationLayout
+                && _navigationPinned;
+        }
 
         var paneCanDock =
             !_compactNavigationLayout
             && _navigationPinned
-            && _navigationPane.IsVisible
-            && !IsMainWorkspaceDestination(
-                _navigationDestination);
+            && _navigationPane.IsVisible;
 
         _navigationPin.IsEnabled =
             !_compactNavigationLayout;
@@ -725,22 +781,31 @@ public sealed class MainWindow : Window
 
         if (paneCanDock)
         {
+            const double pinnedSidebarWidth = 288;
+
+            _navigationRailHost.IsVisible = false;
+            _wideNavigationHost.IsVisible = true;
+            _wideSettingsHost.IsVisible = true;
             _appShell.ColumnDefinitions =
                 new ColumnDefinitions(
-                    $"{LumineDesign.NavigationWidth},Auto,*");
+                    $"{pinnedSidebarWidth},*");
             Grid.SetColumn(
                 _navigationPane,
-                1);
+                0);
             Grid.SetColumn(
                 _workspaceHost,
-                2);
+                1);
+
             _navigationPane.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
             _navigationPane.VerticalAlignment =
                 VerticalAlignment.Stretch;
             _navigationPane.Margin =
                 new Thickness(0);
-            _navigationPane.Width = 280;
+            _navigationPane.Width =
+                pinnedSidebarWidth;
+            _navigationPane.Background =
+                LumineDesign.Surface;
             _navigationPane.CornerRadius =
                 new CornerRadius(0);
             _navigationPane.BorderBrush =
@@ -751,6 +816,9 @@ public sealed class MainWindow : Window
             return;
         }
 
+        _navigationRailHost.IsVisible = true;
+        _wideNavigationHost.IsVisible = false;
+        _wideSettingsHost.IsVisible = false;
         _appShell.ColumnDefinitions =
             new ColumnDefinitions(
                 $"{LumineDesign.NavigationWidth},*");
@@ -776,6 +844,8 @@ public sealed class MainWindow : Window
                     250,
                     300)
                 : 280;
+        _navigationPane.Background =
+            LumineDesign.SurfaceRaised;
         _navigationPane.CornerRadius =
             new CornerRadius(
                 LumineDesign.PanelRadius);
@@ -785,6 +855,27 @@ public sealed class MainWindow : Window
             new Thickness(1);
         _navigationPane.ZIndex = 20;
     }
+
+    internal bool PinnedNavigationUsesUnifiedSidebarForSmoke =>
+        _navigationPinned
+        && _navigationPane.IsVisible
+        && _navigationPane.ZIndex == 0
+        && !_navigationRailHost.IsVisible
+        && _wideNavigationHost.IsVisible
+        && _wideSettingsHost.IsVisible
+        && Grid.GetRow(
+            _wideNavigationHost) == 0
+        && Grid.GetRow(
+            _navigationContent) == 2
+        && Grid.GetRow(
+            _wideSettingsHost) == 3
+        && Grid.GetColumn(
+            _navigationPane) == 0
+        && Grid.GetColumn(
+            _workspaceHost) == 1
+        && _navigationPane.Margin.Left < 0.5
+        && _navigationPane.BorderThickness.Left < 0.5
+        && _navigationPane.BorderThickness.Right > 0.5;
 
     private void DismissCompactNavigationOverlayForBlockingState()
     {
@@ -833,9 +924,17 @@ public sealed class MainWindow : Window
         }
 
         _navigationDestination = destination;
-        _navigationPane.IsVisible =
-            !IsMainWorkspaceDestination(
+        var mainWorkspaceDestination =
+            IsMainWorkspaceDestination(
                 destination);
+        _navigationContextHeader.IsVisible =
+            !mainWorkspaceDestination;
+        _navigationContent.IsVisible =
+            !mainWorkspaceDestination;
+        _navigationPane.IsVisible =
+            !mainWorkspaceDestination
+            || (_navigationPinned
+                && ResolveLayoutWidth() >= 1200);
         _navigationTitle.Text = destination;
         ApplyNavigationLayout(
             ResolveLayoutWidth());
@@ -843,6 +942,14 @@ public sealed class MainWindow : Window
             LumineDesign.CreateNavigationRail(
                 destination,
                 OnNavigationRequested);
+        var expandedNavigation =
+            LumineDesign.CreateExpandedNavigationBands(
+                destination,
+                OnNavigationRequested);
+        _wideNavigationHost.Content =
+            expandedNavigation.Primary;
+        _wideSettingsHost.Content =
+            expandedNavigation.Settings;
         RenderNavigationDestination();
         StartNavigationRefresh();
     }
@@ -1015,6 +1122,8 @@ public sealed class MainWindow : Window
                     HasActiveLibrary =
                         _runtime is not null
                 };
+            _navigationContextHeader.IsVisible = false;
+            _navigationContent.IsVisible = false;
             _navigationContent.Content = null;
             _workspacePageHost.Content =
                 ProductSettingsView.Create(
@@ -1036,6 +1145,8 @@ public sealed class MainWindow : Window
         _workspacePageHost.Content = null;
         _workspacePageHost.IsVisible = false;
         _workspaceContent.IsHitTestVisible = true;
+        _navigationContextHeader.IsVisible = true;
+        _navigationContent.IsVisible = true;
         UpdateStatusSurfaceVisibility();
 
         _navigationContent.Content =
@@ -2826,6 +2937,18 @@ public sealed class MainWindow : Window
             }
 
             EnsureBrowseControls();
+
+            var layoutWidth =
+                ResolveLayoutWidth();
+            if (_navigationPinned
+                && layoutWidth >= 1200
+                && !IsMainWorkspaceDestination(
+                    _navigationDestination))
+            {
+                _navigationPane.IsVisible = true;
+            }
+            ApplyNavigationLayout(layoutWidth);
+
             UpdateScopeDisplay();
             StartNavigationRefresh();
 
