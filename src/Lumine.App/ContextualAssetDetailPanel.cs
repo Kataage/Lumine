@@ -2374,9 +2374,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         AutomationProperties.SetName(
                             button,
                             accessibleName);
-                        ToolTip.SetTip(
-                            button,
-                            $"{rating}つ星");
                         button.Click +=
                             (_, _) =>
                                 SetRatingFromDirectControl(
@@ -2567,9 +2564,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             var rating = index + 1;
             var button = _ratingButtons[index];
-            var active =
-                rating == selected;
-
             if (button.Content is TextBlock glyph)
             {
                 glyph.Foreground =
@@ -2578,14 +2572,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         : LumineDesign.MutedForeground;
             }
 
+            // Rating is communicated by the filled-star count. Keep every
+            // resting cell visually identical so the selected rating never
+            // looks like one oversized boxed button.
             button.Background =
-                active
-                    ? LumineDesign.AccentMuted
-                    : Brushes.Transparent;
+                Brushes.Transparent;
             button.BorderBrush =
-                active
-                    ? LumineDesign.BorderStrong
-                    : Brushes.Transparent;
+                Brushes.Transparent;
         }
     }
 
