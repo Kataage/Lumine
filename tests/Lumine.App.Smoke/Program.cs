@@ -2961,8 +2961,14 @@ try
                 && string.Equals(
                     shell.ContextDetail.PathCopyValueForSmoke,
                     shell.ContextDetail.PathText,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    shell.ContextDetail.DisplayedPathTextForSmoke,
+                    firstContextAsset.RelativePath.Replace(
+                        '/',
+                        Path.DirectorySeparatorChar),
                     StringComparison.Ordinal),
-                "Contextual detail panel did not expose one exact source path for display and copy.");
+                "Contextual detail panel did not preserve full-path copy semantics while presenting a concise library-relative path.");
 
             var inspectorFieldNames =
                 shell.ContextDetail
