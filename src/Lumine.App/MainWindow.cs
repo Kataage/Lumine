@@ -375,8 +375,8 @@ public sealed class MainWindow : Window
             new Border
             {
                 Width = 280,
-                MinWidth = 250,
-                MaxWidth = 320,
+                MinWidth = 220,
+                MaxWidth = 300,
                 Background = LumineDesign.SurfaceRaised,
                 BorderBrush = LumineDesign.BorderStrong,
                 BorderThickness =
@@ -706,8 +706,10 @@ public sealed class MainWindow : Window
     private void ApplyNavigationLayout(
         double width)
     {
-        // Keep contextual navigation off the permanent canvas until there is
-        // enough desktop width for an explicit pinned layout.
+        // Compact windows keep the global rail fixed and present contextual
+        // navigation as a temporary drawer over the canvas. Wide windows may
+        // pin contextual navigation, but the rail + context must read as one
+        // sidebar rather than two independent vertical panels.
         _compactNavigationLayout =
             width < 1200;
 
@@ -723,24 +725,46 @@ public sealed class MainWindow : Window
         _navigationPin.IsVisible =
             !_compactNavigationLayout;
 
+        var railSurface =
+            _navigationRailHost.Content
+                as Border;
+
         if (paneCanDock)
         {
+            const double pinnedContextWidth = 256;
+
             _appShell.ColumnDefinitions =
                 new ColumnDefinitions(
-                    $"{LumineDesign.NavigationWidth},Auto,*");
+                    $"{LumineDesign.NavigationWidth + pinnedContextWidth},*");
             Grid.SetColumn(
                 _navigationPane,
-                1);
+                0);
             Grid.SetColumn(
                 _workspaceHost,
-                2);
+                1);
+
+            if (railSurface is not null)
+            {
+                // The rail and contextual content share one desktop sidebar.
+                // Keep only the outer canvas divider.
+                railSurface.BorderThickness =
+                    new Thickness(0);
+            }
+
             _navigationPane.HorizontalAlignment =
-                HorizontalAlignment.Stretch;
+                HorizontalAlignment.Left;
             _navigationPane.VerticalAlignment =
                 VerticalAlignment.Stretch;
             _navigationPane.Margin =
-                new Thickness(0);
-            _navigationPane.Width = 280;
+                new Thickness(
+                    LumineDesign.NavigationWidth,
+                    0,
+                    0,
+                    0);
+            _navigationPane.Width =
+                pinnedContextWidth;
+            _navigationPane.Background =
+                LumineDesign.Surface;
             _navigationPane.CornerRadius =
                 new CornerRadius(0);
             _navigationPane.BorderBrush =
@@ -749,6 +773,12 @@ public sealed class MainWindow : Window
                 new Thickness(0, 0, 1, 0);
             _navigationPane.ZIndex = 0;
             return;
+        }
+
+        if (railSurface is not null)
+        {
+            railSurface.BorderThickness =
+                new Thickness(0, 0, 1, 0);
         }
 
         _appShell.ColumnDefinitions =
@@ -776,6 +806,8 @@ public sealed class MainWindow : Window
                     250,
                     300)
                 : 280;
+        _navigationPane.Background =
+            LumineDesign.SurfaceRaised;
         _navigationPane.CornerRadius =
             new CornerRadius(
                 LumineDesign.PanelRadius);
@@ -785,6 +817,21 @@ public sealed class MainWindow : Window
             new Thickness(1);
         _navigationPane.ZIndex = 20;
     }
+
+    internal bool PinnedNavigationUsesUnifiedSidebarForSmoke =>
+        _navigationPinned
+        && _navigationPane.IsVisible
+        && _navigationPane.ZIndex == 0
+        && Grid.GetColumn(
+            _navigationPane) == 0
+        && Grid.GetColumn(
+            _workspaceHost) == 1
+        && _navigationPane.Margin.Left
+            >= LumineDesign.NavigationWidth - 0.5
+        && _navigationPane.BorderThickness.Left < 0.5
+        && _navigationRailHost.Content
+            is Border railSurface
+        && railSurface.BorderThickness.Right < 0.5;
 
     private void DismissCompactNavigationOverlayForBlockingState()
     {
