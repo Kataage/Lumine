@@ -183,6 +183,10 @@ internal static class LumineDesign
         "M5.25 8.25L12 15l6.75-6.75";
     public const string MoreIconPath =
         "M6.75 12h.01M12 12h.01M17.25 12h.01";
+    public const string PlusIconPath =
+        "M12 5v14M5 12h14";
+    public const string RefreshIconPath =
+        "M20 7v5h-5 M4 17v-5h5 M18.5 10A7 7 0 006.6 7.1L4 10 M5.5 14A7 7 0 0017.4 16.9L20 14";
     public const string PinIconPath =
         "M14.25 3.75l6 6-2.25 2.25-2.25-.75-3.75 3.75.75 2.25-1.5 1.5-6-6 1.5-1.5 2.25.75 3.75-3.75-.75-2.25 2.25-2.25z M8.25 15.75l-4.5 4.5";
     public const string GridIconPath =
@@ -250,6 +254,16 @@ internal static class LumineDesign
 
         button.Classes.Add("lumine-control");
         button.Classes.Add("lumine-secondary");
+        return button;
+    }
+
+    public static Button ConfigureTertiaryButton(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-tertiary");
         return button;
     }
 
