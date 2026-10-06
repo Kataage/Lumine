@@ -2395,10 +2395,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ColumnDefinitions =
                     new ColumnDefinitions(
                         "*,*,*,*,*,*,*,*"),
+                Width = 224,
+                MinWidth = 224,
+                MaxWidth = 224,
                 MinHeight = 36,
-                MaxWidth = 256,
                 HorizontalAlignment =
-                    HorizontalAlignment.Stretch,
+                    HorizontalAlignment.Left,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
