@@ -4732,6 +4732,7 @@ try
 
                     if (iteration == 0)
                     {
+                        await window.NavigationRefreshForSmokeAsync();
                         window.Width = 1440;
                         window.Height = 900;
                         Dispatcher.UIThread.RunJobs();
