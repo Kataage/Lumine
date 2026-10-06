@@ -69,7 +69,7 @@ internal static class ProductSettingsView
         var root =
             new StackPanel
             {
-                Spacing = LumineDesign.Space16,
+                Spacing = LumineDesign.Space24,
                 MaxWidth = 720,
                 HorizontalAlignment =
                     HorizontalAlignment.Center
