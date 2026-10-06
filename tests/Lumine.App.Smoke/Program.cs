@@ -4602,7 +4602,11 @@ try
                                         AutomationProperties.GetName(
                                             button),
                                         "ライブラリ",
-                                        StringComparison.Ordinal));
+                                        StringComparison.Ordinal)
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && button.Classes.Contains(
+                                        "rail"));
                     Require(
                         libraryDestination.Classes.Contains(
                             "lumine-nav-item")
