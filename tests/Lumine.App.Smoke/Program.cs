@@ -5161,6 +5161,7 @@ try
 
                     window.NavigateForSmoke(
                         "ライブラリ");
+                    await window.NavigationRefreshForSmokeAsync();
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !window.IsWorkspacePageVisibleForSmoke
