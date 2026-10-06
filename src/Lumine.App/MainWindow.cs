@@ -852,6 +852,12 @@ public sealed class MainWindow : Window
         && !_navigationRailHost.IsVisible
         && _wideNavigationHost.IsVisible
         && _wideSettingsHost.IsVisible
+        && Grid.GetRow(
+            _wideNavigationHost) == 0
+        && Grid.GetRow(
+            _navigationContent) == 2
+        && Grid.GetRow(
+            _wideSettingsHost) == 3
         && Grid.GetColumn(
             _navigationPane) == 0
         && Grid.GetColumn(
