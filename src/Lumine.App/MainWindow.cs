@@ -39,6 +39,7 @@ public sealed class MainWindow : Window
     private readonly ContentControl _wideSettingsHost;
     private readonly Border _navigationPane;
     private readonly Button _navigationPin;
+    private readonly Grid _navigationContextHeader;
     private readonly TextBlock _navigationTitle;
     private readonly ContentControl _navigationContent;
     private CancellationTokenSource? _openCancellation;
@@ -361,7 +362,7 @@ public sealed class MainWindow : Window
                 },
                 "ナビゲーションを閉じる");
 
-        var navigationHeader =
+        _navigationContextHeader =
             new Grid
             {
                 ColumnDefinitions =
@@ -370,13 +371,13 @@ public sealed class MainWindow : Window
                     LumineDesign.Space4,
                 Margin = new Thickness(14, 12, 10, 8)
             };
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             _navigationTitle);
         Grid.SetColumn(_navigationPin, 1);
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             _navigationPin);
         Grid.SetColumn(collapseNavigation, 2);
-        navigationHeader.Children.Add(
+        _navigationContextHeader.Children.Add(
             collapseNavigation);
 
         _navigationContent =
@@ -397,9 +398,9 @@ public sealed class MainWindow : Window
             };
         navigationLayout.Children.Add(
             _wideNavigationHost);
-        Grid.SetRow(navigationHeader, 1);
+        Grid.SetRow(_navigationContextHeader, 1);
         navigationLayout.Children.Add(
-            navigationHeader);
+            _navigationContextHeader);
         Grid.SetRow(_navigationContent, 2);
         navigationLayout.Children.Add(
             _navigationContent);
@@ -756,12 +757,21 @@ public sealed class MainWindow : Window
         _compactNavigationLayout =
             width < 1200;
 
+        var mainWorkspaceDestination =
+            IsMainWorkspaceDestination(
+                _navigationDestination);
+
+        if (mainWorkspaceDestination)
+        {
+            _navigationPane.IsVisible =
+                !_compactNavigationLayout
+                && _navigationPinned;
+        }
+
         var paneCanDock =
             !_compactNavigationLayout
             && _navigationPinned
-            && _navigationPane.IsVisible
-            && !IsMainWorkspaceDestination(
-                _navigationDestination);
+            && _navigationPane.IsVisible;
 
         _navigationPin.IsEnabled =
             !_compactNavigationLayout;
@@ -913,9 +923,17 @@ public sealed class MainWindow : Window
         }
 
         _navigationDestination = destination;
-        _navigationPane.IsVisible =
-            !IsMainWorkspaceDestination(
+        var mainWorkspaceDestination =
+            IsMainWorkspaceDestination(
                 destination);
+        _navigationContextHeader.IsVisible =
+            !mainWorkspaceDestination;
+        _navigationContent.IsVisible =
+            !mainWorkspaceDestination;
+        _navigationPane.IsVisible =
+            !mainWorkspaceDestination
+            || (_navigationPinned
+                && ResolveLayoutWidth() >= 1200);
         _navigationTitle.Text = destination;
         ApplyNavigationLayout(
             ResolveLayoutWidth());
@@ -1103,6 +1121,8 @@ public sealed class MainWindow : Window
                     HasActiveLibrary =
                         _runtime is not null
                 };
+            _navigationContextHeader.IsVisible = false;
+            _navigationContent.IsVisible = false;
             _navigationContent.Content = null;
             _workspacePageHost.Content =
                 ProductSettingsView.Create(
@@ -1124,6 +1144,8 @@ public sealed class MainWindow : Window
         _workspacePageHost.Content = null;
         _workspacePageHost.IsVisible = false;
         _workspaceContent.IsHitTestVisible = true;
+        _navigationContextHeader.IsVisible = true;
+        _navigationContent.IsVisible = true;
         UpdateStatusSurfaceVisibility();
 
         _navigationContent.Content =
