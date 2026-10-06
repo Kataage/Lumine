@@ -3058,6 +3058,12 @@ try
                                 == HorizontalAlignment.Center
                             && glyph.VerticalAlignment
                                 == VerticalAlignment.Center
+                            && ReferenceEquals(
+                                button.Background,
+                                Brushes.Transparent)
+                            && ReferenceEquals(
+                                button.BorderBrush,
+                                Brushes.Transparent)
                             && Math.Abs(
                                 glyphCenterX
                                 - buttonCenterX) <= 1.5
