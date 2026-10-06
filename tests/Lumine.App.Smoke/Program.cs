@@ -4593,6 +4593,12 @@ try
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
 
+                    var navigationPinnedBeforeRailSmoke =
+                        window.IsNavigationPinnedForSmoke;
+                    window.SetNavigationPinnedForSmoke(
+                        false);
+                    Dispatcher.UIThread.RunJobs();
+
                     var libraryDestination =
                         window.GetVisualDescendants()
                             .OfType<Button>()
@@ -4691,6 +4697,11 @@ try
                             window.FocusManager.GetFocusedElement(),
                             libraryDestination),
                         "Global navigation Home key did not return to the first destination.");
+
+                    window.SetNavigationPinnedForSmoke(
+                        navigationPinnedBeforeRailSmoke);
+                    Dispatcher.UIThread.RunJobs();
+
                     Require(
                         LumineDesign.InteractionNeutralColor
                             != LumineDesign.InteractionHoverColor
