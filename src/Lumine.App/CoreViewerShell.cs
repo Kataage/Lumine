@@ -570,11 +570,17 @@ internal sealed class CoreViewerShell : UserControl
     private void ApplyInspectorLayout(
         double width)
     {
-        // Below 1200 DIP the Inspector becomes a floating drawer instead of
-        // competing with the image canvas for permanent width. At wider
-        // sizes users may explicitly pin it beside the canvas.
+        // Keep the Inspector drawer-first through normal 1440-class
+        // desktop layouts. A permanent right column is reserved for genuinely
+        // wide canvases so navigation and metadata cannot squeeze the image
+        // surface from both sides at the common desktop acceptance size.
         _compactInspectorLayout =
-            width < 1200;
+            width < 1600;
+
+        if (_compactInspectorLayout)
+        {
+            _inspectorPinned = false;
+        }
 
         var canDock =
             !_compactInspectorLayout
