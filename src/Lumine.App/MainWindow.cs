@@ -193,33 +193,22 @@ public sealed class MainWindow : Window
         _statusSurface =
             new Border
             {
-                Background =
-                    LumineDesign.SurfaceRaised,
-                BorderBrush =
-                    LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.PanelRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space12,
-                        LumineDesign.Space6),
                 Margin =
                     new Thickness(
                         LumineDesign.Space12),
-                MaxWidth = 720,
+                MaxWidth = 560,
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
                 VerticalAlignment =
-                    VerticalAlignment.Top,
+                    VerticalAlignment.Bottom,
                 IsHitTestVisible = false,
                 IsVisible =
                     !string.IsNullOrWhiteSpace(
                         _status.Text),
                 Child = _status
             };
+        _statusSurface.Classes.Add(
+            "lumine-status-hud");
         _status.PropertyChanged +=
             (_, args) =>
             {
