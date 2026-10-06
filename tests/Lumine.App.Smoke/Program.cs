@@ -4741,6 +4741,7 @@ try
                             is Border
                         && window.IsWorkspacePageVisibleForSmoke
                         && !window.IsNavigationPaneVisibleForSmoke
+                        && !window.StatusSurfaceVisibleForSmoke
                         && window.WorkspacePageBoundsForSmoke.Width >= 500
                         && ReferenceEquals(
                             window.CurrentShell,
@@ -4766,7 +4767,7 @@ try
                                     extension,
                                     out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
-                        "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
+                        "Product Settings did not open as a clean main-workspace page without browse status chrome while preserving the active viewer runtime.");
 
                     var settingsText =
                         window.WorkspacePageForSmoke
@@ -4802,6 +4803,49 @@ try
                         && settingsFieldNames.Contains("密度")
                         && settingsFieldNames.Contains("並び順"),
                         "Visible Settings fields lost accessible names tied to their visual labels.");
+
+                    var settingsScroll =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<ScrollViewer>()
+                            .FirstOrDefault(
+                                scroll =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            scroll),
+                                        "設定スクロール",
+                                        StringComparison.Ordinal));
+                    var settingsContent =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "設定コンテンツ",
+                                        StringComparison.Ordinal));
+                    var viewerDefaultsGroup =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<WrapPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "表示設定グループ",
+                                        StringComparison.Ordinal));
+                    Require(
+                        settingsScroll is not null
+                        && settingsScroll.Offset.Y <= 0.5
+                        && settingsContent is not null
+                        && settingsContent.Bounds.Width <= 720.5
+                        && viewerDefaultsGroup is not null
+                        && viewerDefaultsGroup.Children.Count == 3,
+                        "Settings did not open at the top with capped content width and one grouped display-preference form.");
+
 
                     var scanExtensionControls =
                         window.WorkspacePageForSmoke
@@ -4873,6 +4917,60 @@ try
                                         StringComparison.Ordinal)
                                     && button.IsEnabled),
                         "Product Settings did not expose built-in/custom scan-extension controls and the active-library rescan action.");
+
+                    var scanActionGroup =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "読み込み対象アクション",
+                                        StringComparison.Ordinal));
+                    Require(
+                        scanActionGroup is not null
+                        && scanActionGroup
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "読み込み対象を保存",
+                                        StringComparison.Ordinal))
+                        && scanActionGroup
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "現在のライブラリを再スキャン",
+                                        StringComparison.Ordinal)),
+                        "Settings scan-target save/rescan feedback/actions were not kept in one form footer.");
+
+                    var cacheBasicGroup =
+                        window.WorkspacePageForSmoke
+                            .GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .FirstOrDefault(
+                                panel =>
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            panel),
+                                        "キャッシュ基本設定",
+                                        StringComparison.Ordinal));
+                    Require(
+                        cacheBasicGroup is not null
+                        && cacheBasicGroup.Children
+                            .OfType<CheckBox>()
+                            .Any(),
+                        "Settings cache basics were not separated from the advanced disclosure.");
+
 
                     customExtensionInput!.Text =
                         "JFIF";
@@ -4995,8 +5093,8 @@ try
                             ?? throw new InvalidOperationException(
                                 "Advanced Settings disclosure lost its content.");
                         var advancedSettingsText =
-                            EnumeratePanelTree(
-                                    advancedContent)
+                            advancedContent
+                                .GetVisualDescendants()
                                 .OfType<TextBlock>()
                                 .ToArray();
                         Require(
@@ -5037,6 +5135,20 @@ try
                         advancedSettings.IsExpanded = false;
                         window.Width = 900;
                         window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        settingsScroll =
+                            window.WorkspacePageForSmoke
+                                .GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .First(
+                                    scroll =>
+                                        string.Equals(
+                                            AutomationProperties.GetName(
+                                                scroll),
+                                            "設定スクロール",
+                                            StringComparison.Ordinal));
+                        settingsScroll.Offset =
+                            new Vector(0, 0);
                         Dispatcher.UIThread.RunJobs();
                         CaptureVisualEvidence(
                             window,

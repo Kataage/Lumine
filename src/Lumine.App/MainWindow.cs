@@ -223,9 +223,7 @@ public sealed class MainWindow : Window
                 if (args.Property
                     == TextBlock.TextProperty)
                 {
-                    _statusSurface.IsVisible =
-                        !string.IsNullOrWhiteSpace(
-                            _status.Text);
+                    UpdateStatusSurfaceVisibility();
                 }
             };
 
@@ -489,6 +487,10 @@ public sealed class MainWindow : Window
     internal string StatusTextForSmoke =>
         _status.Text
         ?? string.Empty;
+
+    internal bool StatusSurfaceVisibleForSmoke =>
+        _statusSurface.IsVisible;
+
 
     internal bool HasRetryableOpenFailureForSmoke =>
         !string.IsNullOrWhiteSpace(
@@ -1027,12 +1029,14 @@ public sealed class MainWindow : Window
                     ShowDiagnosticsFromNavigationAsync);
             _workspacePageHost.IsVisible = true;
             _workspaceContent.IsHitTestVisible = false;
+            UpdateStatusSurfaceVisibility();
             return;
         }
 
         _workspacePageHost.Content = null;
         _workspacePageHost.IsVisible = false;
         _workspaceContent.IsHitTestVisible = true;
+        UpdateStatusSurfaceVisibility();
 
         _navigationContent.Content =
             _navigationDestination switch
@@ -2528,6 +2532,14 @@ public sealed class MainWindow : Window
         _browseHost.Content =
             _browseControls;
         _browseHost.IsVisible = true;
+    }
+
+    private void UpdateStatusSurfaceVisibility()
+    {
+        _statusSurface.IsVisible =
+            !_workspacePageHost.IsVisible
+            && !string.IsNullOrWhiteSpace(
+                _status.Text);
     }
 
     private void UpdateScopeDisplay()
