@@ -36,6 +36,7 @@ public sealed class MainWindow : Window
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
     private readonly ContentControl _wideNavigationHost;
+    private readonly ContentControl _wideSettingsHost;
     private readonly Border _navigationPane;
     private readonly Button _navigationPin;
     private readonly TextBlock _navigationTitle;
@@ -313,6 +314,20 @@ public sealed class MainWindow : Window
                 _navigationDestination,
                 OnNavigationRequested);
 
+        _wideSettingsHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Bottom
+            };
+        _wideSettingsHost.Content =
+            LumineDesign.CreateExpandedSettingsNavigation(
+                _navigationDestination,
+                OnNavigationRequested);
+
         _navigationTitle =
             new TextBlock
             {
@@ -378,7 +393,7 @@ public sealed class MainWindow : Window
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,Auto,*")
+                    new RowDefinitions("Auto,Auto,*,Auto")
             };
         navigationLayout.Children.Add(
             _wideNavigationHost);
@@ -388,6 +403,9 @@ public sealed class MainWindow : Window
         Grid.SetRow(_navigationContent, 2);
         navigationLayout.Children.Add(
             _navigationContent);
+        Grid.SetRow(_wideSettingsHost, 3);
+        navigationLayout.Children.Add(
+            _wideSettingsHost);
 
         _navigationPane =
             new Border
@@ -756,6 +774,7 @@ public sealed class MainWindow : Window
 
             _navigationRailHost.IsVisible = false;
             _wideNavigationHost.IsVisible = true;
+            _wideSettingsHost.IsVisible = true;
             _appShell.ColumnDefinitions =
                 new ColumnDefinitions(
                     $"{pinnedSidebarWidth},*");
@@ -788,6 +807,7 @@ public sealed class MainWindow : Window
 
         _navigationRailHost.IsVisible = true;
         _wideNavigationHost.IsVisible = false;
+        _wideSettingsHost.IsVisible = false;
         _appShell.ColumnDefinitions =
             new ColumnDefinitions(
                 $"{LumineDesign.NavigationWidth},*");
@@ -831,6 +851,7 @@ public sealed class MainWindow : Window
         && _navigationPane.ZIndex == 0
         && !_navigationRailHost.IsVisible
         && _wideNavigationHost.IsVisible
+        && _wideSettingsHost.IsVisible
         && Grid.GetColumn(
             _navigationPane) == 0
         && Grid.GetColumn(
@@ -898,6 +919,10 @@ public sealed class MainWindow : Window
                 OnNavigationRequested);
         _wideNavigationHost.Content =
             LumineDesign.CreateExpandedNavigationMenu(
+                destination,
+                OnNavigationRequested);
+        _wideSettingsHost.Content =
+            LumineDesign.CreateExpandedSettingsNavigation(
                 destination,
                 OnNavigationRequested);
         RenderNavigationDestination();
