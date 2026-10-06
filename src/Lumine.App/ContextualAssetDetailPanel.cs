@@ -3131,7 +3131,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         var stacked =
             LumineVisualMetrics.TextScaleFactor
-                >= 1.75;
+                >= 1.5;
 
         var row =
             new Grid
