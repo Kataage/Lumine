@@ -3120,6 +3120,10 @@ try
                         && button.HorizontalContentAlignment
                             == HorizontalAlignment.Center
                         && button.VerticalContentAlignment
+                            == VerticalAlignment.Center
+                        && button.HorizontalAlignment
+                            == HorizontalAlignment.Center
+                        && button.VerticalAlignment
                             == VerticalAlignment.Center)
                 && colorCenters.Max(
                     static center => center.Y)
