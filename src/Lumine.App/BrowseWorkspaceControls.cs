@@ -642,6 +642,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
             "selected")
             != _list.Classes.Contains(
                 "selected")
+        && _grid.Resources.Count == 0
+        && _list.Resources.Count == 0
         && string.Equals(
             AutomationProperties.GetName(
                 _density),
@@ -679,15 +681,61 @@ internal sealed class BrowseWorkspaceControls : UserControl
     internal bool DisplayFlyoutIsOpenForSmoke =>
         _displayFlyout.IsOpen;
 
-    internal bool DisplayFlyoutLayoutIsContainedForSmoke =>
-        _displayControlsHost.Bounds.Width
-            is > 0 and <= 320.5
-        && _displayControlsHost.Bounds.Height > 0
-        && _grid.Bounds.Width > 0
-        && _list.Bounds.Width > 0
-        && _density.Bounds.Width > 0
-        && _density.Bounds.Right
-            <= _displayControlsHost.Bounds.Width + 0.5;
+    internal bool DisplayFlyoutLayoutIsContainedForSmoke
+    {
+        get
+        {
+            if (_displayControlsHost.Bounds.Width
+                    is not (> 0 and <= 320.5)
+                || _displayControlsHost.Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var control in new Control[]
+                     {
+                         _grid,
+                         _list,
+                         _density
+                     })
+            {
+                var origin =
+                    control.TranslatePoint(
+                        new Point(0, 0),
+                        _displayControlsHost);
+                if (origin is not { } point)
+                {
+                    return false;
+                }
+
+                var bounds =
+                    new Rect(
+                        point,
+                        control.Bounds.Size);
+                if (bounds.Left < -0.5
+                    || bounds.Top < -0.5
+                    || bounds.Right
+                        > _displayControlsHost.Bounds.Width + 0.5
+                    || bounds.Bottom
+                        > _displayControlsHost.Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    internal bool ActiveChipsUseSharedThemeForSmoke =>
+        _chips.Children
+            .OfType<Button>()
+            .All(
+                static chip =>
+                    chip.Classes.Contains(
+                        "lumine-chip")
+                    && chip.BorderThickness
+                        == new Thickness(0));
 
     internal string FilterButtonTextForSmoke =>
         _filterButtonLabel.Text
