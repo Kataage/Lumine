@@ -111,6 +111,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 {
                     PlaceholderText = "検索",
                     MinWidth = 260,
+                    MaxWidth = 720,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Left,
                     Text = State.SearchText
                 });
         ToolTip.SetTip(
