@@ -2486,6 +2486,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                 HorizontalContentAlignment =
                                     HorizontalAlignment.Center,
                                 VerticalContentAlignment =
+                                    VerticalAlignment.Center,
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalAlignment =
                                     VerticalAlignment.Center
                             };
                         var accessibleName =
