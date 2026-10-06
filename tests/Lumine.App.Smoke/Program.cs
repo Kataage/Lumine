@@ -4684,7 +4684,16 @@ try
                             is CornerRadius controlRadius
                         && controlRadius
                             == new CornerRadius(
-                                LumineDesign.ControlRadius),
+                                LumineDesign.ControlRadius)
+                        && Application.Current?.Resources[
+                            "Lumine.AccentMuted"]
+                            is IBrush
+                        && Application.Current?.Resources[
+                            "Lumine.InteractionSelected"]
+                            is IBrush
+                        && Application.Current?.Resources[
+                            "Lumine.InteractionSelectedHover"]
+                            is IBrush,
                         "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
