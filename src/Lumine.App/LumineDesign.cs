@@ -238,18 +238,8 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(button);
 
-        button.MinHeight = CompactControlHeight;
-        button.Padding =
-            new Thickness(Space12, Space6);
-        button.FontSize = CaptionFontSize;
-        button.CornerRadius =
-            new CornerRadius(ControlRadius);
-        button.Background = Accent;
-        button.Foreground =
-            new SolidColorBrush(BackgroundColor);
-        button.BorderThickness = new Thickness(0);
-        button.FontWeight = FontWeight.SemiBold;
-        ConfigurePrimaryButtonStateResources(button);
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-primary");
         return button;
     }
 
@@ -258,20 +248,8 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(button);
 
-        button.MinHeight = CompactControlHeight;
-        button.Padding =
-            new Thickness(Space12, Space6);
-        button.FontSize = CaptionFontSize;
-        button.CornerRadius =
-            new CornerRadius(ControlRadius);
-        // Secondary commands must remain clearly subordinate to the one
-        // primary action in a surface. Accent is reserved for selection and
-        // primary commitment rather than every ordinary command.
-        button.Background = ControlSurface;
-        button.Foreground = Foreground;
-        button.BorderBrush = Border;
-        button.BorderThickness = new Thickness(1);
-        ConfigureNeutralButtonStateResources(button);
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-secondary");
         return button;
     }
 
@@ -280,24 +258,8 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(button);
 
-        button.MinHeight = CompactControlHeight;
-        button.Padding =
-            new Thickness(Space12, Space6);
-        button.FontSize = CaptionFontSize;
-        button.CornerRadius =
-            new CornerRadius(ControlRadius);
-        button.Background =
-            new SolidColorBrush(
-                DangerColor,
-                0.10);
-        button.Foreground = Danger;
-        button.BorderBrush = Danger;
-        button.BorderThickness =
-            new Thickness(1);
-        button.FontWeight =
-            FontWeight.SemiBold;
-        ConfigureDangerButtonStateResources(
-            button);
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-danger");
         return button;
     }
 
@@ -306,17 +268,7 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(textBox);
 
-        textBox.MinHeight = CompactControlHeight;
-        textBox.FontSize = BodyFontSize;
-        textBox.Background = ControlSurface;
-        textBox.Foreground = Foreground;
-        textBox.BorderBrush = Border;
-        textBox.BorderThickness = new Thickness(1);
-        textBox.Padding =
-            new Thickness(
-                Space12,
-                Space6);
-        ConfigureTextControlStateResources(textBox);
+        textBox.Classes.Add("lumine-input");
         return textBox;
     }
 
@@ -325,17 +277,7 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(comboBox);
 
-        comboBox.MinHeight = CompactControlHeight;
-        comboBox.FontSize = CaptionFontSize;
-        comboBox.Background = ControlSurface;
-        comboBox.Foreground = Foreground;
-        comboBox.BorderBrush = Border;
-        comboBox.BorderThickness = new Thickness(1);
-        comboBox.Padding =
-            new Thickness(
-                Space8,
-                Space4);
-        ConfigureComboBoxStateResources(comboBox);
+        comboBox.Classes.Add("lumine-combo");
         return comboBox;
     }
 
@@ -344,11 +286,7 @@ internal static class LumineDesign
     {
         ArgumentNullException.ThrowIfNull(checkBox);
 
-        checkBox.FontSize = CaptionFontSize;
-        checkBox.Foreground = Foreground;
-        checkBox.VerticalAlignment =
-            VerticalAlignment.Center;
-        ConfigureCheckBoxStateResources(checkBox);
+        checkBox.Classes.Add("lumine-check");
         return checkBox;
     }
 
@@ -378,37 +316,12 @@ internal static class LumineDesign
         ArgumentNullException.ThrowIfNull(button);
         ArgumentException.ThrowIfNullOrWhiteSpace(tooltip);
 
-        button.Width = CompactControlHeight;
-        button.Height = CompactControlHeight;
-        button.MinWidth = CompactControlHeight;
-        button.MinHeight = CompactControlHeight;
-        button.Padding =
-            new Thickness(Space8);
-        button.CornerRadius =
-            new CornerRadius(ControlRadius);
-        button.Background =
-            primary ? Accent : Brushes.Transparent;
-        button.Foreground =
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-icon");
+        button.Classes.Add(
             primary
-                ? new SolidColorBrush(BackgroundColor)
-                : Foreground;
-        button.BorderBrush =
-            Brushes.Transparent;
-        // Keep a transparent 1-DIP geometry slot on neutral icon commands so
-        // hover/focus can appear without shifting layout, while the resting
-        // toolbar does not become a wall of boxed buttons.
-        button.BorderThickness =
-            primary
-                ? new Thickness(0)
-                : new Thickness(1);
-        if (primary)
-        {
-            ConfigurePrimaryButtonStateResources(button);
-        }
-        else
-        {
-            ConfigureNeutralButtonStateResources(button);
-        }
+                ? "lumine-primary"
+                : "lumine-tertiary");
         ToolTip.SetTip(button, tooltip);
         AutomationProperties.SetName(button, tooltip);
         if (!string.IsNullOrWhiteSpace(automationId))
