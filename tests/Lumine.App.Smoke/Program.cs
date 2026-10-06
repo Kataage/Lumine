@@ -5872,6 +5872,7 @@ try
                                         .DisplayControlsGroupedForSmoke
                                     && window.BrowseControlsForSmoke
                                         .SearchUsesSharedThemeForSmoke
+                                    && window.StatusSurfaceUsesHudForSmoke
                                     && !window.BrowseControlsForSmoke
                                         .FilterFlyoutIsOpenForSmoke
                                     && !window.BrowseControlsForSmoke
