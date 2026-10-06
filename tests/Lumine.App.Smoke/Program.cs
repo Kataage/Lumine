@@ -4604,7 +4604,17 @@ try
                                         "ライブラリ",
                                         StringComparison.Ordinal));
                     Require(
-                        libraryDestination
+                        libraryDestination.Classes.Contains(
+                            "lumine-nav-item")
+                        && libraryDestination.Classes.Contains(
+                            "rail")
+                        && libraryDestination.Classes.Contains(
+                            "selected")
+                        && libraryDestination.Resources.Count == 0
+                        && libraryDestination.BorderThickness
+                            == new Thickness(0)
+                        && libraryDestination.MinHeight <= 52.5
+                        && !libraryDestination
                             .GetVisualDescendants()
                             .OfType<Border>()
                             .Any(
@@ -4613,12 +4623,8 @@ try
                                         indicator.Width - 3) < 0.01
                                     && ReferenceEquals(
                                         indicator.Background,
-                                        LumineDesign.Accent))
-                        && ReferenceEquals(
-                            libraryDestination.Background,
-                            LumineDesign.InteractionSelected)
-                        && libraryDestination.MinHeight <= 52.5,
-                        "Selected global navigation lost its lightweight shared selection treatment or non-color accent indicator.");
+                                        LumineDesign.Accent)),
+                        "Selected global navigation regressed from the shared quiet sidebar selection treatment or restored the old accent stripe.");
 
                     libraryDestination.Focus();
                     libraryDestination.RaiseEvent(
