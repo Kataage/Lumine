@@ -3126,6 +3126,13 @@ try
                             right.X - left.X)
                     .ToArray();
 
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-organize-1100x720");
+            }
+
             Require(
                 directColorButtons.Length == 8
                 && colorRow.Bounds.Height is >= 35 and <= 37
@@ -3150,7 +3157,7 @@ try
                 && colorCenterGaps.Length == 7
                 && colorCenterGaps.Max()
                     - colorCenterGaps.Min() <= 1.5,
-                "Inspector color row lost fixed chip geometry, a common centerline, or even spacing.");
+                $"Inspector color row lost fixed chip geometry, a common centerline, or even spacing. count={directColorButtons.Length}, rowHeight={colorRow.Bounds.Height:F2}, centers={string.Join(" | ", colorCenters.Select(static center => $"({center.X:F2},{center.Y:F2})"))}, gaps={string.Join(",", colorCenterGaps.Select(static gap => gap.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)))}");
 
             foreach (var simpleRowLabel in
                      new[]
