@@ -207,12 +207,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
             Maximum = 2,
             TickFrequency = 1,
             IsSnapToTickEnabled = true,
-            Width = 92,
             Value = Preferences.Density,
-            Foreground = LumineDesign.Focus,
-            Background = LumineDesign.ControlSurface,
             VerticalAlignment = VerticalAlignment.Center
         };
+        _density.Classes.Add(
+            "lumine-slider");
 
         _chips = new WrapPanel
         {
@@ -1370,23 +1369,11 @@ internal sealed class BrowseWorkspaceControls : UserControl
             {
                 Content =
                     $"{label}: {value}  ×",
-                Background =
-                    LumineDesign.AccentMuted,
-                Foreground =
-                    LumineDesign.Foreground,
-                BorderBrush =
-                    LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(12),
-                MinHeight = 26,
-                Padding =
-                    new Thickness(9, 3),
-                FontSize = LumineDesign.CaptionFontSize,
                 Margin =
                     new Thickness(3)
             };
+        chip.Classes.Add(
+            "lumine-chip");
         chip.Click +=
             async (_, _) =>
                 await remove();
