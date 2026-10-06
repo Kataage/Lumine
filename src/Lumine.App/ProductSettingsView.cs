@@ -150,6 +150,9 @@ internal static class ProductSettingsView
                 VerticalScrollBarVisibility =
                     Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
             };
+        AutomationProperties.SetName(
+            scroll,
+            "設定スクロール");
 
         return new Border
         {
@@ -832,9 +835,8 @@ internal static class ProductSettingsView
                         snapshot.PersistedThumbnailStorageMode
                         == ThumbnailStorageMode.PersistentDisk
                 });
-        content.Children.Add(persistent);
 
-        content.Children.Add(
+        var cacheModeStatus =
             new TextBlock
             {
                 Text =
@@ -847,6 +849,39 @@ internal static class ProductSettingsView
                         : LumineDesign.MutedForeground,
                 FontSize = LumineDesign.CaptionFontSize,
                 TextWrapping = TextWrapping.Wrap
+            };
+
+        var diskStats =
+            new TextBlock
+            {
+                Text =
+                    $"現在のキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize
+            };
+
+        var basicCache =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        basicCache.Children.Add(persistent);
+        basicCache.Children.Add(cacheModeStatus);
+        basicCache.Children.Add(diskStats);
+        content.Children.Add(
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space8),
+                Child = basicCache
             });
 
         var advanced =
@@ -874,20 +909,19 @@ internal static class ProductSettingsView
                             diskBudgets,
                             snapshot.ThumbnailCacheByteLimit)
                 });
-        advanced.Children.Add(
-            CreateField(
+        disk.MinWidth = 180;
+        var diskField =
+            CreateFieldWithDescription(
                 "ディスク保持上限",
-                disk));
-        advanced.Children.Add(
-            new TextBlock
-            {
-                Text =
-                    "再利用するサムネイルの最大保持量。変更は次回起動から有効です。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
-                TextWrapping = TextWrapping.Wrap
-            });
+                disk,
+                "再利用するサムネイルの最大保持量。変更は次回起動から有効です。");
+        diskField.Width = 280;
+        diskField.Margin =
+            new Thickness(
+                0,
+                0,
+                LumineDesign.Space12,
+                LumineDesign.Space8);
 
         var budgets =
             MemoryBudgetOptions
@@ -911,31 +945,29 @@ internal static class ProductSettingsView
                             budgets,
                             snapshot.EncodedThumbnailMemoryByteLimit)
                 });
-        advanced.Children.Add(
-            CreateField(
+        memory.MinWidth = 180;
+        var memoryField =
+            CreateFieldWithDescription(
                 "高速再表示用メモリ上限",
-                memory));
-        advanced.Children.Add(
-            new TextBlock
-            {
-                Text =
-                    "再表示を速くする一時メモリの上限。変更は次回起動から有効です。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
-                TextWrapping = TextWrapping.Wrap
-            });
+                memory,
+                "再表示を速くする一時メモリの上限。変更は次回起動から有効です。");
+        memoryField.Width = 280;
+        memoryField.Margin =
+            new Thickness(
+                0,
+                0,
+                0,
+                LumineDesign.Space8);
 
-        var diskStats =
-            new TextBlock
+        var budgetFields =
+            new WrapPanel
             {
-                Text =
-                    $"現在のキャッシュ: {snapshot.CacheStats.FileCount:N0}ファイル / {FormatBytes(snapshot.CacheStats.TotalBytes)}",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize
+                Orientation =
+                    Orientation.Horizontal
             };
-        content.Children.Add(diskStats);
+        budgetFields.Children.Add(diskField);
+        budgetFields.Children.Add(memoryField);
+        advanced.Children.Add(budgetFields);
 
         var clear =
             LumineDesign.ConfigureSecondaryButton(
@@ -960,7 +992,20 @@ internal static class ProductSettingsView
                 IsExpanded = false,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch,
-                Content = advanced
+                Content =
+                    new Border
+                    {
+                        Background = LumineDesign.Surface,
+                        BorderBrush = Brushes.Transparent,
+                        BorderThickness = new Thickness(0),
+                        CornerRadius =
+                            new CornerRadius(
+                                LumineDesign.ControlRadius),
+                        Padding =
+                            new Thickness(
+                                LumineDesign.Space8),
+                        Child = advanced
+                    }
             });
 
         var status = CreateStatusText();
@@ -1296,6 +1341,34 @@ internal static class ProductSettingsView
                 FontSize = LumineDesign.CaptionFontSize
             });
         panel.Children.Add(control);
+        return panel;
+    }
+
+    private static StackPanel CreateFieldWithDescription(
+        string label,
+        Control control,
+        string description)
+    {
+        var panel =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space4
+            };
+        panel.Children.Add(
+            CreateField(
+                label,
+                control));
+        panel.Children.Add(
+            new TextBlock
+            {
+                Text = description,
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                TextWrapping =
+                    TextWrapping.Wrap
+            });
         return panel;
     }
 
