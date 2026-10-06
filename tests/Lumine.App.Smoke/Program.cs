@@ -4438,17 +4438,20 @@ try
                             Require(
                                 secondary.BorderThickness
                                     == new Thickness(0)
-                                && ReferenceEquals(
-                                    secondary.Background,
-                                    LumineDesign.ControlSurface)
+                                && secondary.Background
+                                    is SolidColorBrush secondaryBrush
+                                && secondaryBrush.Color
+                                    == LumineDesign.ControlSurfaceColor
                                 && input.BorderThickness
                                     == new Thickness(1)
                                 && input.BorderBrush
-                                    == Brushes.Transparent
+                                    is SolidColorBrush inputBorder
+                                && inputBorder.Color.A == 0
                                 && combo.BorderThickness
                                     == new Thickness(1)
                                 && combo.BorderBrush
-                                    == Brushes.Transparent
+                                    is SolidColorBrush comboBorder
+                                && comboBorder.Color.A == 0
                                 && Math.Abs(
                                     primary.MinHeight
                                     - LumineDesign.CompactControlHeight) < 0.001
