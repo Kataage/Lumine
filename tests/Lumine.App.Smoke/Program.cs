@@ -4611,8 +4611,15 @@ try
                         && libraryDestination.Classes.Contains(
                             "selected")
                         && libraryDestination.Resources.Count == 0
-                        && libraryDestination.BorderThickness
-                            == new Thickness(0)
+                        && (libraryDestination.IsFocused
+                            ? libraryDestination.BorderThickness
+                                == new Thickness(1)
+                                && libraryDestination.BorderBrush
+                                    is ISolidColorBrush focusBorder
+                                && focusBorder.Color
+                                    == LumineDesign.FocusColor
+                            : libraryDestination.BorderThickness
+                                == new Thickness(0))
                         && libraryDestination.MinHeight <= 52.5
                         && !libraryDestination
                             .GetVisualDescendants()
@@ -4624,7 +4631,7 @@ try
                                     && ReferenceEquals(
                                         indicator.Background,
                                         LumineDesign.Accent)),
-                        "Selected global navigation regressed from the shared quiet sidebar selection treatment or restored the old accent stripe.");
+                        $"Selected global navigation regressed from the shared quiet sidebar selection treatment, focus ring contract, or restored the old accent stripe. focused={libraryDestination.IsFocused}, border={libraryDestination.BorderThickness}, resources={libraryDestination.Resources.Count}");
 
                     libraryDestination.Focus();
                     libraryDestination.RaiseEvent(
