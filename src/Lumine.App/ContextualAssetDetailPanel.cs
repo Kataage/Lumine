@@ -619,7 +619,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.ControlRadius),
                 Padding =
                     new Thickness(
-                        LumineDesign.Space10),
+                        LumineDesign.Space8),
                 Child = body
             };
         }
