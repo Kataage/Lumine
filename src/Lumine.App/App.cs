@@ -35,6 +35,12 @@ public sealed class App : Application
             LumineDesign.MutedForeground;
         application.Resources["Lumine.Accent"] =
             LumineDesign.Accent;
+        application.Resources["Lumine.AccentMuted"] =
+            LumineDesign.AccentMuted;
+        application.Resources["Lumine.InteractionSelected"] =
+            LumineDesign.InteractionSelected;
+        application.Resources["Lumine.InteractionSelectedHover"] =
+            LumineDesign.InteractionSelectedHover;
         application.Resources["Lumine.Focus"] =
             LumineDesign.Focus;
         application.Resources["Lumine.Warning"] =

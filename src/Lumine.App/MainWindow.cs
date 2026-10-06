@@ -193,33 +193,22 @@ public sealed class MainWindow : Window
         _statusSurface =
             new Border
             {
-                Background =
-                    LumineDesign.SurfaceRaised,
-                BorderBrush =
-                    LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.PanelRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space12,
-                        LumineDesign.Space6),
                 Margin =
                     new Thickness(
                         LumineDesign.Space12),
-                MaxWidth = 720,
+                MaxWidth = 560,
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
                 VerticalAlignment =
-                    VerticalAlignment.Top,
+                    VerticalAlignment.Bottom,
                 IsHitTestVisible = false,
                 IsVisible =
                     !string.IsNullOrWhiteSpace(
                         _status.Text),
                 Child = _status
             };
+        _statusSurface.Classes.Add(
+            "lumine-status-hud");
         _status.PropertyChanged +=
             (_, args) =>
             {
@@ -533,6 +522,17 @@ public sealed class MainWindow : Window
 
     internal bool StatusSurfaceVisibleForSmoke =>
         _statusSurface.IsVisible;
+
+    internal bool StatusSurfaceUsesHudForSmoke =>
+        _statusSurface.Classes.Contains(
+            "lumine-status-hud")
+        && _statusSurface.VerticalAlignment
+            == VerticalAlignment.Bottom
+        && _statusSurface.HorizontalAlignment
+            == HorizontalAlignment.Center
+        && _statusSurface.BorderThickness
+            == new Thickness(0)
+        && _statusSurface.MaxWidth <= 560.5;
 
 
     internal bool HasRetryableOpenFailureForSmoke =>
