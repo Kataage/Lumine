@@ -5778,6 +5778,10 @@ try
                             browseSearch),
                         "Ctrl+F did not move focus into Browse search.");
 
+                    window.BrowseControlsForSmoke!
+                        .OpenDisplayFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+
                     var thumbnailDensity =
                         window.GetVisualDescendants()
                             .OfType<Slider>()
@@ -5789,8 +5793,15 @@ try
                                         "サムネイルサイズ",
                                         StringComparison.Ordinal));
                     Require(
-                        thumbnailDensity is not null,
-                        "Thumbnail density slider is missing an accessible name.");
+                        thumbnailDensity is not null
+                        && window.BrowseControlsForSmoke
+                            .DisplayFlyoutIsOpenForSmoke
+                        && window.BrowseControlsForSmoke
+                            .DisplayFlyoutLayoutIsContainedForSmoke,
+                        "Display flyout did not expose an accessible, contained thumbnail-density control.");
+                    window.BrowseControlsForSmoke
+                        .CloseDisplayFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
 
                     var viewportMatrix =
                         new[]
