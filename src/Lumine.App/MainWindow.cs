@@ -310,10 +310,6 @@ public sealed class MainWindow : Window
                 VerticalContentAlignment =
                     VerticalAlignment.Top
             };
-        _wideNavigationHost.Content =
-            LumineDesign.CreateExpandedNavigationMenu(
-                _navigationDestination,
-                OnNavigationRequested);
 
         _wideSettingsHost =
             new ContentControl
@@ -324,10 +320,15 @@ public sealed class MainWindow : Window
                 VerticalContentAlignment =
                     VerticalAlignment.Bottom
             };
-        _wideSettingsHost.Content =
-            LumineDesign.CreateExpandedSettingsNavigation(
+
+        var expandedNavigation =
+            LumineDesign.CreateExpandedNavigationBands(
                 _navigationDestination,
                 OnNavigationRequested);
+        _wideNavigationHost.Content =
+            expandedNavigation.Primary;
+        _wideSettingsHost.Content =
+            expandedNavigation.Settings;
 
         _navigationTitle =
             new TextBlock
@@ -941,14 +942,14 @@ public sealed class MainWindow : Window
             LumineDesign.CreateNavigationRail(
                 destination,
                 OnNavigationRequested);
+        var expandedNavigation =
+            LumineDesign.CreateExpandedNavigationBands(
+                destination,
+                OnNavigationRequested);
         _wideNavigationHost.Content =
-            LumineDesign.CreateExpandedNavigationMenu(
-                destination,
-                OnNavigationRequested);
+            expandedNavigation.Primary;
         _wideSettingsHost.Content =
-            LumineDesign.CreateExpandedSettingsNavigation(
-                destination,
-                OnNavigationRequested);
+            expandedNavigation.Settings;
         RenderNavigationDestination();
         StartNavigationRefresh();
     }
