@@ -424,7 +424,7 @@ internal static class ProductSettingsView
                         LumineDesign.ControlRadius),
                 Padding =
                     new Thickness(
-                        LumineDesign.Space10,
+                        LumineDesign.Space8,
                         LumineDesign.Space8,
                         LumineDesign.Space2,
                         LumineDesign.Space2),
@@ -801,7 +801,7 @@ internal static class ProductSettingsView
                         LumineDesign.ControlRadius),
                 Padding =
                     new Thickness(
-                        LumineDesign.Space10,
+                        LumineDesign.Space8,
                         LumineDesign.Space8),
                 Child = actionFooter
             });
