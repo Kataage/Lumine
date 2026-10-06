@@ -72,7 +72,7 @@ internal static class ProductSettingsView
                 Spacing = LumineDesign.Space16,
                 MaxWidth = 720,
                 HorizontalAlignment =
-                    HorizontalAlignment.Stretch
+                    HorizontalAlignment.Center
             };
 
         var heading =
@@ -406,11 +406,48 @@ internal static class ProductSettingsView
         }
 
         content.Children.Add(
-            options);
+            new TextBlock
+            {
+                Text = "標準形式",
+                Foreground = LumineDesign.Foreground,
+                FontSize = LumineDesign.CaptionFontSize,
+                FontWeight = FontWeight.SemiBold
+            });
+        content.Children.Add(
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space10,
+                        LumineDesign.Space8,
+                        LumineDesign.Space2,
+                        LumineDesign.Space2),
+                Child = options
+            });
 
         var status =
             CreateStatusText();
 
+        content.Children.Add(
+            new TextBlock
+            {
+                Text = "追加形式",
+                Foreground = LumineDesign.Foreground,
+                FontSize = LumineDesign.CaptionFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Margin =
+                    new Thickness(
+                        0,
+                        LumineDesign.Space4,
+                        0,
+                        0)
+            });
         content.Children.Add(
             new TextBlock
             {
@@ -506,13 +543,9 @@ internal static class ProductSettingsView
                 {
                     Watermark =
                         "例: .jfif",
-                    Width = 180,
-                    Margin =
-                        new Thickness(
-                            0,
-                            0,
-                            LumineDesign.Space8,
-                            LumineDesign.Space6)
+                    MinWidth = 180,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch
                 });
         AutomationProperties.SetName(
             customInput,
@@ -523,13 +556,8 @@ internal static class ProductSettingsView
                 new Button
                 {
                     Content =
-                        "独自拡張子を追加",
-                    Margin =
-                        new Thickness(
-                            0,
-                            0,
-                            0,
-                            LumineDesign.Space6)
+                        "追加",
+                    MinWidth = 72
                 });
         AutomationProperties.SetName(
             addCustom,
@@ -590,13 +618,21 @@ internal static class ProductSettingsView
             };
 
         var customActions =
-            new WrapPanel
+            new Grid
             {
-                Orientation =
-                    Orientation.Horizontal
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto"),
+                ColumnSpacing =
+                    LumineDesign.Space8,
+                MaxWidth = 430,
+                HorizontalAlignment =
+                    HorizontalAlignment.Left
             };
         customActions.Children.Add(
             customInput);
+        Grid.SetColumn(
+            addCustom,
+            1);
         customActions.Children.Add(
             addCustom);
         content.Children.Add(
@@ -614,9 +650,6 @@ internal static class ProductSettingsView
                 TextWrapping =
                     TextWrapping.Wrap
             });
-
-        content.Children.Add(
-            status);
 
         var actions =
             new WrapPanel
@@ -748,8 +781,30 @@ internal static class ProductSettingsView
             saveButton);
         actions.Children.Add(
             rescanButton);
+
+        var actionFooter =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        actionFooter.Children.Add(status);
+        actionFooter.Children.Add(actions);
+
         content.Children.Add(
-            actions);
+            new Border
+            {
+                Background = LumineDesign.Surface,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space10,
+                        LumineDesign.Space8),
+                Child = actionFooter
+            });
         return CreateCard(
             content);
     }
