@@ -1223,18 +1223,80 @@ try
                     .FindAncestorOfType<Button>() is null,
                 "Active library still presents as an enabled no-op command.");
 
+            var librarySurfaces =
+                navigationView
+                    .GetVisualDescendants()
+                    .OfType<Border>()
+                    .Where(
+                        border =>
+                            (AutomationProperties.GetAutomationId(
+                                border)
+                            ?? string.Empty)
+                            .StartsWith(
+                                "library-card-",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            var activeLibrarySurface =
+                librarySurfaces.Single(
+                    border =>
+                        string.Equals(
+                            AutomationProperties.GetAutomationId(
+                                border),
+                            "library-card-1001",
+                            StringComparison.Ordinal));
+            var addLibraryButton =
+                navigationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "画像フォルダーを追加",
+                                StringComparison.Ordinal));
+            Require(
+                librarySurfaces.Length == navLibraries.Length
+                && librarySurfaces.All(
+                    static surface =>
+                        surface.Classes.Contains(
+                            "lumine-library-row")
+                        && surface.BorderThickness
+                            == new Thickness(0))
+                && activeLibrarySurface.Classes.Contains(
+                    "selected")
+                && librarySurfaces
+                    .Where(
+                        surface =>
+                            !ReferenceEquals(
+                                surface,
+                                activeLibrarySurface))
+                    .All(
+                        static surface =>
+                            !surface.Classes.Contains(
+                                "selected"))
+                && addLibraryButton is not null
+                && addLibraryButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Library sidebar regressed from flat semantic rows to card-heavy or primary-action chrome.");
+
             var rescanButton =
                 navigationView.GetVisualDescendants()
                     .OfType<Button>()
                     .FirstOrDefault(
                         button =>
                             string.Equals(
-                                button.Content as string,
-                                "再スキャン",
+                                AutomationProperties.GetName(
+                                    button),
+                                "現在のライブラリを再スキャン",
                                 StringComparison.Ordinal));
             Require(
-                rescanButton is { IsEnabled: true },
-                "Active library did not expose the direct rescan action.");
+                rescanButton is { IsEnabled: true }
+                && rescanButton.Classes.Contains(
+                    "lumine-icon")
+                && rescanButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Active library did not expose the themed direct rescan utility action.");
             rescanButton.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
@@ -5506,10 +5568,11 @@ try
                             .Any(
                                 button =>
                                     string.Equals(
-                                        button.Content as string,
-                                        "再スキャン",
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "現在のライブラリを再スキャン",
                                         StringComparison.Ordinal)),
-                        "Active Library navigation card did not keep its rescan action inside the unified card surface.");
+                        "Active Library navigation row did not keep its rescan utility inside the unified flat surface.");
 
 
 
