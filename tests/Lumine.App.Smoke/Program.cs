@@ -5658,12 +5658,12 @@ try
                                      inspectorSettleAttempt < 40
                                      && (!window.CurrentShell.IsContextDetailVisible
                                          || window.CurrentShell.IsCompactInspectorLayout
-                                             != (viewport.Width < 1200)
+                                             != (window.CurrentShell.Bounds.Width < 1600)
                                          || window.CurrentShell.ContextSurfaceBounds.Width
                                              is < 300 or > 380
                                          || window.CurrentShell.ContextDetail
                                              .IsCompactPresentationForSmoke
-                                             != (viewport.Width < 1200)
+                                             != (window.CurrentShell.Bounds.Width < 1600)
                                          || !window.CurrentShell.ContextDetail.HasPreview);
                                      inspectorSettleAttempt++)
                                 {
@@ -5677,12 +5677,12 @@ try
                                 Require(
                                     window.CurrentShell.IsContextDetailVisible
                                     && window.CurrentShell.IsCompactInspectorLayout
-                                        == (viewport.Width < 1200)
+                                        == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
                                         is >= 300 and <= 380
                                     && window.CurrentShell.ContextDetail
                                         .IsCompactPresentationForSmoke
-                                        == (viewport.Width < 1200)
+                                        == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.GridViewerBounds.Width
                                         >= 500
                                     && !window.CurrentShell.IsInspectorPinnedForSmoke
@@ -5710,6 +5710,16 @@ try
                                     CaptureVisualEvidence(
                                         window,
                                         "inspector-900x600");
+                                }
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 1440d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-1440x900-drawer");
                                 }
 
                                 for (var tabIndex = 0;
@@ -5777,7 +5787,7 @@ try
                                     $"Leaving bulk selection shifted the image canvas or retained its bottom safe area at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                             }
 
-                            if (viewport.Width >= 1440)
+                            if (window.CurrentShell.Bounds.Width >= 1600)
                             {
                                 window.CurrentShell.GridViewer.SelectAsset(0);
                                 await window.CurrentShell.ShowContextDetailAsync();
@@ -5799,11 +5809,11 @@ try
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
-                                    && viewport.Width == 1440d)
+                                    && viewport.Width == 1920d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "inspector-1440x900-pinned");
+                                        "inspector-1920x1080-pinned");
                                 }
 
                                 window.CurrentShell.SetInspectorPinnedForSmoke(false);
@@ -5825,6 +5835,7 @@ try
                                 Require(
                                     window.IsNavigationPinnedForSmoke
                                     && !window.IsNavigationPaneOverlayForSmoke
+                                    && window.PinnedNavigationUsesUnifiedSidebarForSmoke
                                     && window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
@@ -6444,7 +6455,8 @@ try
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
                 "inspector-900x600",
-                "inspector-1440x900-pinned",
+                "inspector-1440x900-drawer",
+                "inspector-1920x1080-pinned",
                 "focused-viewer-900x600",
                 "focused-viewer-900x600-text225",
                 "settings-1440x900",
