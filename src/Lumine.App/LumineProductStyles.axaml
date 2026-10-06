@@ -284,6 +284,14 @@
     <Setter Property="Padding" Value="12" />
   </Style>
 
+  <Style Selector="Border.lumine-status-hud">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="12,6" />
+  </Style>
+
   <Style Selector="Border.lumine-command-bar">
     <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
