@@ -68,36 +68,8 @@ public sealed class App : Application
         application.Resources["Lumine.DangerPressed"] =
             LumineDesign.InteractionDangerPressed;
 
-        application.Resources["Lumine.ControlHeight"] =
-            LumineDesign.CompactControlHeight;
-        application.Resources["Lumine.CaptionFontSize"] =
-            LumineDesign.CaptionFontSize;
-        application.Resources["Lumine.BodyFontSize"] =
-            LumineDesign.BodyFontSize;
-        application.Resources["Lumine.ControlRadius"] =
-            new CornerRadius(
-                LumineDesign.ControlRadius);
-        application.Resources["Lumine.PanelRadius"] =
-            new CornerRadius(
-                LumineDesign.PanelRadius);
-        application.Resources["Lumine.ControlPadding"] =
-            new Thickness(
-                LumineDesign.Space12,
-                LumineDesign.Space6);
-        application.Resources["Lumine.IconPadding"] =
-            new Thickness(
-                LumineDesign.Space8);
-        application.Resources["Lumine.InputPadding"] =
-            new Thickness(
-                LumineDesign.Space12,
-                LumineDesign.Space6);
-        application.Resources["Lumine.ComboPadding"] =
-            new Thickness(
-                LumineDesign.Space8,
-                LumineDesign.Space4);
-        application.Resources["Lumine.CardPadding"] =
-            new Thickness(
-                LumineDesign.Space12);
+        RefreshScaledProductResources(
+            application);
 
         application.Resources["ButtonBackgroundPointerOver"] =
             LumineDesign.InteractionHover;
@@ -172,6 +144,43 @@ public sealed class App : Application
             new LumineProductStyles());
         application.Styles.Add(
             new ColorPickerFluentStyles());
+    }
+
+    internal static void RefreshScaledProductResources(
+        Application application)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+
+        application.Resources["Lumine.ControlHeight"] =
+            LumineDesign.CompactControlHeight;
+        application.Resources["Lumine.CaptionFontSize"] =
+            LumineDesign.CaptionFontSize;
+        application.Resources["Lumine.BodyFontSize"] =
+            LumineDesign.BodyFontSize;
+        application.Resources["Lumine.ControlRadius"] =
+            new CornerRadius(
+                LumineDesign.ControlRadius);
+        application.Resources["Lumine.PanelRadius"] =
+            new CornerRadius(
+                LumineDesign.PanelRadius);
+        application.Resources["Lumine.ControlPadding"] =
+            new Thickness(
+                LumineDesign.Space12,
+                LumineDesign.Space6);
+        application.Resources["Lumine.IconPadding"] =
+            new Thickness(
+                LumineDesign.Space8);
+        application.Resources["Lumine.InputPadding"] =
+            new Thickness(
+                LumineDesign.Space12,
+                LumineDesign.Space6);
+        application.Resources["Lumine.ComboPadding"] =
+            new Thickness(
+                LumineDesign.Space8,
+                LumineDesign.Space4);
+        application.Resources["Lumine.CardPadding"] =
+            new Thickness(
+                LumineDesign.Space12);
     }
 
     public override void OnFrameworkInitializationCompleted()
