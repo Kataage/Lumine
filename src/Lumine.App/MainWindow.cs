@@ -523,6 +523,17 @@ public sealed class MainWindow : Window
     internal bool StatusSurfaceVisibleForSmoke =>
         _statusSurface.IsVisible;
 
+    internal bool StatusSurfaceUsesHudForSmoke =>
+        _statusSurface.Classes.Contains(
+            "lumine-status-hud")
+        && _statusSurface.VerticalAlignment
+            == VerticalAlignment.Bottom
+        && _statusSurface.HorizontalAlignment
+            == HorizontalAlignment.Center
+        && _statusSurface.BorderThickness
+            == new Thickness(0)
+        && _statusSurface.MaxWidth <= 560.5;
+
 
     internal bool HasRetryableOpenFailureForSmoke =>
         !string.IsNullOrWhiteSpace(
