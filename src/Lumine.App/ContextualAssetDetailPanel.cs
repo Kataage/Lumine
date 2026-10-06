@@ -9,6 +9,7 @@ using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System.Text.Json;
+using Lumine.Core;
 using Lumine.Library;
 using Lumine.Viewer;
 
