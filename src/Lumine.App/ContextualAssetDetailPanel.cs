@@ -1049,6 +1049,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal string PathText =>
         _fullPath;
 
+    internal string DisplayedPathTextForSmoke =>
+        _path.Text ?? string.Empty;
+
     internal bool PathCopyEnabledForSmoke =>
         _copyPath.IsEnabled;
 
