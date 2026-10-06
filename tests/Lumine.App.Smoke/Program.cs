@@ -4439,18 +4439,18 @@ try
                                 secondary.BorderThickness
                                     == new Thickness(0)
                                 && secondary.Background
-                                    is SolidColorBrush secondaryBrush
+                                    is ISolidColorBrush secondaryBrush
                                 && secondaryBrush.Color
                                     == LumineDesign.ControlSurfaceColor
                                 && input.BorderThickness
                                     == new Thickness(1)
                                 && input.BorderBrush
-                                    is SolidColorBrush inputBorder
+                                    is ISolidColorBrush inputBorder
                                 && inputBorder.Color.A == 0
                                 && combo.BorderThickness
                                     == new Thickness(1)
                                 && combo.BorderBrush
-                                    is SolidColorBrush comboBorder
+                                    is ISolidColorBrush comboBorder
                                 && comboBorder.Color.A == 0
                                 && Math.Abs(
                                     primary.MinHeight
