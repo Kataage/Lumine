@@ -552,6 +552,9 @@ public sealed class MainWindow : Window
         OnNavigationRequested(
             destination);
 
+    internal Task NavigationRefreshForSmokeAsync() =>
+        _navigationOperation;
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
