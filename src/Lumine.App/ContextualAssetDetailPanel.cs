@@ -114,6 +114,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private int _selectedTabIndex;
     private long _exifLoadedAssetId;
     private long _exifLoadingAssetId;
+    private string _fullPath = string.Empty;
 
     public ContextualAssetDetailPanel(
         CoreViewerRuntime runtime,
@@ -582,11 +583,55 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             return button;
         }
 
+        Border CreateInspectorSectionCard(
+            string label,
+            Control content)
+        {
+            var body =
+                new StackPanel
+                {
+                    Spacing =
+                        LumineDesign.Space6
+                };
+            body.Children.Add(
+                new TextBlock
+                {
+                    Text = label,
+                    Foreground =
+                        LumineDesign.MutedForeground,
+                    FontSize =
+                        LumineDesign.CaptionFontSize,
+                    FontWeight =
+                        FontWeight.SemiBold
+                });
+            body.Children.Add(content);
+
+            return new Border
+            {
+                Background =
+                    LumineDesign.SurfaceRaised,
+                BorderBrush =
+                    LumineDesign.Border,
+                BorderThickness =
+                    new Thickness(1),
+                CornerRadius =
+                    new CornerRadius(
+                        LumineDesign.ControlRadius),
+                Padding =
+                    new Thickness(
+                        LumineDesign.Space10),
+                Child = body
+            };
+        }
+
         var creative =
             new StackPanel
             {
                 Spacing = LumineDesign.Space8
             };
+
+        var creativeActionButtons =
+            new List<Control>();
 
         if (createWorkRequested is not null
             || createGroupRequested is not null)
@@ -595,8 +640,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 new StackPanel
                 {
                     Width = 220,
-                    Spacing = 6,
-                    Margin = new Thickness(4)
+                    Spacing = LumineDesign.Space6,
+                    Margin =
+                        new Thickness(
+                            LumineDesign.Space4)
                 };
             if (createWorkRequested is not null)
             {
@@ -614,11 +661,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         createGroupRequested));
             }
 
-            creative.Children.Add(
+            creativeActionButtons.Add(
                 LumineDesign.ConfigureSecondaryButton(
                     new DropDownButton
                     {
                         Content = "新規作成",
+                        HorizontalAlignment =
+                            HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment =
+                            HorizontalAlignment.Center,
                         Flyout =
                             new Flyout
                             {
@@ -628,7 +679,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                         Background =
                                             LumineDesign.SurfaceRaised,
                                         Padding =
-                                            new Thickness(10),
+                                            new Thickness(
+                                                LumineDesign.Space8),
                                         Child =
                                             creationPanel
                                     }
@@ -643,8 +695,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 new StackPanel
                 {
                     Width = 240,
-                    Spacing = 6,
-                    Margin = new Thickness(4)
+                    Spacing = LumineDesign.Space6,
+                    Margin =
+                        new Thickness(
+                            LumineDesign.Space4)
                 };
             if (addToWorkRequested is not null)
             {
@@ -662,11 +716,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         addToGroupRequested));
             }
 
-            creative.Children.Add(
+            creativeActionButtons.Add(
                 LumineDesign.ConfigureSecondaryButton(
                     new DropDownButton
                     {
                         Content = "既存へ追加",
+                        HorizontalAlignment =
+                            HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment =
+                            HorizontalAlignment.Center,
                         Flyout =
                             new Flyout
                             {
@@ -676,7 +734,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                         Background =
                                             LumineDesign.SurfaceRaised,
                                         Padding =
-                                            new Thickness(10),
+                                            new Thickness(
+                                                LumineDesign.Space8),
                                         Child =
                                             additionPanel
                                     }
@@ -684,8 +743,47 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     }));
         }
 
-        AddSection(creative, "Work", _works);
-        AddSection(creative, "Generation Group", _groups);
+        if (creativeActionButtons.Count > 0)
+        {
+            var actionColumns =
+                string.Join(
+                    ",",
+                    Enumerable.Repeat(
+                        "*",
+                        creativeActionButtons.Count));
+            var creativeActions =
+                new Grid
+                {
+                    ColumnDefinitions =
+                        new ColumnDefinitions(
+                            actionColumns),
+                    ColumnSpacing =
+                        LumineDesign.Space8
+                };
+            for (var index = 0;
+                 index < creativeActionButtons.Count;
+                 index++)
+            {
+                Grid.SetColumn(
+                    creativeActionButtons[index],
+                    index);
+                creativeActions.Children.Add(
+                    creativeActionButtons[index]);
+            }
+
+            creative.Children.Add(
+                creativeActions);
+        }
+
+        creative.Children.Add(
+            CreateInspectorSectionCard(
+                "Work",
+                _works));
+        creative.Children.Add(
+            CreateInspectorSectionCard(
+                "Generation Group",
+                _groups));
+
         var lineage =
             new StackPanel
             {
@@ -693,12 +791,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
         lineage.Children.Add(_relations);
         lineage.Children.Add(_relationCards);
-        AddSection(creative, "Lineage", lineage);
+        creative.Children.Add(
+            CreateInspectorSectionCard(
+                "Lineage",
+                lineage));
 
         var creativeBody =
             new StackPanel
             {
-                Spacing = LumineDesign.Space12,
+                Spacing = LumineDesign.Space8,
                 Margin =
                     new Thickness(
                         LumineDesign.Space12,
@@ -706,15 +807,24 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space12,
                         LumineDesign.Space16)
             };
-        AddSection(
-            creativeBody,
-            "制作コンテキスト",
+        creativeBody.Children.Add(
+            new TextBlock
+            {
+                Text = "制作コンテキスト",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                FontWeight =
+                    FontWeight.SemiBold
+            });
+        creativeBody.Children.Add(
             creative);
 
         var publicationBody =
             new StackPanel
             {
-                Spacing = LumineDesign.Space12,
+                Spacing = LumineDesign.Space8,
                 Margin =
                     new Thickness(
                         LumineDesign.Space12,
@@ -724,22 +834,53 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
         if (createPublicationRequested is not null)
         {
-            publicationBody.Children.Add(
+            var createPublication =
                 CreateContextAction(
                     "公開記録を作成",
-                    createPublicationRequested));
+                    createPublicationRequested);
+            createPublication.HorizontalAlignment =
+                HorizontalAlignment.Stretch;
+            createPublication.HorizontalContentAlignment =
+                HorizontalAlignment.Center;
+            publicationBody.Children.Add(
+                createPublication);
         }
-        AddSection(
-            publicationBody,
-            "公開履歴",
+
+        var publicationHeader =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("*,Auto")
+            };
+        publicationHeader.Children.Add(
+            new TextBlock
+            {
+                Text = "公開履歴",
+                Foreground =
+                    LumineDesign.MutedForeground,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
+                FontWeight =
+                    FontWeight.SemiBold,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        Grid.SetColumn(
+            _publicationCount,
+            1);
+        _publicationCount.VerticalAlignment =
+            VerticalAlignment.Center;
+        publicationHeader.Children.Add(
             _publicationCount);
+        publicationBody.Children.Add(
+            publicationHeader);
         publicationBody.Children.Add(
             _publicationCards);
 
         var informationBody =
             new StackPanel
             {
-                Spacing = LumineDesign.Space12,
+                Spacing = LumineDesign.Space8,
                 Margin =
                     new Thickness(
                         LumineDesign.Space12,
@@ -747,6 +888,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space12,
                         LumineDesign.Space16)
             };
+
         var pathBody =
             new StackPanel
             {
@@ -756,14 +898,16 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _path);
         pathBody.Children.Add(
             _copyPath);
-        AddSection(
-            informationBody,
-            "場所",
-            pathBody);
-        AddSection(
-            informationBody,
-            "技術情報",
-            _technical);
+        informationBody.Children.Add(
+            CreateInspectorSectionCard(
+                "場所",
+                pathBody));
+
+        informationBody.Children.Add(
+            CreateInspectorSectionCard(
+                "技術情報",
+                _technical));
+
         var exifBody =
             new StackPanel
             {
@@ -774,10 +918,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _exif);
         exifBody.Children.Add(
             _exifRetry);
-        AddSection(
-            informationBody,
-            "撮影情報 (EXIF)",
-            exifBody);
+        informationBody.Children.Add(
+            CreateInspectorSectionCard(
+                "撮影情報 (EXIF)",
+                exifBody));
 
         _tabPages =
         [
@@ -903,14 +1047,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _title.Text ?? string.Empty;
 
     internal string PathText =>
-        _path.Text ?? string.Empty;
+        _fullPath;
 
     internal bool PathCopyEnabledForSmoke =>
         _copyPath.IsEnabled;
 
     internal string PathCopyValueForSmoke =>
         _copyPath.IsEnabled
-            ? _path.Text ?? string.Empty
+            ? _fullPath
             : string.Empty;
 
     internal string TechnicalText =>
@@ -1126,13 +1270,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _title.Text = asset.DisplayName;
         _summary.Text =
             FormatSummary(asset);
-        _path.Text =
+        _fullPath =
             Path.GetFullPath(
                 Path.Combine(
                     _runtime.LibraryRoot,
                     asset.RelativePath.Replace(
                         '/',
                         Path.DirectorySeparatorChar)));
+        _path.Text =
+            asset.RelativePath.Replace(
+                '/',
+                Path.DirectorySeparatorChar);
         _copyPath.Content =
             "パスをコピー";
         _copyPath.IsEnabled = true;
@@ -1407,6 +1555,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "画像を選択してください";
         _summary.Text =
             "選択した画像の情報をここに表示します。";
+        _fullPath = string.Empty;
         _path.Text = "—";
         _copyPath.Content =
             "パスをコピー";
@@ -1463,7 +1612,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
 
         var path =
-            _path.Text;
+            _fullPath;
         if (string.IsNullOrWhiteSpace(path)
             || string.Equals(
                 path,
@@ -1526,11 +1675,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _copyPath.IsEnabled =
                 _assetId > 0
                 && !string.IsNullOrWhiteSpace(
-                    _path.Text)
-                && !string.Equals(
-                    _path.Text,
-                    "—",
-                    StringComparison.Ordinal);
+                    _fullPath);
         }
     }
 
