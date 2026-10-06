@@ -661,7 +661,10 @@ internal sealed class BrowseWorkspaceControls : UserControl
             - LumineDesign.CompactControlHeight) < 0.001
         && Math.Abs(
             _search.Padding.Top
-            - LumineDesign.Space6) < 0.001;
+            - LumineDesign.Space6) < 0.001
+        && _search.MaxWidth <= 720.5
+        && _search.HorizontalAlignment
+            == HorizontalAlignment.Left;
 
     internal bool FilterFlyoutIsOpenForSmoke =>
         _filterFlyout.IsOpen;
