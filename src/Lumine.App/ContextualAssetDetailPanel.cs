@@ -1219,6 +1219,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 if (!button.Classes.Contains(
                         "lumine-segment")
                     || button.Resources.Count != 0
+                    || Math.Abs(
+                        button.FontSize
+                        - LumineDesign.CaptionFontSize) > 0.001
                     || button.Classes.Contains(
                         "selected") != selected)
                 {
