@@ -35,19 +35,25 @@ internal sealed class ManagedTagPicker : UserControl
             ?? throw new ArgumentNullException(nameof(applyTags));
 
         _assignedHost =
-            new WrapPanel();
+            new WrapPanel
+            {
+                MinHeight = 24,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
 
         _search =
             LumineDesign.ConfigureTextBox(
                 new TextBox
                 {
                     PlaceholderText = "タグを検索・追加",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
+                    MinHeight = 36,
                     Padding =
                         new Thickness(
                             LumineDesign.Space8,
-                            LumineDesign.Space4)
+                            LumineDesign.Space6),
+                    VerticalContentAlignment =
+                        VerticalAlignment.Center
                 });
         _search.TextChanged +=
             (_, _) =>
@@ -64,7 +70,13 @@ internal sealed class ManagedTagPicker : UserControl
                 FontSize =
                     LumineDesign.CaptionFontSize,
                 TextWrapping =
-                    TextWrapping.Wrap
+                    TextWrapping.Wrap,
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space2,
+                        0,
+                        0,
+                        0)
             };
 
         _candidateHost =
@@ -174,7 +186,7 @@ internal sealed class ManagedTagPicker : UserControl
         var root =
             new StackPanel
             {
-                Spacing = LumineDesign.Space6
+                Spacing = LumineDesign.Space4
             };
         root.Children.Add(_assignedHost);
         root.Children.Add(_search);
@@ -307,10 +319,14 @@ internal sealed class ManagedTagPicker : UserControl
                         LumineDesign.MutedForeground,
                     FontSize =
                         LumineDesign.CaptionFontSize,
+                    VerticalAlignment =
+                        VerticalAlignment.Center,
                     Margin =
                         new Thickness(
+                            LumineDesign.Space2,
                             0,
-                            LumineDesign.Space2)
+                            0,
+                            0)
                 });
             return;
         }
