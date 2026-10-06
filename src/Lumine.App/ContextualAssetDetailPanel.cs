@@ -2413,16 +2413,16 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         var swatchContent =
                             new Grid
                             {
-                                Width = 22,
-                                Height = 22
+                                Width = 20,
+                                Height = 20
                             };
                         swatchContent.Children.Add(
                             new Border
                             {
-                                Width = 22,
-                                Height = 22,
+                                Width = 20,
+                                Height = 20,
                                 CornerRadius =
-                                    new CornerRadius(11),
+                                    new CornerRadius(10),
                                 Background =
                                     value is null
                                         ? LumineDesign.ControlSurface
@@ -2462,21 +2462,21 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                             new Button
                             {
                                 Content = swatchContent,
-                                Width = 30,
-                                MinWidth = 30,
-                                MaxWidth = 30,
-                                Height = 30,
-                                MinHeight = 30,
-                                MaxHeight = 30,
+                                Width = 28,
+                                MinWidth = 28,
+                                MaxWidth = 28,
+                                Height = 28,
+                                MinHeight = 28,
+                                MaxHeight = 28,
                                 Padding = new Thickness(0),
                                 Margin =
                                     new Thickness(
                                         0,
+                                        4,
                                         3,
-                                        LumineDesign.Space4,
-                                        3),
+                                        4),
                                 CornerRadius =
-                                    new CornerRadius(15),
+                                    new CornerRadius(14),
                                 Background = Brushes.Transparent,
                                 BorderBrush = Brushes.Transparent,
                                 BorderThickness =
