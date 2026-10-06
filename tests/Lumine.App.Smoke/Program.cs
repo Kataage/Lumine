@@ -2996,8 +2996,22 @@ try
                     == "context-detail-note",
                 "Contextual detail panel did not expose user-owned metadata.");
 
-            var directRatingButtons =
+            Grid InspectorEditorRow(string label) =>
                 shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Grid>()
+                    .Single(
+                        row =>
+                            string.Equals(
+                                AutomationProperties.GetAutomationId(
+                                    row),
+                                $"inspector-editor-row-{label}",
+                                StringComparison.Ordinal));
+
+            var ratingRow =
+                InspectorEditorRow("評価");
+            var directRatingButtons =
+                ratingRow
                     .GetVisualDescendants()
                     .OfType<Button>()
                     .Where(
@@ -3010,12 +3024,71 @@ try
                     .ToArray();
             Require(
                 directRatingButtons.Length == 5
+                && ratingRow.Bounds.Height is >= 35 and <= 37
                 && directRatingButtons.All(
                     static button =>
-                        button.FontSize >= 17
-                        && button.Padding.Left <= 1
-                        && button.Padding.Right <= 1),
-                "Inspector direct-rating stars regressed to clipped shared caption/padding geometry.");
+                        Math.Abs(button.Width - 34) < 0.01
+                        && Math.Abs(button.Height - 34) < 0.01
+                        && button.Padding.Left < 0.01
+                        && button.Padding.Top < 0.01
+                        && button.HorizontalContentAlignment
+                            == HorizontalAlignment.Center
+                        && button.VerticalContentAlignment
+                            == VerticalAlignment.Center
+                        && button.Content is TextBlock
+                        {
+                            HorizontalAlignment:
+                                HorizontalAlignment.Center,
+                            VerticalAlignment:
+                                VerticalAlignment.Center
+                        }),
+                "Inspector rating row lost its fixed, optically centered product geometry.");
+
+            var colorRow =
+                InspectorEditorRow("カラー");
+            var directColorButtons =
+                colorRow
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(
+                        button =>
+                            (AutomationProperties.GetName(button)
+                                ?? string.Empty)
+                            .StartsWith(
+                                "カラー ",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            Require(
+                directColorButtons.Length == 8
+                && colorRow.Bounds.Height is >= 35 and <= 37
+                && directColorButtons.All(
+                    static button =>
+                        Math.Abs(button.Width - 28) < 0.01
+                        && Math.Abs(button.Height - 28) < 0.01
+                        && Math.Abs(
+                            button.BorderThickness.Left - 2) < 0.01
+                        && button.HorizontalContentAlignment
+                            == HorizontalAlignment.Center
+                        && button.VerticalContentAlignment
+                            == VerticalAlignment.Center),
+                "Inspector color row lost fixed chip geometry or wrapped at the normal Inspector width.");
+
+            foreach (var simpleRowLabel in
+                     new[]
+                     {
+                         "評価",
+                         "お気に入り",
+                         "状態",
+                         "カラー"
+                     })
+            {
+                var simpleRow =
+                    InspectorEditorRow(simpleRowLabel);
+                Require(
+                    simpleRow.Bounds.Height is >= 35 and <= 37
+                    && simpleRow.ColumnDefinitions.Count == 2,
+                    $"Inspector {simpleRowLabel} row drifted from the shared normal-scale form grid.");
+            }
 
             Require(
                 shell.ContextDetail.UsesDirectRatingControlsForSmoke
