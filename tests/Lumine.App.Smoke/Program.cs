@@ -3034,15 +3034,24 @@ try
                             return false;
                         }
 
+                        var glyphOrigin =
+                            glyph.TranslatePoint(
+                                new Point(0, 0),
+                                button);
+                        if (glyphOrigin is null)
+                        {
+                            return false;
+                        }
+
                         var buttonCenterX =
                             button.Bounds.Width / 2;
                         var buttonCenterY =
                             button.Bounds.Height / 2;
                         var glyphCenterX =
-                            glyph.Bounds.X
+                            glyphOrigin.Value.X
                             + (glyph.Bounds.Width / 2);
                         var glyphCenterY =
-                            glyph.Bounds.Y
+                            glyphOrigin.Value.Y
                             + (glyph.Bounds.Height / 2);
 
                         return
@@ -3089,16 +3098,25 @@ try
                     .ToArray();
             var colorCenters =
                 directColorButtons
-                    .OrderBy(
-                        static button =>
-                            button.Bounds.X)
                     .Select(
-                        static button =>
-                            new Point(
-                                button.Bounds.X
+                        button =>
+                        {
+                            var origin =
+                                button.TranslatePoint(
+                                    new Point(0, 0),
+                                    colorRow)
+                                ?? new Point(
+                                    double.NaN,
+                                    double.NaN);
+                            return new Point(
+                                origin.X
                                     + (button.Bounds.Width / 2),
-                                button.Bounds.Y
-                                    + (button.Bounds.Height / 2)))
+                                origin.Y
+                                    + (button.Bounds.Height / 2));
+                        })
+                    .OrderBy(
+                        static center =>
+                            center.X)
                     .ToArray();
             var colorCenterGaps =
                 colorCenters
