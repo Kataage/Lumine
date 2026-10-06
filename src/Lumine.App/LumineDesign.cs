@@ -717,14 +717,15 @@ internal static class LumineDesign
                 };
         }
 
-        return new Border
-        {
-            Width = NavigationWidth,
-            Background = Surface,
-            BorderBrush = Border,
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            Child = content
-        };
+        var rail =
+            new Border
+            {
+                Width = NavigationWidth,
+                Child = content
+            };
+        rail.Classes.Add(
+            "lumine-nav-rail");
+        return rail;
     }
 
     public static ExpandedNavigationBands CreateExpandedNavigationBands(
@@ -906,20 +907,14 @@ internal static class LumineDesign
         var primary =
             new Border
             {
-                Background = Surface,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness =
-                    new Thickness(0),
                 Child = primaryRoot
             };
+        primary.Classes.Add(
+            "lumine-nav-band");
 
         var settings =
             new Border
             {
-                Background = Surface,
-                BorderBrush = Border,
-                BorderThickness =
-                    new Thickness(0, 1, 0, 0),
                 Padding =
                     new Thickness(
                         Space8,
@@ -928,6 +923,8 @@ internal static class LumineDesign
                         Space8),
                 Child = buttons[^1]
             };
+        settings.Classes.Add(
+            "lumine-nav-settings-band");
 
         return new ExpandedNavigationBands(
             primary,
