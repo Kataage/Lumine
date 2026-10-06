@@ -159,6 +159,7 @@
   <Style Selector="Button.lumine-segment">
     <Setter Property="MinHeight" Value="30" />
     <Setter Property="Padding" Value="10,4" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
