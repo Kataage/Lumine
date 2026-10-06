@@ -4741,6 +4741,7 @@ try
                             is Border
                         && window.IsWorkspacePageVisibleForSmoke
                         && !window.IsNavigationPaneVisibleForSmoke
+                        && !window.StatusSurfaceVisibleForSmoke
                         && window.WorkspacePageBoundsForSmoke.Width >= 500
                         && ReferenceEquals(
                             window.CurrentShell,
@@ -4766,7 +4767,7 @@ try
                                     extension,
                                     out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
-                        "Product Settings did not open as a main-workspace page while preserving the active viewer runtime.");
+                        "Product Settings did not open as a clean main-workspace page without browse status chrome while preserving the active viewer runtime.");
 
                     var settingsText =
                         window.WorkspacePageForSmoke
