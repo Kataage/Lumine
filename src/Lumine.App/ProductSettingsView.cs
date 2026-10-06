@@ -75,6 +75,10 @@ internal static class ProductSettingsView
                     HorizontalAlignment.Center
             };
 
+        AutomationProperties.SetName(
+            root,
+            "設定コンテンツ");
+
         var heading =
             new StackPanel
             {
@@ -790,6 +794,9 @@ internal static class ProductSettingsView
             {
                 Spacing = LumineDesign.Space6
             };
+        AutomationProperties.SetName(
+            actionFooter,
+            "読み込み対象アクション");
         actionFooter.Children.Add(status);
         actionFooter.Children.Add(actions);
 
@@ -866,6 +873,9 @@ internal static class ProductSettingsView
             {
                 Spacing = LumineDesign.Space6
             };
+        AutomationProperties.SetName(
+            basicCache,
+            "キャッシュ基本設定");
         basicCache.Children.Add(persistent);
         basicCache.Children.Add(cacheModeStatus);
         basicCache.Children.Add(diskStats);
