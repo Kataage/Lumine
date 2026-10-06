@@ -9,6 +9,7 @@ using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System.Text.Json;
+using Lumine.Core;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -257,16 +258,22 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 new CheckBox
                 {
                     Content = null,
-                    MinWidth = LumineDesign.CompactCommandHeight,
-                    MinHeight = LumineDesign.CompactCommandHeight,
-                    HorizontalAlignment = HorizontalAlignment.Left
+                    Width = 36,
+                    MinWidth = 36,
+                    Height = 36,
+                    MinHeight = 36,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center
                 });
         _statusEditor =
             LumineDesign.ConfigureComboBox(
                 new ComboBox
                 {
                     ItemsSource = StatusLabels,
-                    MinWidth = 118
+                    MinWidth = 176,
+                    MinHeight = 36,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center
                 });
         _colorEditor =
             LumineDesign.ConfigureComboBox(
@@ -467,45 +474,36 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         summaryBody.Children.Add(_summary);
 
         var editor =
-            new Grid
+            new StackPanel
             {
-                ColumnDefinitions =
-                    new ColumnDefinitions("64,*"),
-                RowDefinitions =
-                    new RowDefinitions(
-                        "Auto,Auto,Auto,Auto,Auto,Auto"),
-                RowSpacing = LumineDesign.Space8
+                Spacing = 10
             };
         AddEditorRow(
             editor,
-            0,
             "評価",
             ratingPicker);
         AddEditorRow(
             editor,
-            1,
             "お気に入り",
             _favoriteEditor);
         AddEditorRow(
             editor,
-            2,
             "状態",
             _statusEditor);
         AddEditorRow(
             editor,
-            3,
             "タグ",
-            _tagPicker);
+            _tagPicker,
+            multiline: true);
         AddEditorRow(
             editor,
-            4,
             "カラー",
             colorPicker);
         AddEditorRow(
             editor,
-            5,
             "ノート",
-            _notesEditor);
+            _notesEditor,
+            multiline: true);
 
         var saveRow =
             new Grid
@@ -2304,44 +2302,76 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var panel =
             new StackPanel
             {
-                Orientation =
-                    Orientation.Horizontal,
-                Spacing =
-                    LumineDesign.Space2
+                Orientation = Orientation.Horizontal,
+                Spacing = LumineDesign.Space4,
+                MinHeight = 36,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
             };
+        AutomationProperties.SetName(
+            panel,
+            "評価");
 
         _ratingButtons =
             Enumerable.Range(1, 5)
                 .Select(
                     rating =>
                     {
+                        var glyph =
+                            new TextBlock
+                            {
+                                Text = "★",
+                                FontSize = 19,
+                                LineHeight = 20,
+                                TextAlignment = TextAlignment.Center,
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                IsHitTestVisible = false
+                            };
+
                         var button =
-                            LumineDesign.ConfigureSecondaryButton(
-                                new Button
-                                {
-                                    Content = "★",
-                                    Width = 31,
-                                    MinWidth = 31,
-                                    Height = 30,
-                                    MinHeight = 30,
-                                    Padding =
-                                        new Thickness(0),
-                                    FontSize = 17
-                                });
-                        // ConfigureSecondaryButton applies shared
-                        // caption sizing and horizontal padding. Restore the
-                        // compact direct-rating geometry after common chrome
-                        // so the star glyph is not clipped inside 31 DIP.
-                        button.FontSize = 17;
-                        button.Padding =
-                            new Thickness(0);
+                            new Button
+                            {
+                                Content = glyph,
+                                Width = 34,
+                                MinWidth = 34,
+                                MaxWidth = 34,
+                                Height = 34,
+                                MinHeight = 34,
+                                MaxHeight = 34,
+                                Padding = new Thickness(0),
+                                CornerRadius =
+                                    new CornerRadius(
+                                        LumineDesign.ControlRadius),
+                                Background = Brushes.Transparent,
+                                BorderBrush = Brushes.Transparent,
+                                BorderThickness = new Thickness(1),
+                                HorizontalContentAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalContentAlignment =
+                                    VerticalAlignment.Center,
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
+                            };
+
+                        button.Resources[
+                            "ButtonBackgroundPointerOver"] =
+                            LumineDesign.InteractionHover;
+                        button.Resources[
+                            "ButtonBackgroundPressed"] =
+                            LumineDesign.InteractionPressed;
+                        button.Resources[
+                            "ButtonBackgroundFocused"] =
+                            LumineDesign.InteractionNeutral;
+                        button.Resources[
+                            "ButtonBorderBrushFocused"] =
+                            LumineDesign.Focus;
 
                         var accessibleName =
                             $"評価 {rating}";
                         AutomationProperties.SetName(
-                            button,
-                            accessibleName);
-                        ToolTip.SetTip(
                             button,
                             accessibleName);
                         button.Click +=
@@ -2360,7 +2390,23 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private Control CreateColorPicker()
     {
         var panel =
-            new WrapPanel();
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions(
+                        "*,*,*,*,*,*,*,*"),
+                Width = 224,
+                MinWidth = 224,
+                MaxWidth = 224,
+                MinHeight = 36,
+                HorizontalAlignment =
+                    HorizontalAlignment.Left,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        AutomationProperties.SetName(
+            panel,
+            "カラー");
 
         _colorButtons =
             ColorValues
@@ -2369,34 +2415,84 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     {
                         var swatch =
                             ResolveColorBrush(value);
+
+                        var swatchContent =
+                            new Grid
+                            {
+                                Width = 20,
+                                Height = 20
+                            };
+                        swatchContent.Children.Add(
+                            new Border
+                            {
+                                Width = 20,
+                                Height = 20,
+                                CornerRadius =
+                                    new CornerRadius(10),
+                                Background =
+                                    value is null
+                                        ? LumineDesign.ControlSurface
+                                        : swatch,
+                                BorderBrush =
+                                    value is null
+                                        ? LumineDesign.BorderStrong
+                                        : LumineDesign.Border,
+                                BorderThickness =
+                                    new Thickness(1),
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
+                            });
+                        if (value is null)
+                        {
+                            swatchContent.Children.Add(
+                                new TextBlock
+                                {
+                                    Text = "×",
+                                    FontSize = 14,
+                                    LineHeight = 16,
+                                    Foreground =
+                                        LumineDesign.MutedForeground,
+                                    TextAlignment =
+                                        TextAlignment.Center,
+                                    HorizontalAlignment =
+                                        HorizontalAlignment.Center,
+                                    VerticalAlignment =
+                                        VerticalAlignment.Center,
+                                    IsHitTestVisible = false
+                                });
+                        }
+
                         var button =
                             new Button
                             {
+                                Content = swatchContent,
                                 Width = 28,
-                                Height = 28,
                                 MinWidth = 28,
+                                MaxWidth = 28,
+                                Height = 28,
                                 MinHeight = 28,
-                                Padding =
-                                    new Thickness(0),
+                                MaxHeight = 28,
+                                Padding = new Thickness(0),
                                 Margin =
                                     new Thickness(
                                         0,
-                                        0,
-                                        LumineDesign.Space2,
-                                        LumineDesign.Space2),
+                                        4),
                                 CornerRadius =
                                     new CornerRadius(14),
-                                Background = swatch,
-                                BorderBrush =
-                                    LumineDesign.Border,
+                                Background = Brushes.Transparent,
+                                BorderBrush = Brushes.Transparent,
                                 BorderThickness =
-                                    new Thickness(1),
-                                Content =
-                                    value is null
-                                        ? "×"
-                                        : string.Empty,
-                                Foreground =
-                                    LumineDesign.Foreground
+                                    new Thickness(2),
+                                HorizontalContentAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalContentAlignment =
+                                    VerticalAlignment.Center,
+                                HorizontalAlignment =
+                                    HorizontalAlignment.Center,
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
                             };
                         var accessibleName =
                             $"カラー {ColorLabels[index]}";
@@ -2406,34 +2502,27 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         ToolTip.SetTip(
                             button,
                             ColorLabels[index]);
+
                         button.Resources[
                             "ButtonBackgroundPointerOver"] =
-                            value is null
-                                ? LumineDesign.InteractionHover
-                                : swatch;
+                            LumineDesign.InteractionHover;
                         button.Resources[
                             "ButtonBackgroundPressed"] =
-                            value is null
-                                ? LumineDesign.InteractionPressed
-                                : swatch;
+                            LumineDesign.InteractionPressed;
                         button.Resources[
-                            "ButtonBorderBrushPointerOver"] =
-                            LumineDesign.Focus;
-                        button.Resources[
-                            "ButtonBorderBrushPressed"] =
-                            LumineDesign.Focus;
+                            "ButtonBackgroundFocused"] =
+                            LumineDesign.InteractionNeutral;
                         button.Resources[
                             "ButtonBorderBrushFocused"] =
                             LumineDesign.Focus;
-                        button.Resources[
-                            "ButtonBackgroundFocused"] =
-                            value is null
-                                ? LumineDesign.InteractionNeutral
-                                : swatch;
+
                         button.Click +=
                             (_, _) =>
                                 SetColorFromDirectControl(
                                     index);
+                        Grid.SetColumn(
+                            button,
+                            index);
                         panel.Children.Add(button);
                         return button;
                     })
@@ -2481,30 +2570,21 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             var rating = index + 1;
             var button = _ratingButtons[index];
-            button.Foreground =
-                rating <= selected
-                    ? LumineDesign.Warning
-                    : LumineDesign.MutedForeground;
-            var active =
-                rating == selected;
+            if (button.Content is TextBlock glyph)
+            {
+                glyph.Foreground =
+                    rating <= selected
+                        ? LumineDesign.Warning
+                        : LumineDesign.MutedForeground;
+            }
+
+            // Rating is communicated by the filled-star count. Keep every
+            // resting cell visually identical so the selected rating never
+            // looks like one oversized boxed button.
             button.Background =
-                active
-                    ? LumineDesign.AccentMuted
-                    : Brushes.Transparent;
+                Brushes.Transparent;
             button.BorderBrush =
-                active
-                    ? LumineDesign.BorderStrong
-                    : Brushes.Transparent;
-            if (active)
-            {
-                LumineDesign.ConfigureSelectedButtonStateResources(
-                    button);
-            }
-            else
-            {
-                LumineDesign.ConfigureNeutralButtonStateResources(
-                    button);
-            }
+                Brushes.Transparent;
         }
     }
 
@@ -2518,23 +2598,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         {
             var button = _colorButtons[index];
             var active = index == selected;
+
+            // Keep the hit target and inner swatch geometry fixed. Selection
+            // is an outer ring, so choosing "未設定" or a color never changes
+            // the apparent chip size or shifts the row.
+            button.Background =
+                Brushes.Transparent;
             button.BorderBrush =
                 active
                     ? LumineDesign.Focus
-                    : LumineDesign.Border;
+                    : Brushes.Transparent;
             button.BorderThickness =
-                new Thickness(
-                    active
-                        ? 2
-                        : 1);
-
-            if (ColorValues[index] is null)
-            {
-                button.Background =
-                    active
-                        ? LumineDesign.AccentMuted
-                        : LumineDesign.ControlSurface;
-            }
+                new Thickness(2);
         }
     }
 
@@ -3024,10 +3099,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     }
 
     private static void AddEditorRow(
-        Grid grid,
-        int row,
+        Panel panel,
         string label,
-        Control editor)
+        Control editor,
+        bool multiline = false)
     {
         if (string.IsNullOrWhiteSpace(
                 AutomationProperties.GetName(
@@ -3044,31 +3119,61 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Text = label,
                 Foreground =
                     LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
+                FontSize =
+                    LumineDesign.CaptionFontSize,
                 VerticalAlignment =
-                    editor is TextBox
-                        or ManagedTagPicker
+                    multiline
                         ? VerticalAlignment.Top
                         : VerticalAlignment.Center,
                 Margin =
-                    editor is TextBox
-                        or ManagedTagPicker
+                    multiline
                         ? new Thickness(
                             0,
                             LumineDesign.Space6,
-                            LumineDesign.Space8,
-                            0)
-                        : new Thickness(
                             0,
-                            0,
-                            LumineDesign.Space8,
                             0)
+                        : new Thickness(0)
             };
-        Grid.SetRow(labelBlock, row);
-        grid.Children.Add(labelBlock);
 
-        Grid.SetRow(editor, row);
-        Grid.SetColumn(editor, 1);
-        grid.Children.Add(editor);
+        var stacked =
+            LumineVisualMetrics.TextScaleFactor
+                >= 1.5;
+
+        var row =
+            new Grid
+            {
+                MinHeight =
+                    multiline
+                        ? 0
+                        : 36
+            };
+        AutomationProperties.SetAutomationId(
+            row,
+            $"inspector-editor-row-{label}");
+
+        if (stacked)
+        {
+            row.RowDefinitions =
+                new RowDefinitions("Auto,Auto");
+            row.RowSpacing =
+                LumineDesign.Space4;
+            labelBlock.Margin =
+                new Thickness(0);
+            row.Children.Add(labelBlock);
+            Grid.SetRow(editor, 1);
+            row.Children.Add(editor);
+        }
+        else
+        {
+            row.ColumnDefinitions =
+                new ColumnDefinitions("76,*");
+            row.ColumnSpacing =
+                LumineDesign.Space12;
+            row.Children.Add(labelBlock);
+            Grid.SetColumn(editor, 1);
+            row.Children.Add(editor);
+        }
+
+        panel.Children.Add(row);
     }
 }

@@ -34,6 +34,7 @@ public sealed class DetailViewerControl : UserControl
     private readonly Button _close;
     private readonly Slider _zoomSlider;
     private readonly TextBlock _zoomText;
+    private readonly Border _topChromeHost;
     private readonly Border _toolbarHost;
     private readonly Border _utilityHost;
     private readonly Border _statusHost;
@@ -305,30 +306,32 @@ public sealed class DetailViewerControl : UserControl
         };
         stage.Children.Add(_scroll);
 
-        _previous.Width = 38;
-        _previous.Height = 50;
-        _previous.MinWidth = 38;
-        _previous.MinHeight = 50;
+        _previous.Width = 36;
+        _previous.Height = 46;
+        _previous.MinWidth = 36;
+        _previous.MinHeight = 46;
         _previous.Padding = new Thickness(0);
+        _previous.CornerRadius = new CornerRadius(8);
         _previous.HorizontalAlignment =
             HorizontalAlignment.Left;
         _previous.VerticalAlignment =
             VerticalAlignment.Center;
-        _previous.Margin = new Thickness(10, 0);
+        _previous.Margin = new Thickness(8, 0);
         _previous.Background = ViewerVisualTokens.OverlaySoft;
         _previous.BorderBrush = Brushes.Transparent;
         stage.Children.Add(_previous);
 
-        _next.Width = 38;
-        _next.Height = 50;
-        _next.MinWidth = 38;
-        _next.MinHeight = 50;
+        _next.Width = 36;
+        _next.Height = 46;
+        _next.MinWidth = 36;
+        _next.MinHeight = 46;
         _next.Padding = new Thickness(0);
+        _next.CornerRadius = new CornerRadius(8);
         _next.HorizontalAlignment =
             HorizontalAlignment.Right;
         _next.VerticalAlignment =
             VerticalAlignment.Center;
-        _next.Margin = new Thickness(10, 0);
+        _next.Margin = new Thickness(8, 0);
         _next.Background = ViewerVisualTokens.OverlaySoft;
         _next.BorderBrush = Brushes.Transparent;
         stage.Children.Add(_next);
@@ -336,35 +339,57 @@ public sealed class DetailViewerControl : UserControl
         _toolbarHost =
             new Border
             {
+                Background = Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                Child = toolbar
+            };
+        _utilityHost =
+            new Border
+            {
+                Background = Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                Child = utilityBar
+            };
+
+        var topChromeLayout =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4
+            };
+        topChromeLayout.Children.Add(_toolbarHost);
+        topChromeLayout.Children.Add(
+            new Border
+            {
+                Width = 1,
+                Height = 20,
+                Margin = new Thickness(2, 0),
+                Background = ViewerVisualTokens.Border,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+        topChromeLayout.Children.Add(_utilityHost);
+
+        _topChromeHost =
+            new Border
+            {
                 Background = ViewerVisualTokens.OverlaySoft,
                 BorderBrush = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(9),
+                CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(2),
                 Margin = new Thickness(12),
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
                 VerticalAlignment =
                     VerticalAlignment.Top,
-                Child = toolbar
+                Child = topChromeLayout
             };
-        _utilityHost =
-            new Border
-            {
-                Background = ViewerVisualTokens.OverlaySoft,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(2),
-                Margin = new Thickness(12),
-                HorizontalAlignment =
-                    HorizontalAlignment.Right,
-                VerticalAlignment =
-                    VerticalAlignment.Top,
-                Child = utilityBar
-            };
-        stage.Children.Add(_toolbarHost);
-        stage.Children.Add(_utilityHost);
+        stage.Children.Add(_topChromeHost);
         stage.Children.Add(_statusHost);
         stage.Children.Add(_metadataHost);
 
@@ -647,6 +672,11 @@ public sealed class DetailViewerControl : UserControl
         }
     }
 
+
+    internal Rect TopChromeBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _topChromeHost,
+            "top chrome");
 
     internal Rect ToolbarBoundsInControlForSmoke =>
         GetControlBoundsForSmoke(
@@ -1938,10 +1968,12 @@ public sealed class DetailViewerControl : UserControl
     private void RevealChrome(
         bool autoHide = true)
     {
+        _topChromeHost.Opacity = 1;
         _toolbarHost.Opacity = 1;
         _utilityHost.Opacity = 1;
         _previous.Opacity = 1;
         _next.Opacity = 1;
+        _topChromeHost.IsHitTestVisible = true;
         _toolbarHost.IsHitTestVisible = true;
         _utilityHost.IsHitTestVisible = true;
         _previous.IsHitTestVisible = true;
@@ -1955,6 +1987,7 @@ public sealed class DetailViewerControl : UserControl
 
     private bool IsChromeInteractionActive() =>
         _dragging
+        || _topChromeHost.IsPointerOver
         || _toolbarHost.IsPointerOver
         || _utilityHost.IsPointerOver
         || _previous.IsPointerOver
@@ -1982,10 +2015,12 @@ public sealed class DetailViewerControl : UserControl
         }
 
         // Idle Viewer chrome must not obscure or intercept the image.
+        _topChromeHost.Opacity = 0;
         _toolbarHost.Opacity = 0;
         _utilityHost.Opacity = 0;
         _previous.Opacity = 0;
         _next.Opacity = 0;
+        _topChromeHost.IsHitTestVisible = false;
         _toolbarHost.IsHitTestVisible = false;
         _utilityHost.IsHitTestVisible = false;
         _previous.IsHitTestVisible = false;
@@ -1998,10 +2033,20 @@ public sealed class DetailViewerControl : UserControl
             "close button");
 
     internal bool UsesLightweightChromeForSmoke =>
-        _toolbarHost.BorderThickness == new Thickness(0)
+        _topChromeHost.BorderThickness == new Thickness(0)
+        && ReferenceEquals(
+            _topChromeHost.Background,
+            ViewerVisualTokens.OverlaySoft)
+        && _toolbarHost.BorderThickness == new Thickness(0)
         && _utilityHost.BorderThickness == new Thickness(0)
-        && _previous.Width <= 40
-        && _next.Width <= 40
+        && ReferenceEquals(
+            _toolbarHost.Background,
+            Brushes.Transparent)
+        && ReferenceEquals(
+            _utilityHost.Background,
+            Brushes.Transparent)
+        && _previous.Width <= 36
+        && _next.Width <= 36
         && ReferenceEquals(
             _zoomOut.Background,
             Brushes.Transparent)
@@ -2024,16 +2069,19 @@ public sealed class DetailViewerControl : UserControl
         _close.Focus();
 
     internal bool IsChromeVisibleForSmoke =>
-        _toolbarHost.Opacity > 0.9
+        _topChromeHost.Opacity > 0.9
+        && _toolbarHost.Opacity > 0.9
         && _utilityHost.Opacity > 0.9
         && _previous.Opacity > 0.9
         && _next.Opacity > 0.9;
 
     internal bool IsChromeNonBlockingForSmoke =>
-        _toolbarHost.Opacity <= 0.001
+        _topChromeHost.Opacity <= 0.001
+        && _toolbarHost.Opacity <= 0.001
         && _utilityHost.Opacity <= 0.001
         && _previous.Opacity <= 0.001
         && _next.Opacity <= 0.001
+        && !_topChromeHost.IsHitTestVisible
         && !_toolbarHost.IsHitTestVisible
         && !_utilityHost.IsHitTestVisible
         && !_previous.IsHitTestVisible

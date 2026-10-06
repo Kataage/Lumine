@@ -9,6 +9,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -2996,8 +2997,22 @@ try
                     == "context-detail-note",
                 "Contextual detail panel did not expose user-owned metadata.");
 
-            var directRatingButtons =
+            Grid InspectorEditorRow(string label) =>
                 shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Grid>()
+                    .Single(
+                        row =>
+                            string.Equals(
+                                AutomationProperties.GetAutomationId(
+                                    row),
+                                $"inspector-editor-row-{label}",
+                                StringComparison.Ordinal));
+
+            var ratingRow =
+                InspectorEditorRow("評価");
+            var directRatingButtons =
+                ratingRow
                     .GetVisualDescendants()
                     .OfType<Button>()
                     .Where(
@@ -3010,12 +3025,156 @@ try
                     .ToArray();
             Require(
                 directRatingButtons.Length == 5
+                && ratingRow.Bounds.Height is >= 35 and <= 37
                 && directRatingButtons.All(
                     static button =>
-                        button.FontSize >= 17
-                        && button.Padding.Left <= 1
-                        && button.Padding.Right <= 1),
-                "Inspector direct-rating stars regressed to clipped shared caption/padding geometry.");
+                    {
+                        if (button.Content is not TextBlock glyph)
+                        {
+                            return false;
+                        }
+
+                        var glyphOrigin =
+                            glyph.TranslatePoint(
+                                new Point(0, 0),
+                                button);
+                        if (glyphOrigin is null)
+                        {
+                            return false;
+                        }
+
+                        var buttonCenterX =
+                            button.Bounds.Width / 2;
+                        var buttonCenterY =
+                            button.Bounds.Height / 2;
+                        var glyphCenterX =
+                            glyphOrigin.Value.X
+                            + (glyph.Bounds.Width / 2);
+                        var glyphCenterY =
+                            glyphOrigin.Value.Y
+                            + (glyph.Bounds.Height / 2);
+
+                        return
+                            Math.Abs(button.Width - 34) < 0.01
+                            && Math.Abs(button.Height - 34) < 0.01
+                            && button.Padding.Left < 0.01
+                            && button.Padding.Top < 0.01
+                            && button.HorizontalContentAlignment
+                                == HorizontalAlignment.Center
+                            && button.VerticalContentAlignment
+                                == VerticalAlignment.Center
+                            && glyph.HorizontalAlignment
+                                == HorizontalAlignment.Center
+                            && glyph.VerticalAlignment
+                                == VerticalAlignment.Center
+                            && ReferenceEquals(
+                                button.Background,
+                                Brushes.Transparent)
+                            && ReferenceEquals(
+                                button.BorderBrush,
+                                Brushes.Transparent)
+                            && Math.Abs(
+                                glyphCenterX
+                                - buttonCenterX) <= 1.5
+                            && Math.Abs(
+                                glyphCenterY
+                                - buttonCenterY) <= 1.5;
+                    }),
+                "Inspector rating row lost fixed geometry or the star glyph was not actually centered after layout.");
+
+            var colorRow =
+                InspectorEditorRow("カラー");
+            var directColorButtons =
+                colorRow
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(
+                        button =>
+                            (AutomationProperties.GetName(button)
+                                ?? string.Empty)
+                            .StartsWith(
+                                "カラー ",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            var colorCenters =
+                directColorButtons
+                    .Select(
+                        button =>
+                        {
+                            var origin =
+                                button.TranslatePoint(
+                                    new Point(0, 0),
+                                    colorRow)
+                                ?? new Point(
+                                    double.NaN,
+                                    double.NaN);
+                            return new Point(
+                                origin.X
+                                    + (button.Bounds.Width / 2),
+                                origin.Y
+                                    + (button.Bounds.Height / 2));
+                        })
+                    .OrderBy(
+                        static center =>
+                            center.X)
+                    .ToArray();
+            var colorCenterGaps =
+                colorCenters
+                    .Zip(
+                        colorCenters.Skip(1),
+                        static (left, right) =>
+                            right.X - left.X)
+                    .ToArray();
+
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-organize-1100x720");
+            }
+
+            Require(
+                directColorButtons.Length == 8
+                && colorRow.Bounds.Height is >= 35 and <= 37
+                && directColorButtons.All(
+                    static button =>
+                        Math.Abs(button.Width - 28) < 0.01
+                        && Math.Abs(button.Height - 28) < 0.01
+                        && Math.Abs(
+                            button.BorderThickness.Left - 2) < 0.01
+                        && button.HorizontalContentAlignment
+                            == HorizontalAlignment.Center
+                        && button.VerticalContentAlignment
+                            == VerticalAlignment.Center
+                        && button.HorizontalAlignment
+                            == HorizontalAlignment.Center
+                        && button.VerticalAlignment
+                            == VerticalAlignment.Center)
+                && colorCenters.Max(
+                    static center => center.Y)
+                    - colorCenters.Min(
+                        static center => center.Y) <= 1
+                && colorCenterGaps.Length == 7
+                && colorCenterGaps.Max()
+                    - colorCenterGaps.Min() <= 1.5,
+                $"Inspector color row lost fixed chip geometry, a common centerline, or even spacing. count={directColorButtons.Length}, rowHeight={colorRow.Bounds.Height:F2}, centers={string.Join(" | ", colorCenters.Select(static center => $"({center.X:F2},{center.Y:F2})"))}, gaps={string.Join(",", colorCenterGaps.Select(static gap => gap.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)))}");
+
+            foreach (var simpleRowLabel in
+                     new[]
+                     {
+                         "評価",
+                         "お気に入り",
+                         "状態",
+                         "カラー"
+                     })
+            {
+                var simpleRow =
+                    InspectorEditorRow(simpleRowLabel);
+                Require(
+                    simpleRow.Bounds.Height is >= 35 and <= 37
+                    && simpleRow.ColumnDefinitions.Count == 2,
+                    $"Inspector {simpleRowLabel} row drifted from the shared normal-scale form grid.");
+            }
 
             Require(
                 shell.ContextDetail.UsesDirectRatingControlsForSmoke
@@ -5730,6 +5889,16 @@ try
                                         "inspector-900x600");
                                 }
 
+                                if (iteration == 2
+                                    && mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && viewport.Width == 900d)
+                                {
+                                    CaptureVisualEvidence(
+                                        window,
+                                        "inspector-900x600-text225");
+                                }
+
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
                                     && !navigationVisible
@@ -6476,7 +6645,9 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "inspector-organize-1100x720",
                 "inspector-900x600",
+                "inspector-900x600-text225",
                 "inspector-1440x900-drawer",
                 "inspector-1920x1080-pinned",
                 "focused-viewer-900x600",
