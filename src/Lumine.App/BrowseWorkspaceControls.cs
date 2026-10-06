@@ -370,7 +370,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
         var displayPanel =
             new StackPanel
             {
-                Spacing = LumineDesign.Space10,
+                Spacing = LumineDesign.Space8,
                 MinWidth = 240
             };
         displayPanel.Children.Add(
