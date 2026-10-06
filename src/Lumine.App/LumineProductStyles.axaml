@@ -156,8 +156,44 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <Style Selector="Button.lumine-segment">
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="7" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.lumine-segment:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+  </Style>
+  <Style Selector="Button.lumine-segment.selected">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.lumine-segment.selected:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />
+  </Style>
+  <Style Selector="Button.lumine-segment:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.lumine-segmented-host">
+    <Setter Property="Background" Value="{DynamicResource Lumine.ControlSurface}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Padding" Value="2" />
+  </Style>
+
   <Style Selector="Border.lumine-card">
-    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="{DynamicResource Lumine.PanelRadius}" />
     <Setter Property="Padding" Value="{DynamicResource Lumine.CardPadding}" />
