@@ -150,6 +150,10 @@ internal static class LumineDesign
         string Label,
         string IconPath);
 
+    internal sealed record ExpandedNavigationBands(
+        Border Primary,
+        Border Settings);
+
     // Keep navigation visual and terse. These vector paths intentionally
     // mirror the proven v1 icon metaphors so users can identify destinations
     // before reading their labels.
@@ -825,7 +829,7 @@ internal static class LumineDesign
         };
     }
 
-    public static Border CreateExpandedNavigationMenu(
+    public static ExpandedNavigationBands CreateExpandedNavigationBands(
         string selectedLabel,
         Action<string> navigate)
     {
@@ -929,9 +933,7 @@ internal static class LumineDesign
                     button);
             }
 
-            ToolTip.SetTip(
-                button,
-                item.Label);
+            ToolTip.SetTip(button, item.Label);
             AutomationProperties.SetName(
                 button,
                 item.Label);
@@ -942,33 +944,12 @@ internal static class LumineDesign
         }
 
         var buttons =
-            new List<Button>(
-                NavigationItems.Count);
-        var destinations =
-            new StackPanel
-            {
-                Spacing = Space2,
-                Margin =
-                    new Thickness(
-                        Space8,
-                        Space4,
-                        Space8,
-                        Space8)
-            };
+            NavigationItems
+                .Select(CreateDestinationButton)
+                .ToArray();
 
         for (var index = 0;
-             index < NavigationItems.Count - 1;
-             index++)
-        {
-            var button =
-                CreateDestinationButton(
-                    NavigationItems[index]);
-            buttons.Add(button);
-            destinations.Children.Add(button);
-        }
-
-        for (var index = 0;
-             index < buttons.Count;
+             index < buttons.Length;
              index++)
         {
             var currentIndex = index;
@@ -984,11 +965,11 @@ internal static class LumineDesign
                                     currentIndex - 1),
                             Key.Down =>
                                 Math.Min(
-                                    buttons.Count - 1,
+                                    buttons.Length - 1,
                                     currentIndex + 1),
                             Key.Home => 0,
                             Key.End =>
-                                buttons.Count - 1,
+                                buttons.Length - 1,
                             _ => currentIndex
                         };
                     if (target == currentIndex)
@@ -1029,144 +1010,62 @@ internal static class LumineDesign
         Grid.SetColumn(brandLabel, 1);
         brandRow.Children.Add(brandLabel);
 
-        var root =
+        var destinations =
+            new StackPanel
+            {
+                Spacing = Space2,
+                Margin =
+                    new Thickness(
+                        Space8,
+                        Space4,
+                        Space8,
+                        Space8)
+            };
+        for (var index = 0;
+             index < buttons.Length - 1;
+             index++)
+        {
+            destinations.Children.Add(
+                buttons[index]);
+        }
+
+        var primaryRoot =
             new StackPanel
             {
                 Spacing = 0
             };
-        root.Children.Add(brandRow);
-        root.Children.Add(destinations);
+        primaryRoot.Children.Add(brandRow);
+        primaryRoot.Children.Add(destinations);
 
-        return new Border
-        {
-            Background = Surface,
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Child = root
-        };
-    }
-
-    public static Border CreateExpandedSettingsNavigation(
-        string selectedLabel,
-        Action<string> navigate)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(selectedLabel);
-        ArgumentNullException.ThrowIfNull(navigate);
-
-        var item = NavigationItems[^1];
-        var selected =
-            string.Equals(
-                item.Label,
-                selectedLabel,
-                StringComparison.Ordinal);
-
-        var row =
-            new Grid
-            {
-                ColumnDefinitions =
-                    new ColumnDefinitions("3,Auto,*"),
-                ColumnSpacing = Space8
-            };
-        row.Children.Add(
+        var primary =
             new Border
             {
-                Width = 3,
-                Height = 24,
-                CornerRadius =
-                    new CornerRadius(2),
-                Background =
-                    selected
-                        ? Accent
-                        : Brushes.Transparent,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            });
-
-        var icon =
-            CreateStrokeIcon(
-                item.IconPath,
-                18,
-                selected
-                    ? Foreground
-                    : MutedForeground);
-        Grid.SetColumn(icon, 1);
-        row.Children.Add(icon);
-
-        var label =
-            new TextBlock
-            {
-                Text = item.Label,
-                FontSize = BodyFontSize,
-                FontWeight =
-                    selected
-                        ? FontWeight.SemiBold
-                        : FontWeight.Normal,
-                Foreground =
-                    selected
-                        ? Foreground
-                        : MutedForeground,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        Grid.SetColumn(label, 2);
-        row.Children.Add(label);
-
-        var button =
-            new Button
-            {
-                Content = row,
-                MinHeight =
-                    Math.Max(
-                        40,
-                        BodyFontSize + 18),
-                Background =
-                    selected
-                        ? InteractionSelected
-                        : Brushes.Transparent,
+                Background = Surface,
                 BorderBrush = Brushes.Transparent,
                 BorderThickness =
                     new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(
-                        ControlRadius),
+                Child = primaryRoot
+            };
+
+        var settings =
+            new Border
+            {
+                Background = Surface,
+                BorderBrush = Border,
+                BorderThickness =
+                    new Thickness(0, 1, 0, 0),
                 Padding =
                     new Thickness(
+                        Space8,
                         Space6,
-                        Space4),
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Stretch
+                        Space8,
+                        Space8),
+                Child = buttons[^1]
             };
-        if (selected)
-        {
-            ConfigureSelectedButtonStateResources(
-                button);
-        }
-        else
-        {
-            ConfigureNeutralButtonStateResources(
-                button);
-        }
 
-        ToolTip.SetTip(button, item.Label);
-        AutomationProperties.SetName(button, item.Label);
-        button.Click +=
-            (_, _) =>
-                navigate(item.Label);
-
-        return new Border
-        {
-            Background = Surface,
-            BorderBrush = Border,
-            BorderThickness =
-                new Thickness(0, 1, 0, 0),
-            Padding =
-                new Thickness(
-                    Space8,
-                    Space6,
-                    Space8,
-                    Space8),
-            Child = button
-        };
+        return new ExpandedNavigationBands(
+            primary,
+            settings);
     }
 
     public static Control CreateProductState(
