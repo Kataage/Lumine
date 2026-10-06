@@ -727,15 +727,41 @@ internal sealed class BrowseWorkspaceControls : UserControl
         }
     }
 
-    internal bool ActiveChipsUseSharedThemeForSmoke =>
-        _chips.Children
-            .OfType<Button>()
-            .All(
-                static chip =>
-                    chip.Classes.Contains(
-                        "lumine-chip")
-                    && chip.BorderThickness
-                        == new Thickness(0));
+    internal bool ActiveChipsUseSharedThemeForSmoke
+    {
+        get
+        {
+            var buttons =
+                _chips.Children
+                    .OfType<Button>()
+                    .ToArray();
+            var filterChips =
+                buttons
+                    .Where(
+                        static button =>
+                            button.Classes.Contains(
+                                "lumine-chip"))
+                    .ToArray();
+            var clearActions =
+                buttons
+                    .Where(
+                        static button =>
+                            button.Classes.Contains(
+                                "lumine-chip-clear"))
+                    .ToArray();
+
+            return filterChips.Length > 0
+                && filterChips.All(
+                    static chip =>
+                        chip.BorderThickness
+                            == new Thickness(0))
+                && clearActions.Length <= 1
+                && clearActions.All(
+                    static clear =>
+                        clear.BorderThickness
+                            == new Thickness(0));
+        }
+    }
 
     internal string FilterButtonTextForSmoke =>
         _filterButtonLabel.Text
@@ -1376,17 +1402,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
         if (_chips.Children.Count > 0)
         {
             var clear =
-                LumineDesign.ConfigureSecondaryButton(
-                    new Button
-                    {
-                        Content = "絞り込みを解除",
-                        MinHeight = 26,
-                        Padding =
-                            new Thickness(8, 3),
-                        FontSize = LumineDesign.CaptionFontSize,
-                        Margin =
-                            new Thickness(3)
-                    });
+                new Button
+                {
+                    Content = "絞り込みを解除",
+                    Margin =
+                        new Thickness(3)
+                };
+            clear.Classes.Add(
+                "lumine-chip-clear");
             clear.Click +=
                 async (_, _) =>
                     await SetStateAsync(
