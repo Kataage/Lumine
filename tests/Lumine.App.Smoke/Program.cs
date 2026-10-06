@@ -5847,14 +5847,15 @@ try
                                     && window.BrowseControlsForSmoke
                                         .FilterButtonIsVisibleForSmoke
                                     && window.BrowseControlsForSmoke
+                                        .DisplayButtonIsVisibleForSmoke
+                                    && window.BrowseControlsForSmoke
                                         .DisplayControlsGroupedForSmoke
+                                    && window.BrowseControlsForSmoke
+                                        .SearchUsesSharedThemeForSmoke
                                     && !window.BrowseControlsForSmoke
                                         .FilterFlyoutIsOpenForSmoke
-                                    && window.BrowseControlsForSmoke
-                                        .SearchPaddingForSmoke.Top <= 4
-                                    && (iteration == 2
-                                        || window.BrowseControlsForSmoke
-                                            .SearchHeightForSmoke <= 33.5),
+                                    && !window.BrowseControlsForSmoke
+                                        .DisplayFlyoutIsOpenForSmoke,
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 if (iteration == 0
@@ -5916,6 +5917,22 @@ try
                                             "browse-filter-open-900x600");
                                         window.BrowseControlsForSmoke
                                             .CloseFilterFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+
+                                        window.BrowseControlsForSmoke
+                                            .OpenDisplayFlyoutForSmoke();
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .DisplayFlyoutIsOpenForSmoke
+                                            && window.BrowseControlsForSmoke
+                                                .DisplayFlyoutLayoutIsContainedForSmoke,
+                                            "Browse display-options Flyout did not remain contained at 900x600.");
+                                        CaptureVisualEvidence(
+                                            window,
+                                            "browse-display-open-900x600");
+                                        window.BrowseControlsForSmoke
+                                            .CloseDisplayFlyoutForSmoke();
                                         Dispatcher.UIThread.RunJobs();
 
                                         var visualFilterAsset =
@@ -6228,12 +6245,13 @@ try
                         && window.BrowseControlsForSmoke
                             .PrimaryToolbarIsContainedForSmoke
                         && window.BrowseControlsForSmoke
+                            .DisplayButtonIsVisibleForSmoke
+                        && window.BrowseControlsForSmoke
                             .DisplayControlsGroupedForSmoke
                         && window.BrowseControlsForSmoke
-                            .SearchPaddingForSmoke.Top <= 4
-                        && (iteration == 2
-                            || window.BrowseControlsForSmoke
-                                .SearchHeightForSmoke <= 33.5),
+                            .SearchUsesSharedThemeForSmoke
+                        && !window.BrowseControlsForSmoke
+                            .DisplayFlyoutIsOpenForSmoke,
                         "Minimum-width browse command bar clipped or escaped the workspace bounds.");
 
                     window.CurrentShell!.GridViewer.SelectAsset(0);
@@ -6286,7 +6304,7 @@ try
                             && window.BrowseControlsForSmoke
                                 .PrimaryToolbarIsContainedForSmoke
                             && window.BrowseControlsForSmoke
-                                .SearchPaddingForSmoke.Top <= 4,
+                                .SearchUsesSharedThemeForSmoke,
                             $"MainWindow responsive/layout virtualization or browse command containment regressed at {scaling:P0} render scaling.");
                     }
 
@@ -6768,6 +6786,7 @@ try
                 "browse-1440x900-sidebar",
                 "browse-1920x1080",
                 "browse-filter-open-900x600",
+                "browse-display-open-900x600",
                 "browse-active-filter-900x600",
                 "navigation-overlay-900x600",
                 "navigation-pinned-1440x900",
