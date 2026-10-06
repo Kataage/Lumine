@@ -3028,22 +3028,44 @@ try
                 && ratingRow.Bounds.Height is >= 35 and <= 37
                 && directRatingButtons.All(
                     static button =>
-                        Math.Abs(button.Width - 34) < 0.01
-                        && Math.Abs(button.Height - 34) < 0.01
-                        && button.Padding.Left < 0.01
-                        && button.Padding.Top < 0.01
-                        && button.HorizontalContentAlignment
-                            == HorizontalAlignment.Center
-                        && button.VerticalContentAlignment
-                            == VerticalAlignment.Center
-                        && button.Content is TextBlock
+                    {
+                        if (button.Content is not TextBlock glyph)
                         {
-                            HorizontalAlignment:
-                                HorizontalAlignment.Center,
-                            VerticalAlignment:
-                                VerticalAlignment.Center
-                        }),
-                "Inspector rating row lost its fixed, optically centered product geometry.");
+                            return false;
+                        }
+
+                        var buttonCenterX =
+                            button.Bounds.Width / 2;
+                        var buttonCenterY =
+                            button.Bounds.Height / 2;
+                        var glyphCenterX =
+                            glyph.Bounds.X
+                            + (glyph.Bounds.Width / 2);
+                        var glyphCenterY =
+                            glyph.Bounds.Y
+                            + (glyph.Bounds.Height / 2);
+
+                        return
+                            Math.Abs(button.Width - 34) < 0.01
+                            && Math.Abs(button.Height - 34) < 0.01
+                            && button.Padding.Left < 0.01
+                            && button.Padding.Top < 0.01
+                            && button.HorizontalContentAlignment
+                                == HorizontalAlignment.Center
+                            && button.VerticalContentAlignment
+                                == VerticalAlignment.Center
+                            && glyph.HorizontalAlignment
+                                == HorizontalAlignment.Center
+                            && glyph.VerticalAlignment
+                                == VerticalAlignment.Center
+                            && Math.Abs(
+                                glyphCenterX
+                                - buttonCenterX) <= 1.5
+                            && Math.Abs(
+                                glyphCenterY
+                                - buttonCenterY) <= 1.5;
+                    }),
+                "Inspector rating row lost fixed geometry or the star glyph was not actually centered after layout.");
 
             var colorRow =
                 InspectorEditorRow("カラー");
@@ -3059,6 +3081,27 @@ try
                                 "カラー ",
                                 StringComparison.Ordinal))
                     .ToArray();
+            var colorCenters =
+                directColorButtons
+                    .OrderBy(
+                        static button =>
+                            button.Bounds.X)
+                    .Select(
+                        static button =>
+                            new Point(
+                                button.Bounds.X
+                                    + (button.Bounds.Width / 2),
+                                button.Bounds.Y
+                                    + (button.Bounds.Height / 2)))
+                    .ToArray();
+            var colorCenterGaps =
+                colorCenters
+                    .Zip(
+                        colorCenters.Skip(1),
+                        static (left, right) =>
+                            right.X - left.X)
+                    .ToArray();
+
             Require(
                 directColorButtons.Length == 8
                 && colorRow.Bounds.Height is >= 35 and <= 37
@@ -3071,8 +3114,15 @@ try
                         && button.HorizontalContentAlignment
                             == HorizontalAlignment.Center
                         && button.VerticalContentAlignment
-                            == VerticalAlignment.Center),
-                "Inspector color row lost fixed chip geometry or wrapped at the normal Inspector width.");
+                            == VerticalAlignment.Center)
+                && colorCenters.Max(
+                    static center => center.Y)
+                    - colorCenters.Min(
+                        static center => center.Y) <= 1
+                && colorCenterGaps.Length == 7
+                && colorCenterGaps.Max()
+                    - colorCenterGaps.Min() <= 1.5,
+                "Inspector color row lost fixed chip geometry, a common centerline, or even spacing.");
 
             foreach (var simpleRowLabel in
                      new[]
