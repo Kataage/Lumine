@@ -4268,6 +4268,10 @@ try
                         {
                             LumineVisualMetrics.ConfigureTextScaleFactor(
                                 scale);
+                            App.RefreshScaledProductResources(
+                                Application.Current
+                                ?? throw new InvalidOperationException(
+                                    "Design-system smoke has no current Avalonia application."));
 
                             var primary =
                                 LumineDesign.ConfigurePrimaryButton(
@@ -4325,20 +4329,23 @@ try
                                     });
 
                             Require(
-                                ReferenceEquals(
-                                    secondary.Background,
-                                    LumineDesign.ControlSurface)
-                                && icon.BorderBrush
-                                    == Brushes.Transparent
-                                && ReferenceEquals(
-                                    danger.Resources[
-                                        "ButtonBackgroundPointerOver"],
-                                    LumineDesign.InteractionDangerHover)
-                                && ReferenceEquals(
-                                    secondary.Resources[
-                                        "ButtonBorderBrushFocused"],
-                                    LumineDesign.InteractionFocus),
-                                $"Design-system command hierarchy/state resources regressed at {scale:P0}.");
+                                primary.Classes.Contains(
+                                    "lumine-primary")
+                                && secondary.Classes.Contains(
+                                    "lumine-secondary")
+                                && danger.Classes.Contains(
+                                    "lumine-danger")
+                                && icon.Classes.Contains(
+                                    "lumine-icon")
+                                && input.Classes.Contains(
+                                    "lumine-input")
+                                && combo.Classes.Contains(
+                                    "lumine-combo")
+                                && check.Classes.Contains(
+                                    "lumine-check")
+                                && secondary.Resources.Count == 0
+                                && danger.Resources.Count == 0,
+                                $"Design-system semantic classes regressed or common appearance leaked back into per-control resources at {scale:P0}.");
 
                             var actions =
                                 new WrapPanel();
@@ -4432,6 +4439,40 @@ try
                             specimen.Show();
                             Dispatcher.UIThread.RunJobs();
 
+                            Require(
+                                secondary.BorderThickness
+                                    == new Thickness(0)
+                                && secondary.Background
+                                    is ISolidColorBrush secondaryBrush
+                                && secondaryBrush.Color
+                                    == LumineDesign.ControlSurfaceColor
+                                && input.BorderThickness
+                                    == new Thickness(1)
+                                && input.BorderBrush
+                                    is ISolidColorBrush inputBorder
+                                && inputBorder.Color.A == 0
+                                && combo.BorderThickness
+                                    == new Thickness(1)
+                                && combo.BorderBrush
+                                    is ISolidColorBrush comboBorder
+                                && comboBorder.Color.A == 0
+                                && Math.Abs(
+                                    primary.MinHeight
+                                    - LumineDesign.CompactControlHeight) < 0.001
+                                && Math.Abs(
+                                    primary.FontSize
+                                    - LumineDesign.CaptionFontSize) < 0.001
+                                && Math.Abs(
+                                    input.FontSize
+                                    - LumineDesign.BodyFontSize) < 0.001
+                                && Math.Abs(
+                                    combo.FontSize
+                                    - LumineDesign.CaptionFontSize) < 0.001
+                                && Math.Abs(
+                                    input.Padding.Left
+                                    - LumineDesign.Space12) < 0.001,
+                                $"Shared Lumine XAML styles did not resolve to the expected quiet, scale-aware resting geometry at {scale:P0}.");
+
                             var clipped =
                                 specimen
                                     .GetVisualDescendants()
@@ -4457,6 +4498,10 @@ try
 
                         LumineVisualMetrics.ConfigureTextScaleFactor(
                             restoreTextScale);
+                        App.RefreshScaledProductResources(
+                            Application.Current
+                            ?? throw new InvalidOperationException(
+                                "Design-system smoke has no current Avalonia application."));
                     }
 
                     var window =
@@ -4600,38 +4645,24 @@ try
                             new ComboBox());
 
                     Require(
-                        ReferenceEquals(
-                            neutralStateButton.Resources[
-                                "ButtonBackgroundPointerOver"],
-                            LumineDesign.InteractionHover)
-                        && ReferenceEquals(
-                            neutralStateButton.Resources[
-                                "ButtonBackgroundPressed"],
-                            LumineDesign.InteractionPressed)
-                        && ReferenceEquals(
-                            primaryStateButton.Resources[
-                                "ButtonForegroundPointerOver"],
-                            LumineDesign.Background)
-                        && ReferenceEquals(
-                            dangerStateButton.Resources[
-                                "ButtonBackgroundPointerOver"],
-                            LumineDesign.InteractionDangerHover)
-                        && ReferenceEquals(
-                            dangerStateButton.Resources[
-                                "ButtonBackgroundPressed"],
-                            LumineDesign.InteractionDangerPressed)
-                        && ReferenceEquals(
-                            dangerStateButton.Foreground,
-                            LumineDesign.Danger)
-                        && ReferenceEquals(
-                            textStateControl.Resources[
-                                "TextControlBorderBrushFocused"],
-                            LumineDesign.InteractionFocus)
-                        && ReferenceEquals(
-                            comboStateControl.Resources[
-                                "ComboBoxBackgroundPointerOver"],
-                            LumineDesign.InteractionHover),
-                        "Representative Fluent controls are not bound to the canonical Lumine interaction-state resources.");
+                        Application.Current is { } currentApplication
+                        && currentApplication.Styles
+                            .OfType<LumineProductStyles>()
+                            .Any()
+                        && neutralStateButton.Classes.Contains(
+                            "lumine-secondary")
+                        && primaryStateButton.Classes.Contains(
+                            "lumine-primary")
+                        && dangerStateButton.Classes.Contains(
+                            "lumine-danger")
+                        && textStateControl.Classes.Contains(
+                            "lumine-input")
+                        && comboStateControl.Classes.Contains(
+                            "lumine-combo")
+                        && neutralStateButton.Resources.Count == 0
+                        && primaryStateButton.Resources.Count == 0
+                        && dangerStateButton.Resources.Count == 0,
+                        "Representative controls are not driven by the shared Lumine product style layer.");
 
                     Require(
                         LumineDesign.Space2 < LumineDesign.Space4
@@ -4642,19 +4673,19 @@ try
                         && LumineDesign.Space16 < LumineDesign.Space24
                         && LumineDesign.PageGutter
                             == LumineDesign.Space24
-                        && neutralStateButton.CornerRadius
+                        && Application.Current?.Resources[
+                            "Lumine.ControlHeight"]
+                            is double controlHeight
+                        && Math.Abs(
+                            controlHeight
+                            - LumineDesign.CompactControlHeight) < 0.001
+                        && Application.Current?.Resources[
+                            "Lumine.ControlRadius"]
+                            is CornerRadius controlRadius
+                        && controlRadius
                             == new CornerRadius(
-                                LumineDesign.ControlRadius)
-                        && Math.Abs(
-                            neutralStateButton.Padding.Left
-                            - LumineDesign.Space12) < 0.001
-                        && Math.Abs(
-                            textStateControl.Padding.Left
-                            - LumineDesign.Space12) < 0.001
-                        && Math.Abs(
-                            comboStateControl.Padding.Left
-                            - LumineDesign.Space8) < 0.001,
-                        "Canonical Lumine spacing/control metrics drifted or representative controls stopped using them.");
+                                LumineDesign.ControlRadius),
+                        "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
                         ContrastRatio(
