@@ -6635,6 +6635,7 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "inspector-organize-1100x720",
                 "inspector-900x600",
                 "inspector-1440x900-drawer",
                 "inspector-1920x1080-pinned",
