@@ -4756,7 +4756,8 @@ try
                         window.WorkspacePageForSmoke
                             is Border
                         && window.IsWorkspacePageVisibleForSmoke
-                        && !window.IsNavigationPaneVisibleForSmoke
+                        && window.IsNavigationPaneVisibleForSmoke
+                        && window.PinnedNavigationUsesUnifiedSidebarForSmoke
                         && !window.StatusSurfaceVisibleForSmoke
                         && window.WorkspacePageBoundsForSmoke.Width >= 500
                         && ReferenceEquals(
@@ -4783,7 +4784,7 @@ try
                                     extension,
                                     out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
-                        "Product Settings did not open as a clean main-workspace page without browse status chrome while preserving the active viewer runtime.");
+                        "Product Settings did not keep the unified desktop sidebar while opening as a clean main-workspace page without browse status chrome.");
 
                     var settingsText =
                         window.WorkspacePageForSmoke
