@@ -443,6 +443,11 @@ public sealed class MainWindow : Window
             (_, e) =>
                 ApplyNavigationLayout(
                     e.NewSize.Width);
+
+        // A normal desktop launch should present one coherent sidebar rather
+        // than a tiny rail plus an immediately separate floating pane.
+        _navigationPinned =
+            Width >= 1200;
         UpdateNavigationPinVisual();
         ApplyNavigationLayout(Width);
 
@@ -2878,6 +2883,18 @@ public sealed class MainWindow : Window
             }
 
             EnsureBrowseControls();
+
+            var layoutWidth =
+                ResolveLayoutWidth();
+            if (_navigationPinned
+                && layoutWidth >= 1200
+                && !IsMainWorkspaceDestination(
+                    _navigationDestination))
+            {
+                _navigationPane.IsVisible = true;
+            }
+            ApplyNavigationLayout(layoutWidth);
+
             UpdateScopeDisplay();
             StartNavigationRefresh();
 
