@@ -5336,6 +5336,30 @@ try
                                 StringComparison.Ordinal)),
                         "Product Settings did not prioritize daily settings or hide advanced cache controls by default.");
 
+                    if (iteration == 2)
+                    {
+                        window.Width = 900;
+                        window.Height = 600;
+                        Dispatcher.UIThread.RunJobs();
+                        settingsScroll =
+                            window.WorkspacePageForSmoke
+                                .GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .First(
+                                    scroll =>
+                                        string.Equals(
+                                            AutomationProperties.GetName(
+                                                scroll),
+                                            "設定スクロール",
+                                            StringComparison.Ordinal));
+                        settingsScroll.Offset =
+                            new Vector(0, 0);
+                        Dispatcher.UIThread.RunJobs();
+                        CaptureVisualEvidence(
+                            window,
+                            "settings-900x600-text225");
+                    }
+
                     if (iteration == 0)
                     {
                         window.Width = 1440;
@@ -6765,6 +6789,7 @@ try
                 "settings-1440x900",
                 "settings-advanced-1440x900",
                 "settings-900x600",
+                "settings-900x600-text225",
                 "empty-library-1440x900",
                 "no-match-1440x900",
                 "error-1440x900",
