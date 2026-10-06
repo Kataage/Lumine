@@ -967,23 +967,6 @@ internal static class LumineDesign
             destinations.Children.Add(button);
         }
 
-        destinations.Children.Add(
-            new Border
-            {
-                Height = 1,
-                Background = Border,
-                Margin =
-                    new Thickness(
-                        Space6,
-                        Space6)
-            });
-
-        var settings =
-            CreateDestinationButton(
-                NavigationItems[^1]);
-        buttons.Add(settings);
-        destinations.Children.Add(settings);
-
         for (var index = 0;
              index < buttons.Count;
              index++)
@@ -1060,6 +1043,129 @@ internal static class LumineDesign
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Child = root
+        };
+    }
+
+    public static Border CreateExpandedSettingsNavigation(
+        string selectedLabel,
+        Action<string> navigate)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(selectedLabel);
+        ArgumentNullException.ThrowIfNull(navigate);
+
+        var item = NavigationItems[^1];
+        var selected =
+            string.Equals(
+                item.Label,
+                selectedLabel,
+                StringComparison.Ordinal);
+
+        var row =
+            new Grid
+            {
+                ColumnDefinitions =
+                    new ColumnDefinitions("3,Auto,*"),
+                ColumnSpacing = Space8
+            };
+        row.Children.Add(
+            new Border
+            {
+                Width = 3,
+                Height = 24,
+                CornerRadius =
+                    new CornerRadius(2),
+                Background =
+                    selected
+                        ? Accent
+                        : Brushes.Transparent,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            });
+
+        var icon =
+            CreateStrokeIcon(
+                item.IconPath,
+                18,
+                selected
+                    ? Foreground
+                    : MutedForeground);
+        Grid.SetColumn(icon, 1);
+        row.Children.Add(icon);
+
+        var label =
+            new TextBlock
+            {
+                Text = item.Label,
+                FontSize = BodyFontSize,
+                FontWeight =
+                    selected
+                        ? FontWeight.SemiBold
+                        : FontWeight.Normal,
+                Foreground =
+                    selected
+                        ? Foreground
+                        : MutedForeground,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        Grid.SetColumn(label, 2);
+        row.Children.Add(label);
+
+        var button =
+            new Button
+            {
+                Content = row,
+                MinHeight =
+                    Math.Max(
+                        40,
+                        BodyFontSize + 18),
+                Background =
+                    selected
+                        ? InteractionSelected
+                        : Brushes.Transparent,
+                BorderBrush = Brushes.Transparent,
+                BorderThickness =
+                    new Thickness(0),
+                CornerRadius =
+                    new CornerRadius(
+                        ControlRadius),
+                Padding =
+                    new Thickness(
+                        Space6,
+                        Space4),
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch
+            };
+        if (selected)
+        {
+            ConfigureSelectedButtonStateResources(
+                button);
+        }
+        else
+        {
+            ConfigureNeutralButtonStateResources(
+                button);
+        }
+
+        ToolTip.SetTip(button, item.Label);
+        AutomationProperties.SetName(button, item.Label);
+        button.Click +=
+            (_, _) =>
+                navigate(item.Label);
+
+        return new Border
+        {
+            Background = Surface,
+            BorderBrush = Border,
+            BorderThickness =
+                new Thickness(0, 1, 0, 0),
+            Padding =
+                new Thickness(
+                    Space8,
+                    Space6,
+                    Space8,
+                    Space8),
+            Child = button
         };
     }
 
