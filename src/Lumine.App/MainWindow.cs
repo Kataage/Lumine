@@ -35,6 +35,7 @@ public sealed class MainWindow : Window
     private readonly LibraryService _navigationLibraryService;
     private readonly Task _navigationInitialization;
     private readonly ContentControl _navigationRailHost;
+    private readonly ContentControl _wideNavigationHost;
     private readonly Border _navigationPane;
     private readonly Button _navigationPin;
     private readonly TextBlock _navigationTitle;
@@ -298,6 +299,20 @@ public sealed class MainWindow : Window
                 _navigationDestination,
                 OnNavigationRequested);
 
+        _wideNavigationHost =
+            new ContentControl
+            {
+                IsVisible = false,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Stretch,
+                VerticalContentAlignment =
+                    VerticalAlignment.Top
+            };
+        _wideNavigationHost.Content =
+            LumineDesign.CreateExpandedNavigationMenu(
+                _navigationDestination,
+                OnNavigationRequested);
+
         _navigationTitle =
             new TextBlock
             {
@@ -363,11 +378,14 @@ public sealed class MainWindow : Window
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                    new RowDefinitions("Auto,Auto,*")
             };
         navigationLayout.Children.Add(
+            _wideNavigationHost);
+        Grid.SetRow(navigationHeader, 1);
+        navigationLayout.Children.Add(
             navigationHeader);
-        Grid.SetRow(_navigationContent, 1);
+        Grid.SetRow(_navigationContent, 2);
         navigationLayout.Children.Add(
             _navigationContent);
 
@@ -709,10 +727,9 @@ public sealed class MainWindow : Window
     private void ApplyNavigationLayout(
         double width)
     {
-        // Compact windows keep the global rail fixed and present contextual
-        // navigation as a temporary drawer over the canvas. Wide windows may
-        // pin contextual navigation, but the rail + context must read as one
-        // sidebar rather than two independent vertical panels.
+        // Compact windows keep the icon rail and use contextual navigation as
+        // a temporary drawer. Wide pinned navigation becomes one actual
+        // sidebar: expanded global destinations above contextual content.
         _compactNavigationLayout =
             width < 1200;
 
@@ -728,17 +745,15 @@ public sealed class MainWindow : Window
         _navigationPin.IsVisible =
             !_compactNavigationLayout;
 
-        var railSurface =
-            _navigationRailHost.Content
-                as Border;
-
         if (paneCanDock)
         {
-            const double pinnedContextWidth = 256;
+            const double pinnedSidebarWidth = 288;
 
+            _navigationRailHost.IsVisible = false;
+            _wideNavigationHost.IsVisible = true;
             _appShell.ColumnDefinitions =
                 new ColumnDefinitions(
-                    $"{LumineDesign.NavigationWidth + pinnedContextWidth},*");
+                    $"{pinnedSidebarWidth},*");
             Grid.SetColumn(
                 _navigationPane,
                 0);
@@ -746,26 +761,14 @@ public sealed class MainWindow : Window
                 _workspaceHost,
                 1);
 
-            if (railSurface is not null)
-            {
-                // The rail and contextual content share one desktop sidebar.
-                // Keep only the outer canvas divider.
-                railSurface.BorderThickness =
-                    new Thickness(0);
-            }
-
             _navigationPane.HorizontalAlignment =
-                HorizontalAlignment.Left;
+                HorizontalAlignment.Stretch;
             _navigationPane.VerticalAlignment =
                 VerticalAlignment.Stretch;
             _navigationPane.Margin =
-                new Thickness(
-                    LumineDesign.NavigationWidth,
-                    0,
-                    0,
-                    0);
+                new Thickness(0);
             _navigationPane.Width =
-                pinnedContextWidth;
+                pinnedSidebarWidth;
             _navigationPane.Background =
                 LumineDesign.Surface;
             _navigationPane.CornerRadius =
@@ -778,12 +781,8 @@ public sealed class MainWindow : Window
             return;
         }
 
-        if (railSurface is not null)
-        {
-            railSurface.BorderThickness =
-                new Thickness(0, 0, 1, 0);
-        }
-
+        _navigationRailHost.IsVisible = true;
+        _wideNavigationHost.IsVisible = false;
         _appShell.ColumnDefinitions =
             new ColumnDefinitions(
                 $"{LumineDesign.NavigationWidth},*");
@@ -825,16 +824,15 @@ public sealed class MainWindow : Window
         _navigationPinned
         && _navigationPane.IsVisible
         && _navigationPane.ZIndex == 0
+        && !_navigationRailHost.IsVisible
+        && _wideNavigationHost.IsVisible
         && Grid.GetColumn(
             _navigationPane) == 0
         && Grid.GetColumn(
             _workspaceHost) == 1
-        && _navigationPane.Margin.Left
-            >= LumineDesign.NavigationWidth - 0.5
+        && _navigationPane.Margin.Left < 0.5
         && _navigationPane.BorderThickness.Left < 0.5
-        && _navigationRailHost.Content
-            is Border railSurface
-        && railSurface.BorderThickness.Right < 0.5;
+        && _navigationPane.BorderThickness.Right > 0.5;
 
     private void DismissCompactNavigationOverlayForBlockingState()
     {
@@ -891,6 +889,10 @@ public sealed class MainWindow : Window
             ResolveLayoutWidth());
         _navigationRailHost.Content =
             LumineDesign.CreateNavigationRail(
+                destination,
+                OnNavigationRequested);
+        _wideNavigationHost.Content =
+            LumineDesign.CreateExpandedNavigationMenu(
                 destination,
                 OnNavigationRequested);
         RenderNavigationDestination();
