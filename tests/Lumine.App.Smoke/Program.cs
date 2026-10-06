@@ -4730,6 +4730,21 @@ try
                         && window.CurrentShell is not null,
                         "MainWindow did not compose the production Core Viewer runtime/shell.");
 
+                    if (iteration == 0)
+                    {
+                        window.Width = 1440;
+                        window.Height = 900;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.IsNavigationPinnedForSmoke
+                            && window.IsNavigationPaneVisibleForSmoke
+                            && window.PinnedNavigationUsesUnifiedSidebarForSmoke,
+                            "Wide default workspace did not present the unified desktop sidebar.");
+                        CaptureVisualEvidence(
+                            window,
+                            "browse-1440x900-sidebar");
+                    }
+
                     var shellBeforeSettings =
                         window.CurrentShell;
 
@@ -6448,6 +6463,7 @@ try
                 "browse-900x600",
                 "browse-1024x768",
                 "browse-1440x900",
+                "browse-1440x900-sidebar",
                 "browse-1920x1080",
                 "browse-filter-open-900x600",
                 "browse-active-filter-900x600",
