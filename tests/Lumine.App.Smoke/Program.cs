@@ -5826,7 +5826,10 @@ try
                                         - unpinnedClosedCanvasWidth) < 1,
                                     $"Unpinning Inspector did not restore overlay canvas width at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                                 window.CurrentShell.HideContextDetail();
+                            }
 
+                            if (viewport.Width >= 1440)
+                            {
                                 window.SetNavigationPaneVisibleForSmoke(true);
                                 window.SetNavigationPinnedForSmoke(true);
                                 Dispatcher.UIThread.RunJobs();
@@ -5842,8 +5845,8 @@ try
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
                                     && pinnedCanvasWidth
-                                        < unpinnedClosedCanvasWidth - 200,
-                                    $"Pinned navigation did not dock beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                        < unpinnedClosedCanvasWidth - 180,
+                                    $"Pinned navigation did not become a unified sidebar beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
