@@ -606,22 +606,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 });
             body.Children.Add(content);
 
-            return new Border
-            {
-                Background =
-                    LumineDesign.SurfaceRaised,
-                BorderBrush =
-                    LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8),
-                Child = body
-            };
+            var card =
+                new Border
+                {
+                    Child = body
+                };
+            card.Classes.Add("lumine-card");
+            return card;
         }
 
         var creative =
@@ -975,20 +966,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         LumineDesign.Space12,
                         0,
                         LumineDesign.Space12,
-                        LumineDesign.Space6),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space2),
-                Background =
-                    LumineDesign.SurfaceRaised,
-                BorderBrush =
-                    Brushes.Transparent,
-                BorderThickness =
-                    new Thickness(0),
-                CornerRadius =
-                    new CornerRadius(8),
+                        LumineDesign.Space8),
                 Child = tabStrip
             };
+        tabStripHost.Classes.Add(
+            "lumine-segmented-host");
 
         var tabLayout =
             new Grid
@@ -3100,23 +3082,16 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         int index)
     {
         var button =
-            LumineDesign.ConfigureSecondaryButton(
-                new Button
-                {
-                    Content = header,
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4),
-                    CornerRadius =
-                        new CornerRadius(6),
-                    HorizontalAlignment =
-                        HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment =
-                        HorizontalAlignment.Center
-                });
+            new Button
+            {
+                Content = header,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
+                HorizontalContentAlignment =
+                    HorizontalAlignment.Center
+            };
+        button.Classes.Add(
+            "lumine-segment");
 
         button.Click +=
             (_, _) => SelectTab(index);
@@ -3170,32 +3145,19 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             var selected =
                 itemIndex == index;
 
-            button.Background =
-                selected
-                    ? LumineDesign.InteractionSelected
-                    : Brushes.Transparent;
-            button.BorderBrush =
-                selected
-                    ? LumineDesign.BorderStrong
-                    : Brushes.Transparent;
-            button.BorderThickness =
-                new Thickness(1);
-            button.FontWeight =
-                selected
-                    ? FontWeight.SemiBold
-                    : FontWeight.Normal;
-
             if (selected)
             {
-                LumineDesign
-                    .ConfigureSelectedButtonStateResources(
-                        button);
+                if (!button.Classes.Contains(
+                        "selected"))
+                {
+                    button.Classes.Add(
+                        "selected");
+                }
             }
             else
             {
-                LumineDesign
-                    .ConfigureNeutralButtonStateResources(
-                        button);
+                button.Classes.Remove(
+                    "selected");
             }
         }
 
