@@ -586,9 +586,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                      {
                          _search,
                          _filterButton,
-                         _grid,
-                         _list,
-                         _density
+                         _displayButton
                      })
             {
                 var origin =
@@ -622,18 +620,44 @@ internal sealed class BrowseWorkspaceControls : UserControl
         && _filterButton.Bounds.Width > 0
         && _filterButton.Bounds.Height > 0;
 
-    internal bool DisplayControlsGroupedForSmoke =>
-        _displayControlsHost.Child is StackPanel display
-        && display.Children.Count == 3
-        && display.Children[0] is StackPanel mode
-        && mode.Children.Contains(_grid)
-        && mode.Children.Contains(_list)
-        && display.Children[2] is StackPanel density
-        && density.Children.Contains(_density)
-        && ReferenceEquals(
-            _displayControlsHost.Background,
-            LumineDesign.SurfaceRaised);
+    internal bool DisplayButtonIsVisibleForSmoke =>
+        _displayButton.IsEffectivelyVisible
+        && _displayButton.Bounds.Width > 0
+        && _displayButton.Bounds.Height > 0;
 
+    internal bool DisplayControlsGroupedForSmoke =>
+        ReferenceEquals(
+            _displayButton.Flyout,
+            _displayFlyout)
+        && _displayControlsHost.Classes.Contains(
+            "lumine-popover")
+        && _grid.Classes.Contains(
+            "lumine-segment")
+        && _grid.Classes.Contains(
+            "icon-only")
+        && _list.Classes.Contains(
+            "lumine-segment")
+        && _list.Classes.Contains(
+            "icon-only")
+        && _grid.Classes.Contains(
+            "selected")
+            != _list.Classes.Contains(
+                "selected")
+        && string.Equals(
+            AutomationProperties.GetName(
+                _density),
+            "サムネイルサイズ",
+            StringComparison.Ordinal);
+
+    internal bool SearchUsesSharedThemeForSmoke =>
+        _search.Classes.Contains(
+            "lumine-input")
+        && Math.Abs(
+            _search.MinHeight
+            - LumineDesign.CompactControlHeight) < 0.001
+        && Math.Abs(
+            _search.Padding.Top
+            - LumineDesign.Space6) < 0.001;
 
     internal bool FilterFlyoutIsOpenForSmoke =>
         _filterFlyout.IsOpen;
@@ -652,6 +676,19 @@ internal sealed class BrowseWorkspaceControls : UserControl
             <= _filterPanel.Bounds.Width + 0.5
         && _color.Bounds.Right
             <= _filterPanel.Bounds.Width + 0.5;
+
+    internal bool DisplayFlyoutIsOpenForSmoke =>
+        _displayFlyout.IsOpen;
+
+    internal bool DisplayFlyoutLayoutIsContainedForSmoke =>
+        _displayControlsHost.Bounds.Width
+            is > 0 and <= 320.5
+        && _displayControlsHost.Bounds.Height > 0
+        && _grid.Bounds.Width > 0
+        && _list.Bounds.Width > 0
+        && _density.Bounds.Width > 0
+        && _density.Bounds.Right
+            <= _displayControlsHost.Bounds.Width + 0.5;
 
     internal string FilterButtonTextForSmoke =>
         _filterButtonLabel.Text
@@ -672,6 +709,13 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     internal void CloseFilterFlyoutForSmoke() =>
         _filterFlyout.Hide();
+
+    internal void OpenDisplayFlyoutForSmoke() =>
+        _displayFlyout.ShowAt(
+            _displayButton);
+
+    internal void CloseDisplayFlyoutForSmoke() =>
+        _displayFlyout.Hide();
 
     internal double SearchHeightForSmoke =>
         _search.Bounds.Height;
