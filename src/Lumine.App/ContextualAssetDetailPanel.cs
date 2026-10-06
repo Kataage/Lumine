@@ -1213,22 +1213,20 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                  index++)
             {
                 var button = _tabButtons[index];
-                var expectedHover =
-                    index == _selectedTabIndex
-                        ? LumineDesign.InteractionSelectedHover
-                        : LumineDesign.InteractionHover;
-                if (!ReferenceEquals(
-                        button.Resources[
-                            "ButtonBackgroundPointerOver"],
-                        expectedHover))
+                var selected =
+                    index == _selectedTabIndex;
+
+                if (!button.Classes.Contains(
+                        "lumine-segment")
+                    || button.Resources.Count != 0
+                    || button.Classes.Contains(
+                        "selected") != selected)
                 {
                     return false;
                 }
             }
 
-            return ReferenceEquals(
-                _tabButtons[_selectedTabIndex].Background,
-                LumineDesign.InteractionSelected);
+            return true;
         }
     }
 
