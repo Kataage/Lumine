@@ -2990,7 +2990,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             + $"元寸法: {raw}\n"
             + $"アルファ: {(asset.HasAlpha == true ? "あり" : asset.HasAlpha == false ? "なし" : "未取得")}\n"
             + $"更新日時: {modified:yyyy-MM-dd HH:mm:ss}\n"
-            + $"source revision: {asset.SourceRevision}";
+            + $"ソース版: {asset.SourceRevision}";
     }
 
     private static string FormatExif(
