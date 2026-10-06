@@ -2393,9 +2393,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private Control CreateColorPicker()
     {
         var panel =
-            new WrapPanel
+            new Grid
             {
+                ColumnDefinitions =
+                    new ColumnDefinitions(
+                        "*,*,*,*,*,*,*,*"),
                 MinHeight = 36,
+                MaxWidth = 256,
+                HorizontalAlignment =
+                    HorizontalAlignment.Stretch,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
@@ -2473,8 +2479,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                 Margin =
                                     new Thickness(
                                         0,
-                                        4,
-                                        3,
                                         4),
                                 CornerRadius =
                                     new CornerRadius(14),
@@ -2513,6 +2517,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                             (_, _) =>
                                 SetColorFromDirectControl(
                                     index);
+                        Grid.SetColumn(
+                            button,
+                            index);
                         panel.Children.Add(button);
                         return button;
                     })
