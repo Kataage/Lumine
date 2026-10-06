@@ -2017,6 +2017,8 @@ internal static class Program
                 - viewportCenterY) <= 1.5,
             "Fit image did not start visually centered in the Viewer viewport.");
 
+        var topChromeBounds =
+            detail.TopChromeBoundsInControlForSmoke;
         var toolbarBounds =
             detail.ToolbarBoundsInControlForSmoke;
         var utilityBounds =
@@ -2035,16 +2037,25 @@ internal static class Program
             "Focused Viewer chrome regressed to heavy bordered command blocks.");
 
         Require(
-            toolbarBounds.Top >= viewportBounds.Top
-            && toolbarBounds.Bottom <= viewportBounds.Top + 96
-            && utilityBounds.Top >= viewportBounds.Top
-            && utilityBounds.Bottom <= viewportBounds.Top + 96
-            && utilityBounds.Right <= viewportBounds.Right
+            topChromeBounds.Top >= viewportBounds.Top
+            && topChromeBounds.Bottom <= viewportBounds.Top + 96
+            && topChromeBounds.Left >= viewportBounds.Left
+            && topChromeBounds.Right <= viewportBounds.Right
+            && toolbarBounds.Left >= topChromeBounds.Left
+            && toolbarBounds.Right <= topChromeBounds.Right
+            && toolbarBounds.Top >= topChromeBounds.Top
+            && toolbarBounds.Bottom <= topChromeBounds.Bottom
+            && utilityBounds.Left >= topChromeBounds.Left
+            && utilityBounds.Right <= topChromeBounds.Right
+            && utilityBounds.Top >= topChromeBounds.Top
+            && utilityBounds.Bottom <= topChromeBounds.Bottom
             && toolbarBounds.Right + 4 <= utilityBounds.Left
             && previousBounds.Left >= viewportBounds.Left
             && previousBounds.Right <= viewportBounds.Left + 96
+            && previousBounds.Width <= 36.5
             && nextBounds.Right <= viewportBounds.Right
             && nextBounds.Left >= viewportBounds.Right - 96
+            && nextBounds.Width <= 36.5
             && closeBounds.Left >= utilityBounds.Left
             && closeBounds.Right <= utilityBounds.Right
             && closeBounds.Top >= utilityBounds.Top
@@ -2053,7 +2064,7 @@ internal static class Program
             && zoomSliderBounds.Right <= toolbarBounds.Right
             && zoomSliderBounds.Top >= toolbarBounds.Top
             && zoomSliderBounds.Bottom <= toolbarBounds.Bottom,
-            "Viewer command groups escaped their safe bands, overlapped, or mixed window commands into the zoom group.");
+            "Viewer top chrome lost its single coherent safe-band layout or navigation controls became visually heavy.");
 
         detail.FocusCloseForSmoke();
         detail.FadeChromeForSmoke();
