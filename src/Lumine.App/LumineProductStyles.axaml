@@ -284,6 +284,50 @@
     <Setter Property="Padding" Value="12" />
   </Style>
 
+  <Style Selector="Border.lumine-sidebar">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+  <Style Selector="Border.lumine-sidebar.docked">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="Border.lumine-sidebar.overlay">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+
+  <Style Selector="Border.lumine-nav-rail">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+
+  <Style Selector="Border.lumine-nav-band">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Border.lumine-nav-settings-band">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+
+  <Style Selector="Button.lumine-icon.active">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.lumine-icon.active:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />
+  </Style>
+
   <Style Selector="Button.lumine-nav-item">
     <Setter Property="MinHeight" Value="38" />
     <Setter Property="Padding" Value="8,5" />
