@@ -2355,124 +2355,69 @@ internal static class ProductNavigationViews
                     content.Classes.Add(
                         "lumine-publication-row-content");
                     content.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                publication.PublishedAtUtc
-                                    .ToLocalTime()
-                                    .ToString("yyyy-MM-dd HH:mm")
-                                + $" · {publication.Destination}"
-                                + (string.IsNullOrWhiteSpace(
-                                        publication.Account)
-                                    ? string.Empty
-                                    : $" · {publication.Account}"),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize
-                        });
+                        CreatePublicationText(
+                            publication.PublishedAtUtc
+                                .ToLocalTime()
+                                .ToString("yyyy-MM-dd HH:mm")
+                            + $" · {publication.Destination}"
+                            + (string.IsNullOrWhiteSpace(
+                                    publication.Account)
+                                ? string.Empty
+                                : $" · {publication.Account}"),
+                            "lumine-muted-caption",
+                            wrap: false));
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.Title))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.Title,
-                                Foreground =
-                                    LumineDesign.Foreground,
-                                FontWeight =
-                                    FontWeight.SemiBold,
-                                FontSize =
-                                    LumineDesign.BodyFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.Title,
+                                "lumine-section-title"));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.Body))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.Body,
-                                Foreground =
-                                    LumineDesign.Foreground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                MaxHeight = 72,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.Body,
+                                "lumine-body-caption",
+                                maxHeight: 72));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.TagsSnapshot))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.TagsSnapshot,
-                                Foreground =
-                                    LumineDesign.Accent,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.TagsSnapshot,
+                                "lumine-accent-caption"));
                     }
 
                     content.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                FormatPublicationAssets(
-                                    publication,
-                                    " → "),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap
-                        });
+                        CreatePublicationText(
+                            FormatPublicationAssets(
+                                publication,
+                                " → "),
+                            "lumine-muted-caption"));
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.ExternalId))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    $"外部ID: {publication.ExternalId}",
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                $"外部ID: {publication.ExternalId}",
+                                "lumine-muted-caption"));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.ExternalUrl))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    $"URL: {publication.ExternalUrl}",
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                $"URL: {publication.ExternalUrl}",
+                                "lumine-muted-caption"));
                     }
 
                     foreach (var flag in
@@ -2480,16 +2425,9 @@ internal static class ProductNavigationViews
                                  publication.PlatformMetadataJson))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text = flag,
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                flag,
+                                "lumine-muted-caption"));
                     }
 
                     if (loadPublicationDetail is not null)
@@ -2504,16 +2442,11 @@ internal static class ProductNavigationViews
                                 IsVisible = false
                             };
                         var detailStatus =
-                            new TextBlock
-                            {
-                                Foreground =
-                                    LumineDesign.Warning,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap,
-                                IsVisible = false
-                            };
+                            CreatePublicationText(
+                                string.Empty,
+                                "lumine-warning-caption");
+                        detailStatus.IsVisible =
+                            false;
                         var expand =
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
@@ -2890,21 +2823,40 @@ internal static class ProductNavigationViews
         return surface;
     }
 
+    private static TextBlock CreatePublicationText(
+        string text,
+        string styleClass,
+        bool wrap = true,
+        double? maxHeight = null)
+    {
+        var block =
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping =
+                    wrap
+                        ? TextWrapping.Wrap
+                        : TextWrapping.NoWrap
+            };
+        if (maxHeight is double resolvedMaxHeight)
+        {
+            block.MaxHeight =
+                resolvedMaxHeight;
+        }
+
+        block.Classes.Add(
+            styleClass);
+        return block;
+    }
+
     private static TextBlock CreatePublicationDetailText(
         string text,
         bool accent = false) =>
-        new()
-        {
-            Text = text,
-            Foreground =
-                accent
-                    ? LumineDesign.Accent
-                    : LumineDesign.MutedForeground,
-            FontSize =
-                LumineDesign.CaptionFontSize,
-            TextWrapping =
-                TextWrapping.Wrap
-        };
+        CreatePublicationText(
+            text,
+            accent
+                ? "lumine-accent-caption"
+                : "lumine-muted-caption");
 
     internal static IReadOnlyList<string>
         ExtractPublicationFlagsForSmoke(
