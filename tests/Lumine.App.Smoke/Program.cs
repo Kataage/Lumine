@@ -1296,15 +1296,17 @@ try
                                 StringComparison.Ordinal));
             Require(
                 manageLibraryButton is { IsEffectivelyVisible: true }
-                && string.Equals(
-                    manageLibraryButton.Content as string,
-                    "•••",
-                    StringComparison.Ordinal)
+                && manageLibraryButton.Content
+                    is Avalonia.Controls.Shapes.Path manageLibraryIcon
+                && manageLibraryIcon.Data is not null
+                && manageLibraryIcon.Data.Bounds.Height > 0.5
+                && manageLibraryIcon.Width >= 15.5
+                && manageLibraryIcon.Height >= 15.5
                 && manageLibraryButton.Classes.Contains(
                     "lumine-icon")
                 && manageLibraryButton.Classes.Contains(
                     "lumine-tertiary"),
-                "Library Manage overflow lost its visible themed utility affordance.");
+                "Library Manage overflow lost its visible non-zero-height themed vector affordance.");
 
             var rescanButton =
                 navigationView.GetVisualDescendants()
