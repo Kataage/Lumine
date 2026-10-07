@@ -1593,6 +1593,29 @@ try
                     ?.Count()
                 ?? 0;
 
+            var allFoldersButton =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "すべての画像",
+                                StringComparison.Ordinal));
+            Require(
+                hierarchyList.Classes.Contains(
+                    "lumine-flat-list")
+                && allFoldersButton.Classes.Contains(
+                    "lumine-folder-row")
+                && allFoldersButton.Classes.Contains(
+                    "selected")
+                && allFoldersButton.Resources.Count == 0
+                && allFoldersButton.BorderThickness
+                    == new Thickness(0),
+                "Folder navigation escaped the shared flat semantic-row contract.");
+
             Require(
                 VisibleFolderCount(hierarchyList) == 1,
                 "Collapsed folder tree exposed descendants before disclosure.");
@@ -1632,6 +1655,34 @@ try
                 VisibleFolderCount(hierarchyList) == 4
                 && hierarchyExpansion.Contains("root/a"),
                 "Expanding a nested folder did not reveal its descendants.");
+
+            var realizedFolderButton =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "フォルダー: root",
+                                StringComparison.Ordinal));
+            Require(
+                realizedFolderButton.Classes.Contains(
+                    "lumine-folder-row")
+                && !realizedFolderButton.Classes.Contains(
+                    "selected")
+                && realizedFolderButton.Resources.Count == 0
+                && realizedFolderButton.BorderThickness
+                    == new Thickness(0),
+                "Folder tree row restored per-control paint resources or resting card borders.");
+
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    hierarchyWindow,
+                    "folders-navigation-420x600");
+            }
 
             hierarchyWindow.Close();
 
@@ -1692,9 +1743,32 @@ try
                 };
             scaleWindow.Show();
             Dispatcher.UIThread.RunJobs();
+            var publicationList =
+                publicationsView
+                    .GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .Single();
+            var publicationRow =
+                publicationsView
+                    .GetVisualDescendants()
+                    .OfType<Border>()
+                    .First(
+                        border =>
+                            border.Classes.Contains(
+                                "lumine-publication-row"));
             Require(
-                RealizedNavigationRows(publicationsView) is > 0 and < 128,
-                "2k publication navigation materialized an unbounded visual tree.");
+                RealizedNavigationRows(publicationsView) is > 0 and < 128
+                && publicationList.Classes.Contains(
+                    "lumine-flat-list")
+                && publicationRow.BorderThickness
+                    == new Thickness(0),
+                "Publication navigation materialized an unbounded tree or regressed to bordered card rows.");
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    scaleWindow,
+                    "publication-navigation-420x600");
+            }
             scaleWindow.Close();
 
             var publicationLoadMoreCalls = 0;
@@ -1978,6 +2052,14 @@ try
                         .Select(
                             static text =>
                                 text.Text));
+            var expandedDetailSurface =
+                expandablePublicationView
+                    .GetVisualDescendants()
+                    .OfType<Border>()
+                    .First(
+                        border =>
+                            border.Classes.Contains(
+                                "lumine-publication-detail"));
             Require(
                 publicationDetailLoadCalls == 1
                 && string.Equals(
@@ -1992,8 +2074,17 @@ try
                     StringComparison.Ordinal)
                 && expandedPublicationText.Contains(
                     "年齢制限: R-18",
-                    StringComparison.Ordinal),
-                "Publication history did not lazily expose the complete ordered snapshot and human-readable platform metadata.");
+                    StringComparison.Ordinal)
+                && expandedDetailSurface.BorderThickness
+                    == new Thickness(0),
+                "Publication history did not expose the complete snapshot or regressed its detail inset to a bordered card.");
+
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    scaleWindow,
+                    "publication-detail-420x600");
+            }
 
             publicationExpand.RaiseEvent(
                 new RoutedEventArgs(
@@ -7145,6 +7236,9 @@ try
                 "navigation-overlay-900x600-text225",
                 "navigation-pinned-1440x900",
                 "navigation-pinned-1440x900-text225",
+                "folders-navigation-420x600",
+                "publication-navigation-420x600",
+                "publication-detail-420x600",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
