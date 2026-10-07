@@ -1645,10 +1645,9 @@ internal static class ProductNavigationViews
                         SelectedIndex = 4
                     });
             var destinationList =
-                new StackPanel
-                {
-                    Spacing = LumineDesign.Space4
-                };
+                new StackPanel();
+            destinationList.Classes.Add(
+                "lumine-compact-stack");
             var accountDestination =
                 LumineDesign.ConfigureComboBox(
                     new ComboBox());
@@ -1667,10 +1666,9 @@ internal static class ProductNavigationViews
                             "@ID / 識別子（任意）"
                     });
             var accountList =
-                new StackPanel
-                {
-                    Spacing = LumineDesign.Space4
-                };
+                new StackPanel();
+            accountList.Classes.Add(
+                "lumine-compact-stack");
             long? editingDestinationId =
                 null;
             long? editingAccountId =
@@ -1740,20 +1738,14 @@ internal static class ProductNavigationViews
                         };
                     row.Classes.Add(
                         "lumine-inline-actions");
+                    var destinationText =
+                        CreatePublicationText(
+                            $"{destinationItem.Name} · {destinationItem.Kind}",
+                            "lumine-body-caption");
+                    destinationText.VerticalAlignment =
+                        VerticalAlignment.Center;
                     row.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                $"{destinationItem.Name} · {destinationItem.Kind}",
-                            Foreground =
-                                LumineDesign.Foreground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap,
-                            VerticalAlignment =
-                                VerticalAlignment.Center
-                        });
+                        destinationText);
                     if (updateDestination is not null)
                     {
                         var edit =
@@ -1881,24 +1873,18 @@ internal static class ProductNavigationViews
                         };
                     row.Classes.Add(
                         "lumine-inline-actions");
+                    var accountText =
+                        CreatePublicationText(
+                            $"{destinationLabel} · {accountItem.DisplayName}"
+                            + (string.IsNullOrWhiteSpace(
+                                    accountItem.AccountIdentifier)
+                                ? string.Empty
+                                : $" · {accountItem.AccountIdentifier}"),
+                            "lumine-body-caption");
+                    accountText.VerticalAlignment =
+                        VerticalAlignment.Center;
                     row.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                $"{destinationLabel} · {accountItem.DisplayName}"
-                                + (string.IsNullOrWhiteSpace(
-                                        accountItem.AccountIdentifier)
-                                    ? string.Empty
-                                    : $" · {accountItem.AccountIdentifier}"),
-                            Foreground =
-                                LumineDesign.Foreground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap,
-                            VerticalAlignment =
-                                VerticalAlignment.Center
-                        });
+                        accountText);
                     if (updateAccount is not null)
                     {
                         var edit =
@@ -2625,18 +2611,11 @@ internal static class ProductNavigationViews
             {
                 Text =
                     "公開履歴はまだありません。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                TextAlignment =
-                    TextAlignment.Center,
-                Margin =
-                    new Thickness(
-                        LumineDesign.Space12),
                 IsVisible =
                     items.Count == 0
             };
+        empty.Classes.Add(
+            "lumine-empty-message");
         items.CollectionChanged +=
             (_, _) =>
             {
@@ -2703,11 +2682,9 @@ internal static class ProductNavigationViews
         if (publication.Assets.Count > 0)
         {
             var assets =
-                new StackPanel
-                {
-                    Spacing =
-                        LumineDesign.Space4
-                };
+                new StackPanel();
+            assets.Classes.Add(
+                "lumine-compact-stack");
             foreach (var asset in
                      publication.Assets
                          .OrderBy(
@@ -2720,17 +2697,9 @@ internal static class ProductNavigationViews
             }
 
             detail.Children.Add(
-                new TextBlock
-                {
-                    Text =
-                        $"画像 {publication.Assets.Count:N0}枚",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.CaptionFontSize
-                });
+                CreatePublicationText(
+                    $"画像 {publication.Assets.Count:N0}枚",
+                    "lumine-section-title"));
             detail.Children.Add(
                 assets);
         }
