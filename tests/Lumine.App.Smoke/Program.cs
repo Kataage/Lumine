@@ -5106,8 +5106,9 @@ try
                                 .Any(
                                     button =>
                                         button.Classes.Contains(
-                                            "lumine-secondary")),
-                            "Danger confirmation dialog escaped the shared quiet product roles.");
+                                            "lumine-secondary"))
+                            && confirmPreview.Height <= 420.5,
+                            "Danger confirmation dialog escaped the shared quiet product roles or became vertically oversized.");
                         CaptureVisualEvidence(
                             confirmPreview,
                             "dialog-confirm-danger-text225");
@@ -5141,8 +5142,9 @@ try
                                 .OfType<Button>()
                                 .Single()
                                 .Classes.Contains(
-                                    "lumine-primary"),
-                            "Notification dialog escaped the shared simple product hierarchy.");
+                                    "lumine-secondary")
+                            && notifyPreview.Height <= 320.5,
+                            "Notification dialog escaped the quiet acknowledgement hierarchy or became vertically oversized.");
                         CaptureVisualEvidence(
                             notifyPreview,
                             "dialog-notify-text225");
