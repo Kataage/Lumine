@@ -1265,6 +1265,10 @@ try
                             == new Thickness(0))
                 && activeLibrarySurface.Classes.Contains(
                     "selected")
+                && (activeLibrarySurface.Background is null
+                    || (activeLibrarySurface.Background
+                            is ISolidColorBrush activeLibraryBackground
+                        && activeLibraryBackground.Color.A == 0))
                 && librarySurfaces
                     .Where(
                         surface =>
