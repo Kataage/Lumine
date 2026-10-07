@@ -1760,15 +1760,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
                                 {
-                                    Content = "編集",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "編集"
                                 });
+                        edit.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             edit,
                             $"公開先を編集: {destinationItem.Name}");
@@ -1800,15 +1795,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
-                                    Content = "削除",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "削除"
                                 });
+                        remove.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             remove,
                             $"公開先を削除: {destinationItem.Name}");
@@ -1915,15 +1905,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
                                 {
-                                    Content = "編集",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "編集"
                                 });
+                        edit.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             edit,
                             $"公開アカウントを編集: {accountItem.DisplayName}");
@@ -1964,15 +1949,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
-                                    Content = "削除",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "削除"
                                 });
+                        remove.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             remove,
                             $"公開アカウントを削除: {accountItem.DisplayName}");
