@@ -1750,6 +1750,10 @@ internal static class ProductNavigationViews
                                 new ColumnDefinitions(
                                     "*,Auto,Auto")
                         };
+                    row.Classes.Add(
+                        "lumine-inline-actions");
+                    row.Classes.Add(
+                        "lumine-inline-actions");
                     row.Children.Add(
                         new TextBlock
                         {
@@ -2249,26 +2253,13 @@ internal static class ProductNavigationViews
             RenderAccounts();
 
             var form =
-                new StackPanel
-                {
-                    Width = 330,
-                    Spacing =
-                        LumineDesign.Space8,
-                    Margin =
-                        new Thickness(
-                            LumineDesign.Space12)
-                };
+                new StackPanel();
+            form.Classes.Add(
+                "lumine-publication-form");
             form.Children.Add(
-                new TextBlock
-                {
-                    Text = "投稿先",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.BodyFontSize
-                });
+                CreatePublicationText(
+                    "投稿先",
+                    "lumine-section-title"));
             form.Children.Add(
                 destinationName);
             form.Children.Add(
@@ -2277,28 +2268,16 @@ internal static class ProductNavigationViews
                 addDestination);
             form.Children.Add(
                 destinationList);
+            var divider =
+                new Border();
+            divider.Classes.Add(
+                "lumine-divider");
             form.Children.Add(
-                new Border
-                {
-                    Height = 1,
-                    Background =
-                        LumineDesign.Border,
-                    Margin =
-                        new Thickness(
-                            0,
-                            LumineDesign.Space6)
-                });
+                divider);
             form.Children.Add(
-                new TextBlock
-                {
-                    Text = "アカウント",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.BodyFontSize
-                });
+                CreatePublicationText(
+                    "アカウント",
+                    "lumine-section-title"));
             form.Children.Add(
                 accountDestination);
             form.Children.Add(
