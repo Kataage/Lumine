@@ -1594,17 +1594,11 @@ internal static class ProductNavigationViews
                 items.Count);
 
         var summary =
-            new TextBlock
-            {
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                TextWrapping =
-                    TextWrapping.Wrap,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
+            CreatePublicationText(
+                string.Empty,
+                "lumine-muted-caption");
+        summary.VerticalAlignment =
+            VerticalAlignment.Center;
 
         void UpdateSummary()
         {
@@ -1687,15 +1681,9 @@ internal static class ProductNavigationViews
                 null!;
 
             var feedback =
-                new TextBlock
-                {
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize =
-                        LumineDesign.CaptionFontSize,
-                    TextWrapping =
-                        TextWrapping.Wrap
-                };
+                CreatePublicationText(
+                    string.Empty,
+                    "lumine-muted-caption");
 
             string ResolveKind() =>
                 destinationKind.SelectedItem as string
@@ -1750,8 +1738,6 @@ internal static class ProductNavigationViews
                                 new ColumnDefinitions(
                                     "*,Auto,Auto")
                         };
-                    row.Classes.Add(
-                        "lumine-inline-actions");
                     row.Classes.Add(
                         "lumine-inline-actions");
                     row.Children.Add(
@@ -1903,6 +1889,8 @@ internal static class ProductNavigationViews
                                 new ColumnDefinitions(
                                     "*,Auto,Auto")
                         };
+                    row.Classes.Add(
+                        "lumine-inline-actions");
                     row.Children.Add(
                         new TextBlock
                         {
