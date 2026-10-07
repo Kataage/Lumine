@@ -276,6 +276,91 @@
     <Setter Property="Background" Value="{DynamicResource Lumine.ControlSurface}" />
   </Style>
 
+  <Style Selector="Button.lumine-compact">
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
+  </Style>
+
+  <Style Selector="Button.lumine-tag-swatch">
+    <Setter Property="Width" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="Height" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="MinWidth" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="99" />
+  </Style>
+  <Style Selector="Border.lumine-tag-swatch-dot">
+    <Setter Property="Width" Value="{DynamicResource Lumine.TagSwatchDotSize}" />
+    <Setter Property="Height" Value="{DynamicResource Lumine.TagSwatchDotSize}" />
+    <Setter Property="CornerRadius" Value="99" />
+  </Style>
+
+  <Style Selector="Border.lumine-tag-preview">
+    <Setter Property="Width" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="Height" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="MinWidth" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Lumine.TagSwatchSize}" />
+    <Setter Property="CornerRadius" Value="99" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.lumine-tag-preview.invalid">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Danger}" />
+  </Style>
+
+  <Style Selector="Button.lumine-tag-swatch:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
+  </Style>
+  <Style Selector="Button.lumine-tag-swatch.selected">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+  </Style>
+  <Style Selector="Button.lumine-tag-swatch:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+  </Style>
+
+  <Style Selector="Border.lumine-tag-advanced">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="10" />
+  </Style>
+
+  <Style Selector="Button.lumine-tag-row">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Padding" Value="10,7" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9" />
+  </Style>
+  <Style Selector="Button.lumine-tag-row:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
+  </Style>
+  <Style Selector="Button.lumine-tag-row.selected">
+    <Setter Property="Background" Value="{DynamicResource Lumine.AccentMuted}" />
+  </Style>
+  <Style Selector="Button.lumine-tag-row:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <Style Selector="Border.lumine-tag-row">
+    <Setter Property="Padding" Value="10,7" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="9" />
+  </Style>
+  <Style Selector="Border.lumine-tag-row.selected">
+    <Setter Property="Background" Value="{DynamicResource Lumine.AccentMuted}" />
+  </Style>
+
   <Style Selector="Border.lumine-popover">
     <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
     <Setter Property="BorderBrush" Value="Transparent" />

@@ -2136,6 +2136,10 @@ try
             {
                 LumineVisualMetrics.ConfigureTextScaleFactor(
                     2.25);
+                App.RefreshScaledProductResources(
+                    Application.Current
+                    ?? throw new InvalidOperationException(
+                        "Tag smoke has no current Avalonia application."));
 
                 string? createdTagColor = null;
                 long? editedTagId = null;
@@ -2199,7 +2203,7 @@ try
                 var compactActionRow =
                     compactTagsView
                         .GetVisualDescendants()
-                        .OfType<WrapPanel>()
+                        .OfType<Panel>()
                         .First(
                             panel =>
                                 panel.Children
@@ -2210,6 +2214,15 @@ try
                                                 button.Content
                                                     as string,
                                                 "＋ 新規",
+                                                StringComparison.Ordinal))
+                                && panel.Children
+                                    .OfType<Button>()
+                                    .Any(
+                                        button =>
+                                            string.Equals(
+                                                button.Content
+                                                    as string,
+                                                "管理",
                                                 StringComparison.Ordinal)));
                 var newTagButton =
                     compactActionRow.Children
@@ -2267,8 +2280,16 @@ try
                     compactColorEditor
                         .GetVisualDescendants()
                         .OfType<ColorPicker>()
-                        .Count() == 1,
-                    "Top-level tag create Flyout did not expose exactly one visual ColorPicker.");
+                        .Count() == 1
+                    && compactColorEditor
+                        .UsesSharedThemeForSmoke
+                    && compactColorEditor
+                        .PresetGridIsFiveByTwoForSmoke
+                    && compactColorEditor
+                        .FirstPresetWidthForSmoke > 30
+                    && compactColorEditor
+                        .FirstPresetWidthForSmoke <= 38.5,
+                    "Top-level tag create Flyout did not expose one themed, scale-aware color editor.");
                 var compactCreateButton =
                     compactCreateSurface
                         .GetVisualDescendants()
@@ -2344,8 +2365,18 @@ try
                     Require(
                         compactCreateFlyout.IsOpen
                         && compactCreateButton.IsEnabled
+                        && compactCreateSurface.Classes.Contains(
+                            "lumine-popover")
                         && compactCreateSurface.Bounds.Width
-                            is > 0 and <= 360.5
+                            is > 360 and <= 440.5
+                        && !compactCreateSurface
+                            .GetVisualAncestors()
+                            .OfType<ScrollViewer>()
+                            .Any(
+                                static scroll =>
+                                    scroll.Viewport.Width > 0
+                                    && scroll.Extent.Width
+                                        > scroll.Viewport.Width + 0.5)
                         && compactColorEditor.Bounds.Width
                             <= compactCreateSurface.Bounds.Width + 0.5
                         && compactTagList.Bounds.Height > 24
@@ -2406,6 +2437,10 @@ try
                     new RoutedEventArgs(
                         Button.ClickEvent));
                 Dispatcher.UIThread.RunJobs();
+                Require(
+                    manageButton.Classes.Contains(
+                        "active"),
+                    "Tag management mode did not use the shared semantic active state.");
 
                 var editButton =
                     compactTagsView
@@ -2416,6 +2451,16 @@ try
                                 string.Equals(
                                     button.Content as string,
                                     "編集",
+                                    StringComparison.Ordinal));
+                var deleteButton =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<Button>()
+                        .First(
+                            button =>
+                                string.Equals(
+                                    button.Content as string,
+                                    "削除",
                                     StringComparison.Ordinal));
                 Require(
                     !editButton
@@ -2474,10 +2519,28 @@ try
 
                 Require(
                     editFlyout.IsOpen
+                    && editSurface.Classes.Contains(
+                        "lumine-popover")
+                    && editSurface.Bounds.Width
+                        is > 360 and <= 440.5
                     && editName.Text
                         == compactTags[0].Name
                     && editColor.SelectedColor
                         == compactTags[0].Color
+                    && editColor.UsesSharedThemeForSmoke
+                    && editColor.PresetGridIsFiveByTwoForSmoke
+                    && !editSurface
+                        .GetVisualAncestors()
+                        .OfType<ScrollViewer>()
+                        .Any(
+                            static scroll =>
+                                scroll.Viewport.Width > 0
+                                && scroll.Extent.Width
+                                    > scroll.Viewport.Width + 0.5)
+                    && editButton.Classes.Contains(
+                        "lumine-compact")
+                    && deleteButton.Classes.Contains(
+                        "lumine-compact")
                     && editSurface
                         .GetVisualDescendants()
                         .OfType<TextBlock>()
@@ -2487,7 +2550,7 @@ try
                                     block.Text,
                                     "123件の画像で使用",
                                     StringComparison.Ordinal)),
-                    "Tag edit Flyout did not prefill the current name/color/count.");
+                    "Tag edit Flyout did not use the scale-aware shared editor surface and compact management actions.");
 
                 Require(
                     !editColor.AdvancedVisibleForSmoke,
@@ -2686,6 +2749,10 @@ try
             {
                 LumineVisualMetrics.ConfigureTextScaleFactor(
                     previousNavigationTextScale);
+                App.RefreshScaledProductResources(
+                    Application.Current
+                    ?? throw new InvalidOperationException(
+                        "Tag smoke has no current Avalonia application."));
             }
 
             var original = await provider.LoadOriginalAsync(
@@ -4811,7 +4878,17 @@ try
                             is IBrush
                         && Application.Current?.Resources[
                             "Lumine.InteractionSelectedHover"]
-                            is IBrush,
+                            is IBrush
+                        && Application.Current?.Resources[
+                            "Lumine.TagSwatchSize"]
+                            is double tagSwatchSize
+                        && tagSwatchSize >= 30
+                        && tagSwatchSize <= 38
+                        && Application.Current?.Resources[
+                            "Lumine.TagSwatchDotSize"]
+                            is double tagSwatchDotSize
+                        && tagSwatchDotSize >= 18
+                        && tagSwatchDotSize <= 24,
                         "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
