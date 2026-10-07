@@ -1223,18 +1223,108 @@ try
                     .FindAncestorOfType<Button>() is null,
                 "Active library still presents as an enabled no-op command.");
 
+            var librarySurfaces =
+                navigationView
+                    .GetVisualDescendants()
+                    .OfType<Border>()
+                    .Where(
+                        border =>
+                            (AutomationProperties.GetAutomationId(
+                                border)
+                            ?? string.Empty)
+                            .StartsWith(
+                                "library-card-",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            var activeLibrarySurface =
+                librarySurfaces.Single(
+                    border =>
+                        string.Equals(
+                            AutomationProperties.GetAutomationId(
+                                border),
+                            "library-card-1001",
+                            StringComparison.Ordinal));
+            var addLibraryButton =
+                navigationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "画像フォルダーを追加",
+                                StringComparison.Ordinal));
+            Require(
+                librarySurfaces.Length == navLibraries.Length
+                && librarySurfaces.All(
+                    static surface =>
+                        surface.Classes.Contains(
+                            "lumine-library-row")
+                        && surface.BorderThickness
+                            == new Thickness(0))
+                && activeLibrarySurface.Classes.Contains(
+                    "selected")
+                && (activeLibrarySurface.Background is null
+                    || (activeLibrarySurface.Background
+                            is ISolidColorBrush activeLibraryBackground
+                        && activeLibraryBackground.Color.A == 0))
+                && librarySurfaces
+                    .Where(
+                        surface =>
+                            !ReferenceEquals(
+                                surface,
+                                activeLibrarySurface))
+                    .All(
+                        static surface =>
+                            !surface.Classes.Contains(
+                                "selected"))
+                && addLibraryButton is not null
+                && addLibraryButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Library sidebar regressed from flat semantic rows to card-heavy or primary-action chrome.");
+
+            var manageLibraryButton =
+                navigationView.GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "ライブラリを管理",
+                                StringComparison.Ordinal));
+            Require(
+                manageLibraryButton is { IsEffectivelyVisible: true }
+                && manageLibraryButton.Content
+                    is Avalonia.Controls.Shapes.Path manageLibraryIcon
+                && manageLibraryIcon.Data is not null
+                && manageLibraryIcon.Data.Bounds.Height > 0.5
+                && manageLibraryIcon.Width >= 15.5
+                && manageLibraryIcon.Height >= 15.5
+                && manageLibraryButton.Classes.Contains(
+                    "lumine-icon")
+                && manageLibraryButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Library Manage overflow lost its visible non-zero-height themed vector affordance.");
+
             var rescanButton =
                 navigationView.GetVisualDescendants()
                     .OfType<Button>()
                     .FirstOrDefault(
                         button =>
                             string.Equals(
-                                button.Content as string,
-                                "再スキャン",
+                                AutomationProperties.GetName(
+                                    button),
+                                "現在のライブラリを再スキャン",
                                 StringComparison.Ordinal));
             Require(
-                rescanButton is { IsEnabled: true },
-                "Active library did not expose the direct rescan action.");
+                rescanButton is { IsEnabled: true }
+                && rescanButton.Classes.Contains(
+                    "lumine-icon")
+                && rescanButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Active library did not expose the themed direct rescan utility action.");
             rescanButton.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
@@ -4531,6 +4621,12 @@ try
                         && LumineDesign.NavigationWidth < 100,
                         "Branded shell navigation contract drifted from the compact v1 product hierarchy.");
 
+                    var navigationPinnedBeforeRailSmoke =
+                        window.IsNavigationPinnedForSmoke;
+                    window.SetNavigationPinnedForSmoke(
+                        false);
+                    Dispatcher.UIThread.RunJobs();
+
                     var libraryDestination =
                         window.GetVisualDescendants()
                             .OfType<Button>()
@@ -4540,9 +4636,30 @@ try
                                         AutomationProperties.GetName(
                                             button),
                                         "ライブラリ",
-                                        StringComparison.Ordinal));
+                                        StringComparison.Ordinal)
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && button.Classes.Contains(
+                                        "rail"));
                     Require(
-                        libraryDestination
+                        libraryDestination.Classes.Contains(
+                            "lumine-nav-item")
+                        && libraryDestination.Classes.Contains(
+                            "rail")
+                        && libraryDestination.Classes.Contains(
+                            "selected")
+                        && libraryDestination.Resources.Count == 0
+                        && (libraryDestination.IsFocused
+                            ? libraryDestination.BorderThickness
+                                == new Thickness(1)
+                                && libraryDestination.BorderBrush
+                                    is ISolidColorBrush focusBorder
+                                && focusBorder.Color
+                                    == LumineDesign.FocusColor
+                            : libraryDestination.BorderThickness
+                                == new Thickness(0))
+                        && libraryDestination.MinHeight <= 52.5
+                        && !libraryDestination
                             .GetVisualDescendants()
                             .OfType<Border>()
                             .Any(
@@ -4551,12 +4668,8 @@ try
                                         indicator.Width - 3) < 0.01
                                     && ReferenceEquals(
                                         indicator.Background,
-                                        LumineDesign.Accent))
-                        && ReferenceEquals(
-                            libraryDestination.Background,
-                            LumineDesign.InteractionSelected)
-                        && libraryDestination.MinHeight <= 52.5,
-                        "Selected global navigation lost its lightweight shared selection treatment or non-color accent indicator.");
+                                        LumineDesign.Accent)),
+                        $"Selected global navigation regressed from the shared quiet sidebar selection treatment, focus ring contract, or restored the old accent stripe. focused={libraryDestination.IsFocused}, border={libraryDestination.BorderThickness}, resources={libraryDestination.Resources.Count}");
 
                     libraryDestination.Focus();
                     libraryDestination.RaiseEvent(
@@ -4612,6 +4725,11 @@ try
                             window.FocusManager.GetFocusedElement(),
                             libraryDestination),
                         "Global navigation Home key did not return to the first destination.");
+
+                    window.SetNavigationPinnedForSmoke(
+                        navigationPinnedBeforeRailSmoke);
+                    Dispatcher.UIThread.RunJobs();
+
                     Require(
                         LumineDesign.InteractionNeutralColor
                             != LumineDesign.InteractionHoverColor
@@ -5506,10 +5624,11 @@ try
                             .Any(
                                 button =>
                                     string.Equals(
-                                        button.Content as string,
-                                        "再スキャン",
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "現在のライブラリを再スキャン",
                                         StringComparison.Ordinal)),
-                        "Active Library navigation card did not keep its rescan action inside the unified card surface.");
+                        "Active Library navigation row did not keep its rescan utility inside the unified flat surface.");
 
 
 
@@ -5879,14 +5998,16 @@ try
                                         .DisplayFlyoutIsOpenForSmoke,
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
-                                if (iteration == 0
+                                if ((iteration == 0 || iteration == 2)
                                     && mode == BrowseViewMode.Grid
                                     && navigationVisible
                                     && viewport.Width == 900d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "navigation-overlay-900x600");
+                                        iteration == 2
+                                            ? "navigation-overlay-900x600-text225"
+                                            : "navigation-overlay-900x600");
                                 }
 
                                 window.CurrentShell.HideContextDetail();
@@ -6205,13 +6326,15 @@ try
                                         < unpinnedClosedCanvasWidth - 180,
                                     $"Pinned navigation did not become a unified sidebar beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
 
-                                if (iteration == 0
+                                if ((iteration == 0 || iteration == 2)
                                     && mode == BrowseViewMode.Grid
                                     && viewport.Width == 1440d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "navigation-pinned-1440x900");
+                                        iteration == 2
+                                            ? "navigation-pinned-1440x900-text225"
+                                            : "navigation-pinned-1440x900");
                                 }
 
                                 window.SetNavigationPinnedForSmoke(false);
@@ -6812,7 +6935,9 @@ try
                 "browse-display-open-900x600",
                 "browse-active-filter-900x600",
                 "navigation-overlay-900x600",
+                "navigation-overlay-900x600-text225",
                 "navigation-pinned-1440x900",
+                "navigation-pinned-1440x900-text225",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",

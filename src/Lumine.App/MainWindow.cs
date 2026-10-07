@@ -404,16 +404,11 @@ public sealed class MainWindow : Window
                 Width = 280,
                 MinWidth = 220,
                 MaxWidth = 300,
-                Background = LumineDesign.SurfaceRaised,
-                BorderBrush = LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.PanelRadius),
                 ClipToBounds = true,
                 Child = navigationLayout
             };
+        _navigationPane.Classes.Add(
+            "lumine-sidebar");
         collapseNavigation.Click +=
             (_, _) =>
             {
@@ -804,14 +799,8 @@ public sealed class MainWindow : Window
                 new Thickness(0);
             _navigationPane.Width =
                 pinnedSidebarWidth;
-            _navigationPane.Background =
-                LumineDesign.Surface;
-            _navigationPane.CornerRadius =
-                new CornerRadius(0);
-            _navigationPane.BorderBrush =
-                LumineDesign.Border;
-            _navigationPane.BorderThickness =
-                new Thickness(0, 0, 1, 0);
+            SetNavigationPaneMode(
+                docked: true);
             _navigationPane.ZIndex = 0;
             return;
         }
@@ -844,17 +833,27 @@ public sealed class MainWindow : Window
                     250,
                     300)
                 : 280;
-        _navigationPane.Background =
-            LumineDesign.SurfaceRaised;
-        _navigationPane.CornerRadius =
-            new CornerRadius(
-                LumineDesign.PanelRadius);
-        _navigationPane.BorderBrush =
-            LumineDesign.BorderStrong;
-        _navigationPane.BorderThickness =
-            new Thickness(1);
+        SetNavigationPaneMode(
+            docked: false);
         _navigationPane.ZIndex = 20;
     }
+
+    internal bool NavigationPaneUsesSharedThemeForSmoke =>
+        _navigationPane.Classes.Contains(
+            "lumine-sidebar")
+        && (_navigationPane.Classes.Contains(
+                "docked")
+            ^ _navigationPane.Classes.Contains(
+                "overlay"));
+
+    internal bool NavigationPinUsesSharedThemeForSmoke =>
+        _navigationPin.Classes.Contains(
+            "lumine-icon")
+        && _navigationPin.Classes.Contains(
+            "lumine-tertiary")
+        && _navigationPin.Classes.Contains(
+            "active") == _navigationPinned
+        && _navigationPin.Resources.Count == 0;
 
     internal bool PinnedNavigationUsesUnifiedSidebarForSmoke =>
         _navigationPinned
@@ -877,6 +876,40 @@ public sealed class MainWindow : Window
         && _navigationPane.BorderThickness.Left < 0.5
         && _navigationPane.BorderThickness.Right > 0.5;
 
+    private void SetNavigationPaneMode(
+        bool docked)
+    {
+        SetClassState(
+            _navigationPane,
+            "docked",
+            docked);
+        SetClassState(
+            _navigationPane,
+            "overlay",
+            !docked);
+    }
+
+    private static void SetClassState(
+        StyledElement element,
+        string className,
+        bool enabled)
+    {
+        if (enabled)
+        {
+            if (!element.Classes.Contains(
+                    className))
+            {
+                element.Classes.Add(
+                    className);
+            }
+
+            return;
+        }
+
+        element.Classes.Remove(
+            className);
+    }
+
     private void DismissCompactNavigationOverlayForBlockingState()
     {
         // A blocking product state owns the workspace. Do not leave
@@ -895,14 +928,10 @@ public sealed class MainWindow : Window
 
     private void UpdateNavigationPinVisual()
     {
-        _navigationPin.Background =
-            _navigationPinned
-                ? LumineDesign.AccentMuted
-                : Brushes.Transparent;
-        _navigationPin.BorderBrush =
-            _navigationPinned
-                ? LumineDesign.BorderStrong
-                : Brushes.Transparent;
+        SetClassState(
+            _navigationPin,
+            "active",
+            _navigationPinned);
         ToolTip.SetTip(
             _navigationPin,
             _navigationPinned

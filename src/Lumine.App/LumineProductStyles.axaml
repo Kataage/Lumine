@@ -284,6 +284,126 @@
     <Setter Property="Padding" Value="12" />
   </Style>
 
+  <Style Selector="Border.lumine-sidebar">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+  <Style Selector="Border.lumine-sidebar.docked">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="Border.lumine-sidebar.overlay">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+  </Style>
+
+  <Style Selector="Border.lumine-nav-rail">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
+
+  <Style Selector="Border.lumine-nav-band">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Border.lumine-nav-settings-band">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Border}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+
+  <Style Selector="Button.lumine-icon.active">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.lumine-icon.active:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />
+  </Style>
+
+  <Style Selector="Button.lumine-nav-item">
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.lumine-nav-item:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+  </Style>
+  <Style Selector="Button.lumine-nav-item.selected">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+  </Style>
+  <Style Selector="Button.lumine-nav-item.selected:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />
+  </Style>
+  <Style Selector="Button.lumine-nav-item:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.lumine-nav-item.rail">
+    <Setter Property="MinHeight" Value="52" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.lumine-library-row">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="2" />
+  </Style>
+  <!--
+    Active Library is already identified by the explicit "表示中" label.
+    Keep the row flat instead of turning a three-line metadata row into
+    another card-like selected surface.
+  -->
+  <Style Selector="Border.lumine-library-row.selected">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <Style Selector="Button.lumine-library-open">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.lumine-library-open:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
+  </Style>
+  <Style Selector="Button.lumine-library-open:pressed">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionPressed}" />
+  </Style>
+  <Style Selector="Button.lumine-library-open:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.lumine-library-open:disabled">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+  </Style>
+
+  <Style Selector="Border.lumine-library-static">
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
   <Style Selector="Border.lumine-status-hud">
     <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
     <Setter Property="BorderBrush" Value="Transparent" />

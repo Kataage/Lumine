@@ -182,7 +182,11 @@ internal static class LumineDesign
     public const string ChevronDownIconPath =
         "M5.25 8.25L12 15l6.75-6.75";
     public const string MoreIconPath =
-        "M6.75 12h.01M12 12h.01M17.25 12h.01";
+        "M6.75 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5 M12 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5 M17.25 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5";
+    public const string PlusIconPath =
+        "M12 5v14M5 12h14";
+    public const string RefreshIconPath =
+        "M20 7v5h-5 M4 17v-5h5 M18.5 10A7 7 0 006.6 7.1L4 10 M5.5 14A7 7 0 0017.4 16.9L20 14";
     public const string PinIconPath =
         "M14.25 3.75l6 6-2.25 2.25-2.25-.75-3.75 3.75.75 2.25-1.5 1.5-6-6 1.5-1.5 2.25.75 3.75-3.75-.75-2.25 2.25-2.25z M8.25 15.75l-4.5 4.5";
     public const string GridIconPath =
@@ -250,6 +254,16 @@ internal static class LumineDesign
 
         button.Classes.Add("lumine-control");
         button.Classes.Add("lumine-secondary");
+        return button;
+    }
+
+    public static Button ConfigureTertiaryButton(
+        Button button)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+
+        button.Classes.Add("lumine-control");
+        button.Classes.Add("lumine-tertiary");
         return button;
     }
 
@@ -538,7 +552,8 @@ internal static class LumineDesign
         ArgumentException.ThrowIfNullOrWhiteSpace(selectedLabel);
         ArgumentNullException.ThrowIfNull(navigate);
 
-        Button CreateDestinationButton(NavigationItem item)
+        Button CreateDestinationButton(
+            NavigationItem item)
         {
             var selected =
                 string.Equals(
@@ -549,7 +564,7 @@ internal static class LumineDesign
             var destination =
                 new StackPanel
                 {
-                    Spacing = 2,
+                    Spacing = Space2,
                     HorizontalAlignment =
                         HorizontalAlignment.Center,
                     VerticalAlignment =
@@ -562,9 +577,7 @@ internal static class LumineDesign
                     selected
                         ? Foreground
                         : MutedForeground));
-            // At large Windows accessibility text scales, keep the rail
-            // icon-first instead of squeezing oversized labels into a narrow
-            // destination. Tooltip and automation name keep the full label.
+
             if (LumineVisualMetrics.TextScaleFactor < 1.75)
             {
                 destination.Children.Add(
@@ -572,7 +585,8 @@ internal static class LumineDesign
                     {
                         Text = item.Label,
                         Width = 62,
-                        FontSize = CompactLabelFontSize,
+                        FontSize =
+                            CompactLabelFontSize,
                         FontWeight =
                             selected
                                 ? FontWeight.SemiBold
@@ -581,68 +595,39 @@ internal static class LumineDesign
                             selected
                                 ? Foreground
                                 : MutedForeground,
-                        TextAlignment = TextAlignment.Center,
-                        TextWrapping = TextWrapping.NoWrap,
+                        TextAlignment =
+                            TextAlignment.Center,
+                        TextWrapping =
+                            TextWrapping.NoWrap,
                         TextTrimming =
                             TextTrimming.CharacterEllipsis
                     });
             }
 
-            var content =
-                new Grid
-                {
-                    ColumnDefinitions =
-                        new ColumnDefinitions("3,*")
-                };
-            content.Children.Add(
-                new Border
-                {
-                    Width = 3,
-                    Height = 26,
-                    CornerRadius =
-                        new CornerRadius(2),
-                    Background =
-                        selected
-                            ? Accent
-                            : Brushes.Transparent,
-                    HorizontalAlignment =
-                        HorizontalAlignment.Left,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                });
-            Grid.SetColumn(
-                destination,
-                1);
-            content.Children.Add(destination);
-
             var button =
                 new Button
                 {
-                    Content = content,
-                    MinHeight = 52,
-                    CornerRadius = new CornerRadius(7),
-                    Background =
-                        selected
-                            ? InteractionSelected
-                            : Brushes.Transparent,
-                    BorderBrush = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(2, 4, 4, 4),
-                    HorizontalContentAlignment =
-                        HorizontalAlignment.Stretch
+                    Content = destination
                 };
+            button.Classes.Add(
+                "lumine-nav-item");
+            button.Classes.Add(
+                "rail");
             if (selected)
             {
-                ConfigureSelectedButtonStateResources(button);
+                button.Classes.Add(
+                    "selected");
             }
-            else
-            {
-                ConfigureNeutralButtonStateResources(button);
-            }
-            ToolTip.SetTip(button, item.Label);
-            AutomationProperties.SetName(button, item.Label);
+
+            ToolTip.SetTip(
+                button,
+                item.Label);
+            AutomationProperties.SetName(
+                button,
+                item.Label);
             button.Click +=
-                (_, _) => navigate(item.Label);
+                (_, _) =>
+                    navigate(item.Label);
             return button;
         }
 
@@ -732,14 +717,15 @@ internal static class LumineDesign
                 };
         }
 
-        return new Border
-        {
-            Width = NavigationWidth,
-            Background = Surface,
-            BorderBrush = Border,
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            Child = content
-        };
+        var rail =
+            new Border
+            {
+                Width = NavigationWidth,
+                Child = content
+            };
+        rail.Classes.Add(
+            "lumine-nav-rail");
+        return rail;
     }
 
     public static ExpandedNavigationBands CreateExpandedNavigationBands(
@@ -749,7 +735,8 @@ internal static class LumineDesign
         ArgumentException.ThrowIfNullOrWhiteSpace(selectedLabel);
         ArgumentNullException.ThrowIfNull(navigate);
 
-        Button CreateDestinationButton(NavigationItem item)
+        Button CreateDestinationButton(
+            NavigationItem item)
         {
             var selected =
                 string.Equals(
@@ -761,23 +748,10 @@ internal static class LumineDesign
                 new Grid
                 {
                     ColumnDefinitions =
-                        new ColumnDefinitions("3,Auto,*"),
+                        new ColumnDefinitions(
+                            "Auto,*"),
                     ColumnSpacing = Space8
                 };
-            row.Children.Add(
-                new Border
-                {
-                    Width = 3,
-                    Height = 24,
-                    CornerRadius =
-                        new CornerRadius(2),
-                    Background =
-                        selected
-                            ? Accent
-                            : Brushes.Transparent,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                });
 
             var icon =
                 CreateStrokeIcon(
@@ -786,7 +760,6 @@ internal static class LumineDesign
                     selected
                         ? Foreground
                         : MutedForeground);
-            Grid.SetColumn(icon, 1);
             row.Children.Add(icon);
 
             var label =
@@ -807,46 +780,27 @@ internal static class LumineDesign
                     VerticalAlignment =
                         VerticalAlignment.Center
                 };
-            Grid.SetColumn(label, 2);
+            Grid.SetColumn(
+                label,
+                1);
             row.Children.Add(label);
 
             var button =
                 new Button
                 {
-                    Content = row,
-                    MinHeight =
-                        Math.Max(
-                            40,
-                            BodyFontSize + 18),
-                    Background =
-                        selected
-                            ? InteractionSelected
-                            : Brushes.Transparent,
-                    BorderBrush = Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(0),
-                    CornerRadius =
-                        new CornerRadius(
-                            ControlRadius),
-                    Padding =
-                        new Thickness(
-                            Space6,
-                            Space4),
-                    HorizontalContentAlignment =
-                        HorizontalAlignment.Stretch
+                    Content = row
                 };
+            button.Classes.Add(
+                "lumine-nav-item");
             if (selected)
             {
-                ConfigureSelectedButtonStateResources(
-                    button);
-            }
-            else
-            {
-                ConfigureNeutralButtonStateResources(
-                    button);
+                button.Classes.Add(
+                    "selected");
             }
 
-            ToolTip.SetTip(button, item.Label);
+            ToolTip.SetTip(
+                button,
+                item.Label);
             AutomationProperties.SetName(
                 button,
                 item.Label);
@@ -953,20 +907,14 @@ internal static class LumineDesign
         var primary =
             new Border
             {
-                Background = Surface,
-                BorderBrush = Brushes.Transparent,
-                BorderThickness =
-                    new Thickness(0),
                 Child = primaryRoot
             };
+        primary.Classes.Add(
+            "lumine-nav-band");
 
         var settings =
             new Border
             {
-                Background = Surface,
-                BorderBrush = Border,
-                BorderThickness =
-                    new Thickness(0, 1, 0, 0),
                 Padding =
                     new Thickness(
                         Space8,
@@ -975,6 +923,8 @@ internal static class LumineDesign
                         Space8),
                 Child = buttons[^1]
             };
+        settings.Classes.Add(
+            "lumine-nav-settings-band");
 
         return new ExpandedNavigationBands(
             primary,
