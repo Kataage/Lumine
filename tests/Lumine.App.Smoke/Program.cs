@@ -2368,7 +2368,7 @@ try
                         && compactCreateSurface.Classes.Contains(
                             "lumine-popover")
                         && compactCreateSurface.Bounds.Width
-                            is > 360 and <= 440.5
+                            is > 360 and <= 400.5
                         && !compactCreateSurface
                             .GetVisualAncestors()
                             .OfType<ScrollViewer>()
@@ -2522,7 +2522,7 @@ try
                     && editSurface.Classes.Contains(
                         "lumine-popover")
                     && editSurface.Bounds.Width
-                        is > 360 and <= 440.5
+                        is > 360 and <= 400.5
                     && editName.Text
                         == compactTags[0].Name
                     && editColor.SelectedColor
