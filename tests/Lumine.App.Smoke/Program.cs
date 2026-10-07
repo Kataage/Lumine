@@ -1284,6 +1284,28 @@ try
                     "lumine-tertiary"),
                 "Library sidebar regressed from flat semantic rows to card-heavy or primary-action chrome.");
 
+            var manageLibraryButton =
+                navigationView.GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(
+                        button =>
+                            string.Equals(
+                                AutomationProperties.GetName(
+                                    button),
+                                "ライブラリを管理",
+                                StringComparison.Ordinal));
+            Require(
+                manageLibraryButton is { IsEffectivelyVisible: true }
+                && string.Equals(
+                    manageLibraryButton.Content as string,
+                    "•••",
+                    StringComparison.Ordinal)
+                && manageLibraryButton.Classes.Contains(
+                    "lumine-icon")
+                && manageLibraryButton.Classes.Contains(
+                    "lumine-tertiary"),
+                "Library Manage overflow lost its visible themed utility affordance.");
+
             var rescanButton =
                 navigationView.GetVisualDescendants()
                     .OfType<Button>()
