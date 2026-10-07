@@ -112,7 +112,7 @@ internal static class ProductDialogs
                 tone);
 
         var close =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
                     Content = buttonLabel,
@@ -149,7 +149,7 @@ internal static class ProductDialogs
             Math.Min(
                 520,
                 baseHeight
-                + ((scale - 1) * 120)));
+                + ((scale - 1) * 64)));
     }
 
     internal static Window CreatePreviewForSmoke(
@@ -181,7 +181,7 @@ internal static class ProductDialogs
         {
             panel.Children.Add(
                 CreateButtons(
-                    LumineDesign.ConfigurePrimaryButton(
+                    LumineDesign.ConfigureSecondaryButton(
                         new Button
                         {
                             Content = "OK",
