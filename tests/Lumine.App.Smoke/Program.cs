@@ -4898,7 +4898,15 @@ try
                             "Lumine.DialogSymbolSize"]
                             is double dialogSymbolSize
                         && dialogSymbolSize
-                            is >= 36 and <= 48,
+                            is >= 36 and <= 48
+                        && Application.Current?.Resources[
+                            "Lumine.BodyLineHeight"]
+                            is double bodyLineHeight
+                        && bodyLineHeight
+                            == LumineDesign.BodyLineHeight
+                        && Application.Current?.Resources[
+                            "Lumine.UiFont"]
+                            is FontFamily,
                         "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
@@ -5074,7 +5082,9 @@ try
                                         panel.Classes.Contains(
                                             "lumine-dialog-actions"));
                         Require(
-                            confirmContent.Classes.Contains(
+                            confirmPreview.Classes.Contains(
+                                "lumine-dialog-window")
+                            && confirmContent.Classes.Contains(
                                 "lumine-dialog-content")
                             && confirmSymbol.Classes.Contains(
                                 "danger")
@@ -5115,7 +5125,9 @@ try
                             ?? throw new InvalidOperationException(
                                 "Notification preview did not expose the expected content panel.");
                         Require(
-                            notifyContent.Classes.Contains(
+                            notifyPreview.Classes.Contains(
+                                "lumine-dialog-window")
+                            && notifyContent.Classes.Contains(
                                 "lumine-dialog-content")
                             && !notifyContent
                                 .GetVisualDescendants()
