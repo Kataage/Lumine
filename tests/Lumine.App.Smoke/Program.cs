@@ -6302,13 +6302,15 @@ try
                                         < unpinnedClosedCanvasWidth - 180,
                                     $"Pinned navigation did not become a unified sidebar beside the canvas at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
 
-                                if (iteration == 0
+                                if ((iteration == 0 || iteration == 2)
                                     && mode == BrowseViewMode.Grid
                                     && viewport.Width == 1440d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "navigation-pinned-1440x900");
+                                        iteration == 2
+                                            ? "navigation-pinned-1440x900-text225"
+                                            : "navigation-pinned-1440x900");
                                 }
 
                                 window.SetNavigationPinnedForSmoke(false);
@@ -6911,6 +6913,7 @@ try
                 "navigation-overlay-900x600",
                 "navigation-overlay-900x600-text225",
                 "navigation-pinned-1440x900",
+                "navigation-pinned-1440x900-text225",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
