@@ -2342,22 +2342,18 @@ internal static class ProductNavigationViews
         var list =
             new ListBox
             {
-                ItemsSource = items,
-                Background = Brushes.Transparent,
-                BorderThickness =
-                    new Thickness(0),
-                Padding =
-                    new Thickness(0)
+                ItemsSource = items
             };
+        list.Classes.Add(
+            "lumine-flat-list");
         list.ItemTemplate =
             new FuncDataTemplate<PublicationInfo>(
                 (publication, _) =>
                 {
                     var content =
-                        new StackPanel
-                        {
-                            Spacing = 5
-                        };
+                        new StackPanel();
+                    content.Classes.Add(
+                        "lumine-publication-row-content");
                     content.Children.Add(
                         new TextBlock
                         {
@@ -2655,9 +2651,8 @@ internal static class ProductNavigationViews
                             remove);
                     }
 
-                    return CreateCard(
-                        content,
-                        selected: false);
+                    return CreatePublicationRow(
+                        content);
                 },
                 supportsRecycling: true);
 
@@ -2804,17 +2799,9 @@ internal static class ProductNavigationViews
         PublicationInfo publication)
     {
         var detail =
-            new StackPanel
-            {
-                Spacing =
-                    LumineDesign.Space6,
-                Margin =
-                    new Thickness(
-                        0,
-                        LumineDesign.Space6,
-                        0,
-                        0)
-            };
+            new StackPanel();
+        detail.Classes.Add(
+            "lumine-publication-detail-body");
 
         if (!string.IsNullOrWhiteSpace(
                 publication.Body))
@@ -2893,22 +2880,14 @@ internal static class ProductNavigationViews
                     flag));
         }
 
-        return new Border
-        {
-            Background =
-                LumineDesign.Background,
-            BorderBrush =
-                LumineDesign.Border,
-            BorderThickness =
-                new Thickness(1),
-            CornerRadius =
-                new CornerRadius(
-                    LumineDesign.ControlRadius),
-            Padding =
-                new Thickness(
-                    LumineDesign.Space8),
-            Child = detail
-        };
+        var surface =
+            new Border
+            {
+                Child = detail
+            };
+        surface.Classes.Add(
+            "lumine-publication-detail");
+        return surface;
     }
 
     private static TextBlock CreatePublicationDetailText(
@@ -3135,51 +3114,50 @@ internal static class ProductNavigationViews
                 Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
 
-    private static Border CreateCard(
-        Control child,
-        bool selected) =>
-        new()
-        {
-            Padding = new Thickness(9),
-            Background =
-                selected
-                    ? LumineDesign.AccentMuted
-                    : LumineDesign.SurfaceRaised,
-            BorderBrush = LumineDesign.Border,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(LumineDesign.PanelRadius),
-            Child = child
-        };
+    private static Border CreatePublicationRow(
+        Control child)
+    {
+        var row =
+            new Border
+            {
+                Child = child
+            };
+        row.Classes.Add(
+            "lumine-publication-row");
+        return row;
+    }
 
     private static TextBlock CreateHint(
-        string text) =>
-        new()
-        {
-            Text = text,
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = LumineDesign.CaptionFontSize,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(2, 4)
-        };
+        string text)
+    {
+        var hint =
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap
+            };
+        hint.Classes.Add(
+            "lumine-nav-hint");
+        return hint;
+    }
 
     private static Control CreatePlaceholder(
         string title,
         string description)
     {
         var stack =
-            new StackPanel
-            {
-                Spacing = 8,
-                Margin = new Thickness(2, 8)
-            };
-        stack.Children.Add(
+            new StackPanel();
+        stack.Classes.Add(
+            "lumine-nav-placeholder");
+        var titleText =
             new TextBlock
             {
-                Text = title,
-                Foreground = LumineDesign.Foreground,
-                FontWeight = FontWeight.SemiBold,
-                FontSize = LumineDesign.BodyFontSize
-            });
+                Text = title
+            };
+        titleText.Classes.Add(
+            "lumine-nav-placeholder-title");
+        stack.Children.Add(
+            titleText);
         stack.Children.Add(
             CreateHint(description));
         return stack;
