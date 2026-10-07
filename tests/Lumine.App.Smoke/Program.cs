@@ -5043,7 +5043,7 @@ try
                             is >= 340 and <= 520,
                         $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
 
-                    if (iteration == 2
+                    if ((iteration == 0 || iteration == 2)
                         && visualOutputDirectory is not null)
                     {
                         var confirmPreview =
@@ -5111,7 +5111,9 @@ try
                             "Danger confirmation dialog escaped the shared quiet product roles or became vertically oversized.");
                         CaptureVisualEvidence(
                             confirmPreview,
-                            "dialog-confirm-danger-text225");
+                            iteration == 2
+                                ? "dialog-confirm-danger-text225"
+                                : "dialog-confirm-danger");
                         confirmPreview.Close();
 
                         var notifyPreview =
@@ -5147,7 +5149,9 @@ try
                             "Notification dialog escaped the quiet acknowledgement hierarchy or became vertically oversized.");
                         CaptureVisualEvidence(
                             notifyPreview,
-                            "dialog-notify-text225");
+                            iteration == 2
+                                ? "dialog-notify-text225"
+                                : "dialog-notify");
                         notifyPreview.Close();
                     }
 
@@ -7146,7 +7150,9 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "dialog-confirm-danger",
                 "dialog-confirm-danger-text225",
+                "dialog-notify",
                 "dialog-notify-text225",
                 "inspector-organize-1100x720",
                 "inspector-creative-1100x720",
