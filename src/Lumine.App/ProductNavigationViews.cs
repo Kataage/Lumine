@@ -294,7 +294,10 @@ internal static class ProductNavigationViews
                 LumineDesign.ConfigureIconButton(
                     new Button
                     {
-                        Content = "•••"
+                        Content =
+                            LumineDesign.CreateStrokeIcon(
+                                LumineDesign.MoreIconPath,
+                                16)
                     },
                     "ライブラリを管理");
             manageButton.VerticalAlignment =
