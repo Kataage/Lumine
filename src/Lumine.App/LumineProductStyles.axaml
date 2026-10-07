@@ -369,6 +369,12 @@
     <Setter Property="Padding" Value="12" />
   </Style>
 
+  <Style Selector="Window.lumine-dialog-window">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Background}" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Lumine.UiFont}" />
+  </Style>
+
   <Style Selector="StackPanel.lumine-dialog-content">
     <Setter Property="Margin" Value="24" />
     <Setter Property="Spacing" Value="12" />
@@ -404,6 +410,7 @@
   <Style Selector="TextBlock.lumine-dialog-description">
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="FontSize" Value="{DynamicResource Lumine.BodyFontSize}" />
+    <Setter Property="LineHeight" Value="{DynamicResource Lumine.BodyLineHeight}" />
   </Style>
 
   <Style Selector="Border.lumine-dialog-detail">
