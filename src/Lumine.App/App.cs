@@ -187,6 +187,20 @@ public sealed class App : Application
         application.Resources["Lumine.CardPadding"] =
             new Thickness(
                 LumineDesign.Space12);
+
+        var textScale =
+            Math.Clamp(
+                LumineVisualMetrics.TextScaleFactor,
+                1,
+                2.25);
+        application.Resources["Lumine.TagSwatchSize"] =
+            Math.Min(
+                38,
+                30 + ((textScale - 1) * 8));
+        application.Resources["Lumine.TagSwatchDotSize"] =
+            Math.Min(
+                24,
+                18 + ((textScale - 1) * 6));
     }
 
     public override void OnFrameworkInitializationCompleted()

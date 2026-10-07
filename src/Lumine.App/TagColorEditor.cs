@@ -142,7 +142,7 @@ internal sealed class TagColorEditor : UserControl
     private readonly ColorPicker _visualPicker;
     private readonly TextBox _custom;
     private readonly TextBlock _validation;
-    private readonly WrapPanel _presetHost;
+    private readonly Grid _presetHost;
     private readonly Button _advancedToggle;
     private readonly Border _advancedSurface;
     private string? _selectedColor;
@@ -155,19 +155,11 @@ internal sealed class TagColorEditor : UserControl
         _preview =
             new Border
             {
-                Width = 30,
-                Height = 30,
-                MinWidth = 30,
-                MinHeight = 30,
-                CornerRadius =
-                    new CornerRadius(15),
-                BorderBrush =
-                    LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
+        _preview.Classes.Add(
+            "lumine-tag-preview");
 
         _visualPicker =
             new ColorPicker
@@ -222,48 +214,44 @@ internal sealed class TagColorEditor : UserControl
             };
 
         _presetHost =
-            new WrapPanel
+            new Grid
             {
+                ColumnDefinitions =
+                    new ColumnDefinitions(
+                        "Auto,Auto,Auto,Auto,Auto"),
+                RowDefinitions =
+                    new RowDefinitions(
+                        "Auto,Auto"),
+                ColumnSpacing =
+                    LumineDesign.Space6,
+                RowSpacing =
+                    LumineDesign.Space6,
                 HorizontalAlignment =
                     HorizontalAlignment.Left
             };
 
-        foreach (var preset in
-                 TagColor.Presets)
+        for (var presetIndex = 0;
+             presetIndex < TagColor.Presets.Count;
+             presetIndex++)
         {
-            var value = preset;
+            var value =
+                TagColor.Presets[presetIndex];
+            var dot =
+                new Border
+                {
+                    Background =
+                        TagColor.ToBrush(value)
+                };
+            dot.Classes.Add(
+                "lumine-tag-swatch-dot");
+
             var button =
                 new Button
                 {
-                    Width = 30,
-                    Height = 30,
-                    MinWidth = 30,
-                    MinHeight = 30,
-                    Padding =
-                        new Thickness(4),
-                    Background =
-                        Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(2),
-                    CornerRadius =
-                        new CornerRadius(15),
-                    Margin =
-                        new Thickness(
-                            0,
-                            0,
-                            LumineDesign.Space4,
-                            LumineDesign.Space4),
-                    Content =
-                        new Border
-                        {
-                            Width = 18,
-                            Height = 18,
-                            CornerRadius =
-                                new CornerRadius(9),
-                            Background =
-                                TagColor.ToBrush(value)
-                        }
+                    Content = dot
                 };
+            button.Classes.Add(
+                "lumine-tag-swatch");
             AutomationProperties.SetName(
                 button,
                 $"タグカラー {value}");
@@ -273,6 +261,12 @@ internal sealed class TagColorEditor : UserControl
             button.Click +=
                 (_, _) =>
                     SetColor(value);
+            Grid.SetColumn(
+                button,
+                presetIndex % 5);
+            Grid.SetRow(
+                button,
+                presetIndex / 5);
             _presetHost.Children.Add(
                 button);
         }
@@ -320,21 +314,10 @@ internal sealed class TagColorEditor : UserControl
             new Border
             {
                 IsVisible = false,
-                Background =
-                    LumineDesign.Background,
-                BorderBrush =
-                    LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8),
-                Child =
-                    advancedBody
+                Child = advancedBody
             };
+        _advancedSurface.Classes.Add(
+            "lumine-tag-advanced");
 
         _advancedToggle =
             LumineDesign.ConfigureSecondaryButton(
@@ -342,13 +325,7 @@ internal sealed class TagColorEditor : UserControl
                 {
                     Content = "カスタム…",
                     HorizontalAlignment =
-                        HorizontalAlignment.Left,
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
+                        HorizontalAlignment.Left
                 });
         AutomationProperties.SetName(
             _advancedToggle,
@@ -420,6 +397,52 @@ internal sealed class TagColorEditor : UserControl
 
     internal int PresetCountForSmoke =>
         _presetHost.Children.Count;
+
+    internal bool UsesSharedThemeForSmoke =>
+        _preview.Classes.Contains(
+            "lumine-tag-preview")
+        && _presetHost.Children
+            .OfType<Button>()
+            .All(
+                static button =>
+                    button.Classes.Contains(
+                        "lumine-tag-swatch")
+                    && button.Content
+                        is Border dot
+                    && dot.Classes.Contains(
+                        "lumine-tag-swatch-dot"))
+        && _advancedSurface.Classes.Contains(
+            "lumine-tag-advanced")
+        && _advancedToggle.Classes.Contains(
+            "lumine-secondary");
+
+    internal double FirstPresetWidthForSmoke =>
+        _presetHost.Children
+            .OfType<Button>()
+            .First()
+            .Bounds.Width;
+
+    internal bool PresetGridIsFiveByTwoForSmoke =>
+        _presetHost.ColumnDefinitions.Count == 5
+        && _presetHost.RowDefinitions.Count == 2
+        && _presetHost.Children.Count
+            == TagColor.Presets.Count
+        && _presetHost.Children
+            .OfType<Button>()
+            .Select(
+                static button =>
+                    (
+                        Column: Grid.GetColumn(button),
+                        Row: Grid.GetRow(button)))
+            .Distinct()
+            .Count()
+            == TagColor.Presets.Count
+        && _presetHost.Children
+            .OfType<Button>()
+            .All(
+                static button =>
+                    Grid.GetColumn(button) is >= 0 and < 5
+                    && Grid.GetRow(button) is >= 0 and < 2);
 
     internal bool ValidationVisibleForSmoke =>
         _validation.IsVisible;
@@ -630,6 +653,20 @@ internal sealed class TagColorEditor : UserControl
     {
         _advancedSurface.IsVisible =
             visible;
+        if (visible)
+        {
+            if (!_advancedToggle.Classes.Contains(
+                    "active"))
+            {
+                _advancedToggle.Classes.Add(
+                    "active");
+            }
+        }
+        else
+        {
+            _advancedToggle.Classes.Remove(
+                "active");
+        }
         _advancedToggle.Content =
             visible
                 ? "カスタムを閉じる"
@@ -672,8 +709,12 @@ internal sealed class TagColorEditor : UserControl
         _selectedColor = null;
         _preview.Background =
             LumineDesign.ControlSurface;
-        _preview.BorderBrush =
-            LumineDesign.Danger;
+        if (!_preview.Classes.Contains(
+                "invalid"))
+        {
+            _preview.Classes.Add(
+                "invalid");
+        }
         _validation.Text =
             "カラーは #RGB / #RRGGBB / #RRGGBBAA で入力してください。";
         _validation.IsVisible = true;
@@ -691,8 +732,8 @@ internal sealed class TagColorEditor : UserControl
             TagColor.ToColor(normalized);
         _preview.Background =
             new SolidColorBrush(color);
-        _preview.BorderBrush =
-            LumineDesign.BorderStrong;
+        _preview.Classes.Remove(
+            "invalid");
 
         if (!_visualPicker.Color.Equals(color))
         {
@@ -725,14 +766,26 @@ internal sealed class TagColorEditor : UserControl
             var preset =
                 ToolTip.GetTip(button)
                     as string;
-            button.BorderBrush =
+            var selected =
                 _selectedColor is not null
                 && string.Equals(
                     preset,
                     _selectedColor,
-                    StringComparison.Ordinal)
-                    ? LumineDesign.InteractionFocus
-                    : Brushes.Transparent;
+                    StringComparison.Ordinal);
+            if (selected)
+            {
+                if (!button.Classes.Contains(
+                        "selected"))
+                {
+                    button.Classes.Add(
+                        "selected");
+                }
+            }
+            else
+            {
+                button.Classes.Remove(
+                    "selected");
+            }
         }
     }
 }

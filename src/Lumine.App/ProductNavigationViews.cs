@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Lumine.Core;
 using Lumine.Library;
 
 namespace Lumine.App;
@@ -818,6 +819,57 @@ internal static class ProductNavigationViews
                 StringComparer.OrdinalIgnoreCase);
         var manageMode = false;
 
+        var tagEditorWidth =
+            Math.Min(
+                400,
+                320
+                + ((Math.Clamp(
+                        LumineVisualMetrics.TextScaleFactor,
+                        1,
+                        2.25)
+                    - 1)
+                    * 64));
+
+        Border CreateTagEditorSurface(
+            Control content,
+            string accessibleName)
+        {
+            var surface =
+                new Border
+                {
+                    Width = tagEditorWidth,
+                    MaxWidth = 400,
+                    Child = content
+                };
+            surface.Classes.Add(
+                "lumine-popover");
+            AutomationProperties.SetName(
+                surface,
+                accessibleName);
+            return surface;
+        }
+
+        static void SetStateClass(
+            StyledElement element,
+            string className,
+            bool enabled)
+        {
+            if (enabled)
+            {
+                if (!element.Classes.Contains(
+                        className))
+                {
+                    element.Classes.Add(
+                        className);
+                }
+            }
+            else
+            {
+                element.Classes.Remove(
+                    className);
+            }
+        }
+
         var root =
             new Grid
             {
@@ -844,12 +896,6 @@ internal static class ProductNavigationViews
                 new Button
                 {
                     Content = "選択を解除",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4),
                     IsVisible = false
                 });
 
@@ -857,52 +903,26 @@ internal static class ProductNavigationViews
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "＋ 新規",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
+                    Content = "＋ 新規"
                 });
 
         var manage =
             LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
-                    Content = "管理",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
+                    Content = "管理"
                 });
 
         var actionRow =
-            new WrapPanel
+            new StackPanel
             {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space6,
                 HorizontalAlignment =
                     HorizontalAlignment.Left
             };
-        clearSelection.Margin =
-            new Thickness(
-                0,
-                0,
-                LumineDesign.Space6,
-                LumineDesign.Space4);
-        add.Margin =
-            new Thickness(
-                0,
-                0,
-                LumineDesign.Space6,
-                LumineDesign.Space4);
-        manage.Margin =
-            new Thickness(
-                0,
-                0,
-                0,
-                LumineDesign.Space4);
         actionRow.Children.Add(
             clearSelection);
         actionRow.Children.Add(
@@ -928,13 +948,7 @@ internal static class ProductNavigationViews
                 new TextBox
                 {
                     PlaceholderText =
-                        "タグを検索",
-                    MinHeight =
-                        LumineDesign.CompactCommandHeight,
-                    Padding =
-                        new Thickness(
-                            LumineDesign.Space8,
-                            LumineDesign.Space4)
+                        "タグを検索"
                 });
         Grid.SetRow(
             search,
@@ -957,8 +971,7 @@ internal static class ProductNavigationViews
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "作成",
-                    MinWidth = 68
+                    Content = "作成"
                 });
 
         var cancelCreate =
@@ -969,23 +982,15 @@ internal static class ProductNavigationViews
                 });
 
         var createActions =
-            new WrapPanel
+            new StackPanel
             {
+                Orientation =
+                    Orientation.Horizontal,
+                Spacing =
+                    LumineDesign.Space6,
                 HorizontalAlignment =
                     HorizontalAlignment.Right
             };
-        cancelCreate.Margin =
-            new Thickness(
-                0,
-                0,
-                LumineDesign.Space6,
-                LumineDesign.Space4);
-        createAction.Margin =
-            new Thickness(
-                0,
-                0,
-                0,
-                LumineDesign.Space4);
         createActions.Children.Add(
             cancelCreate);
         createActions.Children.Add(
@@ -1016,24 +1021,9 @@ internal static class ProductNavigationViews
             createActions);
 
         var createSurface =
-            new Border
-            {
-                Width = 320,
-                MaxWidth = 360,
-                Background =
-                    LumineDesign.SurfaceRaised,
-                BorderBrush =
-                    LumineDesign.Border,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.PanelRadius),
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space12),
-                Child = createBody
-            };
+            CreateTagEditorSurface(
+                createBody,
+                "タグを作成");
 
         var createFlyout =
             new Flyout
@@ -1091,10 +1081,10 @@ internal static class ProductNavigationViews
                 manageMode
                     ? "完了"
                     : "管理";
-            manage.Background =
-                manageMode
-                    ? LumineDesign.AccentMuted
-                    : LumineDesign.ControlSurface;
+            SetStateClass(
+                manage,
+                "active",
+                manageMode);
         }
 
         void ApplyFilter(
@@ -1206,39 +1196,14 @@ internal static class ProductNavigationViews
                             var button =
                                 new Button
                                 {
-                                    Content = content,
-                                    HorizontalAlignment =
-                                        HorizontalAlignment.Stretch,
-                                    HorizontalContentAlignment =
-                                        HorizontalAlignment.Stretch,
-                                    Padding =
-                                        new Thickness(
-                                            LumineDesign.Space8,
-                                            LumineDesign.Space6),
-                                    Background =
-                                        isSelected
-                                            ? LumineDesign.AccentMuted
-                                            : Brushes.Transparent,
-                                    BorderBrush =
-                                        isSelected
-                                            ? LumineDesign.BorderStrong
-                                            : Brushes.Transparent,
-                                    BorderThickness =
-                                        new Thickness(1),
-                                    CornerRadius =
-                                        new CornerRadius(
-                                            LumineDesign.ControlRadius)
+                                    Content = content
                                 };
-                            if (isSelected)
-                            {
-                                LumineDesign.ConfigureSelectedButtonStateResources(
-                                    button);
-                            }
-                            else
-                            {
-                                LumineDesign.ConfigureNeutralButtonStateResources(
-                                    button);
-                            }
+                            button.Classes.Add(
+                                "lumine-tag-row");
+                            SetStateClass(
+                                button,
+                                "selected",
+                                isSelected);
                             AutomationProperties.SetName(
                                 button,
                                 $"タグ: {tag.Name}");
@@ -1278,25 +1243,14 @@ internal static class ProductNavigationViews
                         var tagSurface =
                             new Border
                             {
-                                Padding =
-                                    new Thickness(
-                                        LumineDesign.Space8,
-                                        LumineDesign.Space6),
-                                Background =
-                                    isSelected
-                                        ? LumineDesign.AccentMuted
-                                        : Brushes.Transparent,
-                                BorderBrush =
-                                    isSelected
-                                        ? LumineDesign.BorderStrong
-                                        : LumineDesign.Border,
-                                BorderThickness =
-                                    new Thickness(1),
-                                CornerRadius =
-                                    new CornerRadius(
-                                        LumineDesign.ControlRadius),
                                 Child = content
                             };
+                        tagSurface.Classes.Add(
+                            "lumine-tag-row");
+                        SetStateClass(
+                            tagSurface,
+                            "selected",
+                            isSelected);
                         row.Children.Add(
                             tagSurface);
 
@@ -1305,16 +1259,11 @@ internal static class ProductNavigationViews
                                 new Button
                                 {
                                     Content = "編集",
-                                    MinHeight = 28,
-                                    Padding =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            LumineDesign.Space2),
-                                    FontSize =
-                                        LumineDesign.CaptionFontSize,
                                     VerticalAlignment =
                                         VerticalAlignment.Center
                                 });
+                        edit.Classes.Add(
+                            "lumine-compact");
 
                         var editName =
                             LumineDesign.ConfigureTextBox(
@@ -1341,8 +1290,7 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigurePrimaryButton(
                                 new Button
                                 {
-                                    Content = "保存",
-                                    MinWidth = 68
+                                    Content = "保存"
                                 });
                         var cancelEdit =
                             LumineDesign.ConfigureSecondaryButton(
@@ -1351,23 +1299,15 @@ internal static class ProductNavigationViews
                                     Content = "キャンセル"
                                 });
                         var editActions =
-                            new WrapPanel
+                            new StackPanel
                             {
+                                Orientation =
+                                    Orientation.Horizontal,
+                                Spacing =
+                                    LumineDesign.Space6,
                                 HorizontalAlignment =
                                     HorizontalAlignment.Right
                             };
-                        cancelEdit.Margin =
-                            new Thickness(
-                                0,
-                                0,
-                                LumineDesign.Space6,
-                                LumineDesign.Space4);
-                        saveEdit.Margin =
-                            new Thickness(
-                                0,
-                                0,
-                                0,
-                                LumineDesign.Space4);
                         editActions.Children.Add(
                             cancelEdit);
                         editActions.Children.Add(
@@ -1413,24 +1353,9 @@ internal static class ProductNavigationViews
                             new Flyout
                             {
                                 Content =
-                                    new Border
-                                    {
-                                        Width = 320,
-                                        MaxWidth = 360,
-                                        Background =
-                                            LumineDesign.SurfaceRaised,
-                                        BorderBrush =
-                                            LumineDesign.Border,
-                                        BorderThickness =
-                                            new Thickness(1),
-                                        CornerRadius =
-                                            new CornerRadius(
-                                                LumineDesign.PanelRadius),
-                                        Padding =
-                                            new Thickness(
-                                                LumineDesign.Space12),
-                                        Child = editBody
-                                    }
+                                    CreateTagEditorSurface(
+                                        editBody,
+                                        $"タグを編集: {tag.Name}")
                             };
                         edit.Flyout =
                             editFlyout;
@@ -1546,16 +1471,11 @@ internal static class ProductNavigationViews
                                 new Button
                                 {
                                     Content = "削除",
-                                    MinHeight = 28,
-                                    Padding =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            LumineDesign.Space2),
-                                    FontSize =
-                                        LumineDesign.CaptionFontSize,
                                     VerticalAlignment =
                                         VerticalAlignment.Center
                                 });
+                        remove.Classes.Add(
+                            "lumine-compact");
                         Grid.SetColumn(
                             remove,
                             2);
