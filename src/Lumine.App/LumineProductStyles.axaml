@@ -607,6 +607,15 @@
     <Setter Property="FontSize" Value="{DynamicResource Lumine.BodyFontSize}" />
   </Style>
 
+  <Style Selector="TextBlock.lumine-empty-message">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
+    <Setter Property="TextAlignment" Value="Center" />
+    <Setter Property="Margin" Value="12" />
+  </Style>
+  <Style Selector="StackPanel.lumine-compact-stack">
+    <Setter Property="Spacing" Value="4" />
+  </Style>
   <Style Selector="TextBlock.lumine-nav-hint">
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
