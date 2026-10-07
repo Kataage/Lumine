@@ -112,7 +112,7 @@ internal static class ProductDialogs
                 tone);
 
         var close =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
                     Content = buttonLabel,
@@ -149,7 +149,73 @@ internal static class ProductDialogs
             Math.Min(
                 520,
                 baseHeight
-                + ((scale - 1) * 120)));
+                + ((scale - 1) * 64)));
+    }
+
+    internal static Window CreatePreviewForSmoke(
+        ProductDialogTone tone,
+        bool notification)
+    {
+        var title =
+            notification
+                ? "処理が完了しました"
+                : "元ファイルを削除しますか？";
+        var dialog =
+            CreateDialog(
+                title,
+                notification
+                    ? 240
+                    : 340);
+        var panel =
+            CreateContent(
+                title,
+                notification
+                    ? "変更内容を保存しました。"
+                    : "3件の元画像ファイルをディスクから削除します。",
+                notification
+                    ? null
+                    : "この操作はLumineから元に戻せません。整理情報には削除前の参照が残る場合があります。",
+                tone);
+
+        if (notification)
+        {
+            panel.Children.Add(
+                CreateButtons(
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = "OK",
+                            IsDefault = true,
+                            IsCancel = true
+                        })));
+        }
+        else
+        {
+            panel.Children.Add(
+                CreateButtons(
+                    LumineDesign.ConfigureSecondaryButton(
+                        new Button
+                        {
+                            Content = "キャンセル",
+                            IsCancel = true
+                        }),
+                    tone == ProductDialogTone.Danger
+                        ? LumineDesign.ConfigureDangerButton(
+                            new Button
+                            {
+                                Content = "元ファイルを削除",
+                                IsDefault = true
+                            })
+                        : LumineDesign.ConfigurePrimaryButton(
+                            new Button
+                            {
+                                Content = "実行",
+                                IsDefault = true
+                            })));
+        }
+
+        dialog.Content = panel;
+        return dialog;
     }
 
     private static Window CreateDialog(
@@ -158,23 +224,24 @@ internal static class ProductDialogs
     {
         var resolved =
             ResolveDialogSizeForSmoke(height);
-        return new Window
-        {
-            Title = title,
-            Icon = LumineDesign.CreateWindowIcon(),
-            Width = resolved.Width,
-            Height = resolved.Height,
-            MinWidth = 380,
-            MinHeight = 220,
-            MaxWidth = 680,
-            MaxHeight = 540,
-            CanResize = true,
-            WindowStartupLocation =
-                WindowStartupLocation.CenterOwner,
-            Background = LumineDesign.Background,
-            Foreground = LumineDesign.Foreground,
-            FontFamily = LumineDesign.UiFont
-        };
+        var dialog =
+            new Window
+            {
+                Title = title,
+                Icon = LumineDesign.CreateWindowIcon(),
+                Width = resolved.Width,
+                Height = resolved.Height,
+                MinWidth = 380,
+                MinHeight = 220,
+                MaxWidth = 680,
+                MaxHeight = 540,
+                CanResize = true,
+                WindowStartupLocation =
+                    WindowStartupLocation.CenterOwner
+            };
+        dialog.Classes.Add(
+            "lumine-dialog-window");
+        return dialog;
     }
 
     private static StackPanel CreateContent(
@@ -184,78 +251,84 @@ internal static class ProductDialogs
         ProductDialogTone tone)
     {
         var panel =
-            new StackPanel
-            {
-                Margin = new Thickness(20),
-                Spacing = 12
-            };
+            new StackPanel();
+        panel.Classes.Add(
+            "lumine-dialog-content");
 
-        panel.Children.Add(
+        var symbolGlyph =
+            new TextBlock
+            {
+                Text =
+                    tone == ProductDialogTone.Danger
+                        ? "!"
+                        : "i",
+                HorizontalAlignment =
+                    HorizontalAlignment.Center,
+                VerticalAlignment =
+                    VerticalAlignment.Center
+            };
+        symbolGlyph.Classes.Add(
+            "lumine-dialog-symbol-glyph");
+        if (tone == ProductDialogTone.Danger)
+        {
+            symbolGlyph.Classes.Add(
+                "danger");
+        }
+
+        var symbol =
             new Border
             {
-                Width = 40,
-                Height = 40,
                 HorizontalAlignment =
                     HorizontalAlignment.Left,
-                Background =
-                    tone == ProductDialogTone.Danger
-                        ? new SolidColorBrush(
-                            LumineDesign.DangerColor,
-                            0.12)
-                        : LumineDesign.AccentMuted,
-                CornerRadius = new CornerRadius(10),
-                Child =
-                    new TextBlock
-                    {
-                        Text =
-                            tone == ProductDialogTone.Danger
-                                ? "!"
-                                : "i",
-                        Foreground =
-                            tone == ProductDialogTone.Danger
-                                ? LumineDesign.Danger
-                                : LumineDesign.Accent,
-                        FontWeight = FontWeight.Bold,
-                        FontSize = LumineDesign.EmphasisFontSize,
-                        HorizontalAlignment =
-                            HorizontalAlignment.Center,
-                        VerticalAlignment =
-                            VerticalAlignment.Center
-                    }
-            });
+                Child = symbolGlyph
+            };
+        symbol.Classes.Add(
+            "lumine-dialog-symbol");
+        if (tone == ProductDialogTone.Danger)
+        {
+            symbol.Classes.Add(
+                "danger");
+        }
+        panel.Children.Add(symbol);
 
-        panel.Children.Add(
+        var titleText =
             new TextBlock
             {
                 Text = title,
-                Foreground = LumineDesign.Foreground,
-                FontWeight = FontWeight.SemiBold,
-                FontSize = LumineDesign.DialogTitleFontSize,
                 TextWrapping = TextWrapping.Wrap
-            });
-
+            };
+        titleText.Classes.Add(
+            "lumine-dialog-title");
         panel.Children.Add(
+            titleText);
+
+        var descriptionText =
             new TextBlock
             {
                 Text = description,
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
-                LineHeight = LumineDesign.BodyLineHeight,
-                TextWrapping = TextWrapping.Wrap
-            });
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+        descriptionText.Classes.Add(
+            "lumine-dialog-description");
+        panel.Children.Add(
+            descriptionText);
 
         if (!string.IsNullOrWhiteSpace(detail))
         {
-            panel.Children.Add(
+            var detailText =
+                new TextBlock
+                {
+                    Text = detail,
+                    TextWrapping =
+                        TextWrapping.Wrap
+                };
+            detailText.Classes.Add(
+                "lumine-dialog-detail-text");
+
+            var detailSurface =
                 new Border
                 {
-                    Background =
-                        LumineDesign.SurfaceRaised,
-                    BorderBrush = LumineDesign.Border,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(10),
                     MaxHeight =
                         Math.Min(
                             180,
@@ -267,17 +340,13 @@ internal static class ProductDialogs
                         new ScrollViewer
                         {
                             Content =
-                                new TextBlock
-                                {
-                                    Text = detail,
-                                    Foreground =
-                                        LumineDesign.MutedForeground,
-                                    FontSize = LumineDesign.CaptionFontSize,
-                                    TextWrapping =
-                                        TextWrapping.Wrap
-                                }
+                                detailText
                         }
-                });
+                };
+            detailSurface.Classes.Add(
+                "lumine-dialog-detail");
+            panel.Children.Add(
+                detailSurface);
         }
 
         return panel;
@@ -287,15 +356,9 @@ internal static class ProductDialogs
         params Button[] buttons)
     {
         var panel =
-            new StackPanel
-            {
-                Orientation =
-                    Orientation.Horizontal,
-                HorizontalAlignment =
-                    HorizontalAlignment.Right,
-                Spacing = 8,
-                Margin = new Thickness(0, 6, 0, 0)
-            };
+            new StackPanel();
+        panel.Classes.Add(
+            "lumine-dialog-actions");
 
         foreach (var button in buttons)
         {
@@ -304,4 +367,5 @@ internal static class ProductDialogs
 
         return panel;
     }
+
 }

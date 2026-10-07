@@ -4888,7 +4888,25 @@ try
                             "Lumine.TagSwatchDotSize"]
                             is double tagSwatchDotSize
                         && tagSwatchDotSize >= 18
-                        && tagSwatchDotSize <= 24,
+                        && tagSwatchDotSize <= 24
+                        && Application.Current?.Resources[
+                            "Lumine.DialogTitleFontSize"]
+                            is double dialogTitleFontSize
+                        && dialogTitleFontSize
+                            == LumineDesign.DialogTitleFontSize
+                        && Application.Current?.Resources[
+                            "Lumine.DialogSymbolSize"]
+                            is double dialogSymbolSize
+                        && dialogSymbolSize
+                            is >= 36 and <= 48
+                        && Application.Current?.Resources[
+                            "Lumine.BodyLineHeight"]
+                            is double bodyLineHeight
+                        && bodyLineHeight
+                            == LumineDesign.BodyLineHeight
+                        && Application.Current?.Resources[
+                            "Lumine.UiFont"]
+                            is FontFamily,
                         "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
@@ -5024,6 +5042,118 @@ try
                         && dialogSize.Height
                             is >= 340 and <= 520,
                         $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
+
+                    if ((iteration == 0 || iteration == 2)
+                        && visualOutputDirectory is not null)
+                    {
+                        var confirmPreview =
+                            ProductDialogs.CreatePreviewForSmoke(
+                                ProductDialogTone.Danger,
+                                notification: false);
+                        confirmPreview.Show();
+                        Dispatcher.UIThread.RunJobs();
+
+                        var confirmContent =
+                            confirmPreview.Content as StackPanel
+                            ?? throw new InvalidOperationException(
+                                "Confirmation preview did not expose the expected content panel.");
+                        var confirmSymbol =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .First(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-symbol"));
+                        var confirmDetail =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .First(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-detail"));
+                        var confirmActions =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<StackPanel>()
+                                .First(
+                                    panel =>
+                                        panel.Classes.Contains(
+                                            "lumine-dialog-actions"));
+                        Require(
+                            confirmPreview.Classes.Contains(
+                                "lumine-dialog-window")
+                            && confirmContent.Classes.Contains(
+                                "lumine-dialog-content")
+                            && confirmSymbol.Classes.Contains(
+                                "danger")
+                            && confirmSymbol.Bounds.Width
+                                is >= 35.5 and <= 48.5
+                            && confirmDetail.BorderThickness
+                                == new Thickness(0)
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Count() == 2
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        button.Classes.Contains(
+                                            "lumine-danger"))
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        button.Classes.Contains(
+                                            "lumine-secondary"))
+                            && confirmPreview.Height <= 420.5,
+                            "Danger confirmation dialog escaped the shared quiet product roles or became vertically oversized.");
+                        CaptureVisualEvidence(
+                            confirmPreview,
+                            iteration == 2
+                                ? "dialog-confirm-danger-text225"
+                                : "dialog-confirm-danger");
+                        confirmPreview.Close();
+
+                        var notifyPreview =
+                            ProductDialogs.CreatePreviewForSmoke(
+                                ProductDialogTone.Default,
+                                notification: true);
+                        notifyPreview.Show();
+                        Dispatcher.UIThread.RunJobs();
+
+                        var notifyContent =
+                            notifyPreview.Content as StackPanel
+                            ?? throw new InvalidOperationException(
+                                "Notification preview did not expose the expected content panel.");
+                        Require(
+                            notifyPreview.Classes.Contains(
+                                "lumine-dialog-window")
+                            && notifyContent.Classes.Contains(
+                                "lumine-dialog-content")
+                            && !notifyContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .Any(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-detail"))
+                            && notifyContent
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single()
+                                .Classes.Contains(
+                                    "lumine-secondary")
+                            && notifyPreview.Height <= 320.5,
+                            "Notification dialog escaped the quiet acknowledgement hierarchy or became vertically oversized.");
+                        CaptureVisualEvidence(
+                            notifyPreview,
+                            iteration == 2
+                                ? "dialog-notify-text225"
+                                : "dialog-notify");
+                        notifyPreview.Close();
+                    }
 
                     if (iteration == 0)
                     {
@@ -7020,6 +7150,10 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "dialog-confirm-danger",
+                "dialog-confirm-danger-text225",
+                "dialog-notify",
+                "dialog-notify-text225",
                 "inspector-organize-1100x720",
                 "inspector-creative-1100x720",
                 "inspector-publication-1100x720",
