@@ -589,6 +589,10 @@
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
   </Style>
+  <Style Selector="TextBlock.lumine-body-caption">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
+  </Style>
   <Style Selector="TextBlock.lumine-accent-caption">
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Accent}" />
     <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
