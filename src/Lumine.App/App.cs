@@ -163,6 +163,10 @@ public sealed class App : Application
             LumineDesign.CaptionFontSize;
         application.Resources["Lumine.BodyFontSize"] =
             LumineDesign.BodyFontSize;
+        application.Resources["Lumine.BodyLineHeight"] =
+            LumineDesign.BodyLineHeight;
+        application.Resources["Lumine.UiFont"] =
+            LumineDesign.UiFont;
         application.Resources["Lumine.ControlRadius"] =
             new CornerRadius(
                 LumineDesign.ControlRadius);
