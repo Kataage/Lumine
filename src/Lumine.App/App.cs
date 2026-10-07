@@ -187,12 +187,19 @@ public sealed class App : Application
         application.Resources["Lumine.CardPadding"] =
             new Thickness(
                 LumineDesign.Space12);
+        application.Resources["Lumine.DialogTitleFontSize"] =
+            LumineDesign.DialogTitleFontSize;
 
         var textScale =
             Math.Clamp(
                 LumineVisualMetrics.TextScaleFactor,
                 1,
                 2.25);
+        application.Resources["Lumine.DialogSymbolSize"] =
+            Math.Min(
+                48,
+                36 + ((textScale - 1) * 10));
+
         application.Resources["Lumine.TagSwatchSize"] =
             Math.Min(
                 38,
