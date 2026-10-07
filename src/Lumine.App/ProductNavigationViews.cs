@@ -821,14 +821,14 @@ internal static class ProductNavigationViews
 
         var tagEditorWidth =
             Math.Min(
-                440,
+                400,
                 320
                 + ((Math.Clamp(
                         LumineVisualMetrics.TextScaleFactor,
                         1,
                         2.25)
                     - 1)
-                    * 96));
+                    * 64));
 
         Border CreateTagEditorSurface(
             Control content,
@@ -838,7 +838,7 @@ internal static class ProductNavigationViews
                 new Border
                 {
                     Width = tagEditorWidth,
-                    MaxWidth = 440,
+                    MaxWidth = 400,
                     Child = content
                 };
             surface.Classes.Add(
