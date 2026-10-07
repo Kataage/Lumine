@@ -182,7 +182,7 @@ internal static class LumineDesign
     public const string ChevronDownIconPath =
         "M5.25 8.25L12 15l6.75-6.75";
     public const string MoreIconPath =
-        "M6.25 12h1 M11.5 12h1 M16.75 12h1";
+        "M6.75 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5 M12 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5 M17.25 11.25a.75.75 0 1 1 0 1.5a.75.75 0 1 1 0-1.5";
     public const string PlusIconPath =
         "M12 5v14M5 12h14";
     public const string RefreshIconPath =
