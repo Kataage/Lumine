@@ -224,23 +224,24 @@ internal static class ProductDialogs
     {
         var resolved =
             ResolveDialogSizeForSmoke(height);
-        return new Window
-        {
-            Title = title,
-            Icon = LumineDesign.CreateWindowIcon(),
-            Width = resolved.Width,
-            Height = resolved.Height,
-            MinWidth = 380,
-            MinHeight = 220,
-            MaxWidth = 680,
-            MaxHeight = 540,
-            CanResize = true,
-            WindowStartupLocation =
-                WindowStartupLocation.CenterOwner,
-            Background = LumineDesign.Background,
-            Foreground = LumineDesign.Foreground,
-            FontFamily = LumineDesign.UiFont
-        };
+        var dialog =
+            new Window
+            {
+                Title = title,
+                Icon = LumineDesign.CreateWindowIcon(),
+                Width = resolved.Width,
+                Height = resolved.Height,
+                MinWidth = 380,
+                MinHeight = 220,
+                MaxWidth = 680,
+                MaxHeight = 540,
+                CanResize = true,
+                WindowStartupLocation =
+                    WindowStartupLocation.CenterOwner
+            };
+        dialog.Classes.Add(
+            "lumine-dialog-window");
+        return dialog;
     }
 
     private static StackPanel CreateContent(
@@ -305,8 +306,6 @@ internal static class ProductDialogs
             new TextBlock
             {
                 Text = description,
-                LineHeight =
-                    LumineDesign.BodyLineHeight,
                 TextWrapping =
                     TextWrapping.Wrap
             };
