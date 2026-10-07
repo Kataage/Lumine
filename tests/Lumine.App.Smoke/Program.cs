@@ -4888,7 +4888,17 @@ try
                             "Lumine.TagSwatchDotSize"]
                             is double tagSwatchDotSize
                         && tagSwatchDotSize >= 18
-                        && tagSwatchDotSize <= 24,
+                        && tagSwatchDotSize <= 24
+                        && Application.Current?.Resources[
+                            "Lumine.DialogTitleFontSize"]
+                            is double dialogTitleFontSize
+                        && dialogTitleFontSize
+                            == LumineDesign.DialogTitleFontSize
+                        && Application.Current?.Resources[
+                            "Lumine.DialogSymbolSize"]
+                            is double dialogSymbolSize
+                        && dialogSymbolSize
+                            is >= 36 and <= 48,
                         "Canonical Lumine spacing/control metrics drifted or stopped flowing through the shared theme resources.");
 
                     Require(
@@ -5024,6 +5034,108 @@ try
                         && dialogSize.Height
                             is >= 340 and <= 520,
                         $"Product dialog adaptive sizing escaped the 900x600-safe contract: {dialogSize.Width:N0}x{dialogSize.Height:N0}.");
+
+                    if (iteration == 2
+                        && visualOutputDirectory is not null)
+                    {
+                        var confirmPreview =
+                            ProductDialogs.CreatePreviewForSmoke(
+                                ProductDialogTone.Danger,
+                                notification: false);
+                        confirmPreview.Show();
+                        Dispatcher.UIThread.RunJobs();
+
+                        var confirmContent =
+                            confirmPreview.Content as StackPanel
+                            ?? throw new InvalidOperationException(
+                                "Confirmation preview did not expose the expected content panel.");
+                        var confirmSymbol =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .First(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-symbol"));
+                        var confirmDetail =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .First(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-detail"));
+                        var confirmActions =
+                            confirmContent
+                                .GetVisualDescendants()
+                                .OfType<StackPanel>()
+                                .First(
+                                    panel =>
+                                        panel.Classes.Contains(
+                                            "lumine-dialog-actions"));
+                        Require(
+                            confirmContent.Classes.Contains(
+                                "lumine-dialog-content")
+                            && confirmSymbol.Classes.Contains(
+                                "danger")
+                            && confirmSymbol.Bounds.Width
+                                is >= 35.5 and <= 48.5
+                            && confirmDetail.BorderThickness
+                                == new Thickness(0)
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Count() == 2
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        button.Classes.Contains(
+                                            "lumine-danger"))
+                            && confirmActions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        button.Classes.Contains(
+                                            "lumine-secondary")),
+                            "Danger confirmation dialog escaped the shared quiet product roles.");
+                        CaptureVisualEvidence(
+                            confirmPreview,
+                            "dialog-confirm-danger-text225");
+                        confirmPreview.Close();
+
+                        var notifyPreview =
+                            ProductDialogs.CreatePreviewForSmoke(
+                                ProductDialogTone.Default,
+                                notification: true);
+                        notifyPreview.Show();
+                        Dispatcher.UIThread.RunJobs();
+
+                        var notifyContent =
+                            notifyPreview.Content as StackPanel
+                            ?? throw new InvalidOperationException(
+                                "Notification preview did not expose the expected content panel.");
+                        Require(
+                            notifyContent.Classes.Contains(
+                                "lumine-dialog-content")
+                            && !notifyContent
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .Any(
+                                    border =>
+                                        border.Classes.Contains(
+                                            "lumine-dialog-detail"))
+                            && notifyContent
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single()
+                                .Classes.Contains(
+                                    "lumine-primary"),
+                            "Notification dialog escaped the shared simple product hierarchy.");
+                        CaptureVisualEvidence(
+                            notifyPreview,
+                            "dialog-notify-text225");
+                        notifyPreview.Close();
+                    }
 
                     if (iteration == 0)
                     {
@@ -7020,6 +7132,8 @@ try
                 "tags-create-custom-color-900x600-text225",
                 "tags-edit-900x600-text225",
                 "tags-edit-custom-color-900x600-text225",
+                "dialog-confirm-danger-text225",
+                "dialog-notify-text225",
                 "inspector-organize-1100x720",
                 "inspector-creative-1100x720",
                 "inspector-publication-1100x720",
