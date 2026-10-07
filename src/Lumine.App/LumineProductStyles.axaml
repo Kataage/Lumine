@@ -369,6 +369,62 @@
     <Setter Property="Padding" Value="12" />
   </Style>
 
+  <Style Selector="StackPanel.lumine-dialog-content">
+    <Setter Property="Margin" Value="24" />
+    <Setter Property="Spacing" Value="12" />
+  </Style>
+
+  <Style Selector="Border.lumine-dialog-symbol">
+    <Setter Property="Width" Value="{DynamicResource Lumine.DialogSymbolSize}" />
+    <Setter Property="Height" Value="{DynamicResource Lumine.DialogSymbolSize}" />
+    <Setter Property="MinWidth" Value="{DynamicResource Lumine.DialogSymbolSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource Lumine.DialogSymbolSize}" />
+    <Setter Property="Background" Value="{DynamicResource Lumine.AccentMuted}" />
+    <Setter Property="CornerRadius" Value="99" />
+  </Style>
+  <Style Selector="Border.lumine-dialog-symbol.danger">
+    <Setter Property="Background" Value="{DynamicResource Lumine.DangerTint}" />
+  </Style>
+
+  <Style Selector="TextBlock.lumine-dialog-symbol-glyph">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Accent}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.BodyFontSize}" />
+  </Style>
+  <Style Selector="TextBlock.lumine-dialog-symbol-glyph.danger">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Danger}" />
+  </Style>
+
+  <Style Selector="TextBlock.lumine-dialog-title">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.DialogTitleFontSize}" />
+  </Style>
+
+  <Style Selector="TextBlock.lumine-dialog-description">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.BodyFontSize}" />
+  </Style>
+
+  <Style Selector="Border.lumine-dialog-detail">
+    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionNeutral}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="12" />
+  </Style>
+  <Style Selector="TextBlock.lumine-dialog-detail-text">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
+  </Style>
+
+  <Style Selector="StackPanel.lumine-dialog-actions">
+    <Setter Property="Orientation" Value="Horizontal" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="Spacing" Value="8" />
+    <Setter Property="Margin" Value="0,8,0,0" />
+  </Style>
+
   <Style Selector="Border.lumine-sidebar">
     <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
