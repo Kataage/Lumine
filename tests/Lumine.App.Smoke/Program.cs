@@ -5974,14 +5974,16 @@ try
                                         .DisplayFlyoutIsOpenForSmoke,
                                     $"Responsive shell/navigation or primary toolbar containment regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
-                                if (iteration == 0
+                                if ((iteration == 0 || iteration == 2)
                                     && mode == BrowseViewMode.Grid
                                     && navigationVisible
                                     && viewport.Width == 900d)
                                 {
                                     CaptureVisualEvidence(
                                         window,
-                                        "navigation-overlay-900x600");
+                                        iteration == 2
+                                            ? "navigation-overlay-900x600-text225"
+                                            : "navigation-overlay-900x600");
                                 }
 
                                 window.CurrentShell.HideContextDetail();
@@ -6907,6 +6909,7 @@ try
                 "browse-display-open-900x600",
                 "browse-active-filter-900x600",
                 "navigation-overlay-900x600",
+                "navigation-overlay-900x600-text225",
                 "navigation-pinned-1440x900",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
