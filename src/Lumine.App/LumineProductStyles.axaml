@@ -366,8 +366,13 @@
     <Setter Property="CornerRadius" Value="10" />
     <Setter Property="Padding" Value="2" />
   </Style>
+  <!--
+    Active Library is already identified by the explicit "表示中" label.
+    Keep the row flat instead of turning a three-line metadata row into
+    another card-like selected surface.
+  -->
   <Style Selector="Border.lumine-library-row.selected">
-    <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <Style Selector="Button.lumine-library-open">
