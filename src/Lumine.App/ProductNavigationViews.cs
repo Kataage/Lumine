@@ -408,41 +408,14 @@ internal static class ProductNavigationViews
         var all =
             new Button
             {
-                Content = "すべての画像",
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Left,
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8,
-                        LumineDesign.Space6),
-                Background =
-                    selectedFolder is null
-                        ? LumineDesign.AccentMuted
-                        : Brushes.Transparent,
-                BorderBrush =
-                    selectedFolder is null
-                        ? LumineDesign.BorderStrong
-                        : Brushes.Transparent,
-                BorderThickness = new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Foreground =
-                    selectedFolder is null
-                        ? LumineDesign.Foreground
-                        : LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize
+                Content = "すべての画像"
             };
+        all.Classes.Add(
+            "lumine-folder-row");
         if (selectedFolder is null)
         {
-            LumineDesign.ConfigureSelectedButtonStateResources(
-                all);
-        }
-        else
-        {
-            LumineDesign.ConfigureNeutralButtonStateResources(
-                all);
+            all.Classes.Add(
+                "selected");
         }
         AutomationProperties.SetName(
             all,
@@ -537,15 +510,9 @@ internal static class ProductNavigationViews
             }
 
             var list =
-                new ListBox
-                {
-                    Background =
-                        Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(0),
-                    Padding =
-                        new Thickness(0)
-                };
+                new ListBox();
+            list.Classes.Add(
+                "lumine-flat-list");
 
             IReadOnlyList<LibraryFolderInfo>
                 BuildVisibleFolders()
@@ -710,46 +677,16 @@ internal static class ProductNavigationViews
                                     new TextBlock
                                     {
                                         Text = leaf,
-                                        Foreground =
-                                            selected
-                                                ? LumineDesign.Foreground
-                                                : LumineDesign.MutedForeground,
-                                        FontSize =
-                                            LumineDesign.CaptionFontSize,
                                         TextTrimming =
                                             TextTrimming.CharacterEllipsis
-                                    },
-                                HorizontalAlignment =
-                                    HorizontalAlignment.Stretch,
-                                HorizontalContentAlignment =
-                                    HorizontalAlignment.Left,
-                                Padding =
-                                    new Thickness(
-                                        LumineDesign.Space4,
-                                        LumineDesign.Space6),
-                                Background =
-                                    selected
-                                        ? LumineDesign.AccentMuted
-                                        : Brushes.Transparent,
-                                BorderBrush =
-                                    selected
-                                        ? LumineDesign.BorderStrong
-                                        : Brushes.Transparent,
-                                BorderThickness =
-                                    new Thickness(1),
-                                CornerRadius =
-                                    new CornerRadius(
-                                        LumineDesign.ControlRadius)
+                                    }
                             };
+                        folderButton.Classes.Add(
+                            "lumine-folder-row");
                         if (selected)
                         {
-                            LumineDesign.ConfigureSelectedButtonStateResources(
-                                folderButton);
-                        }
-                        else
-                        {
-                            LumineDesign.ConfigureNeutralButtonStateResources(
-                                folderButton);
+                            folderButton.Classes.Add(
+                                "selected");
                         }
                         ToolTip.SetTip(
                             folderButton,
@@ -774,13 +711,11 @@ internal static class ProductNavigationViews
                                 Text =
                                     folder.DirectAssetCount
                                         .ToString("N0"),
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
                                 VerticalAlignment =
                                     VerticalAlignment.Center
                             };
+                        count.Classes.Add(
+                            "lumine-muted-caption");
                         Grid.SetColumn(count, 2);
                         row.Children.Add(count);
 
