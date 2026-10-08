@@ -528,39 +528,66 @@ internal sealed class BrowseWorkspaceControls : UserControl
         Control firstCommand)
     {
         Control? previousOwnerFocus = null;
+        var focusGeneration = 0;
         flyout.Opened +=
             (_, _) =>
             {
+                var generation = ++focusGeneration;
                 var owner = TopLevel.GetTopLevel(trigger);
-                previousOwnerFocus =
+                var focusAtOpen =
                     owner?.FocusManager?.GetFocusedElement()
                         as Control;
+                previousOwnerFocus = focusAtOpen;
                 Dispatcher.UIThread.Post(
                     () =>
                     {
-                        if (flyout.IsOpen
-                            && firstCommand.IsEffectivelyVisible
-                            && firstCommand.IsEnabled
-                            && ReferenceEquals(
+                        if (generation != focusGeneration
+                            || !flyout.IsOpen
+                            || owner is null
+                            || !firstCommand.IsEffectivelyVisible
+                            || !firstCommand.IsEnabled
+                            || !ReferenceEquals(
                                 TopLevel.GetTopLevel(trigger),
                                 owner))
                         {
-                            firstCommand.Focus(
-                                NavigationMethod.Unspecified,
-                                KeyModifiers.None);
+                            return;
                         }
+
+                        // Opening is deferred to let the popup attach. If
+                        // the user has meanwhile focused another live owner
+                        // command, do not take that focus away.
+                        var current =
+                            owner.FocusManager?.GetFocusedElement();
+                        if (current is Control live
+                            && live.IsEffectivelyVisible
+                            && live.IsEnabled
+                            && ReferenceEquals(
+                                TopLevel.GetTopLevel(live),
+                                owner)
+                            && !ReferenceEquals(live, focusAtOpen)
+                            && !ReferenceEquals(live, trigger)
+                            && !ReferenceEquals(live, firstCommand))
+                        {
+                            return;
+                        }
+
+                        firstCommand.Focus(
+                            NavigationMethod.Unspecified,
+                            KeyModifiers.None);
                     },
                     DispatcherPriority.Input);
             };
         flyout.Closed +=
             (_, _) =>
             {
+                var generation = ++focusGeneration;
                 var owner = TopLevel.GetTopLevel(trigger);
                 var prior = previousOwnerFocus;
                 Dispatcher.UIThread.Post(
                     () =>
                     {
-                        if (flyout.IsOpen
+                        if (generation != focusGeneration
+                            || flyout.IsOpen
                             || owner is null
                             || !trigger.IsEffectivelyVisible
                             || !trigger.IsEnabled
