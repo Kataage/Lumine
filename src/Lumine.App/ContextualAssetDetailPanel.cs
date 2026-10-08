@@ -624,6 +624,42 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var creativeActionButtons =
             new List<Control>();
 
+        DropDownButton CreateCreativeMenu(
+            string label,
+            StackPanel actions)
+        {
+            var flyout =
+                new Flyout
+                {
+                    Content =
+                        new Border
+                        {
+                            Background =
+                                LumineDesign.SurfaceRaised,
+                            Padding =
+                                new Thickness(
+                                    LumineDesign.Space8),
+                            Child = actions
+                        }
+                };
+            var command =
+                new DropDownButton
+                {
+                    Content = label,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment =
+                        HorizontalAlignment.Center,
+                    Flyout = flyout
+                };
+            LumineDesign.ConfigureSecondaryButton(command);
+            AttachCreativeFlyoutFocus(
+                flyout,
+                command,
+                actions.Children.OfType<Button>().First());
+            return command;
+        }
+
         if (createWorkRequested is not null
             || createGroupRequested is not null)
         {
@@ -653,30 +689,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             }
 
             creativeActionButtons.Add(
-                LumineDesign.ConfigureSecondaryButton(
-                    new DropDownButton
-                    {
-                        Content = "新規作成",
-                        HorizontalAlignment =
-                            HorizontalAlignment.Stretch,
-                        HorizontalContentAlignment =
-                            HorizontalAlignment.Center,
-                        Flyout =
-                            new Flyout
-                            {
-                                Content =
-                                    new Border
-                                    {
-                                        Background =
-                                            LumineDesign.SurfaceRaised,
-                                        Padding =
-                                            new Thickness(
-                                                LumineDesign.Space8),
-                                        Child =
-                                            creationPanel
-                                    }
-                            }
-                    }));
+                CreateCreativeMenu(
+                    "新規作成",
+                    creationPanel));
         }
 
         if (addToWorkRequested is not null
@@ -708,30 +723,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             }
 
             creativeActionButtons.Add(
-                LumineDesign.ConfigureSecondaryButton(
-                    new DropDownButton
-                    {
-                        Content = "既存へ追加",
-                        HorizontalAlignment =
-                            HorizontalAlignment.Stretch,
-                        HorizontalContentAlignment =
-                            HorizontalAlignment.Center,
-                        Flyout =
-                            new Flyout
-                            {
-                                Content =
-                                    new Border
-                                    {
-                                        Background =
-                                            LumineDesign.SurfaceRaised,
-                                        Padding =
-                                            new Thickness(
-                                                LumineDesign.Space8),
-                                        Child =
-                                            additionPanel
-                                    }
-                            }
-                    }));
+                CreateCreativeMenu(
+                    "既存へ追加",
+                    additionPanel));
         }
 
         if (creativeActionButtons.Count > 0)
@@ -3077,6 +3071,101 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     ? TextTrimming.None
                     : TextTrimming.CharacterEllipsis
         };
+
+    // Creative action menus follow the same keyboard-focus ownership
+    // as Browse flyouts, without resetting a newer owner-window choice.
+    private static void AttachCreativeFlyoutFocus(
+        Flyout flyout,
+        DropDownButton trigger,
+        Button firstAction)
+    {
+        Control? originalFocus = null;
+        var generation = 0;
+        flyout.Opened += (_, _) =>
+        {
+            var openedGeneration = ++generation;
+            var owner = TopLevel.GetTopLevel(trigger);
+            originalFocus =
+                owner?.FocusManager?.GetFocusedElement()
+                    as Control;
+            var focusedAtOpen = originalFocus;
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (openedGeneration != generation
+                        || !flyout.IsOpen
+                        || owner is null
+                        || !firstAction.IsEnabled
+                        || !firstAction.IsEffectivelyVisible
+                        || !ReferenceEquals(
+                            TopLevel.GetTopLevel(trigger),
+                            owner))
+                    {
+                        return;
+                    }
+
+                    var current =
+                        owner.FocusManager?.GetFocusedElement();
+                    if (current is Control live
+                        && live.IsEnabled
+                        && live.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            TopLevel.GetTopLevel(live),
+                            owner)
+                        && !ReferenceEquals(live, focusedAtOpen)
+                        && !ReferenceEquals(live, trigger)
+                        && !ReferenceEquals(live, firstAction))
+                    {
+                        return;
+                    }
+
+                    firstAction.Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None);
+                },
+                DispatcherPriority.Input);
+        };
+        flyout.Closed += (_, _) =>
+        {
+            var closedGeneration = ++generation;
+            var owner = TopLevel.GetTopLevel(trigger);
+            var focusedAtOpen = originalFocus;
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (closedGeneration != generation
+                        || flyout.IsOpen
+                        || owner is null
+                        || !trigger.IsEnabled
+                        || !trigger.IsEffectivelyVisible
+                        || !ReferenceEquals(
+                            TopLevel.GetTopLevel(trigger),
+                            owner))
+                    {
+                        return;
+                    }
+
+                    var current =
+                        owner.FocusManager?.GetFocusedElement();
+                    if (current is Control live
+                        && live.IsEnabled
+                        && live.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            TopLevel.GetTopLevel(live),
+                            owner)
+                        && !ReferenceEquals(live, focusedAtOpen)
+                        && !ReferenceEquals(live, trigger))
+                    {
+                        return;
+                    }
+
+                    trigger.Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None);
+                },
+                DispatcherPriority.Input);
+        };
+    }
 
     private Button CreateInspectorTabButton(
         string header,

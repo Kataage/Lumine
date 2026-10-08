@@ -4715,6 +4715,69 @@ try
                             StringComparison.Ordinal)),
                 "Single-selection Inspector did not expose its creative creation menu.");
 
+            // Exercise the mounted Inspector Creative action menus, not
+            // just their existence. Opening gives focus to the first
+            // action; dismissal returns it to the live invoking command.
+            var creativeMenus =
+                shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .Where(button =>
+                        button.Content as string is
+                            "新規作成" or "既存へ追加")
+                    .ToArray();
+            Require(
+                creativeMenus.Length == 2,
+                "Inspector Creative is missing an action flyout.");
+            var creativeTab =
+                shell.ContextDetail
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button =>
+                        button.Content as string == "制作"
+                        && button.Classes.Contains("lumine-segment"));
+            foreach (var menu in creativeMenus)
+            {
+                var flyout =
+                    menu.Flyout as Flyout
+                    ?? throw new InvalidOperationException(
+                        "Inspector Creative action has no flyout.");
+                var actions =
+                    (flyout.Content as Border)?.Child
+                        as StackPanel
+                    ?? throw new InvalidOperationException(
+                        "Inspector Creative flyout has no actions.");
+                var firstAction =
+                    actions.Children.OfType<Button>().First();
+                Require(
+                    menu.Focus(),
+                    "Inspector Creative trigger could not focus.");
+                flyout.ShowAt(menu);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    flyout.IsOpen && firstAction.IsFocused,
+                    "Inspector Creative flyout did not focus its first action.");
+                flyout.Hide();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !flyout.IsOpen && menu.IsFocused,
+                    "Inspector Creative flyout did not restore its trigger.");
+
+                Require(
+                    menu.Focus(),
+                    "Inspector Creative trigger could not focus for retarget.");
+                flyout.ShowAt(menu);
+                Dispatcher.UIThread.RunJobs();
+                flyout.Hide();
+                Require(
+                    creativeTab.Focus(),
+                    "Inspector Creative tab could not take deliberate focus.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    creativeTab.IsFocused && !menu.IsFocused,
+                    "Inspector Creative flyout stole deliberately retargeted focus.");
+            }
+
             var singleWork =
                 await shell.CreateWorkFromSelectionAsync(
                     new CreativeWorkDialogResult(
