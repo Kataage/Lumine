@@ -301,10 +301,10 @@ internal sealed class CoreViewerShell : UserControl
         // Multi-selection is contextual chrome, not layout. Keep the image
         // canvas fixed in place while the action surface floats above it.
         _selectionBar.HorizontalAlignment =
-            HorizontalAlignment.Center;
+            HorizontalAlignment.Left;
         _selectionBar.VerticalAlignment =
             VerticalAlignment.Bottom;
-        _selectionBar.MaxWidth = 1180;
+        _selectionBar.MaxWidth = 600;
         _selectionBar.Margin =
             new Thickness(16, 16, 16, 18);
         _selectionBar.ZIndex = 30;
@@ -384,45 +384,51 @@ internal sealed class CoreViewerShell : UserControl
     internal Rect GridViewerBounds =>
         _grid.Bounds;
 
-    internal bool BulkSelectionUsesDirectActionsForSmoke
+    internal bool BulkSelectionCommandsAccessibleForSmoke
     {
         get
         {
-            var labels =
-                _bulkActions
-                    .GetVisualDescendants()
-                    .OfType<Button>()
-                    .Concat(
-                        _bulkActions
-                            .Children
-                            .OfType<Button>())
-                    .Select(
-                        static button =>
-                            button.Content as string
-                            ?? string.Empty)
+            var commands =
+                _bulkActions.Children
+                    .OfType<DropDownButton>()
                     .ToArray();
+            return commands.Length == 3
+                && commands.Select(
+                        static button => button.Content as string)
+                    .SequenceEqual(
+                        new[] { "タグ", "整理", "その他" })
+                && commands.All(
+                    static button =>
+                        button.Flyout is Flyout { Content: not null })
+                && _selectionBar.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        static button =>
+                            AutomationProperties.GetName(button)
+                                == "選択解除");
+        }
+    }
 
-            return labels.Contains(
-                    "★1",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "タグ",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "制作",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "＋ 公開記録",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "元ファイルを削除…",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "選択解除",
-                    StringComparer.Ordinal)
-                && !labels.Contains(
-                    "整理",
-                    StringComparer.Ordinal);
+    internal bool SelectionToolbarAvoidsInspectorForSmoke
+    {
+        get
+        {
+            if (!_selectionBar.IsVisible
+                || !_contextSurface.IsVisible)
+            {
+                return true;
+            }
+
+            var toolbarOrigin =
+                _selectionBar.TranslatePoint(
+                    new Point(0, 0), this);
+            var inspectorOrigin =
+                _contextSurface.TranslatePoint(
+                    new Point(0, 0), this);
+            return toolbarOrigin is { } toolbar
+                && inspectorOrigin is { } inspector
+                && toolbar.X + _selectionBar.Bounds.Width
+                    <= inspector.X - 8;
         }
     }
 
@@ -622,11 +628,31 @@ internal sealed class CoreViewerShell : UserControl
             _contextSurface.ZIndex = 20;
         }
 
+        ApplySelectionBarPlacement(width);
+
         _contextDetail.SetCompactPresentation(
             _compactInspectorLayout);
         _contextDetail.SetPinPresentation(
             _inspectorPinned,
             !_compactInspectorLayout);
+    }
+
+    private void ApplySelectionBarPlacement(double width)
+    {
+        // The toolbar overlays the canvas, never the Inspector. When the
+        // Inspector is docked we also reserve its actual column width.
+        var inspectorReserve = _contextSurface.IsVisible
+            ? _contextSurface.Width
+                + (_compactInspectorLayout
+                    ? 2 * LumineDesign.Space12
+                    : 0)
+                + 12
+            : 0;
+        _selectionBar.Width = Math.Min(
+            600,
+            Math.Max(
+                250,
+                width - inspectorReserve - 48));
     }
 
     internal async Task<CoreViewerQueryUiState>
@@ -1960,6 +1986,11 @@ internal sealed class CoreViewerShell : UserControl
             selection.Count > 1;
         _selectionBar.IsVisible =
             isBulk;
+        if (isBulk)
+        {
+            ApplySelectionBarPlacement(
+                ResolveInspectorLayoutWidth());
+        }
         if (!isBulk)
         {
             _grid.SetBottomOverlayInset(0);
