@@ -1186,6 +1186,9 @@ internal sealed class CoreViewerShell : UserControl
             ToolTip.SetTip(
                 button,
                 $"選択画像の評価を★{rating}に設定");
+            AutomationProperties.SetName(
+                button,
+                $"評価 {rating}つ星に設定");
             return button;
         }
 
@@ -1249,6 +1252,9 @@ internal sealed class CoreViewerShell : UserControl
                     ItemsSource = statusLabels,
                     SelectedIndex = 0
                 });
+        AutomationProperties.SetName(
+            status,
+            "選択画像の状態を変更");
         status.SelectionChanged +=
             async (_, _) =>
             {
@@ -1351,6 +1357,9 @@ internal sealed class CoreViewerShell : UserControl
                         Padding = new Thickness(5)
                     });
             ToolTip.SetTip(
+                button,
+                $"カラー: {item.Label}");
+            AutomationProperties.SetName(
                 button,
                 $"カラー: {item.Label}");
             var value = item.Value;
