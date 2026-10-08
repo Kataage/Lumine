@@ -764,6 +764,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
             "サムネイルサイズ",
             StringComparison.Ordinal);
 
+    internal (Button Grid, Button List) DisplayViewButtonsForSmoke =>
+        (_grid, _list);
+
     internal bool SearchUsesSharedThemeForSmoke =>
         _search.Classes.Contains(
             "lumine-input")
@@ -1387,6 +1390,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
         SetSelectedClass(
             _grid,
             gridSelected);
+        var gridName =
+            gridSelected
+                ? "グリッド表示（表示中）"
+                : "グリッド表示";
+        AutomationProperties.SetName(
+            _grid,
+            gridName);
+        ToolTip.SetTip(
+            _grid,
+            gridName);
 
         var listSelected =
             Preferences.ViewMode
@@ -1394,6 +1407,16 @@ internal sealed class BrowseWorkspaceControls : UserControl
         SetSelectedClass(
             _list,
             listSelected);
+        var listName =
+            listSelected
+                ? "リスト表示（表示中）"
+                : "リスト表示";
+        AutomationProperties.SetName(
+            _list,
+            listName);
+        ToolTip.SetTip(
+            _list,
+            listName);
     }
 
     private static void SetSelectedClass(
