@@ -3673,6 +3673,13 @@ try
                 shell.IsBulkSelectionBarVisible,
                 "Multi-selection did not expose the contextual bulk action bar.");
 
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "bulk-selection-1100x720");
+            }
+
             var smokeWork =
                 await shell.CreateWorkFromSelectionAsync(
                     new CreativeWorkDialogResult(
@@ -7264,6 +7271,7 @@ try
                 "folders-navigation-420x600",
                 "publication-navigation-420x600",
                 "publication-detail-420x600",
+                "bulk-selection-1100x720",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
