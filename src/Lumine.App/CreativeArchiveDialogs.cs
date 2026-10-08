@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -444,7 +445,7 @@ internal static class CreativeArchiveDialogs
                         description.Text ?? string.Empty);
                 }));
         dialog.Content = CreateScroll(stack);
-        return dialog.ShowDialog<CreativeWorkDialogResult?>(owner);
+        return ShowWithFocusReturnAsync<CreativeWorkDialogResult>(owner, dialog);
     }
 
     public static Task<CreativeGroupDialogResult?> ShowGenerationGroupAsync(
@@ -570,7 +571,7 @@ internal static class CreativeArchiveDialogs
                         notes.Text ?? string.Empty);
                 }));
         dialog.Content = CreateScroll(stack);
-        return dialog.ShowDialog<CreativeGroupDialogResult?>(owner);
+        return ShowWithFocusReturnAsync<CreativeGroupDialogResult>(owner, dialog);
     }
 
     public static Task<CreativeArchiveTargetDialogResult?>
@@ -670,8 +671,7 @@ internal static class CreativeArchiveDialogs
         dialog.Content =
             CreateScroll(
                 stack);
-        return dialog.ShowDialog<CreativeArchiveTargetDialogResult?>(
-            owner);
+        return ShowWithFocusReturnAsync<CreativeArchiveTargetDialogResult>(owner, dialog);
     }
 
     public static Task<CreativeRelationDialogResult?> ShowRelationAsync(
@@ -749,7 +749,7 @@ internal static class CreativeArchiveDialogs
                         note.Text ?? string.Empty);
                 }));
         dialog.Content = CreateScroll(stack);
-        return dialog.ShowDialog<CreativeRelationDialogResult?>(owner);
+        return ShowWithFocusReturnAsync<CreativeRelationDialogResult>(owner, dialog);
     }
 
     public static Task<CreativePublicationDialogResult?> ShowPublicationAsync(
@@ -1145,8 +1145,41 @@ internal static class CreativeArchiveDialogs
         dialog.Content =
             CreateScroll(
                 stack);
-        return dialog.ShowDialog<CreativePublicationDialogResult?>(
-            owner);
+        return ShowWithFocusReturnAsync<CreativePublicationDialogResult>(owner, dialog);
+    }
+
+    // All creative-archive modal entry points use the same focus-return
+    // contract as the shared product dialogs. A selected thumbnail or
+    // invoking command may disappear while a dialog is open, so never
+    // attempt to focus a detached, hidden, or disabled control.
+    internal static async Task<TResult?> ShowWithFocusReturnAsync<TResult>(
+        Window owner,
+        Window dialog)
+        where TResult : class
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        var focusReturn =
+            owner.FocusManager?.GetFocusedElement()
+                as Control;
+        try
+        {
+            return await dialog.ShowDialog<TResult?>(owner);
+        }
+        finally
+        {
+            if (focusReturn is
+                { IsEnabled: true, IsEffectivelyVisible: true }
+                && ReferenceEquals(
+                    TopLevel.GetTopLevel(focusReturn),
+                    owner))
+            {
+                focusReturn.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            }
+        }
     }
 
     private static Window CreateDialog(
