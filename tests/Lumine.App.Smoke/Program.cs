@@ -2799,9 +2799,23 @@ try
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
+                var tagEditFocusReturned =
+                    editButton.IsFocused;
+                var parentFocused =
+                    compactTagsWindow.FocusManager
+                        .GetFocusedElement() as Control;
+                var manualEditFocus =
+                    !tagEditFocusReturned
+                    && editButton.Focus();
                 Require(
-                    editButton.IsFocused,
-                    "Tag Edit flyout did not restore focus to its editing command.");
+                    tagEditFocusReturned,
+                    $"Tag Edit focus return failed: "
+                    + $"origin visible={editButton.IsEffectivelyVisible}, "
+                    + $"enabled={editButton.IsEnabled}, "
+                    + $"attached={TopLevel.GetTopLevel(editButton) is not null}, "
+                    + $"parent focus={parentFocused?.GetType().Name ?? "null"}, "
+                    + $"parent same={ReferenceEquals(parentFocused, editButton)}, "
+                    + $"manual focus succeeded={manualEditFocus}.");
                 editFlyout.ShowAt(
                     editButton);
                 Dispatcher.UIThread.RunJobs();
