@@ -2804,9 +2804,6 @@ try
                 var parentFocused =
                     compactTagsWindow.FocusManager
                         .GetFocusedElement() as Control;
-                var manualEditFocus =
-                    !tagEditFocusReturned
-                    && editButton.Focus();
                 Require(
                     tagEditFocusReturned,
                     $"Tag Edit focus return failed: "
@@ -2814,8 +2811,8 @@ try
                     + $"enabled={editButton.IsEnabled}, "
                     + $"attached={TopLevel.GetTopLevel(editButton) is not null}, "
                     + $"parent focus={parentFocused?.GetType().Name ?? "null"}, "
-                    + $"parent same={ReferenceEquals(parentFocused, editButton)}, "
-                    + $"manual focus succeeded={manualEditFocus}.");
+                    + $"parent button={(parentFocused as Button)?.Content as string ?? "n/a"}, "
+                    + $"parent same={ReferenceEquals(parentFocused, editButton)}.");
                 editFlyout.ShowAt(
                     editButton);
                 Dispatcher.UIThread.RunJobs();
