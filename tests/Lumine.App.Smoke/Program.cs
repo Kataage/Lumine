@@ -5916,6 +5916,55 @@ try
                             libraryDestination),
                         "Global navigation Home key did not return to the first destination.");
 
+                    // Activating a destination rebuilds the rail.
+                    // Keyboard focus must follow the replacement button,
+                    // not vanish with the detached original control.
+                    Require(
+                        folderDestination.Focus(),
+                        "Compact Folder navigation command was not focusable.");
+                    folderDestination.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    var selectedCompactFolder =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && button.Classes.Contains("lumine-nav-item")
+                                && button.Classes.Contains("selected")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー");
+                    Require(
+                        selectedCompactFolder.IsFocused
+                        && !ReferenceEquals(
+                            selectedCompactFolder,
+                            folderDestination),
+                        "Compact navigation lost keyboard focus after rebuilding Folder.");
+                    var compactLibraryReturn =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && button.Classes.Contains("lumine-nav-item")
+                                && AutomationProperties.GetName(button)
+                                    == "ライブラリ");
+                    Require(
+                        compactLibraryReturn.Focus(),
+                        "Compact Library return command was not focusable.");
+                    compactLibraryReturn.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(button =>
+                                button.Classes.Contains("rail")
+                                && button.Classes.Contains("selected")
+                                && AutomationProperties.GetName(button)
+                                    == "ライブラリ"
+                                && button.IsFocused),
+                        "Compact navigation lost keyboard focus after returning to Library.");
+
                     window.SetNavigationPinnedForSmoke(
                         navigationPinnedBeforeRailSmoke);
                     Dispatcher.UIThread.RunJobs();
@@ -8348,6 +8397,79 @@ try
                                 window.SetNavigationPaneVisibleForSmoke(true);
                                 window.SetNavigationPinnedForSmoke(true);
                                 Dispatcher.UIThread.RunJobs();
+
+                                if (iteration == 0
+                                    && mode == BrowseViewMode.Grid
+                                    && viewport.Width == 1440d)
+                                {
+                                    // Wide unified navigation also
+                                    // replaces its focused buttons after
+                                    // each destination activation.
+                                    var wideFolder =
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .First(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.Classes.Contains(
+                                                    "lumine-nav-item")
+                                                && !button.Classes.Contains(
+                                                    "rail")
+                                                && AutomationProperties.GetName(
+                                                    button) == "フォルダー");
+                                    Require(
+                                        wideFolder.Focus(),
+                                        "Wide Folder destination could not focus.");
+                                    wideFolder.RaiseEvent(
+                                        new RoutedEventArgs(Button.ClickEvent));
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .Any(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.IsFocused
+                                                && button.Classes.Contains(
+                                                    "lumine-nav-item")
+                                                && button.Classes.Contains(
+                                                    "selected")
+                                                && !button.Classes.Contains(
+                                                    "rail")
+                                                && AutomationProperties.GetName(
+                                                    button) == "フォルダー"),
+                                        "Wide navigation lost focus on Folder destination rebuild.");
+                                    var wideLibrary =
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .First(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.Classes.Contains(
+                                                    "lumine-nav-item")
+                                                && !button.Classes.Contains(
+                                                    "rail")
+                                                && AutomationProperties.GetName(
+                                                    button) == "ライブラリ");
+                                    Require(
+                                        wideLibrary.Focus(),
+                                        "Wide Library destination could not focus.");
+                                    wideLibrary.RaiseEvent(
+                                        new RoutedEventArgs(Button.ClickEvent));
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .Any(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.IsFocused
+                                                && button.Classes.Contains(
+                                                    "lumine-nav-item")
+                                                && button.Classes.Contains(
+                                                    "selected")
+                                                && !button.Classes.Contains(
+                                                    "rail")
+                                                && AutomationProperties.GetName(
+                                                    button) == "ライブラリ"),
+                                        "Wide navigation lost focus after Library return.");
+                                }
 
                                 var pinnedCanvasWidth =
                                     window.CurrentShell.GridViewerBounds.Width;

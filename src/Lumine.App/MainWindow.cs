@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumine.Core;
 using Lumine.Image;
@@ -54,6 +55,7 @@ public sealed class MainWindow : Window
     private bool _lightboxFullScreen;
     private bool _compactNavigationLayout;
     private bool _navigationPinned;
+    private int _navigationFocusGeneration;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -952,6 +954,22 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // Rebuilding the navigation trees detaches the invoking button.
+        // Keep keyboard navigation continuous only if a global
+        // destination actually owned focus at the time of invocation.
+        var previousFocus =
+            FocusManager?.GetFocusedElement() as Button;
+        var focusCameFromNavigation =
+            previousFocus is not null
+            && previousFocus.Classes.Contains("lumine-nav-item")
+            && previousFocus.GetVisualAncestors()
+                .Any(ancestor =>
+                    ReferenceEquals(ancestor, _navigationRailHost)
+                    || ReferenceEquals(ancestor, _wideNavigationHost)
+                    || ReferenceEquals(ancestor, _wideSettingsHost));
+        var navigationFocusGeneration =
+            ++_navigationFocusGeneration;
+
         _navigationDestination = destination;
         var mainWorkspaceDestination =
             IsMainWorkspaceDestination(
@@ -981,6 +999,74 @@ public sealed class MainWindow : Window
             expandedNavigation.Settings;
         RenderNavigationDestination();
         StartNavigationRefresh();
+
+        if (focusCameFromNavigation)
+        {
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (_closeStarted
+                        || navigationFocusGeneration
+                            != _navigationFocusGeneration
+                        || !string.Equals(
+                            _navigationDestination,
+                            destination,
+                            StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    // A newer live focus target must take precedence
+                    // over focus from the detached navigation button.
+                    var current =
+                        FocusManager?.GetFocusedElement();
+                    if (current is Control live
+                        && live.IsEnabled
+                        && live.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            TopLevel.GetTopLevel(live),
+                            this)
+                        && !ReferenceEquals(live, previousFocus))
+                    {
+                        return;
+                    }
+
+                    foreach (var host in new[]
+                             {
+                                 _navigationRailHost,
+                                 _wideNavigationHost,
+                                 _wideSettingsHost
+                             })
+                    {
+                        if (!host.IsEffectivelyVisible)
+                        {
+                            continue;
+                        }
+
+                        var replacement =
+                            host.GetVisualDescendants()
+                                .OfType<Button>()
+                                .FirstOrDefault(button =>
+                                    button.IsEnabled
+                                    && button.IsEffectivelyVisible
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        destination,
+                                        StringComparison.Ordinal));
+                        if (replacement is not null
+                            && replacement.Focus(
+                                NavigationMethod.Unspecified,
+                                KeyModifiers.None))
+                        {
+                            return;
+                        }
+                    }
+                },
+                DispatcherPriority.Input);
+        }
     }
 
     private void StartNavigationRefresh()
