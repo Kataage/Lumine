@@ -43,6 +43,26 @@
     <Setter Property="Padding" Value="2" />
   </Style>
 
+  <!-- Bulk editing remains a short, readable, canvas-safe command surface. -->
+  <Style Selector="Grid.lumine-bulk-summary-grid">
+    <Setter Property="ColumnSpacing" Value="6" />
+    <Setter Property="Margin" Value="0,0,0,5" />
+  </Style>
+  <Style Selector="WrapPanel.lumine-bulk-primary-actions">
+    <Setter Property="Orientation" Value="Horizontal" />
+  </Style>
+  <Style Selector="Button.lumine-bulk-command">
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="Margin" Value="0,0,8,0" />
+  </Style>
+  <Style Selector="StackPanel.lumine-bulk-menu">
+    <Setter Property="Spacing" Value="8" />
+    <Setter Property="Margin" Value="12" />
+  </Style>
+  <Style Selector="StackPanel.lumine-bulk-favorite-actions">
+    <Setter Property="Spacing" Value="8" />
+  </Style>
+
   <Style Selector="Button.lumine-control">
     <Setter Property="MinHeight" Value="{DynamicResource Lumine.ControlHeight}" />
     <Setter Property="Padding" Value="{DynamicResource Lumine.ControlPadding}" />
