@@ -1204,7 +1204,7 @@ internal sealed class CoreViewerShell : UserControl
     // handoff, so preserve an intentional newer destination.
     private static void AttachBulkFlyoutFocus(
         Flyout flyout,
-        DropDownButton trigger,
+        Button trigger,
         Control firstCommand)
     {
         Control? focusAtOpen = null;
