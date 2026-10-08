@@ -3169,6 +3169,16 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        // Shell metadata shortcuts belong to the unmodified key space.
+        // A modified F must bubble to MainWindow's Ctrl+F Browse search,
+        // never toggle a selected image's Favorite flag. Likewise, modified
+        // ratings/Delete may belong to other global or OS commands.
+        if (e.Handled
+            || e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
         var focused =
             TopLevel.GetTopLevel(this)
                 ?.FocusManager
