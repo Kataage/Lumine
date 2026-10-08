@@ -8724,6 +8724,44 @@ try
                                                 && AutomationProperties.GetName(
                                                     button) == "フォルダー"),
                                         "Wide navigation lost focus on Folder destination rebuild.");
+
+                                    // Closing an explicitly pinned sidebar
+                                    // must actually unpin it, expose the
+                                    // rail and restore focus. Otherwise the
+                                    // workspace layout reopens the sidebar.
+                                    var dockedClose =
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .Single(button =>
+                                                button.IsEffectivelyVisible
+                                                && AutomationProperties.GetName(button)
+                                                    == "ナビゲーションを閉じる");
+                                    Require(
+                                        dockedClose.Focus(),
+                                        "Docked sidebar close button was not focusable.");
+                                    dockedClose.RaiseEvent(
+                                        new RoutedEventArgs(Button.ClickEvent));
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        !window.IsNavigationPinnedForSmoke
+                                        && !window.IsNavigationPaneVisibleForSmoke
+                                        && window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .Any(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.IsFocused
+                                                && button.Classes.Contains("rail")
+                                                && button.Classes.Contains("selected")
+                                                && AutomationProperties.GetName(button)
+                                                    == "フォルダー"),
+                                        "Closing a docked sidebar did not expose rail and restore focus.");
+                                    window.SetNavigationPaneVisibleForSmoke(true);
+                                    window.SetNavigationPinnedForSmoke(true);
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        window.PinnedNavigationUsesUnifiedSidebarForSmoke,
+                                        "Docked sidebar could not reopen after explicit dismissal.");
+
                                     var wideLibrary =
                                         window.GetVisualDescendants()
                                             .OfType<Button>()
