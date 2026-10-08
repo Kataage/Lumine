@@ -1905,6 +1905,13 @@ try
                             .FirstOrDefault(
                                 text =>
                                     text.Classes.Contains("lumine-tag-name"));
+                    var selectedTagMarker =
+                        (selectedTagAction.Content as Grid)?
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(
+                                text =>
+                                    text.Classes.Contains("lumine-tag-selection-marker"));
                     var unselectedTagText =
                         (unselectedTagAction.Content as Grid)?
                             .GetVisualDescendants()
@@ -1915,9 +1922,11 @@ try
                     Require(
                         selectedTagAction.Classes.Contains("selected")
                         && !unselectedTagAction.Classes.Contains("selected")
-                        && selectedTagText?.Text
-                            == $"✓ {selectedTagName}"
+                        && selectedTagText?.Text == selectedTagName
                         && selectedTagText.Classes.Contains("selected")
+                        && selectedTagMarker?.Text == "✓"
+                        && selectedTagMarker.IsEffectivelyVisible
+                        && selectedTagMarker.Bounds.Width >= 10
                         && unselectedTagText?.Text == "short"
                         && !unselectedTagText.Classes.Contains("selected")
                         && selectedTagAction.Resources.Count == 0
@@ -1962,6 +1971,11 @@ try
                             .OfType<TextBlock>()
                             .FirstOrDefault(text =>
                                 text.Classes.Contains("lumine-tag-name"));
+                    var selectedManageMarker =
+                        selectedManageSurface.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(text =>
+                                text.Classes.Contains("lumine-tag-selection-marker"));
                     var unselectedManageText =
                         unselectedManageSurface.GetVisualDescendants()
                             .OfType<TextBlock>()
@@ -1970,9 +1984,11 @@ try
                     Require(
                         selectedManageSurface.Classes.Contains("selected")
                         && !unselectedManageSurface.Classes.Contains("selected")
-                        && selectedManageText?.Text
-                            == $"✓ {selectedTagName}"
+                        && selectedManageText?.Text == selectedTagName
                         && selectedManageText.Classes.Contains("selected")
+                        && selectedManageMarker?.Text == "✓"
+                        && selectedManageMarker.IsEffectivelyVisible
+                        && selectedManageMarker.Bounds.Width >= 10
                         && unselectedManageText?.Text == "short"
                         && !unselectedManageText.Classes.Contains("selected")
                         && selectedTagView.GetVisualDescendants()
@@ -1984,6 +2000,31 @@ try
                             .Count(button =>
                                 button.Content as string == "削除") == 2,
                         "Tag management selection lost non-color state or its editing actions.");
+
+                    if (selectedTagScale >= 1.75)
+                    {
+                        var selectedManageRow =
+                            selectedManageSurface.GetVisualAncestors()
+                                .OfType<Grid>()
+                                .First(grid =>
+                                    grid.Children.Contains(selectedManageSurface));
+                        var manageActionRow =
+                            selectedManageRow.Children
+                                .OfType<StackPanel>()
+                                .First(stack =>
+                                    stack.Classes.Contains(
+                                        "lumine-tag-manage-actions"));
+                        Require(
+                            selectedManageText is not null
+                            && selectedManageText.Bounds.Width >= 75
+                            && manageActionRow.Bounds.Y
+                                >= selectedManageSurface.Bounds.Bottom - 0.5
+                            && manageActionRow.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Count(button => button.Content as string
+                                    is "編集" or "削除") == 2,
+                            "225% managed Tag row compressed its long name or overlaid its actions.");
+                    }
 
                     if (visualOutputDirectory is not null)
                     {
