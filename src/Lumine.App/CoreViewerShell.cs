@@ -138,7 +138,9 @@ internal sealed class CoreViewerShell : UserControl
         _focusedSurface.KeyDown +=
             (_, e) =>
             {
-                if (e.Key == Key.Escape)
+                if (!e.Handled
+                    && e.Key == Key.Escape
+                    && e.KeyModifiers == KeyModifiers.None)
                 {
                     CloseFocusedView();
                     e.Handled = true;
@@ -3160,7 +3162,9 @@ internal sealed class CoreViewerShell : UserControl
     {
         if (_focusedSurface.IsVisible)
         {
-            if (e.Key == Key.Escape)
+            if (!e.Handled
+                && e.Key == Key.Escape
+                && e.KeyModifiers == KeyModifiers.None)
             {
                 CloseFocusedView();
                 e.Handled = true;
