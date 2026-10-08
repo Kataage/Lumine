@@ -2258,7 +2258,7 @@ try
                 && pagedPublicationList
                     .GetRealizedContainers()
                     .Count() < 128,
-                "Publication history load-more did not append older rows and hand keyboard focus to its list.");
+                $"Publication load-more focus failed: calls={publicationLoadMoreCalls}, count={pagedPublicationList.ItemsSource?.Cast<PublicationInfo>().Count()}, hidden={!publicationLoadMore.IsVisible}, listFocused={pagedPublicationList.IsFocused}, focusedControl={scaleWindow.FocusManager?.GetFocusedElement()?.GetType().Name}, bounded={pagedPublicationList.GetRealizedContainers().Count() < 128}.");
             scaleWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
