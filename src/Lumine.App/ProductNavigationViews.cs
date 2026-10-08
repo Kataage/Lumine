@@ -1092,7 +1092,9 @@ internal static class ProductNavigationViews
                         var name =
                             new TextBlock
                             {
-                                Text = tag.Name,
+                                Text = isSelected
+                                    ? $"✓ {tag.Name}"
+                                    : tag.Name,
                                 Foreground =
                                     isSelected
                                         ? LumineDesign.Foreground
@@ -1104,6 +1106,12 @@ internal static class ProductNavigationViews
                                 VerticalAlignment =
                                     VerticalAlignment.Center
                             };
+                        name.Classes.Add("lumine-tag-name");
+                        if (isSelected)
+                        {
+                            name.Classes.Add("selected");
+                        }
+                        ToolTip.SetTip(name, tag.Name);
 
                         var count =
                             new TextBlock
@@ -1156,7 +1164,9 @@ internal static class ProductNavigationViews
                                 isSelected);
                             AutomationProperties.SetName(
                                 button,
-                                $"タグ: {tag.Name}");
+                                isSelected
+                                    ? $"タグ: {tag.Name}（選択中）"
+                                    : $"タグ: {tag.Name}");
                             AttachAsync(
                                 button,
                                 async () =>
@@ -1201,6 +1211,11 @@ internal static class ProductNavigationViews
                             tagSurface,
                             "selected",
                             isSelected);
+                        AutomationProperties.SetName(
+                            tagSurface,
+                            isSelected
+                                ? $"タグ: {tag.Name}（選択中）"
+                                : $"タグ: {tag.Name}");
                         row.Children.Add(
                             tagSurface);
 
