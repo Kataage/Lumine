@@ -413,11 +413,7 @@ public sealed class MainWindow : Window
             "lumine-sidebar");
         collapseNavigation.Click +=
             (_, _) =>
-            {
-                _navigationPane.IsVisible = false;
-                ApplyNavigationLayout(
-                    ResolveLayoutWidth());
-            };
+                DismissNavigationPaneToRail();
         _navigationPin.Click +=
             (_, _) =>
             {
@@ -910,6 +906,49 @@ public sealed class MainWindow : Window
 
         element.Classes.Remove(
             className);
+    }
+
+    private void DismissNavigationPaneToRail()
+    {
+        if (!_navigationPane.IsVisible)
+        {
+            return;
+        }
+
+        // A wide pinned workspace recreates its docked sidebar during
+        // layout. Explicit dismissal must first disable that pin state,
+        // otherwise the pane immediately reappears.
+        if (_navigationPinned
+            && !_compactNavigationLayout)
+        {
+            _navigationPinned = false;
+            UpdateNavigationPinVisual();
+        }
+
+        _navigationPane.IsVisible = false;
+        ApplyNavigationLayout(
+            ResolveLayoutWidth());
+
+        // Dismissing an overlay or the expanded sidebar makes its
+        // focused command invisible. Return to the corresponding live
+        // destination on the rail instead of leaving keyboard focus
+        // on the hidden pane.
+        if (!_navigationRailHost.IsEffectivelyVisible)
+        {
+            return;
+        }
+
+        var destination =
+            _navigationRailHost.GetVisualDescendants()
+                .OfType<Button>()
+                .FirstOrDefault(button =>
+                    button.Classes.Contains("lumine-nav-item")
+                    && button.Classes.Contains("selected")
+                    && button.IsEffectivelyVisible
+                    && button.IsEnabled);
+        destination?.Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
     }
 
     private void DismissCompactNavigationOverlayForBlockingState()
@@ -3481,6 +3520,24 @@ public sealed class MainWindow : Window
         if (e.Handled
             || _lightboxHost.IsVisible)
         {
+            return;
+        }
+
+        // Escape dismisses contextual navigation only when keyboard
+        // focus is inside that transient overlay. A focused Viewer,
+        // another window/control or modified key keeps ownership.
+        if (e.Key == Key.Escape
+            && e.KeyModifiers == KeyModifiers.None
+            && _navigationPane.IsVisible
+            && _navigationPane.ZIndex > 0
+            && FocusManager?.GetFocusedElement() is Visual focused
+            && (ReferenceEquals(focused, _navigationPane)
+                || focused.GetVisualAncestors()
+                    .Any(ancestor =>
+                        ReferenceEquals(ancestor, _navigationPane))))
+        {
+            DismissNavigationPaneToRail();
+            e.Handled = true;
             return;
         }
 
