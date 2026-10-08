@@ -2776,6 +2776,11 @@ internal static class ProductNavigationViews
 
                 loadMoreButton.IsEnabled =
                     false;
+                // Avalonia can immediately redirect focus when a
+                // focused Button becomes disabled. That framework
+                // fallback is not an intentional user retarget.
+                var focusAfterDisable =
+                    owner?.FocusManager?.GetFocusedElement();
                 loadMoreButton.Content =
                     "読み込み中…";
                 try
@@ -2847,6 +2852,9 @@ internal static class ProductNavigationViews
                                     && !ReferenceEquals(
                                         live,
                                         loadMoreButton)
+                                    && !ReferenceEquals(
+                                        live,
+                                        focusAfterDisable)
                                     && !ReferenceEquals(
                                         live,
                                         nextFocus))
