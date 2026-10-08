@@ -1533,7 +1533,10 @@ internal sealed class CoreViewerShell : UserControl
         var creativePanel =
             new StackPanel
             {
-                Width = 230,
+                Width = Math.Clamp(
+                    238 + (LumineVisualMetrics.TextScaleFactor - 1) * 64,
+                    238,
+                    318),
                 Spacing = LumineDesign.Space6,
                 Margin =
                     new Thickness(
@@ -1542,7 +1545,7 @@ internal sealed class CoreViewerShell : UserControl
         creativePanel.Children.Add(
             new TextBlock
             {
-                Text = "制作",
+                Text = "制作・公開",
                 FontSize =
                     LumineDesign.BodyFontSize,
                 FontWeight =
@@ -1628,13 +1631,6 @@ internal sealed class CoreViewerShell : UserControl
         // Less frequent creation/publication commands remain directly
         // available within one short, explicitly grouped overflow menu.
         // Source deletion is visually separated from ordinary commands.
-        var overflowSection =
-            new TextBlock
-            {
-                Text = "制作・公開",
-                FontWeight = FontWeight.SemiBold
-            };
-        creativePanel.Children.Insert(0, overflowSection);
         creativePanel.Children.Add(publication);
         var dangerDivider = new Border();
         dangerDivider.Classes.Add("lumine-divider");
@@ -1667,9 +1663,12 @@ internal sealed class CoreViewerShell : UserControl
             more,
             "複数画像の制作・公開・ファイル操作");
 
-        _bulkActions.Children.Add(tagAction);
-        _bulkActions.Children.Add(organize);
-        _bulkActions.Children.Add(more);
+        foreach (var command in
+                 new Button[] { tagAction, organize, more })
+        {
+            command.Classes.Add("lumine-bulk-command");
+            _bulkActions.Children.Add(command);
+        }
 
         var clear =
             CreateBulkButton(
