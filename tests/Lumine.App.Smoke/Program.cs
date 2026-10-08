@@ -3683,6 +3683,98 @@ try
                     "bulk-selection-1100x720");
             }
 
+            var bulkCommands = shell.GetVisualDescendants()
+                .OfType<DropDownButton>()
+                .Where(button =>
+                    button.Content as string is "タグ" or "整理" or "その他")
+                .ToArray();
+            Require(
+                bulkCommands.Length == 3,
+                "Bulk toolbar did not expose all three labeled command groups.");
+
+            var organizeCommand = bulkCommands.Single(
+                button => (string?)button.Content == "整理");
+            var organizeFlyout = organizeCommand.Flyout as Flyout
+                ?? throw new InvalidOperationException(
+                    "Bulk organize command lost its flyout.");
+            organizeFlyout.ShowAt(organizeCommand);
+            Dispatcher.UIThread.RunJobs();
+            var organizeBody =
+                (organizeFlyout.Content as ScrollViewer)?.Content
+                    as StackPanel
+                ?? throw new InvalidOperationException(
+                    "Bulk organize menu has no reachable content.");
+            var organizeButtons = organizeBody.GetVisualDescendants()
+                .OfType<Button>()
+                .ToArray();
+            Require(
+                organizeFlyout.IsOpen
+                && organizeButtons.Count(button =>
+                    button.Content is string content
+                    && content.Length == 2
+                    && content[0] == '★') == 5
+                && organizeButtons.Count(button =>
+                    AutomationProperties.GetName(button)?
+                        .StartsWith("カラー:", StringComparison.Ordinal)
+                        == true) == 8
+                && organizeBody.GetVisualDescendants()
+                    .OfType<ComboBox>()
+                    .Any(box =>
+                        AutomationProperties.GetName(box)
+                            == "選択画像の状態を変更")
+                && organizeButtons.Any(button =>
+                    button.Content as string == "★ お気に入り")
+                && organizeButtons.Any(button =>
+                    button.Content as string == "☆ 解除"),
+                "Bulk organize flyout lost rating/status/color/favorite operations.");
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "bulk-organize-1100x720");
+            }
+            organizeFlyout.Hide();
+            Dispatcher.UIThread.RunJobs();
+
+            var moreCommand = bulkCommands.Single(
+                button => (string?)button.Content == "その他");
+            var moreFlyout = moreCommand.Flyout as Flyout
+                ?? throw new InvalidOperationException(
+                    "Bulk more command lost its flyout.");
+            moreFlyout.ShowAt(moreCommand);
+            Dispatcher.UIThread.RunJobs();
+            var moreBody =
+                (moreFlyout.Content as ScrollViewer)?.Content
+                    as StackPanel
+                ?? throw new InvalidOperationException(
+                    "Bulk more menu has no reachable content.");
+            var moreButtons = moreBody.GetVisualDescendants()
+                .OfType<Button>()
+                .ToArray();
+            Require(
+                moreFlyout.IsOpen
+                && moreButtons.Any(button =>
+                    button.Content as string == "Workを作成")
+                && moreButtons.Any(button =>
+                    button.Content as string == "生成グループを作成")
+                && moreButtons.Any(button =>
+                    button.Content as string == "Lineageを作成"
+                    && button.IsEnabled)
+                && moreButtons.Any(button =>
+                    button.Content as string == "＋ 公開記録")
+                && moreButtons.Any(button =>
+                    button.Content as string == "元ファイルを削除…"
+                    && button.Classes.Contains("lumine-danger")),
+                "Bulk more flyout lost production, publication or destructive actions.");
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "bulk-more-1100x720");
+            }
+            moreFlyout.Hide();
+            Dispatcher.UIThread.RunJobs();
+
             var smokeWork =
                 await shell.CreateWorkFromSelectionAsync(
                     new CreativeWorkDialogResult(
@@ -6612,6 +6704,39 @@ try
                                         CaptureVisualEvidence(
                                             window,
                                             evidenceName);
+                                        if (viewport.Width == 900d
+                                            && iteration == 2)
+                                        {
+                                            var menus =
+                                                window.CurrentShell
+                                                    .GetVisualDescendants()
+                                                    .OfType<DropDownButton>()
+                                                    .ToArray();
+                                            foreach (var menuName in
+                                                     new[] { "整理", "その他" })
+                                            {
+                                                var anchor = menus.First(
+                                                    button =>
+                                                        button.Content as string
+                                                            == menuName);
+                                                var flyout =
+                                                    anchor.Flyout as Flyout
+                                                    ?? throw new InvalidOperationException(
+                                                        "Scaled bulk menu missing.");
+                                                flyout.ShowAt(anchor);
+                                                Dispatcher.UIThread.RunJobs();
+                                                Require(
+                                                    flyout.IsOpen,
+                                                    "Scaled bulk menu did not open.");
+                                                CaptureVisualEvidence(
+                                                    window,
+                                                    menuName == "整理"
+                                                        ? "bulk-organize-900x600-text225"
+                                                        : "bulk-more-900x600-text225");
+                                                flyout.Hide();
+                                                Dispatcher.UIThread.RunJobs();
+                                            }
+                                        }
                                     }
                                     window.CurrentShell.HideContextDetail();
                                 }
@@ -7311,6 +7436,10 @@ try
                 "bulk-selection-900x600",
                 "bulk-selection-900x600-text225",
                 "bulk-selection-1440x900",
+                "bulk-organize-1100x720",
+                "bulk-more-1100x720",
+                "bulk-organize-900x600-text225",
+                "bulk-more-900x600-text225",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
