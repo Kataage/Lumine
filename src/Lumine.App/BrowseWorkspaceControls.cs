@@ -1461,6 +1461,26 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
     private void RenderChips()
     {
+        // Rebuilding the chip collection detaches its focused Button.
+        // Hand off to the stable Filter command before removing it, then
+        // focus a surviving chip after the new collection is attached.
+        // This handoff is synchronous: a deferred callback could steal
+        // focus after the user chooses another command.
+        var previousChips =
+            _chips.Children
+                .OfType<Button>()
+                .ToArray();
+        var focusedChipIndex =
+            Array.FindIndex(
+                previousChips,
+                static chip => chip.IsFocused);
+        if (focusedChipIndex >= 0)
+        {
+            _filterButton.Focus(
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+        }
+
         _chips.Children.Clear();
 
         var flyoutFilterCount =
@@ -1587,6 +1607,29 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
         _chips.IsVisible =
             _chips.Children.Count > 0;
+
+        if (focusedChipIndex >= 0)
+        {
+            var nextChips =
+                _chips.Children
+                    .OfType<Button>()
+                    .ToArray();
+            if (nextChips.Length > 0
+                && !nextChips[
+                    Math.Min(
+                        focusedChipIndex,
+                        nextChips.Length - 1)]
+                    .Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None))
+            {
+                // The Filter command remains a stable keyboard target if
+                // a replacement chip cannot yet accept focus.
+                _filterButton.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            }
+        }
     }
 
     private void AddChip(
