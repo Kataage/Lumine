@@ -2225,6 +2225,9 @@ try
                                 button.Content as string,
                                 "さらに読み込む",
                                 StringComparison.Ordinal));
+            Require(
+                publicationLoadMore.Focus(),
+                "Publication Load More command did not accept keyboard focus.");
             publicationLoadMore.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
@@ -2251,10 +2254,11 @@ try
                     ?.Cast<PublicationInfo>()
                     .Count() == 150
                 && !publicationLoadMore.IsVisible
+                && pagedPublicationList.IsFocused
                 && pagedPublicationList
                     .GetRealizedContainers()
                     .Count() < 128,
-                "Publication history load-more did not append older rows while retaining bounded realization.");
+                "Publication history load-more did not append older rows and hand keyboard focus to its list.");
             scaleWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
