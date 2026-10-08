@@ -8321,6 +8321,47 @@ try
                         browsePopupControls.DisplayFlyoutIsOpenForSmoke
                         && browsePopupControls.IsDisplayEditorFocusedForSmoke,
                         "Browse Display popup failed to focus its Grid control.");
+
+                    // Actual mounted Grid/List buttons must expose the
+                    // selected mode in spoken names, not only a color
+                    // or CSS class. Exercise both click paths.
+                    var displayModes =
+                        browsePopupControls.DisplayViewButtonsForSmoke;
+                    static bool HasActiveDisplayName(
+                        Button selected,
+                        Button unselected,
+                        string expectedActive,
+                        string expectedInactive) =>
+                        AutomationProperties.GetName(selected)
+                            == expectedActive
+                        && selected.Classes.Contains("selected")
+                        && AutomationProperties.GetName(unselected)
+                            == expectedInactive
+                        && !unselected.Classes.Contains("selected");
+                    displayModes.List.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browsePopupControls.Preferences.ViewMode
+                            == BrowseViewMode.List
+                        && HasActiveDisplayName(
+                            displayModes.List,
+                            displayModes.Grid,
+                            "リスト表示（表示中）",
+                            "グリッド表示"),
+                        "Browse List selection was represented only by visual styling.");
+                    displayModes.Grid.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browsePopupControls.Preferences.ViewMode
+                            == BrowseViewMode.Grid
+                        && HasActiveDisplayName(
+                            displayModes.Grid,
+                            displayModes.List,
+                            "グリッド表示（表示中）",
+                            "リスト表示"),
+                        "Browse Grid selection did not restore its accessible spoken state.");
                     browsePopupControls.CloseDisplayFlyoutForSmoke();
                     Dispatcher.UIThread.RunJobs();
                     Require(
