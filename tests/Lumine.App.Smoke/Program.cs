@@ -1602,7 +1602,7 @@ try
                             string.Equals(
                                 AutomationProperties.GetName(
                                     button),
-                                "すべての画像",
+                                "すべての画像（表示中）",
                                 StringComparison.Ordinal));
             Require(
                 hierarchyList.Classes.Contains(
@@ -1611,6 +1611,10 @@ try
                     "lumine-folder-row")
                 && allFoldersButton.Classes.Contains(
                     "selected")
+                && string.Equals(
+                    allFoldersButton.Content as string,
+                    "✓ すべての画像",
+                    StringComparison.Ordinal)
                 && allFoldersButton.Resources.Count == 0
                 && allFoldersButton.BorderThickness
                     == new Thickness(0),
@@ -1685,6 +1689,104 @@ try
             }
 
             hierarchyWindow.Close();
+
+            // Color alone must never identify the current folder. Check the
+            // nested selected state at ordinary and accessible text sizes,
+            // including its visible checkmark and spoken "表示中" label.
+            var originalFolderScale =
+                LumineVisualMetrics.TextScaleFactor;
+            try
+            {
+                foreach (var selectedFolderScale in new[] { 1.0, 2.25 })
+                {
+                    LumineVisualMetrics.ConfigureTextScaleFactor(
+                        selectedFolderScale);
+                    App.RefreshScaledProductResources(
+                        Application.Current
+                        ?? throw new InvalidOperationException(
+                            "Folder accessibility smoke has no Avalonia application."));
+                    var selectedFolderView =
+                        ProductNavigationViews.CreateFolders(
+                            hierarchyFolders,
+                            "root/a",
+                            new HashSet<string>(
+                                new[] { "root" },
+                                StringComparer.OrdinalIgnoreCase),
+                            static _ => Task.CompletedTask);
+                    var selectedFolderWindow =
+                        new Window
+                        {
+                            Width = 420,
+                            Height = 600,
+                            Content = selectedFolderView
+                        };
+                    selectedFolderWindow.Show();
+                    Dispatcher.UIThread.RunJobs();
+
+                    var selectedFolderButton =
+                        selectedFolderView
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button => string.Equals(
+                                    AutomationProperties.GetName(button),
+                                    "フォルダー: root/a（表示中）",
+                                    StringComparison.Ordinal));
+                    var currentFolderText =
+                        selectedFolderButton.Content as TextBlock;
+                    var rootFolderButton =
+                        selectedFolderView
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button => string.Equals(
+                                    AutomationProperties.GetName(button),
+                                    "フォルダー: root",
+                                    StringComparison.Ordinal));
+                    var unselectedAll =
+                        selectedFolderView
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button => string.Equals(
+                                    AutomationProperties.GetName(button),
+                                    "すべての画像",
+                                    StringComparison.Ordinal));
+
+                    Require(
+                        selectedFolderButton.Classes.Contains("selected")
+                        && currentFolderText?.Text == "✓ a"
+                        && selectedFolderButton.Resources.Count == 0
+                        && rootFolderButton.Content is TextBlock
+                            { Text: "root" }
+                        && !rootFolderButton.Classes.Contains("selected")
+                        && unselectedAll.Content as string == "すべての画像"
+                        && !unselectedAll.Classes.Contains("selected")
+                        && selectedFolderButton.BorderThickness
+                            == new Thickness(0),
+                        "Selected folder lacks a non-color current marker or leaks it into unselected rows.");
+
+                    if (visualOutputDirectory is not null)
+                    {
+                        CaptureVisualEvidence(
+                            selectedFolderWindow,
+                            selectedFolderScale > 2
+                                ? "folders-selected-420x600-text225"
+                                : "folders-selected-420x600");
+                    }
+                    selectedFolderWindow.Close();
+                    Dispatcher.UIThread.RunJobs();
+                }
+            }
+            finally
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    originalFolderScale);
+                App.RefreshScaledProductResources(
+                    Application.Current
+                    ?? throw new InvalidOperationException(
+                        "Folder accessibility smoke has no Avalonia application."));
+            }
 
             var tagsView =
                 ProductNavigationViews.CreateTags(
@@ -7451,6 +7553,8 @@ try
                 "navigation-pinned-1440x900",
                 "navigation-pinned-1440x900-text225",
                 "folders-navigation-420x600",
+                "folders-selected-420x600",
+                "folders-selected-420x600-text225",
                 "publication-navigation-420x600",
                 "publication-detail-420x600",
                 "bulk-selection-1100x720",
