@@ -2763,6 +2763,16 @@ internal static class ProductNavigationViews
                     return;
                 }
 
+                // The final page removes this command from the visual
+                // tree. Transfer keyboard focus only when this button
+                // really owned focus on invocation, never on pointer
+                // activation or after a newer owner focus choice.
+                var owner =
+                    TopLevel.GetTopLevel(loadMoreButton);
+                var invokedFromKeyboardFocus =
+                    loadMoreButton.IsFocused
+                    && owner is not null;
+
                 loadMoreButton.IsEnabled =
                     false;
                 loadMoreButton.Content =
@@ -2801,6 +2811,54 @@ internal static class ProductNavigationViews
                         "さらに読み込む";
                     loadMoreButton.IsEnabled =
                         loadMoreButton.IsVisible;
+
+                    if (invokedFromKeyboardFocus)
+                    {
+                        // On a successful final page, the list remains
+                        // visible while Load More disappears. If loading
+                        // failed and the button stays available, restore
+                        // that retry action instead.
+                        var nextFocus =
+                            loadMoreButton.IsVisible
+                                ? (Control)loadMoreButton
+                                : list;
+                        Dispatcher.UIThread.Post(
+                            () =>
+                            {
+                                if (!ReferenceEquals(
+                                        TopLevel.GetTopLevel(list),
+                                        owner)
+                                    || !nextFocus.IsEnabled
+                                    || !nextFocus.IsEffectivelyVisible)
+                                {
+                                    return;
+                                }
+
+                                var current =
+                                    owner!.FocusManager
+                                        ?.GetFocusedElement();
+                                if (current is Control live
+                                    && live.IsEnabled
+                                    && live.IsEffectivelyVisible
+                                    && ReferenceEquals(
+                                        TopLevel.GetTopLevel(live),
+                                        owner)
+                                    && !ReferenceEquals(
+                                        live,
+                                        loadMoreButton)
+                                    && !ReferenceEquals(
+                                        live,
+                                        nextFocus))
+                                {
+                                    return;
+                                }
+
+                                nextFocus.Focus(
+                                    NavigationMethod.Unspecified,
+                                    KeyModifiers.None);
+                            },
+                            DispatcherPriority.Input);
+                    }
                 }
             };
 
