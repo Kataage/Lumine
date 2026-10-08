@@ -2346,8 +2346,12 @@ try
                             largePublications.Skip(1).Take(1).ToArray(),
                             NextCursor: null,
                             TotalCount: 2)));
+            var pointerOwnerAction = new Button
+            {
+                Content = "独立操作"
+            };
             var pointerHost = new StackPanel();
-            pointerHost.Children.Add(otherOwnerAction);
+            pointerHost.Children.Add(pointerOwnerAction);
             pointerHost.Children.Add(pointerPublicationView);
             delayedWindow.Content = pointerHost;
             Dispatcher.UIThread.RunJobs();
@@ -2358,14 +2362,14 @@ try
                     .Single(button =>
                         button.Content as string == "さらに読み込む");
             Require(
-                otherOwnerAction.Focus(),
+                pointerOwnerAction.Focus(),
                 "Pointer-style Publication loading lost independent owner focus.");
             pointerLoadMore.RaiseEvent(
                 new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
             Require(
                 !pointerLoadMore.IsVisible
-                && otherOwnerAction.IsFocused,
+                && pointerOwnerAction.IsFocused,
                 "Unfocused Publication Load More stole keyboard focus.");
             delayedWindow.Close();
             Dispatcher.UIThread.RunJobs();
