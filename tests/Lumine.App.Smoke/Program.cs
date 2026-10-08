@@ -4499,6 +4499,11 @@ try
                     "bulk-selection-1100x720");
             }
 
+            // Populate the actual tag candidates from the saved
+            // Inspector tags before auditing their spoken commands.
+            await shell.SyncTagConsumersAsync();
+            Dispatcher.UIThread.RunJobs();
+
             var bulkCommands = shell.GetVisualDescendants()
                 .OfType<DropDownButton>()
                 .Where(button =>
@@ -4567,6 +4572,39 @@ try
                 Require(
                     bulkFlyout.IsOpen && firstMenuCommand!.IsFocused,
                     $"Bulk {menuName} menu did not hand focus to its first command.");
+                if (menuName == "タグ")
+                {
+                    var tagSearch = (TextBox)firstMenuCommand;
+                    var tagPanel = ((bulkFlyout.Content as Border)?.Child
+                        as StackPanel)
+                        ?? throw new InvalidOperationException(
+                            "Bulk Tag menu has no reachable editor panel.");
+                    Button[] TagCandidates() =>
+                        tagPanel.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Where(button => button.Content is Grid)
+                            .ToArray();
+                    Require(
+                        AutomationProperties.GetName(tagSearch)
+                            == "選択画像に追加するタグを検索"
+                        && TagCandidates().Any(button =>
+                            AutomationProperties.GetName(button)
+                                == "選択画像にタグを追加: context-tag")
+                        && TagCandidates().Any(button =>
+                            AutomationProperties.GetName(button)
+                                == "選択画像にタグを追加: edited-tag"),
+                        "Bulk Tag search/candidates lack explicit action-oriented accessible names.");
+                    tagSearch.Text = "context";
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        TagCandidates().Length == 1
+                        && AutomationProperties.GetName(TagCandidates()[0])
+                            == "選択画像にタグを追加: context-tag"
+                        && tagSearch.IsFocused,
+                        "Filtered bulk Tag candidate lost its accessible action or Search focus.");
+                    tagSearch.Text = string.Empty;
+                    Dispatcher.UIThread.RunJobs();
+                }
                 bulkFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
                 Require(

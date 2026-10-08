@@ -1615,6 +1615,9 @@ internal sealed class CoreViewerShell : UserControl
                     PlaceholderText = "タグを検索…",
                     MinWidth = 210
                 });
+        AutomationProperties.SetName(
+            _bulkTagSearch,
+            "選択画像に追加するタグを検索");
         _bulkTagCandidates =
             new StackPanel
             {
@@ -2040,6 +2043,9 @@ internal sealed class CoreViewerShell : UserControl
                                 LumineDesign.Space4)
                     });
             var name = tag.Name;
+            AutomationProperties.SetName(
+                button,
+                $"選択画像にタグを追加: {name}");
             button.Click +=
                 async (_, _) =>
                 {
