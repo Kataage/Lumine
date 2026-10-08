@@ -3394,8 +3394,7 @@ public sealed class MainWindow : Window
         }
 
         if (e.Key == Key.F
-            && e.KeyModifiers.HasFlag(
-                KeyModifiers.Control)
+            && e.KeyModifiers == KeyModifiers.Control
             && _browseControls is not null
             && !_workspacePageHost.IsVisible)
         {
