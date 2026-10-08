@@ -1833,6 +1833,221 @@ try
                 "Large tag filtering failed to debounce/filter while retaining bounded realization.");
             scaleWindow.Close();
 
+            // The filter and manage presentations must expose the same
+            // selected-tag state without relying on row or dot color.
+            const string selectedTagName =
+                "a-very-long-tag-name-that-must-trim";
+            var selectedTagFixtures =
+                new[]
+                {
+                    new LibraryTagInfo(
+                        1,
+                        selectedTagName,
+                        "#123456",
+                        123),
+                    new LibraryTagInfo(
+                        2,
+                        "short",
+                        "#abcdef",
+                        4)
+                };
+            var originalSelectedTagScale =
+                LumineVisualMetrics.TextScaleFactor;
+            try
+            {
+                foreach (var selectedTagScale in new[] { 1.0, 2.25 })
+                {
+                    LumineVisualMetrics.ConfigureTextScaleFactor(
+                        selectedTagScale);
+                    App.RefreshScaledProductResources(
+                        Application.Current
+                        ?? throw new InvalidOperationException(
+                            "Selected Tag smoke has no current application."));
+                    var selectedTagView =
+                        ProductNavigationViews.CreateTags(
+                            selectedTagFixtures,
+                            new[] { selectedTagName },
+                            static _ => Task.CompletedTask,
+                            static (_, _) => Task.CompletedTask,
+                            static (_, _, _) => Task.CompletedTask,
+                            static _ => Task.CompletedTask);
+                    selectedTagView.Width = 300;
+                    selectedTagView.HorizontalAlignment =
+                        Avalonia.Layout.HorizontalAlignment.Left;
+                    var selectedTagWindow =
+                        new Window
+                        {
+                            Width = 420,
+                            Height = 600,
+                            Content = selectedTagView
+                        };
+                    selectedTagWindow.Show();
+                    Dispatcher.UIThread.RunJobs();
+
+                    var selectedTagAction =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == $"タグ: {selectedTagName}（選択中）");
+                    var unselectedTagAction =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "タグ: short");
+                    var selectedTagText =
+                        (selectedTagAction.Content as Grid)?
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(
+                                text =>
+                                    text.Classes.Contains("lumine-tag-name"));
+                    var selectedTagMarker =
+                        (selectedTagAction.Content as Grid)?
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(
+                                text =>
+                                    text.Classes.Contains("lumine-tag-selection-marker"));
+                    var unselectedTagText =
+                        (unselectedTagAction.Content as Grid)?
+                            .GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(
+                                text =>
+                                    text.Classes.Contains("lumine-tag-name"));
+                    Require(
+                        selectedTagAction.Classes.Contains("selected")
+                        && !unselectedTagAction.Classes.Contains("selected")
+                        && selectedTagText?.Text == selectedTagName
+                        && selectedTagText.Classes.Contains("selected")
+                        && selectedTagMarker?.Text == "✓"
+                        && selectedTagMarker.IsEffectivelyVisible
+                        && selectedTagMarker.Bounds.Width >= 10
+                        && unselectedTagText?.Text == "short"
+                        && !unselectedTagText.Classes.Contains("selected")
+                        && selectedTagAction.Resources.Count == 0
+                        && selectedTagAction.BorderThickness
+                            == new Thickness(0),
+                        "Tag browse selection lost the visible checkmark, accessible state or quiet row styling.");
+
+                    if (visualOutputDirectory is not null)
+                    {
+                        CaptureVisualEvidence(
+                            selectedTagWindow,
+                            selectedTagScale > 2
+                                ? "tags-selected-420x600-text225"
+                                : "tags-selected-420x600");
+                    }
+
+                    var tagManageAction =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .First(button => button.Content as string
+                                == "管理");
+                    tagManageAction.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+
+                    var selectedManageSurface =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Border>()
+                            .First(
+                                surface =>
+                                    AutomationProperties.GetName(surface)
+                                        == $"タグ: {selectedTagName}（選択中）");
+                    var unselectedManageSurface =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<Border>()
+                            .First(
+                                surface =>
+                                    AutomationProperties.GetName(surface)
+                                        == "タグ: short");
+                    var selectedManageText =
+                        selectedManageSurface.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(text =>
+                                text.Classes.Contains("lumine-tag-name"));
+                    var selectedManageMarker =
+                        selectedManageSurface.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(text =>
+                                text.Classes.Contains("lumine-tag-selection-marker"));
+                    var unselectedManageText =
+                        unselectedManageSurface.GetVisualDescendants()
+                            .OfType<TextBlock>()
+                            .FirstOrDefault(text =>
+                                text.Classes.Contains("lumine-tag-name"));
+                    Require(
+                        selectedManageSurface.Classes.Contains("selected")
+                        && !unselectedManageSurface.Classes.Contains("selected")
+                        && selectedManageText?.Text == selectedTagName
+                        && selectedManageText.Classes.Contains("selected")
+                        && selectedManageMarker?.Text == "✓"
+                        && selectedManageMarker.IsEffectivelyVisible
+                        && selectedManageMarker.Bounds.Width >= 10
+                        && unselectedManageText?.Text == "short"
+                        && !unselectedManageText.Classes.Contains("selected")
+                        && selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Count(button =>
+                                button.Content as string == "編集") == 2
+                        && selectedTagView.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Count(button =>
+                                button.Content as string == "削除") == 2,
+                        "Tag management selection lost non-color state or its editing actions.");
+
+                    if (selectedTagScale >= 1.75)
+                    {
+                        var selectedManageRow =
+                            selectedManageSurface.GetVisualAncestors()
+                                .OfType<Grid>()
+                                .First(grid =>
+                                    grid.Children.Contains(selectedManageSurface));
+                        var manageActionRow =
+                            selectedManageRow.Children
+                                .OfType<StackPanel>()
+                                .First(stack =>
+                                    stack.Classes.Contains(
+                                        "lumine-tag-manage-actions"));
+                        Require(
+                            selectedManageText is not null
+                            && selectedManageText.Bounds.Width >= 75
+                            && manageActionRow.Bounds.Y
+                                >= selectedManageSurface.Bounds.Bottom - 0.5
+                            && manageActionRow.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Count(button => button.Content as string
+                                    is "編集" or "削除") == 2,
+                            "225% managed Tag row compressed its long name or overlaid its actions.");
+                    }
+
+                    if (visualOutputDirectory is not null)
+                    {
+                        CaptureVisualEvidence(
+                            selectedTagWindow,
+                            selectedTagScale > 2
+                                ? "tags-managed-selected-420x600-text225"
+                                : "tags-managed-selected-420x600");
+                    }
+                    selectedTagWindow.Close();
+                    Dispatcher.UIThread.RunJobs();
+                }
+            }
+            finally
+            {
+                LumineVisualMetrics.ConfigureTextScaleFactor(
+                    originalSelectedTagScale);
+                App.RefreshScaledProductResources(
+                    Application.Current
+                    ?? throw new InvalidOperationException(
+                        "Selected Tag smoke has no current application."));
+            }
+
             var publicationsView =
                 ProductNavigationViews.CreatePublicationEntry(
                     largePublications);
@@ -2921,8 +3136,10 @@ try
                         .OfType<Grid>()
                         .First(
                             grid =>
-                                grid.Children.Contains(
-                                    removeButton));
+                                grid.Children.Contains(removeButton)
+                                || grid.Children.OfType<StackPanel>()
+                                    .Any(stack =>
+                                        stack.Children.Contains(removeButton)));
 
                 foreach (var navigationWidth in
                          new[]
@@ -2936,12 +3153,21 @@ try
                         navigationWidth;
                     Dispatcher.UIThread.RunJobs();
 
+                    var deletePosition =
+                        removeButton.TranslatePoint(
+                            new Point(0, 0),
+                            manageRow);
                     Require(
-                        removeButton.Bounds.Right
+                        deletePosition is { } position
+                        && position.X >= -0.5
+                        && position.Y >= -0.5
+                        && position.X + removeButton.Bounds.Width
                             <= manageRow.Bounds.Width + 0.5
+                        && position.Y + removeButton.Bounds.Height
+                            <= manageRow.Bounds.Height + 0.5
                         && manageRow.Bounds.Width
                             <= compactTagsView.Bounds.Width + 0.5,
-                        $"Tag manage row overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                        $"Tag manage actions overflowed at {navigationWidth:N0} DIP / 225% text scale.");
                 }
 
                 BrowseFilterState? renamedScopeState = null;
@@ -7597,6 +7823,10 @@ try
                 "folders-navigation-420x600",
                 "folders-selected-420x600",
                 "folders-selected-420x600-text225",
+                "tags-selected-420x600",
+                "tags-selected-420x600-text225",
+                "tags-managed-selected-420x600",
+                "tags-managed-selected-420x600-text225",
                 "publication-navigation-420x600",
                 "publication-detail-420x600",
                 "bulk-selection-1100x720",
