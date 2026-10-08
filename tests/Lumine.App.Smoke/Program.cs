@@ -4768,6 +4768,36 @@ try
                     .Content as StackPanel
                 ?? throw new InvalidOperationException(
                     "Publication settings flyout has no editor.");
+            // The five destination/account fields have distinct
+            // accessible names, independent of placeholder text.
+            var publicationFields =
+                publicationSettingsForm.Children
+                    .OfType<Control>()
+                    .Where(control =>
+                        control is TextBox or ComboBox)
+                    .ToArray();
+            var expectedPublicationNames = new[]
+            {
+                "公開先の名前",
+                "公開先のサービス",
+                "アカウントの公開先",
+                "アカウントの表示名",
+                "アカウントの識別子（任意）"
+            };
+            Require(
+                publicationFields.Length == expectedPublicationNames.Length
+                && publicationFields
+                    .Select(AutomationProperties.GetName)
+                    .SequenceEqual(
+                        expectedPublicationNames,
+                        StringComparer.Ordinal)
+                && publicationFields[0] is TextBox
+                && publicationFields[1] is ComboBox
+                && publicationFields[2] is ComboBox
+                && publicationFields[3] is TextBox
+                && publicationFields[4] is TextBox,
+                "Publication settings fields lack stable, unique accessible names.");
+
             var publicationDestinationName =
                 publicationSettingsForm.Children
                     .OfType<TextBox>()
