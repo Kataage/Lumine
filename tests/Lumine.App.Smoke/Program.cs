@@ -4256,6 +4256,65 @@ try
                 bulkCommands.Length == 3,
                 "Bulk toolbar did not expose all three labeled command groups.");
 
+            // Bulk menus must be reachable by keyboard, not merely
+            // present in the visual tree. Each popup owns first focus
+            // and then returns it to its live invoking command.
+            foreach (var menuName in new[] { "タグ", "整理", "その他" })
+            {
+                var bulkMenu = bulkCommands.Single(
+                    button => button.Content as string == menuName);
+                var bulkFlyout = bulkMenu.Flyout as Flyout
+                    ?? throw new InvalidOperationException(
+                        "Bulk focus test could not find command flyout.");
+                Control? firstMenuCommand = menuName switch
+                {
+                    "タグ" =>
+                        ((bulkFlyout.Content as Border)?.Child
+                            as StackPanel)?.Children
+                            .OfType<TextBox>().FirstOrDefault(),
+                    "整理" =>
+                        ((bulkFlyout.Content as ScrollViewer)?.Content
+                            as StackPanel)?.Children
+                            .OfType<StackPanel>().FirstOrDefault()?
+                            .Children.OfType<Button>().FirstOrDefault(),
+                    "その他" =>
+                        ((bulkFlyout.Content as ScrollViewer)?.Content
+                            as StackPanel)?.Children
+                            .OfType<Button>().FirstOrDefault(),
+                    _ => null
+                };
+                Require(
+                    firstMenuCommand is not null
+                    && bulkMenu.Focus(),
+                    $"Bulk {menuName} menu trigger did not accept focus.");
+                bulkFlyout.ShowAt(bulkMenu);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    bulkFlyout.IsOpen && firstMenuCommand!.IsFocused,
+                    $"Bulk {menuName} menu did not hand focus to its first command.");
+                bulkFlyout.Hide();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !bulkFlyout.IsOpen && bulkMenu.IsFocused,
+                    $"Bulk {menuName} menu did not restore its invoking command.");
+
+                var alternate = bulkCommands.First(
+                    button => !ReferenceEquals(button, bulkMenu));
+                Require(
+                    bulkMenu.Focus(),
+                    $"Bulk {menuName} menu failed to refocus for retarget.");
+                bulkFlyout.ShowAt(bulkMenu);
+                Dispatcher.UIThread.RunJobs();
+                bulkFlyout.Hide();
+                Require(
+                    alternate.Focus(),
+                    $"Bulk {menuName} deliberate target could not focus.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    alternate.IsFocused && !bulkMenu.IsFocused,
+                    $"Bulk {menuName} flyout stole focus from a newer command.");
+            }
+
             var organizeCommand = bulkCommands.Single(
                 button => (string?)button.Content == "整理");
             var organizeFlyout = organizeCommand.Flyout as Flyout
