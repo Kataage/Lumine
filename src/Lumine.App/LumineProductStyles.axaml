@@ -632,6 +632,7 @@
   <Style Selector="Button.lumine-folder-row.selected">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
   <Style Selector="Button.lumine-folder-row.selected:pointerover">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />
