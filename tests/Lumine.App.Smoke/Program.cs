@@ -7744,15 +7744,27 @@ try
                     // viewport, so first scroll the real focused control
                     // into view and allow its layout to settle.
                     customRemoval.BringIntoView();
-                    // The real Settings viewport begins at the top. Explicitly
-                    // scroll to the additional formats before verifying focus.
+                    // Aim the real Settings ScrollViewer at this button,
+                    // not the bottom of the entire page (which also contains
+                    // the unrelated Cache and Storage sections).
+                    var removalInSettings =
+                        customRemoval.TranslatePoint(
+                            new Point(0, 0),
+                            settingsContent!);
+                    Require(
+                        removalInSettings.HasValue,
+                        "The staged extension removal is detached from Settings.");
                     settingsScroll!.Offset =
                         new Vector(
                             0,
-                            Math.Max(
+                            Math.Clamp(
+                                removalInSettings.Value.Y
+                                    - LumineDesign.Space24,
                                 0,
-                                settingsScroll.Extent.Height
-                                    - settingsScroll.Viewport.Height));
+                                Math.Max(
+                                    0,
+                                    settingsScroll.Extent.Height
+                                        - settingsScroll.Viewport.Height)));
                     for (var renderPass = 0;
                          renderPass < 4;
                          renderPass++)
