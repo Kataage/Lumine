@@ -7402,6 +7402,54 @@ try
                         && browsePopupControls.IsDisplayTriggerFocusedForSmoke,
                         "Browse Display popup did not restore its keyboard trigger.");
 
+                    // Focus can move while the popup's Opened focus
+                    // handoff is still queued. That user choice must win.
+                    Require(
+                        browsePopupControls.FocusFilterTriggerForSmoke(),
+                        "Browse Filter trigger could not focus for pending-open regression.");
+                    browsePopupControls.OpenFilterFlyoutForSmoke();
+                    Require(
+                        browseSearch.Focus(),
+                        "Browse Search could not take focus before Filter handoff.");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browseSearch.IsFocused
+                        && !browsePopupControls.IsFilterEditorFocusedForSmoke,
+                        "Queued Filter opening stole focus from Search.");
+                    browsePopupControls.CloseFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+
+                    Require(
+                        browsePopupControls.FocusDisplayTriggerForSmoke(),
+                        "Browse Display trigger could not focus for pending-open regression.");
+                    browsePopupControls.OpenDisplayFlyoutForSmoke();
+                    Require(
+                        browseSearch.Focus(),
+                        "Browse Search could not take focus before Display handoff.");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browseSearch.IsFocused
+                        && !browsePopupControls.IsDisplayEditorFocusedForSmoke,
+                        "Queued Display opening stole focus from Search.");
+                    browsePopupControls.CloseDisplayFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+
+                    // A closed generation must not run the queued focus
+                    // callback after a newer popup instance has opened.
+                    Require(
+                        browsePopupControls.FocusFilterTriggerForSmoke(),
+                        "Browse Filter trigger could not focus for rapid reopen.");
+                    browsePopupControls.OpenFilterFlyoutForSmoke();
+                    browsePopupControls.CloseFilterFlyoutForSmoke();
+                    browsePopupControls.OpenFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browsePopupControls.FilterFlyoutIsOpenForSmoke
+                        && browsePopupControls.IsFilterEditorFocusedForSmoke,
+                        "Rapid Filter reopen did not keep its latest focus handoff.");
+                    browsePopupControls.CloseFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+
                     // A newly focused live owner-window command must win
                     // over deferred popup focus restoration.
                     Require(
