@@ -860,6 +860,8 @@ internal static class ProductNavigationViews
                 {
                     Content = "管理"
                 });
+        add.Classes.Add("lumine-tag-focus-anchor");
+        manage.Classes.Add("lumine-tag-focus-anchor");
 
         var actionRow =
             new StackPanel
@@ -1212,6 +1214,8 @@ internal static class ProductNavigationViews
                                 });
                         edit.Classes.Add(
                             "lumine-compact");
+                        edit.Classes.Add(
+                            "lumine-tag-focus-anchor");
 
                         var editName =
                             LumineDesign.ConfigureTextBox(
