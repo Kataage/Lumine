@@ -1340,7 +1340,9 @@ internal static class ProductNavigationViews
                                     string.Empty;
                                 editStatus.Foreground =
                                     LumineDesign.MutedForeground;
-                                editName.Focus();
+                                FocusFlyoutEditor(
+                                    edit,
+                                    editName);
                                 UpdateEditActionState();
                             };
                         editFlyout.Closed +=
@@ -1469,7 +1471,9 @@ internal static class ProductNavigationViews
         createFlyout.Opened +=
             (_, _) =>
             {
-                createName.Focus();
+                FocusFlyoutEditor(
+                    add,
+                    createName);
                 UpdateCreateActionState();
             };
         createFlyout.Closed +=
@@ -3056,6 +3060,22 @@ internal static class ProductNavigationViews
         stack.Children.Add(
             CreateHint(description));
         return stack;
+    }
+
+    private static void FocusFlyoutEditor(
+        Button origin,
+        Control editor)
+    {
+        // The flyout owns focus while it is open. The parent window may
+        // otherwise retain a stale focused Tag-toolbar button, which would
+        // incorrectly look like a post-dismissal user navigation.
+        TopLevel.GetTopLevel(origin)
+            ?.FocusManager
+            .Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+        editor.Focus();
     }
 
     private static void RestoreFocusAfterFlyoutClose(
