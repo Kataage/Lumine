@@ -3135,6 +3135,31 @@ try
             Dispatcher.UIThread.RunJobs();
 
             Require(
+                shell.Classes.Contains("lumine-canvas-shell")
+                && shell.GetVisualDescendants()
+                    .OfType<Grid>()
+                    .Any(grid => grid.Classes.Contains("lumine-canvas-grid"))
+                && shell.GetVisualDescendants()
+                    .OfType<Border>()
+                    .Any(border =>
+                        border.Classes.Contains("lumine-inspector-surface")
+                        && border.BorderThickness == new Thickness(1))
+                && shell.GetVisualDescendants()
+                    .OfType<Border>()
+                    .Any(border =>
+                        border.Classes.Contains("lumine-bulk-selection-surface")
+                        && border.BorderThickness == new Thickness(1))
+                && shell.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Any(text =>
+                        text.Classes.Contains("lumine-selection-count")
+                        && text.FontWeight == FontWeight.SemiBold)
+                && shell.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Count(text => text.Classes.Contains("lumine-muted-caption")) >= 2,
+                "Core Viewer shell did not apply the shared canvas, Inspector, and multi-selection theme contracts.");
+
+            Require(
                 shell.GridViewer.AssetCount == 2,
                 "Real App shell did not expose the runtime asset count.");
 
