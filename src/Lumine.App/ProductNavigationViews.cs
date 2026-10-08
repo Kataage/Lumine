@@ -523,6 +523,9 @@ internal static class ProductNavigationViews
                 new ListBox();
             list.Classes.Add(
                 "lumine-flat-list");
+            AutomationProperties.SetName(
+                list,
+                "フォルダー一覧");
             var disclosureFocusGeneration = 0;
 
             IReadOnlyList<LibraryFolderInfo>
@@ -2493,6 +2496,9 @@ internal static class ProductNavigationViews
             };
         list.Classes.Add(
             "lumine-flat-list");
+        AutomationProperties.SetName(
+            list,
+            "公開履歴一覧");
         list.ItemTemplate =
             new FuncDataTemplate<PublicationInfo>(
                 (publication, _) =>
