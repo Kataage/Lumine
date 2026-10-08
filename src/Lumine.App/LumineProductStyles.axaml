@@ -394,6 +394,16 @@
 
   <!-- Tag selection has a text cue as well as color; keep name emphasis
        in the shared theme for both filter and manage presentations. -->
+  <Style Selector="TextBlock.lumine-tag-selection-marker">
+    <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+  </Style>
+  <Style Selector="StackPanel.lumine-tag-manage-actions">
+    <Setter Property="Spacing" Value="6" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="Margin" Value="0,4,0,0" />
+  </Style>
   <Style Selector="TextBlock.lumine-tag-name.selected">
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
