@@ -405,21 +405,28 @@ internal static class ProductNavigationViews
                 RowSpacing = LumineDesign.Space6
             };
 
+        var allSelected = selectedFolder is null;
         var all =
             new Button
             {
-                Content = "すべての画像"
+                // A visible checkmark keeps the current location legible
+                // in monochrome and high-contrast themes.
+                Content = allSelected
+                    ? "✓ すべての画像"
+                    : "すべての画像"
             };
         all.Classes.Add(
             "lumine-folder-row");
-        if (selectedFolder is null)
+        if (allSelected)
         {
             all.Classes.Add(
                 "selected");
         }
         AutomationProperties.SetName(
             all,
-            "すべての画像");
+            allSelected
+                ? "すべての画像（表示中）"
+                : "すべての画像");
         AttachAsync(
             all,
             () => selectFolder(null),
@@ -676,7 +683,9 @@ internal static class ProductNavigationViews
                                 Content =
                                     new TextBlock
                                     {
-                                        Text = leaf,
+                                        Text = selected
+                                            ? $"✓ {leaf}"
+                                            : leaf,
                                         TextTrimming =
                                             TextTrimming.CharacterEllipsis
                                     }
@@ -693,7 +702,9 @@ internal static class ProductNavigationViews
                             folder.RelativePath);
                         AutomationProperties.SetName(
                             folderButton,
-                            $"フォルダー: {folder.RelativePath}");
+                            selected
+                                ? $"フォルダー: {folder.RelativePath}（表示中）"
+                                : $"フォルダー: {folder.RelativePath}");
                         AttachAsync(
                             folderButton,
                             () => selectFolder(
