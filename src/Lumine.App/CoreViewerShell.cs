@@ -1202,23 +1202,7 @@ internal sealed class CoreViewerShell : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
-        ratingGroup.Children.Add(
-            new TextBlock
-            {
-                Text = "評価",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                Margin =
-                    new Thickness(
-                        0,
-                        0,
-                        LumineDesign.Space2,
-                        0),
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            });
+
         for (var rating = 1;
              rating <= 5;
              rating++)
@@ -1403,6 +1387,9 @@ internal sealed class CoreViewerShell : UserControl
                 FontWeight = FontWeight.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
+        var ratingLabel = new TextBlock { Text = "評価" };
+        ratingLabel.Classes.Add("lumine-muted-caption");
+        organizePanel.Children.Add(ratingLabel);
         organizePanel.Children.Add(ratingGroup);
         organizePanel.Children.Add(status);
         organizePanel.Children.Add(colorGroup);
