@@ -5861,7 +5861,54 @@ try
                                         LumineDesign.Accent)),
                         $"Selected global navigation regressed from the shared quiet sidebar selection treatment, focus ring contract, or restored the old accent stripe. focused={libraryDestination.IsFocused}, border={libraryDestination.BorderThickness}, resources={libraryDestination.Resources.Count}");
 
-                    libraryDestination.Focus();
+                    Require(
+                        libraryDestination.Focus(),
+                        "Compact navigation first destination was not focusable.");
+                    foreach (var (key, modifiers) in new[]
+                             {
+                                 (Key.Down, KeyModifiers.Control),
+                                 (Key.Home, KeyModifiers.Shift),
+                                 (Key.End, KeyModifiers.Alt),
+                                 (Key.Up, KeyModifiers.Control | KeyModifiers.Shift)
+                             })
+                    {
+                        var modified = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = key,
+                            KeyModifiers = modifiers
+                        };
+                        libraryDestination.RaiseEvent(modified);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modified.Handled && libraryDestination.IsFocused,
+                            $"Compact navigation hijacked {modifiers}+{key}.");
+                    }
+                    var prehandledRail = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.Down,
+                        Handled = true
+                    };
+                    libraryDestination.RaiseEvent(prehandledRail);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        libraryDestination.IsFocused,
+                        "Compact navigation processed a previously handled key.");
+                    foreach (var key in new[] { Key.Up, Key.Home })
+                    {
+                        var edge = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = key
+                        };
+                        libraryDestination.RaiseEvent(edge);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            edge.Handled && libraryDestination.IsFocused,
+                            $"Compact navigation leaked first-item {key}.");
+                    }
+
                     libraryDestination.RaiseEvent(
                         new KeyEventArgs
                         {
@@ -5902,6 +5949,19 @@ try
                             StringComparison.Ordinal),
                         "Global navigation End key did not reach the final Settings destination.");
 
+                    foreach (var key in new[] { Key.Down, Key.End })
+                    {
+                        var edge = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = key
+                        };
+                        settingsDestination!.RaiseEvent(edge);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            edge.Handled && settingsDestination.IsFocused,
+                            $"Compact navigation leaked last-item {key}.");
+                    }
                     settingsDestination!.RaiseEvent(
                         new KeyEventArgs
                         {
@@ -8419,6 +8479,87 @@ try
                                     Require(
                                         wideFolder.Focus(),
                                         "Wide Folder destination could not focus.");
+                                    foreach (var (key, modifiers) in new[]
+                                             {
+                                                 (Key.Up, KeyModifiers.Control),
+                                                 (Key.Down, KeyModifiers.Shift),
+                                                 (Key.End, KeyModifiers.Alt)
+                                             })
+                                    {
+                                        var modified = new KeyEventArgs
+                                        {
+                                            RoutedEvent = InputElement.KeyDownEvent,
+                                            Key = key,
+                                            KeyModifiers = modifiers
+                                        };
+                                        wideFolder.RaiseEvent(modified);
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            !modified.Handled && wideFolder.IsFocused,
+                                            $"Wide navigation hijacked {modifiers}+{key}.");
+                                    }
+                                    var handledWide = new KeyEventArgs
+                                    {
+                                        RoutedEvent = InputElement.KeyDownEvent,
+                                        Key = Key.Home,
+                                        Handled = true
+                                    };
+                                    wideFolder.RaiseEvent(handledWide);
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        wideFolder.IsFocused,
+                                        "Wide navigation processed an already-handled Home.");
+                                    var wideFirst =
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .First(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.Classes.Contains("lumine-nav-item")
+                                                && !button.Classes.Contains("rail")
+                                                && AutomationProperties.GetName(button) == "ライブラリ");
+                                    Require(
+                                        wideFirst.Focus(),
+                                        "Wide first destination could not focus.");
+                                    foreach (var key in new[] { Key.Up, Key.Home })
+                                    {
+                                        var edge = new KeyEventArgs
+                                        {
+                                            RoutedEvent = InputElement.KeyDownEvent,
+                                            Key = key
+                                        };
+                                        wideFirst.RaiseEvent(edge);
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            edge.Handled && wideFirst.IsFocused,
+                                            $"Wide navigation leaked first-item {key}.");
+                                    }
+                                    var wideLast =
+                                        window.GetVisualDescendants()
+                                            .OfType<Button>()
+                                            .First(button =>
+                                                button.IsEffectivelyVisible
+                                                && button.Classes.Contains("lumine-nav-item")
+                                                && !button.Classes.Contains("rail")
+                                                && AutomationProperties.GetName(button) == "設定");
+                                    Require(
+                                        wideLast.Focus(),
+                                        "Wide Settings destination could not focus.");
+                                    foreach (var key in new[] { Key.Down, Key.End })
+                                    {
+                                        var edge = new KeyEventArgs
+                                        {
+                                            RoutedEvent = InputElement.KeyDownEvent,
+                                            Key = key
+                                        };
+                                        wideLast.RaiseEvent(edge);
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            edge.Handled && wideLast.IsFocused,
+                                            $"Wide navigation leaked last-item {key}.");
+                                    }
+                                    Require(
+                                        wideFolder.Focus(),
+                                        "Wide Folder destination could not refocus after edge tests.");
                                     wideFolder.RaiseEvent(
                                         new RoutedEventArgs(Button.ClickEvent));
                                     Dispatcher.UIThread.RunJobs();
