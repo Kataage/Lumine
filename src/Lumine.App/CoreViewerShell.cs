@@ -1199,6 +1199,102 @@ internal sealed class CoreViewerShell : UserControl
         }
     }
 
+    // Own keyboard focus while a bulk command popup is open. The owner
+    // window can change focus between popup activation and deferred focus
+    // handoff, so preserve an intentional newer destination.
+    private static void AttachBulkFlyoutFocus(
+        Flyout flyout,
+        Button trigger,
+        Control firstCommand)
+    {
+        Control? focusAtOpen = null;
+        var generation = 0;
+        flyout.Opened += (_, _) =>
+        {
+            var currentGeneration = ++generation;
+            var owner = TopLevel.GetTopLevel(trigger);
+            focusAtOpen =
+                owner?.FocusManager?.GetFocusedElement() as Control;
+            var original = focusAtOpen;
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (currentGeneration != generation
+                        || !flyout.IsOpen
+                        || owner is null
+                        || !firstCommand.IsEnabled
+                        || !firstCommand.IsEffectivelyVisible
+                        || !ReferenceEquals(
+                            TopLevel.GetTopLevel(trigger),
+                            owner))
+                    {
+                        return;
+                    }
+
+                    var focused =
+                        owner.FocusManager?.GetFocusedElement();
+                    if (focused is Control live
+                        && live.IsEnabled
+                        && live.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            TopLevel.GetTopLevel(live),
+                            owner)
+                        && !ReferenceEquals(live, original)
+                        && !ReferenceEquals(live, trigger)
+                        && !ReferenceEquals(live, firstCommand))
+                    {
+                        return;
+                    }
+
+                    firstCommand.Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None);
+                },
+                DispatcherPriority.Input);
+        };
+
+        flyout.Closed += (_, _) =>
+        {
+            var currentGeneration = ++generation;
+            var owner = TopLevel.GetTopLevel(trigger);
+            var original = focusAtOpen;
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (currentGeneration != generation
+                        || flyout.IsOpen
+                        || owner is null
+                        || !trigger.IsEnabled
+                        || !trigger.IsEffectivelyVisible
+                        || !ReferenceEquals(
+                            TopLevel.GetTopLevel(trigger),
+                            owner))
+                    {
+                        return;
+                    }
+
+                    var focused =
+                        owner.FocusManager?.GetFocusedElement();
+                    if (focused is Control live
+                        && live.IsEnabled
+                        && live.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            TopLevel.GetTopLevel(live),
+                            owner)
+                        && !ReferenceEquals(live, original)
+                        && !ReferenceEquals(live, trigger))
+                    {
+                        return;
+                    }
+
+                    trigger.Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None);
+                },
+                DispatcherPriority.Input);
+        };
+    }
+
     private Border CreateSelectionBar()
     {
         Button CreateRatingButton(int rating)
@@ -1747,6 +1843,19 @@ internal sealed class CoreViewerShell : UserControl
         AutomationProperties.SetName(
             more,
             "複数画像の制作・公開・ファイル操作");
+
+        AttachBulkFlyoutFocus(
+            (Flyout)tagAction.Flyout!,
+            tagAction,
+            _bulkTagSearch);
+        AttachBulkFlyoutFocus(
+            (Flyout)organize.Flyout!,
+            organize,
+            ratingGroup.Children.OfType<Button>().First());
+        AttachBulkFlyoutFocus(
+            (Flyout)more.Flyout!,
+            more,
+            creativePanel.Children.OfType<Button>().First());
 
         foreach (var command in
                  new Button[] { tagAction, organize, more })
