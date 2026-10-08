@@ -1753,6 +1753,25 @@ internal static class ProductNavigationViews
                         PlaceholderText =
                             "@ID / 識別子（任意）"
                     });
+            // Publication and account inputs must be distinguishable to
+            // UI Automation even when placeholder text disappears after
+            // typing or the account destination is unselected.
+            AutomationProperties.SetName(
+                destinationName,
+                "公開先の名前");
+            AutomationProperties.SetName(
+                destinationKind,
+                "公開先のサービス");
+            AutomationProperties.SetName(
+                accountDestination,
+                "アカウントの公開先");
+            AutomationProperties.SetName(
+                accountName,
+                "アカウントの表示名");
+            AutomationProperties.SetName(
+                accountIdentifier,
+                "アカウントの識別子（任意）");
+
             var accountList =
                 new StackPanel();
             accountList.Classes.Add(
