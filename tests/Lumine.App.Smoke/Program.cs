@@ -7763,7 +7763,7 @@ try
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         customRemoval.Focus(),
-                        $"Settings custom extension removal could not receive keyboard focus after scrolling: focusable={customRemoval.Focusable}, enabled={customRemoval.IsEnabled}, visible={customRemoval.IsEffectivelyVisible}, attached={customRemoval.VisualRoot is not null}, bounds={customRemoval.Bounds}, scroll={settingsScroll.Offset.Y:F0}, extent={settingsScroll.Extent.Height:F0}, viewport={settingsScroll.Viewport.Height:F0}, current={window.FocusManager.GetFocusedElement()?.GetType().Name}.");
+                        $"Settings custom extension removal could not receive keyboard focus after scrolling: focusable={customRemoval.Focusable}, enabled={customRemoval.IsEnabled}, visible={customRemoval.IsEffectivelyVisible}, attached={TopLevel.GetTopLevel(customRemoval) is not null}, bounds={customRemoval.Bounds}, scroll={settingsScroll.Offset.Y:F0}, extent={settingsScroll.Extent.Height:F0}, viewport={settingsScroll.Viewport.Height:F0}, current={window.FocusManager.GetFocusedElement()?.GetType().Name}.");
                     customRemoval.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
