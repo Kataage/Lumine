@@ -6026,6 +6026,29 @@ try
                             && productInvoker.IsFocused,
                             "Product notification dismissal did not restore invoking focus.");
 
+                        // A live owner command selected after a modal
+                        // dismisses must not be replaced by a stale focus
+                        // restoration request from an async caller.
+                        Require(
+                            productAlternate.Focus(),
+                            "Product alternate command could not receive deliberate focus.");
+                        ProductDialogs.RestoreFocusIfEligible(
+                            productOwner,
+                            productInvoker);
+                        Require(
+                            productAlternate.IsFocused
+                            && !productInvoker.IsFocused,
+                            "Product dialog restoration stole a newer live owner command's focus.");
+                        Require(
+                            productInvoker.Focus(),
+                            "Product invoking command could not regain focus for further modal checks.");
+                        ProductDialogs.RestoreFocusIfEligible(
+                            productOwner,
+                            productInvoker);
+                        Require(
+                            productInvoker.IsFocused,
+                            "Product modal failed to preserve valid invoking focus.");
+
                         var recycledDialog = new Window
                         {
                             Width = 320,
