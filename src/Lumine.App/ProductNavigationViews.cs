@@ -303,7 +303,7 @@ internal static class ProductNavigationViews
                                 LumineDesign.MoreIconPath,
                                 16)
                     },
-                    "ライブラリを管理");
+                    $"ライブラリを管理: {library.Name}");
             manageButton.VerticalAlignment =
                 VerticalAlignment.Center;
 

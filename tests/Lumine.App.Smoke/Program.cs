@@ -1292,8 +1292,32 @@ try
                             string.Equals(
                                 AutomationProperties.GetName(
                                     button),
-                                "ライブラリを管理",
+                                "ライブラリを管理: Active library",
                                 StringComparison.Ordinal));
+            var manageNamesByLibrary =
+                navLibraries
+                    .Select(library =>
+                    {
+                        var surface = librarySurfaces.Single(
+                            border =>
+                                AutomationProperties.GetAutomationId(border)
+                                    == $"library-card-{library.Id}");
+                        return surface.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                AutomationProperties.GetName(button)
+                                    == $"ライブラリを管理: {library.Name}");
+                    })
+                    .ToArray();
+            Require(
+                manageNamesByLibrary.Length == navLibraries.Length
+                && manageNamesByLibrary.All(button =>
+                    button.IsEffectivelyVisible)
+                && manageNamesByLibrary
+                    .Select(button => AutomationProperties.GetName(button))
+                    .Distinct(StringComparer.Ordinal)
+                    .Count() == navLibraries.Length,
+                "Library Manage accessible names were not associated with their individual rows.");
             Require(
                 manageLibraryButton is { IsEffectivelyVisible: true }
                 && manageLibraryButton.Content
