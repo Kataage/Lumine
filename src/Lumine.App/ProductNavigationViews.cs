@@ -4,7 +4,9 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using Avalonia.Media;
 using Lumine.Core;
 using Lumine.Library;
@@ -858,6 +860,8 @@ internal static class ProductNavigationViews
                 {
                     Content = "管理"
                 });
+        add.Classes.Add("lumine-tag-focus-anchor");
+        manage.Classes.Add("lumine-tag-focus-anchor");
 
         var actionRow =
             new StackPanel
@@ -1210,6 +1214,8 @@ internal static class ProductNavigationViews
                                 });
                         edit.Classes.Add(
                             "lumine-compact");
+                        edit.Classes.Add(
+                            "lumine-tag-focus-anchor");
 
                         var editName =
                             LumineDesign.ConfigureTextBox(
@@ -1323,9 +1329,14 @@ internal static class ProductNavigationViews
                                 !editBusy;
                         }
 
+                        Control? editPreviousOwnerFocus = null;
                         editFlyout.Opened +=
                             (_, _) =>
                             {
+                                editPreviousOwnerFocus =
+                                    TopLevel.GetTopLevel(edit)
+                                        ?.FocusManager
+                                        ?.GetFocusedElement() as Control;
                                 editName.Text =
                                     tag.Name;
                                 editColor.SetColor(
@@ -1334,12 +1345,20 @@ internal static class ProductNavigationViews
                                     string.Empty;
                                 editStatus.Foreground =
                                     LumineDesign.MutedForeground;
-                                editName.Focus();
+                                FocusFlyoutEditor(
+                                    edit,
+                                    editName);
                                 UpdateEditActionState();
                             };
                         editFlyout.Closed +=
                             (_, _) =>
+                            {
                                 UpdateEditActionState();
+                                RestoreFocusAfterFlyoutClose(
+                                    edit,
+                                    editFlyout,
+                                    editPreviousOwnerFocus);
+                            };
                         editName.TextChanged +=
                             (_, _) =>
                                 UpdateEditActionState();
@@ -1455,15 +1474,28 @@ internal static class ProductNavigationViews
                         search.Text);
                 }
             };
+        Control? createPreviousOwnerFocus = null;
         createFlyout.Opened +=
             (_, _) =>
             {
-                createName.Focus();
+                createPreviousOwnerFocus =
+                    TopLevel.GetTopLevel(add)
+                        ?.FocusManager
+                        ?.GetFocusedElement() as Control;
+                FocusFlyoutEditor(
+                    add,
+                    createName);
                 UpdateCreateActionState();
             };
         createFlyout.Closed +=
             (_, _) =>
+            {
                 UpdateCreateActionState();
+                RestoreFocusAfterFlyoutClose(
+                    add,
+                    createFlyout,
+                    createPreviousOwnerFocus);
+            };
 
         cancelCreate.Click +=
             (_, _) =>
@@ -3040,6 +3072,69 @@ internal static class ProductNavigationViews
         stack.Children.Add(
             CreateHint(description));
         return stack;
+    }
+
+    private static void FocusFlyoutEditor(
+        Button origin,
+        Control editor)
+    {
+        // The flyout owns focus while it is open. The parent window may
+        // otherwise retain a stale focused Tag-toolbar button, which would
+        // incorrectly look like a post-dismissal user navigation.
+        TopLevel.GetTopLevel(origin)
+            ?.FocusManager
+            .Focus(
+                null!,
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
+        editor.Focus();
+    }
+
+    private static void RestoreFocusAfterFlyoutClose(
+        Button origin,
+        Flyout flyout,
+        Control? previousOwnerFocus)
+    {
+        // Popup detach and LightDismiss can clear focus after Closed fires.
+        // Defer restoration until the popup is removed, but never override
+        // a user's subsequent click/Tab into a live command.
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (flyout.IsOpen
+                    || !origin.IsEffectivelyVisible
+                    || !origin.IsEnabled)
+                {
+                    return;
+                }
+
+                var owner = TopLevel.GetTopLevel(origin);
+                if (owner is null)
+                {
+                    return; // Tag rows may be recycled while closing.
+                }
+
+                var focused = owner.FocusManager?.GetFocusedElement();
+                if (focused is Control control
+                    && control.IsEffectivelyVisible
+                    && ReferenceEquals(
+                        TopLevel.GetTopLevel(control),
+                        owner)
+                    && !ReferenceEquals(
+                        control,
+                        previousOwnerFocus))
+                {
+                    return; // Newly chosen live control owns the focus.
+                }
+
+                // Avalonia can restore the pre-popup window focus
+                // automatically. That is stale, not a new user choice.
+
+                origin.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            },
+            DispatcherPriority.Input);
     }
 
     private static string DescribeScanState(
