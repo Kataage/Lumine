@@ -3117,9 +3117,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                             Math.Min(
                                 TabHeaders.Count - 1,
                                 index + 1),
-                        _ =>
-                            index
+                        Key.Home => 0,
+                        Key.End => TabHeaders.Count - 1,
+                        _ => -1
                     };
+                if (next < 0)
+                {
+                    return;
+                }
+
+                // The strip owns plain navigation even at its edges.
+                // Otherwise Left/Right can escape to the outer viewer.
+                args.Handled = true;
                 if (next == index)
                 {
                     return;
@@ -3127,7 +3136,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
                 SelectTab(next);
                 _tabButtons[next].Focus();
-                args.Handled = true;
             };
 
         return button;
