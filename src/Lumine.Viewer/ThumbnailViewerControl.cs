@@ -1288,8 +1288,7 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         if (e.Key == Key.A
-            && e.KeyModifiers.HasFlag(
-                KeyModifiers.Control))
+            && e.KeyModifiers == KeyModifiers.Control)
         {
             SelectAll();
             e.Handled = true;
