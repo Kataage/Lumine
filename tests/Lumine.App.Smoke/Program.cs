@@ -1633,14 +1633,28 @@ try
                             AutomationProperties.GetName(button),
                             "root を開く",
                             StringComparison.Ordinal));
+            Require(
+                rootDisclosure.Focus(),
+                "Root folder disclosure did not accept keyboard focus.");
             rootDisclosure.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
+            var expandedRootDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetAutomationId(button)
+                            == "folder-disclosure:root");
             Require(
                 VisibleFolderCount(hierarchyList) == 3
-                && hierarchyExpansion.Contains("root"),
-                "Expanding a root folder did not reveal only its direct children.");
+                && hierarchyExpansion.Contains("root")
+                && expandedRootDisclosure.IsFocused
+                && !ReferenceEquals(expandedRootDisclosure, rootDisclosure)
+                && AutomationProperties.GetName(expandedRootDisclosure)
+                    == "root を閉じる",
+                "Expanding a root folder lost keyboard focus or exposed incorrect children.");
 
             var nestedDisclosure =
                 hierarchyView
@@ -1651,14 +1665,96 @@ try
                             AutomationProperties.GetName(button),
                             "a を開く",
                             StringComparison.Ordinal));
+            Require(
+                nestedDisclosure.Focus(),
+                "Nested folder disclosure did not accept keyboard focus.");
             nestedDisclosure.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
+            var expandedNestedDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetAutomationId(button)
+                            == "folder-disclosure:root/a");
+            Require(
+                VisibleFolderCount(hierarchyList) == 4
+                && hierarchyExpansion.Contains("root/a")
+                && expandedNestedDisclosure.IsFocused
+                && !ReferenceEquals(expandedNestedDisclosure, nestedDisclosure)
+                && AutomationProperties.GetName(expandedNestedDisclosure)
+                    == "a を閉じる",
+                "Expanding a nested folder lost focus or hid its descendants.");
+
+            // The same focused folder must survive collapse/re-expand,
+            // without preserving a recycled disclosure button instance.
+            expandedNestedDisclosure.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var collapsedNestedDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetAutomationId(button)
+                            == "folder-disclosure:root/a");
+            Require(
+                VisibleFolderCount(hierarchyList) == 3
+                && !hierarchyExpansion.Contains("root/a")
+                && collapsedNestedDisclosure.IsFocused
+                && AutomationProperties.GetName(collapsedNestedDisclosure)
+                    == "a を開く",
+                "Collapsing a nested folder lost focus on its new disclosure.");
+            collapsedNestedDisclosure.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
             Require(
                 VisibleFolderCount(hierarchyList) == 4
                 && hierarchyExpansion.Contains("root/a"),
-                "Expanding a nested folder did not reveal its descendants.");
+                "Re-expanding a nested folder lost its expanded subtree.");
+
+            var currentRootDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetAutomationId(button)
+                            == "folder-disclosure:root");
+            Require(
+                currentRootDisclosure.Focus(),
+                "Root folder disclosure could not refocus for collapse.");
+            currentRootDisclosure.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var collapsedRootDisclosure =
+                hierarchyView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetAutomationId(button)
+                            == "folder-disclosure:root");
+            Require(
+                VisibleFolderCount(hierarchyList) == 1
+                && collapsedRootDisclosure.IsFocused
+                && AutomationProperties.GetName(collapsedRootDisclosure)
+                    == "root を開く",
+                "Collapsing a root folder lost focus or leaked descendants.");
+
+            // If another still-attached owner control receives focus
+            // before deferred restoration, the user's choice wins.
+            collapsedRootDisclosure.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Require(
+                allFoldersButton.Focus(),
+                "All-folders command could not take deliberate focus.");
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                allFoldersButton.IsFocused
+                && VisibleFolderCount(hierarchyList) == 4
+                && hierarchyExpansion.Contains("root"),
+                "Folder disclosure restoration stole focus from All folders.");
 
             var realizedFolderButton =
                 hierarchyView

@@ -7,6 +7,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Avalonia.Media;
 using Lumine.Core;
 using Lumine.Library;
@@ -522,6 +523,7 @@ internal static class ProductNavigationViews
                 new ListBox();
             list.Classes.Add(
                 "lumine-flat-list");
+            var disclosureFocusGeneration = 0;
 
             IReadOnlyList<LibraryFolderInfo>
                 BuildVisibleFolders()
@@ -656,6 +658,9 @@ internal static class ProductNavigationViews
                                         ? $"{leaf} を閉じる"
                                         : $"{leaf} を開く"
                                     : $"{leaf} に子フォルダーはありません");
+                        AutomationProperties.SetAutomationId(
+                            disclosure,
+                            $"folder-disclosure:{normalized}");
                         disclosure.Opacity =
                             hasChildren
                                 ? 1
@@ -668,6 +673,16 @@ internal static class ProductNavigationViews
                                     return;
                                 }
 
+                                // Replacing the virtualized ItemsSource
+                                // detaches the invoking button. Preserve
+                                // keyboard-only focus on the same folder,
+                                // not its recycled Control instance.
+                                var owner =
+                                    TopLevel.GetTopLevel(disclosure);
+                                var restoreKeyboardFocus =
+                                    disclosure.IsFocused
+                                    && owner is not null;
+
                                 if (!expandedFolders.Add(
                                         normalized))
                                 {
@@ -675,7 +690,58 @@ internal static class ProductNavigationViews
                                         normalized);
                                 }
 
+                                var generation =
+                                    ++disclosureFocusGeneration;
                                 RebuildVisibleFolders();
+
+                                if (restoreKeyboardFocus)
+                                {
+                                    Dispatcher.UIThread.Post(
+                                        () =>
+                                        {
+                                            if (generation
+                                                    != disclosureFocusGeneration
+                                                || !ReferenceEquals(
+                                                    TopLevel.GetTopLevel(list),
+                                                    owner))
+                                            {
+                                                return;
+                                            }
+
+                                            var current =
+                                                owner!.FocusManager
+                                                    ?.GetFocusedElement();
+                                            if (current is Control live
+                                                && live.IsEnabled
+                                                && live.IsEffectivelyVisible
+                                                && ReferenceEquals(
+                                                    TopLevel.GetTopLevel(live),
+                                                    owner)
+                                                && !ReferenceEquals(
+                                                    live,
+                                                    disclosure))
+                                            {
+                                                return;
+                                            }
+
+                                            var replacement =
+                                                list.GetVisualDescendants()
+                                                    .OfType<Button>()
+                                                    .FirstOrDefault(button =>
+                                                        button.IsEnabled
+                                                        && button.IsEffectivelyVisible
+                                                        && string.Equals(
+                                                            AutomationProperties
+                                                                .GetAutomationId(
+                                                                    button),
+                                                            $"folder-disclosure:{normalized}",
+                                                            StringComparison.Ordinal));
+                                            replacement?.Focus(
+                                                NavigationMethod.Unspecified,
+                                                KeyModifiers.None);
+                                        },
+                                        DispatcherPriority.Input);
+                                }
                             };
                         row.Children.Add(disclosure);
 
