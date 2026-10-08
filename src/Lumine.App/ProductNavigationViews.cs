@@ -2492,6 +2492,9 @@ internal static class ProductNavigationViews
         var list =
             new ListBox
             {
+                // The final Load More keyboard handoff needs a real,
+                // focusable list target, even without a selected row.
+                Focusable = true,
                 ItemsSource = items
             };
         list.Classes.Add(
