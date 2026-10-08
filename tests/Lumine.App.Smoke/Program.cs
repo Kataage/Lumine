@@ -3945,6 +3945,88 @@ try
                 && shell.ContextDetail.TabPagesHaveIndependentScrollStateForSmoke,
                 "Inspector did not expose the selected image preview, four-destination Lumine tab strip, and independent scroll ownership.");
 
+            // Exercise the actual four Inspector tab buttons, not merely
+            // SelectTabForSmoke, so modifiers do not hijack arrow commands.
+            var inspectorKeyboardTabs =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Where(button =>
+                        button.Classes.Contains("lumine-segment")
+                        && button.Content is string name
+                        && shell.ContextDetail.TabHeaders.Contains(name))
+                    .OrderBy(button =>
+                        Array.IndexOf(
+                            shell.ContextDetail.TabHeaders.ToArray(),
+                            button.Content as string))
+                    .ToArray();
+            Require(
+                inspectorKeyboardTabs.Length == 4,
+                "Inspector keyboard smoke could not locate all four tab commands.");
+            shell.ContextDetail.SelectTabForSmoke(1);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                inspectorKeyboardTabs[1].Focus(),
+                "Inspector tab did not accept keyboard focus.");
+            foreach (var (arrowKey, modifiers) in new[]
+                     {
+                         (Key.Left, KeyModifiers.Alt),
+                         (Key.Right, KeyModifiers.Control),
+                         (Key.Right, KeyModifiers.Shift),
+                         (Key.Left, KeyModifiers.Control | KeyModifiers.Shift)
+                     })
+            {
+                var modifiedTabArrow =
+                    new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = arrowKey,
+                        KeyModifiers = modifiers
+                    };
+                inspectorKeyboardTabs[1].RaiseEvent(modifiedTabArrow);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !modifiedTabArrow.Handled
+                    && shell.ContextDetail.SelectedTabIndex == 1
+                    && inspectorKeyboardTabs[1].IsFocused,
+                    $"Inspector hijacked modified tab arrow {modifiers}+{arrowKey}.");
+            }
+            var handledTabArrow =
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Right,
+                    Handled = true
+                };
+            inspectorKeyboardTabs[1].RaiseEvent(handledTabArrow);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.SelectedTabIndex == 1,
+                "Inspector navigated an already-handled arrow.");
+            inspectorKeyboardTabs[1].RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Right
+                });
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.SelectedTabIndex == 2
+                && inspectorKeyboardTabs[2].IsFocused,
+                "Inspector plain Right did not select/focus the following tab.");
+            inspectorKeyboardTabs[2].RaiseEvent(
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Left
+                });
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.SelectedTabIndex == 1
+                && inspectorKeyboardTabs[1].IsFocused,
+                "Inspector plain Left did not select/focus the preceding tab.");
+            shell.ContextDetail.SelectTabForSmoke(0);
+            Dispatcher.UIThread.RunJobs();
+
             if (visualOutputDirectory is not null)
             {
                 shell.ContextDetail.SelectTabForSmoke(1);
@@ -4005,6 +4087,40 @@ try
                 colorLabel: "green",
                 tags: "context-tag, edited-tag",
                 notes: "metadata-editor-search-token");
+            foreach (var modifiers in new[]
+                     {
+                         KeyModifiers.Control | KeyModifiers.Shift,
+                         KeyModifiers.Control | KeyModifiers.Alt
+                     })
+            {
+                var modifiedSave =
+                    new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.S,
+                        KeyModifiers = modifiers
+                    };
+                shell.ContextDetail.RaiseEvent(modifiedSave);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !modifiedSave.Handled
+                    && shell.ContextDetail.IsDirty,
+                    $"Inspector intercepted modified save accelerator {modifiers}+S.");
+            }
+            var alreadyHandledSave =
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.S,
+                    KeyModifiers = KeyModifiers.Control,
+                    Handled = true
+                };
+            shell.ContextDetail.RaiseEvent(alreadyHandledSave);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.ContextDetail.IsDirty,
+                "Inspector saved on an already-handled Ctrl+S.");
+
             Require(
                 shell.ContextDetail.IsDirty,
                 "Contextual metadata editor did not expose its unsaved state.");

@@ -2873,9 +2873,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         object? sender,
         KeyEventArgs e)
     {
-        if (e.Key == Key.S
-            && e.KeyModifiers.HasFlag(
-                KeyModifiers.Control)
+        if (!e.Handled
+            && e.Key == Key.S
+            && e.KeyModifiers == KeyModifiers.Control
             && _dirty)
         {
             e.Handled = true;
@@ -3099,6 +3099,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         button.KeyDown +=
             (_, args) =>
             {
+                // Only plain arrows navigate the segmented tabs.
+                // Modified arrows and handled events belong to their
+                // higher-level keyboard command owner.
+                if (args.Handled
+                    || args.KeyModifiers != KeyModifiers.None)
+                {
+                    return;
+                }
+
                 var next =
                     args.Key switch
                     {
