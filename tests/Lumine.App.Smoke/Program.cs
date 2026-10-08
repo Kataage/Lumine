@@ -7729,8 +7729,18 @@ try
                                     AutomationProperties.GetName(button)
                                         == "独自読み込み対象 .zzfocus を削除"),
                         "Settings failed to stage the second custom extension for focus regression.");
+                    // Adding a custom extension rebuilds its chip list;
+                    // re-resolve the currently mounted Button rather than
+                    // focusing the detached pre-add control.
+                    customRemoval =
+                        customExtensionList.Children
+                            .OfType<Button>()
+                            .Single(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象 .jfif を削除");
                     Require(
-                        customRemoval!.Focus(),
+                        customRemoval.Focus(),
                         "Settings custom extension removal could not receive keyboard focus.");
                     customRemoval.RaiseEvent(
                         new RoutedEventArgs(
