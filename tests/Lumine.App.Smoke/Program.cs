@@ -2254,11 +2254,12 @@ try
                     ?.Cast<PublicationInfo>()
                     .Count() == 150
                 && !publicationLoadMore.IsVisible
+                && pagedPublicationList.Focusable
                 && pagedPublicationList.IsFocused
                 && pagedPublicationList
                     .GetRealizedContainers()
                     .Count() < 128,
-                $"Publication load-more focus failed: calls={publicationLoadMoreCalls}, count={pagedPublicationList.ItemsSource?.Cast<PublicationInfo>().Count()}, hidden={!publicationLoadMore.IsVisible}, listFocused={pagedPublicationList.IsFocused}, focusedControl={scaleWindow.FocusManager?.GetFocusedElement()?.GetType().Name}, bounded={pagedPublicationList.GetRealizedContainers().Count() < 128}.");
+                $"Publication load-more focus failed: calls={publicationLoadMoreCalls}, count={pagedPublicationList.ItemsSource?.Cast<PublicationInfo>().Count()}, hidden={!publicationLoadMore.IsVisible}, listFocusable={pagedPublicationList.Focusable}, listFocused={pagedPublicationList.IsFocused}, focusedControl={scaleWindow.FocusManager?.GetFocusedElement()?.GetType().Name}, bounded={pagedPublicationList.GetRealizedContainers().Count() < 128}.");
             scaleWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
