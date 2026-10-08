@@ -1170,6 +1170,12 @@ internal static class ProductSettingsView
         diagnostics.Click +=
             async (_, _) =>
             {
+                // The command is disabled while diagnostics is open.
+                // Capture its original owner before awaiting the modal,
+                // then restore focus only after the command is enabled.
+                var owner =
+                    TopLevel.GetTopLevel(diagnostics)
+                        as Window;
                 diagnostics.IsEnabled = false;
                 try
                 {
@@ -1178,6 +1184,12 @@ internal static class ProductSettingsView
                 finally
                 {
                     diagnostics.IsEnabled = true;
+                    if (owner is not null)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            diagnostics);
+                    }
                 }
             };
         details.Children.Add(
