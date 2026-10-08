@@ -4024,6 +4024,83 @@ try
                 shell.ContextDetail.SelectedTabIndex == 1
                 && inspectorKeyboardTabs[1].IsFocused,
                 "Inspector plain Left did not select/focus the preceding tab.");
+
+            // Boundary arrows belong to the Inspector tab strip too:
+            // they must not bubble into the surrounding Viewer or
+            // unexpectedly navigate keyboard focus out of the tabs.
+            var homeTabKey = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Home
+            };
+            inspectorKeyboardTabs[1].RaiseEvent(homeTabKey);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                homeTabKey.Handled
+                && shell.ContextDetail.SelectedTabIndex == 0
+                && inspectorKeyboardTabs[0].IsFocused,
+                "Inspector Home failed to select/focus the first tab.");
+            var leftAtFirst = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Left
+            };
+            inspectorKeyboardTabs[0].RaiseEvent(leftAtFirst);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                leftAtFirst.Handled
+                && shell.ContextDetail.SelectedTabIndex == 0
+                && inspectorKeyboardTabs[0].IsFocused,
+                "Inspector boundary Left escaped from the first tab.");
+            var homeAtFirst = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Home
+            };
+            inspectorKeyboardTabs[0].RaiseEvent(homeAtFirst);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                homeAtFirst.Handled
+                && shell.ContextDetail.SelectedTabIndex == 0
+                && inspectorKeyboardTabs[0].IsFocused,
+                "Inspector boundary Home escaped from the first tab.");
+            var endTabKey = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.End
+            };
+            inspectorKeyboardTabs[0].RaiseEvent(endTabKey);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                endTabKey.Handled
+                && shell.ContextDetail.SelectedTabIndex == 3
+                && inspectorKeyboardTabs[3].IsFocused,
+                "Inspector End failed to select/focus the last tab.");
+            var rightAtLast = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Right
+            };
+            inspectorKeyboardTabs[3].RaiseEvent(rightAtLast);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                rightAtLast.Handled
+                && shell.ContextDetail.SelectedTabIndex == 3
+                && inspectorKeyboardTabs[3].IsFocused,
+                "Inspector boundary Right escaped from the last tab.");
+            var endAtLast = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.End
+            };
+            inspectorKeyboardTabs[3].RaiseEvent(endAtLast);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                endAtLast.Handled
+                && shell.ContextDetail.SelectedTabIndex == 3
+                && inspectorKeyboardTabs[3].IsFocused,
+                "Inspector boundary End escaped from the last tab.");
+
             shell.ContextDetail.SelectTabForSmoke(0);
             Dispatcher.UIThread.RunJobs();
 
