@@ -1329,9 +1329,14 @@ internal static class ProductNavigationViews
                                 !editBusy;
                         }
 
+                        Control? editPreviousOwnerFocus = null;
                         editFlyout.Opened +=
                             (_, _) =>
                             {
+                                editPreviousOwnerFocus =
+                                    TopLevel.GetTopLevel(edit)
+                                        ?.FocusManager
+                                        ?.GetFocusedElement() as Control;
                                 editName.Text =
                                     tag.Name;
                                 editColor.SetColor(
@@ -1351,7 +1356,8 @@ internal static class ProductNavigationViews
                                 UpdateEditActionState();
                                 RestoreFocusAfterFlyoutClose(
                                     edit,
-                                    editFlyout);
+                                    editFlyout,
+                                    editPreviousOwnerFocus);
                             };
                         editName.TextChanged +=
                             (_, _) =>
@@ -1468,9 +1474,14 @@ internal static class ProductNavigationViews
                         search.Text);
                 }
             };
+        Control? createPreviousOwnerFocus = null;
         createFlyout.Opened +=
             (_, _) =>
             {
+                createPreviousOwnerFocus =
+                    TopLevel.GetTopLevel(add)
+                        ?.FocusManager
+                        ?.GetFocusedElement() as Control;
                 FocusFlyoutEditor(
                     add,
                     createName);
@@ -1482,7 +1493,8 @@ internal static class ProductNavigationViews
                 UpdateCreateActionState();
                 RestoreFocusAfterFlyoutClose(
                     add,
-                    createFlyout);
+                    createFlyout,
+                    createPreviousOwnerFocus);
             };
 
         cancelCreate.Click +=
@@ -3080,7 +3092,8 @@ internal static class ProductNavigationViews
 
     private static void RestoreFocusAfterFlyoutClose(
         Button origin,
-        Flyout flyout)
+        Flyout flyout,
+        Control? previousOwnerFocus)
     {
         // Popup detach and LightDismiss can clear focus after Closed fires.
         // Defer restoration until the popup is removed, but never override
@@ -3106,10 +3119,16 @@ internal static class ProductNavigationViews
                     && control.IsEffectivelyVisible
                     && ReferenceEquals(
                         TopLevel.GetTopLevel(control),
-                        owner))
+                        owner)
+                    && !ReferenceEquals(
+                        control,
+                        previousOwnerFocus))
                 {
-                    return; // A different, live command owns the focus.
+                    return; // Newly chosen live control owns the focus.
                 }
+
+                // Avalonia can restore the pre-popup window focus
+                // automatically. That is stale, not a new user choice.
 
                 origin.Focus(
                     NavigationMethod.Unspecified,
