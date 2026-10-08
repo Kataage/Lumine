@@ -3670,8 +3670,11 @@ try
                 "Creative archive smoke did not establish a two-asset selection.");
 
             Require(
-                shell.IsBulkSelectionBarVisible,
-                "Multi-selection did not expose the contextual bulk action bar.");
+                shell.IsBulkSelectionBarVisible
+                && shell.BulkSelectionCommandsAccessibleForSmoke
+                && shell.SelectionToolbarIsContainedForSmoke
+                && shell.SelectionToolbarAvoidsInspectorForSmoke,
+                "Grouped bulk toolbar commands overflowed the canvas or obscured the Inspector.");
 
             if (visualOutputDirectory is not null)
             {
@@ -6569,7 +6572,7 @@ try
                                     && window.CurrentShell
                                         .SelectionToolbarIsContainedForSmoke
                                     && window.CurrentShell
-                                        .BulkSelectionUsesDirectActionsForSmoke
+                                        .BulkSelectionCommandsAccessibleForSmoke
                                     && window.CurrentShell.GridViewer
                                         .BottomOverlayInset >= 70
                                     && Math.Abs(
@@ -6579,6 +6582,39 @@ try
                                         gridDuringBulk.Height
                                         - gridBeforeBulk.Height) < 0.5,
                                     $"Bulk selection direct-action/safe-area contract regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+
+                                if (mode == BrowseViewMode.Grid
+                                    && !navigationVisible
+                                    && ((viewport.Width == 900d
+                                            && (iteration == 0
+                                                || iteration == 2))
+                                        || (viewport.Width == 1440d
+                                            && iteration == 0)))
+                                {
+                                    await window.CurrentShell
+                                        .ShowContextDetailAsync();
+                                    Dispatcher.UIThread.RunJobs();
+                                    Require(
+                                        window.CurrentShell
+                                            .SelectionToolbarAvoidsInspectorForSmoke
+                                        && window.CurrentShell
+                                            .SelectionToolbarIsContainedForSmoke,
+                                        "Bulk toolbar covered the Inspector or clipped its commands after opening details.");
+
+                                    if (visualOutputDirectory is not null)
+                                    {
+                                        var evidenceName =
+                                            viewport.Width == 1440d
+                                                ? "bulk-selection-1440x900"
+                                                : iteration == 2
+                                                    ? "bulk-selection-900x600-text225"
+                                                    : "bulk-selection-900x600";
+                                        CaptureVisualEvidence(
+                                            window,
+                                            evidenceName);
+                                    }
+                                    window.CurrentShell.HideContextDetail();
+                                }
 
                                 window.CurrentShell.GridViewer.ClearSelection();
                                 Dispatcher.UIThread.RunJobs();
@@ -7272,6 +7308,9 @@ try
                 "publication-navigation-420x600",
                 "publication-detail-420x600",
                 "bulk-selection-1100x720",
+                "bulk-selection-900x600",
+                "bulk-selection-900x600-text225",
+                "bulk-selection-1440x900",
                 "tags-assignment-1100x720",
                 "tags-create-900x600-text225",
                 "tags-create-custom-color-900x600-text225",
