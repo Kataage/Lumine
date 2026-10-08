@@ -101,6 +101,12 @@
   <Style Selector="Button.lumine-secondary:pressed">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionPressed}" />
   </Style>
+  <!-- Reserve focus border space to prevent Tag flyout return shifting
+       the toolbar/list by 2 DIP at 225% scale. -->
+  <Style Selector="Button.lumine-secondary.lumine-tag-focus-anchor">
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
   <Style Selector="Button.lumine-secondary:focus">
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
