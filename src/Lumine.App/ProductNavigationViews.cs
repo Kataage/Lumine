@@ -2492,6 +2492,9 @@ internal static class ProductNavigationViews
         var list =
             new ListBox
             {
+                // The final Load More keyboard handoff needs a real,
+                // focusable list target, even without a selected row.
+                Focusable = true,
                 ItemsSource = items
             };
         list.Classes.Add(
@@ -2763,8 +2766,24 @@ internal static class ProductNavigationViews
                     return;
                 }
 
+                // The final page removes this command from the visual
+                // tree. Only hand off focus when this button was
+                // focused at invocation; mouse clicks can focus buttons
+                // too, so do not infer an input modality from IsFocused.
+                // A newer live owner focus choice must always win.
+                var owner =
+                    TopLevel.GetTopLevel(loadMoreButton);
+                var invokedWhileFocused =
+                    loadMoreButton.IsFocused
+                    && owner is not null;
+
                 loadMoreButton.IsEnabled =
                     false;
+                // Avalonia can immediately redirect focus when a
+                // focused Button becomes disabled. That framework
+                // fallback is not an intentional user retarget.
+                var focusAfterDisable =
+                    owner?.FocusManager?.GetFocusedElement();
                 loadMoreButton.Content =
                     "読み込み中…";
                 try
@@ -2801,6 +2820,57 @@ internal static class ProductNavigationViews
                         "さらに読み込む";
                     loadMoreButton.IsEnabled =
                         loadMoreButton.IsVisible;
+
+                    if (invokedWhileFocused)
+                    {
+                        // On a successful final page, the list remains
+                        // visible while Load More disappears. If loading
+                        // failed and the button stays available, restore
+                        // that retry action instead.
+                        var nextFocus =
+                            loadMoreButton.IsVisible
+                                ? (Control)loadMoreButton
+                                : list;
+                        Dispatcher.UIThread.Post(
+                            () =>
+                            {
+                                if (!ReferenceEquals(
+                                        TopLevel.GetTopLevel(list),
+                                        owner)
+                                    || !nextFocus.IsEnabled
+                                    || !nextFocus.IsEffectivelyVisible)
+                                {
+                                    return;
+                                }
+
+                                var current =
+                                    owner!.FocusManager
+                                        ?.GetFocusedElement();
+                                if (current is Control live
+                                    && live.IsEnabled
+                                    && live.IsEffectivelyVisible
+                                    && ReferenceEquals(
+                                        TopLevel.GetTopLevel(live),
+                                        owner)
+                                    && !ReferenceEquals(
+                                        live,
+                                        loadMoreButton)
+                                    && !ReferenceEquals(
+                                        live,
+                                        focusAfterDisable)
+                                    && !ReferenceEquals(
+                                        live,
+                                        nextFocus))
+                                {
+                                    return;
+                                }
+
+                                nextFocus.Focus(
+                                    NavigationMethod.Unspecified,
+                                    KeyModifiers.None);
+                            },
+                            DispatcherPriority.Input);
+                    }
                 }
             };
 
