@@ -540,6 +540,56 @@ internal static class LumineDesign
             Foreground;
     }
 
+    private static void AttachNavigationKeyboard(
+        IReadOnlyList<Button> destinations)
+    {
+        for (var index = 0;
+             index < destinations.Count;
+             index++)
+        {
+            var currentIndex = index;
+            destinations[index].KeyDown +=
+                (_, args) =>
+                {
+                    // Navigation owns only plain, previously unhandled
+                    // arrow/Home/End keys. Modified keys belong to
+                    // their parent or OS shortcut handler.
+                    if (args.Handled
+                        || args.KeyModifiers != KeyModifiers.None)
+                    {
+                        return;
+                    }
+
+                    var target =
+                        args.Key switch
+                        {
+                            Key.Up =>
+                                Math.Max(0, currentIndex - 1),
+                            Key.Down =>
+                                Math.Min(
+                                    destinations.Count - 1,
+                                    currentIndex + 1),
+                            Key.Home => 0,
+                            Key.End => destinations.Count - 1,
+                            _ => -1
+                        };
+                    if (target < 0)
+                    {
+                        return;
+                    }
+
+                    // Even at the first/last destination the key
+                    // belongs to this navigation strip, not an outer
+                    // layout or focus-navigation handler.
+                    args.Handled = true;
+                    if (target != currentIndex)
+                    {
+                        destinations[target].Focus();
+                    }
+                };
+        }
+    }
+
     public static Border CreateNavigationRail() =>
         CreateNavigationRail(
             "ライブラリ",
@@ -682,40 +732,7 @@ internal static class LumineDesign
         Grid.SetRow(settings, 2);
         content.Children.Add(settings);
 
-        for (var index = 0;
-             index < destinationButtons.Count;
-             index++)
-        {
-            var currentIndex = index;
-            destinationButtons[index].KeyDown +=
-                (_, args) =>
-                {
-                    var target =
-                        args.Key switch
-                        {
-                            Key.Up =>
-                                Math.Max(
-                                    0,
-                                    currentIndex - 1),
-                            Key.Down =>
-                                Math.Min(
-                                    destinationButtons.Count - 1,
-                                    currentIndex + 1),
-                            Key.Home => 0,
-                            Key.End =>
-                                destinationButtons.Count - 1,
-                            _ => currentIndex
-                        };
-                    if (target == currentIndex)
-                    {
-                        return;
-                    }
-
-                    destinationButtons[target]
-                        .Focus();
-                    args.Handled = true;
-                };
-        }
+        AttachNavigationKeyboard(destinationButtons);
 
         var rail =
             new Border
@@ -815,39 +832,7 @@ internal static class LumineDesign
                 .Select(CreateDestinationButton)
                 .ToArray();
 
-        for (var index = 0;
-             index < buttons.Length;
-             index++)
-        {
-            var currentIndex = index;
-            buttons[index].KeyDown +=
-                (_, args) =>
-                {
-                    var target =
-                        args.Key switch
-                        {
-                            Key.Up =>
-                                Math.Max(
-                                    0,
-                                    currentIndex - 1),
-                            Key.Down =>
-                                Math.Min(
-                                    buttons.Length - 1,
-                                    currentIndex + 1),
-                            Key.Home => 0,
-                            Key.End =>
-                                buttons.Length - 1,
-                            _ => currentIndex
-                        };
-                    if (target == currentIndex)
-                    {
-                        return;
-                    }
-
-                    buttons[target].Focus();
-                    args.Handled = true;
-                };
-        }
+        AttachNavigationKeyboard(buttons);
 
         var brandRow =
             new Grid
