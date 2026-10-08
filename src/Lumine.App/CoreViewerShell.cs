@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -149,6 +150,7 @@ internal sealed class CoreViewerShell : UserControl
                 Orientation = Orientation.Horizontal,
                 IsVisible = false
             };
+        _bulkActions.Classes.Add("lumine-bulk-primary-actions");
 
         _selectionCount =
             new TextBlock
@@ -1376,6 +1378,55 @@ internal sealed class CoreViewerShell : UserControl
                         SetFavorite: true,
                         Favorite: false)));
 
+        // Bulk metadata editing stays discoverable as one cohesive
+        // operation instead of permanent rating/color button clusters.
+        var organizePanel =
+            new StackPanel
+            {
+                Width = 320
+            };
+        organizePanel.Classes.Add("lumine-bulk-menu");
+        organizePanel.Children.Add(
+            new TextBlock
+            {
+                Text = "選択した画像を整理",
+                FontWeight = FontWeight.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+        organizePanel.Children.Add(ratingGroup);
+        organizePanel.Children.Add(status);
+        organizePanel.Children.Add(colorGroup);
+        var favoriteGroup =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal
+            };
+        favoriteGroup.Classes.Add("lumine-bulk-favorite-actions");
+        favoriteGroup.Children.Add(favoriteOn);
+        favoriteGroup.Children.Add(favoriteOff);
+        organizePanel.Children.Add(favoriteGroup);
+
+        var organize =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "整理",
+                    Flyout = new Flyout
+                    {
+                        Content = new ScrollViewer
+                        {
+                            MaxHeight = 380,
+                            VerticalScrollBarVisibility =
+                                Avalonia.Controls.Primitives
+                                    .ScrollBarVisibility.Auto,
+                            Content = organizePanel
+                        }
+                    }
+                });
+        AutomationProperties.SetName(
+            organize,
+            "複数画像の評価・状態・色・お気に入りを整理");
+
         _bulkTagSearch =
             LumineDesign.ConfigureTextBox(
                 new TextBox
@@ -1514,31 +1565,8 @@ internal sealed class CoreViewerShell : UserControl
         creativePanel.Children.Add(
             _lineageAction);
 
-        var creative =
-            LumineDesign.ConfigureSecondaryButton(
-                new DropDownButton
-                {
-                    Content = "制作",
-                    Flyout =
-                        new Flyout
-                        {
-                            Content =
-                                new Border
-                                {
-                                    Background =
-                                        LumineDesign.SurfaceRaised,
-                                    Padding =
-                                        new Thickness(
-                                            LumineDesign.Space8),
-                                    Child =
-                                        creativePanel
-                                }
-                        },
-                    MinWidth = 66
-                });
-
         var publication =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
                     Content = "＋ 公開記録",
@@ -1597,6 +1625,52 @@ internal sealed class CoreViewerShell : UserControl
         _cancelBulkOperationButton.Click +=
             (_, _) => CancelBulkOperation();
 
+        // Less frequent creation/publication commands remain directly
+        // available within one short, explicitly grouped overflow menu.
+        // Source deletion is visually separated from ordinary commands.
+        var overflowSection =
+            new TextBlock
+            {
+                Text = "制作・公開",
+                FontWeight = FontWeight.SemiBold
+            };
+        creativePanel.Children.Insert(0, overflowSection);
+        creativePanel.Children.Add(publication);
+        var dangerDivider = new Border();
+        dangerDivider.Classes.Add("lumine-divider");
+        creativePanel.Children.Add(dangerDivider);
+        creativePanel.Children.Add(delete);
+        foreach (var action in
+                 creativePanel.Children.OfType<Button>())
+        {
+            action.HorizontalAlignment = HorizontalAlignment.Stretch;
+            action.HorizontalContentAlignment = HorizontalAlignment.Left;
+        }
+        var more =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "その他",
+                    Flyout = new Flyout
+                    {
+                        Content = new ScrollViewer
+                        {
+                            MaxHeight = 380,
+                            VerticalScrollBarVisibility =
+                                Avalonia.Controls.Primitives
+                                    .ScrollBarVisibility.Auto,
+                            Content = creativePanel
+                        }
+                    }
+                });
+        AutomationProperties.SetName(
+            more,
+            "複数画像の制作・公開・ファイル操作");
+
+        _bulkActions.Children.Add(tagAction);
+        _bulkActions.Children.Add(organize);
+        _bulkActions.Children.Add(more);
+
         var clear =
             CreateBulkButton(
                 "選択解除",
@@ -1605,58 +1679,36 @@ internal sealed class CoreViewerShell : UserControl
                     _grid.ClearSelection();
                     return Task.CompletedTask;
                 });
+        AutomationProperties.SetName(
+            clear,
+            "選択解除");
+        _cancelBulkOperationButton.Content = "停止";
+        AutomationProperties.SetName(
+            _cancelBulkOperationButton,
+            "処理をキャンセル");
+        ToolTip.SetTip(
+            _cancelBulkOperationButton,
+            "実行中の複数画像処理をキャンセル");
 
-        foreach (var control in
-                 new Control[]
-                 {
-                     ratingGroup,
-                     status,
-                     colorGroup,
-                     favoriteOn,
-                     favoriteOff,
-                     tagAction,
-                     creative,
-                     publication,
-                     delete,
-                     _cancelBulkOperationButton,
-                     clear
-                 })
+        var summary = new Grid
         {
-            control.Margin =
-                ReferenceEquals(
-                    control,
-                    delete)
-                    ? new Thickness(
-                        LumineDesign.Space8,
-                        0,
-                        LumineDesign.Space4,
-                        LumineDesign.Space4)
-                    : new Thickness(
-                        0,
-                        0,
-                        LumineDesign.Space4,
-                        LumineDesign.Space4);
-            _bulkActions.Children.Add(control);
-        }
-
-        var summary =
-            new StackPanel
-            {
-                Orientation =
-                    Orientation.Horizontal,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        summary.Classes.Add("lumine-bulk-summary");
+            ColumnDefinitions =
+                new ColumnDefinitions("Auto,*,Auto,Auto")
+        };
+        summary.Classes.Add("lumine-bulk-summary-grid");
+        Grid.SetColumn(_selectionMetadataSummary, 1);
+        Grid.SetColumn(_cancelBulkOperationButton, 2);
+        Grid.SetColumn(clear, 3);
         summary.Children.Add(_selectionCount);
-        summary.Children.Add(
-            _selectionMetadataSummary);
-        summary.Children.Add(_bulkStatus);
+        summary.Children.Add(_selectionMetadataSummary);
+        summary.Children.Add(_cancelBulkOperationButton);
+        summary.Children.Add(clear);
 
         var root = new StackPanel();
         root.Classes.Add("lumine-bulk-layout");
         root.Children.Add(summary);
         root.Children.Add(_bulkActions);
+        root.Children.Add(_bulkStatus);
 
         var bar = new Border { Child = root };
         bar.Classes.Add("lumine-bulk-selection-surface");
