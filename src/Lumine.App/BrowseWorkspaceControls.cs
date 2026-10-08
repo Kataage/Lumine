@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -507,6 +508,89 @@ internal sealed class BrowseWorkspaceControls : UserControl
         UpdateFacetData(tags, facets);
         SynchronizeControls();
         AttachHandlers();
+
+        AttachFlyoutFocus(
+            _filterFlyout,
+            _filterButton,
+            _sort);
+        AttachFlyoutFocus(
+            _displayFlyout,
+            _displayButton,
+            _grid);
+    }
+
+    // Flyouts own keyboard focus while open and return it to the command
+    // that invoked them after popup detachment. A subsequent Tab/click to
+    // another live owner control always takes precedence.
+    private static void AttachFlyoutFocus(
+        Flyout flyout,
+        Button trigger,
+        Control firstCommand)
+    {
+        Control? previousOwnerFocus = null;
+        flyout.Opened +=
+            (_, _) =>
+            {
+                var owner = TopLevel.GetTopLevel(trigger);
+                previousOwnerFocus =
+                    owner?.FocusManager?.GetFocusedElement()
+                        as Control;
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        if (flyout.IsOpen
+                            && firstCommand.IsEffectivelyVisible
+                            && firstCommand.IsEnabled
+                            && ReferenceEquals(
+                                TopLevel.GetTopLevel(trigger),
+                                owner))
+                        {
+                            firstCommand.Focus(
+                                NavigationMethod.Unspecified,
+                                KeyModifiers.None);
+                        }
+                    },
+                    DispatcherPriority.Input);
+            };
+        flyout.Closed +=
+            (_, _) =>
+            {
+                var owner = TopLevel.GetTopLevel(trigger);
+                var prior = previousOwnerFocus;
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        if (flyout.IsOpen
+                            || owner is null
+                            || !trigger.IsEffectivelyVisible
+                            || !trigger.IsEnabled
+                            || !ReferenceEquals(
+                                TopLevel.GetTopLevel(trigger),
+                                owner))
+                        {
+                            return;
+                        }
+
+                        var current =
+                            owner.FocusManager?.GetFocusedElement();
+                        if (current is Control live
+                            && live.IsEffectivelyVisible
+                            && live.IsEnabled
+                            && ReferenceEquals(
+                                TopLevel.GetTopLevel(live),
+                                owner)
+                            && !ReferenceEquals(live, prior)
+                            && !ReferenceEquals(live, trigger))
+                        {
+                            return;
+                        }
+
+                        trigger.Focus(
+                            NavigationMethod.Unspecified,
+                            KeyModifiers.None);
+                    },
+                    DispatcherPriority.Input);
+            };
     }
 
     private static Border CreatePopoverHost(
@@ -665,6 +749,24 @@ internal sealed class BrowseWorkspaceControls : UserControl
         && _search.MaxWidth <= 720.5
         && _search.HorizontalAlignment
             == HorizontalAlignment.Left;
+
+    internal bool FocusFilterTriggerForSmoke() =>
+        _filterButton.Focus();
+
+    internal bool IsFilterTriggerFocusedForSmoke =>
+        _filterButton.IsFocused;
+
+    internal bool IsFilterEditorFocusedForSmoke =>
+        _sort.IsFocused;
+
+    internal bool FocusDisplayTriggerForSmoke() =>
+        _displayButton.Focus();
+
+    internal bool IsDisplayTriggerFocusedForSmoke =>
+        _displayButton.IsFocused;
+
+    internal bool IsDisplayEditorFocusedForSmoke =>
+        _grid.IsFocused;
 
     internal bool FilterFlyoutIsOpenForSmoke =>
         _filterFlyout.IsOpen;
