@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lumine.Core;
@@ -75,13 +76,9 @@ internal static class ProductDialogs
                 confirm));
         dialog.Content = panel;
 
-        var focusReturn =
-            owner.FocusManager?.GetFocusedElement()
-                as Control;
-        var result =
-            await dialog.ShowDialog<bool>(owner);
-        focusReturn?.Focus();
-        return result;
+        return await ShowWithFocusReturnAsync<bool>(
+            owner,
+            dialog);
     }
 
     public static async Task NotifyAsync(
@@ -126,11 +123,41 @@ internal static class ProductDialogs
             CreateButtons(close));
         dialog.Content = panel;
 
+        await ShowWithFocusReturnAsync<object?>(
+            owner,
+            dialog);
+    }
+
+    // Reuse the creative-dialog focus return contract for both standard
+    // confirmation and notification modals. Invoking controls may become
+    // disabled, hidden, or detached before the modal closes.
+    internal static async Task<TResult> ShowWithFocusReturnAsync<TResult>(
+        Window owner,
+        Window dialog)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(dialog);
+
         var focusReturn =
             owner.FocusManager?.GetFocusedElement()
                 as Control;
-        await dialog.ShowDialog(owner);
-        focusReturn?.Focus();
+        try
+        {
+            return await dialog.ShowDialog<TResult>(owner);
+        }
+        finally
+        {
+            if (focusReturn is
+                { IsEnabled: true, IsEffectivelyVisible: true }
+                && ReferenceEquals(
+                    TopLevel.GetTopLevel(focusReturn),
+                    owner))
+            {
+                focusReturn.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            }
+        }
     }
 
     internal static Size ResolveDialogSizeForSmoke(
