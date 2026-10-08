@@ -508,10 +508,22 @@ internal sealed class CoreViewerShell : UserControl
                 }
             }
 
-            return true;
+            var rowTops =
+                _bulkActions.Children
+                    .OfType<Control>()
+                    .Where(static control => control.IsEffectivelyVisible)
+                    .Select(control =>
+                        control.TranslatePoint(new Point(0, 0), _selectionBar))
+                    .ToArray();
+            return rowTops.Length == 3
+                && rowTops.All(static point => point is not null)
+                && rowTops.Max(static point => point!.Value.Y)
+                    - rowTops.Min(static point => point!.Value.Y) < 1;
         }
     }
 
+    internal double SelectionToolbarHeightForSmoke =>
+        _selectionBar.Bounds.Height;
 
     internal (
         Rect ImageBounds,
