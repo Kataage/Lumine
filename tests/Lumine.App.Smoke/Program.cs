@@ -1607,6 +1607,8 @@ try
             Require(
                 hierarchyList.Classes.Contains(
                     "lumine-flat-list")
+                && AutomationProperties.GetName(hierarchyList)
+                    == "フォルダー一覧"
                 && allFoldersButton.Classes.Contains(
                     "lumine-folder-row")
                 && allFoldersButton.Classes.Contains(
@@ -2243,6 +2245,8 @@ try
                     .Single();
             Require(
                 publicationLoadMoreCalls == 1
+                && AutomationProperties.GetName(pagedPublicationList)
+                    == "公開履歴一覧"
                 && pagedPublicationList.ItemsSource
                     ?.Cast<PublicationInfo>()
                     .Count() == 150
