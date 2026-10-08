@@ -6025,6 +6025,152 @@ try
                                 && button.IsFocused),
                         "Compact navigation lost keyboard focus after returning to Library.");
 
+                    // Verify actual compact contextual navigation is
+                    // dismissible from the keyboard and returns to a live
+                    // rail destination, never the now-hidden close button.
+                    var beforeOverlayWidth = window.Width;
+                    var beforeOverlayHeight = window.Height;
+                    window.Width = 900;
+                    window.Height = 600;
+                    Dispatcher.UIThread.RunJobs();
+                    var compactFolderTrigger =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー");
+                    Require(
+                        compactFolderTrigger.Focus(),
+                        "Compact folder navigation could not focus.");
+                    compactFolderTrigger.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    var overlayDismissButton =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.IsEffectivelyVisible
+                                && AutomationProperties.GetName(button)
+                                    == "ナビゲーションを閉じる");
+                    Require(
+                        window.IsCompactNavigationLayout
+                        && window.IsNavigationPaneOverlayForSmoke
+                        && overlayDismissButton.Focus(),
+                        "Compact contextual navigation was not a focusable overlay.");
+
+                    foreach (var modifier in
+                             new[] { KeyModifiers.Alt, KeyModifiers.Control })
+                    {
+                        var modifiedEscape = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Escape,
+                            KeyModifiers = modifier
+                        };
+                        overlayDismissButton.RaiseEvent(modifiedEscape);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modifiedEscape.Handled
+                            && window.IsNavigationPaneOverlayForSmoke
+                            && overlayDismissButton.IsFocused,
+                            $"Contextual navigation intercepted {modifier}+Escape.");
+                    }
+                    var preHandledOverlayEscape = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.Escape,
+                        Handled = true
+                    };
+                    overlayDismissButton.RaiseEvent(preHandledOverlayEscape);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsNavigationPaneOverlayForSmoke
+                        && overlayDismissButton.IsFocused,
+                        "Contextual navigation processed pre-handled Escape.");
+
+                    var overlayRailDestination =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && button.Classes.Contains("selected")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー");
+                    Require(
+                        overlayRailDestination.Focus(),
+                        "Rail control was not focusable outside the contextual overlay.");
+                    var outsideEscape = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.Escape
+                    };
+                    overlayRailDestination.RaiseEvent(outsideEscape);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !outsideEscape.Handled
+                        && window.IsNavigationPaneOverlayForSmoke,
+                        "Escape outside contextual navigation dismissed its overlay.");
+
+                    Require(
+                        overlayDismissButton.Focus(),
+                        "Contextual close button could not refocus.");
+                    var overlayEscape = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.Escape
+                    };
+                    overlayDismissButton.RaiseEvent(overlayEscape);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        overlayEscape.Handled
+                        && !window.IsNavigationPaneVisibleForSmoke
+                        && overlayRailDestination.IsFocused,
+                        "Escape did not dismiss overlay and restore selected rail focus.");
+
+                    overlayRailDestination.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    var reopenedOverlayClose =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.IsEffectivelyVisible
+                                && AutomationProperties.GetName(button)
+                                    == "ナビゲーションを閉じる");
+                    Require(
+                        window.IsNavigationPaneOverlayForSmoke
+                        && reopenedOverlayClose.Focus(),
+                        "Compact navigation did not reopen for close-button smoke.");
+                    reopenedOverlayClose.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsNavigationPaneVisibleForSmoke
+                        && window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(button =>
+                                button.IsFocused
+                                && button.Classes.Contains("rail")
+                                && button.Classes.Contains("selected")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー"),
+                        "Contextual close button left focus on the hidden pane.");
+
+                    var railLibraryAfterDismiss =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && AutomationProperties.GetName(button)
+                                    == "ライブラリ");
+                    Require(
+                        railLibraryAfterDismiss.Focus(),
+                        "Rail Library return was not focusable.");
+                    railLibraryAfterDismiss.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    window.Width = beforeOverlayWidth;
+                    window.Height = beforeOverlayHeight;
                     window.SetNavigationPinnedForSmoke(
                         navigationPinnedBeforeRailSmoke);
                     Dispatcher.UIThread.RunJobs();
