@@ -2357,6 +2357,33 @@ internal static class ProductNavigationViews
             AutomationProperties.SetName(
                 button,
                 "公開先とアカウントを管理");
+
+            // Keyboard-opened Publication settings must place focus on
+            // the first editable destination field, just like Tag
+            // create/edit flyouts. Preserve newly chosen owner focus
+            // when the popup is dismissed.
+            var settingsFlyout =
+                button.Flyout as Flyout
+                ?? throw new InvalidOperationException(
+                    "Publication settings flyout is missing.");
+            Control? settingsPreviousOwnerFocus = null;
+            settingsFlyout.Opened +=
+                (_, _) =>
+                {
+                    settingsPreviousOwnerFocus =
+                        TopLevel.GetTopLevel(button)
+                            ?.FocusManager
+                            ?.GetFocusedElement() as Control;
+                    FocusFlyoutEditor(
+                        button,
+                        destinationName);
+                };
+            settingsFlyout.Closed +=
+                (_, _) =>
+                    RestoreFocusAfterFlyoutClose(
+                        button,
+                        settingsFlyout,
+                        settingsPreviousOwnerFocus);
             return button;
         }
 
