@@ -7739,9 +7739,22 @@ try
                                 button =>
                                     AutomationProperties.GetName(button)
                                         == "独自読み込み対象 .jfif を削除");
+                    // Settings initially opens scrolled to the top.
+                    // The additional-extension controls are below the
+                    // viewport, so first scroll the real focused control
+                    // into view and allow its layout to settle.
+                    customRemoval.BringIntoView();
+                    for (var renderPass = 0;
+                         renderPass < 3;
+                         renderPass++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    }
+                    Dispatcher.UIThread.RunJobs();
                     Require(
                         customRemoval.Focus(),
-                        "Settings custom extension removal could not receive keyboard focus.");
+                        "Settings custom extension removal could not receive keyboard focus after BringIntoView.");
                     customRemoval.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
