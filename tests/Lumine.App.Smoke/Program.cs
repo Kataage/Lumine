@@ -3136,8 +3136,10 @@ try
                         .OfType<Grid>()
                         .First(
                             grid =>
-                                grid.Children.Contains(
-                                    removeButton));
+                                grid.Children.Contains(removeButton)
+                                || grid.Children.OfType<StackPanel>()
+                                    .Any(stack =>
+                                        stack.Children.Contains(removeButton)));
 
                 foreach (var navigationWidth in
                          new[]
@@ -3151,12 +3153,21 @@ try
                         navigationWidth;
                     Dispatcher.UIThread.RunJobs();
 
+                    var deletePosition =
+                        removeButton.TranslatePoint(
+                            new Point(0, 0),
+                            manageRow);
                     Require(
-                        removeButton.Bounds.Right
+                        deletePosition is { } position
+                        && position.X >= -0.5
+                        && position.Y >= -0.5
+                        && position.X + removeButton.Bounds.Width
                             <= manageRow.Bounds.Width + 0.5
+                        && position.Y + removeButton.Bounds.Height
+                            <= manageRow.Bounds.Height + 0.5
                         && manageRow.Bounds.Width
                             <= compactTagsView.Bounds.Width + 0.5,
-                        $"Tag manage row overflowed at {navigationWidth:N0} DIP / 225% text scale.");
+                        $"Tag manage actions overflowed at {navigationWidth:N0} DIP / 225% text scale.");
                 }
 
                 BrowseFilterState? renamedScopeState = null;
