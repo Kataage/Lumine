@@ -173,6 +173,16 @@ internal sealed class CoreViewerShell : UserControl
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
         _bulkStatus.Classes.Add("lumine-muted-caption");
+        _bulkStatus.IsVisible = false;
+        _bulkStatus.PropertyChanged +=
+            (_, change) =>
+            {
+                if (change.Property == TextBlock.TextProperty)
+                {
+                    _bulkStatus.IsVisible =
+                        !string.IsNullOrWhiteSpace(_bulkStatus.Text);
+                }
+            };
         _selectionBar = CreateSelectionBar();
         _selectionBar.IsVisible = false;
 
@@ -1385,6 +1395,7 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Text = "選択した画像を整理",
                 FontWeight = FontWeight.SemiBold,
+                FontSize = LumineDesign.BodyFontSize,
                 TextWrapping = TextWrapping.Wrap
             });
         var ratingLabel = new TextBlock { Text = "評価" };
@@ -1392,7 +1403,55 @@ internal sealed class CoreViewerShell : UserControl
         organizePanel.Children.Add(ratingLabel);
         organizePanel.Children.Add(ratingGroup);
         organizePanel.Children.Add(status);
-        organizePanel.Children.Add(colorGroup);
+
+        // At accessibility text sizes, labeled choices are clearer and
+        // offer larger targets than eight tiny adjacent color swatches.
+        if (LumineVisualMetrics.TextScaleFactor >= 1.75)
+        {
+            organizePanel.Children.Add(
+                new TextBlock
+                {
+                    Text = "色",
+                    FontSize = LumineDesign.CaptionFontSize,
+                    Foreground = LumineDesign.MutedForeground
+                });
+            var colorChoices =
+                new[] { "カラーを選択…" }
+                    .Concat(colors.Select(static item => item.Label))
+                    .ToArray();
+            var colorPicker =
+                LumineDesign.ConfigureComboBox(
+                    new ComboBox
+                    {
+                        Width = 260,
+                        ItemsSource = colorChoices,
+                        SelectedIndex = 0
+                    });
+            AutomationProperties.SetName(
+                colorPicker,
+                "選択画像のカラーを変更");
+            colorPicker.SelectionChanged +=
+                async (_, _) =>
+                {
+                    if (colorPicker.SelectedIndex <= 0)
+                    {
+                        return;
+                    }
+
+                    var value =
+                        colors[colorPicker.SelectedIndex - 1].Value;
+                    colorPicker.SelectedIndex = 0;
+                    await ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetColorLabel: true,
+                            ColorLabel: value));
+                };
+            organizePanel.Children.Add(colorPicker);
+        }
+        else
+        {
+            organizePanel.Children.Add(colorGroup);
+        }
         var favoriteGroup =
             new StackPanel
             {
@@ -1664,6 +1723,7 @@ internal sealed class CoreViewerShell : UserControl
                  new Button[] { tagAction, organize, more })
         {
             command.Classes.Add("lumine-bulk-command");
+            command.FontSize = LumineDesign.CaptionFontSize;
             _bulkActions.Children.Add(command);
         }
 
