@@ -408,41 +408,14 @@ internal static class ProductNavigationViews
         var all =
             new Button
             {
-                Content = "すべての画像",
-                HorizontalContentAlignment =
-                    HorizontalAlignment.Left,
-                Padding =
-                    new Thickness(
-                        LumineDesign.Space8,
-                        LumineDesign.Space6),
-                Background =
-                    selectedFolder is null
-                        ? LumineDesign.AccentMuted
-                        : Brushes.Transparent,
-                BorderBrush =
-                    selectedFolder is null
-                        ? LumineDesign.BorderStrong
-                        : Brushes.Transparent,
-                BorderThickness = new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.ControlRadius),
-                Foreground =
-                    selectedFolder is null
-                        ? LumineDesign.Foreground
-                        : LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize
+                Content = "すべての画像"
             };
+        all.Classes.Add(
+            "lumine-folder-row");
         if (selectedFolder is null)
         {
-            LumineDesign.ConfigureSelectedButtonStateResources(
-                all);
-        }
-        else
-        {
-            LumineDesign.ConfigureNeutralButtonStateResources(
-                all);
+            all.Classes.Add(
+                "selected");
         }
         AutomationProperties.SetName(
             all,
@@ -537,15 +510,9 @@ internal static class ProductNavigationViews
             }
 
             var list =
-                new ListBox
-                {
-                    Background =
-                        Brushes.Transparent,
-                    BorderThickness =
-                        new Thickness(0),
-                    Padding =
-                        new Thickness(0)
-                };
+                new ListBox();
+            list.Classes.Add(
+                "lumine-flat-list");
 
             IReadOnlyList<LibraryFolderInfo>
                 BuildVisibleFolders()
@@ -710,46 +677,16 @@ internal static class ProductNavigationViews
                                     new TextBlock
                                     {
                                         Text = leaf,
-                                        Foreground =
-                                            selected
-                                                ? LumineDesign.Foreground
-                                                : LumineDesign.MutedForeground,
-                                        FontSize =
-                                            LumineDesign.CaptionFontSize,
                                         TextTrimming =
                                             TextTrimming.CharacterEllipsis
-                                    },
-                                HorizontalAlignment =
-                                    HorizontalAlignment.Stretch,
-                                HorizontalContentAlignment =
-                                    HorizontalAlignment.Left,
-                                Padding =
-                                    new Thickness(
-                                        LumineDesign.Space4,
-                                        LumineDesign.Space6),
-                                Background =
-                                    selected
-                                        ? LumineDesign.AccentMuted
-                                        : Brushes.Transparent,
-                                BorderBrush =
-                                    selected
-                                        ? LumineDesign.BorderStrong
-                                        : Brushes.Transparent,
-                                BorderThickness =
-                                    new Thickness(1),
-                                CornerRadius =
-                                    new CornerRadius(
-                                        LumineDesign.ControlRadius)
+                                    }
                             };
+                        folderButton.Classes.Add(
+                            "lumine-folder-row");
                         if (selected)
                         {
-                            LumineDesign.ConfigureSelectedButtonStateResources(
-                                folderButton);
-                        }
-                        else
-                        {
-                            LumineDesign.ConfigureNeutralButtonStateResources(
-                                folderButton);
+                            folderButton.Classes.Add(
+                                "selected");
                         }
                         ToolTip.SetTip(
                             folderButton,
@@ -774,13 +711,11 @@ internal static class ProductNavigationViews
                                 Text =
                                     folder.DirectAssetCount
                                         .ToString("N0"),
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
                                 VerticalAlignment =
                                     VerticalAlignment.Center
                             };
+                        count.Classes.Add(
+                            "lumine-muted-caption");
                         Grid.SetColumn(count, 2);
                         row.Children.Add(count);
 
@@ -1659,17 +1594,11 @@ internal static class ProductNavigationViews
                 items.Count);
 
         var summary =
-            new TextBlock
-            {
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                TextWrapping =
-                    TextWrapping.Wrap,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
+            CreatePublicationText(
+                string.Empty,
+                "lumine-muted-caption");
+        summary.VerticalAlignment =
+            VerticalAlignment.Center;
 
         void UpdateSummary()
         {
@@ -1716,10 +1645,9 @@ internal static class ProductNavigationViews
                         SelectedIndex = 4
                     });
             var destinationList =
-                new StackPanel
-                {
-                    Spacing = LumineDesign.Space4
-                };
+                new StackPanel();
+            destinationList.Classes.Add(
+                "lumine-compact-stack");
             var accountDestination =
                 LumineDesign.ConfigureComboBox(
                     new ComboBox());
@@ -1738,10 +1666,9 @@ internal static class ProductNavigationViews
                             "@ID / 識別子（任意）"
                     });
             var accountList =
-                new StackPanel
-                {
-                    Spacing = LumineDesign.Space4
-                };
+                new StackPanel();
+            accountList.Classes.Add(
+                "lumine-compact-stack");
             long? editingDestinationId =
                 null;
             long? editingAccountId =
@@ -1752,15 +1679,9 @@ internal static class ProductNavigationViews
                 null!;
 
             var feedback =
-                new TextBlock
-                {
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize =
-                        LumineDesign.CaptionFontSize,
-                    TextWrapping =
-                        TextWrapping.Wrap
-                };
+                CreatePublicationText(
+                    string.Empty,
+                    "lumine-muted-caption");
 
             string ResolveKind() =>
                 destinationKind.SelectedItem as string
@@ -1815,35 +1736,26 @@ internal static class ProductNavigationViews
                                 new ColumnDefinitions(
                                     "*,Auto,Auto")
                         };
+                    row.Classes.Add(
+                        "lumine-inline-actions");
+                    var destinationText =
+                        CreatePublicationText(
+                            $"{destinationItem.Name} · {destinationItem.Kind}",
+                            "lumine-body-caption");
+                    destinationText.VerticalAlignment =
+                        VerticalAlignment.Center;
                     row.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                $"{destinationItem.Name} · {destinationItem.Kind}",
-                            Foreground =
-                                LumineDesign.Foreground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap,
-                            VerticalAlignment =
-                                VerticalAlignment.Center
-                        });
+                        destinationText);
                     if (updateDestination is not null)
                     {
                         var edit =
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
                                 {
-                                    Content = "編集",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "編集"
                                 });
+                        edit.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             edit,
                             $"公開先を編集: {destinationItem.Name}");
@@ -1875,15 +1787,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
-                                    Content = "削除",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "削除"
                                 });
+                        remove.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             remove,
                             $"公開先を削除: {destinationItem.Name}");
@@ -1964,39 +1871,30 @@ internal static class ProductNavigationViews
                                 new ColumnDefinitions(
                                     "*,Auto,Auto")
                         };
+                    row.Classes.Add(
+                        "lumine-inline-actions");
+                    var accountText =
+                        CreatePublicationText(
+                            $"{destinationLabel} · {accountItem.DisplayName}"
+                            + (string.IsNullOrWhiteSpace(
+                                    accountItem.AccountIdentifier)
+                                ? string.Empty
+                                : $" · {accountItem.AccountIdentifier}"),
+                            "lumine-body-caption");
+                    accountText.VerticalAlignment =
+                        VerticalAlignment.Center;
                     row.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                $"{destinationLabel} · {accountItem.DisplayName}"
-                                + (string.IsNullOrWhiteSpace(
-                                        accountItem.AccountIdentifier)
-                                    ? string.Empty
-                                    : $" · {accountItem.AccountIdentifier}"),
-                            Foreground =
-                                LumineDesign.Foreground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap,
-                            VerticalAlignment =
-                                VerticalAlignment.Center
-                        });
+                        accountText);
                     if (updateAccount is not null)
                     {
                         var edit =
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
                                 {
-                                    Content = "編集",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "編集"
                                 });
+                        edit.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             edit,
                             $"公開アカウントを編集: {accountItem.DisplayName}");
@@ -2037,15 +1935,10 @@ internal static class ProductNavigationViews
                             LumineDesign.ConfigureDangerButton(
                                 new Button
                                 {
-                                    Content = "削除",
-                                    MinWidth = 56,
-                                    Margin =
-                                        new Thickness(
-                                            LumineDesign.Space6,
-                                            0,
-                                            0,
-                                            0)
+                                    Content = "削除"
                                 });
+                        remove.Classes.Add(
+                            "lumine-compact");
                         AutomationProperties.SetName(
                             remove,
                             $"公開アカウントを削除: {accountItem.DisplayName}");
@@ -2314,26 +2207,13 @@ internal static class ProductNavigationViews
             RenderAccounts();
 
             var form =
-                new StackPanel
-                {
-                    Width = 330,
-                    Spacing =
-                        LumineDesign.Space8,
-                    Margin =
-                        new Thickness(
-                            LumineDesign.Space12)
-                };
+                new StackPanel();
+            form.Classes.Add(
+                "lumine-publication-form");
             form.Children.Add(
-                new TextBlock
-                {
-                    Text = "投稿先",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.BodyFontSize
-                });
+                CreatePublicationText(
+                    "投稿先",
+                    "lumine-section-title"));
             form.Children.Add(
                 destinationName);
             form.Children.Add(
@@ -2342,28 +2222,16 @@ internal static class ProductNavigationViews
                 addDestination);
             form.Children.Add(
                 destinationList);
+            var divider =
+                new Border();
+            divider.Classes.Add(
+                "lumine-divider");
             form.Children.Add(
-                new Border
-                {
-                    Height = 1,
-                    Background =
-                        LumineDesign.Border,
-                    Margin =
-                        new Thickness(
-                            0,
-                            LumineDesign.Space6)
-                });
+                divider);
             form.Children.Add(
-                new TextBlock
-                {
-                    Text = "アカウント",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.BodyFontSize
-                });
+                CreatePublicationText(
+                    "アカウント",
+                    "lumine-section-title"));
             form.Children.Add(
                 accountDestination);
             form.Children.Add(
@@ -2407,141 +2275,82 @@ internal static class ProductNavigationViews
         var list =
             new ListBox
             {
-                ItemsSource = items,
-                Background = Brushes.Transparent,
-                BorderThickness =
-                    new Thickness(0),
-                Padding =
-                    new Thickness(0)
+                ItemsSource = items
             };
+        list.Classes.Add(
+            "lumine-flat-list");
         list.ItemTemplate =
             new FuncDataTemplate<PublicationInfo>(
                 (publication, _) =>
                 {
                     var content =
-                        new StackPanel
-                        {
-                            Spacing = 5
-                        };
+                        new StackPanel();
+                    content.Classes.Add(
+                        "lumine-publication-row-content");
                     content.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                publication.PublishedAtUtc
-                                    .ToLocalTime()
-                                    .ToString("yyyy-MM-dd HH:mm")
-                                + $" · {publication.Destination}"
-                                + (string.IsNullOrWhiteSpace(
-                                        publication.Account)
-                                    ? string.Empty
-                                    : $" · {publication.Account}"),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize
-                        });
+                        CreatePublicationText(
+                            publication.PublishedAtUtc
+                                .ToLocalTime()
+                                .ToString("yyyy-MM-dd HH:mm")
+                            + $" · {publication.Destination}"
+                            + (string.IsNullOrWhiteSpace(
+                                    publication.Account)
+                                ? string.Empty
+                                : $" · {publication.Account}"),
+                            "lumine-muted-caption",
+                            wrap: false));
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.Title))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.Title,
-                                Foreground =
-                                    LumineDesign.Foreground,
-                                FontWeight =
-                                    FontWeight.SemiBold,
-                                FontSize =
-                                    LumineDesign.BodyFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.Title,
+                                "lumine-section-title"));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.Body))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.Body,
-                                Foreground =
-                                    LumineDesign.Foreground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                MaxHeight = 72,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.Body,
+                                "lumine-body-caption",
+                                maxHeight: 72));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.TagsSnapshot))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    publication.TagsSnapshot,
-                                Foreground =
-                                    LumineDesign.Accent,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                publication.TagsSnapshot,
+                                "lumine-accent-caption"));
                     }
 
                     content.Children.Add(
-                        new TextBlock
-                        {
-                            Text =
-                                FormatPublicationAssets(
-                                    publication,
-                                    " → "),
-                            Foreground =
-                                LumineDesign.MutedForeground,
-                            FontSize =
-                                LumineDesign.CaptionFontSize,
-                            TextWrapping =
-                                TextWrapping.Wrap
-                        });
+                        CreatePublicationText(
+                            FormatPublicationAssets(
+                                publication,
+                                " → "),
+                            "lumine-muted-caption"));
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.ExternalId))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    $"外部ID: {publication.ExternalId}",
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                $"外部ID: {publication.ExternalId}",
+                                "lumine-muted-caption"));
                     }
 
                     if (!string.IsNullOrWhiteSpace(
                             publication.ExternalUrl))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text =
-                                    $"URL: {publication.ExternalUrl}",
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                $"URL: {publication.ExternalUrl}",
+                                "lumine-muted-caption"));
                     }
 
                     foreach (var flag in
@@ -2549,16 +2358,9 @@ internal static class ProductNavigationViews
                                  publication.PlatformMetadataJson))
                     {
                         content.Children.Add(
-                            new TextBlock
-                            {
-                                Text = flag,
-                                Foreground =
-                                    LumineDesign.MutedForeground,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap
-                            });
+                            CreatePublicationText(
+                                flag,
+                                "lumine-muted-caption"));
                     }
 
                     if (loadPublicationDetail is not null)
@@ -2573,16 +2375,11 @@ internal static class ProductNavigationViews
                                 IsVisible = false
                             };
                         var detailStatus =
-                            new TextBlock
-                            {
-                                Foreground =
-                                    LumineDesign.Warning,
-                                FontSize =
-                                    LumineDesign.CaptionFontSize,
-                                TextWrapping =
-                                    TextWrapping.Wrap,
-                                IsVisible = false
-                            };
+                            CreatePublicationText(
+                                string.Empty,
+                                "lumine-warning-caption");
+                        detailStatus.IsVisible =
+                            false;
                         var expand =
                             LumineDesign.ConfigureSecondaryButton(
                                 new Button
@@ -2720,9 +2517,8 @@ internal static class ProductNavigationViews
                             remove);
                     }
 
-                    return CreateCard(
-                        content,
-                        selected: false);
+                    return CreatePublicationRow(
+                        content);
                 },
                 supportsRecycling: true);
 
@@ -2815,18 +2611,11 @@ internal static class ProductNavigationViews
             {
                 Text =
                     "公開履歴はまだありません。",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                TextAlignment =
-                    TextAlignment.Center,
-                Margin =
-                    new Thickness(
-                        LumineDesign.Space12),
                 IsVisible =
                     items.Count == 0
             };
+        empty.Classes.Add(
+            "lumine-empty-message");
         items.CollectionChanged +=
             (_, _) =>
             {
@@ -2869,17 +2658,9 @@ internal static class ProductNavigationViews
         PublicationInfo publication)
     {
         var detail =
-            new StackPanel
-            {
-                Spacing =
-                    LumineDesign.Space6,
-                Margin =
-                    new Thickness(
-                        0,
-                        LumineDesign.Space6,
-                        0,
-                        0)
-            };
+            new StackPanel();
+        detail.Classes.Add(
+            "lumine-publication-detail-body");
 
         if (!string.IsNullOrWhiteSpace(
                 publication.Body))
@@ -2901,11 +2682,9 @@ internal static class ProductNavigationViews
         if (publication.Assets.Count > 0)
         {
             var assets =
-                new StackPanel
-                {
-                    Spacing =
-                        LumineDesign.Space4
-                };
+                new StackPanel();
+            assets.Classes.Add(
+                "lumine-compact-stack");
             foreach (var asset in
                      publication.Assets
                          .OrderBy(
@@ -2918,17 +2697,9 @@ internal static class ProductNavigationViews
             }
 
             detail.Children.Add(
-                new TextBlock
-                {
-                    Text =
-                        $"画像 {publication.Assets.Count:N0}枚",
-                    Foreground =
-                        LumineDesign.Foreground,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    FontSize =
-                        LumineDesign.CaptionFontSize
-                });
+                CreatePublicationText(
+                    $"画像 {publication.Assets.Count:N0}枚",
+                    "lumine-section-title"));
             detail.Children.Add(
                 assets);
         }
@@ -2958,39 +2729,50 @@ internal static class ProductNavigationViews
                     flag));
         }
 
-        return new Border
+        var surface =
+            new Border
+            {
+                Child = detail
+            };
+        surface.Classes.Add(
+            "lumine-publication-detail");
+        return surface;
+    }
+
+    private static TextBlock CreatePublicationText(
+        string text,
+        string styleClass,
+        bool wrap = true,
+        double? maxHeight = null)
+    {
+        var block =
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping =
+                    wrap
+                        ? TextWrapping.Wrap
+                        : TextWrapping.NoWrap
+            };
+        if (maxHeight is double resolvedMaxHeight)
         {
-            Background =
-                LumineDesign.Background,
-            BorderBrush =
-                LumineDesign.Border,
-            BorderThickness =
-                new Thickness(1),
-            CornerRadius =
-                new CornerRadius(
-                    LumineDesign.ControlRadius),
-            Padding =
-                new Thickness(
-                    LumineDesign.Space8),
-            Child = detail
-        };
+            block.MaxHeight =
+                resolvedMaxHeight;
+        }
+
+        block.Classes.Add(
+            styleClass);
+        return block;
     }
 
     private static TextBlock CreatePublicationDetailText(
         string text,
         bool accent = false) =>
-        new()
-        {
-            Text = text,
-            Foreground =
-                accent
-                    ? LumineDesign.Accent
-                    : LumineDesign.MutedForeground,
-            FontSize =
-                LumineDesign.CaptionFontSize,
-            TextWrapping =
-                TextWrapping.Wrap
-        };
+        CreatePublicationText(
+            text,
+            accent
+                ? "lumine-accent-caption"
+                : "lumine-muted-caption");
 
     internal static IReadOnlyList<string>
         ExtractPublicationFlagsForSmoke(
@@ -3200,51 +2982,50 @@ internal static class ProductNavigationViews
                 Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
 
-    private static Border CreateCard(
-        Control child,
-        bool selected) =>
-        new()
-        {
-            Padding = new Thickness(9),
-            Background =
-                selected
-                    ? LumineDesign.AccentMuted
-                    : LumineDesign.SurfaceRaised,
-            BorderBrush = LumineDesign.Border,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(LumineDesign.PanelRadius),
-            Child = child
-        };
+    private static Border CreatePublicationRow(
+        Control child)
+    {
+        var row =
+            new Border
+            {
+                Child = child
+            };
+        row.Classes.Add(
+            "lumine-publication-row");
+        return row;
+    }
 
     private static TextBlock CreateHint(
-        string text) =>
-        new()
-        {
-            Text = text,
-            Foreground = LumineDesign.MutedForeground,
-            FontSize = LumineDesign.CaptionFontSize,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(2, 4)
-        };
+        string text)
+    {
+        var hint =
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap
+            };
+        hint.Classes.Add(
+            "lumine-nav-hint");
+        return hint;
+    }
 
     private static Control CreatePlaceholder(
         string title,
         string description)
     {
         var stack =
-            new StackPanel
-            {
-                Spacing = 8,
-                Margin = new Thickness(2, 8)
-            };
-        stack.Children.Add(
+            new StackPanel();
+        stack.Classes.Add(
+            "lumine-nav-placeholder");
+        var titleText =
             new TextBlock
             {
-                Text = title,
-                Foreground = LumineDesign.Foreground,
-                FontWeight = FontWeight.SemiBold,
-                FontSize = LumineDesign.BodyFontSize
-            });
+                Text = title
+            };
+        titleText.Classes.Add(
+            "lumine-nav-placeholder-title");
+        stack.Children.Add(
+            titleText);
         stack.Children.Add(
             CreateHint(description));
         return stack;
