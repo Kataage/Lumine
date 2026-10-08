@@ -5738,6 +5738,131 @@ try
                         Dispatcher.UIThread.RunJobs();
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Exercise an actual owner/modal focus scope. The
+                        // creative archive flows must return focus after
+                        // both a completed action and a cancelled close.
+                        var creativeInvoker =
+                            new Button
+                            {
+                                Content = "Workを作成"
+                            };
+                        var alternateInvoker =
+                            new Button
+                            {
+                                Content = "別の操作"
+                            };
+                        var creativeOwnerPanel =
+                            new StackPanel();
+                        creativeOwnerPanel.Children.Add(
+                            creativeInvoker);
+                        creativeOwnerPanel.Children.Add(
+                            alternateInvoker);
+                        var creativeOwner =
+                            new Window
+                            {
+                                Width = 460,
+                                Height = 300,
+                                Content = creativeOwnerPanel
+                            };
+                        creativeOwner.Show();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            creativeInvoker.Focus(),
+                            "Creative modal invoking command could not accept focus.");
+
+                        var saveDialog =
+                            new Window
+                            {
+                                Width = 320,
+                                Height = 200,
+                                Content = new TextBlock
+                                {
+                                    Text = "Workを保存"
+                                }
+                            };
+                        var saved =
+                            CreativeArchiveDialogs.ShowWithFocusReturnAsync<string>(
+                                creativeOwner,
+                                saveDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            saveDialog.IsVisible
+                            && !saved.IsCompleted,
+                            "Creative modal did not open as an owned dialog.");
+                        saveDialog.Close("saved");
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await saved == "saved"
+                            && creativeInvoker.IsFocused,
+                            "Creative modal result/focus restoration failed after Save.");
+
+                        var cancelDialog =
+                            new Window
+                            {
+                                Width = 320,
+                                Height = 200
+                            };
+                        var cancelled =
+                            CreativeArchiveDialogs.ShowWithFocusReturnAsync<string>(
+                                creativeOwner,
+                                cancelDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        cancelDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await cancelled is null
+                            && creativeInvoker.IsFocused,
+                            "Creative modal did not restore invoking focus after Cancel or X-close.");
+
+                        // Do not restore a recycled thumbnail/command that
+                        // has left the owner tree while the modal was open.
+                        var detachedDialog =
+                            new Window
+                            {
+                                Width = 320,
+                                Height = 200
+                            };
+                        var detached =
+                            CreativeArchiveDialogs.ShowWithFocusReturnAsync<string>(
+                                creativeOwner,
+                                detachedDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        creativeOwnerPanel.Children.Remove(
+                            creativeInvoker);
+                        detachedDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await detached is null
+                            && !creativeInvoker.IsFocused,
+                            "Creative modal tried to restore a detached return target.");
+
+                        Require(
+                            alternateInvoker.Focus(),
+                            "Creative alternate invoking command could not accept focus.");
+                        var disabledDialog =
+                            new Window
+                            {
+                                Width = 320,
+                                Height = 200
+                            };
+                        var disabled =
+                            CreativeArchiveDialogs.ShowWithFocusReturnAsync<string>(
+                                creativeOwner,
+                                disabledDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        alternateInvoker.IsEnabled = false;
+                        disabledDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await disabled is null
+                            && !alternateInvoker.IsFocused,
+                            "Creative modal tried to restore a disabled return target.");
+                        creativeOwner.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     var dialogSize =
                         ProductDialogs.ResolveDialogSizeForSmoke(
                             340);
