@@ -4,7 +4,9 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using Avalonia.Media;
 using Lumine.Core;
 using Lumine.Library;
@@ -1339,7 +1341,12 @@ internal static class ProductNavigationViews
                             };
                         editFlyout.Closed +=
                             (_, _) =>
+                            {
                                 UpdateEditActionState();
+                                RestoreFocusAfterFlyoutClose(
+                                    edit,
+                                    editFlyout);
+                            };
                         editName.TextChanged +=
                             (_, _) =>
                                 UpdateEditActionState();
@@ -1463,7 +1470,12 @@ internal static class ProductNavigationViews
             };
         createFlyout.Closed +=
             (_, _) =>
+            {
                 UpdateCreateActionState();
+                RestoreFocusAfterFlyoutClose(
+                    add,
+                    createFlyout);
+            };
 
         cancelCreate.Click +=
             (_, _) =>
@@ -3040,6 +3052,46 @@ internal static class ProductNavigationViews
         stack.Children.Add(
             CreateHint(description));
         return stack;
+    }
+
+    private static void RestoreFocusAfterFlyoutClose(
+        Button origin,
+        Flyout flyout)
+    {
+        // Popup detach and LightDismiss can clear focus after Closed fires.
+        // Defer restoration until the popup is removed, but never override
+        // a user's subsequent click/Tab into a live command.
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (flyout.IsOpen
+                    || !origin.IsEffectivelyVisible
+                    || !origin.IsEnabled)
+                {
+                    return;
+                }
+
+                var owner = TopLevel.GetTopLevel(origin);
+                if (owner is null)
+                {
+                    return; // Tag rows may be recycled while closing.
+                }
+
+                var focused = owner.FocusManager?.GetFocusedElement();
+                if (focused is Control control
+                    && control.IsEffectivelyVisible
+                    && ReferenceEquals(
+                        TopLevel.GetTopLevel(control),
+                        owner))
+                {
+                    return; // A different, live command owns the focus.
+                }
+
+                origin.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            },
+            DispatcherPriority.Input);
     }
 
     private static string DescribeScanState(
