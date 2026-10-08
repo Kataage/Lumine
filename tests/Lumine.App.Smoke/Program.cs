@@ -8644,6 +8644,70 @@ try
                                         CaptureVisualEvidence(
                                             window,
                                             "browse-active-filter-900x600");
+
+                                        // The actual mounted per-condition chip
+                                        // must name the removal action, not
+                                        // merely display its condition and ×.
+                                        var chipControls =
+                                            window.BrowseControlsForSmoke;
+                                        var conditionChip =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        button.Classes.Contains(
+                                                            "lumine-chip"));
+                                        const string expectedRemovalName =
+                                            "タグ: browse-filter-smoke の絞り込みを解除";
+                                        var clearAllChip =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        button.Classes.Contains(
+                                                            "lumine-chip-clear"));
+                                        Require(
+                                            AutomationProperties.GetName(
+                                                conditionChip)
+                                                == expectedRemovalName
+                                            && string.Equals(
+                                                ToolTip.GetTip(
+                                                    conditionChip) as string,
+                                                expectedRemovalName,
+                                                StringComparison.Ordinal)
+                                            && AutomationProperties.GetName(
+                                                clearAllChip)
+                                                == "すべての絞り込みを解除"
+                                            && string.Equals(
+                                                ToolTip.GetTip(
+                                                    clearAllChip) as string,
+                                                "すべての絞り込みを解除",
+                                                StringComparison.Ordinal),
+                                            "Browse active-filter actions lack distinct, explicit removal names.");
+
+                                        var searchBeforeChipRemoval =
+                                            chipControls.State.SearchText;
+                                        var sortBeforeChipRemoval =
+                                            chipControls.State.SortOrder;
+                                        conditionChip.RaiseEvent(
+                                            new RoutedEventArgs(
+                                                Button.ClickEvent));
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            chipControls.State.TagNames.Count
+                                                == 0
+                                            && chipControls.State.SearchText
+                                                == searchBeforeChipRemoval
+                                            && chipControls.State.SortOrder
+                                                == sortBeforeChipRemoval
+                                            && !chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Any(
+                                                    button =>
+                                                        button.Classes.Contains(
+                                                            "lumine-chip")),
+                                            "Browse filter chip failed to remove only its condition.");
+
                                         await window.BrowseControlsForSmoke
                                             .ClearTagScopesAsync();
                                         Dispatcher.UIThread.RunJobs();
