@@ -7835,6 +7835,121 @@ try
                         window.IsFocusInsideLightboxForSmoke,
                         "Opening the lightbox did not move keyboard focus into the modal layer.");
 
+                    // Route keys through the actual mounted Viewer,
+                    // not a synthetic shortcut helper. Modified shortcuts
+                    // belong to the OS/parent; Shift+OemPlus remains '+'.
+                    var focusedKeyboardViewer =
+                        window.CurrentShell.DetailViewer;
+                    var metadataVisibilityProperty =
+                        focusedKeyboardViewer.GetType().GetProperty(
+                            "IsMetadataVisibleForSmoke",
+                            BindingFlags.Instance | BindingFlags.NonPublic)
+                        ?? throw new InvalidOperationException(
+                            "Viewer info visibility smoke contract missing.");
+                    bool ViewerInfoVisible() =>
+                        metadataVisibilityProperty.GetValue(
+                            focusedKeyboardViewer) is true;
+                    var originalInfoVisible = ViewerInfoVisible();
+                    var originalViewerZoom = focusedKeyboardViewer.Zoom;
+                    foreach (var (viewerKey, modifiers) in new[]
+                             {
+                                 (Key.Right, KeyModifiers.Control),
+                                 (Key.Left, KeyModifiers.Alt),
+                                 (Key.I, KeyModifiers.Control),
+                                 (Key.F11, KeyModifiers.Alt),
+                                 (Key.D0, KeyModifiers.Shift),
+                                 (Key.D1, KeyModifiers.Control),
+                                 (Key.OemPlus, KeyModifiers.Control),
+                                 (Key.OemMinus, KeyModifiers.Shift),
+                                 (Key.Add, KeyModifiers.Alt)
+                             })
+                    {
+                        var modifiedViewerKey = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = viewerKey,
+                            KeyModifiers = modifiers
+                        };
+                        focusedKeyboardViewer.RaiseEvent(modifiedViewerKey);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modifiedViewerKey.Handled
+                            && focusedKeyboardViewer.SelectedAssetIndex == 0
+                            && ViewerInfoVisible() == originalInfoVisible
+                            && Math.Abs(focusedKeyboardViewer.Zoom
+                                - originalViewerZoom) < 0.0001
+                            && !window.IsLightboxFullScreen
+                            && window.IsFocusInsideLightboxForSmoke,
+                            $"Focused Viewer stole {modifiers}+{viewerKey}.");
+                    }
+
+                    var preHandledViewerKey = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.I,
+                        Handled = true
+                    };
+                    focusedKeyboardViewer.RaiseEvent(preHandledViewerKey);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ViewerInfoVisible() == originalInfoVisible,
+                        "Focused Viewer toggled info for already-handled I.");
+
+                    // Plain I remains an owned Viewer accelerator.
+                    var plainInfo = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.I
+                    };
+                    focusedKeyboardViewer.RaiseEvent(plainInfo);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        plainInfo.Handled
+                        && ViewerInfoVisible() != originalInfoVisible,
+                        "Focused Viewer plain I did not toggle image info.");
+                    focusedKeyboardViewer.RaiseEvent(new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.I
+                    });
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ViewerInfoVisible() == originalInfoVisible,
+                        "Focused Viewer info did not return to its initial state.");
+
+                    // Keep literal '+' usable on layouts that require Shift.
+                    var shiftedPlus = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.OemPlus,
+                        KeyModifiers = KeyModifiers.Shift
+                    };
+                    focusedKeyboardViewer.RaiseEvent(shiftedPlus);
+                    for (var attempt = 0;
+                         attempt < 100 && (!shiftedPlus.Handled
+                             || focusedKeyboardViewer.Zoom
+                                 <= originalViewerZoom + 0.0001);
+                         attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(5);
+                    }
+                    Require(
+                        shiftedPlus.Handled
+                        && focusedKeyboardViewer.Zoom
+                            > originalViewerZoom + 0.0001,
+                        "Focused Viewer Shift+plus zoom accelerator regressed.");
+                    var plainFit = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.D0
+                    };
+                    focusedKeyboardViewer.RaiseEvent(plainFit);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        plainFit.Handled,
+                        "Focused Viewer plain 0 Fit accelerator regressed.");
+
                     for (var tabIndex = 0;
                          tabIndex < 12;
                          tabIndex++)
