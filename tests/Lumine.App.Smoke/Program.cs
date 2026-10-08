@@ -2268,6 +2268,108 @@ try
                     < TimeSpan.FromSeconds(2),
                 $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
 
+            // Keyboard focus deliberately moved during an asynchronous
+            // page load must win over the Load More focus handoff.
+            var delayedPublicationPage =
+                new TaskCompletionSource<PublicationPage>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+            var delayedPublicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    largePublications.Take(1).ToArray(),
+                    totalCount: 2,
+                    hasMore: true,
+                    loadMore: () => delayedPublicationPage.Task);
+            var otherOwnerAction = new Button
+            {
+                Content = "独立操作"
+            };
+            var delayedHost = new StackPanel();
+            delayedHost.Children.Add(otherOwnerAction);
+            delayedHost.Children.Add(delayedPublicationView);
+            var delayedWindow = new Window
+            {
+                Width = 420,
+                Height = 600,
+                Content = delayedHost
+            };
+            delayedWindow.Show();
+            Dispatcher.UIThread.RunJobs();
+            var delayedLoadMore =
+                delayedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        button.Content as string == "さらに読み込む");
+            Require(
+                delayedLoadMore.Focus(),
+                "Delayed Publication Load More could not take keyboard focus.");
+            delayedLoadMore.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Require(
+                otherOwnerAction.Focus(),
+                "Deliberate owner control could not take focus during Publication loading.");
+            delayedPublicationPage.SetResult(
+                new PublicationPage(
+                    largePublications.Skip(1).Take(1).ToArray(),
+                    NextCursor: null,
+                    TotalCount: 2));
+            for (var attempt = 0;
+                 attempt < 50
+                 && delayedLoadMore.IsVisible;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !delayedLoadMore.IsVisible
+                && otherOwnerAction.IsFocused
+                && delayedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<ListBox>()
+                    .Single()
+                    .ItemsSource
+                    ?.Cast<PublicationInfo>()
+                    .Count() == 2,
+                "Final Publication page stole deliberately changed owner focus.");
+
+            // Programmatic/pointer-style activation from an unfocused
+            // button must not transfer focus to the history list.
+            var pointerPublicationView =
+                ProductNavigationViews.CreatePublicationEntry(
+                    largePublications.Take(1).ToArray(),
+                    totalCount: 2,
+                    hasMore: true,
+                    loadMore: () => Task.FromResult(
+                        new PublicationPage(
+                            largePublications.Skip(1).Take(1).ToArray(),
+                            NextCursor: null,
+                            TotalCount: 2)));
+            var pointerHost = new StackPanel();
+            pointerHost.Children.Add(otherOwnerAction);
+            pointerHost.Children.Add(pointerPublicationView);
+            delayedWindow.Content = pointerHost;
+            Dispatcher.UIThread.RunJobs();
+            var pointerLoadMore =
+                pointerPublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        button.Content as string == "さらに読み込む");
+            Require(
+                otherOwnerAction.Focus(),
+                "Pointer-style Publication loading lost independent owner focus.");
+            pointerLoadMore.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !pointerLoadMore.IsVisible
+                && otherOwnerAction.IsFocused,
+                "Unfocused Publication Load More stole keyboard focus.");
+            delayedWindow.Close();
+            Dispatcher.UIThread.RunJobs();
+
             var pixivMetadataEditor =
                 new CreativePublicationPixivMetadataEditor();
             Require(
