@@ -4787,7 +4787,8 @@ try
             Require(
                 publicationFields.Length == expectedPublicationNames.Length
                 && publicationFields
-                    .Select(AutomationProperties.GetName)
+                    .Select(control =>
+                        AutomationProperties.GetName(control))
                     .SequenceEqual(
                         expectedPublicationNames,
                         StringComparer.Ordinal)
