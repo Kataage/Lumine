@@ -7711,21 +7711,60 @@ try
                     Require(
                         customRemoval is not null,
                         "Custom scan-extension editor did not expose the staged JFIF removal action.");
-                    customRemoval!.RaiseEvent(
+                    // Removing the keyboard-focused extension button
+                    // rebuilds the list. Preserve focus on the surviving
+                    // extension, then return to Add for the last removal.
+                    customExtensionInput.Text =
+                        "zzfocus";
+                    addCustomExtension.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        string.IsNullOrEmpty(customExtensionInput.Text)
+                        && customExtensionList.Children
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象 .zzfocus を削除"),
+                        "Settings failed to stage the second custom extension for focus regression.");
+                    Require(
+                        customRemoval!.Focus(),
+                        "Settings custom extension removal could not receive keyboard focus.");
+                    customRemoval.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    var survivingCustomRemoval =
+                        customExtensionList.Children
+                            .OfType<Button>()
+                            .Single(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象 .zzfocus を削除");
+                    Require(
+                        !customExtensionList.Children
+                            .OfType<Button>()
+                            .Any(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象 .jfif を削除")
+                        && survivingCustomRemoval.IsFocused,
+                        "Removing a focused Settings custom extension failed to focus the surviving extension.");
+                    Require(
+                        survivingCustomRemoval.Focus(),
+                        "The last Settings custom-extension removal could not receive focus.");
+                    survivingCustomRemoval.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         !customExtensionList.Children
                             .OfType<Button>()
-                            .Any(
-                                button =>
-                                    string.Equals(
-                                        AutomationProperties.GetName(
-                                            button),
-                                        "独自読み込み対象 .jfif を削除",
-                                        StringComparison.Ordinal)),
-                        "Custom scan-extension removal did not update the staged Settings state.");
+                            .Any()
+                        && addCustomExtension.IsFocused,
+                        "Removing the last Settings custom extension lost focus instead of returning to Add.");
 
                     Require(
                         settingsText.Any(block =>
