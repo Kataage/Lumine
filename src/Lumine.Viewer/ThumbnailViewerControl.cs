@@ -1252,7 +1252,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape)
+        if (e.Handled)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Escape
+            && e.KeyModifiers == KeyModifiers.None)
         {
             ClearSelection();
             e.Handled = true;
@@ -1260,6 +1266,7 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         if (_selectedIndex >= 0
+            && e.KeyModifiers == KeyModifiers.None
             && e.Key is Key.Enter or Key.Space)
         {
             AssetInvoked?.Invoke(
@@ -1270,7 +1277,8 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         if (_selectedIndex >= 0
-            && e.Key == Key.I)
+            && e.Key == Key.I
+            && e.KeyModifiers == KeyModifiers.None)
         {
             AssetDetailRequested?.Invoke(
                 this,
