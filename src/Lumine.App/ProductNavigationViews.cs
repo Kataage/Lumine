@@ -2764,12 +2764,13 @@ internal static class ProductNavigationViews
                 }
 
                 // The final page removes this command from the visual
-                // tree. Transfer keyboard focus only when this button
-                // really owned focus on invocation, never on pointer
-                // activation or after a newer owner focus choice.
+                // tree. Only hand off focus when this button was
+                // focused at invocation; mouse clicks can focus buttons
+                // too, so do not infer an input modality from IsFocused.
+                // A newer live owner focus choice must always win.
                 var owner =
                     TopLevel.GetTopLevel(loadMoreButton);
-                var invokedFromKeyboardFocus =
+                var invokedWhileFocused =
                     loadMoreButton.IsFocused
                     && owner is not null;
 
@@ -2812,7 +2813,7 @@ internal static class ProductNavigationViews
                     loadMoreButton.IsEnabled =
                         loadMoreButton.IsVisible;
 
-                    if (invokedFromKeyboardFocus)
+                    if (invokedWhileFocused)
                     {
                         // On a successful final page, the list remains
                         // visible while Load More disappears. If loading
