@@ -7789,6 +7789,13 @@ try
                         && addCustomExtension.IsFocused,
                         "Removing the last Settings custom extension lost focus instead of returning to Add.");
 
+                    // Restore the initial Settings viewport after the
+                    // keyboard regression so existing screenshot evidence
+                    // still captures the top-level settings hierarchy.
+                    settingsScroll!.Offset =
+                        new Vector(0, 0);
+                    Dispatcher.UIThread.RunJobs();
+
                     Require(
                         settingsText.Any(block =>
                             string.Equals(
