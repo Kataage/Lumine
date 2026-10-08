@@ -4275,8 +4275,8 @@ try
                     "整理" =>
                         ((bulkFlyout.Content as ScrollViewer)?.Content
                             as StackPanel)?.Children
-                            .OfType<StackPanel>().FirstOrDefault()?
-                            .Children.OfType<Button>().FirstOrDefault(),
+                            .OfType<StackPanel>().FirstOrDefault()?.Children
+                            .OfType<Button>().FirstOrDefault(),
                     "その他" =>
                         ((bulkFlyout.Content as ScrollViewer)?.Content
                             as StackPanel)?.Children
