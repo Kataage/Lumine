@@ -3673,8 +3673,9 @@ try
                 shell.IsBulkSelectionBarVisible
                 && shell.BulkSelectionCommandsAccessibleForSmoke
                 && shell.SelectionToolbarIsContainedForSmoke
-                && shell.SelectionToolbarAvoidsInspectorForSmoke,
-                "Grouped bulk toolbar commands overflowed the canvas or obscured the Inspector.");
+                && shell.SelectionToolbarAvoidsInspectorForSmoke
+                && shell.SelectionToolbarHeightForSmoke is > 0 and < 101,
+                "Grouped bulk toolbar commands overflowed, obscured the Inspector or left excessive empty chrome.");
 
             if (visualOutputDirectory is not null)
             {
@@ -6728,6 +6729,26 @@ try
                                                 Require(
                                                     flyout.IsOpen,
                                                     "Scaled bulk menu did not open.");
+                                                if (menuName == "整理")
+                                                {
+                                                    var panel =
+                                                        (flyout.Content as ScrollViewer)?
+                                                            .Content as StackPanel;
+                                                    Require(
+                                                        panel is not null
+                                                        && panel.GetVisualDescendants()
+                                                            .OfType<ComboBox>()
+                                                            .Any(box =>
+                                                                AutomationProperties.GetName(box)
+                                                                    == "選択画像のカラーを変更")
+                                                        && !panel.GetVisualDescendants()
+                                                            .OfType<Button>()
+                                                            .Any(button =>
+                                                                AutomationProperties.GetName(button)?
+                                                                    .StartsWith("カラー:", StringComparison.Ordinal)
+                                                                    == true),
+                                                        "225% color selection fell back to tiny swatches instead of labeled choices.");
+                                                }
                                                 CaptureVisualEvidence(
                                                     window,
                                                     menuName == "整理"
