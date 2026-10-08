@@ -8689,10 +8689,70 @@ try
                                             chipControls.State.SearchText;
                                         var sortBeforeChipRemoval =
                                             chipControls.State.SortOrder;
-                                        conditionChip.RaiseEvent(
+
+                                        // Two active tags exercise the
+                                        // surviving-chip focus handoff,
+                                        // before clear-all exercises the
+                                        // stable Filter-command fallback.
+                                        await chipControls.ToggleTagScopeAsync(
+                                            "zz-browse-focus-smoke");
+                                        Dispatcher.UIThread.RunJobs();
+                                        var focusedRemovalChip =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        AutomationProperties.GetName(
+                                                            button)
+                                                            == expectedRemovalName);
+                                        Require(
+                                            focusedRemovalChip.Focus(),
+                                            "Browse filter chip could not receive keyboard focus.");
+                                        focusedRemovalChip.RaiseEvent(
                                             new RoutedEventArgs(
                                                 Button.ClickEvent));
                                         Dispatcher.UIThread.RunJobs();
+                                        var survivingChip =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        AutomationProperties.GetName(
+                                                            button)
+                                                            == "タグ: zz-browse-focus-smoke の絞り込みを解除");
+                                        Require(
+                                            chipControls.State.TagNames.SequenceEqual(
+                                                ["zz-browse-focus-smoke"],
+                                                StringComparer.Ordinal)
+                                            && survivingChip.IsFocused
+                                            && chipControls.State.SearchText
+                                                == searchBeforeChipRemoval
+                                            && chipControls.State.SortOrder
+                                                == sortBeforeChipRemoval,
+                                            "Removing the focused Browse filter chip did not focus the surviving condition or preserve Search/Sort.");
+
+                                        var focusedClearAll =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        button.Classes.Contains(
+                                                            "lumine-chip-clear"));
+                                        Require(
+                                            focusedClearAll.Focus(),
+                                            "Browse clear-all chip could not receive keyboard focus.");
+                                        focusedClearAll.RaiseEvent(
+                                            new RoutedEventArgs(
+                                                Button.ClickEvent));
+                                        Dispatcher.UIThread.RunJobs();
+                                        var restoredFilterCommand =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        AutomationProperties.GetName(
+                                                            button)
+                                                            == "フィルターを開く");
                                         Require(
                                             chipControls.State.TagNames.Count
                                                 == 0
@@ -8705,9 +8765,9 @@ try
                                                 .Any(
                                                     button =>
                                                         button.Classes.Contains(
-                                                            "lumine-chip")),
-                                            "Browse filter chip failed to remove only its condition.");
-
+                                                            "lumine-chip"))
+                                            && restoredFilterCommand.IsFocused,
+                                            "Clearing focused Browse chips lost keyboard focus or changed unrelated filters.");
                                         await window.BrowseControlsForSmoke
                                             .ClearTagScopesAsync();
                                         Dispatcher.UIThread.RunJobs();
