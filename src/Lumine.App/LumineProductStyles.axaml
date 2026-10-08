@@ -7,6 +7,42 @@
     Content should dominate; controls gain contrast only for interaction,
     selection and commitment.
   -->
+  <!-- Core Viewer runtime owns geometry and behavior; the theme owns resting chrome. -->
+  <Style Selector="UserControl.lumine-canvas-shell">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Background}" />
+  </Style>
+  <Style Selector="Grid.lumine-canvas-grid">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Background}" />
+  </Style>
+  <Style Selector="Border.lumine-canvas-surface">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Background}" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="Border.lumine-inspector-surface">
+    <Setter Property="Background" Value="{DynamicResource Lumine.Surface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Lumine.PanelRadius}" />
+  </Style>
+  <Style Selector="TextBlock.lumine-selection-count">
+    <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="StackPanel.lumine-bulk-summary">
+    <Setter Property="Spacing" Value="8" />
+  </Style>
+  <Style Selector="StackPanel.lumine-bulk-layout">
+    <Setter Property="Spacing" Value="4" />
+    <Setter Property="Margin" Value="8,6" />
+  </Style>
+  <Style Selector="Border.lumine-bulk-selection-surface">
+    <Setter Property="Background" Value="{DynamicResource Lumine.SurfaceRaised}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Lumine.PanelRadius}" />
+    <Setter Property="Padding" Value="2" />
+  </Style>
+
   <Style Selector="Button.lumine-control">
     <Setter Property="MinHeight" Value="{DynamicResource Lumine.ControlHeight}" />
     <Setter Property="Padding" Value="{DynamicResource Lumine.ControlPadding}" />

@@ -111,35 +111,25 @@ internal sealed class CoreViewerShell : UserControl
                 Width = 360,
                 MinWidth = 300,
                 MaxWidth = 400,
-                Background = LumineDesign.Surface,
-                BorderBrush = LumineDesign.BorderStrong,
-                BorderThickness =
-                    new Thickness(1),
-                CornerRadius =
-                    new CornerRadius(
-                        LumineDesign.PanelRadius),
                 ClipToBounds = true,
                 IsVisible = false,
                 Child = _contextDetail
             };
+        _contextSurface.Classes.Add("lumine-inspector-surface");
 
-        var focusedLayout =
-            new Grid
-            {
-                Background = LumineDesign.Background
-            };
+        var focusedLayout = new Grid();
+        focusedLayout.Classes.Add("lumine-canvas-grid");
         focusedLayout.Children.Add(_detail);
 
         _focusedSurface =
             new Border
             {
-                Background = LumineDesign.Background,
-                Padding = new Thickness(0),
                 IsVisible = false,
                 Focusable = true,
                 ClipToBounds = true,
                 Child = focusedLayout
             };
+        _focusedSurface.Classes.Add("lumine-canvas-surface");
         _focusedSurface.SetValue(
             KeyboardNavigation.TabNavigationProperty,
             KeyboardNavigationMode.Cycle);
@@ -163,26 +153,23 @@ internal sealed class CoreViewerShell : UserControl
         _selectionCount =
             new TextBlock
             {
-                Foreground = LumineDesign.Foreground,
-                FontWeight = FontWeight.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center
             };
+        _selectionCount.Classes.Add("lumine-selection-count");
         _selectionMetadataSummary =
             new TextBlock
             {
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+        _selectionMetadataSummary.Classes.Add("lumine-muted-caption");
         _bulkStatus =
             new TextBlock
             {
-                Foreground = LumineDesign.MutedForeground,
-                FontSize = LumineDesign.CaptionFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+        _bulkStatus.Classes.Add("lumine-muted-caption");
         _selectionBar = CreateSelectionBar();
         _selectionBar.IsVisible = false;
 
@@ -265,8 +252,7 @@ internal sealed class CoreViewerShell : UserControl
         _grid.AssetContextRequested += OnAssetContextRequested;
         KeyDown += OnShellKeyDown;
         Focusable = true;
-
-        Background = LumineDesign.Background;
+        Classes.Add("lumine-canvas-shell");
 
         if (runtime.AssetCount == 0)
         {
@@ -277,21 +263,16 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        var gridSurface =
-            new Border
-            {
-                Background = LumineDesign.Background,
-                Padding = new Thickness(0),
-                Child = _grid
-            };
+        var gridSurface = new Border { Child = _grid };
+        gridSurface.Classes.Add("lumine-canvas-surface");
 
         _browseViewer =
             new Grid
             {
-                Background = LumineDesign.Background,
                 ColumnDefinitions =
                     new ColumnDefinitions("*")
             };
+        _browseViewer.Classes.Add("lumine-canvas-grid");
         _browseViewer.Children.Add(
             gridSurface);
         Grid.SetColumn(
@@ -312,11 +293,8 @@ internal sealed class CoreViewerShell : UserControl
         ApplyInspectorLayout(
             Math.Max(1100, Bounds.Width));
 
-        var browseLayout =
-            new Grid
-            {
-                Background = LumineDesign.Background
-            };
+        var browseLayout = new Grid();
+        browseLayout.Classes.Add("lumine-canvas-grid");
         browseLayout.Children.Add(
             _browseViewer);
 
@@ -333,11 +311,8 @@ internal sealed class CoreViewerShell : UserControl
         browseLayout.Children.Add(
             _selectionBar);
 
-        var layers =
-            new Grid
-            {
-                Background = LumineDesign.Background
-            };
+        var layers = new Grid();
+        layers.Classes.Add("lumine-canvas-grid");
         layers.Children.Add(
             browseLayout);
 
@@ -1643,45 +1618,23 @@ internal sealed class CoreViewerShell : UserControl
             {
                 Orientation =
                     Orientation.Horizontal,
-                Spacing =
-                    LumineDesign.Space8,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
+        summary.Classes.Add("lumine-bulk-summary");
         summary.Children.Add(_selectionCount);
         summary.Children.Add(
             _selectionMetadataSummary);
         summary.Children.Add(_bulkStatus);
 
-        var root =
-            new StackPanel
-            {
-                Spacing =
-                    LumineDesign.Space4,
-                Margin =
-                    new Thickness(
-                        LumineDesign.Space8,
-                        LumineDesign.Space6)
-            };
+        var root = new StackPanel();
+        root.Classes.Add("lumine-bulk-layout");
         root.Children.Add(summary);
         root.Children.Add(_bulkActions);
 
-        return new Border
-        {
-            Background =
-                LumineDesign.SurfaceRaised,
-            BorderBrush =
-                LumineDesign.BorderStrong,
-            BorderThickness =
-                new Thickness(1),
-            CornerRadius =
-                new CornerRadius(
-                    LumineDesign.PanelRadius),
-            Padding =
-                new Thickness(
-                    LumineDesign.Space2),
-            Child = root
-        };
+        var bar = new Border { Child = root };
+        bar.Classes.Add("lumine-bulk-selection-surface");
+        return bar;
     }
 
     internal async Task SyncTagConsumersAsync()
