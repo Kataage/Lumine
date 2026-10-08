@@ -8689,10 +8689,21 @@ try
                                             chipControls.State.SearchText;
                                         var sortBeforeChipRemoval =
                                             chipControls.State.SortOrder;
+                                        Require(
+                                            conditionChip.Focus(),
+                                            "Browse filter chip could not receive keyboard focus.");
                                         conditionChip.RaiseEvent(
                                             new RoutedEventArgs(
                                                 Button.ClickEvent));
                                         Dispatcher.UIThread.RunJobs();
+                                        var restoredFilterCommand =
+                                            chipControls.GetVisualDescendants()
+                                                .OfType<Button>()
+                                                .Single(
+                                                    button =>
+                                                        AutomationProperties.GetName(
+                                                            button)
+                                                            == "フィルターを開く");
                                         Require(
                                             chipControls.State.TagNames.Count
                                                 == 0
@@ -8705,8 +8716,9 @@ try
                                                 .Any(
                                                     button =>
                                                         button.Classes.Contains(
-                                                            "lumine-chip")),
-                                            "Browse filter chip failed to remove only its condition.");
+                                                            "lumine-chip"))
+                                            && restoredFilterCommand.IsFocused,
+                                            "Removing the focused Browse filter chip lost keyboard focus or changed unrelated filters.");
 
                                         await window.BrowseControlsForSmoke
                                             .ClearTagScopesAsync();
