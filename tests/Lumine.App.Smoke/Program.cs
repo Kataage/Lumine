@@ -1314,7 +1314,7 @@ try
                 && manageNamesByLibrary.All(button =>
                     button.IsEffectivelyVisible)
                 && manageNamesByLibrary
-                    .Select(AutomationProperties.GetName)
+                    .Select(button => AutomationProperties.GetName(button))
                     .Distinct(StringComparer.Ordinal)
                     .Count() == navLibraries.Length,
                 "Library Manage accessible names were not associated with their individual rows.");
