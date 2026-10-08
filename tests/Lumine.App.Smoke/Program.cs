@@ -4754,10 +4754,55 @@ try
                     == firstContextAsset.Id,
                 "Metadata editor save was not immediately visible to composed search/filter queries.");
 
-            shell.HideContextDetail();
+            // Explicit Inspector closure must return keyboard focus to
+            // the selected thumbnail, not merely to the grid container.
+            // Exercise the real close command after focusing an Inspector
+            // tab so this catches the full cross-surface focus transition.
+            var inspectorReturnIndex =
+                shell.GridViewer.SelectedAssetIndex;
+            var inspectorCloseButton =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Button>()
+                    .FirstOrDefault(button =>
+                        string.Equals(
+                            AutomationProperties.GetName(button),
+                            "詳細を閉じる",
+                            StringComparison.Ordinal));
             Require(
-                !shell.IsContextDetailVisible,
-                "Contextual detail panel did not return the workspace to full browse width.");
+                inspectorReturnIndex >= 0
+                && inspectorCloseButton is not null
+                && inspectorKeyboardTabs[0].Focus(),
+                "Inspector close keyboard smoke could not establish its invoking asset or tab focus.");
+            inspectorCloseButton!.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            for (var focusAttempt = 0;
+                 focusAttempt < 30
+                 && !shell.IsAssetFocusedForSmoke(inspectorReturnIndex);
+                 focusAttempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Require(
+                !shell.IsContextDetailVisible
+                && shell.IsAssetFocusedForSmoke(inspectorReturnIndex),
+                "Closing Inspector did not restore focus to the selected, virtualization-aware asset tile.");
+
+            // Automatic/query-driven hides must keep their existing
+            // grid-container fallback instead of focusing a stale tile.
+            await shell.ShowContextDetailAsync();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                shell.IsContextDetailVisible
+                && inspectorKeyboardTabs[0].Focus(),
+                "Inspector did not reopen with a focusable tab for automatic-hide smoke.");
+            shell.HideContextDetail();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !shell.IsContextDetailVisible
+                && shell.GridViewer.IsFocused,
+                "Automatic Inspector dismissal unexpectedly stole selected-tile focus instead of keeping grid fallback.");
 
             await shell.OpenFocusedViewAsync(0);
             Dispatcher.UIThread.RunJobs();
