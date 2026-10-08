@@ -159,16 +159,34 @@ internal static class ProductDialogs
     {
         ArgumentNullException.ThrowIfNull(owner);
 
-        if (focusReturn is
-            { IsEnabled: true, IsEffectivelyVisible: true }
-            && ReferenceEquals(
+        if (focusReturn is not
+                { IsEnabled: true, IsEffectivelyVisible: true }
+            || !ReferenceEquals(
                 TopLevel.GetTopLevel(focusReturn),
                 owner))
         {
-            focusReturn.Focus(
-                NavigationMethod.Unspecified,
-                KeyModifiers.None);
+            return;
         }
+
+        // Returning from a modal is asynchronous. Another live command
+        // may have received focus during dismissal; that later choice
+        // takes precedence over the original invoking command.
+        var current =
+            owner.FocusManager?.GetFocusedElement();
+        if (current is Control live
+            && !ReferenceEquals(live, focusReturn)
+            && live.IsEnabled
+            && live.IsEffectivelyVisible
+            && ReferenceEquals(
+                TopLevel.GetTopLevel(live),
+                owner))
+        {
+            return;
+        }
+
+        focusReturn.Focus(
+            NavigationMethod.Unspecified,
+            KeyModifiers.None);
     }
 
     internal static Size ResolveDialogSizeForSmoke(
