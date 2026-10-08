@@ -1092,9 +1092,7 @@ internal static class ProductNavigationViews
                         var name =
                             new TextBlock
                             {
-                                Text = isSelected
-                                    ? $"✓ {tag.Name}"
-                                    : tag.Name,
+                                Text = tag.Name,
                                 Foreground =
                                     isSelected
                                         ? LumineDesign.Foreground
@@ -1132,22 +1130,31 @@ internal static class ProductNavigationViews
                             {
                                 ColumnDefinitions =
                                     new ColumnDefinitions(
-                                        "Auto,*,Auto"),
+                                        "Auto,Auto,*,Auto"),
                                 ColumnSpacing =
                                     LumineDesign.Space6
                             };
                         content.Children.Add(
                             colorDot);
-                        Grid.SetColumn(
-                            name,
-                            1);
-                        content.Children.Add(
-                            name);
-                        Grid.SetColumn(
-                            count,
-                            2);
-                        content.Children.Add(
-                            count);
+                        if (isSelected)
+                        {
+                            // A dedicated gutter keeps ✓ visible even when
+                            // a long tag name is fully ellipsized at 225%.
+                            var marker = new TextBlock
+                            {
+                                Text = "✓",
+                                VerticalAlignment =
+                                    VerticalAlignment.Center
+                            };
+                            marker.Classes.Add(
+                                "lumine-tag-selection-marker");
+                            Grid.SetColumn(marker, 1);
+                            content.Children.Add(marker);
+                        }
+                        Grid.SetColumn(name, 2);
+                        content.Children.Add(name);
+                        Grid.SetColumn(count, 3);
+                        content.Children.Add(count);
 
                         if (!manageMode)
                         {
@@ -1188,14 +1195,27 @@ internal static class ProductNavigationViews
                             return button;
                         }
 
+                        var stackedManageActions =
+                            LumineVisualMetrics.TextScaleFactor >= 1.75;
                         var row =
                             new Grid
                             {
                                 ColumnDefinitions =
                                     new ColumnDefinitions(
-                                        "*,Auto,Auto"),
+                                        stackedManageActions
+                                            ? "*"
+                                            : "*,Auto,Auto"),
+                                RowDefinitions =
+                                    new RowDefinitions(
+                                        stackedManageActions
+                                            ? "Auto,Auto"
+                                            : "Auto"),
                                 ColumnSpacing =
                                     LumineDesign.Space6,
+                                RowSpacing =
+                                    stackedManageActions
+                                        ? LumineDesign.Space4
+                                        : 0,
                                 HorizontalAlignment =
                                     HorizontalAlignment.Stretch
                             };
@@ -1440,12 +1460,6 @@ internal static class ProductNavigationViews
                                 }
                             };
 
-                        Grid.SetColumn(
-                            edit,
-                            1);
-                        row.Children.Add(
-                            edit);
-
                         var remove =
                             LumineDesign.ConfigureDangerButton(
                                 new Button
@@ -1456,11 +1470,27 @@ internal static class ProductNavigationViews
                                 });
                         remove.Classes.Add(
                             "lumine-compact");
-                        Grid.SetColumn(
-                            remove,
-                            2);
-                        row.Children.Add(
-                            remove);
+                        if (stackedManageActions)
+                        {
+                            var actions = new StackPanel
+                            {
+                                Orientation =
+                                    Orientation.Horizontal
+                            };
+                            actions.Classes.Add(
+                                "lumine-tag-manage-actions");
+                            actions.Children.Add(edit);
+                            actions.Children.Add(remove);
+                            Grid.SetRow(actions, 1);
+                            row.Children.Add(actions);
+                        }
+                        else
+                        {
+                            Grid.SetColumn(edit, 1);
+                            row.Children.Add(edit);
+                            Grid.SetColumn(remove, 2);
+                            row.Children.Add(remove);
+                        }
                         AttachAsync(
                             remove,
                             () => deleteTag(tag),
