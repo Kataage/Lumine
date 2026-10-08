@@ -6677,6 +6677,73 @@ try
                             "Ctrl+F",
                             StringComparison.Ordinal),
                         "Browse search did not expose its Ctrl+F accelerator metadata.");
+                    // Dispatch through a selected thumbnail, not the
+                    // Window, so thumbnail -> shell -> MainWindow bubbling
+                    // exercises real keyboard accelerator precedence.
+                    var shortcutViewer =
+                        window.CurrentShell!.GridViewer;
+                    shortcutViewer.SelectAsset(0);
+                    Dispatcher.UIThread.RunJobs();
+                    var shortcutTile =
+                        shortcutViewer.GetAssetFocusTarget(0)
+                        ?? throw new InvalidOperationException(
+                            "Shortcut smoke could not resolve a realized thumbnail.");
+                    Require(
+                        shortcutViewer.FocusAsset(0)
+                        && shortcutViewer.SelectedAssetCount > 0,
+                        "Keyboard shortcut smoke did not focus a selected thumbnail.");
+
+                    foreach (var (modifiedKey, modifiers) in new[]
+                             {
+                                 (Key.F, KeyModifiers.Alt),
+                                 (Key.F, KeyModifiers.Shift),
+                                 (Key.I, KeyModifiers.Control),
+                                 (Key.D1, KeyModifiers.Control),
+                                 (Key.Delete, KeyModifiers.Shift),
+                                 (Key.Enter, KeyModifiers.Alt),
+                                 (Key.A, KeyModifiers.Control
+                                     | KeyModifiers.Shift),
+                                 (Key.F, KeyModifiers.Control
+                                     | KeyModifiers.Shift)
+                             })
+                    {
+                        var modifiedKeyEvent =
+                            new KeyEventArgs
+                            {
+                                RoutedEvent = InputElement.KeyDownEvent,
+                                Key = modifiedKey,
+                                KeyModifiers = modifiers
+                            };
+                        shortcutTile.RaiseEvent(modifiedKeyEvent);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modifiedKeyEvent.Handled
+                            && shortcutViewer.SelectedAssetCount > 0
+                            && !window.CurrentShell.IsContextDetailVisible,
+                            $"Thumbnail/Shell hijacked modified key {modifiers}+{modifiedKey} or opened Inspector.");
+                    }
+
+                    var findFromSelectedThumbnail =
+                        new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.F,
+                            KeyModifiers = KeyModifiers.Control
+                        };
+                    shortcutTile.RaiseEvent(findFromSelectedThumbnail);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        findFromSelectedThumbnail.Handled
+                        && ReferenceEquals(
+                            window.FocusManager.GetFocusedElement(),
+                            browseSearch)
+                        && shortcutViewer.SelectedAssetCount > 0
+                        && !window.CurrentShell.IsContextDetailVisible,
+                        "Ctrl+F from selected thumbnail toggled Favorite or failed to bubble to Browse search.");
+
+                    // Keep the existing Window-level shortcut smoke too,
+                    // independent of the routed child-origin regression.
+                    shortcutViewer.FocusAsset(0);
                     window.RaiseEvent(
                         new KeyEventArgs
                         {
@@ -6691,7 +6758,7 @@ try
                         ReferenceEquals(
                             window.FocusManager.GetFocusedElement(),
                             browseSearch),
-                        "Ctrl+F did not move focus into Browse search.");
+                        "Window-level Ctrl+F no longer focused Browse search.");
 
                     window.BrowseControlsForSmoke!
                         .OpenDisplayFlyoutForSmoke();
