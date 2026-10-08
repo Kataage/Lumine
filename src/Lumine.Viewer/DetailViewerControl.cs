@@ -2108,6 +2108,17 @@ public sealed class DetailViewerControl : UserControl
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Viewer accelerators only own their exact key combinations.
+        // Preserve Shift+OemPlus, which types '+' on some keyboards,
+        // without hijacking Ctrl/Alt-modified commands or handled events.
+        if (e.Handled
+            || (e.KeyModifiers != KeyModifiers.None
+                && !(e.Key == Key.OemPlus
+                    && e.KeyModifiers == KeyModifiers.Shift)))
+        {
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Left:
