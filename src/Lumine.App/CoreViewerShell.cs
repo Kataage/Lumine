@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Lumine.Core;
 using Lumine.Library;
 using Lumine.Viewer;
 
