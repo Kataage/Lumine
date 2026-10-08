@@ -2646,6 +2646,19 @@ try
                         .GetVisualDescendants()
                         .OfType<ListBox>()
                         .Single();
+                var compactTagSearch =
+                    compactTagsView
+                        .GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .Single(box =>
+                            box.PlaceholderText == "タグを検索");
+                Require(
+                    AutomationProperties.GetName(compactTagSearch)
+                        == "タグを検索"
+                    && AutomationProperties.GetName(compactTagList)
+                        == "タグ一覧",
+                    "Tag navigation search/list lack explicit accessible names.");
+
                 var compactCreateFlyout =
                     newTagButton.Flyout as Flyout
                     ?? throw new InvalidOperationException(
@@ -2680,8 +2693,10 @@ try
                                     "新しいタグ名",
                                     StringComparison.Ordinal));
                 Require(
-                    compactCreateName.IsFocused,
-                    "Tag Create flyout did not move keyboard focus to its name editor.");
+                    compactCreateName.IsFocused
+                    && AutomationProperties.GetName(compactCreateName)
+                        == "新しいタグの名前",
+                    "Tag Create flyout did not focus its explicitly named editor.");
                 compactCreateFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
                 Require(
@@ -2950,8 +2965,10 @@ try
                                     StringComparison.Ordinal));
 
                 Require(
-                    editName.IsFocused,
-                    "Tag Edit flyout did not focus the edit-name field.");
+                    editName.IsFocused
+                    && AutomationProperties.GetName(editName)
+                        == "編集するタグの名前",
+                    "Tag Edit flyout did not focus its explicitly named editor.");
 
                 Require(
                     editFlyout.IsOpen
