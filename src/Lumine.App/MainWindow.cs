@@ -915,6 +915,16 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // A wide pinned workspace recreates its docked sidebar during
+        // layout. Explicit dismissal must first disable that pin state,
+        // otherwise the pane immediately reappears.
+        if (_navigationPinned
+            && !_compactNavigationLayout)
+        {
+            _navigationPinned = false;
+            UpdateNavigationPinVisual();
+        }
+
         _navigationPane.IsVisible = false;
         ApplyNavigationLayout(
             ResolveLayoutWidth());
