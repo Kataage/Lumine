@@ -4752,6 +4752,67 @@ try
                                 "履歴を削除…",
                                 StringComparison.Ordinal)),
                 "Publication navigation did not expose reusable profile management and history maintenance.");
+
+            var publicationSettingsCommand =
+                managedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<DropDownButton>()
+                    .Single(button =>
+                        button.Content as string == "投稿先設定");
+            var publicationSettingsFlyout =
+                publicationSettingsCommand.Flyout as Flyout
+                ?? throw new InvalidOperationException(
+                    "Publication settings action has no flyout.");
+            var publicationSettingsForm =
+                (publicationSettingsFlyout.Content as ScrollViewer)?
+                    .Content as StackPanel
+                ?? throw new InvalidOperationException(
+                    "Publication settings flyout has no editor.");
+            var publicationDestinationName =
+                publicationSettingsForm.Children
+                    .OfType<TextBox>()
+                    .First();
+            Require(
+                publicationSettingsCommand.Focus(),
+                "Publication settings invoking command did not accept focus.");
+            publicationSettingsFlyout.ShowAt(
+                publicationSettingsCommand);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                publicationSettingsFlyout.IsOpen
+                && publicationDestinationName.IsFocused,
+                "Publication settings failed to focus the first editable destination.");
+            publicationSettingsFlyout.Hide();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !publicationSettingsFlyout.IsOpen
+                && publicationSettingsCommand.IsFocused,
+                "Publication settings did not return focus to its invoking command.");
+
+            // Dismissal must not steal a deliberate choice of another
+            // still-attached owner-window command.
+            var publicationHistoryAction =
+                managedPublicationView
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .First(button =>
+                        button.Content as string == "履歴を削除…");
+            Require(
+                publicationSettingsCommand.Focus(),
+                "Publication settings trigger failed to refocus.");
+            publicationSettingsFlyout.ShowAt(
+                publicationSettingsCommand);
+            Dispatcher.UIThread.RunJobs();
+            publicationSettingsFlyout.Hide();
+            Require(
+                publicationHistoryAction.Focus(),
+                "Publication history action could not take deliberate focus.");
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                publicationHistoryAction.IsFocused
+                && !publicationSettingsCommand.IsFocused,
+                "Publication flyout restoration stole newer history action focus.");
+
             managedPublicationWindow.Close();
             Dispatcher.UIThread.RunJobs();
 
