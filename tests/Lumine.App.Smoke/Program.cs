@@ -6089,6 +6089,142 @@ try
                         Dispatcher.UIThread.RunJobs();
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Exercise the real Settings diagnostics action,
+                        // not a synthetic focus helper. Its own handler
+                        // disables the command until the modal returns.
+                        Window? settingsDiagnosticsOwner = null;
+                        Window? settingsDiagnosticsModal = null;
+                        Button? settingsDiagnosticsAction = null;
+                        var invokedWhileDisabled = false;
+                        var settingsDiagnosticsPage =
+                            ProductSettingsView.Create(
+                                window.SettingsSnapshot,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                async () =>
+                                {
+                                    invokedWhileDisabled =
+                                        settingsDiagnosticsAction is
+                                            { IsEnabled: false };
+                                    settingsDiagnosticsModal =
+                                        new Window
+                                        {
+                                            Width = 320,
+                                            Height = 200,
+                                            Content = new TextBlock
+                                            {
+                                                Text = "診断情報"
+                                            }
+                                        };
+                                    await settingsDiagnosticsModal
+                                        .ShowDialog(settingsDiagnosticsOwner!);
+                                });
+                        settingsDiagnosticsOwner =
+                            new Window
+                            {
+                                Width = 900,
+                                Height = 900,
+                                Content = settingsDiagnosticsPage
+                            };
+                        settingsDiagnosticsOwner.Show();
+                        Dispatcher.UIThread.RunJobs();
+                        var diagnosticsDetails =
+                            settingsDiagnosticsPage
+                                .GetVisualDescendants()
+                                .OfType<Expander>()
+                                .FirstOrDefault(x =>
+                                    string.Equals(
+                                        x.Header as string,
+                                        "保存場所と診断の詳細",
+                                        StringComparison.Ordinal));
+                        Require(
+                            diagnosticsDetails is not null,
+                            "Settings diagnostics details expander is missing.");
+                        diagnosticsDetails!.IsExpanded = true;
+                        Dispatcher.UIThread.RunJobs();
+                        settingsDiagnosticsAction =
+                            settingsDiagnosticsPage
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .FirstOrDefault(x =>
+                                    string.Equals(
+                                        x.Content as string,
+                                        "診断情報を開く",
+                                        StringComparison.Ordinal));
+                        Require(
+                            settingsDiagnosticsAction is not null
+                            && settingsDiagnosticsAction.Focus(),
+                            "Settings diagnostics invoking command was not focusable.");
+
+                        settingsDiagnosticsAction!.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            invokedWhileDisabled
+                            && !settingsDiagnosticsAction.IsEnabled
+                            && settingsDiagnosticsModal is { IsVisible: true },
+                            "Settings diagnostics action was not disabled while its real modal was open.");
+                        settingsDiagnosticsModal!.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            settingsDiagnosticsAction.IsEnabled
+                            && settingsDiagnosticsAction.IsFocused,
+                            "Settings diagnostics failed to restore initiating focus after re-enabling its command.");
+
+                        // The Settings page may change while diagnostics is
+                        // open. Do not send keyboard focus to a hidden action.
+                        Require(
+                            settingsDiagnosticsAction.Focus(),
+                            "Settings diagnostics action lost focus before hidden-target regression.");
+                        settingsDiagnosticsAction.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            settingsDiagnosticsModal is { IsVisible: true }
+                            && !settingsDiagnosticsAction.IsEnabled,
+                            "Settings diagnostics hidden-target modal failed to open.");
+                        settingsDiagnosticsAction.IsVisible = false;
+                        settingsDiagnosticsModal!.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            settingsDiagnosticsAction.IsEnabled
+                            && !settingsDiagnosticsAction.IsFocused,
+                            "Settings diagnostics restored focus to a hidden invoking command.");
+
+                        settingsDiagnosticsAction.IsVisible = true;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            settingsDiagnosticsAction.Focus(),
+                            "Settings diagnostics command did not recover after visibility reset.");
+                        settingsDiagnosticsAction.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            settingsDiagnosticsModal is { IsVisible: true },
+                            "Settings diagnostics detached-target modal failed to open.");
+                        var settingsActionParent =
+                            settingsDiagnosticsAction.GetVisualParent()
+                                as Panel
+                            ?? throw new InvalidOperationException(
+                                "Settings diagnostics command lost its parent panel.");
+                        settingsActionParent.Children.Remove(
+                            settingsDiagnosticsAction);
+                        settingsDiagnosticsModal!.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !settingsDiagnosticsAction.IsFocused,
+                            "Settings diagnostics focused a detached invoking command.");
+                        settingsDiagnosticsOwner.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     var dialogSize =
                         ProductDialogs.ResolveDialogSizeForSmoke(
                             340);
