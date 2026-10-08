@@ -4770,7 +4770,42 @@ try
                     shell.DetailViewer),
                 "Focused viewer reached PreviewReady while its actual Image.Source was null.");
 
-            shell.CloseFocusedView();
+
+            // The shell fallback is also used when a focused surface is not
+            // mounted in MainWindow. It must never steal modified Escape.
+            foreach (var modifiers in new[]
+                     {
+                         KeyModifiers.Control,
+                         KeyModifiers.Shift,
+                         KeyModifiers.Alt
+                     })
+            {
+                var modifiedFallbackEscape =
+                    new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.Escape,
+                        KeyModifiers = modifiers
+                    };
+                shell.RaiseEvent(modifiedFallbackEscape);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !modifiedFallbackEscape.Handled
+                    && shell.IsFocusedViewVisible,
+                    $"Focused Viewer shell fallback intercepted {modifiers}+Escape.");
+            }
+
+            var fallbackPlainEscape =
+                new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Escape
+                };
+            shell.RaiseEvent(fallbackPlainEscape);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                fallbackPlainEscape.Handled,
+                "Focused Viewer shell fallback did not handle plain Escape.");
             Require(
                 !shell.IsFocusedViewVisible,
                 "Focused viewer did not return to the browse workspace.");
@@ -7829,6 +7864,55 @@ try
                             "Tab/Shift+Tab escaped the modal lightbox into the background workspace.");
                     }
 
+                    // Real lightbox routing must reserve Esc for plain
+                    // dismissal only. Ctrl/Shift/Alt combinations must not
+                    // dismiss it or steal focus from its Tab-cycle.
+                    var lightboxEscapeTarget =
+                        window.FocusManager.GetFocusedElement()
+                            as InputElement
+                        ?? throw new InvalidOperationException(
+                            "Focused Viewer lost its keyboard target before Escape routing smoke.");
+                    foreach (var modifiers in new[]
+                             {
+                                 KeyModifiers.Control,
+                                 KeyModifiers.Shift,
+                                 KeyModifiers.Alt,
+                                 KeyModifiers.Control | KeyModifiers.Shift
+                             })
+                    {
+                        var modifiedLightboxEscape =
+                            new KeyEventArgs
+                            {
+                                RoutedEvent = InputElement.KeyDownEvent,
+                                Key = Key.Escape,
+                                KeyModifiers = modifiers
+                            };
+                        lightboxEscapeTarget.RaiseEvent(
+                            modifiedLightboxEscape);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modifiedLightboxEscape.Handled
+                            && window.IsLightboxVisible
+                            && window.CurrentShell.IsFocusedViewVisible
+                            && window.IsFocusInsideLightboxForSmoke,
+                            $"Focused Viewer lightbox intercepted {modifiers}+Escape or lost modal focus.");
+                    }
+
+                    var alreadyHandledLightboxEscape =
+                        new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Escape,
+                            Handled = true
+                        };
+                    lightboxEscapeTarget.RaiseEvent(
+                        alreadyHandledLightboxEscape);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxVisible
+                        && window.CurrentShell.IsFocusedViewVisible,
+                        "Focused Viewer dismissed an already-handled Escape.");
+
                     var windowStateBeforeFullscreen =
                         window.WindowState;
                     window.ToggleLightboxFullScreen();
@@ -7891,12 +7975,20 @@ try
                         window.CurrentShell.DetailViewer.SelectedAssetIndex == 1,
                         "Focused viewer did not move away from the invoking asset for focus-return coverage.");
 
-                    window.CurrentShell.CloseFocusedView();
+                    var plainLightboxEscape =
+                        new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Escape
+                        };
+                    lightboxEscapeTarget.RaiseEvent(
+                        plainLightboxEscape);
                     Dispatcher.UIThread.RunJobs();
                     Require(
-                        window.CurrentShell
+                        plainLightboxEscape.Handled
+                        && window.CurrentShell
                             .IsAssetFocusedForSmoke(0),
-                        "Closing the lightbox did not restore keyboard focus to the invoking thumbnail.");
+                        "Plain Escape did not dismiss the lightbox and restore keyboard focus to the invoking thumbnail.");
 
                     window.SetRenderScaling(1.0);
                     Dispatcher.UIThread.RunJobs();
