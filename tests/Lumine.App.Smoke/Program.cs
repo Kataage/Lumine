@@ -5943,6 +5943,152 @@ try
                         Dispatcher.UIThread.RunJobs();
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Shared confirmation and notification flows have
+                        // the same focus-return contract as creative modals.
+                        // Drive real owned Avalonia windows and dismissal
+                        // outcomes, including command invalidation.
+                        var productInvoker =
+                            new Button { Content = "確認を開く" };
+                        var productAlternate =
+                            new Button { Content = "別の操作" };
+                        var productHidden =
+                            new Button { Content = "非表示になる操作" };
+                        var productOwnerPanel = new StackPanel();
+                        productOwnerPanel.Children.Add(productInvoker);
+                        productOwnerPanel.Children.Add(productAlternate);
+                        productOwnerPanel.Children.Add(productHidden);
+                        var productOwner = new Window
+                        {
+                            Width = 460,
+                            Height = 300,
+                            Content = productOwnerPanel
+                        };
+                        productOwner.Show();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            productInvoker.Focus(),
+                            "Product modal invoking command was not focusable.");
+
+                        var confirmedDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var confirmed =
+                            ProductDialogs.ShowWithFocusReturnAsync<bool>(
+                                productOwner,
+                                confirmedDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            confirmedDialog.IsVisible
+                            && !confirmed.IsCompleted,
+                            "Product confirmation did not open as an owned modal.");
+                        confirmedDialog.Close(true);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await confirmed
+                            && productInvoker.IsFocused,
+                            "Product confirmation did not return the result and invoking focus.");
+
+                        var cancelledDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var cancelled =
+                            ProductDialogs.ShowWithFocusReturnAsync<bool>(
+                                productOwner,
+                                cancelledDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        cancelledDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !await cancelled
+                            && productInvoker.IsFocused,
+                            "Product confirmation X-close did not restore invoking focus.");
+
+                        var noticeDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var notice =
+                            ProductDialogs.ShowWithFocusReturnAsync<object?>(
+                                productOwner,
+                                noticeDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        noticeDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await notice is null
+                            && productInvoker.IsFocused,
+                            "Product notification dismissal did not restore invoking focus.");
+
+                        var recycledDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var recycled =
+                            ProductDialogs.ShowWithFocusReturnAsync<object?>(
+                                productOwner,
+                                recycledDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        productOwnerPanel.Children.Remove(productInvoker);
+                        recycledDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await recycled is null
+                            && !productInvoker.IsFocused,
+                            "Product modal focused a detached invoking control.");
+
+                        Require(
+                            productAlternate.Focus(),
+                            "Product alternate invocation was not focusable.");
+                        var disabledDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var disabled =
+                            ProductDialogs.ShowWithFocusReturnAsync<object?>(
+                                productOwner,
+                                disabledDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        productAlternate.IsEnabled = false;
+                        disabledDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await disabled is null
+                            && !productAlternate.IsFocused,
+                            "Product modal focused a disabled invoking control.");
+
+                        Require(
+                            productHidden.Focus(),
+                            "Product hidden-target invocation was not focusable.");
+                        var hiddenDialog = new Window
+                        {
+                            Width = 320,
+                            Height = 200
+                        };
+                        var hidden =
+                            ProductDialogs.ShowWithFocusReturnAsync<object?>(
+                                productOwner,
+                                hiddenDialog);
+                        Dispatcher.UIThread.RunJobs();
+                        productHidden.IsVisible = false;
+                        hiddenDialog.Close();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            await hidden is null
+                            && !productHidden.IsFocused,
+                            "Product modal focused a hidden invoking control.");
+                        productOwner.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     var dialogSize =
                         ProductDialogs.ResolveDialogSizeForSmoke(
                             340);
