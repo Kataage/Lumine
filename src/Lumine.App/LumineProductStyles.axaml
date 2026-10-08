@@ -392,6 +392,12 @@
     <Setter Property="Padding" Value="10" />
   </Style>
 
+  <!-- Tag selection has a text cue as well as color; keep name emphasis
+       in the shared theme for both filter and manage presentations. -->
+  <Style Selector="TextBlock.lumine-tag-name.selected">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
   <Style Selector="Button.lumine-tag-row">
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
