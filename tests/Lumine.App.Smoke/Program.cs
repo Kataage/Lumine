@@ -2464,6 +2464,17 @@ try
                                     box.PlaceholderText,
                                     "新しいタグ名",
                                     StringComparison.Ordinal));
+                Require(
+                    compactCreateName.IsFocused,
+                    "Tag Create flyout did not move keyboard focus to its name editor.");
+                compactCreateFlyout.Hide();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    newTagButton.IsFocused,
+                    "Tag Create flyout did not restore keyboard focus to the New Tag command.");
+                compactCreateFlyout.ShowAt(newTagButton);
+                Dispatcher.UIThread.RunJobs();
+
                 var compactColorEditor =
                     compactCreateSurface
                         .GetVisualDescendants()
@@ -2626,6 +2637,19 @@ try
                                     button.Content as string,
                                     "管理",
                                     StringComparison.Ordinal));
+                // When another live command receives focus during
+                // dismissal, the popup's deferred return must not steal it.
+                compactCreateFlyout.ShowAt(newTagButton);
+                Dispatcher.UIThread.RunJobs();
+                compactCreateFlyout.Hide();
+                Require(
+                    manageButton.Focus(),
+                    "Tag toolbar Manage command could not receive focus.");
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    manageButton.IsFocused,
+                    "Tag Create focus restoration stole focus from another live command.");
+
                 manageButton.RaiseEvent(
                     new RoutedEventArgs(
                         Button.ClickEvent));
@@ -2711,6 +2735,10 @@ try
                                     StringComparison.Ordinal));
 
                 Require(
+                    editName.IsFocused,
+                    "Tag Edit flyout did not focus the edit-name field.");
+
+                Require(
                     editFlyout.IsOpen
                     && editSurface.Classes.Contains(
                         "lumine-popover")
@@ -2771,6 +2799,9 @@ try
 
                 editFlyout.Hide();
                 Dispatcher.UIThread.RunJobs();
+                Require(
+                    editButton.IsFocused,
+                    "Tag Edit flyout did not restore focus to its editing command.");
                 editFlyout.ShowAt(
                     editButton);
                 Dispatcher.UIThread.RunJobs();
