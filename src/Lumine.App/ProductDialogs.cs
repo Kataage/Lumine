@@ -147,16 +147,27 @@ internal static class ProductDialogs
         }
         finally
         {
-            if (focusReturn is
-                { IsEnabled: true, IsEffectivelyVisible: true }
-                && ReferenceEquals(
-                    TopLevel.GetTopLevel(focusReturn),
-                    owner))
-            {
-                focusReturn.Focus(
-                    NavigationMethod.Unspecified,
-                    KeyModifiers.None);
-            }
+            RestoreFocusIfEligible(owner, focusReturn);
+        }
+    }
+
+    // A modal may outlive its invoking command or its entire Settings
+    // page. Do not attempt to focus a hidden, disabled, or recycled target.
+    internal static void RestoreFocusIfEligible(
+        Window owner,
+        Control? focusReturn)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        if (focusReturn is
+            { IsEnabled: true, IsEffectivelyVisible: true }
+            && ReferenceEquals(
+                TopLevel.GetTopLevel(focusReturn),
+                owner))
+        {
+            focusReturn.Focus(
+                NavigationMethod.Unspecified,
+                KeyModifiers.None);
         }
     }
 

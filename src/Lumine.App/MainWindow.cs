@@ -3235,6 +3235,11 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // Capture before the diagnostics action is disabled.
+        var focusReturn =
+            FocusManager?.GetFocusedElement()
+                as Control;
+
         _diagnosticsCancellation?.Dispose();
         _diagnosticsCancellation =
             new CancellationTokenSource();
@@ -3274,6 +3279,9 @@ public sealed class MainWindow : Window
             if (!_closeStarted)
             {
                 _diagnostics.IsEnabled = true;
+                ProductDialogs.RestoreFocusIfEligible(
+                    this,
+                    focusReturn);
             }
         }
     }
@@ -3363,14 +3371,11 @@ public sealed class MainWindow : Window
             (_, _) => dialog.Close();
 
         _diagnosticsWindow = dialog;
-        var focusReturn =
-            FocusManager?.GetFocusedElement()
-                as Control;
-
         try
         {
+            // The invoker must be re-enabled by its own caller before
+            // restoring focus; the modal body only manages its lifecycle.
             await dialog.ShowDialog(this);
-            focusReturn?.Focus();
         }
         finally
         {
