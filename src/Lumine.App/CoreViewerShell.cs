@@ -82,7 +82,8 @@ internal sealed class CoreViewerShell : UserControl
                 runtime,
                 () =>
                 {
-                    HideContextDetail();
+                    HideContextDetail(
+                        restoreSelectedAssetFocus: true);
                     return Task.CompletedTask;
                 },
                 OpenFocusedViewAsync,
@@ -832,12 +833,26 @@ internal sealed class CoreViewerShell : UserControl
             _grid.SelectedAssetIndex);
     }
 
-    internal void HideContextDetail()
+    internal void HideContextDetail(
+        bool restoreSelectedAssetFocus = false)
     {
         _contextSurface.IsVisible = false;
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
-        _grid.Focus();
+
+        // An explicit Inspector close returns to the invoking asset, even
+        // when its virtualized tile needs another layout pass to materialize.
+        // Programmatic hides (query/no-match transitions) retain the former
+        // grid-container focus behavior so they never refocus a hidden tile.
+        var selectedIndex = _grid.SelectedAssetIndex;
+        if (restoreSelectedAssetFocus && selectedIndex >= 0)
+        {
+            _grid.RestoreAssetFocus(selectedIndex);
+        }
+        else
+        {
+            _grid.Focus();
+        }
     }
 
     internal Task OpenFocusedViewAsync() =>
