@@ -7744,8 +7744,17 @@ try
                     // viewport, so first scroll the real focused control
                     // into view and allow its layout to settle.
                     customRemoval.BringIntoView();
+                    // The real Settings viewport begins at the top. Explicitly
+                    // scroll to the additional formats before verifying focus.
+                    settingsScroll!.Offset =
+                        new Vector(
+                            0,
+                            Math.Max(
+                                0,
+                                settingsScroll.Extent.Height
+                                    - settingsScroll.Viewport.Height));
                     for (var renderPass = 0;
-                         renderPass < 3;
+                         renderPass < 4;
                          renderPass++)
                     {
                         Dispatcher.UIThread.RunJobs();
@@ -7754,7 +7763,7 @@ try
                     Dispatcher.UIThread.RunJobs();
                     Require(
                         customRemoval.Focus(),
-                        "Settings custom extension removal could not receive keyboard focus after BringIntoView.");
+                        $"Settings custom extension removal could not receive keyboard focus after scrolling: focusable={customRemoval.Focusable}, enabled={customRemoval.IsEnabled}, visible={customRemoval.IsEffectivelyVisible}, attached={customRemoval.VisualRoot is not null}, bounds={customRemoval.Bounds}, scroll={settingsScroll.Offset.Y:F0}, extent={settingsScroll.Extent.Height:F0}, viewport={settingsScroll.Viewport.Height:F0}, current={window.FocusManager.GetFocusedElement()?.GetType().Name}.");
                     customRemoval.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
