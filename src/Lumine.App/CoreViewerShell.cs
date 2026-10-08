@@ -1,10 +1,12 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Lumine.Core;
 using Lumine.Library;
 using Lumine.Viewer;
 
@@ -149,6 +151,7 @@ internal sealed class CoreViewerShell : UserControl
                 Orientation = Orientation.Horizontal,
                 IsVisible = false
             };
+        _bulkActions.Classes.Add("lumine-bulk-primary-actions");
 
         _selectionCount =
             new TextBlock
@@ -170,6 +173,16 @@ internal sealed class CoreViewerShell : UserControl
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
         _bulkStatus.Classes.Add("lumine-muted-caption");
+        _bulkStatus.IsVisible = false;
+        _bulkStatus.PropertyChanged +=
+            (_, change) =>
+            {
+                if (change.Property == TextBlock.TextProperty)
+                {
+                    _bulkStatus.IsVisible =
+                        !string.IsNullOrWhiteSpace(_bulkStatus.Text);
+                }
+            };
         _selectionBar = CreateSelectionBar();
         _selectionBar.IsVisible = false;
 
@@ -301,10 +314,10 @@ internal sealed class CoreViewerShell : UserControl
         // Multi-selection is contextual chrome, not layout. Keep the image
         // canvas fixed in place while the action surface floats above it.
         _selectionBar.HorizontalAlignment =
-            HorizontalAlignment.Center;
+            HorizontalAlignment.Left;
         _selectionBar.VerticalAlignment =
             VerticalAlignment.Bottom;
-        _selectionBar.MaxWidth = 1180;
+        _selectionBar.MaxWidth = 600;
         _selectionBar.Margin =
             new Thickness(16, 16, 16, 18);
         _selectionBar.ZIndex = 30;
@@ -384,45 +397,51 @@ internal sealed class CoreViewerShell : UserControl
     internal Rect GridViewerBounds =>
         _grid.Bounds;
 
-    internal bool BulkSelectionUsesDirectActionsForSmoke
+    internal bool BulkSelectionCommandsAccessibleForSmoke
     {
         get
         {
-            var labels =
-                _bulkActions
-                    .GetVisualDescendants()
-                    .OfType<Button>()
-                    .Concat(
-                        _bulkActions
-                            .Children
-                            .OfType<Button>())
-                    .Select(
-                        static button =>
-                            button.Content as string
-                            ?? string.Empty)
+            var commands =
+                _bulkActions.Children
+                    .OfType<DropDownButton>()
                     .ToArray();
+            return commands.Length == 3
+                && commands.Select(
+                        static button => button.Content as string)
+                    .SequenceEqual(
+                        new[] { "タグ", "整理", "その他" })
+                && commands.All(
+                    static button =>
+                        button.Flyout is Flyout { Content: not null })
+                && _selectionBar.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        static button =>
+                            AutomationProperties.GetName(button)
+                                == "選択解除");
+        }
+    }
 
-            return labels.Contains(
-                    "★1",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "タグ",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "制作",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "＋ 公開記録",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "元ファイルを削除…",
-                    StringComparer.Ordinal)
-                && labels.Contains(
-                    "選択解除",
-                    StringComparer.Ordinal)
-                && !labels.Contains(
-                    "整理",
-                    StringComparer.Ordinal);
+    internal bool SelectionToolbarAvoidsInspectorForSmoke
+    {
+        get
+        {
+            if (!_selectionBar.IsVisible
+                || !_contextSurface.IsVisible)
+            {
+                return true;
+            }
+
+            var toolbarOrigin =
+                _selectionBar.TranslatePoint(
+                    new Point(0, 0), this);
+            var inspectorOrigin =
+                _contextSurface.TranslatePoint(
+                    new Point(0, 0), this);
+            return toolbarOrigin is { } toolbar
+                && inspectorOrigin is { } inspector
+                && toolbar.X + _selectionBar.Bounds.Width
+                    <= inspector.X - 8;
         }
     }
 
@@ -489,10 +508,22 @@ internal sealed class CoreViewerShell : UserControl
                 }
             }
 
-            return true;
+            var rowTops =
+                _bulkActions.Children
+                    .OfType<Control>()
+                    .Where(static control => control.IsEffectivelyVisible)
+                    .Select(control =>
+                        control.TranslatePoint(new Point(0, 0), _selectionBar))
+                    .ToArray();
+            return rowTops.Length == 3
+                && rowTops.All(static point => point is not null)
+                && rowTops.Max(static point => point!.Value.Y)
+                    - rowTops.Min(static point => point!.Value.Y) < 1;
         }
     }
 
+    internal double SelectionToolbarHeightForSmoke =>
+        _selectionBar.Bounds.Height;
 
     internal (
         Rect ImageBounds,
@@ -622,11 +653,31 @@ internal sealed class CoreViewerShell : UserControl
             _contextSurface.ZIndex = 20;
         }
 
+        ApplySelectionBarPlacement(width);
+
         _contextDetail.SetCompactPresentation(
             _compactInspectorLayout);
         _contextDetail.SetPinPresentation(
             _inspectorPinned,
             !_compactInspectorLayout);
+    }
+
+    private void ApplySelectionBarPlacement(double width)
+    {
+        // The toolbar overlays the canvas, never the Inspector. When the
+        // Inspector is docked we also reserve its actual column width.
+        var inspectorReserve = _contextSurface.IsVisible
+            ? _contextSurface.Width
+                + (_compactInspectorLayout
+                    ? 2 * LumineDesign.Space12
+                    : 0)
+                + 12
+            : 0;
+        _selectionBar.Width = Math.Min(
+            600,
+            Math.Max(
+                250,
+                width - inspectorReserve - 48));
     }
 
     internal async Task<CoreViewerQueryUiState>
@@ -1158,6 +1209,9 @@ internal sealed class CoreViewerShell : UserControl
             ToolTip.SetTip(
                 button,
                 $"選択画像の評価を★{rating}に設定");
+            AutomationProperties.SetName(
+                button,
+                $"評価 {rating}つ星に設定");
             return button;
         }
 
@@ -1170,23 +1224,7 @@ internal sealed class CoreViewerShell : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
-        ratingGroup.Children.Add(
-            new TextBlock
-            {
-                Text = "評価",
-                Foreground =
-                    LumineDesign.MutedForeground,
-                FontSize =
-                    LumineDesign.CaptionFontSize,
-                Margin =
-                    new Thickness(
-                        0,
-                        0,
-                        LumineDesign.Space2,
-                        0),
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            });
+
         for (var rating = 1;
              rating <= 5;
              rating++)
@@ -1221,6 +1259,9 @@ internal sealed class CoreViewerShell : UserControl
                     ItemsSource = statusLabels,
                     SelectedIndex = 0
                 });
+        AutomationProperties.SetName(
+            status,
+            "選択画像の状態を変更");
         status.SelectionChanged +=
             async (_, _) =>
             {
@@ -1325,6 +1366,9 @@ internal sealed class CoreViewerShell : UserControl
             ToolTip.SetTip(
                 button,
                 $"カラー: {item.Label}");
+            AutomationProperties.SetName(
+                button,
+                $"カラー: {item.Label}");
             var value = item.Value;
             button.Click +=
                 async (_, _) =>
@@ -1349,6 +1393,107 @@ internal sealed class CoreViewerShell : UserControl
                     new AssetUserMetadataPatch(
                         SetFavorite: true,
                         Favorite: false)));
+
+        // Bulk metadata editing stays discoverable as one cohesive
+        // operation instead of permanent rating/color button clusters.
+        var organizePanel =
+            new StackPanel
+            {
+                Width = 320
+            };
+        organizePanel.Classes.Add("lumine-bulk-menu");
+        organizePanel.Children.Add(
+            new TextBlock
+            {
+                Text = "選択した画像を整理",
+                FontWeight = FontWeight.SemiBold,
+                FontSize = LumineDesign.BodyFontSize,
+                TextWrapping = TextWrapping.Wrap
+            });
+        var ratingLabel = new TextBlock { Text = "評価" };
+        ratingLabel.Classes.Add("lumine-muted-caption");
+        organizePanel.Children.Add(ratingLabel);
+        organizePanel.Children.Add(ratingGroup);
+        organizePanel.Children.Add(status);
+
+        // At accessibility text sizes, labeled choices are clearer and
+        // offer larger targets than eight tiny adjacent color swatches.
+        if (LumineVisualMetrics.TextScaleFactor >= 1.75)
+        {
+            organizePanel.Children.Add(
+                new TextBlock
+                {
+                    Text = "色",
+                    FontSize = LumineDesign.CaptionFontSize,
+                    Foreground = LumineDesign.MutedForeground
+                });
+            var colorChoices =
+                new[] { "カラーを選択…" }
+                    .Concat(colors.Select(static item => item.Label))
+                    .ToArray();
+            var colorPicker =
+                LumineDesign.ConfigureComboBox(
+                    new ComboBox
+                    {
+                        Width = 260,
+                        ItemsSource = colorChoices,
+                        SelectedIndex = 0
+                    });
+            AutomationProperties.SetName(
+                colorPicker,
+                "選択画像のカラーを変更");
+            colorPicker.SelectionChanged +=
+                async (_, _) =>
+                {
+                    if (colorPicker.SelectedIndex <= 0)
+                    {
+                        return;
+                    }
+
+                    var value =
+                        colors[colorPicker.SelectedIndex - 1].Value;
+                    colorPicker.SelectedIndex = 0;
+                    await ApplyPatchAsync(
+                        new AssetUserMetadataPatch(
+                            SetColorLabel: true,
+                            ColorLabel: value));
+                };
+            organizePanel.Children.Add(colorPicker);
+        }
+        else
+        {
+            organizePanel.Children.Add(colorGroup);
+        }
+        var favoriteGroup =
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal
+            };
+        favoriteGroup.Classes.Add("lumine-bulk-favorite-actions");
+        favoriteGroup.Children.Add(favoriteOn);
+        favoriteGroup.Children.Add(favoriteOff);
+        organizePanel.Children.Add(favoriteGroup);
+
+        var organize =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "整理",
+                    Flyout = new Flyout
+                    {
+                        Content = new ScrollViewer
+                        {
+                            MaxHeight = 380,
+                            VerticalScrollBarVisibility =
+                                Avalonia.Controls.Primitives
+                                    .ScrollBarVisibility.Auto,
+                            Content = organizePanel
+                        }
+                    }
+                });
+        AutomationProperties.SetName(
+            organize,
+            "複数画像の評価・状態・色・お気に入りを整理");
 
         _bulkTagSearch =
             LumineDesign.ConfigureTextBox(
@@ -1456,7 +1601,10 @@ internal sealed class CoreViewerShell : UserControl
         var creativePanel =
             new StackPanel
             {
-                Width = 230,
+                Width = Math.Clamp(
+                    238 + (LumineVisualMetrics.TextScaleFactor - 1) * 64,
+                    238,
+                    318),
                 Spacing = LumineDesign.Space6,
                 Margin =
                     new Thickness(
@@ -1465,7 +1613,7 @@ internal sealed class CoreViewerShell : UserControl
         creativePanel.Children.Add(
             new TextBlock
             {
-                Text = "制作",
+                Text = "制作・公開",
                 FontSize =
                     LumineDesign.BodyFontSize,
                 FontWeight =
@@ -1488,31 +1636,8 @@ internal sealed class CoreViewerShell : UserControl
         creativePanel.Children.Add(
             _lineageAction);
 
-        var creative =
-            LumineDesign.ConfigureSecondaryButton(
-                new DropDownButton
-                {
-                    Content = "制作",
-                    Flyout =
-                        new Flyout
-                        {
-                            Content =
-                                new Border
-                                {
-                                    Background =
-                                        LumineDesign.SurfaceRaised,
-                                    Padding =
-                                        new Thickness(
-                                            LumineDesign.Space8),
-                                    Child =
-                                        creativePanel
-                                }
-                        },
-                    MinWidth = 66
-                });
-
         var publication =
-            LumineDesign.ConfigurePrimaryButton(
+            LumineDesign.ConfigureSecondaryButton(
                 new Button
                 {
                     Content = "＋ 公開記録",
@@ -1571,6 +1696,49 @@ internal sealed class CoreViewerShell : UserControl
         _cancelBulkOperationButton.Click +=
             (_, _) => CancelBulkOperation();
 
+        // Less frequent creation/publication commands remain directly
+        // available within one short, explicitly grouped overflow menu.
+        // Source deletion is visually separated from ordinary commands.
+        creativePanel.Children.Add(publication);
+        var dangerDivider = new Border();
+        dangerDivider.Classes.Add("lumine-divider");
+        creativePanel.Children.Add(dangerDivider);
+        creativePanel.Children.Add(delete);
+        foreach (var action in
+                 creativePanel.Children.OfType<Button>())
+        {
+            action.HorizontalAlignment = HorizontalAlignment.Stretch;
+            action.HorizontalContentAlignment = HorizontalAlignment.Left;
+        }
+        var more =
+            LumineDesign.ConfigureSecondaryButton(
+                new DropDownButton
+                {
+                    Content = "その他",
+                    Flyout = new Flyout
+                    {
+                        Content = new ScrollViewer
+                        {
+                            MaxHeight = 380,
+                            VerticalScrollBarVisibility =
+                                Avalonia.Controls.Primitives
+                                    .ScrollBarVisibility.Auto,
+                            Content = creativePanel
+                        }
+                    }
+                });
+        AutomationProperties.SetName(
+            more,
+            "複数画像の制作・公開・ファイル操作");
+
+        foreach (var command in
+                 new Button[] { tagAction, organize, more })
+        {
+            command.Classes.Add("lumine-bulk-command");
+            command.FontSize = LumineDesign.CaptionFontSize;
+            _bulkActions.Children.Add(command);
+        }
+
         var clear =
             CreateBulkButton(
                 "選択解除",
@@ -1579,58 +1747,36 @@ internal sealed class CoreViewerShell : UserControl
                     _grid.ClearSelection();
                     return Task.CompletedTask;
                 });
+        AutomationProperties.SetName(
+            clear,
+            "選択解除");
+        _cancelBulkOperationButton.Content = "停止";
+        AutomationProperties.SetName(
+            _cancelBulkOperationButton,
+            "処理をキャンセル");
+        ToolTip.SetTip(
+            _cancelBulkOperationButton,
+            "実行中の複数画像処理をキャンセル");
 
-        foreach (var control in
-                 new Control[]
-                 {
-                     ratingGroup,
-                     status,
-                     colorGroup,
-                     favoriteOn,
-                     favoriteOff,
-                     tagAction,
-                     creative,
-                     publication,
-                     delete,
-                     _cancelBulkOperationButton,
-                     clear
-                 })
+        var summary = new Grid
         {
-            control.Margin =
-                ReferenceEquals(
-                    control,
-                    delete)
-                    ? new Thickness(
-                        LumineDesign.Space8,
-                        0,
-                        LumineDesign.Space4,
-                        LumineDesign.Space4)
-                    : new Thickness(
-                        0,
-                        0,
-                        LumineDesign.Space4,
-                        LumineDesign.Space4);
-            _bulkActions.Children.Add(control);
-        }
-
-        var summary =
-            new StackPanel
-            {
-                Orientation =
-                    Orientation.Horizontal,
-                VerticalAlignment =
-                    VerticalAlignment.Center
-            };
-        summary.Classes.Add("lumine-bulk-summary");
+            ColumnDefinitions =
+                new ColumnDefinitions("Auto,*,Auto,Auto")
+        };
+        summary.Classes.Add("lumine-bulk-summary-grid");
+        Grid.SetColumn(_selectionMetadataSummary, 1);
+        Grid.SetColumn(_cancelBulkOperationButton, 2);
+        Grid.SetColumn(clear, 3);
         summary.Children.Add(_selectionCount);
-        summary.Children.Add(
-            _selectionMetadataSummary);
-        summary.Children.Add(_bulkStatus);
+        summary.Children.Add(_selectionMetadataSummary);
+        summary.Children.Add(_cancelBulkOperationButton);
+        summary.Children.Add(clear);
 
         var root = new StackPanel();
         root.Classes.Add("lumine-bulk-layout");
         root.Children.Add(summary);
         root.Children.Add(_bulkActions);
+        root.Children.Add(_bulkStatus);
 
         var bar = new Border { Child = root };
         bar.Classes.Add("lumine-bulk-selection-surface");
@@ -1960,6 +2106,11 @@ internal sealed class CoreViewerShell : UserControl
             selection.Count > 1;
         _selectionBar.IsVisible =
             isBulk;
+        if (isBulk)
+        {
+            ApplySelectionBarPlacement(
+                ResolveInspectorLayoutWidth());
+        }
         if (!isBulk)
         {
             _grid.SetBottomOverlayInset(0);
