@@ -7363,6 +7363,62 @@ try
                             browseSearch),
                         "Window-level Ctrl+F no longer focused Browse search.");
 
+                    // Open the actual Browse popup from its keyboard
+                    // trigger; focus must enter its first actionable control
+                    // and return to that trigger after Escape/light-dismiss.
+                    var browsePopupControls =
+                        window.BrowseControlsForSmoke
+                        ?? throw new InvalidOperationException(
+                            "Browse toolbar focus smoke has no toolbar.");
+                    Require(
+                        browsePopupControls.FocusFilterTriggerForSmoke(),
+                        "Browse Filter trigger did not accept focus.");
+                    browsePopupControls.OpenFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browsePopupControls.FilterFlyoutIsOpenForSmoke
+                        && browsePopupControls.IsFilterEditorFocusedForSmoke,
+                        "Browse Filter popup failed to focus its Sort control.");
+                    browsePopupControls.CloseFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !browsePopupControls.FilterFlyoutIsOpenForSmoke
+                        && browsePopupControls.IsFilterTriggerFocusedForSmoke,
+                        "Browse Filter popup did not restore its keyboard trigger.");
+
+                    Require(
+                        browsePopupControls.FocusDisplayTriggerForSmoke(),
+                        "Browse Display trigger did not accept focus.");
+                    browsePopupControls.OpenDisplayFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browsePopupControls.DisplayFlyoutIsOpenForSmoke
+                        && browsePopupControls.IsDisplayEditorFocusedForSmoke,
+                        "Browse Display popup failed to focus its Grid control.");
+                    browsePopupControls.CloseDisplayFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !browsePopupControls.DisplayFlyoutIsOpenForSmoke
+                        && browsePopupControls.IsDisplayTriggerFocusedForSmoke,
+                        "Browse Display popup did not restore its keyboard trigger.");
+
+                    // A newly focused live owner-window command must win
+                    // over deferred popup focus restoration.
+                    Require(
+                        browsePopupControls.FocusFilterTriggerForSmoke(),
+                        "Browse Filter trigger could not be focused for handoff smoke.");
+                    browsePopupControls.OpenFilterFlyoutForSmoke();
+                    Dispatcher.UIThread.RunJobs();
+                    browsePopupControls.CloseFilterFlyoutForSmoke();
+                    Require(
+                        browseSearch.Focus(),
+                        "Browse Search did not accept deliberate post-popup focus.");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        browseSearch.IsFocused
+                        && !browsePopupControls.IsFilterTriggerFocusedForSmoke,
+                        "Browse Filter popup stole focus from a newly chosen Search control.");
+
                     window.BrowseControlsForSmoke!
                         .OpenDisplayFlyoutForSmoke();
                     Dispatcher.UIThread.RunJobs();
