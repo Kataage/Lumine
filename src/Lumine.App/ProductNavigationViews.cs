@@ -900,6 +900,9 @@ internal static class ProductNavigationViews
                     PlaceholderText =
                         "タグを検索"
                 });
+        AutomationProperties.SetName(
+            search,
+            "タグを検索");
         Grid.SetRow(
             search,
             1);
@@ -913,6 +916,10 @@ internal static class ProductNavigationViews
                     PlaceholderText =
                         "新しいタグ名"
                 });
+
+        AutomationProperties.SetName(
+            createName,
+            "新しいタグの名前");
 
         var colorEditor =
             new TagColorEditor();
@@ -993,6 +1000,10 @@ internal static class ProductNavigationViews
                 Padding =
                     new Thickness(0)
             };
+
+        AutomationProperties.SetName(
+            list,
+            "タグ一覧");
 
         var empty =
             CreateHint(
@@ -1260,6 +1271,9 @@ internal static class ProductNavigationViews
                                         "タグ名",
                                     Text = tag.Name
                                 });
+                        AutomationProperties.SetName(
+                            editName,
+                            "編集するタグの名前");
                         var editColor =
                             new TagColorEditor(
                                 tag.Color);
