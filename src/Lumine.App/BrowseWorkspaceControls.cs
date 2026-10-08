@@ -1568,6 +1568,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 };
             clear.Classes.Add(
                 "lumine-chip-clear");
+            AutomationProperties.SetName(
+                clear,
+                "すべての絞り込みを解除");
+            ToolTip.SetTip(
+                clear,
+                "すべての絞り込みを解除");
             clear.Click +=
                 async (_, _) =>
                     await SetStateAsync(
@@ -1603,6 +1609,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
             };
         chip.Classes.Add(
             "lumine-chip");
+        var removalName =
+            $"{label}: {value} の絞り込みを解除";
+        AutomationProperties.SetName(
+            chip,
+            removalName);
+        ToolTip.SetTip(
+            chip,
+            removalName);
         chip.Click +=
             async (_, _) =>
                 await remove();
