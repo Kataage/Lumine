@@ -3312,8 +3312,14 @@ internal sealed class CoreViewerShell : UserControl
                 ?.FocusManager
                 ?.GetFocusedElement();
 
-        if (focused is TextBox
-            or ComboBox)
+        // Image metadata shortcuts belong to the thumbnail workspace,
+        // not to Inspector, bulk-toolbar or other focused shell commands.
+        // Otherwise a plain Delete/F/number typed on an unrelated button
+        // can mutate the currently selected images.
+        if (focused is not Control focusControl
+            || (!ReferenceEquals(focusControl, _grid)
+                && !focusControl.GetVisualAncestors()
+                    .Contains(_grid)))
         {
             return;
         }

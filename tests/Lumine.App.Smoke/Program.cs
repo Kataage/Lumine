@@ -3967,6 +3967,30 @@ try
             Require(
                 inspectorKeyboardTabs[1].Focus(),
                 "Inspector tab did not accept keyboard focus.");
+
+            // Inspector buttons are not thumbnail keyboard owners.
+            // Plain metadata keys must never mutate/delete selected
+            // sources while a tab command has focus.
+            Require(
+                shell.GridViewer.SelectedAssetCount > 0,
+                "Inspector key-routing smoke has no selected thumbnail.");
+            foreach (var metadataKey in
+                     new[] { Key.F, Key.I, Key.D1, Key.Delete })
+            {
+                var unrelatedKey = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = metadataKey
+                };
+                inspectorKeyboardTabs[1].RaiseEvent(unrelatedKey);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !unrelatedKey.Handled
+                    && inspectorKeyboardTabs[1].IsFocused
+                    && shell.ContextDetail.SelectedTabIndex == 1,
+                    $"Inspector key {metadataKey} was hijacked as a thumbnail shortcut.");
+            }
+
             foreach (var (arrowKey, modifiers) in new[]
                      {
                          (Key.Left, KeyModifiers.Alt),
@@ -4255,6 +4279,29 @@ try
             Require(
                 bulkCommands.Length == 3,
                 "Bulk toolbar did not expose all three labeled command groups.");
+
+            // Selected thumbnails still exist while a bulk toolbar
+            // command owns keyboard focus. These plain keys must not
+            // trigger viewer metadata edits or source deletion.
+            Require(
+                shell.GridViewer.SelectedAssetCount == 2
+                && bulkCommands[0].Focus(),
+                "Bulk shortcut smoke could not focus a selected-image command.");
+            foreach (var metadataKey in
+                     new[] { Key.F, Key.I, Key.D1, Key.Delete })
+            {
+                var unrelatedKey = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = metadataKey
+                };
+                bulkCommands[0].RaiseEvent(unrelatedKey);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !unrelatedKey.Handled
+                    && bulkCommands[0].IsFocused,
+                    $"Bulk toolbar key {metadataKey} was hijacked as a thumbnail shortcut.");
+            }
 
             // Bulk menus must be reachable by keyboard, not merely
             // present in the visual tree. Each popup owns first focus
@@ -7639,6 +7686,26 @@ try
                             && !window.CurrentShell.IsContextDetailVisible,
                             $"Thumbnail/Shell hijacked modified key {modifiers}+{modifiedKey} or opened Inspector.");
                     }
+
+                    // Plain image shortcuts remain available when
+                    // the realized thumbnail itself owns keyboard focus.
+                    var plainThumbnailInfo = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.I
+                    };
+                    shortcutTile.RaiseEvent(plainThumbnailInfo);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        plainThumbnailInfo.Handled
+                        && window.CurrentShell.IsContextDetailVisible,
+                        "Plain I from a selected thumbnail did not open Inspector.");
+                    window.CurrentShell.HideContextDetail(
+                        restoreSelectedAssetFocus: true);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        shortcutViewer.FocusAsset(0),
+                        "Thumbnail focus did not recover after Inspector shortcut.");
 
                     var findFromSelectedThumbnail =
                         new KeyEventArgs
