@@ -1600,10 +1600,22 @@ public sealed class ThumbnailViewerControl : UserControl
             Interlocked.Read(ref _lookaheadLastPredecodeStartIndex),
             Volatile.Read(ref _lookaheadLastScheduledDirection));
 
-    internal static long ResolveLookaheadRowForSmoke(
-        long rowIndex,
-        int direction) =>
-        rowIndex + (direction < 0 ? -1L : 1L);
+    // Use actual visible viewport boundaries, not a newly attached
+    // virtualized row: the previous row can already be visible after
+    // an upward ScrollIntoView jump.
+    internal static (long BeforeRow, long AfterRow)
+        ResolveOffscreenLookaheadRowsForSmoke(
+            long attachedRow,
+            int firstVisibleRow,
+            int lastVisibleRow) =>
+        (
+            firstVisibleRow >= 0
+                ? (long)firstVisibleRow - 1
+                : attachedRow - 1,
+            lastVisibleRow >= 0
+                ? (long)lastVisibleRow + 1
+                : attachedRow + 1
+        );
 
     private void OnGalleryWheel(
         object? sender,
@@ -1706,6 +1718,9 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        // Attached rows can be raised before the virtualization layout
+        // converges. Resolve visible geometry after the coalescing delay,
+        // rather than capturing a stale partial viewport here.
         var session = _session;
         Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
         Volatile.Write(
@@ -1723,7 +1738,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private async Task PrefetchViewportLookaheadAsync(
         ViewerSession session,
-        long rowIndex,
+        long attachedRow,
         int columns,
         int direction,
         CancellationToken cancellationToken)
@@ -1741,17 +1756,28 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            // Snapshot once, after the initial view has had a chance to
+            // finish layout. This dispatcher hop must not be bypassed:
+            // _rows.GetRealizedContainers and TranslatePoint are UI-only.
+            var (beforeRow, afterRow) =
+                await Dispatcher.UIThread.InvokeAsync(
+                    () => ResolveOffscreenLookaheadRowsForSmoke(
+                        attachedRow,
+                        GetFirstVisibleRowIndex(),
+                        GetLastVisibleRowIndex()));
+            cancellationToken.ThrowIfCancellationRequested();
             var rows = session.Options.PrefetchRows;
-            var afterStartIndex = checked((rowIndex + 1) * columns);
+            var afterStartIndex = checked(afterRow * columns);
             var afterCount = afterStartIndex < session.Count
                 ? checked((int)Math.Min(
                     session.Count - afterStartIndex,
                     (long)rows * columns))
                 : 0;
-            var beforeStartRow = Math.Max(0, rowIndex - rows);
+            var beforeStartRow = Math.Max(0, beforeRow - rows + 1);
             var beforeStartIndex = checked(beforeStartRow * columns);
-            var beforeCount = checked((int)(
-                (rowIndex - beforeStartRow) * columns));
+            var beforeCount = beforeRow >= 0
+                ? checked((int)((beforeRow - beforeStartRow + 1) * columns))
+                : 0;
 
             // Reverse browsing is as important as forward browsing.
             // Start the probable next direction first, while keeping
@@ -1793,10 +1819,22 @@ public sealed class ThumbnailViewerControl : UserControl
             var nextRowCount = Math.Min(
                 columns,
                 Math.Min(8, session.Options.DecodedBitmapEntryLimit / 8));
-            var warmRow = ResolveLookaheadRowForSmoke(
-                rowIndex,
-                direction);
-            var warmStartIndex = checked(warmRow * columns);
+            var preferredRow = direction < 0
+                ? beforeRow
+                : afterRow;
+            var oppositeRow = direction < 0
+                ? afterRow
+                : beforeRow;
+            // An edge viewport may have only one valid side. In that
+            // case, do not abandon the other offscreen neighbor.
+            if (preferredRow < 0
+                || checked(preferredRow * columns) >= session.Count)
+            {
+                preferredRow = oppositeRow;
+                oppositeRow = -1;
+            }
+
+            var warmStartIndex = checked(preferredRow * columns);
             if (nextRowCount > 0
                 && warmStartIndex >= 0
                 && warmStartIndex < session.Count)
@@ -1828,8 +1866,7 @@ public sealed class ThumbnailViewerControl : UserControl
                         // both prospective rows can fit within entry and
                         // byte budgets even while all are leased.
                         var oppositeStart = checked(
-                            ResolveLookaheadRowForSmoke(
-                                rowIndex, -direction) * columns);
+                            oppositeRow * columns);
                         if (oppositeStart >= 0
                             && oppositeStart < session.Count
                             && HasSecondaryWarmCapacityForSmoke(
