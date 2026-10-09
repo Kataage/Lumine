@@ -61,3 +61,25 @@ The screenshot demonstrates what Skia **rasterized in headless mode** at that sp
 
 Next research milestones: inspect captured frames; instrument viewport visible-vs-pre-realized tile stages / per-request direction and cancellation only where missing; then prototype separation of control realization from speculative source I/O under the same bounded budgets. No changes to product default overscan until a repeatable improvement is shown.
 
+
+
+## Deferred-overscan experiment rejected and pixel-level acceptance baseline
+
+The follow-up **PR #651** decoupled attached native 0.25-viewport overscan controls from foreground thumbnail I/O until they entered the viewport. [Windows CI #37947868054](https://github.com/Kataage/Lumine/actions/runs/37947868054) generated the matched 10k/50k/100k A/B JSON and headless Skia PNGs, but **failed** the unchanged 100k fast-scroll gate: **1,630.7939ms >1,500ms**. UI-unready after 200ms dwell and 3 forward offsets was control→trial **18→17 / 18→18 / 13→14** while requests were **1,525→1,561 / 1,568→1,515 / 1,486→1,533**. There was no consistent first-frame benefit despite requests staying under the 10k 1600 cap. The trial was **closed without merge**.
+
+Crucially, the first-offset Skia PNGs (artifact `lumine-deferred-overscan-frames-37947868054`) show **seven of seven** blue thumbnail center pixels in the control versus **two blue / five dark placeholders** in the trial on the newly visible bottom row (1200×800 screenshot, y=710, seven evenly spaced thumbnail centers). The difference is visible in actual Skia rasterization; the aggregate three-step `small_scroll_settled_forward_missing_on_first_frame` metric does not capture this exact first-offset snapshot. The deferred trial recorded 1,780 deferred control registrations, 1,212 activations and 554 explicit discards across its full 10k benchmark, confirming that deferred loading really occurred. It is not correct to mark this experiment successful from its request count alone.
+
+### Guardrail: measure rendered tile placeholders automatically
+
+A separate, opt-in screenshot path in the unchanged `Lumine.Viewer.Benchmarks` now decodes its saved first-offset Skia PNG with SkiaSharp and samples **one fixed center pixel per gallery column** in the deterministic synthetic fixture's newly appearing bottom row, at y=0.8875 × image height (710 at 800px). It distinguishes the known plain **blue WebP** synthetic tile (approximately R48/G112/B197), the **dark** unrendered placeholder (approximately R21/G21/B24), and unexpected/other pixels. Each sample is counted exactly once. It records the image dimensions/column sample summary in the *independent* frame-diagnostic JSON, prints the counts, and CI rejects missing/inconsistent categories. This complements, but does not change or loosen, the established timing/source/memory performance suite. The rendering diagnostic must not be silently included in timed measurements.
+
+This classifier is deliberately **fixture-specific**, not a universal computer-vision test for arbitrary real images or user photographs. It does not equate a headless Skia screenshot with physical Windows display/GPU-present behavior, and a single screenshot is insufficient to promote a product default. Future viewport-driven scheduling trials must report both the existing bounded request/memory/latency metrics and the **rasterized black-placeholder count**, ideally across multiple samples. A cleanly rendered first-offset frame without excessive I/O is the minimum condition to pursue real-owner validation.
+
+### Architectural next step (do not prematurely merge another heuristic)
+
+Both tested extremes fail:
+
+1. Eagerly loading every offscreen realized tile: the native 0.25 buffer reduced synthetic 3-step UI-unready values, but grew total source requests beyond the 1,600/10k cap.
+2. Deferring thumbnail I/O until a tile actually intersects the viewport: request count stayed bounded, but the next visible row could still be black in the **first rasterized frame** and 100k fast-scroll exceeded 1.5s.
+
+A candidate next architecture should use a single **viewport-derived image request coordinator**. It should know the currently visible row range and the nearest imminent row *before* attachment, prioritize foreground and one directional neighbor with explicit per-scroll-revision cancellation, and suppress far-away row requests after large seeking. Avalonia's virtualized controls would remain cheap reusable presentation surfaces, and may be realized ahead of time, **without binding request scheduling to `AttachedToVisualTree`**. Replace per-row event-driven lookahead with one coordinator in a dedicated, separately testable Issue #634 PR; do not layer more ad-hoc prefetch flags onto the failed experiments. Existing 32MiB decoded cache, 1,600/10k source requests, 100k virtualized-row cap, portable NativeAOT and teardown boundaries are invariant.

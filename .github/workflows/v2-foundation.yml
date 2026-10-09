@@ -243,6 +243,25 @@ jobs:
             exit $LASTEXITCODE
           }
 
+      - name: Verify actual Skia raster placeholder accounting
+        shell: pwsh
+        run: |
+          $result = Get-Content "artifacts/viewer-rendered/diagnostic-10000.json" -Raw | ConvertFrom-Json
+          $meta = $result.metadata
+          $columns = [int]$meta.skia_frame_audit_columns
+          $blue = [int]$meta.skia_frame_blue_thumbnail_samples
+          $dark = [int]$meta.skia_frame_dark_placeholder_samples
+          $other = [int]$meta.skia_frame_other_samples
+          $y = [int]$meta.skia_frame_sample_y
+          if ($columns -ne [int]$meta.columns -or
+              $columns -le 0 -or $blue -lt 0 -or
+              $dark -lt 0 -or $other -lt 0 -or
+              $blue + $dark + $other -ne $columns -or
+              $blue -eq 0 -or $other -ne 0 -or $y -lt 0) {
+            throw "Skia raster audit did not find the known synthetic-blue tiles with valid dark placeholders."
+          }
+          Write-Host "Actual Skia raster bottom row: $blue painted blue thumbnails, $dark dark placeholders, $other other pixels across $columns columns at y=$y. These are rendered pixels, not a GPU-present fence."
+
       - name: Upload Skia-rendered Viewer scroll evidence
         uses: actions/upload-artifact@v7
         with:
