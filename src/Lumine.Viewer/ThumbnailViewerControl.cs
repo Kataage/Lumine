@@ -82,6 +82,9 @@ public sealed class ThumbnailViewerControl : UserControl
     // mounted offscreen without consuming speculative thumbnail I/O.
     // These tiles are activated only after intersecting the viewport.
     private readonly HashSet<ViewerTileControl> _deferredOffscreenTiles = [];
+    private long _deferredOverscanRegistered;
+    private long _deferredOverscanActivated;
+    private long _deferredOverscanDiscarded;
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
@@ -205,6 +208,11 @@ public sealed class ThumbnailViewerControl : UserControl
     }
 
     public long AssetCount => _session.Count;
+
+    public (long Registered, long Activated, long Discarded, int Pending)
+        DeferredOverscanDiagnostics =>
+        (_deferredOverscanRegistered, _deferredOverscanActivated,
+         _deferredOverscanDiscarded, _deferredOffscreenTiles.Count);
 
     public long SelectedAssetIndex => _selectedIndex;
 
@@ -1802,12 +1810,21 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void DeferOffscreenTileLoad(ViewerTileControl tile)
     {
-        _deferredOffscreenTiles.Add(tile);
+        if (_deferredOffscreenTiles.Add(tile))
+        {
+            _deferredOverscanRegistered++;
+        }
+
         ActivateVisibleDeferredTiles();
     }
 
-    private void ForgetDeferredOffscreenTile(ViewerTileControl tile) =>
-        _deferredOffscreenTiles.Remove(tile);
+    private void ForgetDeferredOffscreenTile(ViewerTileControl tile)
+    {
+        if (_deferredOffscreenTiles.Remove(tile))
+        {
+            _deferredOverscanDiscarded++;
+        }
+    }
 
     private void ActivateVisibleDeferredTiles()
     {
@@ -1842,6 +1859,7 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             _deferredOffscreenTiles.Remove(tile);
+            _deferredOverscanActivated++;
             tile.StartDeferredVisibleLoad();
         }
     }
