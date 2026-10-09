@@ -386,7 +386,7 @@ internal static class Program
                                 "Raw wheel witness was not installed."),
                             Path.GetFullPath(rawWheelEvidenceDir));
                         Console.WriteLine(
-                            "Unflushed routed wheel (4 units): "
+                            "Unflushed routed wheel (1 unit): "
                             + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
                             + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
                             + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "

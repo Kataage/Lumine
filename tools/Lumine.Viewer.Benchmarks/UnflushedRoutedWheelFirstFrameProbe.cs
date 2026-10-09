@@ -97,15 +97,17 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
         // viewer and the ScrollContentPresenter on bubble both run.
         // Crucially this avoids HeadlessWindowExtensions.MouseWheel's
         // RunJobsAndRender loop, while avoiding inaccessible raw APIs.
-        // Four wheel units are aggregated into one event to challenge
-        // the +198px direct-offset case.
+        // Single normal wheel notch: source-measured Avalonia nonlogical
+        // scrolling moves about 50px, unlike the legacy direct +198px
+        // offset benchmark. Never combine four detents into one event
+        // when claiming a first-notch raster observation.
         using var pointer = new Pointer(
             Pointer.GetNextFreeId(), PointerType.Mouse, isPrimary: true);
         target.RaiseEvent(new PointerWheelEventArgs(
             target, pointer, window, point, 0,
             new PointerPointProperties(),
             KeyModifiers.None,
-            new Vector(0, -4)));
+            new Vector(0, -1)));
 
         var events = viewer.RoutedWheelEventCount - beforeCount;
         var moved = scroller.Offset.Y - beforeOffset;
