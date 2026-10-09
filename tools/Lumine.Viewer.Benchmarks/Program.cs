@@ -69,6 +69,9 @@ internal static class Program
         ViewerLookaheadDiagnostics beforeSettledDwell = default;
         ViewerLookaheadDiagnostics afterSettledDwell = default;
         ViewerLookaheadDiagnostics afterSettledScroll = default;
+        (long Attempts, long BitmapsPredecoded) beforeSecondDirectionalDwell = default;
+        (long Attempts, long BitmapsPredecoded) afterSecondDirectionalDwell = default;
+        (long Attempts, long BitmapsPredecoded) afterSecondDirectionalScroll = default;
         long settledLastVisibleAssetIndex = -1;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
@@ -170,14 +173,20 @@ internal static class Program
                     Dispatcher.UIThread.RunJobs();
                     await WaitForViewportReadyAsync(viewer);
                     beforeSettledDwell = viewer.LookaheadDiagnostics;
+                    beforeSecondDirectionalDwell =
+                        viewer.SecondDirectionalWarmDiagnostics;
                     await Task.Delay(200);
                     Dispatcher.UIThread.RunJobs();
                     afterSettledDwell = viewer.LookaheadDiagnostics;
+                    afterSecondDirectionalDwell =
+                        viewer.SecondDirectionalWarmDiagnostics;
                     settledLastVisibleAssetIndex =
                         viewer.LastVisibleAssetIndex ?? -1;
                     settledForwardWheel = await MeasureSmallScrollAsync(
                         viewer, reverse: false);
                     afterSettledScroll = viewer.LookaheadDiagnostics;
+                    afterSecondDirectionalScroll =
+                        viewer.SecondDirectionalWarmDiagnostics;
                     Observe(viewer);
 
                     viewer.SelectAsset(count - 1);
@@ -304,6 +313,10 @@ internal static class Program
                     ["settled_lookahead_eligible_during_dwell"] = (afterSettledDwell.EligibleForPredecode - beforeSettledDwell.EligibleForPredecode).ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_predecoded_during_dwell"] = (afterSettledDwell.BitmapsPredecoded - beforeSettledDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_predecoded_during_scroll"] = (afterSettledScroll.BitmapsPredecoded - afterSettledDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
+                    ["settled_second_directional_attempts_during_dwell"] = (afterSecondDirectionalDwell.Attempts - beforeSecondDirectionalDwell.Attempts).ToString(CultureInfo.InvariantCulture),
+                    ["settled_second_directional_bitmaps_during_dwell"] = (afterSecondDirectionalDwell.BitmapsPredecoded - beforeSecondDirectionalDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
+                    ["settled_second_directional_attempts_during_scroll"] = (afterSecondDirectionalScroll.Attempts - afterSecondDirectionalDwell.Attempts).ToString(CultureInfo.InvariantCulture),
+                    ["settled_second_directional_bitmaps_during_scroll"] = (afterSecondDirectionalScroll.BitmapsPredecoded - afterSecondDirectionalDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_last_scheduled_row"] = afterSettledDwell.LastScheduledRow.ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_last_predecode_start"] = afterSettledDwell.LastPredecodeStartIndex.ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_last_direction"] = afterSettledDwell.LastScheduledDirection.ToString(CultureInfo.InvariantCulture),
