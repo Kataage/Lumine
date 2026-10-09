@@ -1317,10 +1317,15 @@ try
                             && block.Text.Contains(
                                 $"{library.AssetCount:N0}件",
                                 StringComparison.Ordinal)
-                            && (library.Id != 1001
-                                || block.Text.Contains(
-                                    "表示中",
-                                    StringComparison.Ordinal)))
+                            && !block.Text.Contains(
+                                "表示中",
+                                StringComparison.Ordinal))
+                    && (library.Id != 1001
+                        || rowLabels.Any(
+                            block =>
+                                block.Text == "✓"
+                                && AutomationProperties.GetName(block)
+                                    == "表示中"))
                     && rowLabels.All(
                         block =>
                             !string.Equals(
