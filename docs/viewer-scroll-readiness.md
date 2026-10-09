@@ -64,7 +64,7 @@ After PR #638 made one next-row bitmap reusable on small forward scroll and pass
 
 The owning `ThumbnailViewerControl` now captures the actual scroll direction:
 - Tunneling `PointerWheelChanged` captures wheel intent *before* the virtualized ListBox reattaches rows.
-- Bubbling `ScrollViewer.ScrollChanged` updates the same direction from actual vertical offset changes, including keyboard, scrollbar and touch/inertia.
+- The viewer subscribes directly to its mounted inner `ScrollViewer.OffsetProperty` to track actual vertical offset changes, including keyboard, scrollbar and touch/inertia. A parent-only routed ScrollChanged listener failed the headless reverse-scroll test and is deliberately not used.
 - Zero/tiny offsets and layout-only extent/viewport changes do not change direction.
 - For downward movement, start source-thumbnail lookahead below the newly attached row; for upward movement, start above it. Decode at most one bounded nearest **directional** row only after the current visible rows are ready and active bitmap decoding is idle.
 - Reverse at row zero skips negative-index preparation. Existing cancellation and coalescing, limits, and shutdown ownership remain unchanged; the Viewer does not intercept scroll gestures or set event `Handled`.
