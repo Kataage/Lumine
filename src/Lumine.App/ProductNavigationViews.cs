@@ -101,31 +101,18 @@ internal static class ProductNavigationViews
                         VerticalAlignment.Center
                 };
 
-            var activeLabel =
-                new TextBlock
-                {
-                    Text =
-                        isActive
-                            ? "表示中"
-                            : string.Empty,
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize = LumineDesign.CaptionFontSize,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                };
-
+            // The library name is the primary navigation target.
+            // Moving "表示中" to the secondary status line lets long
+            // names keep the full first-row width, including at 225%.
             var heading =
                 new Grid
                 {
                     ColumnDefinitions =
                         hasStateWarning
                             ? new ColumnDefinitions(
-                                "Auto,*,Auto")
+                                "Auto,*")
                             : new ColumnDefinitions(
-                                "*,Auto"),
+                                "*"),
                     ColumnSpacing =
                         LumineDesign.Space6
                 };
@@ -155,30 +142,18 @@ internal static class ProductNavigationViews
                 title,
                 titleColumn);
             heading.Children.Add(title);
-            Grid.SetColumn(
-                activeLabel,
-                titleColumn + 1);
-            heading.Children.Add(activeLabel);
-
-            var path =
-                new TextBlock
-                {
-                    Text = library.RootPath,
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize = LumineDesign.CaptionFontSize,
-                    TextTrimming =
-                        TextTrimming.CharacterEllipsis
-                };
-            ToolTip.SetTip(
-                path,
-                library.RootPath);
-
+            // Absolute paths are secondary, technical information.
+            // A truncated system path on every library row is neither
+            // readable nor useful for navigating. Keep it available as
+            // a full tooltip on the complete row, not a third text line.
             var detail =
                 new TextBlock
                 {
                     Text =
                         $"{library.AssetCount:N0}件 · {DescribeScanState(library.ScanState)}"
+                        + (isActive
+                            ? " · 表示中"
+                            : string.Empty)
                         + (rootAvailable
                             ? string.Empty
                             : " · オフライン")
@@ -198,7 +173,6 @@ internal static class ProductNavigationViews
                     Spacing = LumineDesign.Space2
                 };
             primaryContent.Children.Add(heading);
-            primaryContent.Children.Add(path);
             primaryContent.Children.Add(detail);
 
             if (!string.IsNullOrWhiteSpace(
@@ -368,6 +342,12 @@ internal static class ProductNavigationViews
             AutomationProperties.SetName(
                 librarySurface,
                 $"ライブラリ: {library.Name}");
+            AutomationProperties.SetHelpText(
+                librarySurface,
+                $"フォルダーの場所: {library.RootPath}");
+            ToolTip.SetTip(
+                librarySurface,
+                $"フォルダーの場所: {library.RootPath}");
             stack.Children.Add(
                 librarySurface);
         }
