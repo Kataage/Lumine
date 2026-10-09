@@ -62,6 +62,7 @@ public sealed class ThumbnailViewerControl : UserControl
     // The sign of the last actual viewer scroll (forward = +1).
     // Wheel capture happens before virtualized rows are reattached.
     private int _lookaheadDirection = 1;
+    private long _lookaheadScheduleCount;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
     private Compositor? _compositor;
@@ -1460,6 +1461,9 @@ public sealed class ThumbnailViewerControl : UserControl
     internal bool IsScrollTrackingAttachedForSmoke =>
         _galleryScrollViewer is not null;
 
+    internal long LookaheadScheduleCountForSmoke =>
+        _lookaheadScheduleCount;
+
     internal static long ResolveLookaheadRowForSmoke(
         long rowIndex,
         int direction) =>
@@ -1517,13 +1521,26 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void SetLookaheadDirection(double deltaY)
     {
-        if (deltaY > 0.01)
+        var next = deltaY > 0.01
+            ? 1
+            : deltaY < -0.01
+                ? -1
+                : _lookaheadDirection;
+        if (next == _lookaheadDirection)
         {
-            _lookaheadDirection = 1;
+            return;
         }
-        else if (deltaY < -0.01)
+
+        _lookaheadDirection = next;
+        // A small reverse scroll can stay within the same set of
+        // realized rows. A pure row-attached scheduler would never
+        // reschedule upward warmup in that case.
+        var nearestVisible = next < 0
+            ? GetFirstVisibleRowIndex()
+            : GetLastVisibleRowIndex();
+        if (nearestVisible >= 0)
         {
-            _lookaheadDirection = -1;
+            ScheduleLookahead(nearestVisible, _columns);
         }
     }
 
@@ -1536,6 +1553,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void ScheduleLookahead(long rowIndex, int columns)
     {
+        _lookaheadScheduleCount++;
         // Rows may attach rapidly while the user scrolls. Never enqueue
         // two independent before/after ranges for each attached row:
         // 100k/10k fast-scroll workloads otherwise amplify background
