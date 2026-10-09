@@ -1422,26 +1422,11 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             try
             {
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var diagnostics = _session.Diagnostics;
-                    if (ShouldStartBackgroundPrefetch(
-                            diagnostics.AttachedTiles,
-                            diagnostics.ReadyTiles))
-                    {
-                        break;
-                    }
-
-                    await Task.Delay(
-                        TimeSpan.FromMilliseconds(25),
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                // Prefetch is useful only after the visible viewport has
-                // remained stable. A row that detaches during a fast scroll
-                // cancels this delay before any background decode is started.
+                // Visible tile requests are already submitted as Foreground
+                // when their rows attach. Do not wait for every current tile
+                // to finish before warming the NEXT rows: the user's first
+                // wheel tick can arrive while the viewport is still loading.
+                // Background requests retain lower Image Core priority.
                 if (_session.Options.PrefetchDelay > TimeSpan.Zero)
                 {
                     await Task.Delay(
@@ -1449,27 +1434,8 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                var stableDiagnostics =
-                    _session.Diagnostics;
-                if (!ShouldStartBackgroundPrefetch(
-                        stableDiagnostics.AttachedTiles,
-                        stableDiagnostics.ReadyTiles))
-                {
-                    return;
-                }
-
+                cancellationToken.ThrowIfCancellationRequested();
                 var rows = _session.Options.PrefetchRows;
-
-                var beforeStartRow = Math.Max(0, _rowIndex - rows);
-                var beforeRowCount = _rowIndex - beforeStartRow;
-                if (beforeRowCount > 0)
-                {
-                    await _session.PrefetchAsync(
-                        checked(beforeStartRow * _columns),
-                        checked((int)(beforeRowCount * _columns)),
-                        cancellationToken).ConfigureAwait(false);
-                }
-
                 var afterStartRow = _rowIndex + 1;
                 var afterStartIndex = checked(afterStartRow * _columns);
                 if (afterStartIndex < _session.Count)
@@ -1478,9 +1444,23 @@ public sealed class ThumbnailViewerControl : UserControl
                         _session.Count - afterStartIndex,
                         (long)rows * _columns));
 
+                    // Forward lookahead precedes the reverse range. Most
+                    // wheel browsing moves downward, and requests for
+                    // repeated assets are coalesced by ViewerSession.
                     await _session.PrefetchAsync(
                         afterStartIndex,
                         afterCount,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                var beforeStartRow = Math.Max(0, _rowIndex - rows);
+                var beforeRowCount = _rowIndex - beforeStartRow;
+                if (beforeRowCount > 0)
+                {
+                    await _session.PrefetchAsync(
+                        checked(beforeStartRow * _columns),
+                        checked((int)(beforeRowCount * _columns)),
                         cancellationToken).ConfigureAwait(false);
                 }
             }
