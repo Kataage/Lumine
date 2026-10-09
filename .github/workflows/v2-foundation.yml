@@ -193,6 +193,17 @@ jobs:
             }
           }
 
+      # Preserve diagnostics even when settled-next-row or source-work
+      # performance gates fail. Previously the only baseline artifact was
+      # uploaded much later, after the entire Windows job had passed.
+      - name: Upload first-row Viewer phase diagnostic baselines
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-prefetch1-diagnostics-${{ github.run_id }}
+          path: artifacts/benchmarks/viewer-*.json
+          if-no-files-found: warn
+
       - name: Enforce Viewer performance acceptance
         shell: pwsh
         run: ./build/Test-ViewerPerformance.ps1 -ExpectedPrefetchRows 1
