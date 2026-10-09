@@ -71,6 +71,34 @@ The owning `ThumbnailViewerControl` now captures the actual scroll direction:
 
 Headless Viewer smoke now uses an actual mounted internal `ScrollViewer.Offset` change down and back up (not only calling `ScrollToAsset`), and checks that lookahead direction updates, plus bounded next-row target selection. This is a deterministic simulation of an offset change; **real Windows wheel perceived latency is still not measured**. Preserve existing Viewer fast-scroll performance gate rather than increasing it.
 
+## Mounted small-offset scroll benchmark (fifth #634 step)
+
+The existing 10k/50k/100k Viewer benchmark exercised 40 scattered `ScrollToAsset` seeks: it stressed cancellation and virtualization, but did not measure the user's actual complaint that **one small movement exposes unloaded images**. A green jump benchmark did not tell us what appeared during normal browsing.
+
+The benchmark now exercises a real mounted inner `ScrollViewer` via its `Offset`: three successive ~198 DIP row-sized forward movements, followed by three reverse movements after the first full viewport becomes UI-ready. After each offset update, it samples **actually realized bitmap tiles intersecting the mounted inner ScrollViewer's pixel viewport** whose decoded `Image.Source` is not yet ready, then measures how long the remaining UI assignments take. A zero-realized-tile viewport is treated as not ready rather than successful. This explicit geometry-based check replaced the original coarse first/last asset-index enumeration after CI [#37917618371](https://github.com/Kataage/Lumine/actions/runs/37917618371) failed `Small-scroll benchmark left unloaded visible tiles after the readiness window`: the index-range approach could include cells that had been virtualized/recycled and were not actually visible, so its result could not distinguish a true blank from a measurement artifact. The replacement retains a strict readiness failure for tiles that genuinely intersect the viewport but remain unready, with offset/cache/decode counts in the error diagnostics. Do not classify the original CI failure as definitively a false positive until the revised metrics run. The benchmark exposes separately for forward and reverse directions:
+
+- `small_scroll_*_steps` (3 each)
+- `small_scroll_*_missing_on_first_frame` (sum of first-sampled not-ready image tiles; lower is better, but not automatically guaranteed zero)
+- `small_scroll_*_max_ui_ready_wait_ms` (worst per-step wait for all sampled visible tiles)
+- `small_scroll_*_warm_bitmap_hits` (decoded presentation reuse during each phase)
+
+The Windows Viewer performance gate now requires these fields and enforces a bounded ready wait without relaxing the 1,600-request/10k fast-scroll, 32 MiB decoded cache, 100k virtualization or peak memory limits. **Do not invent a zero-blank release threshold before collecting a real baseline.** Review the cold/warm and forward/reverse results against subsequent changes.
+
+**Important limits:** this test sets the real ScrollViewer offset, which exercises virtual row attachment and scroll-direction callbacks but is **not injected physical wheel input**. It counts UI-ready bitmap assignments, **not actual GPU composition/presented pixels**. It uses generated 512px image fixtures and cannot substitute for performance measurement with a representative real Windows library, actual wheel gestures and human product-owner acceptance. These remain open requirements of #634.
+
+## #640 CI failure: decoded-cache admission starvation (2026-10-09)
+
+This was a real blocked-viewport finding, **not** only a metric implementation bug. After revising the visible-tile measurement to count mounted intersecting controls, Windows CI [#37918681548](https://github.com/Kataage/Lumine/actions/runs/37918681548) still failed the first 198 DIP forward movement with **35 visible / 32 ready / 3 unready**; source in-flight and active bitmap decodes were both zero after the 1.5s window. Diagnostic CI [#37919703549](https://github.com/Kataage/Lumine/actions/runs/37919703549) isolated indices **28, 29, 30**, all still `loading`, with no provider failure and only one earlier cancellation.
+
+The synthetic provider returned **512×512** WebP images. In the decoded cache a 512×512 RGBA Bitmap is charged **1 MiB**. With a strict **32 MiB** budget, at most 32 such distinct leased images fit. `DecodedBitmapCache.TryAcquire` waits on a capacity signal when existing bitmap leases prevent eviction, so a 35-tile mounted viewport can become stuck rather than merely slow. This explains the exact stalled state; it also highlights that decoded **presentation size**, not encoded thumbnail file dimensions, must participate in the memory budget.
+
+Correction inside the same PR:
+- The ViewerSession passes a dedicated `DecodedThumbnailMaxDimension` option (default **384 physical pixels**) to its thumbnail bitmap cache. The cache uses Avalonia's `Bitmap.DecodeToWidth` / `DecodeToHeight`, respecting thumbnail aspect ratio, and does **not upscale** already smaller thumbnails. The file/memory original and focused/full-resolution Detail path are unchanged. A raw decoded-cache caller retains its previous full-resolution behavior.
+- Scaled-file cache keys are distinct from full-resolution file keys. The existing entry/byte limits, pinned lease lifecycle and cancellation behavior are unchanged.
+- A deterministic headless regression constructs 35 independently keyed 512px presentation images with all leases held under the **32 MiB** cap, and requires each to be admitted within a bound at **384px** decoded size. The normal mounted 10k/50k/100k forward/reverse offset probes must also pass, as must existing fast-jump and NativeAOT gates.
+
+**Verification limitation:** implementation and regression have been committed, but the final Windows CI and product owner acceptance must be checked before saying the defect is fixed. At very wide/large virtualized viewports, a hard entry/byte cap can still make a fully leased working set larger than the budget; this must be covered by viewport-size/scaling tests and an admission-pressure policy rather than loosening memory caps. No claim is made that GPU-composited physical wheel scrolling is blank-free.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.

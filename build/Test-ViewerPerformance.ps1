@@ -57,6 +57,33 @@ foreach ($result in $results) {
     $peakAdditional = [long]$result.metadata.peak_additional_working_set_bytes
     $scrollAllocated = [long]$fastScroll.after.totalAllocatedBytes - [long]$fastScroll.before.totalAllocatedBytes
 
+    # The new small-offset probe must be present in each fixture and
+    # finish loading without weakening any existing fast-scroll limits.
+    # Do not set an ungrounded zero-blank target from synthetic data;
+    # record current missing-first-frame counts for measured follow-up.
+    foreach ($direction in @("forward", "reverse")) {
+        $stepsKey = "small_scroll_${direction}_steps"
+        $missingKey = "small_scroll_${direction}_missing_on_first_frame"
+        $waitKey = "small_scroll_${direction}_max_ui_ready_wait_ms"
+        $warmKey = "small_scroll_${direction}_warm_bitmap_hits"
+        $steps = [int]$result.metadata.$stepsKey
+        $missing = [int]$result.metadata.$missingKey
+        $wait = [double]$result.metadata.$waitKey
+        $warm = [long]$result.metadata.$warmKey
+        if ($steps -ne 3) {
+            throw "$count Viewer small $direction scroll probe was omitted or ran $steps rather than 3 steps."
+        }
+        if ($missing -lt 0 -or $missing -gt ($steps * 128)) {
+            throw "$count Viewer small $direction scroll probe reported an invalid missing count: $missing"
+        }
+        if ($wait -lt 0 -or $wait -gt 1500) {
+            throw "$count Viewer small $direction scroll did not become UI-ready within 1.5s: $wait ms"
+        }
+        if ($warm -lt 0) {
+            throw "$count Viewer small $direction scroll reported negative warm-bitmap reuse."
+        }
+    }
+
     if ([double]$firstPaint.durationMs -gt 1500) {
         throw "$count Viewer first paint exceeded 1.5 s: $($firstPaint.durationMs) ms"
     }
@@ -243,6 +270,14 @@ foreach ($result in $results) {
         ([long]$result.metadata.peak_working_set_bytes / 1MB),
         ([long]$result.metadata.max_decoded_bitmap_bytes / 1MB),
         ($scrollAllocated / 1MB))
+    Write-Host (
+        "  small offsets: forward first-frame missing={0}, max ready={1:N1} ms, warm={2}; reverse first-frame missing={3}, max ready={4:N1} ms, warm={5}" -f
+        $result.metadata.small_scroll_forward_missing_on_first_frame,
+        [double]$result.metadata.small_scroll_forward_max_ui_ready_wait_ms,
+        $result.metadata.small_scroll_forward_warm_bitmap_hits,
+        $result.metadata.small_scroll_reverse_missing_on_first_frame,
+        [double]$result.metadata.small_scroll_reverse_max_ui_ready_wait_ms,
+        $result.metadata.small_scroll_reverse_warm_bitmap_hits)
 }
 
 Write-Host (

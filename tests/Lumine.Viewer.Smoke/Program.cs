@@ -43,6 +43,7 @@ internal static class Program
                 async () =>
                 {
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
+                    await VerifyBoundedViewportDecodingAsync(tempRoot, thumbnailPath);
                     await VerifyDecodedCacheAsyncShutdown(
                         thumbnailPath);
                     await VerifyPrefetchStartsWhileViewportLoadsAsync(
@@ -343,6 +344,65 @@ internal static class Program
             pressureCache.Diagnostics.EntryCount == 0
             && pressureCache.Diagnostics.EstimatedBytes == 0,
             "Disposed pressure cache retained leased bitmap state after release.");
+    }
+
+    private static async Task VerifyBoundedViewportDecodingAsync(
+        string tempRoot,
+        string sourceThumbnail)
+    {
+        // Reproduce the 35 attached 512px tiles / 32 MiB stall observed in
+        // #634 small-scroll CI. An unscaled 512x512 RGBA tile consumes 1 MiB,
+        // making the last three pinned tiles wait indefinitely for capacity.
+        var source = Path.Combine(tempRoot, "viewport-512.png");
+        using (var input = File.OpenRead(sourceThumbnail))
+        using (var bitmap = new Bitmap(input))
+        using (var scaled = bitmap.CreateScaledBitmap(
+                   new PixelSize(512, 512),
+                   BitmapInterpolationMode.LowQuality))
+        {
+            scaled.Save(source);
+        }
+
+        var encoded = await File.ReadAllBytesAsync(source);
+        using var cache = new DecodedBitmapCache(
+            entryLimit: 64,
+            byteLimit: 32L * 1024 * 1024,
+            maxThumbnailDimension: 384);
+        var leases = new List<DecodedBitmapLease>();
+
+        try
+        {
+            for (var index = 0; index < 35; index++)
+            {
+                var thumbnail = new ViewerThumbnail(
+                    $"viewport-{index}",
+                    string.Empty,
+                    512,
+                    512,
+                    EncodedBytes: encoded);
+                var lease = await cache.AcquireAsync(thumbnail)
+                    .WaitAsync(TimeSpan.FromSeconds(3));
+                leases.Add(lease);
+                Require(
+                    lease.Bitmap.PixelSize.Width == 384
+                    && lease.Bitmap.PixelSize.Height == 384,
+                    "Viewer bitmap was not decoded to its bounded presentation size.");
+            }
+
+            var stats = cache.Diagnostics;
+            Require(
+                stats.EntryCount == 35
+                && stats.EstimatedBytes <= 32L * 1024 * 1024
+                && stats.ActiveDecodes == 0,
+                "Viewer's mounted 35-tile viewport starved the bounded decoded cache.");
+        }
+        finally
+        {
+            foreach (var lease in leases)
+            {
+                lease.Dispose();
+            }
+        }
     }
 
     private static async Task VerifyDecodedCacheAsyncShutdown(

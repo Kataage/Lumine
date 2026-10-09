@@ -50,11 +50,14 @@ public sealed class ViewerSession : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(Options.TileSpacing);
         ArgumentOutOfRangeException.ThrowIfNegative(Options.PrefetchRows);
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.PrefetchDelay, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(
+            Options.DecodedThumbnailMaxDimension);
 
         BitmapCache = bitmapCache
             ?? new DecodedBitmapCache(
                 Options.DecodedBitmapEntryLimit,
-                Options.DecodedBitmapByteLimit);
+                Options.DecodedBitmapByteLimit,
+                Options.DecodedThumbnailMaxDimension);
     }
 
     public ViewerOptions Options { get; }

@@ -14,6 +14,13 @@ namespace Lumine.Viewer;
 
 // UI bitmap assignment is measured, not a GPU/compositor-present fence.
 // These diagnostics expose the stages causing an empty visible thumbnail.
+// Count actual attached bitmap tiles intersecting the inner scroller's
+// viewport. Row-index ranges can include virtualized or uninstantiated
+// cells and cannot establish what is visually missing.
+public readonly record struct ViewerViewportReadinessDiagnostics(
+    int VisibleTiles,
+    int UnreadyTiles);
+
 public readonly record struct ViewerTileReadinessDiagnostics(
     long Started,
     long Ready,
@@ -384,6 +391,104 @@ public sealed class ThumbnailViewerControl : UserControl
                 AssetCount - 1,
                 checked(((long)lastRow + 1) * _columns - 1));
         }
+    }
+
+    public ViewerViewportReadinessDiagnostics ViewportReadiness
+    {
+        get
+        {
+            var scroller = _galleryScrollViewer
+                ?? _rows.GetVisualDescendants()
+                    .OfType<ScrollViewer>()
+                    .FirstOrDefault();
+            if (scroller is null)
+            {
+                return default;
+            }
+
+            var viewportWidth = scroller.Viewport.Width;
+            var viewportHeight = scroller.Viewport.Height;
+            if (viewportWidth <= 0 || viewportHeight <= 0)
+            {
+                return default;
+            }
+
+            var visible = 0;
+            var unready = 0;
+            foreach (var container in _rows.GetRealizedContainers())
+            {
+                foreach (var tile in container
+                    .GetVisualDescendants()
+                    .OfType<ViewerTileControl>())
+                {
+                    var origin = tile.TranslatePoint(default, scroller);
+                    if (origin is not { } location
+                        || location.Y + tile.Bounds.Height <= 0
+                        || location.Y >= viewportHeight
+                        || location.X + tile.Bounds.Width <= 0
+                        || location.X >= viewportWidth)
+                    {
+                        continue;
+                    }
+
+                    visible++;
+                    if (!tile.IsReady)
+                    {
+                        unready++;
+                    }
+                }
+            }
+
+            return new ViewerViewportReadinessDiagnostics(
+                visible,
+                unready);
+        }
+    }
+
+    // Slow-path failure diagnostics only: never allocate per-tile strings
+    // during the normal small-scroll readiness sampling loop.
+    public string DescribeUnreadyVisibleTilesForDiagnostics()
+    {
+        var scroller = _galleryScrollViewer
+            ?? _rows.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault();
+        if (scroller is null)
+        {
+            return "no-scrollviewer";
+        }
+
+        var details = new List<string>(8);
+        foreach (var container in _rows.GetRealizedContainers())
+        {
+            foreach (var tile in container
+                .GetVisualDescendants()
+                .OfType<ViewerTileControl>())
+            {
+                var location = tile.TranslatePoint(default, scroller);
+                if (location is not { } origin
+                    || origin.Y + tile.Bounds.Height <= 0
+                    || origin.Y >= scroller.Viewport.Height
+                    || origin.X + tile.Bounds.Width <= 0
+                    || origin.X >= scroller.Viewport.Width
+                    || tile.IsReady)
+                {
+                    continue;
+                }
+
+                details.Add(
+                    $"{tile.Index}:" +
+                    (tile.IsFailed ? "failed" :
+                        tile.IsLoadingForDiagnostics ? "loading" : "idle") +
+                    $":{tile.FailureReason ?? "-"}");
+                if (details.Count == 12)
+                {
+                    return string.Join(",", details) + ",...";
+                }
+            }
+        }
+
+        return details.Count == 0 ? "none" : string.Join(",", details);
     }
 
     public bool IsAssetReady(long index)
@@ -2040,6 +2145,9 @@ public sealed class ThumbnailViewerControl : UserControl
         public long Index => _index;
 
         public bool IsReady => _isReady;
+
+        internal bool IsLoadingForDiagnostics => _isLoading;
+
 
         public bool IsFailed =>
             _failureOverlay?.IsVisible == true;
