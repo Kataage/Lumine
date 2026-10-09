@@ -58,6 +58,19 @@ The headless test exercises a **small forward scroll**: hold visible foreground 
 
 Remaining release work: measure actual real Windows natural wheel-scroll visual gaps across varied image formats and low/high density; adapt range to scroll direction/velocity while respecting cache pressure. The test validates `Image.Source` readiness, not a physical GPU frame-present fence. The final #634 acceptance must be verified by the owner.
 
+## Direction-aware adjacent-row warmup (fourth #634 step)
+
+After PR #638 made one next-row bitmap reusable on small forward scroll and passed Windows CI 50/50, lookahead still always treated "next" as **down**, even when the user reverses scrolling direction. This wastes speculative source/decode work while returning to previously unseen rows.
+
+The owning `ThumbnailViewerControl` now captures the actual scroll direction:
+- Tunneling `PointerWheelChanged` captures wheel intent *before* the virtualized ListBox reattaches rows.
+- The viewer subscribes directly to its mounted inner `ScrollViewer.OffsetProperty` to track actual vertical offset changes, including keyboard, scrollbar and touch/inertia. A parent-only routed ScrollChanged listener failed the headless reverse-scroll test and is deliberately not used.
+- Zero/tiny offsets and layout-only extent/viewport changes do not change direction. An actual direction reversal reschedules the coalesced lookahead immediately from the nearest visible row, even when the same set of rows remains realized, so the old-direction queue is not left active until a future row attach.
+- For downward movement, start source-thumbnail lookahead below the newly attached row; for upward movement, start above it. Decode at most one bounded nearest **directional** row only after the current visible rows are ready and active bitmap decoding is idle.
+- Reverse at row zero skips negative-index preparation. Existing cancellation and coalescing, limits, and shutdown ownership remain unchanged; the Viewer does not intercept scroll gestures or set event `Handled`.
+
+Headless Viewer smoke now uses an actual mounted internal `ScrollViewer.Offset` change down and back up (not only calling `ScrollToAsset`), and checks that lookahead direction updates, plus bounded next-row target selection. This is a deterministic simulation of an offset change; **real Windows wheel perceived latency is still not measured**. Preserve existing Viewer fast-scroll performance gate rather than increasing it.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
