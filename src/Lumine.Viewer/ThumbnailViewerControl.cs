@@ -11,6 +11,10 @@ using Avalonia.VisualTree;
 
 namespace Lumine.Viewer;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The coalesced lookahead CTS is cancelled and disposed when the Viewer detaches or rebinds.")]
 public sealed class ThumbnailViewerControl : UserControl
 {
     private ViewerSession _session;
