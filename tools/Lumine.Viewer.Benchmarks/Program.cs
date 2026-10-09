@@ -85,6 +85,9 @@ internal static class Program
         long routedWheelEventCount = 0;
         double firstWheelOffsetDelta = 0;
         double fourthWheelOffsetDelta = 0;
+        var priorWheelScrollIntent = 0;
+        var firstWheelScrollIntent = 0;
+        var fourthWheelScrollIntent = 0;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -272,6 +275,8 @@ internal static class Program
                                 "Wheel probe could not locate a window-relative input point.");
                         var beforeWheelEvents = viewer.RoutedWheelEventCount;
                         var beforeWheelOffset = wheelScroller.Offset.Y;
+                        priorWheelScrollIntent =
+                            viewer.CurrentScrollIntentDirection;
                         var evidenceRoot = Path.GetFullPath(
                             wheelEvidenceDir);
                         Directory.CreateDirectory(evidenceRoot);
@@ -283,6 +288,8 @@ internal static class Program
                         Dispatcher.UIThread.RunJobs();
                         firstWheelOffsetDelta =
                             wheelScroller.Offset.Y - beforeWheelOffset;
+                        firstWheelScrollIntent =
+                            viewer.CurrentScrollIntentDirection;
                         firstWheelAudit = CaptureWheelFrame(
                             window,
                             viewer.Columns,
@@ -301,6 +308,8 @@ internal static class Program
 
                         fourthWheelOffsetDelta =
                             wheelScroller.Offset.Y - beforeWheelOffset;
+                        fourthWheelScrollIntent =
+                            viewer.CurrentScrollIntentDirection;
                         routedWheelEventCount =
                             viewer.RoutedWheelEventCount - beforeWheelEvents;
                         fourthWheelAudit = CaptureWheelFrame(
@@ -311,19 +320,23 @@ internal static class Program
 
                         if (routedWheelEventCount < 4
                             || firstWheelOffsetDelta <= 0
-                            || fourthWheelOffsetDelta <= firstWheelOffsetDelta)
+                            || fourthWheelOffsetDelta <= firstWheelOffsetDelta
+                            || firstWheelScrollIntent != 1
+                            || fourthWheelScrollIntent != 1)
                         {
                             throw new InvalidOperationException(
                                 "Headless wheel probe did not traverse the routed wheel input path: "
                                 + $"events={routedWheelEventCount}, "
                                 + $"firstDelta={firstWheelOffsetDelta:F1}, "
-                                + $"fourthDelta={fourthWheelOffsetDelta:F1}.");
+                                + $"fourthDelta={fourthWheelOffsetDelta:F1}, "
+                                + $"intent prior/first/fourth={priorWheelScrollIntent}/{firstWheelScrollIntent}/{fourthWheelScrollIntent}.");
                         }
 
                         Console.WriteLine(
                             "Actual routed wheel input: "
                             + $"events={routedWheelEventCount}, "
                             + $"offset first/fourth={firstWheelOffsetDelta:F1}/{fourthWheelOffsetDelta:F1}px, "
+                            + $"intent prior/first/fourth={priorWheelScrollIntent}/{firstWheelScrollIntent}/{fourthWheelScrollIntent}, "
                             + $"first blue/dark={firstWheelAudit.Value.BlueThumbnailSamples}/{firstWheelAudit.Value.DarkPlaceholderSamples}, "
                             + $"fourth blue/dark={fourthWheelAudit.Value.BlueThumbnailSamples}/{fourthWheelAudit.Value.DarkPlaceholderSamples}.");
                     }
@@ -417,6 +430,9 @@ internal static class Program
                     ["wheel_probe_routed_event_count"] = routedWheelEventCount.ToString(CultureInfo.InvariantCulture),
                     ["wheel_probe_first_offset_px"] = firstWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
                     ["wheel_probe_fourth_offset_px"] = fourthWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
+                    ["wheel_probe_scroll_intent_before"] = priorWheelScrollIntent.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_probe_scroll_intent_after_first"] = firstWheelScrollIntent.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_probe_scroll_intent_after_fourth"] = fourthWheelScrollIntent.ToString(CultureInfo.InvariantCulture),
                     ["wheel_probe_first_blue"] = firstWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
