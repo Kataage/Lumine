@@ -256,8 +256,9 @@ jobs:
           if ($columns -ne [int]$meta.columns -or
               $columns -le 0 -or $blue -lt 0 -or
               $dark -lt 0 -or $other -lt 0 -or
-              $blue + $dark + $other -ne $columns -or $y -lt 0) {
-            throw "Skia raster audit returned invalid sample categories."
+              $blue + $dark + $other -ne $columns -or
+              $blue -eq 0 -or $other -ne 0 -or $y -lt 0) {
+            throw "Skia raster audit did not find the known synthetic-blue tiles with valid dark placeholders."
           }
           Write-Host "Actual Skia raster bottom row: $blue painted blue thumbnails, $dark dark placeholders, $other other pixels across $columns columns at y=$y. These are rendered pixels, not a GPU-present fence."
 
