@@ -1718,13 +1718,9 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
-        // Resolve on the UI thread while realized geometry is available;
-        // the asynchronous lookahead task must not touch visual elements.
-        var (beforeRow, afterRow) =
-            ResolveOffscreenLookaheadRowsForSmoke(
-                rowIndex,
-                GetFirstVisibleRowIndex(),
-                GetLastVisibleRowIndex());
+        // Attached rows can be raised before the virtualization layout
+        // converges. Resolve visible geometry after the coalescing delay,
+        // rather than capturing a stale partial viewport here.
         var session = _session;
         Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
         Volatile.Write(
@@ -1733,8 +1729,7 @@ public sealed class ThumbnailViewerControl : UserControl
         _lookaheadCancellation = new CancellationTokenSource();
         _lookaheadTask = PrefetchViewportLookaheadAsync(
             session,
-            beforeRow,
-            afterRow,
+            rowIndex,
             columns,
             _lookaheadDirection,
             _lookaheadCancellation.Token);
@@ -1743,8 +1738,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private async Task PrefetchViewportLookaheadAsync(
         ViewerSession session,
-        long beforeRow,
-        long afterRow,
+        long attachedRow,
         int columns,
         int direction,
         CancellationToken cancellationToken)
@@ -1761,6 +1755,16 @@ public sealed class ThumbnailViewerControl : UserControl
                     cancellationToken).ConfigureAwait(false);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            // Snapshot once, after the initial view has had a chance to
+            // finish layout. This dispatcher hop must not be bypassed:
+            // _rows.GetRealizedContainers and TranslatePoint are UI-only.
+            var (beforeRow, afterRow) =
+                await Dispatcher.UIThread.InvokeAsync(
+                    () => ResolveOffscreenLookaheadRowsForSmoke(
+                        attachedRow,
+                        GetFirstVisibleRowIndex(),
+                        GetLastVisibleRowIndex()));
             cancellationToken.ThrowIfCancellationRequested();
             var rows = session.Options.PrefetchRows;
             var afterStartIndex = checked(afterRow * columns);
