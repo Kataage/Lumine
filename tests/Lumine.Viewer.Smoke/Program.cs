@@ -31,6 +31,7 @@ internal static class Program
 
         try
         {
+            VerifyViewportRequestPlanner();
             VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
             await VerifyBackgroundForegroundCoalescingAsync(thumbnailPath);
@@ -84,6 +85,106 @@ internal static class Program
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    private static void VerifyViewportRequestPlanner()
+    {
+        // Test exactly the row range that would be requested by a
+        // viewport-centric controller; no Avalonia control attachments
+        // or variable overscan geometry may expand these ranges.
+        var forward = ViewerViewportRequestPlanner.Build(
+            assetCount: 10000, columns: 7,
+            firstVisibleRow: 100, lastVisibleRow: 103,
+            scrollDirection: 1, maxImminentAssets: 7);
+        Require(
+            forward.VisibleStartIndex == 700
+            && forward.VisibleCount == 28
+            && forward.VisibleEndExclusive == 728
+            && forward.ImminentStartIndex == 728
+            && forward.ImminentCount == 7
+            && forward.ScrollDirection == 1,
+            "Viewport planner failed to select one bounded forward row.");
+
+        var reverse = ViewerViewportRequestPlanner.Build(
+            10000, 7, 100, 103, -1, 7);
+        Require(
+            reverse.VisibleStartIndex == forward.VisibleStartIndex
+            && reverse.VisibleCount == forward.VisibleCount
+            && reverse.ImminentStartIndex == 693
+            && reverse.ImminentEndExclusive == 700
+            && reverse.ImminentCount == 7,
+            "Viewport planner did not give reverse scrolling the prior row.");
+
+        // Hard cap independent of the number of rows native Avalonia
+        // happens to have pre-realized outside the visible range.
+        var budgeted = ViewerViewportRequestPlanner.Build(
+            10000, 7, 100, 103, 1, 3);
+        var disabled = ViewerViewportRequestPlanner.Build(
+            10000, 7, 100, 103, 1, 0);
+        Require(
+            budgeted.ImminentCount == 3
+            && budgeted.ImminentEndExclusive == 731
+            && disabled.ImminentCount == 0,
+            "Viewport planner failed the explicit imminent I/O budget.");
+
+        var first = ViewerViewportRequestPlanner.Build(
+            10000, 7, 0, 3, -1, 7);
+        var lastPartial = ViewerViewportRequestPlanner.Build(
+            15, 7, 2, 2, 1, 7);
+        var lastReverse = ViewerViewportRequestPlanner.Build(
+            15, 7, 2, 2, -1, 7);
+        Require(
+            first.ImminentCount == 0
+            && lastPartial.VisibleStartIndex == 14
+            && lastPartial.VisibleCount == 1
+            && lastPartial.ImminentCount == 0
+            && lastReverse.ImminentStartIndex == 7
+            && lastReverse.ImminentCount == 7,
+            "Viewport planner crossed the first/partial-last row boundary.");
+
+        var stale = ViewerViewportRequestPlanner.Build(
+            10000, 7, 100, 2000, 1, 7);
+        var missing = ViewerViewportRequestPlanner.Build(
+            10000, 7, -1, -1, 1, 7);
+        var empty = ViewerViewportRequestPlanner.Build(
+            0, 7, 0, 0, 1, 7);
+        Require(
+            stale.IsEmpty && missing.IsEmpty && empty.IsEmpty,
+            "Unstable virtualization geometry triggered speculative I/O.");
+
+        // Extreme counts must not overflow count+columns-1 or the
+        // end of a partial last row.
+        var extremeRow = (long.MaxValue - 1) / 7;
+        var extreme = ViewerViewportRequestPlanner.Build(
+            long.MaxValue, 7, extremeRow, extremeRow, 1, 7);
+        Require(
+            extreme.VisibleCount is > 0 and <= 7
+            && extreme.VisibleEndExclusive <= long.MaxValue,
+            "Viewport planning overflowed near Int64 maximum asset count.");
+
+        static void RequireArgumentThrows(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "Viewport planner accepted invalid budget or geometry parameters.");
+        }
+
+        RequireArgumentThrows(() =>
+            ViewerViewportRequestPlanner.Build(-1, 7, 0, 0, 1, 7));
+        RequireArgumentThrows(() =>
+            ViewerViewportRequestPlanner.Build(100, 0, 0, 0, 1, 0));
+        RequireArgumentThrows(() =>
+            ViewerViewportRequestPlanner.Build(100, 7, 0, 0, 0, 7));
+        RequireArgumentThrows(() =>
+            ViewerViewportRequestPlanner.Build(100, 7, 0, 0, 1, 8));
     }
 
     private static void VerifyResourcePolicyMapping()
