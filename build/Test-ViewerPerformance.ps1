@@ -116,6 +116,17 @@ foreach ($result in $results) {
         throw "$count Viewer settled direction diagnostic was invalid."
     }
 
+    # Baseline #642: 21 missing first-frame forward tiles even after a
+    # 200ms dwell, with zero decoded bitmap warm hits. A bounded opposite-
+    # side warm row must actually be reused after this jump scenario.
+    $settledHits = [long]$result.metadata.small_scroll_settled_forward_warm_bitmap_hits
+    if ($settledHits -le 0) {
+        throw "$count Viewer settled forward scrolling still reused no decoded next-row bitmaps."
+    }
+    if ([long]$result.metadata.settled_lookahead_predecoded_during_dwell -lt 8) {
+        throw "$count Viewer did not decode both bounded adjacent warm rows during the 200ms dwell."
+    }
+
     if ([double]$firstPaint.durationMs -gt 1500) {
         throw "$count Viewer first paint exceeded 1.5 s: $($firstPaint.durationMs) ms"
     }
