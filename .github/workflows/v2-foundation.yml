@@ -255,6 +255,24 @@ jobs:
               $trial.metadata.max_decoded_bitmap_bytes)
           }
 
+      # Rendered-frame A/B is separate from performance acceptance:
+      # capturing a Skia frame may advance the graphics queue.
+      - name: Capture rendered control and deferred-overscan first offset
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-deferred-render/control.json" --frame-output "artifacts/viewer-deferred-render/control.png"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --realization-buffer 0.25 --defer-overscan-loads --output "artifacts/viewer-deferred-render/trial.json" --frame-output "artifacts/viewer-deferred-render/trial.png"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload rendered deferred-overscan A/B frames
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-deferred-overscan-frames-${{ github.run_id }}
+          path: artifacts/viewer-deferred-render/
+          if-no-files-found: warn
+
       - name: Enforce strict deferred-overscan Viewer acceptance
         shell: pwsh
         run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-deferred-overscan" -ExpectedPrefetchRows 2 -ExpectedRealizationBuffer 0.25 -ExpectedDeferOverscanLoads $true
