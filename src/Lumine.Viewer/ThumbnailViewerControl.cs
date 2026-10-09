@@ -445,6 +445,52 @@ public sealed class ThumbnailViewerControl : UserControl
         }
     }
 
+    // Slow-path failure diagnostics only: never allocate per-tile strings
+    // during the normal small-scroll readiness sampling loop.
+    public string DescribeUnreadyVisibleTilesForDiagnostics()
+    {
+        var scroller = _galleryScrollViewer
+            ?? _rows.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault();
+        if (scroller is null)
+        {
+            return "no-scrollviewer";
+        }
+
+        var details = new List<string>(8);
+        foreach (var container in _rows.GetRealizedContainers())
+        {
+            foreach (var tile in container
+                .GetVisualDescendants()
+                .OfType<ViewerTileControl>())
+            {
+                var location = tile.TranslatePoint(default, scroller);
+                if (location is not { } origin
+                    || origin.Y + tile.Bounds.Height <= 0
+                    || origin.Y >= scroller.Viewport.Height
+                    || origin.X + tile.Bounds.Width <= 0
+                    || origin.X >= scroller.Viewport.Width
+                    || tile.IsReady)
+                {
+                    continue;
+                }
+
+                details.Add(
+                    $"{tile.Index}:" +
+                    (tile.IsFailed ? "failed" :
+                        tile.IsLoadingForDiagnostics ? "loading" : "idle") +
+                    $":{tile.FailureReason ?? "-"}");
+                if (details.Count == 12)
+                {
+                    return string.Join(",", details) + ",...";
+                }
+            }
+        }
+
+        return details.Count == 0 ? "none" : string.Join(",", details);
+    }
+
     public bool IsAssetReady(long index)
     {
         if ((ulong)index >= (ulong)AssetCount)
@@ -2099,6 +2145,9 @@ public sealed class ThumbnailViewerControl : UserControl
         public long Index => _index;
 
         public bool IsReady => _isReady;
+
+        internal bool IsLoadingForDiagnostics => _isLoading;
+
 
         public bool IsFailed =>
             _failureOverlay?.IsVisible == true;
