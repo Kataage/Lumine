@@ -170,6 +170,11 @@ public sealed class ViewerOptions
     public long DecodedBitmapByteLimit { get; init; } =
         CoreResourcePolicy.Default.DecodedThumbnailByteLimit;
 
+    // Decode display thumbnails, not full encoded 512px+ source bitmaps.
+    // 384px supports roughly 2x standard grid tiles while avoiding
+    // 32 MiB leased-cache stalls on ordinary mounted viewports.
+    public int DecodedThumbnailMaxDimension { get; init; } = 384;
+
     public static ViewerOptions FromResourcePolicy(
         CoreResourcePolicy policy)
     {
