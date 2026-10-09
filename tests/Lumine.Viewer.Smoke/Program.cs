@@ -1270,6 +1270,58 @@ internal static class Program
                 }, attachedTiles: 12, nextRowCount: 2),
             "List second-row warming bypassed viewport/native cache budget or leaked to Grid.");
 
+        // Four 50px List notches cross almost three 68px rows,
+        // including one at the lower viewport boundary. Extend the
+        // source and Bitmap warm horizon to three List rows ONLY if
+        // the attached viewport plus 3 neighbors on both sides fits
+        // the unchanged conservative native cache capacity.
+        Require(
+            ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 2,
+                twoSidedOptions, attachedTiles: 12) == 3
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: false, configuredRows: 2,
+                twoSidedOptions, attachedTiles: 12) == 2
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 1,
+                twoSidedOptions, attachedTiles: 12) == 1
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 0,
+                twoSidedOptions, attachedTiles: 12) == 0
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 2,
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 16,
+                    DecodedBitmapByteLimit = 8L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 12) == 2
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == 102
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 100, direction: -1,
+                assetCount: 1000, ordinal: 3) == 98
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: false, lookaheadRows: 3,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 2,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 998, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 1, direction: -1,
+                assetCount: 1000, ordinal: 3) == -1,
+            "List third-row warm horizon bypassed source range, memory budget, edge or Grid isolation.");
+
         // Unlike ScrollToAsset, a small offset adjustment exercises
         // the real inner ScrollViewer's routed ScrollChanged event.
         // This also covers keyboard/scrollbar/touch direction changes,

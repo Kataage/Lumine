@@ -2088,7 +2088,11 @@ public sealed class ThumbnailViewerControl : UserControl
                         GetFirstVisibleRowIndex(),
                         GetLastVisibleRowIndex()));
             cancellationToken.ThrowIfCancellationRequested();
-            var rows = session.Options.PrefetchRows;
+            var rows = ResolveListLookaheadRowsForSmoke(
+                _layoutMode == ViewerLayoutMode.List,
+                session.Options.PrefetchRows,
+                session.Options,
+                session.Diagnostics.AttachedTiles);
             var afterStartIndex = checked(afterRow * columns);
             var afterCount = afterStartIndex < session.Count
                 ? checked((int)Math.Min(
@@ -2263,6 +2267,50 @@ public sealed class ThumbnailViewerControl : UserControl
                                 .ConfigureAwait(false);
                         }
 
+                        // A 68px List row crosses the lower viewport
+                        // boundary after only ~1.36 normal 50px notches.
+                        // Four consecutive forward events traverse almost
+                        // three rows. Two warm rows on each side were
+                        // insufficient at the 4th first-render tick.
+                        // Prepare the third on each side if and ONLY if
+                        // configured 2+ prefetch rows were extended to a
+                        // bounded three-row List horizon and all six
+                        // native Bitmaps fit the worst-case cache budget.
+                        var listThreeRowCapacity =
+                            listTwoRowCapacity
+                            && rows >= 3
+                            && HasSecondaryWarmCapacityForSmoke(
+                                session.Options,
+                                state.AttachedTiles,
+                                nextRowCount * 3);
+                        if (listThreeRowCapacity)
+                        {
+                            var thirdPreferredRow =
+                                ResolveAdditionalListWarmRowForSmoke(
+                                    isList: true, rows,
+                                    preferredRow, direction,
+                                    session.Count, ordinal: 3);
+                            var thirdOppositeRow =
+                                ResolveAdditionalListWarmRowForSmoke(
+                                    isList: true, rows,
+                                    oppositeRow, -direction,
+                                    session.Count, ordinal: 3);
+                            Task thirdPrimary = thirdPreferredRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, thirdPreferredRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            Task thirdOpposite = warmOpposite
+                                && thirdOppositeRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, thirdOppositeRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            await Task.WhenAll(
+                                thirdPrimary, thirdOpposite)
+                                .ConfigureAwait(false);
+                        }
+
                         break;
                     }
 
@@ -2310,6 +2358,44 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    // Extend only List's configured 2+ source lookahead by one row
+    // when the visible viewport + three rows on EACH side fit the
+    // existing native bitmap entry/byte budget. Small List/disabled
+    // settings and all Grid layouts preserve exactly their old range.
+    internal static int ResolveListLookaheadRowsForSmoke(
+        bool isList,
+        int configuredRows,
+        ViewerOptions options,
+        int attachedTiles) =>
+        isList
+        && configuredRows >= 2
+        && HasSecondaryWarmCapacityForSmoke(
+            options, attachedTiles, nextRowCount: 3)
+            ? Math.Max(3, configuredRows)
+            : configuredRows;
+
+    internal static long ResolveAdditionalListWarmRowForSmoke(
+        bool isList,
+        int lookaheadRows,
+        long nearRow,
+        int direction,
+        long assetCount,
+        int ordinal)
+    {
+        if (!isList
+            || ordinal < 2
+            || lookaheadRows < ordinal
+            || nearRow < 0
+            || nearRow >= assetCount
+            || direction is not (1 or -1))
+        {
+            return -1;
+        }
+
+        var target = nearRow + (long)(ordinal - 1) * direction;
+        return target >= 0 && target < assetCount ? target : -1;
     }
 
     // Return the next (not the first) offscreen List row, preserving
