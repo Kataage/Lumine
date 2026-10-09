@@ -1284,6 +1284,65 @@ try
                     "lumine-tertiary"),
                 "Library sidebar regressed from flat semantic rows to card-heavy or primary-action chrome.");
 
+            // The sidebar must remain legible at both normal and 225%
+            // text scale: exact machine paths belong in accessible
+            // help and a deliberate tooltip, not the compact row.
+            foreach (var library in navLibraries)
+            {
+                var surface =
+                    librarySurfaces.Single(
+                        border =>
+                            AutomationProperties.GetAutomationId(border)
+                                == $"library-card-{library.Id}");
+                var rowLabels =
+                    surface.GetVisualDescendants()
+                        .OfType<TextBlock>()
+                        .ToArray();
+                var primaryControl =
+                    surface.Child is Grid rowGrid
+                        ? rowGrid.Children
+                            .OfType<Control>()
+                            .First()
+                        : throw new InvalidOperationException(
+                            "Library row lost its primary control.");
+                var locationLabel =
+                    $"フォルダーの場所: {library.RootPath}";
+                Require(
+                    rowLabels.Any(
+                        block =>
+                            block.Text == library.Name)
+                    && rowLabels.Any(
+                        block =>
+                            block.Text is not null
+                            && block.Text.Contains(
+                                $"{library.AssetCount:N0}件",
+                                StringComparison.Ordinal)
+                            && !block.Text.Contains(
+                                "表示中",
+                                StringComparison.Ordinal))
+                    && (library.Id != 1001
+                        || rowLabels.Any(
+                            block =>
+                                block.Text == "✓"
+                                && AutomationProperties.GetName(block)
+                                    == "表示中"))
+                    && rowLabels.All(
+                        block =>
+                            !string.Equals(
+                                block.Text,
+                                library.RootPath,
+                                StringComparison.Ordinal))
+                    && string.Equals(
+                        AutomationProperties.GetHelpText(surface),
+                        locationLabel,
+                        StringComparison.Ordinal)
+                    && string.Equals(
+                        ToolTip.GetTip(primaryControl) as string,
+                        locationLabel,
+                        StringComparison.Ordinal),
+                    $"Library sidebar hierarchy or full-path discoverability regressed for {library.Name}.");
+            }
+
             var manageLibraryButton =
                 navigationView.GetVisualDescendants()
                     .OfType<Button>()

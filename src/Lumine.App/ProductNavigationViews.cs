@@ -101,31 +101,23 @@ internal static class ProductNavigationViews
                         VerticalAlignment.Center
                 };
 
-            var activeLabel =
-                new TextBlock
-                {
-                    Text =
-                        isActive
-                            ? "表示中"
-                            : string.Empty,
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize = LumineDesign.CaptionFontSize,
-                    FontWeight =
-                        FontWeight.SemiBold,
-                    VerticalAlignment =
-                        VerticalAlignment.Center
-                };
-
+            // Keep the name prominent. A small checkmark makes the
+            // selected Library obvious without consuming a large
+            // "表示中" caption beside the name or wrapping to an orphan
+            // status line at 225% Windows text scale.
             var heading =
                 new Grid
                 {
                     ColumnDefinitions =
                         hasStateWarning
                             ? new ColumnDefinitions(
-                                "Auto,*,Auto")
+                                isActive
+                                    ? "Auto,*,Auto"
+                                    : "Auto,*")
                             : new ColumnDefinitions(
-                                "*,Auto"),
+                                isActive
+                                    ? "*,Auto"
+                                    : "*"),
                     ColumnSpacing =
                         LumineDesign.Space6
                 };
@@ -155,25 +147,34 @@ internal static class ProductNavigationViews
                 title,
                 titleColumn);
             heading.Children.Add(title);
-            Grid.SetColumn(
-                activeLabel,
-                titleColumn + 1);
-            heading.Children.Add(activeLabel);
+            if (isActive)
+            {
+                var activeMark =
+                    new TextBlock
+                    {
+                        Text = "✓",
+                        Foreground = LumineDesign.Accent,
+                        FontSize = LumineDesign.CaptionFontSize,
+                        FontWeight = FontWeight.SemiBold,
+                        VerticalAlignment =
+                            VerticalAlignment.Center
+                    };
+                AutomationProperties.SetName(
+                    activeMark,
+                    "表示中");
+                ToolTip.SetTip(
+                    activeMark,
+                    "現在表示中のライブラリ");
+                Grid.SetColumn(
+                    activeMark,
+                    titleColumn + 1);
+                heading.Children.Add(activeMark);
+            }
 
-            var path =
-                new TextBlock
-                {
-                    Text = library.RootPath,
-                    Foreground =
-                        LumineDesign.MutedForeground,
-                    FontSize = LumineDesign.CaptionFontSize,
-                    TextTrimming =
-                        TextTrimming.CharacterEllipsis
-                };
-            ToolTip.SetTip(
-                path,
-                library.RootPath);
-
+            // Absolute paths are secondary, technical information.
+            // A truncated system path on every library row is neither
+            // readable nor useful for navigating. Keep it available as
+            // a full tooltip on the complete row, not a third text line.
             var detail =
                 new TextBlock
                 {
@@ -189,7 +190,11 @@ internal static class ProductNavigationViews
                         rootAvailable
                             ? LumineDesign.MutedForeground
                             : LumineDesign.Warning,
-                    FontSize = LumineDesign.CaptionFontSize
+                    FontSize = LumineDesign.CaptionFontSize,
+                    // Counts, scan/availability, and active status must
+                    // remain legible instead of running under the Rescan
+                    // and Manage buttons at large Windows text scales.
+                    TextWrapping = TextWrapping.Wrap
                 };
 
             var primaryContent =
@@ -198,7 +203,6 @@ internal static class ProductNavigationViews
                     Spacing = LumineDesign.Space2
                 };
             primaryContent.Children.Add(heading);
-            primaryContent.Children.Add(path);
             primaryContent.Children.Add(detail);
 
             if (!string.IsNullOrWhiteSpace(
@@ -253,6 +257,13 @@ internal static class ProductNavigationViews
 
                 primary = open;
             }
+
+            // Pointer access to the full location must work on both
+            // the selected static row and the inactive Open button,
+            // not only the surrounding border.
+            ToolTip.SetTip(
+                primary,
+                $"フォルダーの場所: {library.RootPath}");
 
             var libraryRow =
                 new Grid
@@ -367,7 +378,15 @@ internal static class ProductNavigationViews
                 $"library-card-{library.Id}");
             AutomationProperties.SetName(
                 librarySurface,
-                $"ライブラリ: {library.Name}");
+                isActive
+                    ? $"ライブラリ: {library.Name}（表示中）"
+                    : $"ライブラリ: {library.Name}");
+            AutomationProperties.SetHelpText(
+                librarySurface,
+                $"フォルダーの場所: {library.RootPath}");
+            ToolTip.SetTip(
+                librarySurface,
+                $"フォルダーの場所: {library.RootPath}");
             stack.Children.Add(
                 librarySurface);
         }
