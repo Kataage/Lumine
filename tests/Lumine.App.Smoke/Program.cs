@@ -7727,6 +7727,113 @@ try
                                         StringComparison.Ordinal)),
                         "Custom scan-extension removal did not update the staged Settings state.");
 
+
+                    // Keyboard focus regression is exercised on a separate
+                    // REAL mounted Settings window. MainWindow's asynchronous
+                    // navigation refresh may replace its Settings tree while
+                    // unrelated smoke work is running; a detached Button
+                    // cannot meaningfully validate keyboard focus.
+                    var keyboardSettingsPage =
+                        ProductSettingsView.Create(
+                            window.SettingsSnapshot,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask);
+                    var keyboardSettingsWindow = new Window
+                    {
+                        Width = 900,
+                        Height = 900,
+                        Content = keyboardSettingsPage
+                    };
+                    keyboardSettingsWindow.Show();
+                    try
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        var keyboardInput =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(
+                                    input =>
+                                        AutomationProperties.GetName(input)
+                                            == "独自読み込み対象を入力");
+                        var keyboardAdd =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象を追加");
+                        var keyboardExtensions =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<WrapPanel>()
+                                .Single(
+                                    panel =>
+                                        AutomationProperties.GetName(panel)
+                                            == "独自読み込み対象一覧");
+
+                        foreach (var extension in new[] { "JFIF", "zzfocus" })
+                        {
+                            keyboardInput.Text = extension;
+                            keyboardAdd.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                string.IsNullOrEmpty(keyboardInput.Text),
+                                $"Settings focus fixture could not stage {extension}.");
+                        }
+
+                        var focusedRemoval =
+                            keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .jfif を削除");
+                        Require(
+                            ReferenceEquals(
+                                TopLevel.GetTopLevel(focusedRemoval),
+                                keyboardSettingsWindow)
+                            && focusedRemoval.Focus(),
+                            "Mounted Settings custom-extension button did not accept keyboard focus.");
+                        focusedRemoval.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        var survivingRemoval =
+                            keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .zzfocus を削除");
+                        Require(
+                            survivingRemoval.IsFocused
+                            && !keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .jfif を削除"),
+                            "Settings did not focus the surviving custom-extension removal after deleting the focused chip.");
+
+                        survivingRemoval.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !keyboardExtensions.Children.OfType<Button>().Any()
+                            && keyboardAdd.IsFocused,
+                            "Settings did not return keyboard focus to Add after deleting the last custom extension.");
+                    }
+                    finally
+                    {
+                        keyboardSettingsWindow.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     Require(
                         settingsText.Any(block =>
                             string.Equals(

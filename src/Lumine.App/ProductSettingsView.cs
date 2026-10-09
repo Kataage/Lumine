@@ -457,8 +457,26 @@ internal static class ProductSettingsView
             customOptions,
             "独自読み込み対象一覧");
 
+        // The Add command is a stable keyboard fallback when a focused
+        // extension removal button is detached. It is assigned after the
+        // initial render, before any user-triggered removal can occur.
+        Button? addCustomFocusTarget = null;
+
         void RefreshCustomOptions()
         {
+            var previousRemovals =
+                customOptions.Children
+                    .OfType<Button>()
+                    .ToArray();
+            var focusedRemovalIndex =
+                Array.FindIndex(
+                    previousRemovals,
+                    static button => button.IsFocused);
+            if (focusedRemovalIndex >= 0)
+            {
+                addCustomFocusTarget?.Focus();
+            }
+
             customOptions.Children.Clear();
 
             foreach (var extension in
@@ -517,6 +535,25 @@ internal static class ProductSettingsView
                                 LumineDesign.Space6)
                     });
             }
+
+            if (focusedRemovalIndex >= 0)
+            {
+                var nextRemovals =
+                    customOptions.Children
+                        .OfType<Button>()
+                        .ToArray();
+                if (nextRemovals.Length > 0
+                    && nextRemovals[
+                        Math.Min(
+                            focusedRemovalIndex,
+                            nextRemovals.Length - 1)]
+                        .Focus())
+                {
+                    return;
+                }
+
+                addCustomFocusTarget?.Focus();
+            }
         }
 
         RefreshCustomOptions();
@@ -548,6 +585,7 @@ internal static class ProductSettingsView
         AutomationProperties.SetName(
             addCustom,
             "独自読み込み対象を追加");
+        addCustomFocusTarget = addCustom;
 
         addCustom.Click +=
             (_, _) =>
