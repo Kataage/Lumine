@@ -1455,14 +1455,15 @@ public sealed class ThumbnailViewerControl : UserControl
 
         var session = _session;
         _lookaheadCancellation = new CancellationTokenSource();
-        _ = PrefetchViewportLookaheadAsync(
-            session,
-            rowIndex,
-            columns,
-            _lookaheadCancellation.Token);
+        TrackTileLoad(
+            PrefetchViewportLookaheadAsync(
+                session,
+                rowIndex,
+                columns,
+                _lookaheadCancellation.Token));
     }
 
-    private static async Task PrefetchViewportLookaheadAsync(
+    private async Task PrefetchViewportLookaheadAsync(
         ViewerSession session,
         long rowIndex,
         int columns,
@@ -1503,9 +1504,115 @@ public sealed class ThumbnailViewerControl : UserControl
                     checked((int)(beforeRowCount * columns)),
                     cancellationToken).ConfigureAwait(false);
             }
+
+            // Source prefetch alone is not enough: a tile still has to
+            // decode an Avalonia Bitmap when the user reaches it.
+            // Only decode one next row after current visible work is
+            // ready, leaving foreground decode capacity untouched.
+            var nextRowCount = Math.Min(
+                columns,
+                Math.Min(8, session.Options.DecodedBitmapEntryLimit / 8));
+            if (nextRowCount > 0 && afterStartIndex < session.Count)
+            {
+                for (var attempt = 0; attempt < 80; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var state = session.Diagnostics;
+                    if (state.AttachedTiles > 0
+                        && state.ReadyTiles >= state.AttachedTiles
+                        && state.ActiveBitmapDecodes == 0)
+                    {
+                        await PredecodeNextRowAsync(
+                            session,
+                            afterStartIndex,
+                            checked((int)Math.Min(
+                                session.Count - afterStartIndex,
+                                nextRowCount)),
+                            cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(25),
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task PredecodeNextRowAsync(
+        ViewerSession session,
+        long startIndex,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        for (var offset = 0; offset < count; offset++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var index = startIndex + offset;
+            DecodedBitmapLease? lease = null;
+            try
+            {
+                var asset = await session.GetAssetAsync(
+                    index, cancellationToken).ConfigureAwait(false);
+                var thumbnail = await session.GetThumbnailAsync(
+                    asset,
+                    ViewerThumbnailPriority.Background,
+                    cancellationToken).ConfigureAwait(false);
+                lease = await session.BitmapCache.AcquireAsync(
+                    thumbnail,
+                    cancellationToken).ConfigureAwait(false);
+
+                // Warm descriptors and decoded cache residency must be
+                // updated together on UI thread. An unleased bitmap
+                // remains in the bounded LRU until later eviction.
+                var acquired = lease;
+                await Dispatcher.UIThread.InvokeAsync(
+                    () =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (ReferenceEquals(_session, session))
+                        {
+                            RememberWarmPresentation(
+                                index,
+                                asset,
+                                thumbnail);
+                        }
+
+                        acquired.Dispose();
+                    });
+                lease = null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                // Speculative images are expendable. Visible tile work
+                // still owns its own retry/error reporting.
+                session.NotifyTileLoadFailed(exception);
+                break;
+            }
+            finally
+            {
+                if (lease is not null)
+                {
+                    var orphan = lease;
+                    await Dispatcher.UIThread.InvokeAsync(
+                        orphan.Dispose);
+                }
+            }
         }
     }
 
