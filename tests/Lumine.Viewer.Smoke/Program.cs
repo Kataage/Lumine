@@ -1296,6 +1296,30 @@ internal static class Program
                 > scheduledBeforeReverse,
             "Reverse scroll within the same realized viewport failed to supersede stale forward lookahead.");
 
+        // A row attachment for the current visible edge must NOT cancel
+        // a previously scheduled source/Bitmap warming task. Test the
+        // pure admission gate independently of Avalonia layout timing.
+        Require(
+            ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: true, visibleEdge: 7,
+                direction: 1, lastEdge: 7, lastDirection: 1)
+            && ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: true, visibleEdge: 7,
+                direction: -1, lastEdge: 7, lastDirection: -1)
+            && !ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: false, visibleEdge: 7,
+                direction: 1, lastEdge: 7, lastDirection: 1)
+            && !ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: true, visibleEdge: -1,
+                direction: 1, lastEdge: -1, lastDirection: 1)
+            && !ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: true, visibleEdge: 8,
+                direction: 1, lastEdge: 7, lastDirection: 1)
+            && !ThumbnailViewerControl.ShouldReuseScheduledLookaheadForSmoke(
+                hasScheduledTask: true, visibleEdge: 7,
+                direction: -1, lastEdge: 7, lastDirection: 1),
+            "Duplicate row attachments cancelled valid same-edge lookahead or blocked a required direction/edge refresh.");
+
         // A later same-direction motion may shift the *visible* edge
         // without creating a new virtual row (the overscan already
         // contains it). It must still schedule the new nearest row.

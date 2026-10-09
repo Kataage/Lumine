@@ -1817,14 +1817,43 @@ public sealed class ThumbnailViewerControl : UserControl
         _lookaheadTask = null;
     }
 
+    // Virtualized row attachments frequently repeat after offset-driven
+    // schedules have already targeted the SAME visible edge. Restarting
+    // the same task cancels useful background work and can create a new
+    // thumbnail source request for an identical neighbor. Preserve the
+    // first task (including an already-completed warm cache) unless the
+    // actual visible boundary or direction changed. With no visible
+    // geometry yet, allow the attached-row fallback to be superseded.
+    internal static bool ShouldReuseScheduledLookaheadForSmoke(
+        bool hasScheduledTask,
+        int visibleEdge,
+        int direction,
+        int lastEdge,
+        int lastDirection) =>
+        hasScheduledTask
+        && visibleEdge >= 0
+        && visibleEdge == lastEdge
+        && direction == lastDirection;
+
     private void ScheduleLookahead(long rowIndex, int columns)
     {
-        _lookaheadScheduleCount++;
-        // Coalesce offset-driven scheduling with virtualized row attachment
-        // scheduling using the actual visible boundary at this point.
+        // Coalesce row attachment with offset-driven scheduling BEFORE
+        // cancelling the old task. The same edge and direction need only
+        // one outstanding (or completed) speculative work item.
         var visibleEdge = _lookaheadDirection < 0
             ? GetFirstVisibleRowIndex()
             : GetLastVisibleRowIndex();
+        if (ShouldReuseScheduledLookaheadForSmoke(
+                _lookaheadTask is not null,
+                visibleEdge,
+                _lookaheadDirection,
+                _lastLookaheadOffsetEdge,
+                _lastLookaheadOffsetDirection))
+        {
+            return;
+        }
+
+        _lookaheadScheduleCount++;
         if (visibleEdge >= 0)
         {
             _lastLookaheadOffsetEdge = visibleEdge;
