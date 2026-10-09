@@ -48,6 +48,7 @@ internal static class Program
         long maxDecodedBitmapBytes = 0;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
+        ViewerTileReadinessDiagnostics finalTileReadiness = default;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
         long cursorRandomSeekPages = 0;
@@ -131,6 +132,7 @@ internal static class Program
                     window.Close();
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
+                    finalTileReadiness = viewer.TileReadiness;
 
                     if (finalDiagnostics.AttachedTiles != 0)
                     {
@@ -206,6 +208,17 @@ internal static class Program
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_failed"] = finalDiagnostics.ThumbnailRequestsFailed.ToString(CultureInfo.InvariantCulture),
                     ["tile_load_failures"] = finalDiagnostics.TileLoadFailures.ToString(CultureInfo.InvariantCulture),
+                    // UI bitmap assignment, not a compositor-present fence:
+                    // keep these distinct from source thumbnail requests.
+                    ["tile_load_started"] = finalTileReadiness.Started.ToString(CultureInfo.InvariantCulture),
+                    ["tile_ui_ready"] = finalTileReadiness.Ready.ToString(CultureInfo.InvariantCulture),
+                    ["tile_ui_ready_bitmap_cache_hits"] = finalTileReadiness.ReadyFromBitmapCache.ToString(CultureInfo.InvariantCulture),
+                    ["tile_detached_before_ready"] = finalTileReadiness.CancelledBeforeReady.ToString(CultureInfo.InvariantCulture),
+                    ["tile_attach_to_ui_ready_mean_ms"] = finalTileReadiness.MeanAttachToReadyMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["tile_attach_to_ui_ready_max_ms"] = finalTileReadiness.MaxAttachToReadyMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["tile_metadata_mean_ms"] = finalTileReadiness.MeanMetadataMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["tile_thumbnail_source_mean_ms"] = finalTileReadiness.MeanThumbnailSourceMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["tile_bitmap_acquire_mean_ms"] = finalTileReadiness.MeanBitmapAcquireMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["last_tile_load_error"] = finalDiagnostics.LastTileLoadError ?? string.Empty,
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
