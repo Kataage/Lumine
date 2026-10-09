@@ -46,6 +46,18 @@ The 10k/100k `Lumine.Viewer.Benchmarks` JSON now records these independently of 
 
 **Interpretation limits:** the measurements represent all attached/realized tiles, not just those inside the strict pixel viewport. A small nonzero UI assignment delay does not establish a physically blank frame, and the current generated fixtures are synthetic. The next targeted change should introduce a viewport-visibility timestamp and cold/warm representative-library small-wheel interaction benchmark before setting quantitative targets and considering low-priority decoded-bitmap prewarm. This issue cannot close without real Windows owner scroll acceptance.
 
+## First bounded decoded-bitmap lookahead (third #634 step)
+
+The preceding CI telemetry in `lumine-core-baselines-37912236670` showed that the 10k synthetic fast-jump workload started 1,118 tile loads but cancelled 1,030 before completion. It measured about 72 ms mean attach-to-UI-ready for the loads that finished, about 22 ms mean source wait and 4 ms mean bitmap acquisition. The workload is aggressively jumping and **must not be called a measurement of normal mouse-wheel scroll**.
+
+The next implementation step therefore opportunistically **predecodes one adjacent forward row after all currently attached tiles are ready**, rather than just prefetching the encoded source. It is deliberately bounded by `min(columns, 8, decodedEntryLimit / 8)`, at most one row and never ahead of active foreground decodes. It uses the existing byte/entry-limited `DecodedBitmapCache` to hold the unleased bitmap and the viewer's existing warm-presentation descriptor so `StartLoad()` can attach the decoded bitmap immediately. All work shares the viewer-owned cancellable lookahead task: a new scroll, rebind or detach cancels stale work, and teardown drains the task.
+
+Offscreen warm-up failures are logged but not counted as failures of any visible tile. The real visible request still retains its existing error and retry UX. Neither the cache budget nor the existing fast-scroll request-count/performance acceptance limits change.
+
+The headless test exercises a **small forward scroll**: hold visible foreground loads pending, verify low-priority source lookahead starts, allow foreground to become ready, wait for an immediately following virtualized row's bitmap to be prepared, scroll into that row, and assert the decoded warm bitmap is reused on attachment without requesting/re-decoding it.
+
+Remaining release work: measure actual real Windows natural wheel-scroll visual gaps across varied image formats and low/high density; adapt range to scroll direction/velocity while respecting cache pressure. The test validates `Image.Source` readiness, not a physical GPU frame-present fence. The final #634 acceptance must be verified by the owner.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
