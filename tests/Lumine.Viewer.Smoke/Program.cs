@@ -983,6 +983,31 @@ internal static class Program
             && prelayoutRows.AfterRow == 21,
             "Lookahead prepared an in-viewport row rather than the adjacent offscreen boundary.");
 
+        // With two prefetched rows per side, the nearest row must be
+        // queued first while the original source-request set stays exact.
+        // For reverse the nearest row is at the TAIL of the source range.
+        var ahead = ThumbnailViewerControl.SplitLookaheadRangeForSmoke(
+            startIndex: 112, count: 21, columns: 7,
+            beforeViewport: false);
+        var behind = ThumbnailViewerControl.SplitLookaheadRangeForSmoke(
+            startIndex: 84, count: 21, columns: 7,
+            beforeViewport: true);
+        var single = ThumbnailViewerControl.SplitLookaheadRangeForSmoke(
+            startIndex: 7, count: 7, columns: 7,
+            beforeViewport: true);
+        var empty = ThumbnailViewerControl.SplitLookaheadRangeForSmoke(
+            startIndex: 0, count: 0, columns: 7,
+            beforeViewport: false);
+        Require(
+            ahead.NearStart == 112 && ahead.NearCount == 7
+            && ahead.FarStart == 119 && ahead.FarCount == 14
+            && behind.NearStart == 98 && behind.NearCount == 7
+            && behind.FarStart == 84 && behind.FarCount == 14
+            && single.NearStart == 7 && single.NearCount == 7
+            && single.FarCount == 0
+            && empty.NearCount == 0 && empty.FarCount == 0,
+            "Adjacent-first lookahead split duplicated or skipped background source rows.");
+
         // A jump can leave the last observed direction reversed. When the
         // actual viewport plus two adjacent rows fit the strict budget,
         // prepare both sides rather than leaving a cold forward strip.
