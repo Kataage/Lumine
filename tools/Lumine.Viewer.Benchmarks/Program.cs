@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -5,6 +6,7 @@ using Avalonia.Headless;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lumine.Diagnostics;
 using Lumine.Image;
 using Lumine.Library;
@@ -49,6 +51,8 @@ internal static class Program
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
+        ScrollProbeResult forwardWheel = default;
+        ScrollProbeResult reverseWheel = default;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
         long cursorRandomSeekPages = 0;
@@ -102,6 +106,20 @@ internal static class Program
                         await WaitForViewportReadyAsync(viewer);
                     }
 
+                    Observe(viewer);
+
+                    // One row per small offset change reproduces normal
+                    // browsing more closely than the legacy 40 random
+                    // ScrollToAsset jumps. Capture both cold and reverse
+                    // navigation, including first-frame blank tiles.
+                    forwardWheel =
+                        await MeasureSmallScrollAsync(
+                            viewer,
+                            reverse: false);
+                    reverseWheel =
+                        await MeasureSmallScrollAsync(
+                            viewer,
+                            reverse: true);
                     Observe(viewer);
 
                     using (recorder.Measure(CoreMetricNames.ViewerFastScrollRefresh))
@@ -219,6 +237,14 @@ internal static class Program
                     ["tile_metadata_mean_ms"] = finalTileReadiness.MeanMetadataMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["tile_thumbnail_source_mean_ms"] = finalTileReadiness.MeanThumbnailSourceMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["tile_bitmap_acquire_mean_ms"] = finalTileReadiness.MeanBitmapAcquireMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_steps"] = forwardWheel.Steps.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_missing_on_first_frame"] = forwardWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_max_ui_ready_wait_ms"] = forwardWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_warm_bitmap_hits"] = forwardWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_steps"] = reverseWheel.Steps.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_missing_on_first_frame"] = reverseWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_max_ui_ready_wait_ms"] = reverseWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_warm_bitmap_hits"] = reverseWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
                     ["last_tile_load_error"] = finalDiagnostics.LastTileLoadError ?? string.Empty,
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
@@ -247,6 +273,108 @@ internal static class Program
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    private readonly record struct ScrollProbeResult(
+        int Steps,
+        int MissingOnFirstFrame,
+        double MaxWaitMilliseconds,
+        long WarmBitmapHits);
+
+    private static async Task<ScrollProbeResult> MeasureSmallScrollAsync(
+        ThumbnailViewerControl viewer,
+        bool reverse)
+    {
+        var scroller = viewer.GetVisualDescendants()
+            .OfType<ScrollViewer>()
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Small-scroll benchmark could not locate gallery ScrollViewer.");
+        var maximumOffset = Math.Max(
+            0,
+            scroller.Extent.Height - scroller.Viewport.Height);
+        // Advance by approximately one visual row, including spacing.
+        // This uses the same ScrollViewer offset path as wheel, touch
+        // and scrollbar motion, not random ScrollIntoView seeks.
+        const double step = 198;
+        const int stepCount = 3;
+        if (maximumOffset < step * stepCount)
+        {
+            throw new InvalidOperationException(
+                "Small-scroll benchmark requires more scrollable rows.");
+        }
+
+        var missing = 0;
+        var maxWait = 0.0;
+        var beforeWarmHits =
+            viewer.TileReadiness.ReadyFromBitmapCache;
+
+        for (var i = 0; i < stepCount; i++)
+        {
+            var nextOffset = Math.Clamp(
+                scroller.Offset.Y + (reverse ? -step : step),
+                0,
+                maximumOffset);
+            scroller.Offset = new Vector(
+                scroller.Offset.X,
+                nextOffset);
+            Dispatcher.UIThread.RunJobs();
+
+            // Sample immediately after layout/row realization to find
+            // whether the next viewport momentarily has empty tiles.
+            missing += CountUnreadyVisibleTiles(viewer);
+            var wait = Stopwatch.StartNew();
+            for (var attempt = 0;
+                 attempt < 1500
+                 && CountUnreadyVisibleTiles(viewer) != 0;
+                 attempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+
+            wait.Stop();
+            if (CountUnreadyVisibleTiles(viewer) != 0)
+            {
+                throw new InvalidOperationException(
+                    "Small-scroll benchmark left unloaded visible tiles after the readiness window.");
+            }
+
+            maxWait = Math.Max(
+                maxWait,
+                wait.Elapsed.TotalMilliseconds);
+        }
+
+        return new ScrollProbeResult(
+            stepCount,
+            missing,
+            maxWait,
+            viewer.TileReadiness.ReadyFromBitmapCache
+                - beforeWarmHits);
+    }
+
+    private static int CountUnreadyVisibleTiles(
+        ThumbnailViewerControl viewer)
+    {
+        if (viewer.FirstVisibleAssetIndex is not { } first
+            || viewer.LastVisibleAssetIndex is not { } last
+            || last < first)
+        {
+            return 1; // Not yet a valid realized/visible viewport.
+        }
+
+        var missing = 0;
+        for (var index = first;
+             index <= Math.Min(last, first + 255);
+             index++)
+        {
+            if (!viewer.IsAssetReady(index))
+            {
+                missing++;
+            }
+        }
+
+        return missing;
     }
 
     private static async Task<CursorIntegrationResult> MeasureLibraryCursorIntegrationAsync(
