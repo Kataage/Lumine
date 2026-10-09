@@ -78,6 +78,12 @@ public sealed class ThumbnailViewerControl : UserControl
     // shutdown must drain these tasks as well as composition-fenced leases.
     private readonly object _tileLoadGate = new();
     private readonly HashSet<Task> _pendingTileLoads = [];
+    // Exactly one scheduling owner in the opt-in experiment. Never
+    // enqueue its requests alongside attachment-driven lookahead.
+    private readonly ViewerViewportRequestCoordinator
+        _viewportRequestCoordinator = new();
+    private long _viewportPlansActivated;
+    private long _viewportPlanBitmapsPredecoded;
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
@@ -152,6 +158,14 @@ public sealed class ThumbnailViewerControl : UserControl
         };
 
         Content = _rows;
+        if (session.Options.UseViewportRequestCoordinator)
+        {
+            // Realized rows may already be in the visual tree when no
+            // more attachment events fire. Re-check actual ScrollViewer
+            // geometry on layout, with the coordinator de-duping plans.
+            LayoutUpdated += (_, _) => RefreshViewportRequestPlan();
+        }
+
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
         AttachedToVisualTree += OnAttachedToVisualTree;
@@ -1618,6 +1632,12 @@ public sealed class ThumbnailViewerControl : UserControl
     internal int LastLookaheadOffsetDirectionForSmoke =>
         _lastLookaheadOffsetDirection;
 
+    public (long Revisions, long ActivePlans, long BitmapsPredecoded)
+        ViewportRequestCoordinatorDiagnostics =>
+        (_viewportRequestCoordinator.Revision,
+         _viewportPlansActivated,
+         _viewportPlanBitmapsPredecoded);
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
@@ -1734,6 +1754,13 @@ public sealed class ThumbnailViewerControl : UserControl
         var next = scroller.Offset.Y;
         var delta = next - _lastGalleryOffsetY;
         _lastGalleryOffsetY = next;
+        if (_session.Options.UseViewportRequestCoordinator)
+        {
+            SetLookaheadDirection(delta);
+            RefreshViewportRequestPlan();
+            return;
+        }
+
         var previousDirection = _lookaheadDirection;
         SetLookaheadDirection(delta);
 
@@ -1800,10 +1827,22 @@ public sealed class ThumbnailViewerControl : UserControl
         _lookaheadCancellation?.Dispose();
         _lookaheadCancellation = null;
         _lookaheadTask = null;
+        if (_session.Options.UseViewportRequestCoordinator)
+        {
+            // Cancels the previous revision's source and decode token.
+            _viewportRequestCoordinator.Update(
+                ViewerViewportRequestPlan.Empty);
+        }
     }
 
     private void ScheduleLookahead(long rowIndex, int columns)
     {
+        if (_session.Options.UseViewportRequestCoordinator)
+        {
+            RefreshViewportRequestPlan();
+            return;
+        }
+
         _lookaheadScheduleCount++;
         // Coalesce offset-driven scheduling with virtualized row attachment
         // scheduling using the actual visible boundary at this point.
