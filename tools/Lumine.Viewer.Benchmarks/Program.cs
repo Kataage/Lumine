@@ -344,7 +344,11 @@ internal static class Program
                     + $"attached={diagnostic.AttachedTiles}, ready={diagnostic.ReadyTiles}, "
                     + $"realizedRows={viewer.RealizedRowCount}, "
                     + $"first={viewer.FirstVisibleAssetIndex}, last={viewer.LastVisibleAssetIndex}, "
-                    + $"sourceInFlight={diagnostic.InFlightThumbnailRequests}, activeDecodes={diagnostic.ActiveBitmapDecodes}.");
+                    + $"sourceInFlight={diagnostic.InFlightThumbnailRequests}, activeDecodes={diagnostic.ActiveBitmapDecodes}, "
+                    + $"tileStates=[{viewer.DescribeUnreadyVisibleTilesForDiagnostics()}], "
+                    + $"tileStarted={viewer.TileReadiness.Started}, tileReady={viewer.TileReadiness.Ready}, "
+                    + $"tileCancelled={viewer.TileReadiness.CancelledBeforeReady}, "
+                    + $"lastError={diagnostic.LastTileLoadError ?? "none"}.");
             }
 
             maxWait = Math.Max(
