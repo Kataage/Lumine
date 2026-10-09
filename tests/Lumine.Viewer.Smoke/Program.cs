@@ -836,6 +836,46 @@ internal static class Program
                 >= viewer.Diagnostics.AttachedTiles,
             "Visible tile readiness regressed after background lookahead.");
 
+        // Next-row predecode must run only after the foreground
+        // viewport is ready, then return a bitmap immediately when
+        // a small scroll realizes the prefetched row.
+        var nextRowIndex =
+            (viewer.FirstRealizedAssetIndex ?? 0)
+            + (long)viewer.RealizedRowCount * viewer.Columns;
+        Require(
+            nextRowIndex < viewer.AssetCount,
+            "Lookahead smoke needs a next virtualized row.");
+
+        for (var attempt = 0;
+             attempt < 500
+             && !viewer.IsAssetWarmForSmoke(nextRowIndex);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.IsAssetWarmForSmoke(nextRowIndex),
+            $"Decoded bitmap was not prepared for the next scroll row: first={viewer.FirstRealizedAssetIndex}, rows={viewer.RealizedRowCount}, target={nextRowIndex}.");
+
+        var warmHitsBeforeForward = viewer.WarmTileHitCountForSmoke;
+        viewer.ScrollToAsset(nextRowIndex);
+        for (var attempt = 0;
+             attempt < 150
+             && !viewer.IsAssetReady(nextRowIndex);
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.IsAssetReady(nextRowIndex)
+            && viewer.WarmTileHitCountForSmoke
+                > warmHitsBeforeForward,
+            "Small scroll failed to reuse an already decoded next-row thumbnail.");
+
         // The user-visible missing-thumbnail regression must be
         // instrumented as UI bitmap-source assignment latency, with
         // metadata / thumbnail source / decoded bitmap stages separate.
