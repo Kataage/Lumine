@@ -151,6 +151,30 @@ public sealed class ThumbnailViewerControl : UserControl
             BorderThickness = new Thickness(0)
         };
 
+        // Keep the production default ListBox template untouched when
+        // the factor is zero. For the controlled experiment use Avalonia's
+        // documented native virtualized-panel realization buffer, not an
+        // expanded decoded Bitmap cache or a custom scroll implementation.
+        var realizationBuffer = session.Options.RealizationBufferFactor;
+        if (!double.IsFinite(realizationBuffer)
+            || realizationBuffer < 0
+            || realizationBuffer > 0.5)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(session),
+                "RealizationBufferFactor must be between 0 and 0.5.");
+        }
+
+        if (realizationBuffer > 0)
+        {
+            _rows.ItemsPanel =
+                new FuncTemplate<Panel?>(
+                    () => new VirtualizingStackPanel
+                    {
+                        CacheLength = realizationBuffer
+                    });
+        }
+
         Content = _rows;
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
