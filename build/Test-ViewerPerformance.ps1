@@ -84,6 +84,38 @@ foreach ($result in $results) {
         }
     }
 
+    # Detect missing or impossible stage instrumentation without imposing
+    # an ungrounded warm-hit threshold before observing the new baseline.
+    foreach ($key in @(
+        "settled_lookahead_scheduled_before_dwell",
+        "settled_lookahead_scheduled_during_dwell",
+        "settled_lookahead_cancelled_during_dwell",
+        "settled_lookahead_source_completed_during_dwell",
+        "settled_lookahead_eligible_during_dwell",
+        "settled_lookahead_predecoded_during_dwell",
+        "settled_lookahead_predecoded_during_scroll"
+    )) {
+        $value = $result.metadata.$key
+        if ($null -eq $value -or [long]$value -lt 0) {
+            throw "$count Viewer lookahead stage diagnostic missing or invalid: $key=$value"
+        }
+    }
+
+    foreach ($key in @(
+        "settled_lookahead_last_scheduled_row",
+        "settled_lookahead_last_predecode_start",
+        "settled_lookahead_last_visible_index"
+    )) {
+        $value = $result.metadata.$key
+        if ($null -eq $value -or [long]$value -lt -1) {
+            throw "$count Viewer lookahead anchor diagnostic missing or invalid: $key=$value"
+        }
+    }
+
+    if ([int]$result.metadata.settled_lookahead_last_direction -notin @(-1, 1)) {
+        throw "$count Viewer settled direction diagnostic was invalid."
+    }
+
     if ([double]$firstPaint.durationMs -gt 1500) {
         throw "$count Viewer first paint exceeded 1.5 s: $($firstPaint.durationMs) ms"
     }
@@ -283,6 +315,18 @@ foreach ($result in $results) {
         $result.metadata.small_scroll_settled_forward_missing_on_first_frame,
         [double]$result.metadata.small_scroll_settled_forward_max_ui_ready_wait_ms,
         $result.metadata.small_scroll_settled_forward_warm_bitmap_hits)
+    Write-Host (
+        "  lookahead during dwell: scheduled={0}, cancelled={1}, source={2}, eligible={3}, decoded={4}, decoded after scroll={5}; anchor row={6}, predecode start={7}, last visible={8}, direction={9}" -f
+        $result.metadata.settled_lookahead_scheduled_during_dwell,
+        $result.metadata.settled_lookahead_cancelled_during_dwell,
+        $result.metadata.settled_lookahead_source_completed_during_dwell,
+        $result.metadata.settled_lookahead_eligible_during_dwell,
+        $result.metadata.settled_lookahead_predecoded_during_dwell,
+        $result.metadata.settled_lookahead_predecoded_during_scroll,
+        $result.metadata.settled_lookahead_last_scheduled_row,
+        $result.metadata.settled_lookahead_last_predecode_start,
+        $result.metadata.settled_lookahead_last_visible_index,
+        $result.metadata.settled_lookahead_last_direction)
 }
 
 Write-Host (
