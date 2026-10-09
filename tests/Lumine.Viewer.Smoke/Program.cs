@@ -932,14 +932,41 @@ internal static class Program
             + $"lastPredecodeIndex={warmState.LastPredecodeStartIndex}, "
             + $"direction={warmState.LastScheduledDirection}.");
 
+        // A nearest-row Bitmap deliberately becomes ready BEFORE distant
+        // source prefetch completes (PR #645). Assert those stages
+        // independently rather than introducing a timing race here.
         var warmDiagnostics = viewer.LookaheadDiagnostics;
         Require(
             warmDiagnostics.Scheduled > 0
-            && warmDiagnostics.SourcePrefetchCompleted > 0
             && warmDiagnostics.EligibleForPredecode > 0
             && warmDiagnostics.BitmapsPredecoded > 0
             && warmDiagnostics.LastPredecodeStartIndex >= 0,
-            "Lookahead diagnostics did not track a completed, eligible bitmap predecode.");
+            "Lookahead did not record eligible nearest-row Bitmap predecode: "
+            + $"scheduled={warmDiagnostics.Scheduled}, "
+            + $"sources={warmDiagnostics.SourcePrefetchCompleted}, "
+            + $"eligible={warmDiagnostics.EligibleForPredecode}, "
+            + $"decoded={warmDiagnostics.BitmapsPredecoded}, "
+            + $"last={warmDiagnostics.LastPredecodeStartIndex}.");
+
+        // During an idle viewport, the remaining far source requests
+        // must still finish. Check separately after near-row readiness.
+        for (var attempt = 0;
+             attempt < 500
+             && viewer.LookaheadDiagnostics.SourcePrefetchCompleted == 0;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        var completedLookahead = viewer.LookaheadDiagnostics;
+        Require(
+            completedLookahead.SourcePrefetchCompleted > 0,
+            "Adjacent Bitmap was ready but full source prefetch never "
+            + $"completed in an idle viewport: scheduled={completedLookahead.Scheduled}, "
+            + $"cancelled={completedLookahead.CancelledBeforeCompletion}, "
+            + $"eligible={completedLookahead.EligibleForPredecode}, "
+            + $"predecoded={completedLookahead.BitmapsPredecoded}.");
 
 
         var warmHitsBeforeForward = viewer.WarmTileHitCountForSmoke;
