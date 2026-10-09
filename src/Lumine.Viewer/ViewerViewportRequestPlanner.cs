@@ -81,9 +81,9 @@ internal static class ViewerViewportRequestPlanner
         }
 
         var start = checked(firstVisibleRow * columns);
-        var end = Math.Min(
-            assetCount,
-            checked((lastVisibleRow + 1) * (long)columns));
+        var lastStart = checked(lastVisibleRow * columns);
+        var end = lastStart
+            + Math.Min((long)columns, assetCount - lastStart);
         var visibleCount = end - start;
         if (visibleCount > int.MaxValue)
         {
