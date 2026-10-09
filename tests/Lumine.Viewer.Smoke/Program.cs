@@ -1058,6 +1058,32 @@ internal static class Program
                 }, attachedTiles: 35, nextRowCount: 7),
             "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
 
+        // Two rows in the likely scroll direction plus one opposite
+        // row are possible at 35 mounted/leased tiles, 7 columns,
+        // 384px max decode, strict 32 MiB and 64 cache-entry limits.
+        // The third row must be rejected immediately if memory or
+        // entry counts cannot fit all worst-case decoded Bitmaps.
+        Require(
+            ThumbnailViewerControl.HasThirdWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 35, nextRowCount: 7)
+            && !ThumbnailViewerControl.HasThirdWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 36, nextRowCount: 7)
+            && !ThumbnailViewerControl.HasThirdWarmCapacityForSmoke(
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 48,
+                    DecodedBitmapByteLimit = 32L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 35, nextRowCount: 7)
+            && !ThumbnailViewerControl.HasThirdWarmCapacityForSmoke(
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 64,
+                    DecodedBitmapByteLimit = 16L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 35, nextRowCount: 7),
+            "A third directional row ignored the strict pinned 32 MiB/entry budget.");
+
         // Unlike ScrollToAsset, a small offset adjustment exercises
         // the real inner ScrollViewer's routed ScrollChanged event.
         // This also covers keyboard/scrollbar/touch direction changes,
