@@ -210,6 +210,15 @@ public readonly record struct ViewerRuntimeDiagnostics(
     int PeakConcurrentBitmapDecodes,
     string? LastTileLoadError);
 
+// A failed warm lookup is not always an evicted decoded Bitmap:
+// most misses have no speculative descriptor at all. Keep the two
+// causes separate before choosing a memory/retention policy.
+public readonly record struct ViewerWarmPresentationDiagnostics(
+    long LookupAttempts,
+    long Hits,
+    long MissingDescriptor,
+    long BitmapUnavailable);
+
 public enum ViewerDetailLoadState
 {
     Empty = 0,
