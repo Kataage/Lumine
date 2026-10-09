@@ -78,6 +78,13 @@ public sealed class ThumbnailViewerControl : UserControl
     // shutdown must drain these tasks as well as composition-fenced leases.
     private readonly object _tileLoadGate = new();
     private readonly HashSet<Task> _pendingTileLoads = [];
+    // Exactly one scheduling owner in the opt-in experiment. Never
+    // enqueue its requests alongside attachment-driven lookahead.
+    private readonly ViewerViewportRequestCoordinator
+        _viewportRequestCoordinator = new();
+    private bool _viewportMounted;
+    private long _viewportPlansActivated;
+    private long _viewportPlanBitmapsPredecoded;
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
@@ -152,11 +159,20 @@ public sealed class ThumbnailViewerControl : UserControl
         };
 
         Content = _rows;
+        if (session.Options.UseViewportRequestCoordinator)
+        {
+            // Realized rows may already be in the visual tree when no
+            // more attachment events fire. Re-check actual ScrollViewer
+            // geometry on layout, with the coordinator de-duping plans.
+            LayoutUpdated += (_, _) => RefreshViewportRequestPlan();
+        }
+
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
         AttachedToVisualTree += OnAttachedToVisualTree;
         DetachedFromVisualTree += (_, _) =>
         {
+            _viewportMounted = false;
             CancelLookahead();
             StopScrollTracking();
         };
@@ -271,6 +287,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Terminal shell teardown must detach realized rows synchronously.
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
+        _viewportMounted = false;
         CancelPendingAssetFocus();
         CancelLookahead();
         _rows.ItemsSource = null;
@@ -1095,6 +1112,7 @@ public sealed class ThumbnailViewerControl : UserControl
         object? sender,
         VisualTreeAttachmentEventArgs e)
     {
+        _viewportMounted = true;
         _compositor =
             ElementComposition.GetElementVisual(this)?.Compositor
             ?? _compositor;
@@ -1618,6 +1636,12 @@ public sealed class ThumbnailViewerControl : UserControl
     internal int LastLookaheadOffsetDirectionForSmoke =>
         _lastLookaheadOffsetDirection;
 
+    public (long Revisions, long ActivePlans, long BitmapsPredecoded)
+        ViewportRequestCoordinatorDiagnostics =>
+        (_viewportRequestCoordinator.Revision,
+         _viewportPlansActivated,
+         _viewportPlanBitmapsPredecoded);
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
@@ -1734,6 +1758,13 @@ public sealed class ThumbnailViewerControl : UserControl
         var next = scroller.Offset.Y;
         var delta = next - _lastGalleryOffsetY;
         _lastGalleryOffsetY = next;
+        if (_session.Options.UseViewportRequestCoordinator)
+        {
+            SetLookaheadDirection(delta);
+            RefreshViewportRequestPlan();
+            return;
+        }
+
         var previousDirection = _lookaheadDirection;
         SetLookaheadDirection(delta);
 
@@ -1800,10 +1831,166 @@ public sealed class ThumbnailViewerControl : UserControl
         _lookaheadCancellation?.Dispose();
         _lookaheadCancellation = null;
         _lookaheadTask = null;
+        // Cancellation is unconditional: the owner may have rebound to
+        // a different session/option before the old task completes.
+        _viewportRequestCoordinator.Update(
+            ViewerViewportRequestPlan.Empty);
+    }
+
+    private void RefreshViewportRequestPlan()
+    {
+        if (!_viewportMounted
+            || !_session.Options.UseViewportRequestCoordinator)
+        {
+            return;
+        }
+
+        EnsureScrollTracking();
+        var scroller = _galleryScrollViewer;
+        var first = -1;
+        var last = -1;
+        if (scroller is not null
+            && scroller.Viewport.Height > 0
+            && scroller.Viewport.Width > 0)
+        {
+            // Measure against the INNER ScrollViewer viewport, not
+            // the outer ListBox.Bounds or overscanned attached rows.
+            foreach (var container in _rows.GetRealizedContainers())
+            {
+                var row = _rows.IndexFromContainer(container);
+                if (row < 0 || container.Bounds.Height <= 0)
+                {
+                    continue;
+                }
+
+                var p = container.TranslatePoint(default, scroller);
+                if (p is not { } point
+                    || point.Y >= scroller.Viewport.Height
+                    || point.Y + container.Bounds.Height <= 0)
+                {
+                    continue;
+                }
+
+                first = first < 0 ? row : Math.Min(first, row);
+                last = Math.Max(last, row);
+            }
+        }
+
+        // Only the visible range contributes to speculative source
+        // requests. More Avalonia control realization cannot inflate it.
+        var imminentCap = _session.Options.PrefetchRows <= 0
+            ? 0
+            : Math.Min(
+                _columns,
+                Math.Min(8, _session.Options.DecodedBitmapEntryLimit / 8));
+        var plan = ViewerViewportRequestPlanner.Build(
+            _session.Count, _columns, first, last,
+            _lookaheadDirection, imminentCap);
+        var lease = _viewportRequestCoordinator.Update(plan);
+        if (!lease.Changed || plan.IsEmpty
+            || plan.ImminentCount <= 0)
+        {
+            return;
+        }
+
+        _viewportPlansActivated++;
+        _lookaheadScheduleCount++;
+        Interlocked.Exchange(
+            ref _lookaheadLastRow,
+            plan.ImminentStartIndex / _columns);
+        Volatile.Write(
+            ref _lookaheadLastScheduledDirection,
+            plan.ScrollDirection);
+        _lookaheadTask = PrefetchPlannedViewportAsync(
+            _session, plan, lease.Token);
+        TrackTileLoad(_lookaheadTask);
+    }
+
+    private async Task PrefetchPlannedViewportAsync(
+        ViewerSession session,
+        ViewerViewportRequestPlan plan,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (session.Options.PrefetchDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(
+                    session.Options.PrefetchDelay,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            // Only one imminent directional row is admitted by the
+            // planner; do not run the original two-sided row scheduler.
+            await session.PrefetchAsync(
+                plan.ImminentStartIndex,
+                plan.ImminentCount,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _lookaheadSourcesComplete);
+
+            // Foreground bitmap rendering has priority. Predecode only
+            // once the attached visible surface has finished loading.
+            for (var attempt = 0; attempt < 80; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var state = session.Diagnostics;
+                if (state.AttachedTiles > 0
+                    && state.ReadyTiles >= state.AttachedTiles
+                    && state.ActiveBitmapDecodes == 0)
+                {
+                    Interlocked.Increment(
+                        ref _lookaheadPredecodeEligible);
+                    Interlocked.Exchange(
+                        ref _lookaheadLastPredecodeStartIndex,
+                        plan.ImminentStartIndex);
+                    var before = Interlocked.Read(
+                        ref _lookaheadBitmapsPredecoded);
+                    await PredecodeNextRowAsync(
+                        session,
+                        plan.ImminentStartIndex,
+                        plan.ImminentCount,
+                        cancellationToken).ConfigureAwait(false);
+                    var warmed = Interlocked.Read(
+                        ref _lookaheadBitmapsPredecoded) - before;
+                    if (warmed > 0)
+                    {
+                        Interlocked.Add(
+                            ref _viewportPlanBitmapsPredecoded,
+                            warmed);
+                    }
+
+                    break;
+                }
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(25),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning(
+                "Viewer viewport-request predecode failed: {0}", ex);
+        }
     }
 
     private void ScheduleLookahead(long rowIndex, int columns)
     {
+        if (_session.Options.UseViewportRequestCoordinator)
+        {
+            RefreshViewportRequestPlan();
+            return;
+        }
+
         _lookaheadScheduleCount++;
         // Coalesce offset-driven scheduling with virtualized row attachment
         // scheduling using the actual visible boundary at this point.
