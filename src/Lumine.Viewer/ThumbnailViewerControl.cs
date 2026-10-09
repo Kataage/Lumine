@@ -1842,14 +1842,19 @@ public sealed class ThumbnailViewerControl : UserControl
     // neighbors at each short-lived intermediate viewport should wait
     // for a brief quiet period. Foreground tile work is unaffected.
     // The normal 8ms/default delay remains exact for small scrolling.
-    internal static TimeSpan LookaheadDelayForScrollForSmoke(
-        TimeSpan normalDelay,
+    internal static bool IsFullViewportJumpForSmoke(
         double offsetChange,
         double viewportHeight) =>
         viewportHeight > 0
         && double.IsFinite(viewportHeight)
         && double.IsFinite(offsetChange)
-        && Math.Abs(offsetChange) >= viewportHeight
+        && Math.Abs(offsetChange) >= viewportHeight;
+
+    internal static TimeSpan LookaheadDelayForScrollForSmoke(
+        TimeSpan normalDelay,
+        double offsetChange,
+        double viewportHeight) =>
+        IsFullViewportJumpForSmoke(offsetChange, viewportHeight)
             ? TimeSpan.FromMilliseconds(
                 Math.Max(normalDelay.TotalMilliseconds, 48))
             : normalDelay;
@@ -1874,7 +1879,11 @@ public sealed class ThumbnailViewerControl : UserControl
             _session.Options.PrefetchDelay,
             offsetChange,
             viewportHeight);
-        var isLargeJump = delay > _session.Options.PrefetchDelay;
+        // Whether geometry belongs to the previous viewport must not
+        // depend on the configured delay. If the caller already uses a
+        // >=48ms delay, a bulk jump still invalidates same-edge reuse.
+        var isLargeJump = IsFullViewportJumpForSmoke(
+            offsetChange, viewportHeight);
         // A large seek can be reported while the old viewport geometry
         // is still attached. Do not reuse that old same-edge task just
         // because virtualization has not measured the new rows yet.

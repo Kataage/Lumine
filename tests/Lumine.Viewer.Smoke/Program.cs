@@ -1342,6 +1342,14 @@ internal static class Program
             && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
                 TimeSpan.FromMilliseconds(60), 1600, 800)
                 == TimeSpan.FromMilliseconds(60)
+            && ThumbnailViewerControl.IsFullViewportJumpForSmoke(
+                1600, 800)
+            && ThumbnailViewerControl.IsFullViewportJumpForSmoke(
+                -800, 800)
+            && !ThumbnailViewerControl.IsFullViewportJumpForSmoke(
+                200, 800)
+            && !ThumbnailViewerControl.IsFullViewportJumpForSmoke(
+                1600, double.NaN)
             && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
                 normalLookaheadDelay, 1600, double.NaN)
                 == normalLookaheadDelay,
