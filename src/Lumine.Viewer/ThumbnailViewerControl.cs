@@ -86,6 +86,8 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _lookaheadSourcesComplete;
     private long _lookaheadPredecodeEligible;
     private long _lookaheadBitmapsPredecoded;
+    private long _lookaheadSecondDirectionalAttempts;
+    private long _lookaheadSecondDirectionalBitmapsPredecoded;
     private long _lookaheadLastRow = -1;
     private long _lookaheadLastPredecodeStartIndex = -1;
     private int _lookaheadLastScheduledDirection = 1;
@@ -1618,6 +1620,14 @@ public sealed class ThumbnailViewerControl : UserControl
     internal int LastLookaheadOffsetDirectionForSmoke =>
         _lastLookaheadOffsetDirection;
 
+    // Extra directional Bitmap work is optional; expose a separate
+    // counter so benchmarks can distinguish “not admitted” from
+    // “attempted but still had a missing first frame”.
+    public (long Attempts, long BitmapsPredecoded)
+        SecondDirectionalWarmDiagnostics =>
+        (_lookaheadSecondDirectionalAttempts,
+         _lookaheadSecondDirectionalBitmapsPredecoded);
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
@@ -2048,6 +2058,8 @@ public sealed class ThumbnailViewerControl : UserControl
                 {
                     secondDirectionalWarmStart =
                         checked(secondDirectionalRow * columns);
+                    Interlocked.Increment(
+                        ref _lookaheadSecondDirectionalAttempts);
                     Interlocked.Exchange(
                         ref _lookaheadLastPredecodeStartIndex,
                         secondDirectionalWarmStart);
@@ -2056,6 +2068,9 @@ public sealed class ThumbnailViewerControl : UserControl
                         secondDirectionalWarmStart,
                         columns,
                         cancellationToken).ConfigureAwait(false);
+                    Interlocked.Add(
+                        ref _lookaheadSecondDirectionalBitmapsPredecoded,
+                        completed);
                     secondDirectionalWarmComplete = completed == columns;
                 }
             }
