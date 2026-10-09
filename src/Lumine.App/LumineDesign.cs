@@ -159,8 +159,12 @@ internal static class LumineDesign
     // before reading their labels.
     public const string LibraryIconPath =
         "M3.75 6.75A2.25 2.25 0 016 4.5h3.879c.621 0 1.216.257 1.641.71l1.21 1.29H18a2.25 2.25 0 012.25 2.25v8.5A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25V6.75z";
+    // Folder navigation uses the conventional open-folder silhouette.
+    // The previous icon was visually dominated by a right arrow and
+    // looked like a forward/navigation command at 16 DIP, not a folder.
+    // Keep Library's closed folder and Folder's open folder distinct.
     public const string FolderIconPath =
-        "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5L17.25 12l-3.75 3.75M17.25 12H3";
+        "M3 10V5a2 2 0 012-2h4.88a2 2 0 011.41.59L14 6h5a2 2 0 012 2v2 M6 14l1.5-2.9A2 2 0 019.24 10H20a2 2 0 011.94 2.5l-1.54 6A2 2 0 0118.46 20H4a2 2 0 01-1.94-2.5l1.54-6A2 2 0 015.54 10H7";
     public const string TagIconPath =
         "M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z";
     public const string PublicationIconPath =
