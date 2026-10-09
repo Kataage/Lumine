@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -10,6 +11,19 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace Lumine.Viewer;
+
+// UI bitmap assignment is measured, not a GPU/compositor-present fence.
+// These diagnostics expose the stages causing an empty visible thumbnail.
+public readonly record struct ViewerTileReadinessDiagnostics(
+    long Started,
+    long Ready,
+    long ReadyFromBitmapCache,
+    long CancelledBeforeReady,
+    double MeanAttachToReadyMilliseconds,
+    double MaxAttachToReadyMilliseconds,
+    double MeanMetadataMilliseconds,
+    double MeanThumbnailSourceMilliseconds,
+    double MeanBitmapAcquireMilliseconds);
 
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Design",
@@ -25,6 +39,15 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly Dictionary<long, WarmPresentation> _warmPresentations = [];
     private readonly LinkedList<long> _warmPresentationLru = [];
     private long _warmPresentationHits;
+    private long _tileLoadsStarted;
+    private long _tileLoadsReady;
+    private long _tileLoadsReadyWarm;
+    private long _tileLoadsCancelled;
+    private double _totalReadyMilliseconds;
+    private double _maxReadyMilliseconds;
+    private double _totalMetadataMilliseconds;
+    private double _totalThumbnailSourceMilliseconds;
+    private double _totalBitmapAcquireMilliseconds;
     private Exception? _bitmapReleaseFailure;
 
     // Tile decode tasks extend beyond ViewerSession.GetThumbnailAsync:
@@ -117,6 +140,56 @@ public sealed class ThumbnailViewerControl : UserControl
 
     public int DensityLevel =>
         _densityLevel;
+
+    public ViewerTileReadinessDiagnostics TileReadiness =>
+        new(
+            _tileLoadsStarted,
+            _tileLoadsReady,
+            _tileLoadsReadyWarm,
+            _tileLoadsCancelled,
+            _tileLoadsReady > 0
+                ? _totalReadyMilliseconds / _tileLoadsReady
+                : 0,
+            _maxReadyMilliseconds,
+            _tileLoadsReady > _tileLoadsReadyWarm
+                ? _totalMetadataMilliseconds
+                    / (_tileLoadsReady - _tileLoadsReadyWarm)
+                : 0,
+            _tileLoadsReady > _tileLoadsReadyWarm
+                ? _totalThumbnailSourceMilliseconds
+                    / (_tileLoadsReady - _tileLoadsReadyWarm)
+                : 0,
+            _tileLoadsReady > _tileLoadsReadyWarm
+                ? _totalBitmapAcquireMilliseconds
+                    / (_tileLoadsReady - _tileLoadsReadyWarm)
+                : 0);
+
+    private void RecordTileReady(
+        long startedAt,
+        bool warm,
+        double metadataMilliseconds = 0,
+        double thumbnailMilliseconds = 0,
+        double bitmapMilliseconds = 0)
+    {
+        var total = Stopwatch.GetElapsedTime(startedAt)
+            .TotalMilliseconds;
+        _tileLoadsReady++;
+        if (warm)
+        {
+            _tileLoadsReadyWarm++;
+        }
+        else
+        {
+            _totalMetadataMilliseconds += metadataMilliseconds;
+            _totalThumbnailSourceMilliseconds += thumbnailMilliseconds;
+            _totalBitmapAcquireMilliseconds += bitmapMilliseconds;
+        }
+
+        _totalReadyMilliseconds += total;
+        _maxReadyMilliseconds = Math.Max(
+            _maxReadyMilliseconds,
+            total);
+    }
 
     public double BottomOverlayInset =>
         Math.Max(
@@ -1511,6 +1584,7 @@ public sealed class ThumbnailViewerControl : UserControl
         private string? _failureReason;
         private bool _isReady;
         private bool _isLoading;
+        private long _loadStartedAt;
         private bool _hovered;
         private bool _pressed;
 
@@ -2107,6 +2181,8 @@ public sealed class ThumbnailViewerControl : UserControl
             CancelLoad();
             ClearFailure();
             _isLoading = true;
+            _loadStartedAt = Stopwatch.GetTimestamp();
+            _owner._tileLoadsStarted++;
             _loadCancellation =
                 new CancellationTokenSource();
             var token =
@@ -2123,6 +2199,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 ApplyPresentation(
                     warmAsset);
                 MarkReady();
+                _owner.RecordTileReady(
+                    _loadStartedAt,
+                    warm: true);
                 _isLoading = false;
 
                 var refresh =
@@ -2140,6 +2219,11 @@ public sealed class ThumbnailViewerControl : UserControl
 
         private void CancelLoad()
         {
+            if (_isLoading && !_isReady)
+            {
+                _owner._tileLoadsCancelled++;
+            }
+
             _loadCancellation?.Cancel();
             _loadCancellation?.Dispose();
             _loadCancellation = null;
@@ -2422,18 +2506,21 @@ public sealed class ThumbnailViewerControl : UserControl
                         _index,
                         cancellationToken)
                         .ConfigureAwait(false);
+                var afterMetadata = Stopwatch.GetTimestamp();
                 var thumbnail =
                     await _session.GetThumbnailAsync(
                         asset,
                         ViewerThumbnailPriority.Foreground,
                         cancellationToken)
                         .ConfigureAwait(false);
+                var afterSource = Stopwatch.GetTimestamp();
                 lease =
                     await _session.BitmapCache
                         .AcquireAsync(
                             thumbnail,
                             cancellationToken)
                         .ConfigureAwait(false);
+                var afterBitmap = Stopwatch.GetTimestamp();
 
                 await Dispatcher.UIThread.InvokeAsync(
                     () =>
@@ -2452,6 +2539,18 @@ public sealed class ThumbnailViewerControl : UserControl
                         ReplaceBitmapLease(next);
                         ApplyPresentation(asset);
                         MarkReady();
+                        _owner.RecordTileReady(
+                            _loadStartedAt,
+                            warm: false,
+                            metadataMilliseconds: Stopwatch.GetElapsedTime(
+                                _loadStartedAt,
+                                afterMetadata).TotalMilliseconds,
+                            thumbnailMilliseconds: Stopwatch.GetElapsedTime(
+                                afterMetadata,
+                                afterSource).TotalMilliseconds,
+                            bitmapMilliseconds: Stopwatch.GetElapsedTime(
+                                afterSource,
+                                afterBitmap).TotalMilliseconds);
                         _isLoading = false;
                     });
             }
