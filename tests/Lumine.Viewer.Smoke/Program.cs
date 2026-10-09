@@ -895,6 +895,9 @@ internal static class Program
                 .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Viewer has no mounted ScrollViewer for wheel-direction smoke.");
+        Require(
+            viewer.IsScrollTrackingAttachedForSmoke,
+            "The virtualized gallery never subscribed to its own ScrollViewer offset.");
         var maxScroll =
             Math.Max(0, scrollViewer.Extent.Height
                 - scrollViewer.Viewport.Height);
