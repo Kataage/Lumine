@@ -90,7 +90,9 @@ jobs:
             "./build/Run-ProductAcceptance.ps1",
             "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1",
-            "./build/Sanitize-AcceptancePackage.ps1"
+            "./build/Sanitize-AcceptancePackage.ps1",
+            "./build/Compare-ViewerSkiaRaster.ps1",
+            "./build/Test-ViewerSkiaRasterComparison.ps1"
           )) {
             $tokens = $null
             $errors = $null
@@ -261,6 +263,13 @@ jobs:
             throw "Skia raster audit did not find the known synthetic-blue tiles with valid dark placeholders."
           }
           Write-Host "Actual Skia raster bottom row: $blue painted blue thumbnails, $dark dark placeholders, $other other pixels across $columns columns at y=$y. These are rendered pixels, not a GPU-present fence."
+
+      # Verify that future A/B trials fail when their *actual Skia
+      # pixels* are darker than the matched control, even if source
+      # request and decoded memory caps alone still pass.
+      - name: Test strict Skia-rendered first-offset A/B policy
+        shell: pwsh
+        run: ./build/Test-ViewerSkiaRasterComparison.ps1
 
       - name: Upload Skia-rendered Viewer scroll evidence
         uses: actions/upload-artifact@v7
