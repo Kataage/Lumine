@@ -1320,6 +1320,33 @@ internal static class Program
                 direction: -1, lastEdge: 7, lastDirection: 1),
             "Duplicate row attachments cancelled valid same-edge lookahead or blocked a required direction/edge refresh.");
 
+        // Rapid ScrollToAsset jumps must not prefetch each transient
+        // offscreen range. A 50px wheel notch (including reverse) keeps
+        // the short normal delay; a >=viewport jump gets 48ms to coalesce.
+        // This must not affect Foreground tile admission or extend the
+        // quiet period for small mouse input.
+        var normalLookaheadDelay = TimeSpan.FromMilliseconds(8);
+        Require(
+            ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                normalLookaheadDelay, 50, 800)
+                == normalLookaheadDelay
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                normalLookaheadDelay, -200, 800)
+                == normalLookaheadDelay
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                normalLookaheadDelay, 800, 800)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                normalLookaheadDelay, -1600, 800)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(60), 1600, 800)
+                == TimeSpan.FromMilliseconds(60)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                normalLookaheadDelay, 1600, double.NaN)
+                == normalLookaheadDelay,
+            "Lookahead seek debounce improperly slows small/reverse wheel input or ignores a full-viewport jump.");
+
         // A later same-direction motion may shift the *visible* edge
         // without creating a new virtual row (the overscan already
         // contains it). It must still schedule the new nearest row.

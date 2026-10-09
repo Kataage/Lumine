@@ -96,6 +96,7 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _lookaheadScheduleCount;
     private long _lookaheadViewportEdgeReschedules;
     private int _lastLookaheadOffsetEdge = -1;
+    private double _lastLookaheadScheduledOffsetY = double.NaN;
     private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
@@ -1482,6 +1483,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        _lastLookaheadScheduledOffsetY = double.NaN;
         _lastLookaheadOffsetEdge = -1;
         _lastLookaheadOffsetDirection = 0;
         _rows.ItemsSource = new VirtualRowIndexList(AssetCount, _columns);
@@ -1731,6 +1733,7 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
+            _lastLookaheadScheduledOffsetY = double.NaN;
             _lastLookaheadOffsetEdge = -1;
             _lastLookaheadOffsetDirection = 0;
         }
@@ -1835,6 +1838,22 @@ public sealed class ThumbnailViewerControl : UserControl
         && visibleEdge == lastEdge
         && direction == lastDirection;
 
+    // Large random seeks are unlike a 50px wheel notch: speculative
+    // neighbors at each short-lived intermediate viewport should wait
+    // for a brief quiet period. Foreground tile work is unaffected.
+    // The normal 8ms/default delay remains exact for small scrolling.
+    internal static TimeSpan LookaheadDelayForScrollForSmoke(
+        TimeSpan normalDelay,
+        double offsetChange,
+        double viewportHeight) =>
+        viewportHeight > 0
+        && double.IsFinite(viewportHeight)
+        && double.IsFinite(offsetChange)
+        && Math.Abs(offsetChange) >= viewportHeight
+            ? TimeSpan.FromMilliseconds(
+                Math.Max(normalDelay.TotalMilliseconds, 48))
+            : normalDelay;
+
     private void ScheduleLookahead(long rowIndex, int columns)
     {
         // Coalesce row attachment with offset-driven scheduling BEFORE
@@ -1843,7 +1862,24 @@ public sealed class ThumbnailViewerControl : UserControl
         var visibleEdge = _lookaheadDirection < 0
             ? GetFirstVisibleRowIndex()
             : GetLastVisibleRowIndex();
-        if (ShouldReuseScheduledLookaheadForSmoke(
+        var offset = _galleryScrollViewer?.Offset.Y ?? double.NaN;
+        var offsetChange =
+            double.IsFinite(offset)
+            && double.IsFinite(_lastLookaheadScheduledOffsetY)
+                ? Math.Abs(offset - _lastLookaheadScheduledOffsetY)
+                : 0;
+        var viewportHeight =
+            _galleryScrollViewer?.Viewport.Height ?? 0;
+        var delay = LookaheadDelayForScrollForSmoke(
+            _session.Options.PrefetchDelay,
+            offsetChange,
+            viewportHeight);
+        var isLargeJump = delay > _session.Options.PrefetchDelay;
+        // A large seek can be reported while the old viewport geometry
+        // is still attached. Do not reuse that old same-edge task just
+        // because virtualization has not measured the new rows yet.
+        if (!isLargeJump
+            && ShouldReuseScheduledLookaheadForSmoke(
                 _lookaheadTask is not null,
                 visibleEdge,
                 _lookaheadDirection,
@@ -1853,6 +1889,7 @@ public sealed class ThumbnailViewerControl : UserControl
             return;
         }
 
+        _lastLookaheadScheduledOffsetY = offset;
         _lookaheadScheduleCount++;
         if (visibleEdge >= 0)
         {
@@ -1884,6 +1921,7 @@ public sealed class ThumbnailViewerControl : UserControl
             rowIndex,
             columns,
             _lookaheadDirection,
+            delay,
             _lookaheadCancellation.Token);
         TrackTileLoad(_lookaheadTask);
     }
@@ -1893,17 +1931,18 @@ public sealed class ThumbnailViewerControl : UserControl
         long attachedRow,
         int columns,
         int direction,
+        TimeSpan delay,
         CancellationToken cancellationToken)
     {
         try
         {
-            // A short quiet period lets the current Foreground requests
-            // enqueue, while avoiding the previous gate that required
-            // every visible tile to finish first.
-            if (session.Options.PrefetchDelay > TimeSpan.Zero)
+            // Ordinary wheel scrolling uses the original short delay;
+            // a >viewport seek gets up to a 48ms quiet period to avoid
+            // speculative source requests for abandoned viewports.
+            if (delay > TimeSpan.Zero)
             {
                 await Task.Delay(
-                    session.Options.PrefetchDelay,
+                    delay,
                     cancellationToken).ConfigureAwait(false);
             }
 
