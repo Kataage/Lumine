@@ -351,6 +351,17 @@ foreach ($result in $results) {
         [double]$result.metadata.small_scroll_settled_forward_max_ui_ready_wait_ms,
         $result.metadata.small_scroll_settled_forward_warm_bitmap_hits)
     Write-Host (
+        "  warm lookups by cause: cold forward={0}/{1}/{2}; reverse={3}/{4}/{5}; rested forward={6}/{7}/{8} (attempts/no-descriptor/no-bitmap)" -f
+        $result.metadata.small_scroll_forward_warm_lookup_attempts,
+        $result.metadata.small_scroll_forward_no_descriptor,
+        $result.metadata.small_scroll_forward_bitmap_unavailable,
+        $result.metadata.small_scroll_reverse_warm_lookup_attempts,
+        $result.metadata.small_scroll_reverse_no_descriptor,
+        $result.metadata.small_scroll_reverse_bitmap_unavailable,
+        $result.metadata.small_scroll_settled_forward_warm_lookup_attempts,
+        $result.metadata.small_scroll_settled_forward_no_descriptor,
+        $result.metadata.small_scroll_settled_forward_bitmap_unavailable)
+    Write-Host (
         "  lookahead during dwell: scheduled={0}, cancelled={1}, source={2}, eligible={3}, decoded={4}, decoded after scroll={5}; anchor row={6}, predecode start={7}, last visible={8}, direction={9}" -f
         $result.metadata.settled_lookahead_scheduled_during_dwell,
         $result.metadata.settled_lookahead_cancelled_during_dwell,
