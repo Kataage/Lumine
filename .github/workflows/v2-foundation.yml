@@ -297,6 +297,8 @@ jobs:
           if ($meta.small_scroll_input_kind -ne "direct-scrollviewer-offset" -or
               $meta.wheel_probe_input_kind -ne "routed-headless-mouse-wheel" -or
               [long]$meta.wheel_probe_routed_event_count -lt 4 -or
+              [int]$meta.wheel_probe_scroll_intent_after_first -ne 1 -or
+              [int]$meta.wheel_probe_scroll_intent_after_fourth -ne 1 -or
               [double]$meta.wheel_probe_first_offset_px -le 0 -or
               [double]$meta.wheel_probe_fourth_offset_px -le [double]$meta.wheel_probe_first_offset_px -or
               [long]$meta.thumbnail_requests -gt 1600 -or
