@@ -45,7 +45,7 @@ internal static class Program
                     await VerifyDecodedCacheAsync(tempRoot, thumbnailPath);
                     await VerifyDecodedCacheAsyncShutdown(
                         thumbnailPath);
-                    await VerifyPrefetchWaitsForVisibleTilesAsync(
+                    await VerifyPrefetchStartsWhileViewportLoadsAsync(
                         thumbnailPath);
                     await VerifyHeadlessVirtualizationCoreAsync(thumbnailPath);
                     await VerifyBrowsePresentationParityAsync(thumbnailPath);
@@ -107,6 +107,12 @@ internal static class Program
                 productDefaults.TileWidth
                 - productDefaults.TileHeight) < 0.001,
             "Default product grid is no longer square.");
+        Require(
+            productDefaults.PrefetchRows >= 2
+            && productDefaults.PrefetchRows <= 4
+            && productDefaults.PrefetchDelay
+                <= TimeSpan.FromMilliseconds(16),
+            "Product lookahead lost its small bounded early-start policy.");
 
         Require(
             viewer.DecodedBitmapEntryLimit
@@ -751,9 +757,12 @@ internal static class Program
             "ViewerSession.DisposeAsync did not drain active bitmap decode.");
     }
 
-    private static async Task VerifyPrefetchWaitsForVisibleTilesAsync(
+    private static async Task VerifyPrefetchStartsWhileViewportLoadsAsync(
         string thumbnailPath)
     {
+        // Gate visible tile requests to make the original regression
+        // deterministic. Neighbor rows must start prefetching before
+        // the initial viewport has finished loading.
         var provider =
             new GatedPriorityThumbnailProvider(
                 thumbnailPath);
@@ -766,7 +775,7 @@ internal static class Program
                     TileWidth = 120,
                     TileHeight = 120,
                     TileSpacing = 8,
-                    PrefetchRows = 1,
+                    PrefetchRows = 2,
                     PrefetchDelay =
                         TimeSpan.FromMilliseconds(1),
                     DecodedBitmapEntryLimit = 64,
@@ -787,8 +796,9 @@ internal static class Program
         window.Show();
 
         for (var attempt = 0;
-             attempt < 500
-             && provider.ForegroundRequests == 0;
+             attempt < 750
+             && (provider.ForegroundRequests == 0
+                 || provider.BackgroundRequests == 0);
              attempt++)
         {
             Dispatcher.UIThread.RunJobs();
@@ -797,19 +807,15 @@ internal static class Program
 
         Require(
             provider.ForegroundRequests > 0,
-            "Prefetch scheduling smoke never started visible foreground work.");
-
-        for (var attempt = 0;
-             attempt < 75;
-             attempt++)
-        {
-            Dispatcher.UIThread.RunJobs();
-            await Task.Delay(1);
-        }
-
+            "Lookahead smoke never started visible foreground work.");
         Require(
-            provider.BackgroundRequests == 0,
-            "Background prefetch started while visible tiles were still loading.");
+            viewer.Diagnostics.AttachedTiles > 0
+            && viewer.Diagnostics.ReadyTiles
+                < viewer.Diagnostics.AttachedTiles,
+            "Lookahead smoke did not keep visible tiles in flight.");
+        Require(
+            provider.BackgroundRequests > 0,
+            "Lookahead did not start before the viewport finished loading. A short scroll would expose an unloaded thumbnail strip.");
 
         provider.ReleaseForeground();
 
@@ -817,8 +823,7 @@ internal static class Program
              attempt < 1_000
              && (viewer.Diagnostics.AttachedTiles == 0
                  || viewer.Diagnostics.ReadyTiles
-                    < viewer.Diagnostics.AttachedTiles
-                 || provider.BackgroundRequests == 0);
+                    < viewer.Diagnostics.AttachedTiles);
              attempt++)
         {
             Dispatcher.UIThread.RunJobs();
@@ -829,10 +834,7 @@ internal static class Program
             viewer.Diagnostics.AttachedTiles > 0
             && viewer.Diagnostics.ReadyTiles
                 >= viewer.Diagnostics.AttachedTiles,
-            "Visible tiles did not reach ready state after foreground release.");
-        Require(
-            provider.BackgroundRequests > 0,
-            "Background prefetch did not resume after visible tiles became ready.");
+            "Visible tile readiness regressed after background lookahead.");
 
         window.Close();
         Dispatcher.UIThread.RunJobs();
