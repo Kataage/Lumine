@@ -225,10 +225,6 @@ jobs:
             }
           }
 
-      - name: Enforce Viewer quarter-viewport realization resource limits
-        shell: pwsh
-        run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-realization025" -ExpectedPrefetchRows 2 -ExpectedRealizationBuffer 0.25
-
       - name: Compare Viewer realization-buffer A/B readiness
         shell: pwsh
         run: |
@@ -257,6 +253,10 @@ jobs:
               $control.metadata.max_decoded_bitmap_bytes,
               $trial.metadata.max_decoded_bitmap_bytes)
           }
+
+      - name: Enforce Viewer quarter-viewport realization resource limits
+        shell: pwsh
+        run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-realization025" -ExpectedPrefetchRows 2 -ExpectedRealizationBuffer 0.25
 
       - name: Compare Viewer one-row versus default two-row readiness
         shell: pwsh
@@ -316,6 +316,7 @@ jobs:
         run: ./build/Test-BmpFallback.ps1
 
       - name: Upload Core benchmark results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: lumine-core-baselines-${{ github.run_id }}
