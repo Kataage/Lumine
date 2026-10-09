@@ -32,6 +32,7 @@ internal static class Program
         try
         {
             VerifyViewportRequestPlanner();
+            VerifyViewportRequestCoordinator();
             VerifyResourcePolicyMapping();
             await VerifyCursorPagingAsync();
             await VerifyBackgroundForegroundCoalescingAsync(thumbnailPath);
@@ -185,6 +186,82 @@ internal static class Program
             ViewerViewportRequestPlanner.Build(100, 7, 0, 0, 0, 7));
         RequireArgumentThrows(() =>
             ViewerViewportRequestPlanner.Build(100, 7, 0, 0, 1, 8));
+    }
+
+    private static void VerifyViewportRequestCoordinator()
+    {
+        var first = ViewerViewportRequestPlanner.Build(
+            100000, 7, 100, 103, 1, 7);
+        var reversed = ViewerViewportRequestPlanner.Build(
+            100000, 7, 100, 103, -1, 7);
+        var seek = ViewerViewportRequestPlanner.Build(
+            100000, 7, 12000, 12003, -1, 7);
+
+        var coordinator = new ViewerViewportRequestCoordinator();
+        var initial = coordinator.Update(first);
+        Require(
+            initial.Changed && initial.Revision == 1
+            && !initial.Token.IsCancellationRequested,
+            "Viewport coordinator failed to admit initial bounded work.");
+
+        // A pixel offset within the same visible rows must not restart
+        // I/O or cancel a decoded soon-visible image already in flight.
+        var duplicate = coordinator.Update(first);
+        Require(
+            !duplicate.Changed
+            && duplicate.Revision == initial.Revision
+            && !initial.Token.IsCancellationRequested,
+            "Same viewport geometry restarted speculative I/O.");
+
+        var reverseLease = coordinator.Update(reversed);
+        Require(
+            reverseLease.Changed && reverseLease.Revision == 2
+            && initial.Token.IsCancellationRequested
+            && !reverseLease.Token.IsCancellationRequested,
+            "Direction reversal failed to cancel stale forward work.");
+
+        var jumpLease = coordinator.Update(seek);
+        Require(
+            jumpLease.Changed && jumpLease.Revision == 3
+            && reverseLease.Token.IsCancellationRequested
+            && !jumpLease.Token.IsCancellationRequested,
+            "Fast seek failed to cancel the previous viewport request.");
+
+        var missing = coordinator.Update(
+            ViewerViewportRequestPlan.Empty);
+        Require(
+            missing.Changed && missing.Revision == 4
+            && jumpLease.Token.IsCancellationRequested
+            && missing.Token.IsCancellationRequested,
+            "Unknown viewport geometry did not cancel speculative I/O.");
+
+        var stillEmpty = coordinator.Update(
+            ViewerViewportRequestPlan.Empty);
+        Require(
+            !stillEmpty.Changed && stillEmpty.Revision == 4,
+            "Repeated invalid geometry kept advancing request revisions.");
+
+        var returned = coordinator.Update(first);
+        Require(
+            returned.Changed && returned.Revision == 5
+            && !returned.Token.IsCancellationRequested,
+            "Valid geometry did not recover after a seek transition.");
+
+        coordinator.Dispose();
+        Require(
+            returned.Token.IsCancellationRequested,
+            "Shutdown did not cancel the final viewport request.");
+
+        try
+        {
+            coordinator.Update(first);
+            throw new InvalidOperationException(
+                "Viewport coordinator accepted new requests after disposal.");
+        }
+        catch (ObjectDisposedException)
+        {
+            // Correct: no resurrection of request work after teardown.
+        }
     }
 
     private static void VerifyResourcePolicyMapping()
