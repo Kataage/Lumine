@@ -1984,15 +1984,31 @@ internal static class ProductNavigationViews
                         AutomationProperties.SetName(
                             remove,
                             $"公開先を削除: {destinationItem.Name}");
+                        // Keep the keyboard-focused Delete enabled during
+                        // the async callback: disabling it would make
+                        // Avalonia move focus before we can preserve it.
+                        // Guard against repeat submissions separately.
+                        var removalInProgress = false;
                         remove.Click +=
                             async (_, _) =>
                             {
-                                remove.IsEnabled = false;
+                                if (removalInProgress)
+                                {
+                                    return;
+                                }
+
+                                removalInProgress = true;
+                                var hadFocus = remove.IsFocused;
                                 try
                                 {
                                     if (await deleteDestination(
                                             destinationItem))
                                     {
+                                        // A user may deliberately focus a
+                                        // different command while the async
+                                        // delete is in flight.
+                                        var restoreFocus =
+                                            hadFocus && remove.IsFocused;
                                         destinationItems.Remove(
                                             destinationItem);
                                         foreach (var linked in
@@ -2010,6 +2026,11 @@ internal static class ProductNavigationViews
                                         RefreshAccountDestinations();
                                         RenderDestinations();
                                         RenderAccounts();
+                                        if (restoreFocus)
+                                        {
+                                            addDestination.Focus();
+                                        }
+
                                         feedback.Text =
                                             "公開先を削除しました。過去のPublication snapshotは変更していません。";
                                     }
@@ -2025,7 +2046,7 @@ internal static class ProductNavigationViews
                                 }
                                 finally
                                 {
-                                    remove.IsEnabled = true;
+                                    removalInProgress = false;
                                 }
                             };
                         Grid.SetColumn(

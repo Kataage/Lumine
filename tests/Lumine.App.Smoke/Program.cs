@@ -5042,9 +5042,11 @@ try
                         static (destination, _, _) =>
                             Task.FromResult<PublicationDestinationInfo?>(
                                 destination),
+                    // This mounted adapter mutates only its own in-memory
+                    // rows; the persistent destination remains untouched.
                     deleteDestination:
                         static _ =>
-                            Task.FromResult(false),
+                            Task.FromResult(true),
                     createAccount:
                         static (_, _, _) =>
                             Task.FromResult<PublicationAccountInfo?>(
@@ -5229,6 +5231,56 @@ try
                             AutomationProperties.GetName(button)
                                 == "公開アカウントを削除: App Smoke Account"),
                 $"Publication account deletion focus failed: open={publicationSettingsFlyout.IsOpen}, addFocused={accountAdd.IsFocused}, addEnabled={accountAdd.IsEnabled}, addAttached={TopLevel.GetTopLevel(accountAdd) is not null}, rowExists={publicationSettingsForm.GetVisualDescendants().OfType<Button>().Any(button => AutomationProperties.GetName(button) == "公開アカウントを削除: App Smoke Account")}, focused={TopLevel.GetTopLevel(accountAdd)?.FocusManager?.GetFocusedElement()?.GetType().Name}.");
+            publicationSettingsFlyout.Hide();
+            Dispatcher.UIThread.RunJobs();
+
+            // A focused destination Remove must transfer focus to the
+            // surviving Add Destination command after its row disappears.
+            // This adapter uses in-memory-only successful deletion.
+            Require(
+                publicationSettingsCommand.Focus(),
+                "Publication settings could not refocus before destination removal.");
+            publicationSettingsFlyout.ShowAt(
+                publicationSettingsCommand);
+            Dispatcher.UIThread.RunJobs();
+            var destinationDelete =
+                publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            AutomationProperties.GetName(button)
+                                == "公開先を削除: Pixiv");
+            destinationDelete.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                destinationDelete.Focus(),
+                $"Publication destination Remove did not receive focus: attached={TopLevel.GetTopLevel(destinationDelete) is not null}, enabled={destinationDelete.IsEnabled}, visible={destinationDelete.IsEffectivelyVisible}.");
+            destinationDelete.RaiseEvent(
+                new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var destinationAdd =
+                publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            button.Content as string == "公開先を追加");
+            var destinationRowExists =
+                publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        button =>
+                            AutomationProperties.GetName(button)
+                                == "公開先を削除: Pixiv");
+            Require(
+                publicationSettingsFlyout.IsOpen
+                && destinationAdd.IsFocused
+                && !destinationRowExists,
+                $"Publication destination deletion focus failed: open={publicationSettingsFlyout.IsOpen}, addFocused={destinationAdd.IsFocused}, addEnabled={destinationAdd.IsEnabled}, addAttached={TopLevel.GetTopLevel(destinationAdd) is not null}, rowExists={destinationRowExists}, focused={TopLevel.GetTopLevel(destinationAdd)?.FocusManager?.GetFocusedElement()?.GetType().Name}.");
             publicationSettingsFlyout.Hide();
             Dispatcher.UIThread.RunJobs();
 
