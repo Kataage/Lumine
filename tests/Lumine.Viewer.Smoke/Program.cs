@@ -923,6 +923,8 @@ internal static class Program
             viewer.LookaheadDirectionForSmoke == 1,
             "A positive ScrollViewer offset failed to select forward lookahead.");
 
+        var scheduledBeforeReverse =
+            viewer.LookaheadScheduleCountForSmoke;
         scrollViewer.Offset = new Vector(
             scrollViewer.Offset.X,
             Math.Max(0, newOffset - 100));
@@ -938,6 +940,10 @@ internal static class Program
         Require(
             viewer.LookaheadDirectionForSmoke == -1,
             "A reverse ScrollViewer offset did not switch lookahead priority.");
+        Require(
+            viewer.LookaheadScheduleCountForSmoke
+                > scheduledBeforeReverse,
+            "Reverse scroll within the same realized viewport failed to supersede stale forward lookahead.");
 
         // The user-visible missing-thumbnail regression must be
         // instrumented as UI bitmap-source assignment latency, with
