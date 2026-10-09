@@ -900,11 +900,11 @@ internal static class Program
         // viewport is ready, then return a bitmap immediately when
         // a small scroll realizes the prefetched row.
         var nextRowIndex =
-            (viewer.FirstRealizedAssetIndex ?? 0)
-            + (long)viewer.RealizedRowCount * viewer.Columns;
+            ((viewer.LastVisibleAssetIndex ?? 0)
+                / viewer.Columns + 1) * viewer.Columns;
         Require(
             nextRowIndex < viewer.AssetCount,
-            "Lookahead smoke needs a next virtualized row.");
+            "Lookahead smoke needs a truly offscreen next row.");
 
         for (var attempt = 0;
              attempt < 500
@@ -946,14 +946,29 @@ internal static class Program
                 > warmHitsBeforeForward,
             "Small scroll failed to reuse an already decoded next-row thumbnail.");
 
-        // The directional lookahead target must remain bounded and
-        // symmetric; at the start of the library reverse predecode
-        // is intentionally skipped rather than accessing index -1.
+        // A virtualized row can attach inside the viewport or even
+        // beyond it. Both warm-up targets must be outside the actual
+        // visible range, independently of the last offset direction.
+        var offscreenRows =
+            ThumbnailViewerControl.ResolveOffscreenLookaheadRowsForSmoke(
+                attachedRow: 736, firstVisibleRow: 733,
+                lastVisibleRow: 736);
+        var startRows =
+            ThumbnailViewerControl.ResolveOffscreenLookaheadRowsForSmoke(
+                attachedRow: 0, firstVisibleRow: 0,
+                lastVisibleRow: 4);
+        var prelayoutRows =
+            ThumbnailViewerControl.ResolveOffscreenLookaheadRowsForSmoke(
+                attachedRow: 20, firstVisibleRow: -1,
+                lastVisibleRow: -1);
         Require(
-            ThumbnailViewerControl.ResolveLookaheadRowForSmoke(5, 1) == 6
-            && ThumbnailViewerControl.ResolveLookaheadRowForSmoke(5, -1) == 4
-            && ThumbnailViewerControl.ResolveLookaheadRowForSmoke(0, -1) == -1,
-            "Lookahead failed to choose the neighbor in the scroll direction.");
+            offscreenRows.BeforeRow == 732
+            && offscreenRows.AfterRow == 737
+            && startRows.BeforeRow == -1
+            && startRows.AfterRow == 5
+            && prelayoutRows.BeforeRow == 19
+            && prelayoutRows.AfterRow == 21,
+            "Lookahead prepared an in-viewport row rather than the adjacent offscreen boundary.");
 
         // A jump can leave the last observed direction reversed. When the
         // actual viewport plus two adjacent rows fit the strict budget,
