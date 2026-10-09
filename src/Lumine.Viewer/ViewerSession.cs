@@ -1,5 +1,16 @@
 namespace Lumine.Viewer;
 
+// New thumbnail source requests, not waits or reused in-flight work.
+// Keep these independent of overall runtime diagnostics so priority
+// provenance can be compared at each 10k scroll-benchmark checkpoint.
+public readonly record struct ViewerSourcePriorityDiagnostics(
+    long Foreground,
+    long Background,
+    long Interactive)
+{
+    public long Total => Foreground + Background + Interactive;
+}
+
 public sealed class ViewerSession : IAsyncDisposable
 {
     private readonly IViewerAssetProvider _assets;
@@ -14,6 +25,9 @@ public sealed class ViewerSession : IAsyncDisposable
         NewSignal();
     private int _activeOperations;
     private long _thumbnailRequests;
+    private long _thumbnailRequestsForeground;
+    private long _thumbnailRequestsBackground;
+    private long _thumbnailRequestsInteractive;
     private long _thumbnailRequestsCoalesced;
     private long _thumbnailRequestsCancelled;
     private long _thumbnailRequestsFailed;
@@ -90,6 +104,15 @@ public sealed class ViewerSession : IAsyncDisposable
             }
         }
     }
+
+    // Count only newly started source requests by priority. A
+    // foreground waiter coalescing onto a background request must NOT
+    // be double-counted, and a cancelled request is still real work.
+    public ViewerSourcePriorityDiagnostics SourceRequestsByPriority =>
+        new(
+            Interlocked.Read(ref _thumbnailRequestsForeground),
+            Interlocked.Read(ref _thumbnailRequestsBackground),
+            Interlocked.Read(ref _thumbnailRequestsInteractive));
 
     public void NotifyTileAttached() => Interlocked.Increment(ref _attachedTiles);
 
@@ -265,8 +288,20 @@ public sealed class ViewerSession : IAsyncDisposable
             ObserveRequestCompletionAsync(
                 asset.Id,
                 request);
-        Interlocked.Increment(
-            ref _thumbnailRequests);
+        if (priority == ViewerThumbnailPriority.Background)
+        {
+            Interlocked.Increment(ref _thumbnailRequestsBackground);
+        }
+        else if (priority == ViewerThumbnailPriority.Interactive)
+        {
+            Interlocked.Increment(ref _thumbnailRequestsInteractive);
+        }
+        else
+        {
+            Interlocked.Increment(ref _thumbnailRequestsForeground);
+        }
+
+        Interlocked.Increment(ref _thumbnailRequests);
         return request;
     }
 
