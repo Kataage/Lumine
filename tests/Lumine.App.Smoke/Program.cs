@@ -7687,7 +7687,57 @@ try
                         "Settings cache basics were not separated from the advanced disclosure.");
 
 
-                    customExtensionInput!.Text =
+                    // Navigation refresh may replace the whole Settings
+                    // page after the earlier structural checks. Always stage
+                    // and focus against the CURRENT mounted visual tree.
+                    var liveSettingsPage =
+                        window.WorkspacePageForSmoke
+                        ?? throw new InvalidOperationException(
+                            "Settings page disappeared before extension smoke.");
+                    Require(
+                        TopLevel.GetTopLevel(liveSettingsPage) is not null,
+                        "Current Settings page is not attached to the window.");
+                    settingsScroll =
+                        liveSettingsPage.GetVisualDescendants()
+                            .OfType<ScrollViewer>()
+                            .Single(
+                                scroll =>
+                                    AutomationProperties.GetName(scroll)
+                                        == "設定スクロール");
+                    settingsContent =
+                        liveSettingsPage.GetVisualDescendants()
+                            .OfType<StackPanel>()
+                            .Single(
+                                panel =>
+                                    AutomationProperties.GetName(panel)
+                                        == "設定コンテンツ");
+                    customExtensionInput =
+                        liveSettingsPage.GetVisualDescendants()
+                            .OfType<TextBox>()
+                            .Single(
+                                input =>
+                                    AutomationProperties.GetName(input)
+                                        == "独自読み込み対象を入力");
+                    addCustomExtension =
+                        liveSettingsPage.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(
+                                button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象を追加");
+                    customExtensionList =
+                        liveSettingsPage.GetVisualDescendants()
+                            .OfType<WrapPanel>()
+                            .Single(
+                                panel =>
+                                    AutomationProperties.GetName(panel)
+                                        == "独自読み込み対象一覧");
+                    Require(
+                        TopLevel.GetTopLevel(customExtensionList) is not null
+                        && TopLevel.GetTopLevel(addCustomExtension) is not null,
+                        "Current Settings extension controls are detached.");
+
+                    customExtensionInput.Text =
                         "JFIF";
                     addCustomExtension!.RaiseEvent(
                         new RoutedEventArgs(
