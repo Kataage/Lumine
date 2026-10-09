@@ -836,6 +836,20 @@ internal static class Program
                 >= viewer.Diagnostics.AttachedTiles,
             "Visible tile readiness regressed after background lookahead.");
 
+        // The user-visible missing-thumbnail regression must be
+        // instrumented as UI bitmap-source assignment latency, with
+        // metadata / thumbnail source / decoded bitmap stages separate.
+        var readiness = viewer.TileReadiness;
+        Require(
+            readiness.Started >= readiness.Ready
+            && readiness.Ready >= viewer.Diagnostics.ReadyTiles
+            && readiness.MaxAttachToReadyMilliseconds
+                >= readiness.MeanAttachToReadyMilliseconds
+            && readiness.MeanThumbnailSourceMilliseconds > 0
+            && readiness.MeanBitmapAcquireMilliseconds >= 0
+            && readiness.ReadyFromBitmapCache <= readiness.Ready,
+            "Tile-readiness diagnostics did not measure actual visible foreground completion.");
+
         window.Close();
         Dispatcher.UIThread.RunJobs();
     }
@@ -1036,6 +1050,9 @@ internal static class Program
             && warmReturnWatch.Elapsed
                 < TimeSpan.FromMilliseconds(150),
             $"Warm scroll-back did not synchronously reuse the decoded thumbnail within the interactive budget: {warmReturnWatch.Elapsed.TotalMilliseconds:N1} ms.");
+        Require(
+            viewer.TileReadiness.ReadyFromBitmapCache > 0,
+            "Warm scroll-back was not recorded as a cache-hit UI-ready thumbnail.");
 
         var selectAllWatch =
             Stopwatch.StartNew();

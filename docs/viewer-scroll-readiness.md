@@ -32,6 +32,20 @@ From `src/Lumine.Viewer/ThumbnailViewerControl.cs` and `ViewerSession.cs`:
 
 This is a **first correction only**. It primarily warms source thumbnails, not necessarily final decoded presentations, and does not guarantee eliminating all short-scroll blanking.
 
+## UI-ready stage instrumentation (second #634 step)
+
+The Viewer currently tracks foreground thumbnail requests and decoded-cache occupancy, but the product owner's visible blank-tile complaint requires a **separate UI-ready measurement**. A tile's `ViewerTileControl.StartLoad` timestamp now begins when it is attached/retried, and the successful `Image.Source = Bitmap` assignment ends the interval. Reported as **UI source assignment**, *not a GPU composition or physically painted frame measurement*.
+
+The new `ViewerTileReadinessDiagnostics` counters include:
+
+- `Started`, `Ready`, `CancelledBeforeReady`, `ReadyFromBitmapCache` (return without source/decode work)
+- Mean and maximum attach-to-UI-ready time
+- Mean time spent fetching asset metadata, acquiring the encoded/source thumbnail, and acquiring/decoding its Avalonia bitmap on the non-warm path
+
+The 10k/100k `Lumine.Viewer.Benchmarks` JSON now records these independently of `viewer.first_viewport_ready` and `viewer.fast_scroll_refresh`, so CI can expose an apparently fast scan that still spends time preparing each tile. The existing performance budget stays enforced; no new memory allocations proportional to library size or full-resolution image decode are introduced.
+
+**Interpretation limits:** the measurements represent all attached/realized tiles, not just those inside the strict pixel viewport. A small nonzero UI assignment delay does not establish a physically blank frame, and the current generated fixtures are synthetic. The next targeted change should introduce a viewport-visibility timestamp and cold/warm representative-library small-wheel interaction benchmark before setting quantitative targets and considering low-priority decoded-bitmap prewarm. This issue cannot close without real Windows owner scroll acceptance.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
