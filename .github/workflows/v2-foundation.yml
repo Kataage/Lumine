@@ -90,7 +90,9 @@ jobs:
             "./build/Run-ProductAcceptance.ps1",
             "./build/Compare-ThumbnailStoragePolicies.ps1",
             "./build/Test-RealLibraryAcceptanceWrapper.ps1",
-            "./build/Sanitize-AcceptancePackage.ps1"
+            "./build/Sanitize-AcceptancePackage.ps1",
+            "./build/Compare-ViewerSkiaRaster.ps1",
+            "./build/Test-ViewerSkiaRasterComparison.ps1"
           )) {
             $tokens = $null
             $errors = $null
