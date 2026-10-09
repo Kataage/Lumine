@@ -45,6 +45,20 @@ internal static class Program
                 "--prefetch-rows must be an integer from 0 to 8.");
         }
 
+        var bufferText = ReadOption(args, "--realization-buffer") ?? "0";
+        if (!double.TryParse(
+                bufferText,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var realizationBuffer)
+            || !double.IsFinite(realizationBuffer)
+            || realizationBuffer < 0
+            || realizationBuffer > 0.5)
+        {
+            throw new ArgumentException(
+                "--realization-buffer must be between 0 and 0.5.");
+        }
+
         var tempRoot = Path.Combine(
             Path.GetTempPath(),
             $"lumine-viewer-benchmark-{Guid.NewGuid():N}");
@@ -98,6 +112,7 @@ internal static class Program
                             TileHeight = 190,
                             TileSpacing = 8,
                             PrefetchRows = prefetchRows,
+                            RealizationBufferFactor = realizationBuffer,
                             DecodedBitmapEntryLimit = 64,
                             DecodedBitmapByteLimit = 32L * 1024 * 1024
                         });
@@ -253,6 +268,7 @@ internal static class Program
                     ["kind"] = "viewer-core",
                     ["asset_count"] = count.ToString(CultureInfo.InvariantCulture),
                     ["prefetch_rows"] = prefetchRows.ToString(CultureInfo.InvariantCulture),
+                    ["realization_buffer_factor"] = realizationBuffer.ToString("G17", CultureInfo.InvariantCulture),
                     ["columns"] = finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),
