@@ -61,3 +61,20 @@ The screenshot demonstrates what Skia **rasterized in headless mode** at that sp
 
 Next research milestones: inspect captured frames; instrument viewport visible-vs-pre-realized tile stages / per-request direction and cancellation only where missing; then prototype separation of control realization from speculative source I/O under the same bounded budgets. No changes to product default overscan until a repeatable improvement is shown.
 
+
+## Controlled follow-up: offscreen realization without offscreen foreground I/O (PR #651 candidate)
+
+The failed 0.25-buffer A/B proved two separable behaviors: (1) mounted Avalonia controls available earlier can reduce the *UI unready tile count* at the first offset, but (2) eagerly starting each tile's source request in `ViewerTileControl.OnAttached` increases source requests from **1,344 to 1,871** at 10k, violating the unchanged **1,600** cap. We should therefore avoid both unbounded overscan and the assumption that attached controls must immediately request thumbnails.
+
+New experimental options are **default OFF**: `RealizationBufferFactor=0` and `DeferOverscanTileLoads=false`. Only a test configuration with `0 < RealizationBufferFactor <= 0.5` and defer=true creates Avalonia's built-in `VirtualizingStackPanel { CacheLength = buffer }` and delays **foreground** `StartLoad()` for visual-attached tiles whose actual coordinates do not intersect the inner ScrollViewer viewport. All attached tile bookkeeping stays truthful, and deferred tile controls can begin foreground loading when they become visible in a subsequent scroll offset or `LayoutUpdated` pass. Unattached/detached tiles are removed from the small deferred set; no global library scan. Lookahead's foreground-idle condition in this opt-in branch uses the **visible** `ViewportReadiness` instead of requiring all deliberately-unloaded overscan controls to become ready.
+
+This is not the same as suppressing all speculative source work: the existing **2-row bounded background source prefetch** and warm descriptor lookup remain present. Only the *additional eager foreground requests created by offscreen control attachment* are gated. In particular, the extra row and source priority are not made larger. The main production branch keeps the original Avalonia default and eager behavior.
+
+CI A/B runs 10k/50k/100k with identical `PrefetchRows=2`, simulated provider, layout, UI size, source/decode limits and same strict existing policy at 0 vs 0.25-with-deferred-I/O. Compare **first-frame-unready**, **missing warm descriptor count**, **thumbnail request count**, **realized rows / attached tiles**, **decoded bytes**, first paint/viewport time, fast-scroll peak memory/virtualization and shutdown. The full JSON is uploaded even on failure. An independent 10k capture produces actual headless **Skia raster PNGs** for each variant without contaminating the acceptance benchmark runs. This is still not an actual Windows GPU-present fence.
+
+### Acceptance / rejection
+
+- **Reject** if 10k requests >1,600, decoded cache >32MiB, 100k virtualization cap >16 rows, attached tiles >128, incremental process working set >128MiB, or existing first-paint/viewport/shutdown/portable/NativeAOT gates fail. Do not relax original policy to justify a trial.
+- The UI-ready first-frame misses and **Skia-rendered black slots** must improve on repeatable same-run controls without 10k request violations. A single run, even if green, is not enough for a product-default change.
+- If this experimental variant fails, do not leave a growing chain of UI flags. Close without merge and document whether the blocker is geometry-driven load activation, layout/present timing, or background prefetch requests. Consider a cohesive viewport-driven tile scheduler separate from the `ListBox` container lifecycle.
+- Issue #634 must remain **OPEN** until the user's physical Windows wheel/compositor display test passes.
