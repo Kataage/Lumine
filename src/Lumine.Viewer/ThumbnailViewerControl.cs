@@ -2039,8 +2039,21 @@ public sealed class ThumbnailViewerControl : UserControl
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var state = session.Diagnostics;
-                    if (state.AttachedTiles > 0
-                        && state.ReadyTiles >= state.AttachedTiles
+                    var foregroundReady = state.AttachedTiles > 0
+                        && state.ReadyTiles >= state.AttachedTiles;
+                    if (session.Options.DeferOverscanTileLoads)
+                    {
+                        // Offscreen realization intentionally leaves
+                        // mounted tiles idle. They must not block the
+                        // existing foreground-first Bitmap warmup; only
+                        // tiles INTERSECTING the actual viewport count.
+                        var viewport = await Dispatcher.UIThread.InvokeAsync(
+                            () => ViewportReadiness);
+                        foregroundReady = viewport.VisibleTiles > 0
+                            && viewport.UnreadyTiles == 0;
+                    }
+
+                    if (foregroundReady
                         && state.ActiveBitmapDecodes == 0)
                     {
                         Interlocked.Increment(
@@ -2072,8 +2085,17 @@ public sealed class ThumbnailViewerControl : UserControl
                         {
                             cancellationToken.ThrowIfCancellationRequested();
                             var beforeSecondary = session.Diagnostics;
-                            if (beforeSecondary.ReadyTiles
-                                    >= beforeSecondary.AttachedTiles
+                            var secondaryReady = beforeSecondary.ReadyTiles
+                                >= beforeSecondary.AttachedTiles;
+                            if (session.Options.DeferOverscanTileLoads)
+                            {
+                                var visible = await Dispatcher.UIThread.InvokeAsync(
+                                    () => ViewportReadiness);
+                                secondaryReady = visible.VisibleTiles > 0
+                                    && visible.UnreadyTiles == 0;
+                            }
+
+                            if (secondaryReady
                                 && beforeSecondary.ActiveBitmapDecodes == 0)
                             {
                                 Interlocked.Exchange(
