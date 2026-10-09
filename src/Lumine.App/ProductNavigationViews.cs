@@ -101,18 +101,23 @@ internal static class ProductNavigationViews
                         VerticalAlignment.Center
                 };
 
-            // The library name is the primary navigation target.
-            // Moving "表示中" to the secondary status line lets long
-            // names keep the full first-row width, including at 225%.
+            // Keep the name prominent. A small checkmark makes the
+            // selected Library obvious without consuming a large
+            // "表示中" caption beside the name or wrapping to an orphan
+            // status line at 225% Windows text scale.
             var heading =
                 new Grid
                 {
                     ColumnDefinitions =
                         hasStateWarning
                             ? new ColumnDefinitions(
-                                "Auto,*")
+                                isActive
+                                    ? "Auto,*,Auto"
+                                    : "Auto,*")
                             : new ColumnDefinitions(
-                                "*"),
+                                isActive
+                                    ? "*,Auto"
+                                    : "*"),
                     ColumnSpacing =
                         LumineDesign.Space6
                 };
@@ -142,6 +147,30 @@ internal static class ProductNavigationViews
                 title,
                 titleColumn);
             heading.Children.Add(title);
+            if (isActive)
+            {
+                var activeMark =
+                    new TextBlock
+                    {
+                        Text = "✓",
+                        Foreground = LumineDesign.Accent,
+                        FontSize = LumineDesign.CaptionFontSize,
+                        FontWeight = FontWeight.SemiBold,
+                        VerticalAlignment =
+                            VerticalAlignment.Center
+                    };
+                AutomationProperties.SetName(
+                    activeMark,
+                    "表示中");
+                ToolTip.SetTip(
+                    activeMark,
+                    "現在表示中のライブラリ");
+                Grid.SetColumn(
+                    activeMark,
+                    titleColumn + 1);
+                heading.Children.Add(activeMark);
+            }
+
             // Absolute paths are secondary, technical information.
             // A truncated system path on every library row is neither
             // readable nor useful for navigating. Keep it available as
@@ -151,9 +180,6 @@ internal static class ProductNavigationViews
                 {
                     Text =
                         $"{library.AssetCount:N0}件 · {DescribeScanState(library.ScanState)}"
-                        + (isActive
-                            ? " · 表示中"
-                            : string.Empty)
                         + (rootAvailable
                             ? string.Empty
                             : " · オフライン")
@@ -352,7 +378,9 @@ internal static class ProductNavigationViews
                 $"library-card-{library.Id}");
             AutomationProperties.SetName(
                 librarySurface,
-                $"ライブラリ: {library.Name}");
+                isActive
+                    ? $"ライブラリ: {library.Name}（表示中）"
+                    : $"ライブラリ: {library.Name}");
             AutomationProperties.SetHelpText(
                 librarySurface,
                 $"フォルダーの場所: {library.RootPath}");
