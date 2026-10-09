@@ -62,6 +62,8 @@ public sealed class ThumbnailViewerControl : UserControl
     // The sign of the last actual viewer scroll (forward = +1).
     // Wheel capture happens before virtualized rows are reattached.
     private int _lookaheadDirection = 1;
+    private ScrollViewer? _galleryScrollViewer;
+    private double _lastGalleryOffsetY;
     private Compositor? _compositor;
     private int _columns = 1;
     private readonly ViewerRangeSelection _selection = new();
@@ -119,7 +121,11 @@ public sealed class ThumbnailViewerControl : UserControl
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
         AttachedToVisualTree += OnAttachedToVisualTree;
-        DetachedFromVisualTree += (_, _) => CancelLookahead();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            CancelLookahead();
+            StopScrollTracking();
+        };
         // Capture wheel direction before the ListBox's ScrollViewer
         // handles the event and triggers virtualized row attachments.
         AddHandler(
@@ -127,11 +133,10 @@ public sealed class ThumbnailViewerControl : UserControl
             OnGalleryWheel,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
-        // Keyboard, scrollbar and touch also update this direction.
-        AddHandler(
-            ScrollViewer.ScrollChangedEvent,
-            OnGalleryScrollChanged,
-            RoutingStrategies.Bubble);
+        // An offset property subscription on the actual inner
+        // ScrollViewer handles keyboard, scrollbar and touch changes.
+        // A bubble-only listener on the outer UserControl can miss
+        // template-created scrollers in headless/realized layouts.
 
         RebuildRows();
     }
@@ -1452,6 +1457,9 @@ public sealed class ThumbnailViewerControl : UserControl
     internal int LookaheadDirectionForSmoke =>
         _lookaheadDirection;
 
+    internal bool IsScrollTrackingAttachedForSmoke =>
+        _galleryScrollViewer is not null;
+
     internal static long ResolveLookaheadRowForSmoke(
         long rowIndex,
         int direction) =>
@@ -1462,10 +1470,50 @@ public sealed class ThumbnailViewerControl : UserControl
         PointerWheelEventArgs e) =>
         SetLookaheadDirection(-e.Delta.Y);
 
-    private void OnGalleryScrollChanged(
+    private void EnsureScrollTracking()
+    {
+        if (_galleryScrollViewer is not null)
+        {
+            return;
+        }
+
+        var scroller = _rows.GetVisualDescendants()
+            .OfType<ScrollViewer>()
+            .FirstOrDefault();
+        if (scroller is null)
+        {
+            return;
+        }
+
+        _galleryScrollViewer = scroller;
+        _lastGalleryOffsetY = scroller.Offset.Y;
+        scroller.PropertyChanged += OnGalleryOffsetChanged;
+    }
+
+    private void StopScrollTracking()
+    {
+        if (_galleryScrollViewer is { } scroller)
+        {
+            scroller.PropertyChanged -= OnGalleryOffsetChanged;
+            _galleryScrollViewer = null;
+        }
+    }
+
+    private void OnGalleryOffsetChanged(
         object? sender,
-        ScrollChangedEventArgs e) =>
-        SetLookaheadDirection(e.OffsetDelta.Y);
+        AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != ScrollViewer.OffsetProperty
+            || sender is not ScrollViewer scroller)
+        {
+            return;
+        }
+
+        var next = scroller.Offset.Y;
+        var delta = next - _lastGalleryOffsetY;
+        _lastGalleryOffsetY = next;
+        SetLookaheadDirection(delta);
+    }
 
     private void SetLookaheadDirection(double deltaY)
     {
@@ -1735,7 +1783,10 @@ public sealed class ThumbnailViewerControl : UserControl
             }
 
             AttachedToVisualTree += (_, _) =>
+            {
+                _owner.EnsureScrollTracking();
                 _owner.ScheduleLookahead(_rowIndex, _columns);
+            };
         }
     }
 
