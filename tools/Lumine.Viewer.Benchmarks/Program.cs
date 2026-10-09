@@ -54,6 +54,10 @@ internal static class Program
                 "--prefetch-rows must be an integer from 0 to 8.");
         }
 
+        // A/B only. Original product and acceptance remain unchanged.
+        var trialViewportCoordinator = args.Contains(
+            "--viewport-coordinator", StringComparer.Ordinal);
+
         var tempRoot = Path.Combine(
             Path.GetTempPath(),
             $"lumine-viewer-benchmark-{Guid.NewGuid():N}");
@@ -73,6 +77,8 @@ internal static class Program
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
+        (long Revisions, long ActivePlans, long BitmapsPredecoded)
+            finalViewportCoordinator = default;
         ScrollProbeResult forwardWheel = default;
         ScrollProbeResult reverseWheel = default;
         ScrollProbeResult settledForwardWheel = default;
@@ -108,6 +114,8 @@ internal static class Program
                             TileHeight = 190,
                             TileSpacing = 8,
                             PrefetchRows = prefetchRows,
+                            UseViewportRequestCoordinator =
+                                trialViewportCoordinator,
                             DecodedBitmapEntryLimit = 64,
                             DecodedBitmapByteLimit = 32L * 1024 * 1024
                         });
@@ -239,6 +247,8 @@ internal static class Program
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
                     finalTileReadiness = viewer.TileReadiness;
+                    finalViewportCoordinator =
+                        viewer.ViewportRequestCoordinatorDiagnostics;
 
                     if (finalDiagnostics.AttachedTiles != 0)
                     {
@@ -303,6 +313,10 @@ internal static class Program
                     ["kind"] = "viewer-core",
                     ["asset_count"] = count.ToString(CultureInfo.InvariantCulture),
                     ["prefetch_rows"] = prefetchRows.ToString(CultureInfo.InvariantCulture),
+                    ["viewport_coordinator_trial"] = trialViewportCoordinator.ToString(CultureInfo.InvariantCulture),
+                    ["viewport_coordinator_revisions"] = finalViewportCoordinator.Revisions.ToString(CultureInfo.InvariantCulture),
+                    ["viewport_coordinator_plans"] = finalViewportCoordinator.ActivePlans.ToString(CultureInfo.InvariantCulture),
+                    ["viewport_coordinator_bitmaps_predecoded"] = finalViewportCoordinator.BitmapsPredecoded.ToString(CultureInfo.InvariantCulture),
                     ["columns"] = finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),
