@@ -280,14 +280,23 @@ internal static class Program
                     ["small_scroll_forward_missing_on_first_frame"] = forwardWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_forward_max_ui_ready_wait_ms"] = forwardWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["small_scroll_forward_warm_bitmap_hits"] = forwardWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_warm_lookup_attempts"] = forwardWheel.WarmLookupAttempts.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_no_descriptor"] = forwardWheel.WarmMissingDescriptors.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_forward_bitmap_unavailable"] = forwardWheel.WarmBitmapUnavailable.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_steps"] = reverseWheel.Steps.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_missing_on_first_frame"] = reverseWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_max_ui_ready_wait_ms"] = reverseWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_warm_bitmap_hits"] = reverseWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_warm_lookup_attempts"] = reverseWheel.WarmLookupAttempts.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_no_descriptor"] = reverseWheel.WarmMissingDescriptors.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_reverse_bitmap_unavailable"] = reverseWheel.WarmBitmapUnavailable.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_steps"] = settledForwardWheel.Steps.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_missing_on_first_frame"] = settledForwardWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_max_ui_ready_wait_ms"] = settledForwardWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_warm_bitmap_hits"] = settledForwardWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_warm_lookup_attempts"] = settledForwardWheel.WarmLookupAttempts.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_no_descriptor"] = settledForwardWheel.WarmMissingDescriptors.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_bitmap_unavailable"] = settledForwardWheel.WarmBitmapUnavailable.ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_scheduled_before_dwell"] = beforeSettledDwell.Scheduled.ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_scheduled_during_dwell"] = (afterSettledDwell.Scheduled - beforeSettledDwell.Scheduled).ToString(CultureInfo.InvariantCulture),
                     ["settled_lookahead_cancelled_during_dwell"] = (afterSettledDwell.CancelledBeforeCompletion - beforeSettledDwell.CancelledBeforeCompletion).ToString(CultureInfo.InvariantCulture),
@@ -333,7 +342,10 @@ internal static class Program
         int Steps,
         int MissingOnFirstFrame,
         double MaxWaitMilliseconds,
-        long WarmBitmapHits);
+        long WarmBitmapHits,
+        long WarmLookupAttempts,
+        long WarmMissingDescriptors,
+        long WarmBitmapUnavailable);
 
     private static async Task<ScrollProbeResult> MeasureSmallScrollAsync(
         ThumbnailViewerControl viewer,
@@ -362,6 +374,7 @@ internal static class Program
         var maxWait = 0.0;
         var beforeWarmHits =
             viewer.TileReadiness.ReadyFromBitmapCache;
+        var beforeWarmLookups = viewer.WarmPresentationDiagnostics;
 
         for (var i = 0; i < stepCount; i++)
         {
@@ -410,12 +423,16 @@ internal static class Program
                 wait.Elapsed.TotalMilliseconds);
         }
 
+        var afterWarmLookups = viewer.WarmPresentationDiagnostics;
         return new ScrollProbeResult(
             stepCount,
             missing,
             maxWait,
             viewer.TileReadiness.ReadyFromBitmapCache
-                - beforeWarmHits);
+                - beforeWarmHits,
+            afterWarmLookups.LookupAttempts - beforeWarmLookups.LookupAttempts,
+            afterWarmLookups.MissingDescriptor - beforeWarmLookups.MissingDescriptor,
+            afterWarmLookups.BitmapUnavailable - beforeWarmLookups.BitmapUnavailable);
     }
 
     private static int CountUnreadyVisibleTiles(

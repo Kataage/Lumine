@@ -88,6 +88,24 @@ foreach ($result in $results) {
         if ($warm -lt 0) {
             throw "$count Viewer small $direction scroll reported negative warm-bitmap reuse."
         }
+
+        # Every tile warm lookup is classified as acquired, no
+        # speculative descriptor, or descriptor with no cached Bitmap.
+        # A source-ready thumbnail is not itself a decoded Bitmap hit.
+        $attemptsKey = "small_scroll_${direction}_warm_lookup_attempts"
+        $noDescriptorKey = "small_scroll_${direction}_no_descriptor"
+        $noBitmapKey = "small_scroll_${direction}_bitmap_unavailable"
+        foreach ($key in @($attemptsKey, $noDescriptorKey, $noBitmapKey)) {
+            if ($null -eq $result.metadata.$key -or [long]$result.metadata.$key -lt 0) {
+                throw "$count Viewer $direction warm miss reason was missing or invalid: $key"
+            }
+        }
+        $warmLookups = [long]$result.metadata.$attemptsKey
+        $warmNoDescriptor = [long]$result.metadata.$noDescriptorKey
+        $warmNoBitmap = [long]$result.metadata.$noBitmapKey
+        if ($warmNoDescriptor + $warmNoBitmap -gt $warmLookups) {
+            throw "$count Viewer $direction warm miss reasons exceed observed lookups."
+        }
     }
 
     # Detect missing or impossible stage instrumentation without imposing
@@ -332,6 +350,17 @@ foreach ($result in $results) {
         $result.metadata.small_scroll_settled_forward_missing_on_first_frame,
         [double]$result.metadata.small_scroll_settled_forward_max_ui_ready_wait_ms,
         $result.metadata.small_scroll_settled_forward_warm_bitmap_hits)
+    Write-Host (
+        "  warm lookups by cause: cold forward={0}/{1}/{2}; reverse={3}/{4}/{5}; rested forward={6}/{7}/{8} (attempts/no-descriptor/no-bitmap)" -f
+        $result.metadata.small_scroll_forward_warm_lookup_attempts,
+        $result.metadata.small_scroll_forward_no_descriptor,
+        $result.metadata.small_scroll_forward_bitmap_unavailable,
+        $result.metadata.small_scroll_reverse_warm_lookup_attempts,
+        $result.metadata.small_scroll_reverse_no_descriptor,
+        $result.metadata.small_scroll_reverse_bitmap_unavailable,
+        $result.metadata.small_scroll_settled_forward_warm_lookup_attempts,
+        $result.metadata.small_scroll_settled_forward_no_descriptor,
+        $result.metadata.small_scroll_settled_forward_bitmap_unavailable)
     Write-Host (
         "  lookahead during dwell: scheduled={0}, cancelled={1}, source={2}, eligible={3}, decoded={4}, decoded after scroll={5}; anchor row={6}, predecode start={7}, last visible={8}, direction={9}" -f
         $result.metadata.settled_lookahead_scheduled_during_dwell,
