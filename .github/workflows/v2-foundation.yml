@@ -281,6 +281,14 @@ jobs:
           dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-wheel-input/diagnostic-10000.json" --wheel-evidence-dir "artifacts/viewer-wheel-input"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Upload genuine wheel input screenshot evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-routed-wheel-${{ github.run_id }}
+          path: artifacts/viewer-wheel-input/
+          if-no-files-found: warn
+
       - name: Validate routed wheel input provenance and raster
         shell: pwsh
         run: |
@@ -291,6 +299,8 @@ jobs:
               [long]$meta.wheel_probe_routed_event_count -lt 4 -or
               [double]$meta.wheel_probe_first_offset_px -le 0 -or
               [double]$meta.wheel_probe_fourth_offset_px -le [double]$meta.wheel_probe_first_offset_px -or
+              [long]$meta.thumbnail_requests -gt 1600 -or
+              [long]$meta.max_decoded_bitmap_bytes -gt 33554432 -or
               ([int]$meta.wheel_probe_first_blue + [int]$meta.wheel_probe_first_dark) -ne 7 -or
               ([int]$meta.wheel_probe_fourth_blue + [int]$meta.wheel_probe_fourth_dark) -ne 7 -or
               -not (Test-Path "artifacts/viewer-wheel-input/first-wheel.png") -or
@@ -298,14 +308,6 @@ jobs:
             throw "Actual routed wheel input did not deliver four pointer events and two valid Skia raster images."
           }
           Write-Host "Routed wheel proof: events=$($meta.wheel_probe_routed_event_count), first/fourth offset=$($meta.wheel_probe_first_offset_px)/$($meta.wheel_probe_fourth_offset_px)px, blue first/fourth=$($meta.wheel_probe_first_blue)/$($meta.wheel_probe_fourth_blue), dark first/fourth=$($meta.wheel_probe_first_dark)/$($meta.wheel_probe_fourth_dark)."
-
-      - name: Upload genuine wheel input screenshot evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: lumine-viewer-routed-wheel-${{ github.run_id }}
-          path: artifacts/viewer-wheel-input/
-          if-no-files-found: warn
 
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
