@@ -99,6 +99,17 @@ Correction inside the same PR:
 
 **Verification limitation:** implementation and regression have been committed, but the final Windows CI and product owner acceptance must be checked before saying the defect is fixed. At very wide/large virtualized viewports, a hard entry/byte cap can still make a fully leased working set larger than the budget; this must be covered by viewport-size/scaling tests and an admission-pressure policy rather than loosening memory caps. No claim is made that GPU-composited physical wheel scrolling is blank-free.
 
+## Settled forward scrolling versus immediate scroll (sixth #634 step)
+
+[PR #640](https://github.com/Kataage/Lumine/pull/640) passed all 50 Windows CI checks and merged, but its immediate post-first-viewport-ready probes still show **20–21 not-ready first-frame tiles across 3 forward 198 DIP offsets**, **zero forward decoded warm-presentation hits**, while the reverse phase reports **zero first-frame misses and 14 bitmap reuse hits**. The previous 32 MiB / 512px fully pinned cache stall was corrected by bounding decoded Viewer presentation size; remaining forward blanks now require a distinct diagnosis, not an arbitrary increase in the cache budget.
+
+The next diagnostic keeps the original immediate forward + reverse probe completely intact and adds a second forward probe after jumping to a **different, previously unvisited middle-library viewport**. It first waits for that viewport to be UI-ready, then allows a fixed **200ms natural browsing dwell**, and finally uses three one-row mounted ScrollViewer.Offset moves. It records `small_scroll_settled_forward_{steps,missing_on_first_frame,max_ui_ready_wait_ms,warm_bitmap_hits}` separately for 10k/50k/100k fixtures.
+
+Interpretation:
+- If settled forward lookahead reuses decoded bitmaps and reduces first-frame blank tiles, the scheduling mechanism works after idle but is late for immediate scrolling; optimize its lead time and cancellation behavior while measuring first-paint regressions.
+- If it is still cold after the dwell, inspect the coalesced lookahead anchor, source fetch timing, predecode eligibility and cancellation/supersession before adjusting the scheduler.
+- Neither 200ms artificially waiting nor UI `Image.Source` readiness establishes a zero-blank claim for real Windows wheel input. Keep the 32 MiB / 1600 request / virtualization / NativeAOT gates intact, and collect owner real-library interaction evidence before closing #634.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.

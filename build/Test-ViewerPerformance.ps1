@@ -61,7 +61,7 @@ foreach ($result in $results) {
     # finish loading without weakening any existing fast-scroll limits.
     # Do not set an ungrounded zero-blank target from synthetic data;
     # record current missing-first-frame counts for measured follow-up.
-    foreach ($direction in @("forward", "reverse")) {
+    foreach ($direction in @("forward", "reverse", "settled_forward")) {
         $stepsKey = "small_scroll_${direction}_steps"
         $missingKey = "small_scroll_${direction}_missing_on_first_frame"
         $waitKey = "small_scroll_${direction}_max_ui_ready_wait_ms"
@@ -278,6 +278,11 @@ foreach ($result in $results) {
         $result.metadata.small_scroll_reverse_missing_on_first_frame,
         [double]$result.metadata.small_scroll_reverse_max_ui_ready_wait_ms,
         $result.metadata.small_scroll_reverse_warm_bitmap_hits)
+    Write-Host (
+        "  settled forward after 200ms viewport dwell: first-frame missing={0}, max ready={1:N1} ms, warm={2}" -f
+        $result.metadata.small_scroll_settled_forward_missing_on_first_frame,
+        [double]$result.metadata.small_scroll_settled_forward_max_ui_ready_wait_ms,
+        $result.metadata.small_scroll_settled_forward_warm_bitmap_hits)
 }
 
 Write-Host (

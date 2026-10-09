@@ -53,6 +53,7 @@ internal static class Program
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
         ScrollProbeResult forwardWheel = default;
         ScrollProbeResult reverseWheel = default;
+        ScrollProbeResult settledForwardWheel = default;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
         long cursorRandomSeekPages = 0;
@@ -141,6 +142,22 @@ internal static class Program
                         await WaitForViewportReadyAsync(viewer);
                         Observe(viewer);
                     }
+
+                    // Separate the unavoidable immediate first-viewport
+                    // race from a normal browsing pause. Jump to a new
+                    // unvisited region (not the earlier top-row round-trip),
+                    // let its first viewport become ready, then allow only
+                    // a small, fixed 200ms dwell for scheduled lookahead.
+                    // Measure the same real mounted offset path afterward.
+                    // Do not replace the immediate cold-scroll probe above.
+                    viewer.ScrollToAsset(Math.Min(count - 1, count / 2 + 137));
+                    Dispatcher.UIThread.RunJobs();
+                    await WaitForViewportReadyAsync(viewer);
+                    await Task.Delay(200);
+                    Dispatcher.UIThread.RunJobs();
+                    settledForwardWheel = await MeasureSmallScrollAsync(
+                        viewer, reverse: false);
+                    Observe(viewer);
 
                     viewer.SelectAsset(count - 1);
                     Observe(viewer);
@@ -245,6 +262,10 @@ internal static class Program
                     ["small_scroll_reverse_missing_on_first_frame"] = reverseWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_max_ui_ready_wait_ms"] = reverseWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["small_scroll_reverse_warm_bitmap_hits"] = reverseWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_steps"] = settledForwardWheel.Steps.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_missing_on_first_frame"] = settledForwardWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_max_ui_ready_wait_ms"] = settledForwardWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
+                    ["small_scroll_settled_forward_warm_bitmap_hits"] = settledForwardWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
                     ["last_tile_load_error"] = finalDiagnostics.LastTileLoadError ?? string.Empty,
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),
