@@ -117,7 +117,11 @@ foreach ($result in $results) {
         "settled_lookahead_source_completed_during_dwell",
         "settled_lookahead_eligible_during_dwell",
         "settled_lookahead_predecoded_during_dwell",
-        "settled_lookahead_predecoded_during_scroll"
+        "settled_lookahead_predecoded_during_scroll",
+        "settled_second_directional_attempts_during_dwell",
+        "settled_second_directional_bitmaps_during_dwell",
+        "settled_second_directional_attempts_during_scroll",
+        "settled_second_directional_bitmaps_during_scroll"
     )) {
         $value = $result.metadata.$key
         if ($null -eq $value -or [long]$value -lt 0) {
@@ -361,6 +365,12 @@ foreach ($result in $results) {
         $result.metadata.small_scroll_settled_forward_warm_lookup_attempts,
         $result.metadata.small_scroll_settled_forward_no_descriptor,
         $result.metadata.small_scroll_settled_forward_bitmap_unavailable)
+    Write-Host (
+        "  second directional Bitmap row: attempts during dwell={0}, decoded images={1}; attempts during scroll={2}, decoded images={3}" -f
+        $result.metadata.settled_second_directional_attempts_during_dwell,
+        $result.metadata.settled_second_directional_bitmaps_during_dwell,
+        $result.metadata.settled_second_directional_attempts_during_scroll,
+        $result.metadata.settled_second_directional_bitmaps_during_scroll)
     Write-Host (
         "  lookahead during dwell: scheduled={0}, cancelled={1}, source={2}, eligible={3}, decoded={4}, decoded after scroll={5}; anchor row={6}, predecode start={7}, last visible={8}, direction={9}" -f
         $result.metadata.settled_lookahead_scheduled_during_dwell,
