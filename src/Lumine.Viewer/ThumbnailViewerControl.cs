@@ -92,6 +92,7 @@ public sealed class ThumbnailViewerControl : UserControl
     // The sign of the last actual viewer scroll (forward = +1).
     // Wheel capture happens before virtualized rows are reattached.
     private int _lookaheadDirection = 1;
+    private long _routedWheelEvents;
     private long _lookaheadScheduleCount;
     private long _lookaheadViewportEdgeReschedules;
     private int _lastLookaheadOffsetEdge = -1;
@@ -176,6 +177,12 @@ public sealed class ThumbnailViewerControl : UserControl
     }
 
     public long AssetCount => _session.Count;
+
+    // Do not confuse benchmark mutations of ScrollViewer.Offset with
+    // routed mouse-wheel input. The headless wheel probe asserts this
+    // counter advances through Avalonia's actual input pipeline.
+    public long RoutedWheelEventCount =>
+        Interlocked.Read(ref _routedWheelEvents);
 
     public long SelectedAssetIndex => _selectedIndex;
 
@@ -1687,8 +1694,11 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void OnGalleryWheel(
         object? sender,
-        PointerWheelEventArgs e) =>
+        PointerWheelEventArgs e)
+    {
+        Interlocked.Increment(ref _routedWheelEvents);
         SetLookaheadDirection(-e.Delta.Y);
+    }
 
     private void EnsureScrollTracking()
     {
