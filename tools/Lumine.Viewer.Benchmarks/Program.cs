@@ -90,7 +90,7 @@ internal static class Program
         var priorWheelScrollIntent = 0;
         var firstWheelScrollIntent = 0;
         var fourthWheelScrollIntent = 0;
-        RawWheelFrameEvidence? rawWheelEvidence = null;
+        UnflushedRoutedWheelFrameEvidence? rawWheelEvidence = null;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -355,12 +355,12 @@ internal static class Program
                         await Task.Delay(200);
                         Dispatcher.UIThread.RunJobs();
 
-                        rawWheelEvidence = RawWheelFirstFrameProbe.Capture(
+                        rawWheelEvidence = UnflushedRoutedWheelFirstFrameProbe.Capture(
                             window,
                             viewer,
                             Path.GetFullPath(rawWheelEvidenceDir));
                         Console.WriteLine(
-                            "Unflushed raw wheel +200px: "
+                            "Unflushed routed wheel (4 units): "
                             + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
                             + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
                             + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "
@@ -465,7 +465,7 @@ internal static class Program
                     ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
-                    ["raw_wheel_probe_input_kind"] = rawWheelEvidence is null ? "not-captured" : "public-platform-raw-wheel-no-auto-flush",
+                    ["raw_wheel_probe_input_kind"] = rawWheelEvidence is null ? "not-captured" : "routed-pointerwheel-no-auto-flush",
                     ["raw_wheel_routed_event_count"] = rawWheelEvidence?.RoutedEvents.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_offset_delta_px"] = rawWheelEvidence?.OffsetDeltaPixels.ToString("F3", CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_direction_before"] = rawWheelEvidence?.DirectionBefore.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
