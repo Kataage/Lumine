@@ -58,6 +58,9 @@ public sealed class ThumbnailViewerControl : UserControl
     private readonly Dictionary<long, WarmPresentation> _warmPresentations = [];
     private readonly LinkedList<long> _warmPresentationLru = [];
     private long _warmPresentationHits;
+    private long _warmPresentationLookups;
+    private long _warmPresentationMissingDescriptors;
+    private long _warmPresentationBitmapUnavailable;
     private long _tileLoadsStarted;
     private long _tileLoadsReady;
     private long _tileLoadsReadyWarm;
@@ -535,6 +538,13 @@ public sealed class ThumbnailViewerControl : UserControl
 
     internal long WarmTileHitCountForSmoke =>
         _warmPresentationHits;
+
+    public ViewerWarmPresentationDiagnostics WarmPresentationDiagnostics =>
+        new(
+            _warmPresentationLookups,
+            _warmPresentationHits,
+            _warmPresentationMissingDescriptors,
+            _warmPresentationBitmapUnavailable);
 
     internal bool IsAssetWarmForSmoke(long index) =>
         _warmPresentations.ContainsKey(index);
@@ -1153,11 +1163,13 @@ public sealed class ThumbnailViewerControl : UserControl
     {
         asset = null!;
         lease = null!;
+        _warmPresentationLookups++;
 
         if (!_warmPresentations.TryGetValue(
                 index,
                 out var existing))
         {
+            _warmPresentationMissingDescriptors++;
             return false;
         }
 
@@ -1166,6 +1178,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 out var acquired)
             || acquired is null)
         {
+            // The descriptor was present, but its Bitmap lease was
+            // unavailable (possibly evicted by the bounded cache).
+            _warmPresentationBitmapUnavailable++;
             _warmPresentations.Remove(index);
             _warmPresentationLru.Remove(
                 existing.Node);
