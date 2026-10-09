@@ -5228,7 +5228,7 @@ try
                         button =>
                             AutomationProperties.GetName(button)
                                 == "公開アカウントを削除: App Smoke Account"),
-                $"Publication account deletion focus failed: open={publicationSettingsFlyout.IsOpen}, addFocused={accountAdd.IsFocused}, addEnabled={accountAdd.IsEnabled}, addAttached={TopLevel.GetTopLevel(accountAdd) is not null}, rowExists={publicationSettingsForm.GetVisualDescendants().OfType<Button>().Any(button => AutomationProperties.GetName(button) == "公開アカウントを削除: App Smoke Account")}, focused={accountAdd.FocusManager?.GetFocusedElement()?.GetType().Name}.");
+                $"Publication account deletion focus failed: open={publicationSettingsFlyout.IsOpen}, addFocused={accountAdd.IsFocused}, addEnabled={accountAdd.IsEnabled}, addAttached={TopLevel.GetTopLevel(accountAdd) is not null}, rowExists={publicationSettingsForm.GetVisualDescendants().OfType<Button>().Any(button => AutomationProperties.GetName(button) == "公開アカウントを削除: App Smoke Account")}, focused={TopLevel.GetTopLevel(accountAdd)?.FocusManager?.GetFocusedElement()?.GetType().Name}.");
             publicationSettingsFlyout.Hide();
             Dispatcher.UIThread.RunJobs();
 
