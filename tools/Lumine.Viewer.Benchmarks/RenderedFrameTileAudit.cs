@@ -14,11 +14,20 @@ internal readonly record struct RenderedFrameTileAudit(
     int SampleY)
 {
     internal static RenderedFrameTileAudit Inspect(
-        string pngPath, int expectedColumns)
+        string pngPath,
+        int expectedColumns,
+        double sampleFraction = 0.8875)
     {
         if (expectedColumns <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(expectedColumns));
+        }
+
+        if (!double.IsFinite(sampleFraction)
+            || sampleFraction <= 0
+            || sampleFraction >= 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sampleFraction));
         }
 
         using var image = SKBitmap.Decode(pngPath)
@@ -31,11 +40,14 @@ internal readonly record struct RenderedFrameTileAudit(
                 "Rendered frame too small to sample gallery columns.");
         }
 
-        // 0.8875*H corresponds to y=710 for the deterministic 1200x800
-        // fixture; it lies near the upper edge of the fourth visible row.
-        // Keep the sample position constant across control/trial runs.
+        // Default 0.8875*H = y710 remains unchanged for the original
+        // 198px/200px offset probe. A single +50px wheel notch instead
+        // reveals the next row at y764 in the fixed 1200x800 fixture;
+        // its blue center lies near y780 (0.975*H). Do NOT sample y710
+        // after one notch: it lies in the previous row's blue/black
+        // caption gradient, not the newly exposed row.
         var y = Math.Clamp(
-            (int)Math.Round(image.Height * 0.8875),
+            (int)Math.Round(image.Height * sampleFraction),
             0, image.Height - 1);
         var blue = 0;
         var dark = 0;

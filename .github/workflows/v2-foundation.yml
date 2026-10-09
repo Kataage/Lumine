@@ -303,9 +303,13 @@ jobs:
         run: |
           $result = Get-Content "artifacts/viewer-wheel-input/diagnostic-10000.json" -Raw | ConvertFrom-Json
           $meta = $result.metadata
+          Write-Host "Routed wheel request checkpoints: first=$($meta.wheel_request_checkpoint_first_viewport), cold=$($meta.wheel_request_checkpoint_cold_small), fast=$($meta.wheel_request_checkpoint_fast_seek), settled=$($meta.wheel_request_checkpoint_settled_small), before=$($meta.wheel_request_checkpoint_before_input), after=$($meta.wheel_request_checkpoint_after_input), final=$($meta.thumbnail_requests), cancelled during input=$($meta.wheel_request_cancellations_during_input), limit=1600."
           if ($meta.small_scroll_input_kind -ne "direct-scrollviewer-offset" -or
               $meta.wheel_probe_input_kind -ne "routed-headless-mouse-wheel" -or
               [long]$meta.wheel_probe_routed_event_count -lt 4 -or
+              [long]$meta.wheel_request_checkpoint_after_input -lt [long]$meta.wheel_request_checkpoint_before_input -or
+              [long]$meta.wheel_request_checkpoint_after_input -gt [long]$meta.thumbnail_requests -or
+              [long]$meta.wheel_request_checkpoint_fast_seek -lt [long]$meta.wheel_request_checkpoint_cold_small -or
               [int]$meta.wheel_probe_scroll_intent_after_first -ne 1 -or
               [int]$meta.wheel_probe_scroll_intent_after_fourth -ne 1 -or
               [double]$meta.wheel_probe_first_offset_px -le 0 -or
@@ -319,6 +323,54 @@ jobs:
             throw "Actual routed wheel input did not deliver four pointer events and two valid Skia raster images."
           }
           Write-Host "Routed wheel proof: events=$($meta.wheel_probe_routed_event_count), first/fourth offset=$($meta.wheel_probe_first_offset_px)/$($meta.wheel_probe_fourth_offset_px)px, blue first/fourth=$($meta.wheel_probe_first_blue)/$($meta.wheel_probe_fourth_blue), dark first/fourth=$($meta.wheel_probe_first_dark)/$($meta.wheel_probe_fourth_dark)."
+
+      # Distinct from both accepted direct 198px Offset benchmarks and
+      # Window.MouseWheel, which internally flushes up to 10 render
+      # ticks before/after injecting a single event. This diagnostic
+      # sends one raw routed -4 wheel through public PointerWheelEventArgs routing,
+      # then forces ONLY ONE explicit render timer tick before inspecting
+      # the Skia framebuffer. It is isolated from performance timings.
+      - name: Capture unflushed raw-wheel first-tick raster evidence
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-raw-wheel/diagnostic-10000.json" --unflushed-wheel-evidence-dir "artifacts/viewer-raw-wheel"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload raw-wheel first-render and settled Skia rasters
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-raw-wheel-${{ github.run_id }}
+          path: artifacts/viewer-raw-wheel/
+          if-no-files-found: warn
+
+      - name: Verify unflushed routed input first-tick raster
+        shell: pwsh
+        run: |
+          $d = Get-Content "artifacts/viewer-raw-wheel/diagnostic-10000.json" -Raw | ConvertFrom-Json
+          $m = $d.metadata
+          if ($m.raw_wheel_probe_input_kind -ne "routed-pointerwheel-no-auto-flush" -or
+              [long]$m.raw_wheel_routed_event_count -ne 1 -or
+              [double]$m.raw_wheel_offset_delta_px -le 0 -or
+              [int]$m.raw_wheel_direction_after -ne 1 -or
+              $m.raw_wheel_pre_witness_valid -ne "True" -or
+              $m.raw_wheel_post_dispatch_witness_changed -ne "True" -or
+              $m.raw_wheel_post_dispatch_frame_changed -ne "True" -or
+              [int]$m.raw_wheel_post_dispatch_changed_viewer_samples -lt 64 -or
+              [int]$m.raw_wheel_post_dispatch_passes -lt 1 -or
+              [int]$m.raw_wheel_post_dispatch_passes -gt 3 -or
+              [int]$m.raw_wheel_first_tick_blue + [int]$m.raw_wheel_first_tick_dark -ne 7 -or
+              [int]$m.raw_wheel_post_dispatch_blue + [int]$m.raw_wheel_post_dispatch_dark -ne 7 -or
+              [int]$m.raw_wheel_post_flush_blue + [int]$m.raw_wheel_post_flush_dark -ne 7 -or
+              [long]$m.thumbnail_requests -gt 1600 -or
+              [long]$m.max_decoded_bitmap_bytes -gt 33554432 -or
+              -not (Test-Path "artifacts/viewer-raw-wheel/raw-before-input.png") -or
+              -not (Test-Path "artifacts/viewer-raw-wheel/raw-first-explicit-tick.png") -or
+              -not (Test-Path "artifacts/viewer-raw-wheel/raw-first-post-dispatch-render.png") -or
+              -not (Test-Path "artifacts/viewer-raw-wheel/raw-after-headless-flush.png")) {
+            throw "Unflushed routed wheel diagnostic lacked a bounded post-dispatch Skia repaint or exceeded resource limits."
+          }
+          Write-Host "Raw wheel: offset=$($m.raw_wheel_offset_delta_px)px; unready=$($m.raw_wheel_immediate_unready); no-dispatch changed=$($m.raw_wheel_first_tick_raster_changed); first witness=$($m.raw_wheel_first_tick_witness_changed); first blue/dark=$($m.raw_wheel_first_tick_blue)/$($m.raw_wheel_first_tick_dark); bounded dispatch passes=$($m.raw_wheel_post_dispatch_passes); repaint witness=$($m.raw_wheel_post_dispatch_witness_changed); changed gallery samples=$($m.raw_wheel_post_dispatch_changed_viewer_samples); post-dispatch blue/dark=$($m.raw_wheel_post_dispatch_blue)/$($m.raw_wheel_post_dispatch_dark); settled blue/dark=$($m.raw_wheel_post_flush_blue)/$($m.raw_wheel_post_flush_dark)."
 
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json

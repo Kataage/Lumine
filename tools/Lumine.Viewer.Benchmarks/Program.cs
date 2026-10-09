@@ -32,6 +32,8 @@ internal static class Program
         }
 
         var wheelEvidenceDir = ReadOption(args, "--wheel-evidence-dir");
+        var rawWheelEvidenceDir = ReadOption(
+            args, "--unflushed-wheel-evidence-dir");
         // This is an independently invoked input/raster diagnostic, NOT
         // part of the accepted direct-offset timing benchmark.
         if (wheelEvidenceDir is not null
@@ -83,11 +85,22 @@ internal static class Program
         RenderedFrameTileAudit? firstWheelAudit = null;
         RenderedFrameTileAudit? fourthWheelAudit = null;
         long routedWheelEventCount = 0;
+        // Phase checkpoints identify unnecessary work without changing
+        // thumbnail scheduling or resource acceptance thresholds.
+        long requestsAfterInitialViewport = 0;
+        long requestsAfterColdSmallScroll = 0;
+        long requestsAfterFastSeek = 0;
+        long requestsAfterSettledSmallScroll = 0;
+        long requestsBeforeRoutedWheel = 0;
+        long requestsAfterRoutedWheel = 0;
+        long cancelledBeforeRoutedWheel = 0;
+        long cancelledAfterRoutedWheel = 0;
         double firstWheelOffsetDelta = 0;
         double fourthWheelOffsetDelta = 0;
         var priorWheelScrollIntent = 0;
         var firstWheelScrollIntent = 0;
         var fourthWheelScrollIntent = 0;
+        UnflushedRoutedWheelFrameEvidence? rawWheelEvidence = null;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -131,11 +144,35 @@ internal static class Program
                         });
 
                     var viewer = new ThumbnailViewerControl(session);
+                    // Only the opt-in #634 diagnostic gets a compositor
+                    // witness pixel: identical blue fixture rows can produce
+                    // byte-identical PNGs despite a genuine redraw.
+                    Border? rasterWitness = null;
+                    Control windowContent = viewer;
+                    if (rawWheelEvidenceDir is not null)
+                    {
+                        rasterWitness = new Border
+                        {
+                            Width = 16,
+                            Height = 16,
+                            Background = Avalonia.Media.Brushes.Lime,
+                            HorizontalAlignment =
+                                Avalonia.Layout.HorizontalAlignment.Right,
+                            VerticalAlignment =
+                                Avalonia.Layout.VerticalAlignment.Top,
+                            IsHitTestVisible = false
+                        };
+                        var diagnosticOverlay = new Grid();
+                        diagnosticOverlay.Children.Add(viewer);
+                        diagnosticOverlay.Children.Add(rasterWitness);
+                        windowContent = diagnosticOverlay;
+                    }
+
                     var window = new Window
                     {
                         Width = 1200,
                         Height = 800,
-                        Content = viewer
+                        Content = windowContent
                     };
 
                     using (recorder.Measure(CoreMetricNames.ViewerFirstPaint))
@@ -152,6 +189,8 @@ internal static class Program
                     }
 
                     Observe(viewer);
+                    requestsAfterInitialViewport =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     // One row per small offset change reproduces normal
                     // browsing more closely than the legacy 40 random
@@ -166,6 +205,8 @@ internal static class Program
                             viewer,
                             reverse: true);
                     Observe(viewer);
+                    requestsAfterColdSmallScroll =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     using (recorder.Measure(CoreMetricNames.ViewerFastScrollRefresh))
                     {
@@ -186,6 +227,8 @@ internal static class Program
                         await WaitForViewportReadyAsync(viewer);
                         Observe(viewer);
                     }
+                    requestsAfterFastSeek =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     // Separate the unavoidable immediate first-viewport
                     // race from a normal browsing pause. Jump to a new
@@ -247,6 +290,8 @@ internal static class Program
                             });
                     afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
+                    requestsAfterSettledSmallScroll =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     if (wheelEvidenceDir is not null)
                     {
@@ -273,6 +318,10 @@ internal static class Program
                             window)
                             ?? throw new InvalidOperationException(
                                 "Wheel probe could not locate a window-relative input point.");
+                        requestsBeforeRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequests;
+                        cancelledBeforeRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequestsCancelled;
                         var beforeWheelEvents = viewer.RoutedWheelEventCount;
                         var beforeWheelOffset = wheelScroller.Offset.Y;
                         priorWheelScrollIntent =
@@ -317,6 +366,10 @@ internal static class Program
                             viewer.Columns,
                             Path.Combine(
                                 evidenceRoot, "fourth-wheel.png"));
+                        requestsAfterRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequests;
+                        cancelledAfterRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequestsCancelled;
 
                         if (routedWheelEventCount < 4
                             || firstWheelOffsetDelta <= 0
@@ -341,6 +394,37 @@ internal static class Program
                             + $"fourth blue/dark={fourthWheelAudit.Value.BlueThumbnailSamples}/{fourthWheelAudit.Value.DarkPlaceholderSamples}.");
                     }
 
+                    if (rawWheelEvidenceDir is not null)
+                    {
+                        // Different page from the ordinary headless
+                        // wheel test; reuse no pre-visited warm entries.
+                        viewer.ScrollToAsset(
+                            Math.Min(count - 1, count / 2 + 2107));
+                        Dispatcher.UIThread.RunJobs();
+                        await WaitForViewportReadyAsync(viewer);
+                        await Task.Delay(200);
+                        Dispatcher.UIThread.RunJobs();
+
+                        rawWheelEvidence = UnflushedRoutedWheelFirstFrameProbe.Capture(
+                            window,
+                            viewer,
+                            rasterWitness ?? throw new InvalidOperationException(
+                                "Raw wheel witness was not installed."),
+                            Path.GetFullPath(rawWheelEvidenceDir));
+                        Console.WriteLine(
+                            "Unflushed routed wheel (1 unit): "
+                            + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
+                            + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
+                            + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "
+                            + $"single-tick raster changed={rawWheelEvidence.Value.FirstTickContainsUpdatedRaster}, "
+                            + $"first-tick blue/dark={rawWheelEvidence.Value.FirstTick.BlueThumbnailSamples}/{rawWheelEvidence.Value.FirstTick.DarkPlaceholderSamples}, "
+                            + $"bounded dispatch passes={rawWheelEvidence.Value.PostDispatchPasses}, "
+                            + $"post-dispatch witness={rawWheelEvidence.Value.PostDispatchWitnessChanged}, "
+                            + $"changed gallery samples={rawWheelEvidence.Value.PostDispatchChangedViewerSamples}, "
+                            + $"post-dispatch blue/dark={rawWheelEvidence.Value.PostDispatch.BlueThumbnailSamples}/{rawWheelEvidence.Value.PostDispatch.DarkPlaceholderSamples}, "
+                            + $"post-flush blue/dark={rawWheelEvidence.Value.Settled.BlueThumbnailSamples}/{rawWheelEvidence.Value.Settled.DarkPlaceholderSamples}.");
+                    }
+
                     viewer.SelectAsset(count - 1);
                     Observe(viewer);
 
@@ -350,6 +434,19 @@ internal static class Program
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
                     finalTileReadiness = viewer.TileReadiness;
+                    if (wheelEvidenceDir is not null)
+                    {
+                        Console.WriteLine(
+                            "Routed wheel source-work stages: "
+                            + $"firstViewport={requestsAfterInitialViewport}, "
+                            + $"coldSmall={requestsAfterColdSmallScroll}, "
+                            + $"fastSeek={requestsAfterFastSeek}, "
+                            + $"settledSmall={requestsAfterSettledSmallScroll}, "
+                            + $"beforeWheel={requestsBeforeRoutedWheel}, "
+                            + $"afterWheel={requestsAfterRoutedWheel}, "
+                            + $"final={finalDiagnostics.ThumbnailRequests}, "
+                            + $"wheelCancelledDelta={cancelledAfterRoutedWheel - cancelledBeforeRoutedWheel}.");
+                    }
 
                     if (finalDiagnostics.AttachedTiles != 0)
                     {
@@ -428,6 +525,13 @@ internal static class Program
                     ["small_scroll_input_kind"] = "direct-scrollviewer-offset",
                     ["wheel_probe_input_kind"] = wheelEvidenceDir is null ? "not-captured" : "routed-headless-mouse-wheel",
                     ["wheel_probe_routed_event_count"] = routedWheelEventCount.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_first_viewport"] = requestsAfterInitialViewport.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_cold_small"] = requestsAfterColdSmallScroll.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_fast_seek"] = requestsAfterFastSeek.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_settled_small"] = requestsAfterSettledSmallScroll.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_before_input"] = requestsBeforeRoutedWheel.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_after_input"] = requestsAfterRoutedWheel.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_cancellations_during_input"] = (cancelledAfterRoutedWheel - cancelledBeforeRoutedWheel).ToString(CultureInfo.InvariantCulture),
                     ["wheel_probe_first_offset_px"] = firstWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
                     ["wheel_probe_fourth_offset_px"] = fourthWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
                     ["wheel_probe_scroll_intent_before"] = priorWheelScrollIntent.ToString(CultureInfo.InvariantCulture),
@@ -437,6 +541,28 @@ internal static class Program
                     ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_probe_input_kind"] = rawWheelEvidence is null ? "not-captured" : "routed-pointerwheel-no-auto-flush",
+                    ["raw_wheel_routed_event_count"] = rawWheelEvidence?.RoutedEvents.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_offset_delta_px"] = rawWheelEvidence?.OffsetDeltaPixels.ToString("F3", CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_direction_before"] = rawWheelEvidence?.DirectionBefore.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_direction_after"] = rawWheelEvidence?.DirectionAfter.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_immediate_unready"] = rawWheelEvidence?.UnreadyImmediatelyAfterInput.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_raster_changed"] = rawWheelEvidence?.FirstTickContainsUpdatedRaster.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_blue"] = rawWheelEvidence?.FirstTick.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_sample_y"] = rawWheelEvidence?.FirstTick.SampleY.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_dark"] = rawWheelEvidence?.FirstTick.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_pre_witness_valid"] = rawWheelEvidence?.PreInputWitnessValid.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_witness_changed"] = rawWheelEvidence?.FirstTickWitnessChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_passes"] = rawWheelEvidence?.PostDispatchPasses.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_witness_changed"] = rawWheelEvidence?.PostDispatchWitnessChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_frame_changed"] = rawWheelEvidence?.PostDispatchRasterChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_changed_viewer_samples"] = rawWheelEvidence?.PostDispatchChangedViewerSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_blue"] = rawWheelEvidence?.PostDispatch.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_sample_y"] = rawWheelEvidence?.PostDispatch.SampleY.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_dark"] = rawWheelEvidence?.PostDispatch.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_flush_blue"] = rawWheelEvidence?.Settled.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_flush_sample_y"] = rawWheelEvidence?.Settled.SampleY.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_flush_dark"] = rawWheelEvidence?.Settled.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
