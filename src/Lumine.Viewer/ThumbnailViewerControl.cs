@@ -1827,12 +1827,10 @@ public sealed class ThumbnailViewerControl : UserControl
         _lookaheadCancellation?.Dispose();
         _lookaheadCancellation = null;
         _lookaheadTask = null;
-        if (_session.Options.UseViewportRequestCoordinator)
-        {
-            // Cancels the previous revision's source and decode token.
-            _viewportRequestCoordinator.Update(
-                ViewerViewportRequestPlan.Empty);
-        }
+        // Cancellation is unconditional: the owner may have rebound to
+        // a different session/option before the old task completes.
+        _viewportRequestCoordinator.Update(
+            ViewerViewportRequestPlan.Empty);
     }
 
     private void RefreshViewportRequestPlan()
