@@ -231,6 +231,27 @@ jobs:
               $oneWarm, $twoWarm, ($twoWarm - $oneWarm))
           }
 
+      # Actual in-memory Skia raster evidence, distinct from a tile
+      # Image.Source/IsReady counter and from real GPU display present.
+      # This is an EXTRA, opt-in 10k run; capturing the frame may affect
+      # timing, so do not feed it into performance acceptance.
+      - name: Capture Skia-rendered first-scroll frame
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-rendered/diagnostic-10000.json" --frame-output "artifacts/viewer-rendered/settled-first-offset-10000.png"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload Skia-rendered Viewer scroll evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-skia-frame-${{ github.run_id }}
+          path: |
+            artifacts/viewer-rendered/*.png
+            artifacts/viewer-rendered/*.json
+          if-no-files-found: error
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
