@@ -78,6 +78,10 @@ public sealed class ThumbnailViewerControl : UserControl
     // shutdown must drain these tasks as well as composition-fenced leases.
     private readonly object _tileLoadGate = new();
     private readonly HashSet<Task> _pendingTileLoads = [];
+    // Default OFF. With native realization overscan, controls can be
+    // mounted offscreen without consuming speculative thumbnail I/O.
+    // These tiles are activated only after intersecting the viewport.
+    private readonly HashSet<ViewerTileControl> _deferredOffscreenTiles = [];
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
@@ -151,6 +155,30 @@ public sealed class ThumbnailViewerControl : UserControl
             BorderThickness = new Thickness(0)
         };
 
+        var buffer = session.Options.RealizationBufferFactor;
+        if (!double.IsFinite(buffer)
+            || buffer < 0 || buffer > 0.5
+            || (session.Options.DeferOverscanTileLoads && buffer == 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(session),
+                "DeferOverscanTileLoads requires a realization buffer (0, 0.5].");
+        }
+
+        // Use Avalonia's actual virtualized items panel, not a custom
+        // scrolling algorithm. Leave the existing production template
+        // untouched when no experimental buffer is requested.
+        if (buffer > 0)
+        {
+            _rows.ItemsPanel = new FuncTemplate<Panel?>(
+                () => new VirtualizingStackPanel { CacheLength = buffer });
+        }
+
+        if (session.Options.DeferOverscanTileLoads)
+        {
+            LayoutUpdated += (_, _) => ActivateVisibleDeferredTiles();
+        }
+
         Content = _rows;
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
@@ -159,6 +187,7 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             CancelLookahead();
             StopScrollTracking();
+            _deferredOffscreenTiles.Clear();
         };
         // Capture wheel direction before the ListBox's ScrollViewer
         // handles the event and triggers virtualized row attachments.
@@ -1734,6 +1763,13 @@ public sealed class ThumbnailViewerControl : UserControl
         var next = scroller.Offset.Y;
         var delta = next - _lastGalleryOffsetY;
         _lastGalleryOffsetY = next;
+        if (_session.Options.DeferOverscanTileLoads)
+        {
+            // Offset can change before layout; LayoutUpdated retries
+            // after containers receive their new geometry.
+            ActivateVisibleDeferredTiles();
+        }
+
         var previousDirection = _lookaheadDirection;
         SetLookaheadDirection(delta);
 
@@ -1762,6 +1798,52 @@ public sealed class ThumbnailViewerControl : UserControl
 
         _lookaheadViewportEdgeReschedules++;
         ScheduleLookahead(visibleEdge, _columns);
+    }
+
+    private void DeferOffscreenTileLoad(ViewerTileControl tile)
+    {
+        _deferredOffscreenTiles.Add(tile);
+        ActivateVisibleDeferredTiles();
+    }
+
+    private void ForgetDeferredOffscreenTile(ViewerTileControl tile) =>
+        _deferredOffscreenTiles.Remove(tile);
+
+    private void ActivateVisibleDeferredTiles()
+    {
+        if (_deferredOffscreenTiles.Count == 0)
+        {
+            return;
+        }
+
+        EnsureScrollTracking();
+        var scroller = _galleryScrollViewer;
+        if (scroller is null
+            || scroller.Viewport.Width <= 0
+            || scroller.Viewport.Height <= 0)
+        {
+            return;
+        }
+
+        // A layout tick visits only the small realized overscan set,
+        // never the 10k/100k library. Do not trigger I/O offscreen.
+        foreach (var tile in _deferredOffscreenTiles.ToArray())
+        {
+            var origin = tile.TranslatePoint(default, scroller);
+            if (origin is not { } point
+                || tile.Bounds.Height <= 0
+                || tile.Bounds.Width <= 0
+                || point.Y >= scroller.Viewport.Height
+                || point.Y + tile.Bounds.Height <= 0
+                || point.X >= scroller.Viewport.Width
+                || point.X + tile.Bounds.Width <= 0)
+            {
+                continue;
+            }
+
+            _deferredOffscreenTiles.Remove(tile);
+            tile.StartDeferredVisibleLoad();
+        }
     }
 
     private void SetLookaheadDirection(double deltaY)
@@ -2456,12 +2538,20 @@ public sealed class ThumbnailViewerControl : UserControl
             UpdateSelection();
             _owner.CompletePendingAssetFocus(this);
             _session.NotifyTileAttached();
-            StartLoad();
+            if (_session.Options.DeferOverscanTileLoads)
+            {
+                _owner.DeferOffscreenTileLoad(this);
+            }
+            else
+            {
+                StartLoad();
+            }
         }
 
         private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
         {
             _owner.SelectionChanged -= OnSelectionChanged;
+            _owner.ForgetDeferredOffscreenTile(this);
             _session.NotifyTileDetached();
             CancelLoad();
         }
@@ -2825,6 +2915,16 @@ public sealed class ThumbnailViewerControl : UserControl
 
             _selectionBadge = badge;
             _gridLayers!.Children.Add(badge);
+        }
+
+        public void StartDeferredVisibleLoad()
+        {
+            if (_isLoading || _isReady || _loadCancellation is not null)
+            {
+                return;
+            }
+
+            StartLoad();
         }
 
         private void StartLoad()
