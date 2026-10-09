@@ -86,6 +86,19 @@ The Windows Viewer performance gate now requires these fields and enforces a bou
 
 **Important limits:** this test sets the real ScrollViewer offset, which exercises virtual row attachment and scroll-direction callbacks but is **not injected physical wheel input**. It counts UI-ready bitmap assignments, **not actual GPU composition/presented pixels**. It uses generated 512px image fixtures and cannot substitute for performance measurement with a representative real Windows library, actual wheel gestures and human product-owner acceptance. These remain open requirements of #634.
 
+## #640 CI failure: decoded-cache admission starvation (2026-10-09)
+
+This was a real blocked-viewport finding, **not** only a metric implementation bug. After revising the visible-tile measurement to count mounted intersecting controls, Windows CI [#37918681548](https://github.com/Kataage/Lumine/actions/runs/37918681548) still failed the first 198 DIP forward movement with **35 visible / 32 ready / 3 unready**; source in-flight and active bitmap decodes were both zero after the 1.5s window. Diagnostic CI [#37919703549](https://github.com/Kataage/Lumine/actions/runs/37919703549) isolated indices **28, 29, 30**, all still `loading`, with no provider failure and only one earlier cancellation.
+
+The synthetic provider returned **512×512** WebP images. In the decoded cache a 512×512 RGBA Bitmap is charged **1 MiB**. With a strict **32 MiB** budget, at most 32 such distinct leased images fit. `DecodedBitmapCache.TryAcquire` waits on a capacity signal when existing bitmap leases prevent eviction, so a 35-tile mounted viewport can become stuck rather than merely slow. This explains the exact stalled state; it also highlights that decoded **presentation size**, not encoded thumbnail file dimensions, must participate in the memory budget.
+
+Correction inside the same PR:
+- The ViewerSession passes a dedicated `DecodedThumbnailMaxDimension` option (default **384 physical pixels**) to its thumbnail bitmap cache. The cache uses Avalonia's `Bitmap.DecodeToWidth` / `DecodeToHeight`, respecting thumbnail aspect ratio, and does **not upscale** already smaller thumbnails. The file/memory original and focused/full-resolution Detail path are unchanged. A raw decoded-cache caller retains its previous full-resolution behavior.
+- Scaled-file cache keys are distinct from full-resolution file keys. The existing entry/byte limits, pinned lease lifecycle and cancellation behavior are unchanged.
+- A deterministic headless regression constructs 35 independently keyed 512px presentation images with all leases held under the **32 MiB** cap, and requires each to be admitted within a bound at **384px** decoded size. The normal mounted 10k/50k/100k forward/reverse offset probes must also pass, as must existing fast-jump and NativeAOT gates.
+
+**Verification limitation:** implementation and regression have been committed, but the final Windows CI and product owner acceptance must be checked before saying the defect is fixed. At very wide/large virtualized viewports, a hard entry/byte cap can still make a fully leased working set larger than the budget; this must be covered by viewport-size/scaling tests and an admission-pressure policy rather than loosening memory caps. No claim is made that GPU-composited physical wheel scrolling is blank-free.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
