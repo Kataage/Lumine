@@ -90,6 +90,9 @@ public sealed class ThumbnailViewerControl : UserControl
     // Wheel capture happens before virtualized rows are reattached.
     private int _lookaheadDirection = 1;
     private long _lookaheadScheduleCount;
+    private long _lookaheadViewportEdgeReschedules;
+    private int _lastLookaheadOffsetEdge = -1;
+    private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
     private Compositor? _compositor;
@@ -1452,6 +1455,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        _lastLookaheadOffsetEdge = -1;
+        _lastLookaheadOffsetDirection = 0;
         _rows.ItemsSource = new VirtualRowIndexList(AssetCount, _columns);
         var tileWidth = GetTileWidth();
         var tileHeight = GetTileHeight();
@@ -1589,6 +1594,9 @@ public sealed class ThumbnailViewerControl : UserControl
     internal long LookaheadScheduleCountForSmoke =>
         _lookaheadScheduleCount;
 
+    internal long LookaheadViewportEdgeReschedulesForSmoke =>
+        _lookaheadViewportEdgeReschedules;
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
@@ -1671,6 +1679,8 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
+            _lastLookaheadOffsetEdge = -1;
+            _lastLookaheadOffsetDirection = 0;
         }
     }
 
@@ -1687,7 +1697,32 @@ public sealed class ThumbnailViewerControl : UserControl
         var next = scroller.Offset.Y;
         var delta = next - _lastGalleryOffsetY;
         _lastGalleryOffsetY = next;
+        var previousDirection = _lookaheadDirection;
         SetLookaheadDirection(delta);
+
+        // Direction changes already schedule lookahead above. But a
+        // continued same-direction scroll can move the visible boundary
+        // through pre-realized rows without attaching any new row.
+        // Schedule exactly once per newly observed viewport edge;
+        // otherwise small pixel deltas would churn background requests.
+        if (Math.Abs(delta) <= 0.01
+            || previousDirection != _lookaheadDirection)
+        {
+            return;
+        }
+
+        var visibleEdge = _lookaheadDirection < 0
+            ? GetFirstVisibleRowIndex()
+            : GetLastVisibleRowIndex();
+        if (visibleEdge < 0
+            || (visibleEdge == _lastLookaheadOffsetEdge
+                && _lookaheadDirection == _lastLookaheadOffsetDirection))
+        {
+            return;
+        }
+
+        _lookaheadViewportEdgeReschedules++;
+        ScheduleLookahead(visibleEdge, _columns);
     }
 
     private void SetLookaheadDirection(double deltaY)
@@ -1731,6 +1766,17 @@ public sealed class ThumbnailViewerControl : UserControl
     private void ScheduleLookahead(long rowIndex, int columns)
     {
         _lookaheadScheduleCount++;
+        // Coalesce offset-driven scheduling with virtualized row attachment
+        // scheduling using the actual visible boundary at this point.
+        var visibleEdge = _lookaheadDirection < 0
+            ? GetFirstVisibleRowIndex()
+            : GetLastVisibleRowIndex();
+        if (visibleEdge >= 0)
+        {
+            _lastLookaheadOffsetEdge = visibleEdge;
+            _lastLookaheadOffsetDirection = _lookaheadDirection;
+        }
+
         // Rows may attach rapidly while the user scrolls. Never enqueue
         // two independent before/after ranges for each attached row:
         // 100k/10k fast-scroll workloads otherwise amplify background

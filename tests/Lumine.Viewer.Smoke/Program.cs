@@ -1091,6 +1091,46 @@ internal static class Program
                 > scheduledBeforeReverse,
             "Reverse scroll within the same realized viewport failed to supersede stale forward lookahead.");
 
+        // A later same-direction motion may shift the *visible* edge
+        // without creating a new virtual row (the overscan already
+        // contains it). It must still schedule the new nearest row.
+        // Conversely, tiny within-row offsets must not continually
+        // restart the same lookahead task.
+        var edgeRefreshesBefore =
+            viewer.LookaheadViewportEdgeReschedulesForSmoke;
+        for (var attempt = 0;
+             attempt < 15
+             && viewer.LookaheadViewportEdgeReschedulesForSmoke
+                == edgeRefreshesBefore;
+             attempt++)
+        {
+            scrollViewer.Offset = new Vector(
+                scrollViewer.Offset.X,
+                Math.Min(maxScroll, scrollViewer.Offset.Y + 125));
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.LookaheadViewportEdgeReschedulesForSmoke
+                > edgeRefreshesBefore,
+            "Repeated same-direction scroll failed to refresh lookahead when the visible boundary advanced.");
+
+        var refreshesAtEdge =
+            viewer.LookaheadViewportEdgeReschedulesForSmoke;
+        var visibleEdgeAtRest = viewer.LastVisibleAssetIndex;
+        scrollViewer.Offset = new Vector(
+            scrollViewer.Offset.X,
+            Math.Min(maxScroll, scrollViewer.Offset.Y + 1));
+        Dispatcher.UIThread.RunJobs();
+        if (viewer.LastVisibleAssetIndex == visibleEdgeAtRest)
+        {
+            Require(
+                viewer.LookaheadViewportEdgeReschedulesForSmoke
+                    == refreshesAtEdge,
+                "Small pixel offsets without a visible edge change repeatedly scheduled background work.");
+        }
+
         // The user-visible missing-thumbnail regression must be
         // instrumented as UI bitmap-source assignment latency, with
         // metadata / thumbnail source / decoded bitmap stages separate.
