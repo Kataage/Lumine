@@ -1149,6 +1149,24 @@ internal static class Program
         // contains it). It must still schedule the new nearest row.
         // Conversely, tiny within-row offsets must not continually
         // restart the same lookahead task.
+        // A long ScrollIntoView jump is not evidence that the next
+        // user scroll will follow the same direction; wheel-sized
+        // movement is directional while multi-viewport jumps are not.
+        Require(
+            ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: 198, viewportHeight: 600)
+            && ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: -500, viewportHeight: 600)
+            && !ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: 1250, viewportHeight: 600)
+            && !ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: -1250, viewportHeight: 600)
+            && !ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: 0, viewportHeight: 600)
+            && !ThumbnailViewerControl.IsIntentBearingScrollDeltaForSmoke(
+                deltaY: double.NaN, viewportHeight: 600),
+            "Multi-viewport seek offsets incorrectly changed browsing-direction intent.");
+
         var edgeRefreshesBefore =
             viewer.LookaheadViewportEdgeReschedulesForSmoke;
         for (var attempt = 0;
