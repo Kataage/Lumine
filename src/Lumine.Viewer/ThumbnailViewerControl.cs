@@ -11,6 +11,10 @@ using Avalonia.VisualTree;
 
 namespace Lumine.Viewer;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The coalesced lookahead CTS is cancelled and disposed when the Viewer detaches or rebinds.")]
 public sealed class ThumbnailViewerControl : UserControl
 {
     private ViewerSession _session;
@@ -29,6 +33,9 @@ public sealed class ThumbnailViewerControl : UserControl
     // shutdown must drain these tasks as well as composition-fenced leases.
     private readonly object _tileLoadGate = new();
     private readonly HashSet<Task> _pendingTileLoads = [];
+    // One coalesced viewport lookahead, not one speculative queue per
+    // realized row. Fast scroll repeatedly supersedes the previous range.
+    private CancellationTokenSource? _lookaheadCancellation;
     private Compositor? _compositor;
     private int _columns = 1;
     private readonly ViewerRangeSelection _selection = new();
@@ -86,6 +93,7 @@ public sealed class ThumbnailViewerControl : UserControl
         KeyDown += OnKeyDown;
         SizeChanged += OnSizeChanged;
         AttachedToVisualTree += OnAttachedToVisualTree;
+        DetachedFromVisualTree += (_, _) => CancelLookahead();
 
         RebuildRows();
     }
@@ -137,6 +145,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
         CancelPendingAssetFocus();
+        CancelLookahead();
         _rows.ItemsSource = null;
         _warmPresentations.Clear();
         _warmPresentationLru.Clear();
@@ -146,6 +155,7 @@ public sealed class ThumbnailViewerControl : UserControl
     public async Task PrepareForSessionRebindAsync()
     {
         CancelPendingAssetFocus();
+        CancelLookahead();
         _rows.ItemsSource = null;
         _warmPresentations.Clear();
         _warmPresentationLru.Clear();
@@ -1351,17 +1361,86 @@ public sealed class ThumbnailViewerControl : UserControl
         e.Handled = true;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Design",
-        "CA1001:Types that own disposable fields should be disposable",
-        Justification = "The row cancellation source is cancelled and disposed on visual detach.")]
+    private void CancelLookahead()
+    {
+        _lookaheadCancellation?.Cancel();
+        _lookaheadCancellation?.Dispose();
+        _lookaheadCancellation = null;
+    }
+
+    private void ScheduleLookahead(long rowIndex, int columns)
+    {
+        // Rows may attach rapidly while the user scrolls. Never enqueue
+        // two independent before/after ranges for each attached row:
+        // 100k/10k fast-scroll workloads otherwise amplify background
+        // thumbnail requests and exceed the product's work budget.
+        CancelLookahead();
+        if (_session.Options.PrefetchRows <= 0)
+        {
+            return;
+        }
+
+        var session = _session;
+        _lookaheadCancellation = new CancellationTokenSource();
+        _ = PrefetchViewportLookaheadAsync(
+            session,
+            rowIndex,
+            columns,
+            _lookaheadCancellation.Token);
+    }
+
+    private static async Task PrefetchViewportLookaheadAsync(
+        ViewerSession session,
+        long rowIndex,
+        int columns,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // A short quiet period lets the current Foreground requests
+            // enqueue, while avoiding the previous gate that required
+            // every visible tile to finish first.
+            if (session.Options.PrefetchDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(
+                    session.Options.PrefetchDelay,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var rows = session.Options.PrefetchRows;
+            var afterStartIndex = checked((rowIndex + 1) * columns);
+            if (afterStartIndex < session.Count)
+            {
+                await session.PrefetchAsync(
+                    afterStartIndex,
+                    checked((int)Math.Min(
+                        session.Count - afterStartIndex,
+                        (long)rows * columns)),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var beforeStartRow = Math.Max(0, rowIndex - rows);
+            var beforeRowCount = rowIndex - beforeStartRow;
+            if (beforeRowCount > 0)
+            {
+                await session.PrefetchAsync(
+                    checked(beforeStartRow * columns),
+                    checked((int)(beforeRowCount * columns)),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
     private sealed class ViewerRowControl : StackPanel
     {
-        private readonly ViewerSession _session;
         private readonly long _rowIndex;
         private readonly int _columns;
         private readonly ThumbnailViewerControl _owner;
-        private CancellationTokenSource? _prefetchCancellation;
 
         public ViewerRowControl(
             ThumbnailViewerControl owner,
@@ -1373,7 +1452,6 @@ public sealed class ThumbnailViewerControl : UserControl
             double tileHeight)
         {
             _owner = owner;
-            _session = session;
             _rowIndex = rowIndex;
             _columns = columns;
 
@@ -1402,98 +1480,8 @@ public sealed class ThumbnailViewerControl : UserControl
                     tileHeight));
             }
 
-            AttachedToVisualTree += OnAttached;
-            DetachedFromVisualTree += OnDetached;
-        }
-
-        private void OnAttached(object? sender, VisualTreeAttachmentEventArgs e)
-        {
-            _prefetchCancellation?.Cancel();
-            _prefetchCancellation?.Dispose();
-            _prefetchCancellation = new CancellationTokenSource();
-
-            if (_session.Options.PrefetchRows > 0)
-            {
-                _ = PrefetchAfterDelayAsync(_prefetchCancellation.Token);
-            }
-        }
-
-        private async Task PrefetchAfterDelayAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var diagnostics = _session.Diagnostics;
-                    if (ShouldStartBackgroundPrefetch(
-                            diagnostics.AttachedTiles,
-                            diagnostics.ReadyTiles))
-                    {
-                        break;
-                    }
-
-                    await Task.Delay(
-                        TimeSpan.FromMilliseconds(25),
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                // Prefetch is useful only after the visible viewport has
-                // remained stable. A row that detaches during a fast scroll
-                // cancels this delay before any background decode is started.
-                if (_session.Options.PrefetchDelay > TimeSpan.Zero)
-                {
-                    await Task.Delay(
-                        _session.Options.PrefetchDelay,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                var stableDiagnostics =
-                    _session.Diagnostics;
-                if (!ShouldStartBackgroundPrefetch(
-                        stableDiagnostics.AttachedTiles,
-                        stableDiagnostics.ReadyTiles))
-                {
-                    return;
-                }
-
-                var rows = _session.Options.PrefetchRows;
-
-                var beforeStartRow = Math.Max(0, _rowIndex - rows);
-                var beforeRowCount = _rowIndex - beforeStartRow;
-                if (beforeRowCount > 0)
-                {
-                    await _session.PrefetchAsync(
-                        checked(beforeStartRow * _columns),
-                        checked((int)(beforeRowCount * _columns)),
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                var afterStartRow = _rowIndex + 1;
-                var afterStartIndex = checked(afterStartRow * _columns);
-                if (afterStartIndex < _session.Count)
-                {
-                    var afterCount = checked((int)Math.Min(
-                        _session.Count - afterStartIndex,
-                        (long)rows * _columns));
-
-                    await _session.PrefetchAsync(
-                        afterStartIndex,
-                        afterCount,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-            }
-        }
-
-        private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e)
-        {
-            _prefetchCancellation?.Cancel();
-            _prefetchCancellation?.Dispose();
-            _prefetchCancellation = null;
+            AttachedToVisualTree += (_, _) =>
+                _owner.ScheduleLookahead(_rowIndex, _columns);
         }
     }
 
