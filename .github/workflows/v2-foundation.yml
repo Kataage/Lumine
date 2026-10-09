@@ -323,7 +323,7 @@ jobs:
       # Distinct from both accepted direct 198px Offset benchmarks and
       # Window.MouseWheel, which internally flushes up to 10 render
       # ticks before/after injecting a single event. This diagnostic
-      # sends one raw routed -4 wheel through public ITopLevelImpl.Input,
+      # sends one raw routed -4 wheel through public PointerWheelEventArgs routing,
       # then forces ONLY ONE explicit render timer tick before inspecting
       # the Skia framebuffer. It is isolated from performance timings.
       - name: Capture unflushed raw-wheel first-tick raster evidence
@@ -345,7 +345,7 @@ jobs:
         run: |
           $d = Get-Content "artifacts/viewer-raw-wheel/diagnostic-10000.json" -Raw | ConvertFrom-Json
           $m = $d.metadata
-          if ($m.raw_wheel_probe_input_kind -ne "public-platform-raw-wheel-no-auto-flush" -or
+          if ($m.raw_wheel_probe_input_kind -ne "routed-pointerwheel-no-auto-flush" -or
               [long]$m.raw_wheel_routed_event_count -ne 1 -or
               [double]$m.raw_wheel_offset_delta_px -le 0 -or
               [int]$m.raw_wheel_direction_after -ne 1 -or
@@ -357,7 +357,7 @@ jobs:
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-before-input.png") -or
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-first-explicit-tick.png") -or
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-after-headless-flush.png")) {
-            throw "Raw routed first-tick wheel probe failed to supply a new Skia raster with bounded requests."
+            throw "Unflushed routed first-tick wheel probe failed to supply a new Skia raster with bounded requests."
           }
           Write-Host "Raw wheel: offset=$($m.raw_wheel_offset_delta_px)px; unready immediately after input=$($m.raw_wheel_immediate_unready); changed framebuffer=$($m.raw_wheel_first_tick_raster_changed); first-tick blue/dark=$($m.raw_wheel_first_tick_blue)/$($m.raw_wheel_first_tick_dark); after headless flush blue/dark=$($m.raw_wheel_post_flush_blue)/$($m.raw_wheel_post_flush_dark)."
 
