@@ -25,8 +25,9 @@ From `src/Lumine.Viewer/ThumbnailViewerControl.cs` and `ViewerSession.cs`:
 ## First bounded intervention (PR for #634)
 
 1. Start opportunistic background lookahead after only a short foreground-submission grace period, without waiting for every visible tile to finish.
-2. Request the forward two rows before reverse rows. Keep low-priority background work coalesced with eventual foreground tile requests. Cancel obsolete work when rows detach.
-3. Keep `ViewerOptions.PrefetchRows` small and explicit (2) and `PrefetchDelay` short (8 ms) so the virtualized row population remains bounded; **do not** introduce permanent full-library UI objects or unbounded queue allocations.
+2. Request the forward two rows before reverse rows. Keep low-priority background work coalesced with eventual foreground tile requests.
+3. **Coalesce speculative work at the owning Viewer level** instead of starting separate before/after prefetch queues from *every* realized row. New row attachments cancel and supersede the old speculative range; detach/rebind cancels outstanding work. This requirement was added after CI #37910288282 measured **1,775 thumbnail requests** in the 10,000-image fast-scroll workload, exceeding the **1,600** request budget. The very first eager per-row attempt failed the existing performance gate even though functional Viewer smoke passed. Never weaken the benchmark limit to hide that regression.
+4. Keep `ViewerOptions.PrefetchRows` small and explicit (2) and `PrefetchDelay` short (8 ms) so the virtualized row population remains bounded; **do not** introduce permanent full-library UI objects or unbounded queue allocations.
 4. Add deterministic Viewer smoke with *foreground deliberately blocked*, asserting background lookahead begins while the viewport is still loading, followed by normal visible readiness. Keep existing 100k virtualization, bitmap-resource and shutdown tests.
 
 This is a **first correction only**. It primarily warms source thumbnails, not necessarily final decoded presentations, and does not guarantee eliminating all short-scroll blanking.
