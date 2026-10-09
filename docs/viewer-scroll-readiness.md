@@ -143,6 +143,16 @@ The correction derives nearest offscreen rows `first - 1` and `last + 1` from `G
 
 CI-derived headless UI assignment metrics, even if improved, still do not prove physical Windows wheel/GPU presentation or end-user experience. Maintain Issue #634 as OPEN until this evidence and owner acceptance.
 
+## Start decoded adjacent rows before distant source lookahead (tenth #634 step)
+
+[PR #644](https://github.com/Kataage/Lumine/pull/644) merged to `develop` as `12f6ec58` after all 50 Windows CI steps passed, including the repaired virtualization smoke and NativeAOT/portable checks. The settled three-step forward benchmark showed 17 / 18 / 14 first-frame misses at 10k / 50k / 100k versus 18 / 16 / 15 on PR #643; warm bitmap cache hits were 4 / 3 / 4 versus 3 / 5 / 6. This is **mixed sampling, not proven generalized latency improvement**, though the last decoded target now correctly lies just outside the visible viewport.
+
+The next opportunity is a separate scheduling stage: the Viewer has ordinarily `PrefetchRows=2`, but its old lookahead awaited the source fetch for *all* rows before beginning even one adjacent decoded Bitmap. Real local libraries can take much longer to fetch/generate thumbnails for a distant lookahead row, unnecessarily delaying the neighbor a user is about to expose.
+
+The scheduler now splits each already-bounded per-direction source range into **nearest one-row** and **remaining distant rows**. It requests the nearest row on the preferred side, then the nearest row on the opposite side; once those sources are available it waits for the existing foreground-idle gate and warms adjacent Bitmap rows under the existing 32 MiB/entry budget. Only afterward does it request more distant sources, with original directional ordering and the exact same total unique request range. If the user jumps away, cancellation can now avoid distant speculative work rather than issuing extra requests. `SourcePrefetchCompleted` continues to mean all planned source ranges (near and far) finished, not just the first two rows.
+
+For `PrefetchRows=1` (the existing three-size benchmark), no far rows exist and this is intentionally a no-op. The product/default `PrefetchRows=2` path benefits from the reordered stages; smoke coverage verifies disjoint correct ranges, including reverse nearest-row positioning. A later *specific* multirow fixture/real-Windows run is still required before a quantitative claim of improvement. All first-paint, fast-jump/1,600-request, 32 MiB, virtualization, NativeAOT/portable gates remain unchanged, and no real physical-wheel/GPU-present acceptance is implied.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
