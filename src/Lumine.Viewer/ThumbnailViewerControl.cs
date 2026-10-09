@@ -1599,9 +1599,12 @@ public sealed class ThumbnailViewerControl : UserControl
             }
             catch (Exception exception)
             {
-                // Speculative images are expendable. Visible tile work
-                // still owns its own retry/error reporting.
-                session.NotifyTileLoadFailed(exception);
+                // A failed offscreen warm-up must never mark a visible
+                // tile as failed. The actual tile retains its retry
+                // and user-facing error handling when it appears.
+                System.Diagnostics.Trace.TraceWarning(
+                    "Viewer lookahead bitmap preparation failed: {0}",
+                    exception);
                 break;
             }
             finally
