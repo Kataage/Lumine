@@ -32,6 +32,8 @@ internal static class Program
         }
 
         var wheelEvidenceDir = ReadOption(args, "--wheel-evidence-dir");
+        var rawWheelEvidenceDir = ReadOption(
+            args, "--unflushed-wheel-evidence-dir");
         // This is an independently invoked input/raster diagnostic, NOT
         // part of the accepted direct-offset timing benchmark.
         if (wheelEvidenceDir is not null
@@ -88,6 +90,7 @@ internal static class Program
         var priorWheelScrollIntent = 0;
         var firstWheelScrollIntent = 0;
         var fourthWheelScrollIntent = 0;
+        RawWheelFrameEvidence? rawWheelEvidence = null;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -341,6 +344,30 @@ internal static class Program
                             + $"fourth blue/dark={fourthWheelAudit.Value.BlueThumbnailSamples}/{fourthWheelAudit.Value.DarkPlaceholderSamples}.");
                     }
 
+                    if (rawWheelEvidenceDir is not null)
+                    {
+                        // Different page from the ordinary headless
+                        // wheel test; reuse no pre-visited warm entries.
+                        viewer.ScrollToAsset(
+                            Math.Min(count - 1, count / 2 + 2107));
+                        Dispatcher.UIThread.RunJobs();
+                        await WaitForViewportReadyAsync(viewer);
+                        await Task.Delay(200);
+                        Dispatcher.UIThread.RunJobs();
+
+                        rawWheelEvidence = RawWheelFirstFrameProbe.Capture(
+                            window,
+                            viewer,
+                            Path.GetFullPath(rawWheelEvidenceDir));
+                        Console.WriteLine(
+                            "Unflushed raw wheel +200px: "
+                            + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
+                            + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
+                            + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "
+                            + $"first-tick blue/dark={rawWheelEvidence.Value.FirstTick.BlueThumbnailSamples}/{rawWheelEvidence.Value.FirstTick.DarkPlaceholderSamples}, "
+                            + $"post-flush blue/dark={rawWheelEvidence.Value.Settled.BlueThumbnailSamples}/{rawWheelEvidence.Value.Settled.DarkPlaceholderSamples}.");
+                    }
+
                     viewer.SelectAsset(count - 1);
                     Observe(viewer);
 
@@ -437,6 +464,16 @@ internal static class Program
                     ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_probe_input_kind"] = rawWheelEvidence is null ? "not-captured" : "public-platform-raw-wheel-no-auto-flush",
+                    ["raw_wheel_routed_event_count"] = rawWheelEvidence?.RoutedEvents.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_offset_delta_px"] = rawWheelEvidence?.OffsetDeltaPixels.ToString("F3", CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_direction_before"] = rawWheelEvidence?.DirectionBefore.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_direction_after"] = rawWheelEvidence?.DirectionAfter.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_immediate_unready"] = rawWheelEvidence?.UnreadyImmediatelyAfterInput.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_blue"] = rawWheelEvidence?.FirstTick.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_dark"] = rawWheelEvidence?.FirstTick.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_flush_blue"] = rawWheelEvidence?.Settled.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_flush_dark"] = rawWheelEvidence?.Settled.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
