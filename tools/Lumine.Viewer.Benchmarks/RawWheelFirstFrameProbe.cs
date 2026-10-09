@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -21,6 +22,7 @@ internal readonly record struct RawWheelFrameEvidence(
     int DirectionBefore,
     int DirectionAfter,
     int UnreadyImmediatelyAfterInput,
+    bool FirstTickContainsUpdatedRaster,
     RenderedFrameTileAudit FirstTick,
     RenderedFrameTileAudit Settled);
 
@@ -48,6 +50,18 @@ internal static class RawWheelFirstFrameProbe
         var platformInput = window.PlatformImpl?.Input
             ?? throw new InvalidOperationException(
                 "Raw-wheel probe cannot access public platform input callback.");
+
+        // Read the prior frame WITHOUT the headless helper's
+        // pre/post auto-render loop so we can detect when the new tick
+        // only returned an unchanged/stale framebuffer.
+        var beforePath = Path.Combine(
+            outputDirectory, "raw-before-input.png");
+        using (var before = window.GetLastRenderedFrame()
+            ?? throw new InvalidOperationException(
+                "Raw-wheel probe lacks a pre-input raster baseline."))
+        {
+            before.Save(beforePath);
+        }
 
         var beforeCount = viewer.RoutedWheelEventCount;
         var beforeOffset = scroller.Offset.Y;
@@ -94,6 +108,11 @@ internal static class RawWheelFirstFrameProbe
             first.Save(firstPath);
         }
 
+        var firstTickChangedRaster =
+            !SHA256.HashData(File.ReadAllBytes(beforePath))
+                .AsSpan()
+                .SequenceEqual(
+                    SHA256.HashData(File.ReadAllBytes(firstPath)));
         var firstAudit = RenderedFrameTileAudit.Inspect(
             firstPath, viewer.Columns);
 
@@ -127,6 +146,7 @@ internal static class RawWheelFirstFrameProbe
             previousDirection,
             direction,
             immediateViewport.UnreadyTiles,
+            firstTickChangedRaster,
             firstAudit,
             settledAudit);
     }
