@@ -33,6 +33,18 @@ internal static class Program
             throw new ArgumentException("--count must be a positive integer.");
         }
 
+        var prefetchRowsText = ReadOption(args, "--prefetch-rows") ?? "1";
+        if (!int.TryParse(
+                prefetchRowsText,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var prefetchRows)
+            || prefetchRows is < 0 or > 8)
+        {
+            throw new ArgumentException(
+                "--prefetch-rows must be an integer from 0 to 8.");
+        }
+
         var tempRoot = Path.Combine(
             Path.GetTempPath(),
             $"lumine-viewer-benchmark-{Guid.NewGuid():N}");
@@ -85,7 +97,7 @@ internal static class Program
                             TileWidth = 160,
                             TileHeight = 190,
                             TileSpacing = 8,
-                            PrefetchRows = 1,
+                            PrefetchRows = prefetchRows,
                             DecodedBitmapEntryLimit = 64,
                             DecodedBitmapByteLimit = 32L * 1024 * 1024
                         });
@@ -240,6 +252,7 @@ internal static class Program
                 {
                     ["kind"] = "viewer-core",
                     ["asset_count"] = count.ToString(CultureInfo.InvariantCulture),
+                    ["prefetch_rows"] = prefetchRows.ToString(CultureInfo.InvariantCulture),
                     ["columns"] = finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),

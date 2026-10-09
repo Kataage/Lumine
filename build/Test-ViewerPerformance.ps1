@@ -1,5 +1,7 @@
 param(
-    [string]$BenchmarkDirectory = "artifacts/benchmarks"
+    [string]$BenchmarkDirectory = "artifacts/benchmarks",
+    [ValidateRange(0, 8)]
+    [int]$ExpectedPrefetchRows = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +32,10 @@ $results = @($tenK, $fiftyK, $hundredK)
 
 foreach ($result in $results) {
     $count = [int]$result.metadata.asset_count
+    $observedPrefetchRows = [int]$result.metadata.prefetch_rows
+    if ($observedPrefetchRows -ne $ExpectedPrefetchRows) {
+        throw "$count Viewer expected PrefetchRows=$ExpectedPrefetchRows, got $observedPrefetchRows."
+    }
     $firstPaint = Get-Metric $result "viewer.first_paint"
     $firstViewportReady = Get-Metric $result "viewer.first_viewport_ready"
     $fastScroll = Get-Metric $result "viewer.fast_scroll_refresh"

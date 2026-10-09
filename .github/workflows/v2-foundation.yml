@@ -193,7 +193,43 @@ jobs:
 
       - name: Enforce Viewer performance acceptance
         shell: pwsh
-        run: ./build/Test-ViewerPerformance.ps1
+        run: ./build/Test-ViewerPerformance.ps1 -ExpectedPrefetchRows 1
+
+      # The original suite intentionally uses one lookahead row.
+      # The product default is two; verify this separate path with the
+      # same full acceptance limits rather than a synthetic speed claim.
+      - name: Generate Viewer default two-row benchmarks
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count $count --prefetch-rows 2 --output "artifacts/benchmarks/viewer-prefetch2/viewer-$count.json"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Enforce Viewer default two-row performance acceptance
+        shell: pwsh
+        run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-prefetch2" -ExpectedPrefetchRows 2
+
+      - name: Compare Viewer one-row versus default two-row readiness
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            $one = Get-Content "artifacts/benchmarks/viewer-$count.json" -Raw | ConvertFrom-Json
+            $two = Get-Content "artifacts/benchmarks/viewer-prefetch2/viewer-$count.json" -Raw | ConvertFrom-Json
+            if ([int]$one.metadata.prefetch_rows -ne 1 -or [int]$two.metadata.prefetch_rows -ne 2) {
+              throw "Viewer lookahead depth comparison received mismatched fixtures for $count assets."
+            }
+            $oneMiss = [int]$one.metadata.small_scroll_settled_forward_missing_on_first_frame
+            $twoMiss = [int]$two.metadata.small_scroll_settled_forward_missing_on_first_frame
+            $oneWarm = [long]$one.metadata.small_scroll_settled_forward_warm_bitmap_hits
+            $twoWarm = [long]$two.metadata.small_scroll_settled_forward_warm_bitmap_hits
+            Write-Host (
+              "{0:N0}: settled forward first-frame missing: 1-row={1}, 2-row={2}, delta={3:+#;-#;0}; warmed Bitmap hits: 1-row={4}, 2-row={5}, delta={6:+#;-#;0}" -f
+              $count, $oneMiss, $twoMiss, ($twoMiss - $oneMiss),
+              $oneWarm, $twoWarm, ($twoWarm - $oneWarm))
+          }
 
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
@@ -237,7 +273,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lumine-core-baselines-${{ github.run_id }}
-          path: artifacts/benchmarks/*.json
+          path: |
+            artifacts/benchmarks/*.json
+            artifacts/benchmarks/viewer-prefetch2/*.json
           if-no-files-found: error
 
       - name: Publish NativeAOT
