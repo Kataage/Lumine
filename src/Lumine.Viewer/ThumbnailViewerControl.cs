@@ -1617,6 +1617,29 @@ public sealed class ThumbnailViewerControl : UserControl
                 : attachedRow + 1
         );
 
+    // Preserve the exact original bounded source request range while
+    // advancing the immediately adjacent row ahead of distant prefetch.
+    // In the reverse direction the nearest row is the range's tail.
+    internal static (long NearStart, int NearCount,
+        long FarStart, int FarCount) SplitLookaheadRangeForSmoke(
+            long startIndex,
+            int count,
+            int columns,
+            bool beforeViewport)
+    {
+        var nearCount = Math.Min(count, columns);
+        var farCount = count - nearCount;
+        return beforeViewport
+            ? (checked(startIndex + farCount),
+                nearCount,
+                startIndex,
+                farCount)
+            : (startIndex,
+                nearCount,
+                checked(startIndex + nearCount),
+                farCount);
+    }
+
     private void OnGalleryWheel(
         object? sender,
         PointerWheelEventArgs e) =>
@@ -1779,36 +1802,42 @@ public sealed class ThumbnailViewerControl : UserControl
                 ? checked((int)((beforeRow - beforeStartRow + 1) * columns))
                 : 0;
 
-            // Reverse browsing is as important as forward browsing.
-            // Start the probable next direction first, while keeping
-            // the other side's lookahead within the same bounded task.
-            if (direction < 0 && beforeCount > 0)
+            // Request the immediate offscreen row on each side before
+            // fetching more distant rows. With PrefetchRows > 1, awaiting
+            // far-away source work used to delay actual Bitmap predecode.
+            // This split makes NO additional source requests and keeps
+            // the existing directional priority and cancellation token.
+            var beforeRanges = SplitLookaheadRangeForSmoke(
+                beforeStartIndex, beforeCount, columns,
+                beforeViewport: true);
+            var afterRanges = SplitLookaheadRangeForSmoke(
+                afterStartIndex, afterCount, columns,
+                beforeViewport: false);
+            if (direction < 0 && beforeRanges.NearCount > 0)
             {
                 await session.PrefetchAsync(
-                    beforeStartIndex,
-                    beforeCount,
+                    beforeRanges.NearStart,
+                    beforeRanges.NearCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (afterCount > 0)
+            if (afterRanges.NearCount > 0)
             {
                 await session.PrefetchAsync(
-                    afterStartIndex,
-                    afterCount,
+                    afterRanges.NearStart,
+                    afterRanges.NearCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (direction >= 0 && beforeCount > 0)
+            if (direction >= 0 && beforeRanges.NearCount > 0)
             {
                 await session.PrefetchAsync(
-                    beforeStartIndex,
-                    beforeCount,
+                    beforeRanges.NearStart,
+                    beforeRanges.NearCount,
                     cancellationToken).ConfigureAwait(false);
             }
-
-            Interlocked.Increment(ref _lookaheadSourcesComplete);
 
             // ScrollIntoView can jump upward from a far-away position.
             // Its last offset direction is NOT the user's next scroll
@@ -1901,6 +1930,38 @@ public sealed class ThumbnailViewerControl : UserControl
                         cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            // Longer-range source prefetch still runs, but only after the
+            // near rows have had an opportunity to become decoded Bitmaps.
+            // Keep both directions bounded by the original PrefetchRows.
+            cancellationToken.ThrowIfCancellationRequested();
+            if (direction < 0 && beforeRanges.FarCount > 0)
+            {
+                await session.PrefetchAsync(
+                    beforeRanges.FarStart,
+                    beforeRanges.FarCount,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (afterRanges.FarCount > 0)
+            {
+                await session.PrefetchAsync(
+                    afterRanges.FarStart,
+                    afterRanges.FarCount,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (direction >= 0 && beforeRanges.FarCount > 0)
+            {
+                await session.PrefetchAsync(
+                    beforeRanges.FarStart,
+                    beforeRanges.FarCount,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            Interlocked.Increment(ref _lookaheadSourcesComplete);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
