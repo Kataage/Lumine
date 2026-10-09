@@ -148,9 +148,13 @@ public sealed class ViewerOptions
 
     public double TileSpacing { get; init; } = 8;
 
-    public int PrefetchRows { get; init; } = 1;
+    // Keep a small bounded lookahead in both directions; the current
+    // viewport itself is always loaded at Foreground priority.
+    public int PrefetchRows { get; init; } = 2;
 
-    public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(40);
+    // Give foreground requests a brief chance to enqueue, but do not
+    // require all visible tiles to finish before warming adjacent rows.
+    public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(8);
 
     public int MetadataPageSize { get; init; } = 256;
 
