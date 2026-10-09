@@ -184,6 +184,11 @@ public sealed class ThumbnailViewerControl : UserControl
     public long RoutedWheelEventCount =>
         Interlocked.Read(ref _routedWheelEvents);
 
+    // Positive is toward later rows; negative is toward earlier rows.
+    // Unlike LastScheduledDirection, this reflects current input intent
+    // even if no lookahead task was admitted due to viewport geometry.
+    public int CurrentScrollIntentDirection => _lookaheadDirection;
+
     public long SelectedAssetIndex => _selectedIndex;
 
     public int SelectedAssetCount => _selection.Count;
