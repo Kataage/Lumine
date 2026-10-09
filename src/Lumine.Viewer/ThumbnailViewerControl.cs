@@ -2016,33 +2016,98 @@ public sealed class ThumbnailViewerControl : UserControl
                 }
             }
 
+            // Product-default PrefetchRows=2 already includes the next
+            // direction-side row in its *source* request range, but
+            // previously never decoded its Bitmap before it became visible.
+            // Within the existing 32 MiB bound, promote that one row from
+            // source-only lookahead to display-ready warmup. Do not fetch
+            // the same sources again when the distant range is visited.
+            var secondDirectionalWarmStart = -1L;
+            var secondDirectionalWarmComplete = false;
+            var secondDirectionalRow = direction < 0
+                ? beforeRow - 1
+                : afterRow + 1;
+            var secondDirectionalFarCount = direction < 0
+                ? beforeRanges.FarCount
+                : afterRanges.FarCount;
+            if (rows >= 2
+                && nextRowCount == columns
+                && secondDirectionalFarCount >= columns
+                && secondDirectionalRow >= 0
+                && preferredRow == (direction < 0 ? beforeRow : afterRow)
+                && checked(secondDirectionalRow * columns) < session.Count)
+            {
+                var capacity = session.Diagnostics;
+                if (capacity.AttachedTiles > 0
+                    && capacity.ReadyTiles >= capacity.AttachedTiles
+                    && capacity.ActiveBitmapDecodes == 0
+                    && HasThirdWarmCapacityForSmoke(
+                        session.Options,
+                        capacity.AttachedTiles,
+                        nextRowCount))
+                {
+                    secondDirectionalWarmStart =
+                        checked(secondDirectionalRow * columns);
+                    Interlocked.Exchange(
+                        ref _lookaheadLastPredecodeStartIndex,
+                        secondDirectionalWarmStart);
+                    var completed = await PredecodeNextRowAsync(
+                        session,
+                        secondDirectionalWarmStart,
+                        columns,
+                        cancellationToken).ConfigureAwait(false);
+                    secondDirectionalWarmComplete = completed == columns;
+                }
+            }
+
             // Longer-range source prefetch still runs, but only after the
             // near rows have had an opportunity to become decoded Bitmaps.
             // Keep both directions bounded by the original PrefetchRows.
             cancellationToken.ThrowIfCancellationRequested();
-            if (direction < 0 && beforeRanges.FarCount > 0)
+            var beforeFarCount = beforeRanges.FarCount;
+            var afterFarStart = afterRanges.FarStart;
+            var afterFarCount = afterRanges.FarCount;
+            if (secondDirectionalWarmComplete)
+            {
+                if (direction < 0
+                    && secondDirectionalWarmStart
+                        == beforeRanges.FarStart + beforeFarCount - columns)
+                {
+                    // Reverse nearest distant row is at the far range tail.
+                    beforeFarCount -= columns;
+                }
+                else if (direction >= 0
+                    && secondDirectionalWarmStart == afterFarStart)
+                {
+                    // Forward nearest distant row is at the far range head.
+                    afterFarStart += columns;
+                    afterFarCount -= columns;
+                }
+            }
+
+            if (direction < 0 && beforeFarCount > 0)
             {
                 await session.PrefetchAsync(
                     beforeRanges.FarStart,
-                    beforeRanges.FarCount,
+                    beforeFarCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (afterRanges.FarCount > 0)
+            if (afterFarCount > 0)
             {
                 await session.PrefetchAsync(
-                    afterRanges.FarStart,
-                    afterRanges.FarCount,
+                    afterFarStart,
+                    afterFarCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (direction >= 0 && beforeRanges.FarCount > 0)
+            if (direction >= 0 && beforeFarCount > 0)
             {
                 await session.PrefetchAsync(
                     beforeRanges.FarStart,
-                    beforeRanges.FarCount,
+                    beforeFarCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -2059,7 +2124,22 @@ public sealed class ThumbnailViewerControl : UserControl
     internal static bool HasSecondaryWarmCapacityForSmoke(
         ViewerOptions options,
         int attachedTiles,
-        int nextRowCount)
+        int nextRowCount) =>
+        HasWarmCapacityForRows(
+            options, attachedTiles, nextRowCount, rowCount: 2);
+
+    internal static bool HasThirdWarmCapacityForSmoke(
+        ViewerOptions options,
+        int attachedTiles,
+        int nextRowCount) =>
+        HasWarmCapacityForRows(
+            options, attachedTiles, nextRowCount, rowCount: 3);
+
+    private static bool HasWarmCapacityForRows(
+        ViewerOptions options,
+        int attachedTiles,
+        int nextRowCount,
+        int rowCount)
     {
         // Avoid checked arithmetic overflow for invalid/excessive caller
         // dimensions; no speculative decode when the budget is unknown.
@@ -2071,7 +2151,7 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         var combinedEntries = (long)attachedTiles
-            + 2L * nextRowCount;
+            + (long)rowCount * nextRowCount;
         var dimension = (long)options.DecodedThumbnailMaxDimension;
         var worstCaseBytesPerEntry = dimension * dimension * 4L;
         return combinedEntries <= options.DecodedBitmapEntryLimit
@@ -2079,12 +2159,13 @@ public sealed class ThumbnailViewerControl : UserControl
                 / worstCaseBytesPerEntry;
     }
 
-    private async Task PredecodeNextRowAsync(
+    private async Task<int> PredecodeNextRowAsync(
         ViewerSession session,
         long startIndex,
         int count,
         CancellationToken cancellationToken)
     {
+        var warmed = 0;
         for (var offset = 0; offset < count; offset++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -2118,6 +2199,7 @@ public sealed class ThumbnailViewerControl : UserControl
                                 thumbnail);
                             Interlocked.Increment(
                                 ref _lookaheadBitmapsPredecoded);
+                            warmed++;
                         }
 
                         acquired.Dispose();
@@ -2152,6 +2234,8 @@ public sealed class ThumbnailViewerControl : UserControl
                 }
             }
         }
+
+        return warmed;
     }
 
     private sealed class ViewerRowControl : StackPanel
