@@ -2135,15 +2135,46 @@ internal static class ProductNavigationViews
                         remove.Click +=
                             async (_, _) =>
                             {
+                                // A keyboard-activated Delete is disabled
+                                // before the async operation, and successful
+                                // deletion rebuilds the entire account list.
+                                // Capture focus before disabling the Button.
+                                var restoreFocus =
+                                    remove.IsFocused;
                                 remove.IsEnabled = false;
                                 try
                                 {
                                     if (await deleteAccount(
                                             accountItem))
                                     {
+                                        var owner =
+                                            TopLevel.GetTopLevel(addAccount);
+                                        var activeFocus =
+                                            owner?.FocusManager
+                                                ?.GetFocusedElement();
+                                        var mayRestoreFocus =
+                                            restoreFocus
+                                            && addAccount.IsEffectivelyVisible
+                                            && addAccount.IsEnabled
+                                            && (activeFocus is null
+                                                || ReferenceEquals(
+                                                    activeFocus,
+                                                    remove)
+                                                || ReferenceEquals(
+                                                    activeFocus,
+                                                    addAccount));
+
                                         accountItems.Remove(
                                             accountItem);
                                         RenderAccounts();
+                                        if (mayRestoreFocus)
+                                        {
+                                            // Keep keyboard navigation in
+                                            // this live settings flyout rather
+                                            // than leaving the now-detached
+                                            // account Delete as its target.
+                                            addAccount.Focus();
+                                        }
                                         feedback.Text =
                                             "アカウントを削除しました。過去のPublication snapshotは変更していません。";
                                     }
