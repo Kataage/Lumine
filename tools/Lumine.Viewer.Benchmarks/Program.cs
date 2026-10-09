@@ -31,6 +31,16 @@ internal static class Program
                 "--frame-output requires a .png path.");
         }
 
+        var wheelEvidenceDir = ReadOption(args, "--wheel-evidence-dir");
+        // This is an independently invoked input/raster diagnostic, NOT
+        // part of the accepted direct-offset timing benchmark.
+        if (wheelEvidenceDir is not null
+            && string.IsNullOrWhiteSpace(wheelEvidenceDir))
+        {
+            throw new ArgumentException(
+                "--wheel-evidence-dir must name an output directory.");
+        }
+
         var countText = ReadOption(args, "--count") ?? "100000";
         if (!long.TryParse(
                 countText,
@@ -70,6 +80,11 @@ internal static class Program
         var maxDecodedBitmapEntries = 0;
         long maxDecodedBitmapBytes = 0;
         RenderedFrameTileAudit? renderedFrameAudit = null;
+        RenderedFrameTileAudit? firstWheelAudit = null;
+        RenderedFrameTileAudit? fourthWheelAudit = null;
+        long routedWheelEventCount = 0;
+        double firstWheelOffsetDelta = 0;
+        double fourthWheelOffsetDelta = 0;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -230,6 +245,89 @@ internal static class Program
                     afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
 
+                    if (wheelEvidenceDir is not null)
+                    {
+                        // Unlike the pre-existing 198px Offset probe,
+                        // this explicitly invokes Avalonia.Headless's
+                        // real routed wheel-input path. A fresh seek
+                        // and 200ms rest give it its own viewport.
+                        viewer.ScrollToAsset(
+                            Math.Min(count - 1, count / 2 + 137));
+                        Dispatcher.UIThread.RunJobs();
+                        await WaitForViewportReadyAsync(viewer);
+                        await Task.Delay(200);
+                        Dispatcher.UIThread.RunJobs();
+
+                        var wheelScroller = viewer.GetVisualDescendants()
+                            .OfType<ScrollViewer>()
+                            .FirstOrDefault()
+                            ?? throw new InvalidOperationException(
+                                "Wheel probe could not locate ScrollViewer.");
+                        var wheelPoint = wheelScroller.TranslatePoint(
+                            new Point(
+                                wheelScroller.Bounds.Width / 2,
+                                wheelScroller.Bounds.Height / 2),
+                            window)
+                            ?? throw new InvalidOperationException(
+                                "Wheel probe could not locate a window-relative input point.");
+                        var beforeWheelEvents = viewer.RoutedWheelEventCount;
+                        var beforeWheelOffset = wheelScroller.Offset.Y;
+                        var evidenceRoot = Path.GetFullPath(
+                            wheelEvidenceDir);
+                        Directory.CreateDirectory(evidenceRoot);
+
+                        // One real wheel tick: observe how far Avalonia
+                        // actually scrolls, rather than assuming 198px.
+                        window.MouseWheel(
+                            wheelPoint, new Vector(0, -1));
+                        Dispatcher.UIThread.RunJobs();
+                        firstWheelOffsetDelta =
+                            wheelScroller.Offset.Y - beforeWheelOffset;
+                        firstWheelAudit = CaptureWheelFrame(
+                            window,
+                            viewer.Columns,
+                            Path.Combine(
+                                evidenceRoot, "first-wheel.png"));
+
+                        // Three additional wheel ticks approximate the
+                        // original one-row-offset probe, but the actual
+                        // rendered and input offsets are reported as-is.
+                        for (var wheel = 0; wheel < 3; wheel++)
+                        {
+                            window.MouseWheel(
+                                wheelPoint, new Vector(0, -1));
+                            Dispatcher.UIThread.RunJobs();
+                        }
+
+                        fourthWheelOffsetDelta =
+                            wheelScroller.Offset.Y - beforeWheelOffset;
+                        routedWheelEventCount =
+                            viewer.RoutedWheelEventCount - beforeWheelEvents;
+                        fourthWheelAudit = CaptureWheelFrame(
+                            window,
+                            viewer.Columns,
+                            Path.Combine(
+                                evidenceRoot, "fourth-wheel.png"));
+
+                        if (routedWheelEventCount < 4
+                            || firstWheelOffsetDelta <= 0
+                            || fourthWheelOffsetDelta <= firstWheelOffsetDelta)
+                        {
+                            throw new InvalidOperationException(
+                                "Headless wheel probe did not traverse the routed wheel input path: "
+                                + $"events={routedWheelEventCount}, "
+                                + $"firstDelta={firstWheelOffsetDelta:F1}, "
+                                + $"fourthDelta={fourthWheelOffsetDelta:F1}.");
+                        }
+
+                        Console.WriteLine(
+                            "Actual routed wheel input: "
+                            + $"events={routedWheelEventCount}, "
+                            + $"offset first/fourth={firstWheelOffsetDelta:F1}/{fourthWheelOffsetDelta:F1}px, "
+                            + $"first blue/dark={firstWheelAudit.Value.BlueThumbnailSamples}/{firstWheelAudit.Value.DarkPlaceholderSamples}, "
+                            + $"fourth blue/dark={fourthWheelAudit.Value.BlueThumbnailSamples}/{fourthWheelAudit.Value.DarkPlaceholderSamples}.");
+                    }
+
                     viewer.SelectAsset(count - 1);
                     Observe(viewer);
 
@@ -314,6 +412,15 @@ internal static class Program
                     ["skia_frame_dark_placeholder_samples"] = renderedFrameAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["skia_frame_other_samples"] = renderedFrameAudit?.OtherSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["skia_frame_sample_y"] = renderedFrameAudit?.SampleY.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["small_scroll_input_kind"] = "direct-scrollviewer-offset",
+                    ["wheel_probe_input_kind"] = wheelEvidenceDir is null ? "not-captured" : "routed-headless-mouse-wheel",
+                    ["wheel_probe_routed_event_count"] = routedWheelEventCount.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_probe_first_offset_px"] = firstWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
+                    ["wheel_probe_fourth_offset_px"] = fourthWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
+                    ["wheel_probe_first_blue"] = firstWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
@@ -391,6 +498,24 @@ internal static class Program
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    private static RenderedFrameTileAudit CaptureWheelFrame(
+        Window window,
+        int columns,
+        string pngPath)
+    {
+        using var frame = window.CaptureRenderedFrame()
+            ?? throw new InvalidOperationException(
+                "Actual wheel input left no captured Skia frame.");
+        frame.Save(pngPath);
+        if (new FileInfo(pngPath).Length <= 64)
+        {
+            throw new InvalidOperationException(
+                "Actual wheel input produced an empty Skia PNG.");
+        }
+
+        return RenderedFrameTileAudit.Inspect(pngPath, columns);
     }
 
     private readonly record struct ScrollProbeResult(
