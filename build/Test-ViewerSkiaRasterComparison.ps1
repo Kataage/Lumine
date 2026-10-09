@@ -46,7 +46,7 @@ function Expect([string]$Name, [bool]$Pass,
     }
 
     if ($failed -eq $Pass) {
-        throw "$Name: expected Pass=$Pass, got failure=$failed ($message)"
+        throw "${Name}: expected Pass=$Pass, got failure=$failed ($message)"
     }
     Write-Host "Raster gate test: $Name — expected pass=$Pass"
 }
