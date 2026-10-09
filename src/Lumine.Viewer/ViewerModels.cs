@@ -152,6 +152,11 @@ public sealed class ViewerOptions
     // viewport itself is always loaded at Foreground priority.
     public int PrefetchRows { get; init; } = 2;
 
+    // Default-OFF A/B trial: REPLACE per-row attachment driven source
+    // lookahead with a single viewport-revision scheduler. Product
+    // behavior is unchanged until visual + budget evidence passes.
+    public bool UseViewportRequestCoordinator { get; init; } = false;
+
     // Give foreground requests a brief chance to enqueue, but do not
     // require all visible tiles to finish before warming adjacent rows.
     public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(8);
