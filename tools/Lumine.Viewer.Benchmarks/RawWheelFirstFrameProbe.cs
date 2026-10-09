@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
-using Avalonia.Input.Raw;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Lumine.Viewer;
@@ -13,8 +12,8 @@ namespace Lumine.Viewer.Benchmarks;
 // Opt-in experimental first-tick raster evidence. Avalonia's documented
 // Window.MouseWheel helper calls RunJobsAndRender before AND after input.
 // Using that helper cannot inspect the first explicit rendering tick;
-// the public platform Input callback allows a raw wheel to be routed
-// synchronously, followed by one explicit headless render tick. This
+// the public PointerWheelEventArgs + InputElement.RaiseEvent API
+// allows a routed wheel without the implicit render-flush helper. This
 // deliberately never runs in the baseline timing/performance sample.
 internal readonly record struct RawWheelFrameEvidence(
     long RoutedEvents,
@@ -47,9 +46,13 @@ internal static class RawWheelFirstFrameProbe
                 "Raw-wheel probe cannot locate target in window coordinates.");
 
         Directory.CreateDirectory(outputDirectory);
-        var platformInput = window.PlatformImpl?.Input
+        // Use only stable externally callable Avalonia routed-event
+        // surfaces. The raw platform input callback is inaccessible in
+        // the Avalonia NuGet reference assembly even though its source
+        // definition is visible in upstream internals.
+        var target = window.InputHitTest(point) as InputElement
             ?? throw new InvalidOperationException(
-                "Raw-wheel probe cannot access public platform input callback.");
+                "Unflushed wheel probe found no hit-tested input control.");
 
         // Read the prior frame WITHOUT the headless helper's
         // pre/post auto-render loop so we can detect when the new tick
@@ -67,21 +70,20 @@ internal static class RawWheelFirstFrameProbe
         var beforeOffset = scroller.Offset.Y;
         var previousDirection = viewer.CurrentScrollIntentDirection;
 
-        // Avalonia 12.1.3's HeadlessWindowImpl.MouseWheel ultimately
-        // constructs a RawMouseWheelEventArgs and forwards it to its
-        // public ITopLevelImpl.Input callback. We repeat that boundary
-        // without calling the *convenience helper's* implicit render
-        // stabilization loop. This does not bypass routed input.
-        // Use 4 wheel units atomically (nominally 4x50px) to challenge
-        // the single large-offset case with a real input route.
-        using var mouse = new MouseDevice();
-        platformInput(new RawMouseWheelEventArgs(
-            mouse,
-            timestamp: 0,
-            window,
-            point,
-            new Vector(0, -4),
-            RawInputModifiers.None));
+        // Raise the exact PointerWheelChanged routed event from
+        // the hit-tested descendant, so the tunnel handler on the
+        // viewer and the ScrollContentPresenter on bubble both run.
+        // Crucially this avoids HeadlessWindowExtensions.MouseWheel's
+        // RunJobsAndRender loop, while avoiding inaccessible raw APIs.
+        // Four wheel units are aggregated into one event to challenge
+        // the +198px direct-offset case.
+        using var pointer = new Pointer(
+            Pointer.GetNextFreeId(), PointerType.Mouse, isPrimary: true);
+        target.RaiseEvent(new PointerWheelEventArgs(
+            target, pointer, window, point, 0,
+            new PointerPointProperties(),
+            KeyModifiers.None,
+            new Vector(0, -4)));
 
         var events = viewer.RoutedWheelEventCount - beforeCount;
         var moved = scroller.Offset.Y - beforeOffset;
@@ -90,7 +92,7 @@ internal static class RawWheelFirstFrameProbe
         if (events != 1 || moved <= 0 || direction != 1)
         {
             throw new InvalidOperationException(
-                $"Raw-wheel event not routed: events={events}, "
+                $"Unflushed routed-wheel event not delivered: events={events}, "
                 + $"offsetDelta={moved:F1}, direction={direction}.");
         }
 
