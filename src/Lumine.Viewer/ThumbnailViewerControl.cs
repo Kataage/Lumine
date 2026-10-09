@@ -82,6 +82,7 @@ public sealed class ThumbnailViewerControl : UserControl
     // enqueue its requests alongside attachment-driven lookahead.
     private readonly ViewerViewportRequestCoordinator
         _viewportRequestCoordinator = new();
+    private bool _viewportMounted;
     private long _viewportPlansActivated;
     private long _viewportPlanBitmapsPredecoded;
     // One coalesced viewport lookahead, not one speculative queue per
@@ -171,6 +172,7 @@ public sealed class ThumbnailViewerControl : UserControl
         AttachedToVisualTree += OnAttachedToVisualTree;
         DetachedFromVisualTree += (_, _) =>
         {
+            _viewportMounted = false;
             CancelLookahead();
             StopScrollTracking();
         };
@@ -285,6 +287,7 @@ public sealed class ThumbnailViewerControl : UserControl
         // Terminal shell teardown must detach realized rows synchronously.
         // Relying only on visual-tree event delivery leaves a timing window
         // where tile decode/file work can outlive the owning window.
+        _viewportMounted = false;
         CancelPendingAssetFocus();
         CancelLookahead();
         _rows.ItemsSource = null;
@@ -1109,6 +1112,7 @@ public sealed class ThumbnailViewerControl : UserControl
         object? sender,
         VisualTreeAttachmentEventArgs e)
     {
+        _viewportMounted = true;
         _compositor =
             ElementComposition.GetElementVisual(this)?.Compositor
             ?? _compositor;
@@ -1835,7 +1839,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RefreshViewportRequestPlan()
     {
-        if (!_session.Options.UseViewportRequestCoordinator)
+        if (!_viewportMounted
+            || !_session.Options.UseViewportRequestCoordinator)
         {
             return;
         }
