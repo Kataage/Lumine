@@ -123,6 +123,16 @@ In the next bounded diagnostic, the Viewer publishes inexpensive monotonic looka
 
 This instrumentation does not change decode, prefetch, cache or attachment scheduling semantics. Do not construe headless UI readiness as actual GPU compositing; keep Issue #634 open until real Windows-wheel owner acceptance.
 
+## Measured reverse-direction bias after a jump (eighth #634 step)
+
+Windows CI [#37922983535](https://github.com/Kataage/Lumine/actions/runs/37922983535) on PR #642 passed 50/50 steps. The new 200ms-dwell snapshot made the root cause concrete: all 10k/50k/100k cases completed **7 offscreen Bitmap decodes** during the dwell, but the last lookahead direction remained **-1** (upward), inherited from the preceding jump from the library end into its middle. The last attempted warm Bitmap index fell **one row before the last visible row** (for example 10k: warm index 5145 versus last visible 5158). Three immediately following **forward** 198-DIP steps therefore each exposed a cold row: 21 first-frame misses and **zero Bitmap reuse hits** in every fixture.
+
+This is not a generalized prefetch-execution failure, nor a reason to loosen the 32 MiB cache. The existing direction-aware warmup prepares only one row based on the **last observed movement direction**, which a programmatic jump cannot reliably use to predict the user's next gesture.
+
+The follow-up code keeps the same bounded source lookahead and foreground-first decode gate, prepares the previously preferred adjacent row **first**, and then opportunistically pre-decodes the opposite one-row neighbor **only if the worst-case full attached viewport plus both adjacent rows fit within the existing bitmap entry/byte limits**. At standard 35-tile/7-column, 384px-decoded, 32 MiB / 64-entry benchmarks, there is sufficient headroom; the extra row is skipped for larger/pinned viewports or tighter policies. The extra work shares the same cancellable coalesced lookahead task; rapid jumps still cancel speculation. No original/detail decode or cache limit is modified.
+
+Regression requirements: the settled 200ms-forward probe must demonstrate **at least one actual decoded warm Bitmap reuse hit** and at least eight bitmap preparation events across the two directions, while existing immediate forward/reverse, 10k fast-scroll **1,600 requests**, 32 MiB, 100k UI virtualization, memory, NativeAOT, Windows Portable and lifecycle gates all remain enforced. Headless UI assignment remains distinct from physical Windows wheel/composition; owner acceptance remains a separate blocker until verified.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
