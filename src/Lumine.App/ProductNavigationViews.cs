@@ -164,7 +164,11 @@ internal static class ProductNavigationViews
                         rootAvailable
                             ? LumineDesign.MutedForeground
                             : LumineDesign.Warning,
-                    FontSize = LumineDesign.CaptionFontSize
+                    FontSize = LumineDesign.CaptionFontSize,
+                    // Counts, scan/availability, and active status must
+                    // remain legible instead of running under the Rescan
+                    // and Manage buttons at large Windows text scales.
+                    TextWrapping = TextWrapping.Wrap
                 };
 
             var primaryContent =
