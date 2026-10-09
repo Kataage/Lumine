@@ -3,7 +3,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
+using SkiaSharp;
 using Avalonia.VisualTree;
 using Lumine.Viewer;
 
@@ -22,7 +24,13 @@ internal readonly record struct UnflushedRoutedWheelFrameEvidence(
     int DirectionAfter,
     int UnreadyImmediatelyAfterInput,
     bool FirstTickContainsUpdatedRaster,
+    bool PreInputWitnessValid,
+    bool FirstTickWitnessChanged,
+    int PostDispatchPasses,
+    bool PostDispatchWitnessChanged,
+    bool PostDispatchRasterChanged,
     RenderedFrameTileAudit FirstTick,
+    RenderedFrameTileAudit PostDispatch,
     RenderedFrameTileAudit Settled);
 
 internal static class UnflushedRoutedWheelFirstFrameProbe
@@ -30,6 +38,7 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
     internal static UnflushedRoutedWheelFrameEvidence Capture(
         Window window,
         ThumbnailViewerControl viewer,
+        Border witness,
         string outputDirectory)
     {
         var scroller = viewer.GetVisualDescendants()
@@ -66,6 +75,18 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
             before.Save(beforePath);
         }
 
+        // The witness occupies only the top-right 16x16 pixels, outside
+        // the bottom-row seven-column color samples. It lets us distinguish
+        // a stale framebuffer from a new raster when all thumbnails are
+        // visually identical. It does not assert a Windows GPU present.
+        var preInputWitnessValid = HasWitnessColor(
+            beforePath, expectChanged: false);
+        if (!preInputWitnessValid)
+        {
+            throw new InvalidOperationException(
+                "Raw-wheel diagnostic has no pre-input green witness raster.");
+        }
+
         var beforeCount = viewer.RoutedWheelEventCount;
         var beforeOffset = scroller.Offset.Y;
         var previousDirection = viewer.CurrentScrollIntentDirection;
@@ -96,10 +117,15 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
                 + $"offsetDelta={moved:F1}, direction={direction}.");
         }
 
-        // Intentionally do NOT call Dispatcher.RunJobs or the
-        // Window.MouseWheel/CaptureRenderedFrame convenience helpers
-        // before this checkpoint. Trigger one render timer tick and
-        // read the frame *without* another dispatcher-flush loop.
+        // Change the diagnostic-only witness AFTER the wheel handler has
+        // accepted real routed input. This color change is not sufficient
+        // to prove a scroll-visible frame by itself, but it guarantees a
+        // newly painted Skia raster differs from the flat blue fixture.
+        witness.Background = Brushes.Magenta;
+
+        // Intentionally do NOT run queued dispatcher jobs before the
+        // first checkpoint. A single timer tick can legitimately return
+        // a stale Skia framebuffer while layout/compositor jobs are queued.
         AvaloniaHeadlessPlatform.ForceRenderTimerTick();
         var firstPath = Path.Combine(
             outputDirectory, "raw-first-explicit-tick.png");
@@ -117,6 +143,46 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
                     SHA256.HashData(File.ReadAllBytes(firstPath)));
         var firstAudit = RenderedFrameTileAudit.Inspect(
             firstPath, viewer.Columns);
+        var firstTickWitnessChanged = HasWitnessColor(
+            firstPath, expectChanged: true);
+
+        // The pinned Avalonia helper normally drains UI dispatcher work
+        // before rendering. Observe the first UPDATED post-dispatch raster
+        // separately. Each pass is one explicit dispatcher drain followed
+        // by exactly one render tick; never treat the preceding unchanged
+        // framebuffer as first-frame proof, or silently loop to stability.
+        const int maxPostDispatchPasses = 3;
+        var postDispatchPath = Path.Combine(
+            outputDirectory, "raw-first-post-dispatch-render.png");
+        var postDispatchPasses = 0;
+        var postDispatchWitnessChanged = false;
+        for (var pass = 1; pass <= maxPostDispatchPasses; pass++)
+        {
+            postDispatchPasses = pass;
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using (var postDispatch = window.GetLastRenderedFrame()
+                ?? throw new InvalidOperationException(
+                    "Post-dispatch headless tick produced no raster."))
+            {
+                postDispatch.Save(postDispatchPath);
+            }
+
+            postDispatchWitnessChanged = HasWitnessColor(
+                postDispatchPath, expectChanged: true);
+            if (postDispatchWitnessChanged)
+            {
+                break;
+            }
+        }
+
+        var postDispatchRasterChanged =
+            !SHA256.HashData(File.ReadAllBytes(beforePath))
+                .AsSpan()
+                .SequenceEqual(SHA256.HashData(
+                    File.ReadAllBytes(postDispatchPath)));
+        var postDispatchAudit = RenderedFrameTileAudit.Inspect(
+            postDispatchPath, viewer.Columns);
 
         // For contrast, measure Avalonia's normal fully flushed
         // headless raster. It may advance up to 10 dispatcher/timer
@@ -135,8 +201,11 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
             settledPath, viewer.Columns);
         if (firstAudit.SampledColumns != 7
             || firstAudit.OtherSamples != 0
+            || postDispatchAudit.SampledColumns != 7
+            || postDispatchAudit.OtherSamples != 0
             || settledAudit.SampledColumns != 7
-            || settledAudit.OtherSamples != 0)
+            || settledAudit.OtherSamples != 0
+            || !HasWitnessColor(settledPath, expectChanged: true))
         {
             throw new InvalidOperationException(
                 "Raw-wheel Skia raster did not match the known blue/dark fixture.");
@@ -149,7 +218,29 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
             direction,
             immediateViewport.UnreadyTiles,
             firstTickChangedRaster,
+            preInputWitnessValid,
+            firstTickWitnessChanged,
+            postDispatchPasses,
+            postDispatchWitnessChanged,
+            postDispatchRasterChanged,
             firstAudit,
+            postDispatchAudit,
             settledAudit);
+    }
+
+    // Check a pixel strictly inside the fixed top-right overlay. A
+    // hash-only comparison is ambiguous for identical blue tile fixtures.
+    private static bool HasWitnessColor(
+        string pngPath, bool expectChanged)
+    {
+        using var image = SKBitmap.Decode(pngPath)
+            ?? throw new InvalidOperationException(
+                "Could not decode compositor witness raster.");
+        var sample = image.GetPixel(image.Width - 8, 8);
+        return expectChanged
+            ? sample.Red >= 200 && sample.Blue >= 200
+                && sample.Green <= 80
+            : sample.Green >= 200 && sample.Red <= 80
+                && sample.Blue <= 80;
     }
 }

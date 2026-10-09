@@ -134,11 +134,35 @@ internal static class Program
                         });
 
                     var viewer = new ThumbnailViewerControl(session);
+                    // Only the opt-in #634 diagnostic gets a compositor
+                    // witness pixel: identical blue fixture rows can produce
+                    // byte-identical PNGs despite a genuine redraw.
+                    Border? rasterWitness = null;
+                    Control windowContent = viewer;
+                    if (rawWheelEvidenceDir is not null)
+                    {
+                        rasterWitness = new Border
+                        {
+                            Width = 16,
+                            Height = 16,
+                            Background = Avalonia.Media.Brushes.Lime,
+                            HorizontalAlignment =
+                                Avalonia.Layout.HorizontalAlignment.Right,
+                            VerticalAlignment =
+                                Avalonia.Layout.VerticalAlignment.Top,
+                            IsHitTestVisible = false
+                        };
+                        var diagnosticOverlay = new Grid();
+                        diagnosticOverlay.Children.Add(viewer);
+                        diagnosticOverlay.Children.Add(rasterWitness);
+                        windowContent = diagnosticOverlay;
+                    }
+
                     var window = new Window
                     {
                         Width = 1200,
                         Height = 800,
-                        Content = viewer
+                        Content = windowContent
                     };
 
                     using (recorder.Measure(CoreMetricNames.ViewerFirstPaint))
@@ -358,14 +382,19 @@ internal static class Program
                         rawWheelEvidence = UnflushedRoutedWheelFirstFrameProbe.Capture(
                             window,
                             viewer,
+                            rasterWitness ?? throw new InvalidOperationException(
+                                "Raw wheel witness was not installed."),
                             Path.GetFullPath(rawWheelEvidenceDir));
                         Console.WriteLine(
                             "Unflushed routed wheel (4 units): "
                             + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
                             + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
                             + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "
-                            + $"first-tick framebuffer updated={rawWheelEvidence.Value.FirstTickContainsUpdatedRaster}, "
+                            + $"single-tick raster changed={rawWheelEvidence.Value.FirstTickContainsUpdatedRaster}, "
                             + $"first-tick blue/dark={rawWheelEvidence.Value.FirstTick.BlueThumbnailSamples}/{rawWheelEvidence.Value.FirstTick.DarkPlaceholderSamples}, "
+                            + $"bounded dispatch passes={rawWheelEvidence.Value.PostDispatchPasses}, "
+                            + $"post-dispatch witness={rawWheelEvidence.Value.PostDispatchWitnessChanged}, "
+                            + $"post-dispatch blue/dark={rawWheelEvidence.Value.PostDispatch.BlueThumbnailSamples}/{rawWheelEvidence.Value.PostDispatch.DarkPlaceholderSamples}, "
                             + $"post-flush blue/dark={rawWheelEvidence.Value.Settled.BlueThumbnailSamples}/{rawWheelEvidence.Value.Settled.DarkPlaceholderSamples}.");
                     }
 
@@ -474,6 +503,13 @@ internal static class Program
                     ["raw_wheel_first_tick_raster_changed"] = rawWheelEvidence?.FirstTickContainsUpdatedRaster.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_first_tick_blue"] = rawWheelEvidence?.FirstTick.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_first_tick_dark"] = rawWheelEvidence?.FirstTick.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_pre_witness_valid"] = rawWheelEvidence?.PreInputWitnessValid.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_witness_changed"] = rawWheelEvidence?.FirstTickWitnessChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_passes"] = rawWheelEvidence?.PostDispatchPasses.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_witness_changed"] = rawWheelEvidence?.PostDispatchWitnessChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_frame_changed"] = rawWheelEvidence?.PostDispatchRasterChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_blue"] = rawWheelEvidence?.PostDispatch.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_dark"] = rawWheelEvidence?.PostDispatch.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_flush_blue"] = rawWheelEvidence?.Settled.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_flush_dark"] = rawWheelEvidence?.Settled.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),

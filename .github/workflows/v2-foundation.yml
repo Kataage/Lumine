@@ -349,17 +349,23 @@ jobs:
               [long]$m.raw_wheel_routed_event_count -ne 1 -or
               [double]$m.raw_wheel_offset_delta_px -le 0 -or
               [int]$m.raw_wheel_direction_after -ne 1 -or
-              $m.raw_wheel_first_tick_raster_changed -ne "True" -or
+              $m.raw_wheel_pre_witness_valid -ne "True" -or
+              $m.raw_wheel_post_dispatch_witness_changed -ne "True" -or
+              $m.raw_wheel_post_dispatch_frame_changed -ne "True" -or
+              [int]$m.raw_wheel_post_dispatch_passes -lt 1 -or
+              [int]$m.raw_wheel_post_dispatch_passes -gt 3 -or
               [int]$m.raw_wheel_first_tick_blue + [int]$m.raw_wheel_first_tick_dark -ne 7 -or
+              [int]$m.raw_wheel_post_dispatch_blue + [int]$m.raw_wheel_post_dispatch_dark -ne 7 -or
               [int]$m.raw_wheel_post_flush_blue + [int]$m.raw_wheel_post_flush_dark -ne 7 -or
               [long]$m.thumbnail_requests -gt 1600 -or
               [long]$m.max_decoded_bitmap_bytes -gt 33554432 -or
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-before-input.png") -or
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-first-explicit-tick.png") -or
+              -not (Test-Path "artifacts/viewer-raw-wheel/raw-first-post-dispatch-render.png") -or
               -not (Test-Path "artifacts/viewer-raw-wheel/raw-after-headless-flush.png")) {
-            throw "Unflushed routed first-tick wheel probe failed to supply a new Skia raster with bounded requests."
+            throw "Unflushed routed wheel diagnostic lacked a bounded post-dispatch Skia repaint or exceeded resource limits."
           }
-          Write-Host "Raw wheel: offset=$($m.raw_wheel_offset_delta_px)px; unready immediately after input=$($m.raw_wheel_immediate_unready); changed framebuffer=$($m.raw_wheel_first_tick_raster_changed); first-tick blue/dark=$($m.raw_wheel_first_tick_blue)/$($m.raw_wheel_first_tick_dark); after headless flush blue/dark=$($m.raw_wheel_post_flush_blue)/$($m.raw_wheel_post_flush_dark)."
+          Write-Host "Raw wheel: offset=$($m.raw_wheel_offset_delta_px)px; unready=$($m.raw_wheel_immediate_unready); no-dispatch changed=$($m.raw_wheel_first_tick_raster_changed); first witness=$($m.raw_wheel_first_tick_witness_changed); first blue/dark=$($m.raw_wheel_first_tick_blue)/$($m.raw_wheel_first_tick_dark); bounded dispatch passes=$($m.raw_wheel_post_dispatch_passes); repaint witness=$($m.raw_wheel_post_dispatch_witness_changed); post-dispatch blue/dark=$($m.raw_wheel_post_dispatch_blue)/$($m.raw_wheel_post_dispatch_dark); settled blue/dark=$($m.raw_wheel_post_flush_blue)/$($m.raw_wheel_post_flush_dark)."
 
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
