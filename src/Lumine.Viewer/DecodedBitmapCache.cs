@@ -47,6 +47,7 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
     private readonly Func<string, CancellationToken, Bitmap> _decodeBitmap;
     private readonly int _entryLimit;
     private readonly long _byteLimit;
+    private readonly int _maxThumbnailDimension;
     private long _estimatedBytes;
     private long _sequence;
     private TaskCompletionSource _capacityChanged = NewCapacitySignal();
@@ -60,7 +61,18 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
     private bool _disposed;
 
     public DecodedBitmapCache(int entryLimit, long byteLimit)
-        : this(entryLimit, byteLimit, DecodeBitmapFromFile)
+        : this(entryLimit, byteLimit, DecodeBitmapFromFile, int.MaxValue)
+    {
+    }
+
+    // Viewer thumbnail bitmaps are presentation surfaces, not originals.
+    // Decode at a bounded pixel dimension so the visible leased set does
+    // not exhaust the byte budget before the next row can appear.
+    public DecodedBitmapCache(
+        int entryLimit,
+        long byteLimit,
+        int maxThumbnailDimension)
+        : this(entryLimit, byteLimit, DecodeBitmapFromFile, maxThumbnailDimension)
     {
     }
 
@@ -68,13 +80,24 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
         int entryLimit,
         long byteLimit,
         Func<string, CancellationToken, Bitmap> decodeBitmap)
+        : this(entryLimit, byteLimit, decodeBitmap, int.MaxValue)
+    {
+    }
+
+    private DecodedBitmapCache(
+        int entryLimit,
+        long byteLimit,
+        Func<string, CancellationToken, Bitmap> decodeBitmap,
+        int maxThumbnailDimension)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(entryLimit);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(byteLimit);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxThumbnailDimension);
         ArgumentNullException.ThrowIfNull(decodeBitmap);
 
         _entryLimit = entryLimit;
         _byteLimit = byteLimit;
+        _maxThumbnailDimension = maxThumbnailDimension;
         _decodeBitmap = decodeBitmap;
     }
 
@@ -119,15 +142,24 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
                 key,
                 token => DecodeBitmapFromBytes(
                     encoded,
-                    token),
+                    token,
+                    thumbnail.Width,
+                    thumbnail.Height,
+                    _maxThumbnailDimension),
                 cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(
                 thumbnail.CachePath))
         {
-            return AcquireAsync(
-                thumbnail.CachePath,
+            return AcquireCoreAsync(
+                ThumbnailFileKey(thumbnail.CachePath),
+                token => DecodeThumbnailBitmapFromFile(
+                    thumbnail.CachePath,
+                    token,
+                    thumbnail.Width,
+                    thumbnail.Height,
+                    _maxThumbnailDimension),
                 cancellationToken);
         }
 
@@ -151,9 +183,8 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
         else if (!string.IsNullOrWhiteSpace(
                      thumbnail.CachePath))
         {
-            key =
-                Path.GetFullPath(
-                    thumbnail.CachePath);
+            key = ThumbnailFileKey(
+                thumbnail.CachePath);
         }
 
         if (key is null)
@@ -186,6 +217,16 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
                     existing.Bitmap);
             return true;
         }
+    }
+
+    private string ThumbnailFileKey(string path)
+    {
+        var absolutePath = Path.GetFullPath(path);
+        // Raw path consumers may require full-resolution. Keep a separate
+        // identity from the bounded Viewer presentation cache.
+        return _maxThumbnailDimension == int.MaxValue
+            ? absolutePath
+            : $"thumbnail:{_maxThumbnailDimension}:{absolutePath}";
     }
 
     private async Task<DecodedBitmapLease> AcquireCoreAsync(
@@ -533,14 +574,54 @@ public sealed class DecodedBitmapCache : IDisposable, IAsyncDisposable
 
     private static Bitmap DecodeBitmapFromBytes(
         byte[] encoded,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int width,
+        int height,
+        int maxThumbnailDimension)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         using var stream = new MemoryStream(
             encoded,
             writable: false);
-        var bitmap = new Bitmap(stream);
+        return DecodeThumbnailStream(
+            stream, cancellationToken, width, height, maxThumbnailDimension);
+    }
+
+    private static Bitmap DecodeThumbnailBitmapFromFile(
+        string path,
+        CancellationToken cancellationToken,
+        int width,
+        int height,
+        int maxThumbnailDimension)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 64 * 1024, FileOptions.SequentialScan);
+        return DecodeThumbnailStream(
+            stream, cancellationToken, width, height, maxThumbnailDimension);
+    }
+
+    private static Bitmap DecodeThumbnailStream(
+        Stream stream,
+        CancellationToken cancellationToken,
+        int width,
+        int height,
+        int maxThumbnailDimension)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The image service provides the orientation-adjusted thumbnail
+        // dimensions. Preserve its aspect ratio and never upscale sources
+        // smaller than the requested presentation limit.
+        var shrink = width > 0 && height > 0
+            && Math.Max(width, height) > maxThumbnailDimension;
+        var bitmap = !shrink
+            ? new Bitmap(stream)
+            : width >= height
+                ? Bitmap.DecodeToWidth(stream, maxThumbnailDimension)
+                : Bitmap.DecodeToHeight(stream, maxThumbnailDimension);
 
         if (cancellationToken.IsCancellationRequested)
         {
