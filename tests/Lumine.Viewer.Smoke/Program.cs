@@ -1236,6 +1236,40 @@ internal static class Program
                 }, attachedTiles: 35, nextRowCount: 7),
             "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
 
+        // A 50px List notch (List row height ~68px) often makes the
+        // second adjacent row visible before lookahead can run again.
+        // Warm two contiguous List rows on BOTH sides only with a
+        // proven cache budget; never spend extra Grid source/Bitmap work.
+        Require(
+            ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 100, direction: 1, assetCount: 1000) == 101
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 100, direction: -1, assetCount: 1000) == 99
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 1,
+                nearRow: 100, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: false, prefetchRows: 2,
+                nearRow: 100, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 0, direction: -1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 999, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 12, nextRowCount: 2)
+            && !ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 14,
+                    DecodedBitmapByteLimit = 8L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 12, nextRowCount: 2),
+            "List second-row warming bypassed viewport/native cache budget or leaked to Grid.");
+
         // Unlike ScrollToAsset, a small offset adjustment exercises
         // the real inner ScrollViewer's routed ScrollChanged event.
         // This also covers keyboard/scrollbar/touch direction changes,

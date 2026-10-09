@@ -2103,6 +2103,37 @@ public sealed class ThumbnailViewerControl : UserControl
                                 nextRowCount)),
                             cancellationToken).ConfigureAwait(false);
 
+                        // List rows are only ~68px high, so 50px mouse
+                        // notches expose the *second* offscreen row within
+                        // two events. Preparing sources for PrefetchRows=2
+                        // was insufficient: only one List Bitmap was warm.
+                        // Warm the next nearest List row too, but ONLY
+                        // when the entire viewport + two rows on each side
+                        // fit the worst-case native bitmap budget.
+                        var listTwoRowCapacity =
+                            _layoutMode == ViewerLayoutMode.List
+                            && HasSecondaryWarmCapacityForSmoke(
+                                session.Options,
+                                state.AttachedTiles,
+                                nextRowCount * 2);
+                        var secondPreferredRow =
+                            ResolveSecondListWarmRowForSmoke(
+                                _layoutMode == ViewerLayoutMode.List,
+                                session.Options.PrefetchRows,
+                                preferredRow,
+                                direction,
+                                session.Count);
+                        if (listTwoRowCapacity
+                            && secondPreferredRow >= 0)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await PredecodeNextRowAsync(
+                                session,
+                                secondPreferredRow,
+                                1,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+
                         // One extra row is the absolute upper bound. Use
                         // the worst-case configured decoded square pixel
                         // size to guarantee the attached visible set and
@@ -2133,6 +2164,24 @@ public sealed class ThumbnailViewerControl : UserControl
                                         session.Count - oppositeStart,
                                         nextRowCount)),
                                     cancellationToken).ConfigureAwait(false);
+
+                                var secondOppositeRow =
+                                    ResolveSecondListWarmRowForSmoke(
+                                        _layoutMode == ViewerLayoutMode.List,
+                                        session.Options.PrefetchRows,
+                                        oppositeRow,
+                                        -direction,
+                                        session.Count);
+                                if (listTwoRowCapacity
+                                    && secondOppositeRow >= 0)
+                                {
+                                    cancellationToken.ThrowIfCancellationRequested();
+                                    await PredecodeNextRowAsync(
+                                        session,
+                                        secondOppositeRow,
+                                        1,
+                                        cancellationToken).ConfigureAwait(false);
+                                }
                             }
                         }
 
@@ -2183,6 +2232,29 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    // Return the next (not the first) offscreen List row, preserving
+    // nearest-first warm order. Grid warms full seven-column rows as
+    // before. This never requests an item beyond PrefetchRows or Count.
+    internal static long ResolveSecondListWarmRowForSmoke(
+        bool isList,
+        int prefetchRows,
+        long nearRow,
+        int direction,
+        long assetCount)
+    {
+        if (!isList
+            || prefetchRows < 2
+            || nearRow < 0
+            || nearRow >= assetCount
+            || direction is not (1 or -1))
+        {
+            return -1;
+        }
+
+        var second = nearRow + direction;
+        return second >= 0 && second < assetCount ? second : -1;
     }
 
     internal static bool HasSecondaryWarmCapacityForSmoke(
