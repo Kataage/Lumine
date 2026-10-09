@@ -34,6 +34,14 @@ internal static class Program
         var wheelEvidenceDir = ReadOption(args, "--wheel-evidence-dir");
         var rawWheelEvidenceDir = ReadOption(
             args, "--unflushed-wheel-evidence-dir");
+        var wheelSequenceEvidenceDir = ReadOption(
+            args, "--wheel-sequence-evidence-dir");
+        if (wheelSequenceEvidenceDir is not null
+            && string.IsNullOrWhiteSpace(wheelSequenceEvidenceDir))
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-evidence-dir requires an output directory.");
+        }
         // This is an independently invoked input/raster diagnostic, NOT
         // part of the accepted direct-offset timing benchmark.
         if (wheelEvidenceDir is not null
@@ -101,6 +109,7 @@ internal static class Program
         var firstWheelScrollIntent = 0;
         var fourthWheelScrollIntent = 0;
         UnflushedRoutedWheelFrameEvidence? rawWheelEvidence = null;
+        RoutedWheelSequenceEvidence? wheelSequenceEvidence = null;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -191,6 +200,39 @@ internal static class Program
                     Observe(viewer);
                     requestsAfterInitialViewport =
                         viewer.Diagnostics.ThumbnailRequests;
+
+                    // Standalone wheel burst/reversal: exclude all forty
+                    // synthetic far seeks and the other raster probes.
+                    if (wheelSequenceEvidenceDir is not null)
+                    {
+                        viewer.ScrollToAsset(
+                            Math.Min(count - 1, count / 2 + 3107));
+                        Dispatcher.UIThread.RunJobs();
+                        await WaitForViewportReadyAsync(viewer);
+                        await Task.Delay(200);
+                        Dispatcher.UIThread.RunJobs();
+                        wheelSequenceEvidence =
+                            RoutedWheelSequenceFrameProbe.Capture(
+                                window, viewer,
+                                Path.GetFullPath(wheelSequenceEvidenceDir));
+                        Observe(viewer);
+                        finalColumns = viewer.Columns;
+                        window.Close();
+                        await WaitForViewerIdleAsync(session);
+                        finalDiagnostics = viewer.Diagnostics;
+                        finalTileReadiness = viewer.TileReadiness;
+                        Console.WriteLine(
+                            "Wheel burst/reverse: "
+                            + $"steps={wheelSequenceEvidence.Value.Steps}, "
+                            + $"switches={wheelSequenceEvidence.Value.DirectionChanges}, "
+                            + $"immediate unready max={wheelSequenceEvidence.Value.MaxImmediateUnready}, "
+                            + $"first-raster unready max={wheelSequenceEvidence.Value.MaxRenderedUnready}, "
+                            + $"min changed gallery samples={wheelSequenceEvidence.Value.MinChangedSamples}, "
+                            + $"max dispatcher passes={wheelSequenceEvidence.Value.MaxPasses}, "
+                            + $"new source requests={wheelSequenceEvidence.Value.NewSourceRequests}, "
+                            + $"total requests={finalDiagnostics.ThumbnailRequests}.");
+                        return 0;
+                    }
 
                     // One row per small offset change reproduces normal
                     // browsing more closely than the legacy 40 random
@@ -541,6 +583,16 @@ internal static class Program
                     ["wheel_probe_first_dark"] = firstWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_input_kind"] = wheelSequenceEvidence is null ? "not-captured" : "routed-pointerwheel-first-raster",
+                    ["wheel_sequence_steps"] = wheelSequenceEvidence?.Steps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_forward_steps"] = wheelSequenceEvidence?.ForwardSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_reverse_steps"] = wheelSequenceEvidence?.ReverseSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_direction_changes"] = wheelSequenceEvidence?.DirectionChanges.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_immediate_unready_max"] = wheelSequenceEvidence?.MaxImmediateUnready.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_rendered_unready_max"] = wheelSequenceEvidence?.MaxRenderedUnready.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_changed_samples_min"] = wheelSequenceEvidence?.MinChangedSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_dispatch_passes_max"] = wheelSequenceEvidence?.MaxPasses.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["wheel_sequence_source_requests_added"] = wheelSequenceEvidence?.NewSourceRequests.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_probe_input_kind"] = rawWheelEvidence is null ? "not-captured" : "routed-pointerwheel-no-auto-flush",
                     ["raw_wheel_routed_event_count"] = rawWheelEvidence?.RoutedEvents.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_offset_delta_px"] = rawWheelEvidence?.OffsetDeltaPixels.ToString("F3", CultureInfo.InvariantCulture) ?? "not-captured",

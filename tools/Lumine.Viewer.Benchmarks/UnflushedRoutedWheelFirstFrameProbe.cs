@@ -251,7 +251,7 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
     // captions and row geometry change after the routed wheel notch.
     // Ignore the top-right witness, scrollbar and window perimeter.
     // The changed-sample threshold is independently audited in CI.
-    private static int CountChangedViewerSamples(
+    internal static int CountChangedViewerSamples(
         string beforePath, string afterPath)
     {
         using var before = SKBitmap.Decode(beforePath)
