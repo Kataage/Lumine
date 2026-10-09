@@ -212,6 +212,64 @@ jobs:
         shell: pwsh
         run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-prefetch2" -ExpectedPrefetchRows 2
 
+      # Same Issue #634 A/B. This trial replaces (never adds alongside)
+      # the attachment-driven speculative lookahead scheduling route.
+      # Default product behavior is still the unchanged two-row control.
+      - name: Generate viewport-coordinator scheduling trial
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count $count --prefetch-rows 2 --viewport-coordinator --output "artifacts/benchmarks/viewer-viewport-plan/viewer-$count.json"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Compare viewport-coordinator versus unchanged Viewer
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            $control = Get-Content "artifacts/benchmarks/viewer-prefetch2/viewer-$count.json" -Raw | ConvertFrom-Json
+            $trial = Get-Content "artifacts/benchmarks/viewer-viewport-plan/viewer-$count.json" -Raw | ConvertFrom-Json
+            if ($control.metadata.viewport_coordinator_trial -ne "False" -or
+                $trial.metadata.viewport_coordinator_trial -ne "True" -or
+                [int]$control.metadata.prefetch_rows -ne 2 -or
+                [int]$trial.metadata.prefetch_rows -ne 2) {
+              throw "$count Viewer coordinator A/B ran mismatched scenarios."
+            }
+            Write-Host (
+              "{0}: first-frame unready control/trial={1}/{2}; absent warm descriptors={3}/{4}; requests={5}/{6}; decoded bytes={7}/{8}; plan revisions={9}; planned images ready={10}" -f
+              $count,
+              $control.metadata.small_scroll_settled_forward_missing_on_first_frame,
+              $trial.metadata.small_scroll_settled_forward_missing_on_first_frame,
+              $control.metadata.small_scroll_settled_forward_no_descriptor,
+              $trial.metadata.small_scroll_settled_forward_no_descriptor,
+              $control.metadata.thumbnail_requests,
+              $trial.metadata.thumbnail_requests,
+              $control.metadata.max_decoded_bitmap_bytes,
+              $trial.metadata.max_decoded_bitmap_bytes,
+              $trial.metadata.viewport_coordinator_revisions,
+              $trial.metadata.viewport_coordinator_bitmaps_predecoded)
+          }
+
+      - name: Capture matched Skia viewport-coordinator A/B frames
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-coordinator-render/control.json" --frame-output "artifacts/viewer-coordinator-render/control.png"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --viewport-coordinator --output "artifacts/viewer-coordinator-render/trial.json" --frame-output "artifacts/viewer-coordinator-render/trial.png"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Skia viewport-coordinator A/B frames
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewport-coordinator-frames-${{ github.run_id }}
+          path: artifacts/viewer-coordinator-render/
+          if-no-files-found: warn
+
+      - name: Enforce unchanged viewport-coordinator performance limits
+        shell: pwsh
+        run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-viewport-plan" -ExpectedPrefetchRows 2 -ExpectedViewportCoordinator $true
+
       - name: Compare Viewer one-row versus default two-row readiness
         shell: pwsh
         run: |
@@ -291,12 +349,14 @@ jobs:
         run: ./build/Test-BmpFallback.ps1
 
       - name: Upload Core benchmark results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: lumine-core-baselines-${{ github.run_id }}
           path: |
             artifacts/benchmarks/*.json
             artifacts/benchmarks/viewer-prefetch2/*.json
+            artifacts/benchmarks/viewer-viewport-plan/*.json
           if-no-files-found: error
 
       - name: Publish NativeAOT
