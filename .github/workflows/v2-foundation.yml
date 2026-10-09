@@ -193,7 +193,24 @@ jobs:
 
       - name: Enforce Viewer performance acceptance
         shell: pwsh
-        run: ./build/Test-ViewerPerformance.ps1
+        run: ./build/Test-ViewerPerformance.ps1 -ExpectedPrefetchRows 1
+
+      # The original suite intentionally uses one lookahead row.
+      # The product default is two; verify this separate path with the
+      # same full acceptance limits rather than a synthetic speed claim.
+      - name: Generate Viewer default two-row benchmarks
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count $count --prefetch-rows 2 --output "artifacts/benchmarks/viewer-prefetch2/viewer-$count.json"
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Enforce Viewer default two-row performance acceptance
+        shell: pwsh
+        run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-prefetch2" -ExpectedPrefetchRows 2
 
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
