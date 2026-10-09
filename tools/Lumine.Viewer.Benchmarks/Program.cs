@@ -22,6 +22,15 @@ internal static class Program
         var output = ReadOption(args, "--output")
             ?? Path.Combine("artifacts", "benchmarks", "viewer-100000.json");
 
+        var captureFrameOutput = ReadOption(args, "--frame-output");
+        if (captureFrameOutput is not null
+            && !captureFrameOutput.EndsWith(
+                ".png", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                "--frame-output requires a .png path.");
+        }
+
         var countText = ReadOption(args, "--count") ?? "100000";
         if (!long.TryParse(
                 countText,
@@ -176,7 +185,32 @@ internal static class Program
                     settledLastVisibleAssetIndex =
                         viewer.LastVisibleAssetIndex ?? -1;
                     settledForwardWheel = await MeasureSmallScrollAsync(
-                        viewer, reverse: false);
+                        viewer,
+                        reverse: false,
+                        captureFirstOffset: captureFrameOutput is null
+                            ? null
+                            : () =>
+                            {
+                                // This is a Skia-rendered frame, not merely
+                                // Image.Source/UI-ready state. Keep capture
+                                // opt-in: rendering may advance the timing
+                                // being measured, so this separate diagnostic
+                                // run must NEVER replace acceptance baselines.
+                                var png = Path.GetFullPath(
+                                    captureFrameOutput);
+                                Directory.CreateDirectory(
+                                    Path.GetDirectoryName(png)!);
+                                using var frame =
+                                    window.CaptureRenderedFrame()
+                                    ?? throw new InvalidOperationException(
+                                        "Skia headless renderer returned no frame.");
+                                frame.Save(png);
+                                if (new FileInfo(png).Length <= 64)
+                                {
+                                    throw new InvalidOperationException(
+                                        "Captured rendered-frame PNG was empty.");
+                                }
+                            });
                     afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
 
@@ -349,7 +383,8 @@ internal static class Program
 
     private static async Task<ScrollProbeResult> MeasureSmallScrollAsync(
         ThumbnailViewerControl viewer,
-        bool reverse)
+        bool reverse,
+        Action? captureFirstOffset = null)
     {
         var scroller = viewer.GetVisualDescendants()
             .OfType<ScrollViewer>()
@@ -386,6 +421,10 @@ internal static class Program
                 scroller.Offset.X,
                 nextOffset);
             Dispatcher.UIThread.RunJobs();
+            if (i == 0)
+            {
+                captureFirstOffset?.Invoke();
+            }
 
             // Sample immediately after layout/row realization to find
             // whether the next viewport momentarily has empty tiles.
