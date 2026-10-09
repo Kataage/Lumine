@@ -42,6 +42,43 @@ internal static class Program
             throw new ArgumentException(
                 "--wheel-sequence-evidence-dir requires an output directory.");
         }
+
+        // The opt-in sequence test can exercise the SAME routed 10-event
+        // probe against Grid or List and all three density settings. It
+        // does not modify default Viewer benchmark behavior.
+        var sequenceLayoutText =
+            ReadOption(args, "--wheel-sequence-layout") ?? "grid";
+        if (wheelSequenceEvidenceDir is null
+            && args.Contains("--wheel-sequence-layout"))
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-layout requires --wheel-sequence-evidence-dir.");
+        }
+
+        var sequenceLayout = sequenceLayoutText.ToLowerInvariant() switch
+        {
+            "grid" => ViewerLayoutMode.Grid,
+            "list" => ViewerLayoutMode.List,
+            _ => throw new ArgumentException(
+                "--wheel-sequence-layout must be grid or list.")
+        };
+        var sequenceDensityText =
+            ReadOption(args, "--wheel-sequence-density") ?? "1";
+        if (wheelSequenceEvidenceDir is null
+            && args.Contains("--wheel-sequence-density"))
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-density requires --wheel-sequence-evidence-dir.");
+        }
+
+        if (!int.TryParse(sequenceDensityText,
+                NumberStyles.None, CultureInfo.InvariantCulture,
+                out var sequenceDensity)
+            || sequenceDensity is < 0 or > 2)
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-density must be an integer 0, 1 or 2.");
+        }
         // This is an independently invoked input/raster diagnostic, NOT
         // part of the accepted direct-offset timing benchmark.
         if (wheelEvidenceDir is not null
@@ -152,7 +189,14 @@ internal static class Program
                             DecodedBitmapByteLimit = 32L * 1024 * 1024
                         });
 
-                    var viewer = new ThumbnailViewerControl(session);
+                    var viewer = new ThumbnailViewerControl(
+                        session,
+                        wheelSequenceEvidenceDir is null
+                            ? ViewerLayoutMode.Grid
+                            : sequenceLayout,
+                        wheelSequenceEvidenceDir is null
+                            ? 1
+                            : sequenceDensity);
                     // Only the opt-in #634 diagnostic gets a compositor
                     // witness pixel: identical blue fixture rows can produce
                     // byte-identical PNGs despite a genuine redraw.
@@ -584,6 +628,9 @@ internal static class Program
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_input_kind"] = wheelSequenceEvidence is null ? "not-captured" : "routed-pointerwheel-first-raster",
+                    ["wheel_sequence_layout"] = wheelSequenceEvidence is null ? "not-captured" : sequenceLayout.ToString().ToLowerInvariant(),
+                    ["wheel_sequence_density"] = wheelSequenceEvidence is null ? "not-captured" : sequenceDensity.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_sequence_columns"] = wheelSequenceEvidence is null ? "not-captured" : finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["wheel_sequence_steps"] = wheelSequenceEvidence?.Steps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_forward_steps"] = wheelSequenceEvidence?.ForwardSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_reverse_steps"] = wheelSequenceEvidence?.ReverseSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",

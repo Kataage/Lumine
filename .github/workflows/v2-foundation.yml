@@ -409,6 +409,46 @@ jobs:
             throw "Wheel burst/reverse first-render or strict source/cache budgets failed."
           }
 
+      # The same 10 notches on a 1-column List layout are independently
+      # audited; Grid-only success must not mask blank List rows.
+      - name: Capture List-layout routed burst and reverse Skia frames
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-wheel-list/diagnostic-10000.json" --wheel-sequence-evidence-dir "artifacts/viewer-wheel-list" --wheel-sequence-layout list --wheel-sequence-density 1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload List-layout burst and reverse Skia evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-wheel-list-${{ github.run_id }}
+          path: artifacts/viewer-wheel-list/
+          if-no-files-found: warn
+
+      - name: Verify List-layout burst first-raster and strict resource limits
+        shell: pwsh
+        run: |
+          $r = Get-Content "artifacts/viewer-wheel-list/diagnostic-10000.json" -Raw | ConvertFrom-Json
+          $m = $r.metadata
+          Write-Host "List sequence: layout=$($m.wheel_sequence_layout), density=$($m.wheel_sequence_density), columns=$($m.wheel_sequence_columns), steps=$($m.wheel_sequence_steps), forward/reverse=$($m.wheel_sequence_forward_steps)/$($m.wheel_sequence_reverse_steps), reversals=$($m.wheel_sequence_direction_changes), unreadyImmediately=$($m.wheel_sequence_immediate_unready_max), unreadyFirstRaster=$($m.wheel_sequence_rendered_unready_max), minChanged=$($m.wheel_sequence_changed_samples_min), dispatchMax=$($m.wheel_sequence_dispatch_passes_max), totalRequests=$($m.thumbnail_requests), bitmapPeak=$($m.max_decoded_bitmap_bytes)."
+          if ($m.wheel_sequence_input_kind -ne "routed-pointerwheel-first-raster" -or
+              $m.wheel_sequence_layout -ne "list" -or
+              [int]$m.wheel_sequence_density -ne 1 -or
+              [int]$m.wheel_sequence_columns -ne 1 -or
+              [int]$m.wheel_sequence_steps -ne 10 -or
+              [int]$m.wheel_sequence_forward_steps -ne 6 -or
+              [int]$m.wheel_sequence_reverse_steps -ne 4 -or
+              [int]$m.wheel_sequence_direction_changes -ne 2 -or
+              [int]$m.wheel_sequence_changed_samples_min -lt 64 -or
+              [int]$m.wheel_sequence_dispatch_passes_max -gt 3 -or
+              [int]$m.wheel_sequence_rendered_unready_max -gt 0 -or
+              [long]$m.thumbnail_requests -gt 1600 -or
+              [long]$m.max_decoded_bitmap_bytes -gt 33554432 -or
+              -not (Test-Path "artifacts/viewer-wheel-list/sequence-before.png") -or
+              -not (Test-Path "artifacts/viewer-wheel-list/sequence-10-forward.png")) {
+            throw "List wheel first-render/raster or strict memory/source caps violated."
+          }
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
