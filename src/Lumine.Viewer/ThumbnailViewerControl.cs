@@ -59,6 +59,9 @@ public sealed class ThumbnailViewerControl : UserControl
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
+    // The sign of the last actual viewer scroll (forward = +1).
+    // Wheel capture happens before virtualized rows are reattached.
+    private int _lookaheadDirection = 1;
     private Compositor? _compositor;
     private int _columns = 1;
     private readonly ViewerRangeSelection _selection = new();
@@ -117,6 +120,18 @@ public sealed class ThumbnailViewerControl : UserControl
         SizeChanged += OnSizeChanged;
         AttachedToVisualTree += OnAttachedToVisualTree;
         DetachedFromVisualTree += (_, _) => CancelLookahead();
+        // Capture wheel direction before the ListBox's ScrollViewer
+        // handles the event and triggers virtualized row attachments.
+        AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnGalleryWheel,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        // Keyboard, scrollbar and touch also update this direction.
+        AddHandler(
+            ScrollViewer.ScrollChangedEvent,
+            OnGalleryScrollChanged,
+            RoutingStrategies.Bubble);
 
         RebuildRows();
     }
@@ -1434,6 +1449,36 @@ public sealed class ThumbnailViewerControl : UserControl
         e.Handled = true;
     }
 
+    internal int LookaheadDirectionForSmoke =>
+        _lookaheadDirection;
+
+    internal static long ResolveLookaheadRowForSmoke(
+        long rowIndex,
+        int direction) =>
+        rowIndex + (direction < 0 ? -1L : 1L);
+
+    private void OnGalleryWheel(
+        object? sender,
+        PointerWheelEventArgs e) =>
+        SetLookaheadDirection(-e.Delta.Y);
+
+    private void OnGalleryScrollChanged(
+        object? sender,
+        ScrollChangedEventArgs e) =>
+        SetLookaheadDirection(e.OffsetDelta.Y);
+
+    private void SetLookaheadDirection(double deltaY)
+    {
+        if (deltaY > 0.01)
+        {
+            _lookaheadDirection = 1;
+        }
+        else if (deltaY < -0.01)
+        {
+            _lookaheadDirection = -1;
+        }
+    }
+
     private void CancelLookahead()
     {
         _lookaheadCancellation?.Cancel();
@@ -1460,6 +1505,7 @@ public sealed class ThumbnailViewerControl : UserControl
                 session,
                 rowIndex,
                 columns,
+                _lookaheadDirection,
                 _lookaheadCancellation.Token));
     }
 
@@ -1467,6 +1513,7 @@ public sealed class ThumbnailViewerControl : UserControl
         ViewerSession session,
         long rowIndex,
         int columns,
+        int direction,
         CancellationToken cancellationToken)
     {
         try
@@ -1484,24 +1531,42 @@ public sealed class ThumbnailViewerControl : UserControl
             cancellationToken.ThrowIfCancellationRequested();
             var rows = session.Options.PrefetchRows;
             var afterStartIndex = checked((rowIndex + 1) * columns);
-            if (afterStartIndex < session.Count)
+            var afterCount = afterStartIndex < session.Count
+                ? checked((int)Math.Min(
+                    session.Count - afterStartIndex,
+                    (long)rows * columns))
+                : 0;
+            var beforeStartRow = Math.Max(0, rowIndex - rows);
+            var beforeStartIndex = checked(beforeStartRow * columns);
+            var beforeCount = checked((int)(
+                (rowIndex - beforeStartRow) * columns));
+
+            // Reverse browsing is as important as forward browsing.
+            // Start the probable next direction first, while keeping
+            // the other side's lookahead within the same bounded task.
+            if (direction < 0 && beforeCount > 0)
             {
                 await session.PrefetchAsync(
-                    afterStartIndex,
-                    checked((int)Math.Min(
-                        session.Count - afterStartIndex,
-                        (long)rows * columns)),
+                    beforeStartIndex,
+                    beforeCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var beforeStartRow = Math.Max(0, rowIndex - rows);
-            var beforeRowCount = rowIndex - beforeStartRow;
-            if (beforeRowCount > 0)
+            if (afterCount > 0)
             {
                 await session.PrefetchAsync(
-                    checked(beforeStartRow * columns),
-                    checked((int)(beforeRowCount * columns)),
+                    afterStartIndex,
+                    afterCount,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (direction >= 0 && beforeCount > 0)
+            {
+                await session.PrefetchAsync(
+                    beforeStartIndex,
+                    beforeCount,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -1512,7 +1577,13 @@ public sealed class ThumbnailViewerControl : UserControl
             var nextRowCount = Math.Min(
                 columns,
                 Math.Min(8, session.Options.DecodedBitmapEntryLimit / 8));
-            if (nextRowCount > 0 && afterStartIndex < session.Count)
+            var warmRow = ResolveLookaheadRowForSmoke(
+                rowIndex,
+                direction);
+            var warmStartIndex = checked(warmRow * columns);
+            if (nextRowCount > 0
+                && warmStartIndex >= 0
+                && warmStartIndex < session.Count)
             {
                 for (var attempt = 0; attempt < 80; attempt++)
                 {
@@ -1524,9 +1595,9 @@ public sealed class ThumbnailViewerControl : UserControl
                     {
                         await PredecodeNextRowAsync(
                             session,
-                            afterStartIndex,
+                            warmStartIndex,
                             checked((int)Math.Min(
-                                session.Count - afterStartIndex,
+                                session.Count - warmStartIndex,
                                 nextRowCount)),
                             cancellationToken).ConfigureAwait(false);
                         break;
