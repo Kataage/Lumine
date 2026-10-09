@@ -955,6 +955,29 @@ internal static class Program
             && ThumbnailViewerControl.ResolveLookaheadRowForSmoke(0, -1) == -1,
             "Lookahead failed to choose the neighbor in the scroll direction.");
 
+        // A jump can leave the last observed direction reversed. When the
+        // actual viewport plus two adjacent rows fit the strict budget,
+        // prepare both sides rather than leaving a cold forward strip.
+        var twoSidedOptions = new ViewerOptions
+        {
+            DecodedBitmapEntryLimit = 64,
+            DecodedBitmapByteLimit = 32L * 1024 * 1024,
+            DecodedThumbnailMaxDimension = 384
+        };
+        Require(
+            ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 35, nextRowCount: 7)
+            && !ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 56, nextRowCount: 7)
+            && !ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 40,
+                    DecodedBitmapByteLimit = 32L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 35, nextRowCount: 7),
+            "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
+
         // Unlike ScrollToAsset, a small offset adjustment exercises
         // the real inner ScrollViewer's routed ScrollChanged event.
         // This also covers keyboard/scrollbar/touch direction changes,
