@@ -71,6 +71,21 @@ The owning `ThumbnailViewerControl` now captures the actual scroll direction:
 
 Headless Viewer smoke now uses an actual mounted internal `ScrollViewer.Offset` change down and back up (not only calling `ScrollToAsset`), and checks that lookahead direction updates, plus bounded next-row target selection. This is a deterministic simulation of an offset change; **real Windows wheel perceived latency is still not measured**. Preserve existing Viewer fast-scroll performance gate rather than increasing it.
 
+## Mounted small-offset scroll benchmark (fifth #634 step)
+
+The existing 10k/50k/100k Viewer benchmark exercised 40 scattered `ScrollToAsset` seeks: it stressed cancellation and virtualization, but did not measure the user's actual complaint that **one small movement exposes unloaded images**. A green jump benchmark did not tell us what appeared during normal browsing.
+
+The benchmark now exercises a real mounted inner `ScrollViewer` via its `Offset`: three successive ~198 DIP row-sized forward movements, followed by three reverse movements after the first full viewport becomes UI-ready. After each offset update, it samples the first realized viewport for visible tile entries whose decoded `Image.Source` is not yet ready, then measures how long the remaining UI assignments take. The benchmark exposes separately for forward and reverse directions:
+
+- `small_scroll_*_steps` (3 each)
+- `small_scroll_*_missing_on_first_frame` (sum of first-sampled not-ready image tiles; lower is better, but not automatically guaranteed zero)
+- `small_scroll_*_max_ui_ready_wait_ms` (worst per-step wait for all sampled visible tiles)
+- `small_scroll_*_warm_bitmap_hits` (decoded presentation reuse during each phase)
+
+The Windows Viewer performance gate now requires these fields and enforces a bounded ready wait without relaxing the 1,600-request/10k fast-scroll, 32 MiB decoded cache, 100k virtualization or peak memory limits. **Do not invent a zero-blank release threshold before collecting a real baseline.** Review the cold/warm and forward/reverse results against subsequent changes.
+
+**Important limits:** this test sets the real ScrollViewer offset, which exercises virtual row attachment and scroll-direction callbacks but is **not injected physical wheel input**. It counts UI-ready bitmap assignments, **not actual GPU composition/presented pixels**. It uses generated 512px image fixtures and cannot substitute for performance measurement with a representative real Windows library, actual wheel gestures and human product-owner acceptance. These remain open requirements of #634.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
