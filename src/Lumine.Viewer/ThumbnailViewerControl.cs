@@ -1597,6 +1597,12 @@ public sealed class ThumbnailViewerControl : UserControl
     internal long LookaheadViewportEdgeReschedulesForSmoke =>
         _lookaheadViewportEdgeReschedules;
 
+    internal int LastLookaheadOffsetEdgeForSmoke =>
+        _lastLookaheadOffsetEdge;
+
+    internal int LastLookaheadOffsetDirectionForSmoke =>
+        _lastLookaheadOffsetDirection;
+
     public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
         new(
             _lookaheadScheduleCount,
