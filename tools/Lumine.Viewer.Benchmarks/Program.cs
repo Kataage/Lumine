@@ -70,6 +70,7 @@ internal static class Program
         long peakWorkingSetBytes = 0;
         long peakAdditionalWorkingSetBytes = 0;
         var maxRealizedRows = 0;
+        double observedRealizationBuffer = -1;
         var maxAttachedTiles = 0;
         var maxReadyTiles = 0;
         var maxDecodedBitmapEntries = 0;
@@ -129,6 +130,22 @@ internal static class Program
                     {
                         window.Show();
                         await WaitForRealizationAsync(viewer);
+                    }
+
+                    // Ensure the actual mounted virtualizing panel applies
+                    // the requested experimental buffer, rather than
+                    // comparing two identically configured ListBoxes.
+                    var actualPanel = viewer.GetVisualDescendants()
+                        .OfType<VirtualizingStackPanel>()
+                        .FirstOrDefault()
+                        ?? throw new InvalidOperationException(
+                            "Viewer A/B could not find mounted virtualized items panel.");
+                    observedRealizationBuffer = actualPanel.CacheLength;
+                    if (Math.Abs(observedRealizationBuffer - realizationBuffer)
+                            > 0.000001)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected mounted CacheLength={realizationBuffer}, got {observedRealizationBuffer}.");
                     }
 
                     Observe(viewer);
@@ -269,6 +286,7 @@ internal static class Program
                     ["asset_count"] = count.ToString(CultureInfo.InvariantCulture),
                     ["prefetch_rows"] = prefetchRows.ToString(CultureInfo.InvariantCulture),
                     ["realization_buffer_factor"] = realizationBuffer.ToString("G17", CultureInfo.InvariantCulture),
+                    ["mounted_realization_cache_length"] = observedRealizationBuffer.ToString("G17", CultureInfo.InvariantCulture),
                     ["columns"] = finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),
