@@ -394,6 +394,7 @@ internal static class Program
                             + $"first-tick blue/dark={rawWheelEvidence.Value.FirstTick.BlueThumbnailSamples}/{rawWheelEvidence.Value.FirstTick.DarkPlaceholderSamples}, "
                             + $"bounded dispatch passes={rawWheelEvidence.Value.PostDispatchPasses}, "
                             + $"post-dispatch witness={rawWheelEvidence.Value.PostDispatchWitnessChanged}, "
+                            + $"changed gallery samples={rawWheelEvidence.Value.PostDispatchChangedViewerSamples}, "
                             + $"post-dispatch blue/dark={rawWheelEvidence.Value.PostDispatch.BlueThumbnailSamples}/{rawWheelEvidence.Value.PostDispatch.DarkPlaceholderSamples}, "
                             + $"post-flush blue/dark={rawWheelEvidence.Value.Settled.BlueThumbnailSamples}/{rawWheelEvidence.Value.Settled.DarkPlaceholderSamples}.");
                     }
@@ -508,6 +509,7 @@ internal static class Program
                     ["raw_wheel_post_dispatch_passes"] = rawWheelEvidence?.PostDispatchPasses.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_dispatch_witness_changed"] = rawWheelEvidence?.PostDispatchWitnessChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_dispatch_frame_changed"] = rawWheelEvidence?.PostDispatchRasterChanged.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_post_dispatch_changed_viewer_samples"] = rawWheelEvidence?.PostDispatchChangedViewerSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_dispatch_blue"] = rawWheelEvidence?.PostDispatch.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_dispatch_dark"] = rawWheelEvidence?.PostDispatch.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_flush_blue"] = rawWheelEvidence?.Settled.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",

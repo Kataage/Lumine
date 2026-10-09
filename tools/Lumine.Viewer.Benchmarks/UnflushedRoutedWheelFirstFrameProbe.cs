@@ -29,6 +29,7 @@ internal readonly record struct UnflushedRoutedWheelFrameEvidence(
     int PostDispatchPasses,
     bool PostDispatchWitnessChanged,
     bool PostDispatchRasterChanged,
+    int PostDispatchChangedViewerSamples,
     RenderedFrameTileAudit FirstTick,
     RenderedFrameTileAudit PostDispatch,
     RenderedFrameTileAudit Settled);
@@ -183,6 +184,12 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
                     File.ReadAllBytes(postDispatchPath)));
         var postDispatchAudit = RenderedFrameTileAudit.Inspect(
             postDispatchPath, viewer.Columns);
+        // The compositor witness alone is not sufficient: an overlay
+        // repaint must not count as successful viewport scrolling while
+        // the underlying gallery raster is stale. Compare interior
+        // pixels, excluding both the witness and the right scrollbar.
+        var changedViewerSamples = CountChangedViewerSamples(
+            beforePath, postDispatchPath);
 
         // For contrast, measure Avalonia's normal fully flushed
         // headless raster. It may advance up to 10 dispatcher/timer
@@ -223,9 +230,52 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
             postDispatchPasses,
             postDispatchWitnessChanged,
             postDispatchRasterChanged,
+            changedViewerSamples,
             firstAudit,
             postDispatchAudit,
             settledAudit);
+    }
+
+    // Count visibly changed samples in the gallery interior only.
+    // The fixtures repeat monochrome blue thumbnails, but their asset
+    // captions and row geometry change after the 200px routed offset.
+    // Ignore the top-right witness, scrollbar and window perimeter.
+    // The changed-sample threshold is independently audited in CI.
+    private static int CountChangedViewerSamples(
+        string beforePath, string afterPath)
+    {
+        using var before = SKBitmap.Decode(beforePath)
+            ?? throw new InvalidOperationException(
+                "Could not decode pre-scroll content raster.");
+        using var after = SKBitmap.Decode(afterPath)
+            ?? throw new InvalidOperationException(
+                "Could not decode post-scroll content raster.");
+        if (before.Width != after.Width
+            || before.Height != after.Height
+            || before.Width < 96
+            || before.Height < 96)
+        {
+            throw new InvalidOperationException(
+                "Incompatible raster dimensions for viewer content diff.");
+        }
+
+        var changed = 0;
+        for (var y = 24; y < before.Height - 24; y += 4)
+        {
+            for (var x = 24; x < before.Width - 32; x += 4)
+            {
+                var a = before.GetPixel(x, y);
+                var b = after.GetPixel(x, y);
+                if (Math.Abs((int)a.Red - b.Red) > 20
+                    || Math.Abs((int)a.Green - b.Green) > 20
+                    || Math.Abs((int)a.Blue - b.Blue) > 20)
+                {
+                    changed++;
+                }
+            }
+        }
+
+        return changed;
     }
 
     // Check a pixel strictly inside the fixed top-right overlay. A
