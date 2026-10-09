@@ -2132,49 +2132,41 @@ internal static class ProductNavigationViews
                         AutomationProperties.SetName(
                             remove,
                             $"公開アカウントを削除: {accountItem.DisplayName}");
+                        // Keep the focused keyboard target enabled while
+                        // awaiting the delete callback. Disabling it first
+                        // makes Avalonia move focus automatically, which
+                        // makes it impossible to distinguish that fallback
+                        // from a user's deliberate new focus choice.
+                        var removalInProgress = false;
                         remove.Click +=
                             async (_, _) =>
                             {
-                                // A keyboard-activated Delete is disabled
-                                // before the async operation, and successful
-                                // deletion rebuilds the entire account list.
-                                // Capture focus before disabling the Button.
-                                var restoreFocus =
-                                    remove.IsFocused;
-                                remove.IsEnabled = false;
+                                if (removalInProgress)
+                                {
+                                    return;
+                                }
+
+                                removalInProgress = true;
+                                var hadFocus = remove.IsFocused;
                                 try
                                 {
                                     if (await deleteAccount(
                                             accountItem))
                                     {
-                                        var owner =
-                                            TopLevel.GetTopLevel(addAccount);
-                                        var activeFocus =
-                                            owner?.FocusManager
-                                                ?.GetFocusedElement();
-                                        var mayRestoreFocus =
-                                            restoreFocus
-                                            && addAccount.IsEffectivelyVisible
-                                            && addAccount.IsEnabled
-                                            && (activeFocus is null
-                                                || ReferenceEquals(
-                                                    activeFocus,
-                                                    remove)
-                                                || ReferenceEquals(
-                                                    activeFocus,
-                                                    addAccount));
-
+                                        // A user might intentionally move
+                                        // focus while the async operation
+                                        // runs. Restore it only if this
+                                        // Delete still owns focus.
+                                        var restoreFocus =
+                                            hadFocus && remove.IsFocused;
                                         accountItems.Remove(
                                             accountItem);
                                         RenderAccounts();
-                                        if (mayRestoreFocus)
+                                        if (restoreFocus)
                                         {
-                                            // Keep keyboard navigation in
-                                            // this live settings flyout rather
-                                            // than leaving the now-detached
-                                            // account Delete as its target.
                                             addAccount.Focus();
                                         }
+
                                         feedback.Text =
                                             "アカウントを削除しました。過去のPublication snapshotは変更していません。";
                                     }
@@ -2190,7 +2182,7 @@ internal static class ProductNavigationViews
                                 }
                                 finally
                                 {
-                                    remove.IsEnabled = true;
+                                    removalInProgress = false;
                                 }
                             };
                         Grid.SetColumn(
