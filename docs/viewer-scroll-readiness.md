@@ -161,6 +161,17 @@ The follow-up change listens to the **actual inner ScrollViewer OffsetProperty**
 
 The explicit objective is earlier next-row warming for **continued** forward browsing, not raising source work. This must pass **both** one-row and default two-row 10k/50k/100k performance acceptance, particularly the close-to-limit 10k 2-row request budget: the previous single Windows run recorded 1,587 requests against max 1,600. If offset-driven updates cause request churn or violate memory/shutdown limits, revise before merge. Headless first-frame samples and real Windows wheel/compositor acceptance remain separate; #634 stays open.
 
+## Why decoded lookahead is not reused (twelfth #634 step)
+
+[PR #646](https://github.com/Kataage/Lumine/pull/646) passed **53/53** Windows CI steps and merged into `develop` as `0c2a20a9`. Its single headless 200ms-settled three-small-scroll probe still showed **first-frame missing** tiles 18 / 19 / 8 at 10k / 50k / 100k with one source prefetch row, and 19 / 18 / 17 with two rows; neither setting consistently eliminates blank new strips. Two-row 10k had **1,372 source requests**, under the non-negotiable 1,600 limit. The 32 MiB decoded Bitmap peak remained ~31.5 MiB. These are one sample per fixture; they are **not physical Windows/compositor evidence**.
+
+The next diagnostic distinguishes two root-cause classes at the precise **newly attached tile lookup** before visible loading:
+- **No warm descriptor** for that asset index. Possible causes: the scheduler has not yet predecoded the target, that row was not selected, or its descriptor was trimmed.
+- **Descriptor present, decoded Bitmap unavailable** in `BitmapCache.TryAcquireExisting`. Possible cause: bounded cache LRU evicted the Bitmap before the row entered view. Do not automatically classify every miss as LRU eviction without confirming why it was absent.
+- **Warm hit** (existing semantics). The three mutually exclusive outcomes must exactly partition all warm lookup attempts.
+
+The Viewer now publishes `ViewerWarmPresentationDiagnostics` counters without changing rendering, request priorities, cache limits or object lifetime. Headless small-scroll probes record **separate per-probe deltas** (cold forward, reverse, 200ms-settled forward), both for `PrefetchRows=1` and product-default `2`. CI rejects absent/negative counters or miss categories exceeding lookup attempts; mounted smoke verifies the full accounting identity. This is intentionally **diagnostic**, not a speculative performance fix. Follow-on cache retention/prefetch tuning must be guided by whether lack of predecode or lost Bitmap residency dominates, with full native/managed limits unchanged.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.
