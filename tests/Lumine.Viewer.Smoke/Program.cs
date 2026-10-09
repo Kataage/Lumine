@@ -1414,7 +1414,7 @@ internal static class Program
                 == TimeSpan.FromMilliseconds(48)
             && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
                 TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 2)
-                == TimeSpan.FromMilliseconds(160)
+                == TimeSpan.FromMilliseconds(96)
             && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
                 TimeSpan.FromMilliseconds(200), consecutiveFarSeeks: 2)
                 == TimeSpan.FromMilliseconds(200),
@@ -1444,11 +1444,11 @@ internal static class Program
             && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
                 TimeSpan.FromMilliseconds(8), 1600, 800,
                 consecutiveFullViewportJumps: 2)
-                == TimeSpan.FromMilliseconds(160)
+                == TimeSpan.FromMilliseconds(96)
             && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
                 TimeSpan.FromMilliseconds(8), -1600, 800,
                 consecutiveFullViewportJumps: 2)
-                == TimeSpan.FromMilliseconds(160)
+                == TimeSpan.FromMilliseconds(96)
             && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
                 TimeSpan.FromMilliseconds(8), 50, 800,
                 consecutiveFullViewportJumps: 2)

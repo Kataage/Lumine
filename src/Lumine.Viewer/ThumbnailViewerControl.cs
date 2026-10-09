@@ -1910,7 +1910,7 @@ public sealed class ThumbnailViewerControl : UserControl
             ? TimeSpan.FromMilliseconds(
                 Math.Max(
                     normalDelay.TotalMilliseconds,
-                    consecutiveFullViewportJumps >= 2 ? 160 : 48))
+                    consecutiveFullViewportJumps >= 2 ? 96 : 48))
             : normalDelay;
 
     internal static bool IsFarProgrammaticTargetForSmoke(
@@ -1939,7 +1939,7 @@ public sealed class ThumbnailViewerControl : UserControl
             return baseDelay;
         }
 
-        var floor = consecutiveFarSeeks >= 2 ? 160 : 48;
+        var floor = consecutiveFarSeeks >= 2 ? 96 : 48;
         return TimeSpan.FromMilliseconds(
             Math.Max(baseDelay.TotalMilliseconds, floor));
     }
