@@ -198,7 +198,7 @@ internal static class Program
                     // Do not replace the immediate cold-scroll probe above.
                     viewer.ScrollToAsset(Math.Min(count - 1, count / 2 + 137));
                     Dispatcher.UIThread.RunJobs();
-                    await WaitForViewportReadyAsync(viewer);
+                    await WaitForViewportReadyAsync(viewer, visibleOnly: deferredOverscan);
                     beforeSettledDwell = viewer.LookaheadDiagnostics;
                     await Task.Delay(200);
                     Dispatcher.UIThread.RunJobs();
