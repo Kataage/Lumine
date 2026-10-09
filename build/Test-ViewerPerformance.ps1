@@ -88,6 +88,24 @@ foreach ($result in $results) {
         if ($warm -lt 0) {
             throw "$count Viewer small $direction scroll reported negative warm-bitmap reuse."
         }
+
+        # Every tile warm lookup is classified as acquired, no
+        # speculative descriptor, or descriptor with no cached Bitmap.
+        # A source-ready thumbnail is not itself a decoded Bitmap hit.
+        $attemptsKey = "small_scroll_${direction}_warm_lookup_attempts"
+        $noDescriptorKey = "small_scroll_${direction}_no_descriptor"
+        $noBitmapKey = "small_scroll_${direction}_bitmap_unavailable"
+        foreach ($key in @($attemptsKey, $noDescriptorKey, $noBitmapKey)) {
+            if ($null -eq $result.metadata.$key -or [long]$result.metadata.$key -lt 0) {
+                throw "$count Viewer $direction warm miss reason was missing or invalid: $key"
+            }
+        }
+        $warmLookups = [long]$result.metadata.$attemptsKey
+        $warmNoDescriptor = [long]$result.metadata.$noDescriptorKey
+        $warmNoBitmap = [long]$result.metadata.$noBitmapKey
+        if ($warmNoDescriptor + $warmNoBitmap -gt $warmLookups) {
+            throw "$count Viewer $direction warm miss reasons exceed observed lookups."
+        }
     }
 
     # Detect missing or impossible stage instrumentation without imposing
