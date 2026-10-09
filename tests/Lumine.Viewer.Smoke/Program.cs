@@ -919,6 +919,16 @@ internal static class Program
             viewer.IsAssetWarmForSmoke(nextRowIndex),
             $"Decoded bitmap was not prepared for the next scroll row: first={viewer.FirstRealizedAssetIndex}, rows={viewer.RealizedRowCount}, target={nextRowIndex}.");
 
+        var warmDiagnostics = viewer.LookaheadDiagnostics;
+        Require(
+            warmDiagnostics.Scheduled > 0
+            && warmDiagnostics.SourcePrefetchCompleted > 0
+            && warmDiagnostics.EligibleForPredecode > 0
+            && warmDiagnostics.BitmapsPredecoded > 0
+            && warmDiagnostics.LastPredecodeStartIndex >= 0,
+            "Lookahead diagnostics did not track a completed, eligible bitmap predecode.");
+
+
         var warmHitsBeforeForward = viewer.WarmTileHitCountForSmoke;
         viewer.ScrollToAsset(nextRowIndex);
         for (var attempt = 0;

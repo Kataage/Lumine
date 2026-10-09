@@ -110,6 +110,19 @@ Interpretation:
 - If it is still cold after the dwell, inspect the coalesced lookahead anchor, source fetch timing, predecode eligibility and cancellation/supersession before adjusting the scheduler.
 - Neither 200ms artificially waiting nor UI `Image.Source` readiness establishes a zero-blank claim for real Windows wheel input. Keep the 32 MiB / 1600 request / virtualization / NativeAOT gates intact, and collect owner real-library interaction evidence before closing #634.
 
+## Diagnose why 200ms rested forward scroll is still cold (seventh #634 step)
+
+The [PR #641](https://github.com/Kataage/Lumine/pull/641) mounted Windows benchmark passed full CI and confirmed **21 first-frame misses in 3 settled forward scrolls and zero decoded warm bitmap reuse** at **all 10k/50k/100k fixture sizes**, even after a 200ms dwell at an unvisited middle-library region. This eliminates the simple explanation that users scroll too soon after the initial viewport is loaded; it does **not** prove that lookahead never runs, because the prior metric counted successful bitmap reuse on tile attachment only.
+
+In the next bounded diagnostic, the Viewer publishes inexpensive monotonic lookahead-stage counters and the last scheduled row/direction + attempted decoded row. The 200ms dwell benchmark snapshots the counters *before and after the dwell*, separately from new decodes after the ensuing three small scroll steps. The Windows gate validates that the fields exist and are nonnegative without inventing a pass threshold. This discriminates:
+
+- **Scheduled but source prefetch never completed**: inspect CTS cancellation/supersession and background source work.
+- **Source completed, decode never eligible**: inspect the foreground-ready/active-decode gate (and any attached-vs-ready mismatch).
+- **Decoded some tiles but warm reuse remains zero**: inspect whether the *actual next visible row* matches the last attempted warm index, whether its bitmap is still resident under pinned cache pressure, and whether cancelled tasks evict the expected row.
+- **Decoded hits only after movement**: predecode scheduling is too late for small gestures; confirm actual user-relevant lead time before changing priorities.
+
+This instrumentation does not change decode, prefetch, cache or attachment scheduling semantics. Do not construe headless UI readiness as actual GPU compositing; keep Issue #634 open until real Windows-wheel owner acceptance.
+
 ## Required follow-up work before closing #634
 
 1. Record a scroll-into-view timing trace with at least: metadata pagination latency, decode/cache source latency, decoded bitmap cache acquisition, tile `Attached`→`Ready` latency, viewport direction/velocity, prefetch queue age/cancellation and cache hit rates.

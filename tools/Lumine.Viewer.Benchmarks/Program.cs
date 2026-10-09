@@ -54,6 +54,10 @@ internal static class Program
         ScrollProbeResult forwardWheel = default;
         ScrollProbeResult reverseWheel = default;
         ScrollProbeResult settledForwardWheel = default;
+        ViewerLookaheadDiagnostics beforeSettledDwell = default;
+        ViewerLookaheadDiagnostics afterSettledDwell = default;
+        ViewerLookaheadDiagnostics afterSettledScroll = default;
+        long settledLastVisibleAssetIndex = -1;
         var finalColumns = 0;
         long cursorEndSeekPages = 0;
         long cursorRandomSeekPages = 0;
@@ -153,10 +157,15 @@ internal static class Program
                     viewer.ScrollToAsset(Math.Min(count - 1, count / 2 + 137));
                     Dispatcher.UIThread.RunJobs();
                     await WaitForViewportReadyAsync(viewer);
+                    beforeSettledDwell = viewer.LookaheadDiagnostics;
                     await Task.Delay(200);
                     Dispatcher.UIThread.RunJobs();
+                    afterSettledDwell = viewer.LookaheadDiagnostics;
+                    settledLastVisibleAssetIndex =
+                        viewer.LastVisibleAssetIndex ?? -1;
                     settledForwardWheel = await MeasureSmallScrollAsync(
                         viewer, reverse: false);
+                    afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
 
                     viewer.SelectAsset(count - 1);
@@ -266,6 +275,17 @@ internal static class Program
                     ["small_scroll_settled_forward_missing_on_first_frame"] = settledForwardWheel.MissingOnFirstFrame.ToString(CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_max_ui_ready_wait_ms"] = settledForwardWheel.MaxWaitMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
                     ["small_scroll_settled_forward_warm_bitmap_hits"] = settledForwardWheel.WarmBitmapHits.ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_scheduled_before_dwell"] = beforeSettledDwell.Scheduled.ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_scheduled_during_dwell"] = (afterSettledDwell.Scheduled - beforeSettledDwell.Scheduled).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_cancelled_during_dwell"] = (afterSettledDwell.CancelledBeforeCompletion - beforeSettledDwell.CancelledBeforeCompletion).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_source_completed_during_dwell"] = (afterSettledDwell.SourcePrefetchCompleted - beforeSettledDwell.SourcePrefetchCompleted).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_eligible_during_dwell"] = (afterSettledDwell.EligibleForPredecode - beforeSettledDwell.EligibleForPredecode).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_predecoded_during_dwell"] = (afterSettledDwell.BitmapsPredecoded - beforeSettledDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_predecoded_during_scroll"] = (afterSettledScroll.BitmapsPredecoded - afterSettledDwell.BitmapsPredecoded).ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_last_scheduled_row"] = afterSettledDwell.LastScheduledRow.ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_last_predecode_start"] = afterSettledDwell.LastPredecodeStartIndex.ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_last_direction"] = afterSettledDwell.LastScheduledDirection.ToString(CultureInfo.InvariantCulture),
+                    ["settled_lookahead_last_visible_index"] = settledLastVisibleAssetIndex.ToString(CultureInfo.InvariantCulture),
                     ["last_tile_load_error"] = finalDiagnostics.LastTileLoadError ?? string.Empty,
                     ["inflight_thumbnail_requests"] = finalDiagnostics.InFlightThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["final_attached_tiles"] = finalDiagnostics.AttachedTiles.ToString(CultureInfo.InvariantCulture),

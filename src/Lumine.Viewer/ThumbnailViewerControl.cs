@@ -21,6 +21,18 @@ public readonly record struct ViewerViewportReadinessDiagnostics(
     int VisibleTiles,
     int UnreadyTiles);
 
+// Diagnostic counts distinguish source warming, admission eligibility and
+// actual decoded bitmap retention without changing foreground scheduling.
+public readonly record struct ViewerLookaheadDiagnostics(
+    long Scheduled,
+    long CancelledBeforeCompletion,
+    long SourcePrefetchCompleted,
+    long EligibleForPredecode,
+    long BitmapsPredecoded,
+    long LastScheduledRow,
+    long LastPredecodeStartIndex,
+    int LastScheduledDirection);
+
 public readonly record struct ViewerTileReadinessDiagnostics(
     long Started,
     long Ready,
@@ -66,6 +78,14 @@ public sealed class ThumbnailViewerControl : UserControl
     // One coalesced viewport lookahead, not one speculative queue per
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
+    private Task? _lookaheadTask;
+    private long _lookaheadCancelled;
+    private long _lookaheadSourcesComplete;
+    private long _lookaheadPredecodeEligible;
+    private long _lookaheadBitmapsPredecoded;
+    private long _lookaheadLastRow = -1;
+    private long _lookaheadLastPredecodeStartIndex = -1;
+    private int _lookaheadLastScheduledDirection = 1;
     // The sign of the last actual viewer scroll (forward = +1).
     // Wheel capture happens before virtualized rows are reattached.
     private int _lookaheadDirection = 1;
@@ -1569,6 +1589,17 @@ public sealed class ThumbnailViewerControl : UserControl
     internal long LookaheadScheduleCountForSmoke =>
         _lookaheadScheduleCount;
 
+    public ViewerLookaheadDiagnostics LookaheadDiagnostics =>
+        new(
+            _lookaheadScheduleCount,
+            Interlocked.Read(ref _lookaheadCancelled),
+            Interlocked.Read(ref _lookaheadSourcesComplete),
+            Interlocked.Read(ref _lookaheadPredecodeEligible),
+            Interlocked.Read(ref _lookaheadBitmapsPredecoded),
+            Interlocked.Read(ref _lookaheadLastRow),
+            Interlocked.Read(ref _lookaheadLastPredecodeStartIndex),
+            Volatile.Read(ref _lookaheadLastScheduledDirection));
+
     internal static long ResolveLookaheadRowForSmoke(
         long rowIndex,
         int direction) =>
@@ -1651,9 +1682,15 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void CancelLookahead()
     {
+        if (_lookaheadTask is { IsCompleted: false })
+        {
+            Interlocked.Increment(ref _lookaheadCancelled);
+        }
+
         _lookaheadCancellation?.Cancel();
         _lookaheadCancellation?.Dispose();
         _lookaheadCancellation = null;
+        _lookaheadTask = null;
     }
 
     private void ScheduleLookahead(long rowIndex, int columns)
@@ -1670,14 +1707,18 @@ public sealed class ThumbnailViewerControl : UserControl
         }
 
         var session = _session;
+        Interlocked.Exchange(ref _lookaheadLastRow, rowIndex);
+        Volatile.Write(
+            ref _lookaheadLastScheduledDirection,
+            _lookaheadDirection);
         _lookaheadCancellation = new CancellationTokenSource();
-        TrackTileLoad(
-            PrefetchViewportLookaheadAsync(
-                session,
-                rowIndex,
-                columns,
-                _lookaheadDirection,
-                _lookaheadCancellation.Token));
+        _lookaheadTask = PrefetchViewportLookaheadAsync(
+            session,
+            rowIndex,
+            columns,
+            _lookaheadDirection,
+            _lookaheadCancellation.Token);
+        TrackTileLoad(_lookaheadTask);
     }
 
     private async Task PrefetchViewportLookaheadAsync(
@@ -1741,6 +1782,8 @@ public sealed class ThumbnailViewerControl : UserControl
                     cancellationToken).ConfigureAwait(false);
             }
 
+            Interlocked.Increment(ref _lookaheadSourcesComplete);
+
             // Source prefetch alone is not enough: a tile still has to
             // decode an Avalonia Bitmap when the user reaches it.
             // Only decode one next row after current visible work is
@@ -1752,6 +1795,9 @@ public sealed class ThumbnailViewerControl : UserControl
                 rowIndex,
                 direction);
             var warmStartIndex = checked(warmRow * columns);
+            Interlocked.Exchange(
+                ref _lookaheadLastPredecodeStartIndex,
+                warmStartIndex);
             if (nextRowCount > 0
                 && warmStartIndex >= 0
                 && warmStartIndex < session.Count)
@@ -1764,6 +1810,8 @@ public sealed class ThumbnailViewerControl : UserControl
                         && state.ReadyTiles >= state.AttachedTiles
                         && state.ActiveBitmapDecodes == 0)
                     {
+                        Interlocked.Increment(
+                            ref _lookaheadPredecodeEligible);
                         await PredecodeNextRowAsync(
                             session,
                             warmStartIndex,
@@ -1825,6 +1873,8 @@ public sealed class ThumbnailViewerControl : UserControl
                                 index,
                                 asset,
                                 thumbnail);
+                            Interlocked.Increment(
+                                ref _lookaheadBitmapsPredecoded);
                         }
 
                         acquired.Dispose();
