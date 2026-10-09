@@ -1355,6 +1355,45 @@ internal static class Program
                 == normalLookaheadDelay,
             "Lookahead seek debounce improperly slows small/reverse wheel input or ignores a full-viewport jump.");
 
+        // Multiple large seeks separated by <250ms form one burst:
+        // cancel old speculative requests and debounce discarded pages.
+        // First isolated seeks and all 50px forward/reverse wheel input
+        // must preserve their existing short-delay priority.
+        Require(
+            ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 0,
+                sincePreviousJump: TimeSpan.MaxValue) == 1
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 1,
+                sincePreviousJump: TimeSpan.FromMilliseconds(2)) == 2
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 2,
+                sincePreviousJump: TimeSpan.FromMilliseconds(2)) == 2
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 2,
+                sincePreviousJump: TimeSpan.FromMilliseconds(250)) == 1
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 1600, 800,
+                consecutiveFullViewportJumps: 1)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(160)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), -1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(160)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 50, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(8)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(220), 1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(220),
+            "Repeated full-viewport seeks did not debounce obsolete prefetch or slowed normal mouse scroll.");
+
         // A later same-direction motion may shift the *visible* edge
         // without creating a new virtual row (the overscan already
         // contains it). It must still schedule the new nearest row.

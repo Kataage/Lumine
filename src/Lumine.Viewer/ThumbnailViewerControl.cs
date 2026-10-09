@@ -97,6 +97,12 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _lookaheadViewportEdgeReschedules;
     private int _lastLookaheadOffsetEdge = -1;
     private double _lastLookaheadScheduledOffsetY = double.NaN;
+    // A solitary programmatic viewport seek gets the normal 48ms
+    // coalescing window. A rapidly repeated series gets a longer quiet
+    // window to avoid issuing speculative sources for discarded pages.
+    // Monotonic timestamps make this independent of wall-clock changes.
+    private long _lastFullViewportJumpTimestamp;
+    private int _consecutiveFullViewportJumpCount;
     private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
@@ -1483,6 +1489,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        _lastFullViewportJumpTimestamp = 0;
+        _consecutiveFullViewportJumpCount = 0;
         _lastLookaheadScheduledOffsetY = double.NaN;
         _lastLookaheadOffsetEdge = -1;
         _lastLookaheadOffsetDirection = 0;
@@ -1733,6 +1741,8 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
+            _lastFullViewportJumpTimestamp = 0;
+            _consecutiveFullViewportJumpCount = 0;
             _lastLookaheadScheduledOffsetY = double.NaN;
             _lastLookaheadOffsetEdge = -1;
             _lastLookaheadOffsetDirection = 0;
@@ -1853,11 +1863,23 @@ public sealed class ThumbnailViewerControl : UserControl
     internal static TimeSpan LookaheadDelayForScrollForSmoke(
         TimeSpan normalDelay,
         double offsetChange,
-        double viewportHeight) =>
+        double viewportHeight,
+        int consecutiveFullViewportJumps = 1) =>
         IsFullViewportJumpForSmoke(offsetChange, viewportHeight)
             ? TimeSpan.FromMilliseconds(
-                Math.Max(normalDelay.TotalMilliseconds, 48))
+                Math.Max(
+                    normalDelay.TotalMilliseconds,
+                    consecutiveFullViewportJumps >= 2 ? 160 : 48))
             : normalDelay;
+
+    internal static int CountConsecutiveViewportJumpsForSmoke(
+        int previousCount,
+        TimeSpan sincePreviousJump) =>
+        previousCount > 0
+        && sincePreviousJump >= TimeSpan.Zero
+        && sincePreviousJump < TimeSpan.FromMilliseconds(250)
+            ? Math.Min(2, previousCount + 1)
+            : 1;
 
     private void ScheduleLookahead(long rowIndex, int columns)
     {
@@ -1875,15 +1897,30 @@ public sealed class ThumbnailViewerControl : UserControl
                 : 0;
         var viewportHeight =
             _galleryScrollViewer?.Viewport.Height ?? 0;
+        var isLargeJump = IsFullViewportJumpForSmoke(
+            offsetChange, viewportHeight);
+        if (isLargeJump)
+        {
+            var now = Stopwatch.GetTimestamp();
+            var sincePreviousJump = _lastFullViewportJumpTimestamp > 0
+                ? Stopwatch.GetElapsedTime(
+                    _lastFullViewportJumpTimestamp, now)
+                : TimeSpan.MaxValue;
+            _consecutiveFullViewportJumpCount =
+                CountConsecutiveViewportJumpsForSmoke(
+                    _consecutiveFullViewportJumpCount,
+                    sincePreviousJump);
+            _lastFullViewportJumpTimestamp = now;
+        }
+
         var delay = LookaheadDelayForScrollForSmoke(
             _session.Options.PrefetchDelay,
             offsetChange,
-            viewportHeight);
+            viewportHeight,
+            _consecutiveFullViewportJumpCount);
         // Whether geometry belongs to the previous viewport must not
         // depend on the configured delay. If the caller already uses a
         // >=48ms delay, a bulk jump still invalidates same-edge reuse.
-        var isLargeJump = IsFullViewportJumpForSmoke(
-            offsetChange, viewportHeight);
         // A large seek can be reported while the old viewport geometry
         // is still attached. Do not reuse that old same-edge task just
         // because virtualization has not measured the new rows yet.
