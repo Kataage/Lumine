@@ -336,8 +336,15 @@ internal static class Program
             wait.Stop();
             if (CountUnreadyVisibleTiles(viewer) != 0)
             {
+                var viewport = viewer.ViewportReadiness;
+                var diagnostic = viewer.Diagnostics;
                 throw new InvalidOperationException(
-                    "Small-scroll benchmark left unloaded visible tiles after the readiness window.");
+                    $"Small-scroll { (reverse ? "reverse" : "forward") } step {i + 1} left unloaded visible tiles: "
+                    + $"offset={scroller.Offset.Y:F1}, visible={viewport.VisibleTiles}, unready={viewport.UnreadyTiles}, "
+                    + $"attached={diagnostic.AttachedTiles}, ready={diagnostic.ReadyTiles}, "
+                    + $"realizedRows={viewer.RealizedRowCount}, "
+                    + $"first={viewer.FirstVisibleAssetIndex}, last={viewer.LastVisibleAssetIndex}, "
+                    + $"sourceInFlight={diagnostic.InFlightThumbnailRequests}, activeDecodes={diagnostic.ActiveBitmapDecodes}.");
             }
 
             maxWait = Math.Max(
@@ -356,25 +363,12 @@ internal static class Program
     private static int CountUnreadyVisibleTiles(
         ThumbnailViewerControl viewer)
     {
-        if (viewer.FirstVisibleAssetIndex is not { } first
-            || viewer.LastVisibleAssetIndex is not { } last
-            || last < first)
-        {
-            return 1; // Not yet a valid realized/visible viewport.
-        }
-
-        var missing = 0;
-        for (var index = first;
-             index <= Math.Min(last, first + 255);
-             index++)
-        {
-            if (!viewer.IsAssetReady(index))
-            {
-                missing++;
-            }
-        }
-
-        return missing;
+        var actual = viewer.ViewportReadiness;
+        // A viewport without a single realized intersecting tile is
+        // not a successful empty viewport; the layout may be pending.
+        return actual.VisibleTiles > 0
+            ? actual.UnreadyTiles
+            : 1;
     }
 
     private static async Task<CursorIntegrationResult> MeasureLibraryCursorIntegrationAsync(
