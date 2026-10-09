@@ -915,9 +915,22 @@ internal static class Program
             await Task.Delay(1);
         }
 
+        var warmState = viewer.LookaheadDiagnostics;
         Require(
             viewer.IsAssetWarmForSmoke(nextRowIndex),
-            $"Decoded bitmap was not prepared for the next scroll row: first={viewer.FirstRealizedAssetIndex}, rows={viewer.RealizedRowCount}, target={nextRowIndex}.");
+            $"Decoded bitmap was not prepared for the next offscreen row: "
+            + $"firstRealized={viewer.FirstRealizedAssetIndex}, "
+            + $"firstVisible={viewer.FirstVisibleAssetIndex}, "
+            + $"lastVisible={viewer.LastVisibleAssetIndex}, "
+            + $"rows={viewer.RealizedRowCount}, target={nextRowIndex}, "
+            + $"lookaheadScheduled={warmState.Scheduled}, "
+            + $"cancelled={warmState.CancelledBeforeCompletion}, "
+            + $"sourceComplete={warmState.SourcePrefetchCompleted}, "
+            + $"predecodeEligible={warmState.EligibleForPredecode}, "
+            + $"predecoded={warmState.BitmapsPredecoded}, "
+            + $"lastScheduledRow={warmState.LastScheduledRow}, "
+            + $"lastPredecodeIndex={warmState.LastPredecodeStartIndex}, "
+            + $"direction={warmState.LastScheduledDirection}.");
 
         var warmDiagnostics = viewer.LookaheadDiagnostics;
         Require(
