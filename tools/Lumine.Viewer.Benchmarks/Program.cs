@@ -150,7 +150,7 @@ internal static class Program
 
                     using (recorder.Measure(CoreMetricNames.ViewerFirstViewportReady))
                     {
-                        await WaitForViewportReadyAsync(viewer);
+                        await WaitForViewportReadyAsync(viewer, visibleOnly: deferredOverscan);
                     }
 
                     Observe(viewer);
@@ -185,7 +185,7 @@ internal static class Program
                             await Task.Delay(1);
                         }
 
-                        await WaitForViewportReadyAsync(viewer);
+                        await WaitForViewportReadyAsync(viewer, visibleOnly: deferredOverscan);
                         Observe(viewer);
                     }
 
@@ -613,16 +613,31 @@ internal static class Program
             final.CursorCheckpoints);
     }
 
-    private static async Task WaitForViewportReadyAsync(ThumbnailViewerControl viewer)
+    private static async Task WaitForViewportReadyAsync(
+        ThumbnailViewerControl viewer,
+        bool visibleOnly = false)
     {
         for (var attempt = 0; attempt < 1500; attempt++)
         {
             Dispatcher.UIThread.RunJobs();
 
             var diagnostics = viewer.Diagnostics;
-            if (diagnostics.AttachedTiles > 0
-                && diagnostics.ReadyTiles == diagnostics.AttachedTiles
-                && diagnostics.ActiveBitmapDecodes == 0)
+            if (visibleOnly)
+            {
+                // The trial deliberately keeps attached offscreen tiles
+                // idle; they must NOT be considered incomplete viewport
+                // pixels. Still require every actually visible tile ready.
+                var viewport = viewer.ViewportReadiness;
+                if (viewport.VisibleTiles > 0
+                    && viewport.UnreadyTiles == 0
+                    && diagnostics.ActiveBitmapDecodes == 0)
+                {
+                    return;
+                }
+            }
+            else if (diagnostics.AttachedTiles > 0
+                     && diagnostics.ReadyTiles == diagnostics.AttachedTiles
+                     && diagnostics.ActiveBitmapDecodes == 0)
             {
                 return;
             }
@@ -631,8 +646,9 @@ internal static class Program
         }
 
         var final = viewer.Diagnostics;
+        var actual = viewer.ViewportReadiness;
         throw new InvalidOperationException(
-            $"Viewer viewport did not become image-ready: attached={final.AttachedTiles}, ready={final.ReadyTiles}, decodes={final.ActiveBitmapDecodes}, inflight={final.InFlightThumbnailRequests}.");
+            $"Viewer viewport did not become image-ready: visible={actual.VisibleTiles}, unready={actual.UnreadyTiles}, attached={final.AttachedTiles}, ready={final.ReadyTiles}, decodes={final.ActiveBitmapDecodes}, inflight={final.InFlightThumbnailRequests}.");
     }
 
     private static async Task WaitForViewerIdleAsync(ViewerSession session)
