@@ -85,6 +85,16 @@ internal static class Program
         RenderedFrameTileAudit? firstWheelAudit = null;
         RenderedFrameTileAudit? fourthWheelAudit = null;
         long routedWheelEventCount = 0;
+        // Phase checkpoints identify unnecessary work without changing
+        // thumbnail scheduling or resource acceptance thresholds.
+        long requestsAfterInitialViewport = 0;
+        long requestsAfterColdSmallScroll = 0;
+        long requestsAfterFastSeek = 0;
+        long requestsAfterSettledSmallScroll = 0;
+        long requestsBeforeRoutedWheel = 0;
+        long requestsAfterRoutedWheel = 0;
+        long cancelledBeforeRoutedWheel = 0;
+        long cancelledAfterRoutedWheel = 0;
         double firstWheelOffsetDelta = 0;
         double fourthWheelOffsetDelta = 0;
         var priorWheelScrollIntent = 0;
@@ -179,6 +189,8 @@ internal static class Program
                     }
 
                     Observe(viewer);
+                    requestsAfterInitialViewport =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     // One row per small offset change reproduces normal
                     // browsing more closely than the legacy 40 random
@@ -193,6 +205,8 @@ internal static class Program
                             viewer,
                             reverse: true);
                     Observe(viewer);
+                    requestsAfterColdSmallScroll =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     using (recorder.Measure(CoreMetricNames.ViewerFastScrollRefresh))
                     {
@@ -213,6 +227,8 @@ internal static class Program
                         await WaitForViewportReadyAsync(viewer);
                         Observe(viewer);
                     }
+                    requestsAfterFastSeek =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     // Separate the unavoidable immediate first-viewport
                     // race from a normal browsing pause. Jump to a new
@@ -274,6 +290,8 @@ internal static class Program
                             });
                     afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
+                    requestsAfterSettledSmallScroll =
+                        viewer.Diagnostics.ThumbnailRequests;
 
                     if (wheelEvidenceDir is not null)
                     {
@@ -300,6 +318,10 @@ internal static class Program
                             window)
                             ?? throw new InvalidOperationException(
                                 "Wheel probe could not locate a window-relative input point.");
+                        requestsBeforeRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequests;
+                        cancelledBeforeRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequestsCancelled;
                         var beforeWheelEvents = viewer.RoutedWheelEventCount;
                         var beforeWheelOffset = wheelScroller.Offset.Y;
                         priorWheelScrollIntent =
@@ -344,6 +366,10 @@ internal static class Program
                             viewer.Columns,
                             Path.Combine(
                                 evidenceRoot, "fourth-wheel.png"));
+                        requestsAfterRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequests;
+                        cancelledAfterRoutedWheel =
+                            viewer.Diagnostics.ThumbnailRequestsCancelled;
 
                         if (routedWheelEventCount < 4
                             || firstWheelOffsetDelta <= 0
@@ -408,6 +434,19 @@ internal static class Program
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
                     finalTileReadiness = viewer.TileReadiness;
+                    if (wheelEvidenceDir is not null)
+                    {
+                        Console.WriteLine(
+                            "Routed wheel source-work stages: "
+                            + $"firstViewport={requestsAfterInitialViewport}, "
+                            + $"coldSmall={requestsAfterColdSmallScroll}, "
+                            + $"fastSeek={requestsAfterFastSeek}, "
+                            + $"settledSmall={requestsAfterSettledSmallScroll}, "
+                            + $"beforeWheel={requestsBeforeRoutedWheel}, "
+                            + $"afterWheel={requestsAfterRoutedWheel}, "
+                            + $"final={finalDiagnostics.ThumbnailRequests}, "
+                            + $"wheelCancelledDelta={cancelledAfterRoutedWheel - cancelledBeforeRoutedWheel}.");
+                    }
 
                     if (finalDiagnostics.AttachedTiles != 0)
                     {
@@ -486,6 +525,13 @@ internal static class Program
                     ["small_scroll_input_kind"] = "direct-scrollviewer-offset",
                     ["wheel_probe_input_kind"] = wheelEvidenceDir is null ? "not-captured" : "routed-headless-mouse-wheel",
                     ["wheel_probe_routed_event_count"] = routedWheelEventCount.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_first_viewport"] = requestsAfterInitialViewport.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_cold_small"] = requestsAfterColdSmallScroll.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_fast_seek"] = requestsAfterFastSeek.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_settled_small"] = requestsAfterSettledSmallScroll.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_before_input"] = requestsBeforeRoutedWheel.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_checkpoint_after_input"] = requestsAfterRoutedWheel.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_request_cancellations_during_input"] = (cancelledAfterRoutedWheel - cancelledBeforeRoutedWheel).ToString(CultureInfo.InvariantCulture),
                     ["wheel_probe_first_offset_px"] = firstWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
                     ["wheel_probe_fourth_offset_px"] = fourthWheelOffsetDelta.ToString("F3", CultureInfo.InvariantCulture),
                     ["wheel_probe_scroll_intent_before"] = priorWheelScrollIntent.ToString(CultureInfo.InvariantCulture),

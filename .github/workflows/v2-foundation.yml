@@ -303,9 +303,13 @@ jobs:
         run: |
           $result = Get-Content "artifacts/viewer-wheel-input/diagnostic-10000.json" -Raw | ConvertFrom-Json
           $meta = $result.metadata
+          Write-Host "Routed wheel request checkpoints: first=$($meta.wheel_request_checkpoint_first_viewport), cold=$($meta.wheel_request_checkpoint_cold_small), fast=$($meta.wheel_request_checkpoint_fast_seek), settled=$($meta.wheel_request_checkpoint_settled_small), before=$($meta.wheel_request_checkpoint_before_input), after=$($meta.wheel_request_checkpoint_after_input), final=$($meta.thumbnail_requests), cancelled during input=$($meta.wheel_request_cancellations_during_input), limit=1600."
           if ($meta.small_scroll_input_kind -ne "direct-scrollviewer-offset" -or
               $meta.wheel_probe_input_kind -ne "routed-headless-mouse-wheel" -or
               [long]$meta.wheel_probe_routed_event_count -lt 4 -or
+              [long]$meta.wheel_request_checkpoint_after_input -lt [long]$meta.wheel_request_checkpoint_before_input -or
+              [long]$meta.wheel_request_checkpoint_after_input -gt [long]$meta.thumbnail_requests -or
+              [long]$meta.wheel_request_checkpoint_fast_seek -lt [long]$meta.wheel_request_checkpoint_cold_small -or
               [int]$meta.wheel_probe_scroll_intent_after_first -ne 1 -or
               [int]$meta.wheel_probe_scroll_intent_after_fourth -ne 1 -or
               [double]$meta.wheel_probe_first_offset_px -le 0 -or
