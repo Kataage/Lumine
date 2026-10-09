@@ -1,7 +1,8 @@
 param(
     [string]$BenchmarkDirectory = "artifacts/benchmarks",
     [ValidateRange(0, 8)]
-    [int]$ExpectedPrefetchRows = 1
+    [int]$ExpectedPrefetchRows = 1,
+    [bool]$ExpectedViewportCoordinator = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +36,15 @@ foreach ($result in $results) {
     $observedPrefetchRows = [int]$result.metadata.prefetch_rows
     if ($observedPrefetchRows -ne $ExpectedPrefetchRows) {
         throw "$count Viewer expected PrefetchRows=$ExpectedPrefetchRows, got $observedPrefetchRows."
+    }
+    if (($null -eq $result.metadata.viewport_coordinator_trial) -or
+        ([bool]::Parse([string]$result.metadata.viewport_coordinator_trial) -ne $ExpectedViewportCoordinator)) {
+        throw "$count Viewer unexpected viewport-coordinator A/B configuration."
+    }
+    if ($ExpectedViewportCoordinator -and
+        (([long]$result.metadata.viewport_coordinator_revisions -le 0) -or
+         ([long]$result.metadata.viewport_coordinator_plans -le 0))) {
+        throw "$count Viewer trial did not actually activate any viewport plans."
     }
     $firstPaint = Get-Metric $result "viewer.first_paint"
     $firstViewportReady = Get-Metric $result "viewer.first_viewport_ready"
