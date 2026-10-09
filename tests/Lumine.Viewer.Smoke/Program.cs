@@ -1116,19 +1116,51 @@ internal static class Program
                 > edgeRefreshesBefore,
             "Repeated same-direction scroll failed to refresh lookahead when the visible boundary advanced.");
 
+        // The offset listener must ignore any transient edge reported
+        // *behind* an already scheduled row (layout/recycle jitter).
+        // Only a strictly advancing row in the current direction
+        // deserves a new speculative source request.
+        Require(
+            !ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: 1, visibleEdge: 5,
+                lastScheduledEdge: 5, lastScheduledDirection: 1)
+            && !ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: 1, visibleEdge: 4,
+                lastScheduledEdge: 5, lastScheduledDirection: 1)
+            && ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: 1, visibleEdge: 6,
+                lastScheduledEdge: 5, lastScheduledDirection: 1)
+            && !ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: -1, visibleEdge: 6,
+                lastScheduledEdge: 5, lastScheduledDirection: -1)
+            && ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: -1, visibleEdge: 4,
+                lastScheduledEdge: 5, lastScheduledDirection: -1)
+            && !ThumbnailViewerControl.ShouldRefreshViewportEdgeForSmoke(
+                direction: 1, visibleEdge: -1,
+                lastScheduledEdge: 5, lastScheduledDirection: 1),
+            "Lookahead edge refresh did not enforce directional progress.");
+
         var refreshesAtEdge =
             viewer.LookaheadViewportEdgeReschedulesForSmoke;
         var visibleEdgeAtRest = viewer.LastVisibleAssetIndex;
+        var scheduledEdgeAtRest =
+            viewer.LastLookaheadOffsetEdgeForSmoke;
+        var scheduledDirectionAtRest =
+            viewer.LastLookaheadOffsetDirectionForSmoke;
         scrollViewer.Offset = new Vector(
             scrollViewer.Offset.X,
             Math.Min(maxScroll, scrollViewer.Offset.Y + 1));
         Dispatcher.UIThread.RunJobs();
-        if (viewer.LastVisibleAssetIndex == visibleEdgeAtRest)
+        if (viewer.LastVisibleAssetIndex == visibleEdgeAtRest
+            && scheduledDirectionAtRest == 1
+            && scheduledEdgeAtRest >=
+                (int)((visibleEdgeAtRest ?? -1) / viewer.Columns))
         {
             Require(
                 viewer.LookaheadViewportEdgeReschedulesForSmoke
                     == refreshesAtEdge,
-                "Small pixel offsets without a visible edge change repeatedly scheduled background work.");
+                "Small pixel offsets without a progressed visible edge repeatedly scheduled background work.");
         }
 
         // The user-visible missing-thumbnail regression must be
