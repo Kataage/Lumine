@@ -38,8 +38,10 @@ foreach ($result in $results) {
     if ($observedPrefetchRows -ne $ExpectedPrefetchRows) {
         throw "$count Viewer expected PrefetchRows=$ExpectedPrefetchRows, got $observedPrefetchRows."
     }
-    if ($null -eq $result.metadata.realization_buffer_factor
-        -or [math]::Abs([double]$result.metadata.realization_buffer_factor - $ExpectedRealizationBuffer) -gt 0.000001) {
+    if (($null -eq $result.metadata.realization_buffer_factor) -or
+        ([math]::Abs(
+            [double]$result.metadata.realization_buffer_factor -
+            $ExpectedRealizationBuffer) -gt 0.000001)) {
         throw "$count Viewer expected realization buffer $ExpectedRealizationBuffer, got $($result.metadata.realization_buffer_factor)."
     }
     $firstPaint = Get-Metric $result "viewer.first_paint"
@@ -325,8 +327,10 @@ if ($peak100 -gt ($peak10 + 32MB)) {
 Write-Host "Viewer performance acceptance passed."
 foreach ($result in $results) {
     $count = [int]$result.metadata.asset_count
-    if ($null -eq $result.metadata.realization_buffer_factor
-        -or [math]::Abs([double]$result.metadata.realization_buffer_factor - $ExpectedRealizationBuffer) -gt 0.000001) {
+    if (($null -eq $result.metadata.realization_buffer_factor) -or
+        ([math]::Abs(
+            [double]$result.metadata.realization_buffer_factor -
+            $ExpectedRealizationBuffer) -gt 0.000001)) {
         throw "$count Viewer expected realization buffer $ExpectedRealizationBuffer, got $($result.metadata.realization_buffer_factor)."
     }
     $firstPaint = Get-Metric $result "viewer.first_paint"
