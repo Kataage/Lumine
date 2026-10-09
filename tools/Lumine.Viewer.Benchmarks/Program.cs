@@ -86,6 +86,9 @@ internal static class Program
         var maxRealizedRows = 0;
         var maxAttachedTiles = 0;
         var maxReadyTiles = 0;
+        var maxDeferredPending = 0;
+        (long Registered, long Activated, long Discarded, int Pending)
+            finalDeferred = default;
         var maxDecodedBitmapEntries = 0;
         long maxDecodedBitmapBytes = 0;
         var maxConcurrentBitmapDecodes = 0;
@@ -244,6 +247,12 @@ internal static class Program
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
                     finalTileReadiness = viewer.TileReadiness;
+                    finalDeferred = viewer.DeferredOverscanDiagnostics;
+                    if (finalDeferred.Pending != 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Deferred offscreen tiles leaked at shutdown: {finalDeferred.Pending}.");
+                    }
 
                     if (finalDiagnostics.AttachedTiles != 0)
                     {
@@ -262,6 +271,9 @@ internal static class Program
                     void Observe(ThumbnailViewerControl control)
                     {
                         var diagnostics = control.Diagnostics;
+                        maxDeferredPending = Math.Max(
+                            maxDeferredPending,
+                            control.DeferredOverscanDiagnostics.Pending);
 
                         maxRealizedRows = Math.Max(
                             maxRealizedRows,
@@ -314,6 +326,10 @@ internal static class Program
                     ["max_realized_rows"] = maxRealizedRows.ToString(CultureInfo.InvariantCulture),
                     ["max_attached_tiles"] = maxAttachedTiles.ToString(CultureInfo.InvariantCulture),
                     ["max_ready_tiles"] = maxReadyTiles.ToString(CultureInfo.InvariantCulture),
+                    ["overscan_deferred_registered"] = finalDeferred.Registered.ToString(CultureInfo.InvariantCulture),
+                    ["overscan_deferred_activated"] = finalDeferred.Activated.ToString(CultureInfo.InvariantCulture),
+                    ["overscan_deferred_discarded"] = finalDeferred.Discarded.ToString(CultureInfo.InvariantCulture),
+                    ["overscan_deferred_max_pending"] = maxDeferredPending.ToString(CultureInfo.InvariantCulture),
                     ["max_decoded_bitmap_entries"] = maxDecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["max_decoded_bitmap_bytes"] = maxDecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
