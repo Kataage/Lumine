@@ -103,6 +103,11 @@ public sealed class ThumbnailViewerControl : UserControl
     // Monotonic timestamps make this independent of wall-clock changes.
     private long _lastFullViewportJumpTimestamp;
     private int _consecutiveFullViewportJumpCount;
+    // A programmatic ScrollIntoView can attach rows before its scroller
+    // Offset reflects the new position. Track explicit far seeks at the
+    // call site so stale interim geometry cannot bypass coalescing.
+    private long _lastFarProgrammaticSeekTimestamp;
+    private int _consecutiveFarProgrammaticSeeks;
     private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
@@ -1020,7 +1025,35 @@ public sealed class ThumbnailViewerControl : UserControl
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
-        _rows.ScrollIntoView(checked((int)(index / _columns)));
+        var row = checked((int)(index / _columns));
+        if (IsFarProgrammaticTargetForSmoke(
+                GetFirstVisibleRowIndex(),
+                GetLastVisibleRowIndex(),
+                row))
+        {
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = _lastFarProgrammaticSeekTimestamp > 0
+                ? Stopwatch.GetElapsedTime(
+                    _lastFarProgrammaticSeekTimestamp, now)
+                : TimeSpan.MaxValue;
+            _consecutiveFarProgrammaticSeeks =
+                CountConsecutiveViewportJumpsForSmoke(
+                    _consecutiveFarProgrammaticSeeks, elapsed);
+            _lastFarProgrammaticSeekTimestamp = now;
+            // Cancel speculative work immediately rather than allowing
+            // an old 8/48ms timer to admit source requests before the
+            // virtualized row attachments trigger a new schedule.
+            CancelLookahead();
+        }
+        else
+        {
+            // Nearby programmatic navigation must not inherit a prior
+            // burst's background debounce.
+            _consecutiveFarProgrammaticSeeks = 0;
+            _lastFarProgrammaticSeekTimestamp = 0;
+        }
+
+        _rows.ScrollIntoView(row);
     }
 
     public async Task DrainBitmapReleasesAsync()
@@ -1489,6 +1522,8 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        _lastFarProgrammaticSeekTimestamp = 0;
+        _consecutiveFarProgrammaticSeeks = 0;
         _lastFullViewportJumpTimestamp = 0;
         _consecutiveFullViewportJumpCount = 0;
         _lastLookaheadScheduledOffsetY = double.NaN;
@@ -1711,6 +1746,10 @@ public sealed class ThumbnailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
+        // Real wheel input is never a continuation of a programmatic
+        // far-seek burst. Keep its normal short lookahead delay.
+        _consecutiveFarProgrammaticSeeks = 0;
+        _lastFarProgrammaticSeekTimestamp = 0;
         Interlocked.Increment(ref _routedWheelEvents);
         SetLookaheadDirection(-e.Delta.Y);
     }
@@ -1741,6 +1780,8 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
+            _lastFarProgrammaticSeekTimestamp = 0;
+            _consecutiveFarProgrammaticSeeks = 0;
             _lastFullViewportJumpTimestamp = 0;
             _consecutiveFullViewportJumpCount = 0;
             _lastLookaheadScheduledOffsetY = double.NaN;
@@ -1872,6 +1913,37 @@ public sealed class ThumbnailViewerControl : UserControl
                     consecutiveFullViewportJumps >= 2 ? 160 : 48))
             : normalDelay;
 
+    internal static bool IsFarProgrammaticTargetForSmoke(
+        int firstVisibleRow,
+        int lastVisibleRow,
+        int targetRow)
+    {
+        if (targetRow < 0
+            || firstVisibleRow < 0
+            || lastVisibleRow < firstVisibleRow)
+        {
+            return false;
+        }
+
+        var visibleRows = (long)lastVisibleRow - firstVisibleRow + 1;
+        return targetRow < (long)firstVisibleRow - visibleRows
+            || targetRow > (long)lastVisibleRow + visibleRows;
+    }
+
+    internal static TimeSpan ProgrammaticSeekLookaheadDelayForSmoke(
+        TimeSpan baseDelay,
+        int consecutiveFarSeeks)
+    {
+        if (consecutiveFarSeeks <= 0)
+        {
+            return baseDelay;
+        }
+
+        var floor = consecutiveFarSeeks >= 2 ? 160 : 48;
+        return TimeSpan.FromMilliseconds(
+            Math.Max(baseDelay.TotalMilliseconds, floor));
+    }
+
     internal static int CountConsecutiveViewportJumpsForSmoke(
         int previousCount,
         TimeSpan sincePreviousJump) =>
@@ -1918,6 +1990,19 @@ public sealed class ThumbnailViewerControl : UserControl
             offsetChange,
             viewportHeight,
             _consecutiveFullViewportJumpCount);
+        // A ScrollToAsset jump can attach a new row before ScrollViewer
+        // changes its Offset, so the geometry-based large-jump branch
+        // above may incorrectly see zero. Honour explicit far-seek
+        // admission as well, but only while the seek is recent.
+        if (_lastFarProgrammaticSeekTimestamp > 0
+            && Stopwatch.GetElapsedTime(
+                _lastFarProgrammaticSeekTimestamp)
+                < TimeSpan.FromMilliseconds(250))
+        {
+            delay = ProgrammaticSeekLookaheadDelayForSmoke(
+                delay, _consecutiveFarProgrammaticSeeks);
+        }
+
         // Whether geometry belongs to the previous viewport must not
         // depend on the configured delay. If the caller already uses a
         // >=48ms delay, a bulk jump still invalidates same-edge reuse.

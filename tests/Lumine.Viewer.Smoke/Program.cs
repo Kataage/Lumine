@@ -1389,6 +1389,37 @@ internal static class Program
                 == normalLookaheadDelay,
             "Lookahead seek debounce improperly slows small/reverse wheel input or ignores a full-viewport jump.");
 
+        // ScrollToAsset can attach virtualized rows before Offset catches
+        // up. Explicit target-distance classification must still detect
+        // far direct navigation with stale visible geometry, and must
+        // never slow near movement, a mounted initial page, or user wheel.
+        Require(
+            ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 500)
+            && ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 20)
+            && !ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 108)
+            && !ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: -1, lastVisibleRow: -1,
+                targetRow: 500)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 0)
+                == TimeSpan.FromMilliseconds(8)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 1)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 2)
+                == TimeSpan.FromMilliseconds(160)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(200), consecutiveFarSeeks: 2)
+                == TimeSpan.FromMilliseconds(200),
+            "Programmatic far-seek lookahead did not coalesce stale-geometry source work.");
+
         // Multiple large seeks separated by <250ms form one burst:
         // cancel old speculative requests and debounce discarded pages.
         // First isolated seeks and all 50px forward/reverse wheel input
