@@ -1892,8 +1892,8 @@ public sealed class ThumbnailViewerControl : UserControl
         var dimension = (long)options.DecodedThumbnailMaxDimension;
         var worstCaseBytesPerEntry = dimension * dimension * 4L;
         return combinedEntries <= options.DecodedBitmapEntryLimit
-            && combinedEntries * worstCaseBytesPerEntry
-                <= options.DecodedBitmapByteLimit;
+            && combinedEntries <= options.DecodedBitmapByteLimit
+                / worstCaseBytesPerEntry;
     }
 
     private async Task PredecodeNextRowAsync(
