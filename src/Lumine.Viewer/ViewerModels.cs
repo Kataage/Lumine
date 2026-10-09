@@ -152,6 +152,15 @@ public sealed class ViewerOptions
     // viewport itself is always loaded at Foreground priority.
     public int PrefetchRows { get; init; } = 2;
 
+    // Experimental native Avalonia control realization overscan.
+    // Zero keeps the stock ListBox items panel; production default OFF.
+    public double RealizationBufferFactor { get; init; } = 0;
+
+    // Realize the overscan controls without starting a foreground
+    // thumbnail I/O request until the control enters the viewport.
+    // Never enable unless a realization buffer is explicitly configured.
+    public bool DeferOverscanTileLoads { get; init; } = false;
+
     // Give foreground requests a brief chance to enqueue, but do not
     // require all visible tiles to finish before warming adjacent rows.
     public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(8);
