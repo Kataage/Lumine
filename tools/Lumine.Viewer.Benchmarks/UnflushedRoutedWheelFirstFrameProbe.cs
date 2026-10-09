@@ -184,8 +184,15 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
                 .AsSpan()
                 .SequenceEqual(SHA256.HashData(
                     File.ReadAllBytes(postDispatchPath)));
+        // One normal wheel notch exposes a NEW row only near the bottom
+        // (y764+ in our fixed 1200x800 fixture). The legacy y710 sample
+        // crosses the previous row's caption gradient and cannot
+        // discriminate a thumbnail from an unfinished slot. Use y780
+        // only for this new one-notch proof, leaving other probes alone.
+        const double firstNotchRevealedRowFraction = 0.975;
         var postDispatchAudit = RenderedFrameTileAudit.Inspect(
-            postDispatchPath, viewer.Columns);
+            postDispatchPath, viewer.Columns,
+            sampleFraction: firstNotchRevealedRowFraction);
         // The compositor witness alone is not sufficient: an overlay
         // repaint must not count as successful viewport scrolling while
         // the underlying gallery raster is stale. Compare interior
@@ -207,7 +214,8 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
         }
 
         var settledAudit = RenderedFrameTileAudit.Inspect(
-            settledPath, viewer.Columns);
+            settledPath, viewer.Columns,
+            sampleFraction: firstNotchRevealedRowFraction);
         if (firstAudit.SampledColumns != 7
             || firstAudit.OtherSamples != 0
             || postDispatchAudit.SampledColumns != 7
@@ -240,7 +248,7 @@ internal static class UnflushedRoutedWheelFirstFrameProbe
 
     // Count visibly changed samples in the gallery interior only.
     // The fixtures repeat monochrome blue thumbnails, but their asset
-    // captions and row geometry change after the 200px routed offset.
+    // captions and row geometry change after the routed wheel notch.
     // Ignore the top-right witness, scrollbar and window perimeter.
     // The changed-sample threshold is independently audited in CI.
     private static int CountChangedViewerSamples(
