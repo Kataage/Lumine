@@ -1784,10 +1784,12 @@ public sealed class ThumbnailViewerControl : UserControl
 
             Interlocked.Increment(ref _lookaheadSourcesComplete);
 
-            // Source prefetch alone is not enough: a tile still has to
-            // decode an Avalonia Bitmap when the user reaches it.
-            // Only decode one next row after current visible work is
-            // ready, leaving foreground decode capacity untouched.
+            // ScrollIntoView can jump upward from a far-away position.
+            // Its last offset direction is NOT the user's next scroll
+            // intent. Prefetch sources on both sides above, then decode
+            // the preferred next row first and, only with ample pinned
+            // viewport capacity, the opposite adjacent row as well.
+            // Never let speculative decoding compete with foreground.
             var nextRowCount = Math.Min(
                 columns,
                 Math.Min(8, session.Options.DecodedBitmapEntryLimit / 8));
@@ -1795,9 +1797,6 @@ public sealed class ThumbnailViewerControl : UserControl
                 rowIndex,
                 direction);
             var warmStartIndex = checked(warmRow * columns);
-            Interlocked.Exchange(
-                ref _lookaheadLastPredecodeStartIndex,
-                warmStartIndex);
             if (nextRowCount > 0
                 && warmStartIndex >= 0
                 && warmStartIndex < session.Count)
@@ -1812,6 +1811,9 @@ public sealed class ThumbnailViewerControl : UserControl
                     {
                         Interlocked.Increment(
                             ref _lookaheadPredecodeEligible);
+                        Interlocked.Exchange(
+                            ref _lookaheadLastPredecodeStartIndex,
+                            warmStartIndex);
                         await PredecodeNextRowAsync(
                             session,
                             warmStartIndex,
@@ -1819,6 +1821,41 @@ public sealed class ThumbnailViewerControl : UserControl
                                 session.Count - warmStartIndex,
                                 nextRowCount)),
                             cancellationToken).ConfigureAwait(false);
+
+                        // One extra row is the absolute upper bound. Use
+                        // the worst-case configured decoded square pixel
+                        // size to guarantee the attached visible set and
+                        // both prospective rows can fit within entry and
+                        // byte budgets even while all are leased.
+                        var oppositeStart = checked(
+                            ResolveLookaheadRowForSmoke(
+                                rowIndex, -direction) * columns);
+                        if (oppositeStart >= 0
+                            && oppositeStart < session.Count
+                            && HasSecondaryWarmCapacityForSmoke(
+                                session.Options,
+                                state.AttachedTiles,
+                                nextRowCount))
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var beforeSecondary = session.Diagnostics;
+                            if (beforeSecondary.ReadyTiles
+                                    >= beforeSecondary.AttachedTiles
+                                && beforeSecondary.ActiveBitmapDecodes == 0)
+                            {
+                                Interlocked.Exchange(
+                                    ref _lookaheadLastPredecodeStartIndex,
+                                    oppositeStart);
+                                await PredecodeNextRowAsync(
+                                    session,
+                                    oppositeStart,
+                                    checked((int)Math.Min(
+                                        session.Count - oppositeStart,
+                                        nextRowCount)),
+                                    cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+
                         break;
                     }
 
@@ -1834,6 +1871,29 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    internal static bool HasSecondaryWarmCapacityForSmoke(
+        ViewerOptions options,
+        int attachedTiles,
+        int nextRowCount)
+    {
+        // Avoid checked arithmetic overflow for invalid/excessive caller
+        // dimensions; no speculative decode when the budget is unknown.
+        if (options.DecodedThumbnailMaxDimension is <= 0 or > 32768
+            || attachedTiles < 0
+            || nextRowCount <= 0)
+        {
+            return false;
+        }
+
+        var combinedEntries = (long)attachedTiles
+            + 2L * nextRowCount;
+        var dimension = (long)options.DecodedThumbnailMaxDimension;
+        var worstCaseBytesPerEntry = dimension * dimension * 4L;
+        return combinedEntries <= options.DecodedBitmapEntryLimit
+            && combinedEntries * worstCaseBytesPerEntry
+                <= options.DecodedBitmapByteLimit;
     }
 
     private async Task PredecodeNextRowAsync(
