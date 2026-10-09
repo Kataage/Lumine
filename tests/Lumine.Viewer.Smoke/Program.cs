@@ -1190,6 +1190,20 @@ internal static class Program
                 "Small pixel offsets without a progressed visible edge repeatedly scheduled background work.");
         }
 
+        // Every newly attached tile attempts exactly one warm lookup.
+        // Missing speculative descriptors and unavailable decoded Bitmap
+        // entries are distinct root causes and must add up with hits.
+        var warmLookup = viewer.WarmPresentationDiagnostics;
+        Require(
+            warmLookup.LookupAttempts > 0
+            && warmLookup.Hits > 0
+            && warmLookup.MissingDescriptor > 0
+            && warmLookup.LookupAttempts
+                == warmLookup.Hits
+                   + warmLookup.MissingDescriptor
+                   + warmLookup.BitmapUnavailable,
+            "Warm presentation lookup accounting lost or duplicated a tile attempt.");
+
         // The user-visible missing-thumbnail regression must be
         // instrumented as UI bitmap-source assignment latency, with
         // metadata / thumbnail source / decoded bitmap stages separate.
