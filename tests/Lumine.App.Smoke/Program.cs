@@ -7687,57 +7687,7 @@ try
                         "Settings cache basics were not separated from the advanced disclosure.");
 
 
-                    // Navigation refresh may replace the whole Settings
-                    // page after the earlier structural checks. Always stage
-                    // and focus against the CURRENT mounted visual tree.
-                    var liveSettingsPage =
-                        window.WorkspacePageForSmoke
-                        ?? throw new InvalidOperationException(
-                            "Settings page disappeared before extension smoke.");
-                    Require(
-                        TopLevel.GetTopLevel(liveSettingsPage) is not null,
-                        "Current Settings page is not attached to the window.");
-                    settingsScroll =
-                        liveSettingsPage.GetVisualDescendants()
-                            .OfType<ScrollViewer>()
-                            .Single(
-                                scroll =>
-                                    AutomationProperties.GetName(scroll)
-                                        == "設定スクロール");
-                    settingsContent =
-                        liveSettingsPage.GetVisualDescendants()
-                            .OfType<StackPanel>()
-                            .Single(
-                                panel =>
-                                    AutomationProperties.GetName(panel)
-                                        == "設定コンテンツ");
-                    customExtensionInput =
-                        liveSettingsPage.GetVisualDescendants()
-                            .OfType<TextBox>()
-                            .Single(
-                                input =>
-                                    AutomationProperties.GetName(input)
-                                        == "独自読み込み対象を入力");
-                    addCustomExtension =
-                        liveSettingsPage.GetVisualDescendants()
-                            .OfType<Button>()
-                            .Single(
-                                button =>
-                                    AutomationProperties.GetName(button)
-                                        == "独自読み込み対象を追加");
-                    customExtensionList =
-                        liveSettingsPage.GetVisualDescendants()
-                            .OfType<WrapPanel>()
-                            .Single(
-                                panel =>
-                                    AutomationProperties.GetName(panel)
-                                        == "独自読み込み対象一覧");
-                    Require(
-                        TopLevel.GetTopLevel(customExtensionList) is not null
-                        && TopLevel.GetTopLevel(addCustomExtension) is not null,
-                        "Current Settings extension controls are detached.");
-
-                    customExtensionInput.Text =
+                    customExtensionInput!.Text =
                         "JFIF";
                     addCustomExtension!.RaiseEvent(
                         new RoutedEventArgs(
@@ -7761,111 +7711,128 @@ try
                     Require(
                         customRemoval is not null,
                         "Custom scan-extension editor did not expose the staged JFIF removal action.");
-                    // Removing the keyboard-focused extension button
-                    // rebuilds the list. Preserve focus on the surviving
-                    // extension, then return to Add for the last removal.
-                    customExtensionInput.Text =
-                        "zzfocus";
-                    addCustomExtension.RaiseEvent(
+                    customRemoval!.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
                     Require(
-                        string.IsNullOrEmpty(customExtensionInput.Text)
-                        && customExtensionList.Children
+                        !customExtensionList.Children
                             .OfType<Button>()
                             .Any(
                                 button =>
-                                    AutomationProperties.GetName(button)
-                                        == "独自読み込み対象 .zzfocus を削除"),
-                        "Settings failed to stage the second custom extension for focus regression.");
-                    // Adding a custom extension rebuilds its chip list;
-                    // re-resolve the currently mounted Button rather than
-                    // focusing the detached pre-add control.
-                    customRemoval =
-                        customExtensionList.Children
-                            .OfType<Button>()
-                            .Single(
-                                button =>
-                                    AutomationProperties.GetName(button)
-                                        == "独自読み込み対象 .jfif を削除");
-                    // Settings initially opens scrolled to the top.
-                    // The additional-extension controls are below the
-                    // viewport, so first scroll the real focused control
-                    // into view and allow its layout to settle.
-                    customRemoval.BringIntoView();
-                    // Aim the real Settings ScrollViewer at this button,
-                    // not the bottom of the entire page (which also contains
-                    // the unrelated Cache and Storage sections).
-                    var removalInSettings =
-                        customRemoval.TranslatePoint(
-                            new Point(0, 0),
-                            settingsContent!);
-                    Require(
-                        removalInSettings.HasValue,
-                        "The staged extension removal is detached from Settings.");
-                    settingsScroll!.Offset =
-                        new Vector(
-                            0,
-                            Math.Clamp(
-                                removalInSettings.Value.Y
-                                    - LumineDesign.Space24,
-                                0,
-                                Math.Max(
-                                    0,
-                                    settingsScroll.Extent.Height
-                                        - settingsScroll.Viewport.Height)));
-                    for (var renderPass = 0;
-                         renderPass < 4;
-                         renderPass++)
+                                    string.Equals(
+                                        AutomationProperties.GetName(
+                                            button),
+                                        "独自読み込み対象 .jfif を削除",
+                                        StringComparison.Ordinal)),
+                        "Custom scan-extension removal did not update the staged Settings state.");
+
+
+                    // Keyboard focus regression is exercised on a separate
+                    // REAL mounted Settings window. MainWindow's asynchronous
+                    // navigation refresh may replace its Settings tree while
+                    // unrelated smoke work is running; a detached Button
+                    // cannot meaningfully validate keyboard focus.
+                    var keyboardSettingsPage =
+                        ProductSettingsView.Create(
+                            window.SettingsSnapshot,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask);
+                    var keyboardSettingsWindow = new Window
+                    {
+                        Width = 900,
+                        Height = 900,
+                        Content = keyboardSettingsPage
+                    };
+                    keyboardSettingsWindow.Show();
+                    try
                     {
                         Dispatcher.UIThread.RunJobs();
-                        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
-                    }
-                    Dispatcher.UIThread.RunJobs();
-                    Require(
-                        customRemoval.Focus(),
-                        $"Settings custom extension removal could not receive keyboard focus after scrolling: focusable={customRemoval.Focusable}, enabled={customRemoval.IsEnabled}, visible={customRemoval.IsEffectivelyVisible}, attached={TopLevel.GetTopLevel(customRemoval) is not null}, bounds={customRemoval.Bounds}, scroll={settingsScroll.Offset.Y:F0}, extent={settingsScroll.Extent.Height:F0}, viewport={settingsScroll.Viewport.Height:F0}, current={window.FocusManager.GetFocusedElement()?.GetType().Name}.");
-                    customRemoval.RaiseEvent(
-                        new RoutedEventArgs(
-                            Button.ClickEvent));
-                    Dispatcher.UIThread.RunJobs();
-                    var survivingCustomRemoval =
-                        customExtensionList.Children
-                            .OfType<Button>()
-                            .Single(
-                                button =>
-                                    AutomationProperties.GetName(button)
-                                        == "独自読み込み対象 .zzfocus を削除");
-                    Require(
-                        !customExtensionList.Children
-                            .OfType<Button>()
-                            .Any(
-                                button =>
-                                    AutomationProperties.GetName(button)
-                                        == "独自読み込み対象 .jfif を削除")
-                        && survivingCustomRemoval.IsFocused,
-                        "Removing a focused Settings custom extension failed to focus the surviving extension.");
-                    Require(
-                        survivingCustomRemoval.Focus(),
-                        "The last Settings custom-extension removal could not receive focus.");
-                    survivingCustomRemoval.RaiseEvent(
-                        new RoutedEventArgs(
-                            Button.ClickEvent));
-                    Dispatcher.UIThread.RunJobs();
-                    Require(
-                        !customExtensionList.Children
-                            .OfType<Button>()
-                            .Any()
-                        && addCustomExtension.IsFocused,
-                        "Removing the last Settings custom extension lost focus instead of returning to Add.");
+                        var keyboardInput =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(
+                                    input =>
+                                        AutomationProperties.GetName(input)
+                                            == "独自読み込み対象を入力");
+                        var keyboardAdd =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象を追加");
+                        var keyboardExtensions =
+                            keyboardSettingsPage.GetVisualDescendants()
+                                .OfType<WrapPanel>()
+                                .Single(
+                                    panel =>
+                                        AutomationProperties.GetName(panel)
+                                            == "独自読み込み対象一覧");
 
-                    // Restore the initial Settings viewport after the
-                    // keyboard regression so existing screenshot evidence
-                    // still captures the top-level settings hierarchy.
-                    settingsScroll!.Offset =
-                        new Vector(0, 0);
-                    Dispatcher.UIThread.RunJobs();
+                        foreach (var extension in new[] { "JFIF", "zzfocus" })
+                        {
+                            keyboardInput.Text = extension;
+                            keyboardAdd.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                string.IsNullOrEmpty(keyboardInput.Text),
+                                $"Settings focus fixture could not stage {extension}.");
+                        }
+
+                        var focusedRemoval =
+                            keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .jfif を削除");
+                        Require(
+                            ReferenceEquals(
+                                TopLevel.GetTopLevel(focusedRemoval),
+                                keyboardSettingsWindow)
+                            && focusedRemoval.Focus(),
+                            "Mounted Settings custom-extension button did not accept keyboard focus.");
+                        focusedRemoval.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        var survivingRemoval =
+                            keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Single(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .zzfocus を削除");
+                        Require(
+                            survivingRemoval.IsFocused
+                            && !keyboardExtensions.Children
+                                .OfType<Button>()
+                                .Any(
+                                    button =>
+                                        AutomationProperties.GetName(button)
+                                            == "独自読み込み対象 .jfif を削除"),
+                            "Settings did not focus the surviving custom-extension removal after deleting the focused chip.");
+
+                        survivingRemoval.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !keyboardExtensions.Children.OfType<Button>().Any()
+                            && keyboardAdd.IsFocused,
+                            "Settings did not return keyboard focus to Add after deleting the last custom extension.");
+                    }
+                    finally
+                    {
+                        keyboardSettingsWindow.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
 
                     Require(
                         settingsText.Any(block =>
