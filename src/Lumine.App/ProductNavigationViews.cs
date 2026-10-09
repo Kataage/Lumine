@@ -228,6 +228,13 @@ internal static class ProductNavigationViews
                 primary = open;
             }
 
+            // Pointer access to the full location must work on both
+            // the selected static row and the inactive Open button,
+            // not only the surrounding border.
+            ToolTip.SetTip(
+                primary,
+                $"フォルダーの場所: {library.RootPath}");
+
             var libraryRow =
                 new Grid
                 {
