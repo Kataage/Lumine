@@ -876,6 +876,66 @@ internal static class Program
                 > warmHitsBeforeForward,
             "Small scroll failed to reuse an already decoded next-row thumbnail.");
 
+        // The directional lookahead target must remain bounded and
+        // symmetric; at the start of the library reverse predecode
+        // is intentionally skipped rather than accessing index -1.
+        Require(
+            ThumbnailViewerControl.ResolveLookaheadRowForSmoke(5, 1) == 6
+            && ThumbnailViewerControl.ResolveLookaheadRowForSmoke(5, -1) == 4
+            && ThumbnailViewerControl.ResolveLookaheadRowForSmoke(0, -1) == -1,
+            "Lookahead failed to choose the neighbor in the scroll direction.");
+
+        // Unlike ScrollToAsset, a small offset adjustment exercises
+        // the real inner ScrollViewer's routed ScrollChanged event.
+        // This also covers keyboard/scrollbar/touch direction changes,
+        // rather than assuming the next scroll is always downward.
+        var scrollViewer =
+            viewer.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Viewer has no mounted ScrollViewer for wheel-direction smoke.");
+        var maxScroll =
+            Math.Max(0, scrollViewer.Extent.Height
+                - scrollViewer.Viewport.Height);
+        var newOffset = Math.Min(
+            maxScroll,
+            scrollViewer.Offset.Y + 160);
+        Require(
+            newOffset > 80,
+            "Direction test needs sufficient scrollable gallery height.");
+        scrollViewer.Offset = new Vector(
+            scrollViewer.Offset.X,
+            newOffset);
+        for (var attempt = 0;
+             attempt < 60
+             && viewer.LookaheadDirectionForSmoke != 1;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.LookaheadDirectionForSmoke == 1,
+            "A positive ScrollViewer offset failed to select forward lookahead.");
+
+        scrollViewer.Offset = new Vector(
+            scrollViewer.Offset.X,
+            Math.Max(0, newOffset - 100));
+        for (var attempt = 0;
+             attempt < 100
+             && viewer.LookaheadDirectionForSmoke != -1;
+             attempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Require(
+            viewer.LookaheadDirectionForSmoke == -1,
+            "A reverse ScrollViewer offset did not switch lookahead priority.");
+
         // The user-visible missing-thumbnail regression must be
         // instrumented as UI bitmap-source assignment latency, with
         // metadata / thumbnail source / decoded bitmap stages separate.
