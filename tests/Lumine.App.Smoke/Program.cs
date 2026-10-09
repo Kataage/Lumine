@@ -5053,9 +5053,11 @@ try
                         static (account, _, _, _) =>
                             Task.FromResult<PublicationAccountInfo?>(
                                 account),
+                    // This adapter is in-memory: exercise successful
+                    // deletion without modifying the persisted fixture.
                     deleteAccount:
                         static _ =>
-                            Task.FromResult(false),
+                            Task.FromResult(true),
                     deletePublication:
                         static _ =>
                             Task.FromResult(false));
@@ -5180,6 +5182,55 @@ try
                 publicationHistoryAction.IsFocused
                 && !publicationSettingsCommand.IsFocused,
                 "Publication flyout restoration stole newer history action focus.");
+
+            // Deleting a keyboard-focused account must not strand focus
+            // on a disabled/detached Button after RenderAccounts rebuilds.
+            Require(
+                publicationSettingsCommand.Focus(),
+                "Publication settings could not focus before account removal.");
+            publicationSettingsFlyout.ShowAt(
+                publicationSettingsCommand);
+            Dispatcher.UIThread.RunJobs();
+            var accountDelete =
+                publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            AutomationProperties.GetName(button)
+                                == "公開アカウントを削除: App Smoke Account");
+            accountDelete.BringIntoView();
+            Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                accountDelete.Focus(),
+                $"Publication account Remove did not receive focus: attached={TopLevel.GetTopLevel(accountDelete) is not null}, enabled={accountDelete.IsEnabled}, visible={accountDelete.IsEffectivelyVisible}.");
+            accountDelete.RaiseEvent(
+                new RoutedEventArgs(
+                    Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+            var accountAdd =
+                publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(
+                        button =>
+                            button.Content as string
+                                == "アカウントを追加");
+            Require(
+                publicationSettingsFlyout.IsOpen
+                && accountAdd.IsFocused
+                && !publicationSettingsForm
+                    .GetVisualDescendants()
+                    .OfType<Button>()
+                    .Any(
+                        button =>
+                            AutomationProperties.GetName(button)
+                                == "公開アカウントを削除: App Smoke Account"),
+                $"Publication account deletion focus failed: open={publicationSettingsFlyout.IsOpen}, addFocused={accountAdd.IsFocused}, addEnabled={accountAdd.IsEnabled}, addAttached={TopLevel.GetTopLevel(accountAdd) is not null}, rowExists={publicationSettingsForm.GetVisualDescendants().OfType<Button>().Any(button => AutomationProperties.GetName(button) == "公開アカウントを削除: App Smoke Account")}, focused={TopLevel.GetTopLevel(accountAdd)?.FocusManager?.GetFocusedElement()?.GetType().Name}.");
+            publicationSettingsFlyout.Hide();
+            Dispatcher.UIThread.RunJobs();
 
             managedPublicationWindow.Close();
             Dispatcher.UIThread.RunJobs();
