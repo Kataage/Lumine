@@ -49,3 +49,22 @@ Snapshot the visible geometry and revision once per coalesced update; do not hav
 - Physical Windows owner mouse wheel/GPU compositor validation remains mandatory before Issue #634 can be closed.
 
 **Stage 1 is a contract and unit-tested cancellation primitive, not a completed performance fix.**
+
+
+## Stage 2 A/B verdict — PR #654 rejected, not a production fix
+
+[PR #654](https://github.com/Kataage/Lumine/pull/654) attempted to connect the stage-1 planner to the runtime, with the new route **opt-in** and the existing legacy lookahead disabled in that route. Its measured [Windows CI #37952664978](https://github.com/Kataage/Lumine/actions/runs/37952664978) **failed** at the original settled-forward requirement: `10000 Viewer settled forward scrolling still reused no decoded next-row bitmaps.` The test is **not** a no-op: each 10k/50k/100k trial reported 105 plan revisions, 58 activated plans and 7 predecoded Bitmaps. The 200ms-dwell **three-step** unready UI counts were, control → experimental route, **17→21 / 18→21 / 19→14**, while thumbnail source requests were **1400→1456 / 1368→1484 / 1366→1451**. The cache peak stayed 33,030,144 bytes, within 32 MiB.
+
+The independent, screenshot-perturbed **first-offset Skia raster** A/B artifact `lumine-viewport-coordinator-frames-37952664978` was substantially worse: **7 blue painted thumbnail centers, 0 dark placeholders** in the existing control; **0 blue, 7 dark placeholders** in the new scheduler (1200×800, y=710). The trial's warm-lookups were **0 hits, 21 descriptor-absent** at 10k. This is a direct **rendered-pixel** regression even though the source-request and Bitmap byte limits passed.
+
+The logged pre-scroll `LastScheduledDirection=-1` after a distant programmatic jump is **opposite** the subsequent synthetic forward scrollbar motion. It explains *which neighbor was speculatively decoded*, but cannot alone prove all causes of the first-offset black raster. A single-sided neighbor selection that infers browsing intent from a previous large seek is not a valid universal replacement for the legacy two-sided warmup. The trial was **closed unmerged**; stage-1 planner/cancellation primitives remain in `develop` without runtime activation.
+
+### Non-negotiable follow-up gates
+
+1. Compare **actual rendered first-offset pixels** for matched 10k synthetic control/trial; must never have **more black placeholders or fewer painted thumbnails** than the control. When the control has black placeholders, demand a **strict raster improvement**, not mere resource-limit compliance. Current fixture uses `RenderedFrameTileAudit`, a known blue/dark per-column classifier; it is **not** a generic photograph classifier or actual GPU-present fence.
+2. Compare against the original **full** 10k/50k/100k first paint, settled/cold forward/reverse, 100k fast scroll, memory, lifecycle and NativeAOT/portable policies; no performance threshold, request allowance or decoded Bitmap cap may be increased.
+3. Capture **browsing intent before layout/offset mutation**, and explicitly distinguish wheel/trackpad, scrollbar, programmatic seek and direction-unknown cases. Do not treat a large seek's displacement sign as the next scroll direction.
+4. Instrument **time at which a specific soon-visible index was selected for prefetch, its source completion, decoded cache residency and first visible raster**. Counts alone are inadequate: 7 speculative Bitmaps from the wrong row do not constitute 7 useful first-frame warmups.
+5. Do not add a second speculative queue atop the old one to inflate warm-hit statistics. One logical request authority plus deadline-aware foreground priority is required.
+
+The strict raster comparison guard now has a reusable PowerShell implementation and ten deterministic acceptance/rejection cases in `build/Compare-ViewerSkiaRaster.ps1` and `build/Test-ViewerSkiaRasterComparison.ps1`. This guard protects future architecture trials; it does **not** claim Issue #634 itself is fixed. Real Windows mousewheel/compositor owner acceptance remains **OPEN/FAILED**.
