@@ -212,6 +212,25 @@ jobs:
         shell: pwsh
         run: ./build/Test-ViewerPerformance.ps1 -BenchmarkDirectory "artifacts/benchmarks/viewer-prefetch2" -ExpectedPrefetchRows 2
 
+      - name: Compare Viewer one-row versus default two-row readiness
+        shell: pwsh
+        run: |
+          foreach ($count in 10000, 50000, 100000) {
+            $one = Get-Content "artifacts/benchmarks/viewer-$count.json" -Raw | ConvertFrom-Json
+            $two = Get-Content "artifacts/benchmarks/viewer-prefetch2/viewer-$count.json" -Raw | ConvertFrom-Json
+            if ([int]$one.metadata.prefetch_rows -ne 1 -or [int]$two.metadata.prefetch_rows -ne 2) {
+              throw "Viewer lookahead depth comparison received mismatched fixtures for $count assets."
+            }
+            $oneMiss = [int]$one.metadata.small_scroll_settled_forward_missing_on_first_frame
+            $twoMiss = [int]$two.metadata.small_scroll_settled_forward_missing_on_first_frame
+            $oneWarm = [long]$one.metadata.small_scroll_settled_forward_warm_bitmap_hits
+            $twoWarm = [long]$two.metadata.small_scroll_settled_forward_warm_bitmap_hits
+            Write-Host (
+              "{0:N0}: settled forward first-frame missing: 1-row={1}, 2-row={2}, delta={3:+#;-#;0}; warmed Bitmap hits: 1-row={4}, 2-row={5}, delta={6:+#;-#;0}" -f
+              $count, $oneMiss, $twoMiss, ($twoMiss - $oneMiss),
+              $oneWarm, $twoWarm, ($twoWarm - $oneWarm))
+          }
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
