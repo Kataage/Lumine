@@ -254,7 +254,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lumine-core-baselines-${{ github.run_id }}
-          path: artifacts/benchmarks/*.json
+          path: |
+            artifacts/benchmarks/*.json
+            artifacts/benchmarks/viewer-prefetch2/*.json
           if-no-files-found: error
 
       - name: Publish NativeAOT
