@@ -69,6 +69,7 @@ internal static class Program
         var maxReadyTiles = 0;
         var maxDecodedBitmapEntries = 0;
         long maxDecodedBitmapBytes = 0;
+        RenderedFrameTileAudit? renderedFrameAudit = null;
         var maxConcurrentBitmapDecodes = 0;
         ViewerRuntimeDiagnostics finalDiagnostics = default;
         ViewerTileReadinessDiagnostics finalTileReadiness = default;
@@ -210,6 +211,21 @@ internal static class Program
                                     throw new InvalidOperationException(
                                         "Captured rendered-frame PNG was empty.");
                                 }
+
+                                // Do NOT infer actual painted pixels from
+                                // Image.Source/IsReady: directly examine
+                                // the saved Skia raster for this known
+                                // synthetic-color fixture.
+                                renderedFrameAudit =
+                                    RenderedFrameTileAudit.Inspect(
+                                        png, viewer.Columns);
+                                Console.WriteLine(
+                                    "Skia first-offset bottom row: "
+                                    + $"blue={renderedFrameAudit.Value.BlueThumbnailSamples}, "
+                                    + $"dark={renderedFrameAudit.Value.DarkPlaceholderSamples}, "
+                                    + $"other={renderedFrameAudit.Value.OtherSamples} "
+                                    + $"of {renderedFrameAudit.Value.SampledColumns} columns, "
+                                    + $"sampleY={renderedFrameAudit.Value.SampleY}.");
                             });
                     afterSettledScroll = viewer.LookaheadDiagnostics;
                     Observe(viewer);
@@ -293,6 +309,11 @@ internal static class Program
                     ["max_ready_tiles"] = maxReadyTiles.ToString(CultureInfo.InvariantCulture),
                     ["max_decoded_bitmap_entries"] = maxDecodedBitmapEntries.ToString(CultureInfo.InvariantCulture),
                     ["max_decoded_bitmap_bytes"] = maxDecodedBitmapBytes.ToString(CultureInfo.InvariantCulture),
+                    ["skia_frame_audit_columns"] = renderedFrameAudit?.SampledColumns.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["skia_frame_blue_thumbnail_samples"] = renderedFrameAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["skia_frame_dark_placeholder_samples"] = renderedFrameAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["skia_frame_other_samples"] = renderedFrameAudit?.OtherSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["skia_frame_sample_y"] = renderedFrameAudit?.SampleY.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
