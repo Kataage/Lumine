@@ -1648,6 +1648,22 @@ public sealed class ThumbnailViewerControl : UserControl
                 farCount);
     }
 
+    // A newly mounted/rearranged viewport can momentarily report
+    // an earlier edge than a row-attachment scheduler already targeted.
+    // Refresh only for *progress* in the current scroll direction,
+    // never for reverse/layout jitter or repeated offsets in one row.
+    internal static bool ShouldRefreshViewportEdgeForSmoke(
+        int direction,
+        int visibleEdge,
+        int lastScheduledEdge,
+        int lastScheduledDirection) =>
+        visibleEdge >= 0
+        && (lastScheduledEdge < 0
+            || direction != lastScheduledDirection
+            || (direction < 0
+                ? visibleEdge < lastScheduledEdge
+                : visibleEdge > lastScheduledEdge));
+
     private void OnGalleryWheel(
         object? sender,
         PointerWheelEventArgs e) =>
@@ -1714,9 +1730,11 @@ public sealed class ThumbnailViewerControl : UserControl
         var visibleEdge = _lookaheadDirection < 0
             ? GetFirstVisibleRowIndex()
             : GetLastVisibleRowIndex();
-        if (visibleEdge < 0
-            || (visibleEdge == _lastLookaheadOffsetEdge
-                && _lookaheadDirection == _lastLookaheadOffsetDirection))
+        if (!ShouldRefreshViewportEdgeForSmoke(
+                _lookaheadDirection,
+                visibleEdge,
+                _lastLookaheadOffsetEdge,
+                _lastLookaheadOffsetDirection))
         {
             return;
         }
