@@ -364,6 +364,7 @@ internal static class Program
                             + $"input events={rawWheelEvidence.Value.RoutedEvents}, "
                             + $"offset={rawWheelEvidence.Value.OffsetDeltaPixels:F1}px, "
                             + $"immediate unready={rawWheelEvidence.Value.UnreadyImmediatelyAfterInput}, "
+                            + $"first-tick framebuffer updated={rawWheelEvidence.Value.FirstTickContainsUpdatedRaster}, "
                             + $"first-tick blue/dark={rawWheelEvidence.Value.FirstTick.BlueThumbnailSamples}/{rawWheelEvidence.Value.FirstTick.DarkPlaceholderSamples}, "
                             + $"post-flush blue/dark={rawWheelEvidence.Value.Settled.BlueThumbnailSamples}/{rawWheelEvidence.Value.Settled.DarkPlaceholderSamples}.");
                     }
@@ -470,6 +471,7 @@ internal static class Program
                     ["raw_wheel_direction_before"] = rawWheelEvidence?.DirectionBefore.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_direction_after"] = rawWheelEvidence?.DirectionAfter.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_immediate_unready"] = rawWheelEvidence?.UnreadyImmediatelyAfterInput.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
+                    ["raw_wheel_first_tick_raster_changed"] = rawWheelEvidence?.FirstTickContainsUpdatedRaster.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_first_tick_blue"] = rawWheelEvidence?.FirstTick.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_first_tick_dark"] = rawWheelEvidence?.FirstTick.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["raw_wheel_post_flush_blue"] = rawWheelEvidence?.Settled.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
