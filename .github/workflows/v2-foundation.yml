@@ -372,6 +372,43 @@ jobs:
           }
           Write-Host "Raw wheel: offset=$($m.raw_wheel_offset_delta_px)px; unready=$($m.raw_wheel_immediate_unready); no-dispatch changed=$($m.raw_wheel_first_tick_raster_changed); first witness=$($m.raw_wheel_first_tick_witness_changed); first blue/dark=$($m.raw_wheel_first_tick_blue)/$($m.raw_wheel_first_tick_dark); bounded dispatch passes=$($m.raw_wheel_post_dispatch_passes); repaint witness=$($m.raw_wheel_post_dispatch_witness_changed); changed gallery samples=$($m.raw_wheel_post_dispatch_changed_viewer_samples); post-dispatch blue/dark=$($m.raw_wheel_post_dispatch_blue)/$($m.raw_wheel_post_dispatch_dark); settled blue/dark=$($m.raw_wheel_post_flush_blue)/$($m.raw_wheel_post_flush_dark)."
 
+      # Isolated from the 40 far jumps to attribute first-frame defects
+      # to rapid routed wheel input and direction reversal alone.
+      - name: Capture routed burst and reverse wheel first rasters
+        shell: pwsh
+        run: |
+          dotnet run --project tools/Lumine.Viewer.Benchmarks/Lumine.Viewer.Benchmarks.csproj -c Release --no-build -- --count 10000 --prefetch-rows 2 --output "artifacts/viewer-wheel-sequence/diagnostic-10000.json" --wheel-sequence-evidence-dir "artifacts/viewer-wheel-sequence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload routed burst and reverse Skia evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-viewer-wheel-sequence-${{ github.run_id }}
+          path: artifacts/viewer-wheel-sequence/
+          if-no-files-found: warn
+
+      - name: Verify routed burst/reverse first-raster budgets
+        shell: pwsh
+        run: |
+          $r = Get-Content "artifacts/viewer-wheel-sequence/diagnostic-10000.json" -Raw | ConvertFrom-Json
+          $m = $r.metadata
+          Write-Host "Wheel sequence: steps=$($m.wheel_sequence_steps), forward=$($m.wheel_sequence_forward_steps), reverse=$($m.wheel_sequence_reverse_steps), reversals=$($m.wheel_sequence_direction_changes), immediateUnready=$($m.wheel_sequence_immediate_unready_max), firstRasterUnready=$($m.wheel_sequence_rendered_unready_max), minGalleryChanged=$($m.wheel_sequence_changed_samples_min), maxDispatches=$($m.wheel_sequence_dispatch_passes_max), newSourceRequests=$($m.wheel_sequence_source_requests_added), totalRequests=$($m.thumbnail_requests), decodedPeak=$($m.max_decoded_bitmap_bytes)."
+          if ($m.wheel_sequence_input_kind -ne "routed-pointerwheel-first-raster" -or
+              [int]$m.wheel_sequence_steps -ne 10 -or
+              [int]$m.wheel_sequence_forward_steps -ne 6 -or
+              [int]$m.wheel_sequence_reverse_steps -ne 4 -or
+              [int]$m.wheel_sequence_direction_changes -ne 2 -or
+              [int]$m.wheel_sequence_changed_samples_min -lt 64 -or
+              [int]$m.wheel_sequence_dispatch_passes_max -gt 3 -or
+              [int]$m.wheel_sequence_rendered_unready_max -gt 0 -or
+              [long]$m.thumbnail_requests -gt 1600 -or
+              [long]$m.max_decoded_bitmap_bytes -gt 33554432 -or
+              -not (Test-Path "artifacts/viewer-wheel-sequence/sequence-before.png") -or
+              -not (Test-Path "artifacts/viewer-wheel-sequence/sequence-10-forward.png")) {
+            throw "Wheel burst/reverse first-render or strict source/cache budgets failed."
+          }
+
       - name: Generate 100k Core baseline result
         run: dotnet run --project tools/Lumine.Benchmarks/Lumine.Benchmarks.csproj -c Release --no-build -- --count 100000 --output artifacts/benchmarks/core-100000.json
 
