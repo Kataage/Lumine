@@ -152,6 +152,12 @@ public sealed class ViewerOptions
     // viewport itself is always loaded at Foreground priority.
     public int PrefetchRows { get; init; } = 2;
 
+    // Experimental Avalonia virtualized *control realization* buffer,
+    // independent of decoded Bitmap source prefetch. Leave production
+    // behavior at zero until the A/B measurements pass resource caps.
+    // CacheLength is a fraction of one viewport per side.
+    public double RealizationBufferFactor { get; init; } = 0;
+
     // Give foreground requests a brief chance to enqueue, but do not
     // require all visible tiles to finish before warming adjacent rows.
     public TimeSpan PrefetchDelay { get; init; } = TimeSpan.FromMilliseconds(8);
