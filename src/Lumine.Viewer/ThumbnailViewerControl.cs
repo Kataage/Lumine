@@ -1745,7 +1745,16 @@ public sealed class ThumbnailViewerControl : UserControl
         var delta = next - _lastGalleryOffsetY;
         _lastGalleryOffsetY = next;
         var previousDirection = _lookaheadDirection;
-        SetLookaheadDirection(delta);
+        // Programmatic ScrollIntoView / Home/End jumps may be many
+        // viewports long. Their offset sign does not predict the next
+        // small wheel or trackpad movement. Preserve the last explicit
+        // browsing direction instead of warming a far row on the
+        // arbitrary jump side. Wheel input is already captured earlier.
+        if (IsIntentBearingScrollDeltaForSmoke(
+                delta, scroller.Viewport.Height))
+        {
+            SetLookaheadDirection(delta);
+        }
 
         // Direction changes already schedule lookahead above. But a
         // continued same-direction scroll can move the visible boundary
@@ -1772,6 +1781,24 @@ public sealed class ThumbnailViewerControl : UserControl
 
         _lookaheadViewportEdgeReschedules++;
         ScheduleLookahead(visibleEdge, _columns);
+    }
+
+    internal static bool IsIntentBearingScrollDeltaForSmoke(
+        double deltaY,
+        double viewportHeight)
+    {
+        if (!double.IsFinite(deltaY)
+            || Math.Abs(deltaY) <= 0.01)
+        {
+            return false;
+        }
+
+        // Keep ordinary wheel, touch and scrollbar motion directional.
+        // Two viewport heights is a deliberately generous jump boundary;
+        // an actual routed wheel event can still set direction directly.
+        return !double.IsFinite(viewportHeight)
+            || viewportHeight <= 0
+            || Math.Abs(deltaY) <= Math.Max(400, viewportHeight * 2);
     }
 
     private void SetLookaheadDirection(double deltaY)
