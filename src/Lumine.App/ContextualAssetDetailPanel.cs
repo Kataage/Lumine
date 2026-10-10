@@ -1174,6 +1174,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal IReadOnlyList<string> TabHeaders { get; } =
         new[] { "整理", "制作", "公開", "情報" };
 
+    // The keyboard I shortcut enters the current Inspector tab. Do not
+    // reset the user's tab/scroll state or create a second tab strip.
+    internal bool FocusSelectedTab() =>
+        _tabButtons[_selectedTabIndex].Focus();
+
+    internal bool IsSelectedTabFocusedForSmoke =>
+        _tabButtons[_selectedTabIndex].IsFocused;
+
     internal void SelectTabForSmoke(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
