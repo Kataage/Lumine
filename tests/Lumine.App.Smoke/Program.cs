@@ -7483,6 +7483,9 @@ try
                             window,
                             "loading-1440x900");
 
+                        Require(
+                            cancelOpen.Focus(),
+                            "Library Loading cancellation was not keyboard focusable.");
                         cancelOpen.RaiseEvent(
                             new RoutedEventArgs(
                                 Button.ClickEvent));
@@ -7501,6 +7504,9 @@ try
 
                         window.PresentWelcomeStateForSmoke();
                         Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.PrimaryProductActionHasFocusForSmoke,
+                            "Canceling Loading did not transfer keyboard focus to Welcome's Add Folder recovery action.");
                         // An old loading CTA may still have a captured
                         // reference; it must not cancel a later operation.
                         cancelOpen.RaiseEvent(
@@ -7575,10 +7581,33 @@ try
                             window,
                             "error-1440x900");
 
+                        var retryCommand =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "もう一度開く",
+                                        StringComparison.Ordinal));
+                        Require(
+                            retryCommand.Focus(),
+                            "Error primary retry was not keyboard focusable.");
                         Directory.CreateDirectory(
                             retryableMissingRoot);
-                        await window
-                            .RetryFailedLibraryForSmokeAsync();
+                        retryCommand.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        for (var recoveryAttempt = 0;
+                             recoveryAttempt < 1200
+                             && !string.Equals(
+                                 window.ProductShellState,
+                                 "EmptyLibrary",
+                                 StringComparison.Ordinal);
+                             recoveryAttempt++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(2);
+                        }
                         Dispatcher.UIThread.RunJobs();
                         Require(
                             string.Equals(
@@ -7586,8 +7615,9 @@ try
                                 "EmptyLibrary",
                                 StringComparison.Ordinal)
                             && !window.HasRetryableOpenFailureForSmoke
-                            && window.OpenFolderCommandEnabledForSmoke,
-                            "Retrying the same recovered library path did not transition out of Error cleanly.");
+                            && window.OpenFolderCommandEnabledForSmoke
+                            && window.PrimaryProductActionHasFocusForSmoke,
+                            "Keyboard retry did not reach EmptyLibrary with Add Folder focus after async Error→Loading recovery.");
 
                         var alternateMissingRoot =
                             Path.Combine(
