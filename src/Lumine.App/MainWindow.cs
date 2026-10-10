@@ -56,6 +56,8 @@ public sealed class MainWindow : Window
     private bool _compactNavigationLayout;
     private bool _navigationPinned;
     private int _navigationFocusGeneration;
+    private int _contextNavigationFocusGeneration;
+    private string? _renderedNavigationDestination;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
     private bool _closeStarted;
@@ -1280,6 +1282,43 @@ public sealed class MainWindow : Window
             return;
         }
 
+        // RefreshNavigationAsync replaces the entire contextual view.
+        // Preserve only keyboard focus from the currently displayed
+        // destination; a genuine global navigation change must not carry
+        // a Folder/Tag action into a different page.
+        var previousView = _navigationContent.Content as Control;
+        var previouslyFocused =
+            FocusManager?.GetFocusedElement() as Button;
+        var restoreContextFocus =
+            previousView is not null
+            && _navigationContent.IsEffectivelyVisible
+            && !_lightboxHost.IsVisible
+            && string.Equals(
+                _renderedNavigationDestination,
+                _navigationDestination,
+                StringComparison.Ordinal)
+            && previouslyFocused?.IsFocused == true
+            && previouslyFocused.GetVisualAncestors()
+                .Any(ancestor =>
+                    ReferenceEquals(ancestor, previousView));
+        var previousAutomationId =
+            restoreContextFocus
+                ? AutomationProperties.GetAutomationId(
+                    previouslyFocused!)
+                : null;
+        var previousName =
+            restoreContextFocus
+                ? AutomationProperties.GetName(
+                    previouslyFocused!)
+                : null;
+        var previousFolderPath =
+            restoreContextFocus
+            && previouslyFocused!.Classes.Contains("lumine-folder-row")
+                ? ToolTip.GetTip(previouslyFocused) as string
+                : null;
+        var contextFocusGeneration =
+            ++_contextNavigationFocusGeneration;
+
         _navigationTitle.Text =
             _navigationDestination;
 
@@ -1308,6 +1347,8 @@ public sealed class MainWindow : Window
                     ShowDiagnosticsFromNavigationAsync);
             _workspacePageHost.IsVisible = true;
             _workspaceContent.IsHitTestVisible = false;
+            _renderedNavigationDestination =
+                _navigationDestination;
             UpdateStatusSurfaceVisibility();
             return;
         }
@@ -1378,6 +1419,77 @@ public sealed class MainWindow : Window
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
             };
+
+        _renderedNavigationDestination =
+            _navigationDestination;
+        if (!restoreContextFocus)
+        {
+            return;
+        }
+
+        var nextView = _navigationContent.Content as Control;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (_closeStarted
+                    || _lightboxHost.IsVisible
+                    || contextFocusGeneration
+                        != _contextNavigationFocusGeneration
+                    || !ReferenceEquals(
+                        _navigationContent.Content,
+                        nextView)
+                    || !_navigationContent.IsEffectivelyVisible)
+                {
+                    return;
+                }
+
+                var current =
+                    FocusManager?.GetFocusedElement() as Control;
+                if (current is not null
+                    && !ReferenceEquals(current, previouslyFocused)
+                    && current.IsEffectivelyVisible
+                    && current.IsEffectivelyEnabled
+                    && ReferenceEquals(
+                        TopLevel.GetTopLevel(current),
+                        this))
+                {
+                    // Search, navigation or a dialog acquired focus after
+                    // the asynchronous refresh: that input wins.
+                    return;
+                }
+
+                var replacement =
+                    nextView?.GetVisualDescendants()
+                        .OfType<Button>()
+                        .FirstOrDefault(button =>
+                            button.IsEffectivelyEnabled
+                            && button.IsEffectivelyVisible
+                            && ((!string.IsNullOrWhiteSpace(
+                                    previousAutomationId)
+                                && string.Equals(
+                                    AutomationProperties.GetAutomationId(
+                                        button),
+                                    previousAutomationId,
+                                    StringComparison.Ordinal))
+                                || (!string.IsNullOrWhiteSpace(
+                                        previousFolderPath)
+                                    && button.Classes.Contains(
+                                        "lumine-folder-row")
+                                    && string.Equals(
+                                        ToolTip.GetTip(button) as string,
+                                        previousFolderPath,
+                                        StringComparison.OrdinalIgnoreCase))
+                                || (!string.IsNullOrWhiteSpace(
+                                        previousName)
+                                    && string.Equals(
+                                        AutomationProperties.GetName(button),
+                                        previousName,
+                                        StringComparison.Ordinal))));
+                replacement?.Focus(
+                    NavigationMethod.Unspecified,
+                    KeyModifiers.None);
+            },
+            DispatcherPriority.Input);
     }
 
     private async Task<PublicationPage>
