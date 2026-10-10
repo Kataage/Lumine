@@ -10186,6 +10186,13 @@ try
                         "Inspector-invoked focused viewer failed to establish modality.");
 
                     await window.CurrentShell.DetailViewer.SelectAsync(1);
+                    Dispatcher.UIThread.RunJobs();
+                    // Navigating inside the focused view may legitimately
+                    // synchronize a new selected asset back to the Gallery.
+                    // The close operation must preserve whichever selection
+                    // is current, not silently roll back to the opener.
+                    var selectionBeforeInspectorReturn =
+                        window.CurrentShell.GridViewer.SelectedAssetIndex;
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
                     Require(
@@ -10193,8 +10200,9 @@ try
                         && window.IsWorkspaceInteractionEnabled
                         && window.CurrentShell.IsContextDetailVisible
                         && inspectorOpenImageCommand.IsFocused
-                        && window.CurrentShell.GridViewer.SelectedAssetIndex == 0,
-                        "Closing Inspector-invoked focused viewer did not return to the live Inspector command with original selection.");
+                        && window.CurrentShell.GridViewer.SelectedAssetIndex
+                            == selectionBeforeInspectorReturn,
+                        "Closing Inspector-invoked focused viewer lost the live Inspector command or silently rewound Gallery selection.");
 
                     // If Inspector is hidden while the modal is open, its
                     // invoker is no longer a valid keyboard destination:
