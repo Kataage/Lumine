@@ -8308,6 +8308,58 @@ try
                             window.StatusTextForSmoke),
                         "Filtered zero-result query replaced the Viewer shell, kept stale selection/Inspector state, or duplicated No Match in the status banner.");
 
+                    Require(
+                        window.CurrentShell.NoMatchRecoveryLabelForSmoke
+                            == "検索を解除",
+                        "No Match primary action did not identify the exact Search constraint that will be cleared.");
+
+                    var constrainedNoMatch =
+                        new BrowseFilterState(
+                            SearchText: "search-kept",
+                            FolderPath: "folder-kept",
+                            RequiredTags: ["tag-to-clear"],
+                            MinRating: 3,
+                            StatusLabel: "pending",
+                            FavoriteOnly: true,
+                            ColorLabel: "blue",
+                            SortOrder: AssetSortOrder.ModifiedOldest);
+                    var refineRecovery =
+                        constrainedNoMatch.PlanNoMatchRecovery();
+                    Require(
+                        refineRecovery.ActionLabel == "絞り込みを解除"
+                        && refineRecovery.NextState is { } refined
+                        && refined.SearchText == "search-kept"
+                        && refined.FolderPath == "folder-kept"
+                        && refined.SortOrder == AssetSortOrder.ModifiedOldest
+                        && !refined.HasRefinements,
+                        "No Match refinement recovery erased Search/Folder/Sort or retained hidden facet filters.");
+
+                    var searchRecovery =
+                        (refineRecovery.NextState
+                            ?? throw new InvalidOperationException(
+                                "Refinement plan missing."))
+                            .PlanNoMatchRecovery();
+                    Require(
+                        searchRecovery.ActionLabel == "検索を解除"
+                        && searchRecovery.NextState is { } searched
+                        && searched.SearchText == string.Empty
+                        && searched.FolderPath == "folder-kept"
+                        && searched.SortOrder == AssetSortOrder.ModifiedOldest,
+                        "No Match search recovery erased the selected folder or sort.");
+
+                    var scopeRecovery =
+                        (searchRecovery.NextState
+                            ?? throw new InvalidOperationException(
+                                "Search plan missing."))
+                            .PlanNoMatchRecovery();
+                    Require(
+                        scopeRecovery.ActionLabel == "すべての画像を表示"
+                        && scopeRecovery.NextState is { } unscoped
+                        && unscoped.FolderPath is null
+                        && unscoped.SortOrder == AssetSortOrder.ModifiedOldest
+                        && unscoped.PlanNoMatchRecovery().NextState is null,
+                        "No Match folder/no-filter fallback is not a progressive non-destructive recovery.");
+
                     var reviewFilters =
                         window.GetVisualDescendants()
                             .OfType<Button>()
@@ -8346,7 +8398,7 @@ try
                                 button =>
                                     string.Equals(
                                         button.Content as string,
-                                        "条件をすべて解除",
+                                        "検索を解除",
                                         StringComparison.Ordinal))
                         ?? throw new InvalidOperationException(
                             "No Match did not expose a direct clear action.");
