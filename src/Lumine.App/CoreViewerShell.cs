@@ -356,6 +356,23 @@ internal sealed class CoreViewerShell : UserControl
     internal bool IsNoMatchStateVisibleForSmoke =>
         _noMatchSurface.IsVisible;
 
+    internal bool HasGalleryKeyboardFocus
+    {
+        get
+        {
+            var focused =
+                TopLevel.GetTopLevel(this)
+                    ?.FocusManager
+                    ?.GetFocusedElement() as Control;
+            return focused is not null
+                && (ReferenceEquals(focused, _grid)
+                    || focused.GetVisualAncestors().Contains(_grid));
+        }
+    }
+
+    internal bool NoMatchRecoveryHasKeyboardFocusForSmoke =>
+        _noMatchRecoveryButton.IsFocused;
+
     internal string NoMatchRecoveryLabelForSmoke =>
         _noMatchRecoveryButton.Content as string ?? string.Empty;
 
@@ -363,8 +380,12 @@ internal sealed class CoreViewerShell : UserControl
         bool visible,
         string? recoveryLabel = null,
         Func<Task>? clearFilters = null,
-        Action? editFilters = null)
+        Action? editFilters = null,
+        bool focusRecoveryFromGallery = false)
     {
+        var wasVisible = _noMatchSurface.IsVisible;
+        var recoveryHeldFocus =
+            wasVisible && _noMatchRecoveryButton.IsFocused;
         _clearNoMatchFilters =
             visible
                 ? clearFilters
@@ -389,6 +410,75 @@ internal sealed class CoreViewerShell : UserControl
         {
             HideContextDetail();
             _grid.ClearSelection();
+
+            if (!wasVisible && focusRecoveryFromGallery)
+            {
+                // A keyboard Gallery action that finds no matching image
+                // needs a reachable next command. Do not steal focus
+                // when Search, navigation, or a modal owns it instead.
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        if (!_noMatchSurface.IsVisible
+                            || _focusedSurface.IsVisible)
+                        {
+                            return;
+                        }
+
+                        var current =
+                            TopLevel.GetTopLevel(this)
+                                ?.FocusManager
+                                ?.GetFocusedElement() as Control;
+                        if (current is null
+                            || ReferenceEquals(current, _grid)
+                            || current.GetVisualAncestors().Contains(_grid)
+                            || TopLevel.GetTopLevel(current)
+                                != TopLevel.GetTopLevel(this))
+                        {
+                            // The previously focused virtualized tile may
+                            // have detached during query/session rebind.
+                            _noMatchRecoveryButton.Focus(
+                                NavigationMethod.Unspecified,
+                                KeyModifiers.None);
+                        }
+                    },
+                    DispatcherPriority.Input);
+            }
+        }
+        else if (recoveryHeldFocus)
+        {
+            // Restore semantic tile focus only if the recovery button
+            // really owned focus. Pointer-driven queries and Search
+            // caret remain under their own focus ownership.
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (_noMatchSurface.IsVisible
+                        || _focusedSurface.IsVisible
+                        || _grid.AssetCount <= 0)
+                    {
+                        return;
+                    }
+
+                    var current =
+                        TopLevel.GetTopLevel(this)
+                            ?.FocusManager
+                            ?.GetFocusedElement() as Control;
+                    if (current is not null
+                        && !ReferenceEquals(
+                            current,
+                            _noMatchRecoveryButton))
+                    {
+                        return;
+                    }
+
+                    var index =
+                        _grid.SelectedAssetIndex >= 0
+                            ? _grid.SelectedAssetIndex
+                            : 0;
+                    _grid.RestoreAssetFocus(index);
+                },
+                DispatcherPriority.Input);
         }
     }
 

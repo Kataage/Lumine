@@ -2639,6 +2639,10 @@ public sealed class MainWindow : Window
             BuildBrowseQuery();
         var existingShell =
             _shell;
+        // Prepare/Rebind may recycle the focused Gallery tile before
+        // No Match is presented. Capture keyboard ownership first.
+        var galleryHadKeyboardFocus =
+            existingShell?.HasGalleryKeyboardFocus == true;
         CoreViewerQueryUiState? queryUiState =
             null;
 
@@ -2679,7 +2683,9 @@ public sealed class MainWindow : Window
                     runtime.AssetCount == 0,
                     _browseFilterState.PlanNoMatchRecovery().ActionLabel,
                     ClearBrowseFiltersAsync,
-                    OpenBrowseFilterPanel);
+                    OpenBrowseFilterPanel,
+                    focusRecoveryFromGallery:
+                        galleryHadKeyboardFocus);
                 _status.Foreground =
                     LumineDesign.MutedForeground;
                 _status.Text =
