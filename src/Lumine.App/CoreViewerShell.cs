@@ -308,7 +308,8 @@ internal sealed class CoreViewerShell : UserControl
         SizeChanged +=
             (_, e) =>
                 ApplyInspectorLayout(
-                    e.NewSize.Width);
+                    e.NewSize.Width,
+                    e.NewSize.Height);
         ApplyInspectorLayout(
             Math.Max(1100, Bounds.Width));
 
@@ -580,7 +581,8 @@ internal sealed class CoreViewerShell : UserControl
             : 1100;
 
     private void ApplyInspectorLayout(
-        double width)
+        double width,
+        double? height = null)
     {
         // Keep the Inspector drawer-first through normal 1440-class
         // desktop layouts. A permanent right column is reserved for genuinely
@@ -662,7 +664,8 @@ internal sealed class CoreViewerShell : UserControl
         ApplySelectionBarPlacement(width);
 
         _contextDetail.SetCompactPresentation(
-            _compactInspectorLayout);
+            _compactInspectorLayout,
+            height ?? Bounds.Height);
         _contextDetail.SetPinPresentation(
             _inspectorPinned,
             !_compactInspectorLayout);

@@ -1122,17 +1122,32 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _previewSurface.Height <= 120.5
         && _notesEditor.MinHeight <= 72.5;
 
+    internal double PreviewHeightForSmoke =>
+        _previewSurface.Height;
+
+    // A short desktop layout needs usable editable fields without
+    // scrolling beyond the entire preview. Only the image preview,
+    // not text or the four Inspector tabs, is reduced in height.
+    // Large/full-height views retain the existing 120/148-DIP preview.
+    internal static double ResolvePreviewHeightForSmoke(
+        bool compact,
+        double availableHeight) =>
+        !compact
+            ? 148
+            : availableHeight > 0
+                && availableHeight < 720
+                    ? 80
+                    : 120;
+
     internal void SetCompactPresentation(
-        bool compact)
+        bool compact,
+        double availableHeight = 0)
     {
-        _previewSurface.Height =
-            compact
-                ? 120
-                : 148;
-        _preview.MaxHeight =
-            compact
-                ? 120
-                : 148;
+        var previewHeight = ResolvePreviewHeightForSmoke(
+            compact,
+            availableHeight);
+        _previewSurface.Height = previewHeight;
+        _preview.MaxHeight = previewHeight;
         _notesEditor.MinHeight =
             compact
                 ? 72
