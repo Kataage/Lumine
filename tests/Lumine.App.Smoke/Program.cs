@@ -8320,6 +8320,18 @@ try
                             .IsContextDetailVisible,
                         "Browse sort rebuilt the Viewer shell/control or lost a still-matching selected Inspector asset.");
 
+                    // Keyboard Gallery -> No Match is distinct from a
+                    // Search textbox initiated query. Preserve the user's
+                    // source of focus before virtualized rows are rebound.
+                    shellBeforeQueryChange.HideContextDetail();
+                    shellBeforeQueryChange.GridViewer.RestoreAssetFocus(
+                        selectedIndexAfterSort);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        shellBeforeQueryChange.IsAssetFocusedForSmoke(
+                            selectedIndexAfterSort),
+                        "Pre-No Match Gallery tile did not own keyboard focus.");
+
                     await window.ApplyBrowseFilterForSmokeAsync(
                         new BrowseFilterState(
                             SearchText:
@@ -8345,9 +8357,11 @@ try
                             .IsContextDetailVisible
                         && window.CurrentShell
                             .IsNoMatchStateVisibleForSmoke
+                        && window.CurrentShell
+                            .NoMatchRecoveryHasKeyboardFocusForSmoke
                         && string.IsNullOrWhiteSpace(
                             window.StatusTextForSmoke),
-                        "Filtered zero-result query replaced the Viewer shell, kept stale selection/Inspector state, or duplicated No Match in the status banner.");
+                        "Filtered zero-result query rebuilt the Viewer, kept stale selection or failed to transfer Gallery keyboard focus to No Match recovery.");
 
                     Require(
                         window.CurrentShell.NoMatchRecoveryLabelForSmoke
@@ -8443,6 +8457,9 @@ try
                                         StringComparison.Ordinal))
                         ?? throw new InvalidOperationException(
                             "No Match did not expose a direct clear action.");
+                    Require(
+                        clearNoMatch.Focus(),
+                        "No Match recovery could not receive keyboard focus after closing the Filter flyout.");
                     clearNoMatch.RaiseEvent(
                         new RoutedEventArgs(
                             Button.ClickEvent));
@@ -8473,6 +8490,19 @@ try
                         && !window.CurrentShell
                             .IsNoMatchStateVisibleForSmoke,
                         "Clearing No Match from its primary recovery action rebuilt the Viewer shell/control or failed to restore data in place.");
+
+                    for (var focusAttempt = 0;
+                         focusAttempt < 40
+                         && !shellBeforeQueryChange
+                             .IsAssetFocusedForSmoke(0);
+                         focusAttempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        await Task.Delay(2);
+                    }
+                    Require(
+                        shellBeforeQueryChange.IsAssetFocusedForSmoke(0),
+                        "Keyboard No Match recovery did not restore semantic focus to a live Gallery tile.");
 
                     await window.OpenLibraryAsync(
                         repeatedEmptyLibraryRoot);
