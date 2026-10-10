@@ -7917,6 +7917,117 @@ try
                                     && AutomationProperties.GetName(button)
                                         == "ライブラリ"),
                             "Returning to Library after Folder refresh lost context or global keyboard focus.");
+
+                        // Real asynchronous metadata refresh must not
+                        // discard unsaved Tag search text or a currently
+                        // open Tag/Publication editor flyout.
+                        window.NavigateForSmoke("タグ");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var tagsWhileEditing =
+                            window.NavigationContentForSmoke!;
+                        var tagSearchDraft =
+                            tagsWhileEditing.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "タグを検索");
+                        tagSearchDraft.Text = "unsaved-tag-filter";
+                        Require(
+                            tagSearchDraft.Focus(),
+                            "Tag search draft was not keyboard focusable.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            ReferenceEquals(
+                                window.NavigationContentForSmoke,
+                                tagsWhileEditing)
+                            && tagSearchDraft.IsFocused
+                            && tagSearchDraft.Text
+                                == "unsaved-tag-filter",
+                            "Asynchronous Tag refresh discarded a focused search draft.");
+
+                        var newTagAction =
+                            tagsWhileEditing.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.Content as string == "＋ 新規");
+                        var tagEditorFlyout =
+                            newTagAction.Flyout as Flyout
+                            ?? throw new InvalidOperationException(
+                                "Tag create action lost its editor flyout.");
+                        tagEditorFlyout.ShowAt(newTagAction);
+                        Dispatcher.UIThread.RunJobs();
+                        var tagEditorDraft =
+                            (tagEditorFlyout.Content as Control)!
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "新しいタグの名前");
+                        tagEditorDraft.Text = "unsaved-tag-name";
+                        Require(
+                            tagEditorFlyout.IsOpen,
+                            "Tag editor did not open for refresh protection.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            ReferenceEquals(
+                                window.NavigationContentForSmoke,
+                                tagsWhileEditing)
+                            && tagEditorFlyout.IsOpen
+                            && tagEditorDraft.Text == "unsaved-tag-name",
+                            "Asynchronous Tag refresh closed its active create editor or lost the draft.");
+                        tagEditorFlyout.Hide();
+                        Dispatcher.UIThread.RunJobs();
+
+                        window.NavigateForSmoke("公開履歴");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var publicationWhileEditing =
+                            window.NavigationContentForSmoke!;
+                        var profileAction =
+                            publicationWhileEditing.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    AutomationProperties.GetName(button)
+                                        == "公開先とアカウントを管理");
+                        var publicationEditorFlyout =
+                            profileAction.Flyout as Flyout
+                            ?? throw new InvalidOperationException(
+                                "Publication profile editor flyout missing.");
+                        publicationEditorFlyout.ShowAt(profileAction);
+                        Dispatcher.UIThread.RunJobs();
+                        var publicationDraft =
+                            (publicationEditorFlyout.Content as Control)!
+                                .GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "公開先の名前");
+                        publicationDraft.Text = "unsaved-publication";
+                        Require(
+                            publicationEditorFlyout.IsOpen,
+                            "Publication editor was not opened.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            ReferenceEquals(
+                                window.NavigationContentForSmoke,
+                                publicationWhileEditing)
+                            && publicationEditorFlyout.IsOpen
+                            && publicationDraft.Text
+                                == "unsaved-publication",
+                            "Asynchronous Publication refresh discarded an active editor draft.");
+                        publicationEditorFlyout.Hide();
+                        Dispatcher.UIThread.RunJobs();
+
+                        window.NavigateForSmoke("ライブラリ");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
                     }
 
                     var shellBeforeSettings =
@@ -7958,6 +8069,56 @@ try
                                     out _))
                         && window.SettingsSnapshot.HasActiveLibrary,
                         "Product Settings did not keep the unified desktop sidebar while opening as a clean main-workspace page without browse status chrome.");
+
+                    if (iteration == 0)
+                    {
+                        var settingsWhileEditing =
+                            window.WorkspacePageForSmoke;
+                        var extensionDraft =
+                            settingsWhileEditing.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "独自読み込み対象を入力");
+                        extensionDraft.Text = ".unsaved";
+                        Require(
+                            extensionDraft.Focus(),
+                            "Settings custom extension input was not keyboard focusable.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            ReferenceEquals(
+                                window.WorkspacePageForSmoke,
+                                settingsWhileEditing)
+                            && extensionDraft.IsFocused
+                            && extensionDraft.Text == ".unsaved",
+                            "Asynchronous Settings refresh destroyed the focused unsaved extension draft.");
+
+                        // Once the user moves focus away from the editor,
+                        // the next refresh must render fresh settings
+                        // instead of freezing all future metadata updates.
+                        var settingsNav =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .First(button =>
+                                    button.IsEffectivelyVisible
+                                    && button.Classes.Contains("lumine-nav-item")
+                                    && AutomationProperties.GetName(button)
+                                        == "設定");
+                        Require(
+                            settingsNav.Focus(),
+                            "Settings navigation focus could not leave the editor.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !ReferenceEquals(
+                                window.WorkspacePageForSmoke,
+                                settingsWhileEditing)
+                            && settingsNav.IsFocused,
+                            "Leaving the Settings editor did not resume metadata refresh or stole global focus.");
+                    }
 
                     var settingsText =
                         window.WorkspacePageForSmoke
