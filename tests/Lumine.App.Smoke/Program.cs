@@ -9174,6 +9174,12 @@ try
                                                 window.CurrentShell
                                                     .IsCompactInspectorLayout,
                                                 window.CurrentShell.Bounds.Height)) < 0.5
+                                    && window.CurrentShell.ContextDetail
+                                        .UsesCompactHorizontalSummaryForSmoke
+                                        == (window.CurrentShell
+                                            .IsCompactInspectorLayout
+                                            && window.CurrentShell.Bounds.Height > 0
+                                            && window.CurrentShell.Bounds.Height < 720)
                                     && window.CurrentShell.IsCompactInspectorLayout
                                         == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
@@ -9716,6 +9722,8 @@ try
                         && Math.Abs(
                             window.CurrentShell.ContextDetail
                                 .PreviewHeightForSmoke - 80) < 0.5
+                        && window.CurrentShell.ContextDetail
+                            .UsesCompactHorizontalSummaryForSmoke
                         && window.CurrentShell.ContextSurfaceBounds.Width <= 340
                         && window.CurrentShell.ContextDetail
                             .IsCompactPresentationForSmoke
