@@ -8153,6 +8153,116 @@ try
                             && passiveTagNavigation.IsFocused,
                             "Metadata refresh reset a blurred Tag search filter or stole live global navigation focus.");
 
+                        // Stage 2T: exercise a *real* scrolled, virtualized
+                        // contextual Tag list. Previous tests only proved
+                        // search text and focus, not viewport continuity.
+                        var scrollFixtureNames =
+                            Enumerable.Range(0, 40)
+                                .Select(index =>
+                                    $"nav-scroll-smoke-{index:D3}")
+                                .ToArray();
+                        foreach (var tagName in scrollFixtureNames)
+                        {
+                            await window.CurrentRuntime!.LibraryService
+                                .CreateTagAsync(
+                                    window.CurrentRuntime.Library.Id,
+                                    tagName,
+                                    "#6366f1");
+                        }
+
+                        restoredTagSearch.Text = string.Empty;
+                        var priorNavigationHeight = window.Height;
+                        window.Height = 600;
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var scrollingTags =
+                            window.NavigationContentForSmoke!;
+                        var scrollingTagList =
+                            scrollingTags.GetVisualDescendants()
+                                .OfType<ListBox>()
+                                .Single(list =>
+                                    AutomationProperties.GetName(list)
+                                        == "タグ一覧");
+                        var beforeListScroll =
+                            scrollingTagList.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .First(scroll =>
+                                    scroll.IsEffectivelyVisible);
+                        Require(
+                            beforeListScroll.Extent.Height
+                                > beforeListScroll.Viewport.Height + 140,
+                            "Tag scroll continuity smoke did not produce an overflowing real virtualized list.");
+
+                        var previousListOffset = Math.Min(
+                            240,
+                            beforeListScroll.Extent.Height
+                                - beforeListScroll.Viewport.Height - 4);
+                        beforeListScroll.Offset =
+                            new Vector(0, previousListOffset);
+                        Dispatcher.UIThread.RunJobs();
+                        previousListOffset = beforeListScroll.Offset.Y;
+                        Require(
+                            previousListOffset > 100
+                            && passiveTagNavigation.IsFocused,
+                            "Tag list did not scroll while the live global navigation retained focus.");
+
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        for (var layoutPass = 0; layoutPass < 3; layoutPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        }
+
+                        var refreshedTagList =
+                            window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<ListBox>()
+                                .Single(list =>
+                                    AutomationProperties.GetName(list)
+                                        == "タグ一覧");
+                        var afterListScroll =
+                            refreshedTagList.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .First(scroll =>
+                                    scroll.IsEffectivelyVisible);
+                        Require(
+                            !ReferenceEquals(
+                                scrollingTagList,
+                                refreshedTagList)
+                            && !ReferenceEquals(
+                                beforeListScroll,
+                                afterListScroll)
+                            && Math.Abs(
+                                afterListScroll.Offset.Y
+                                - previousListOffset) < 3
+                            && passiveTagNavigation.IsFocused,
+                            $"Async Tag refresh lost virtualized scroll position: old={previousListOffset:N1}, "
+                            + $"new={afterListScroll.Offset.Y:N1}, "
+                            + $"extent={afterListScroll.Extent.Height:N1}, "
+                            + $"viewport={afterListScroll.Viewport.Height:N1}.");
+
+                        var fixtureTags =
+                            await window.CurrentRuntime!.LibraryService
+                                .ListTagsAsync(
+                                    window.CurrentRuntime.Library.Id,
+                                    limit: LibraryRepository.MaxTagListLimit);
+                        foreach (var fixtureTag in fixtureTags.Where(tag =>
+                                     scrollFixtureNames.Contains(
+                                         tag.Name,
+                                         StringComparer.Ordinal)))
+                        {
+                            await window.CurrentRuntime.LibraryService
+                                .DeleteTagAsync(
+                                    window.CurrentRuntime.Library.Id,
+                                    fixtureTag.Id);
+                        }
+                        window.Height = priorNavigationHeight;
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+
                         window.NavigateForSmoke("公開履歴");
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
