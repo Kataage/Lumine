@@ -97,6 +97,17 @@ public sealed class ThumbnailViewerControl : UserControl
     private long _lookaheadViewportEdgeReschedules;
     private int _lastLookaheadOffsetEdge = -1;
     private double _lastLookaheadScheduledOffsetY = double.NaN;
+    // A solitary programmatic viewport seek gets the normal 48ms
+    // coalescing window. A rapidly repeated series gets a longer quiet
+    // window to avoid issuing speculative sources for discarded pages.
+    // Monotonic timestamps make this independent of wall-clock changes.
+    private long _lastFullViewportJumpTimestamp;
+    private int _consecutiveFullViewportJumpCount;
+    // A programmatic ScrollIntoView can attach rows before its scroller
+    // Offset reflects the new position. Track explicit far seeks at the
+    // call site so stale interim geometry cannot bypass coalescing.
+    private long _lastFarProgrammaticSeekTimestamp;
+    private int _consecutiveFarProgrammaticSeeks;
     private int _lastLookaheadOffsetDirection;
     private ScrollViewer? _galleryScrollViewer;
     private double _lastGalleryOffsetY;
@@ -1014,7 +1025,35 @@ public sealed class ThumbnailViewerControl : UserControl
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
-        _rows.ScrollIntoView(checked((int)(index / _columns)));
+        var row = checked((int)(index / _columns));
+        if (IsFarProgrammaticTargetForSmoke(
+                GetFirstVisibleRowIndex(),
+                GetLastVisibleRowIndex(),
+                row))
+        {
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = _lastFarProgrammaticSeekTimestamp > 0
+                ? Stopwatch.GetElapsedTime(
+                    _lastFarProgrammaticSeekTimestamp, now)
+                : TimeSpan.MaxValue;
+            _consecutiveFarProgrammaticSeeks =
+                CountConsecutiveViewportJumpsForSmoke(
+                    _consecutiveFarProgrammaticSeeks, elapsed);
+            _lastFarProgrammaticSeekTimestamp = now;
+            // Cancel speculative work immediately rather than allowing
+            // an old 8/48ms timer to admit source requests before the
+            // virtualized row attachments trigger a new schedule.
+            CancelLookahead();
+        }
+        else
+        {
+            // Nearby programmatic navigation must not inherit a prior
+            // burst's background debounce.
+            _consecutiveFarProgrammaticSeeks = 0;
+            _lastFarProgrammaticSeekTimestamp = 0;
+        }
+
+        _rows.ScrollIntoView(row);
     }
 
     public async Task DrainBitmapReleasesAsync()
@@ -1483,6 +1522,10 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private void RebuildRows(long? anchorAssetIndex = null)
     {
+        _lastFarProgrammaticSeekTimestamp = 0;
+        _consecutiveFarProgrammaticSeeks = 0;
+        _lastFullViewportJumpTimestamp = 0;
+        _consecutiveFullViewportJumpCount = 0;
         _lastLookaheadScheduledOffsetY = double.NaN;
         _lastLookaheadOffsetEdge = -1;
         _lastLookaheadOffsetDirection = 0;
@@ -1703,6 +1746,10 @@ public sealed class ThumbnailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
+        // Real wheel input is never a continuation of a programmatic
+        // far-seek burst. Keep its normal short lookahead delay.
+        _consecutiveFarProgrammaticSeeks = 0;
+        _lastFarProgrammaticSeekTimestamp = 0;
         Interlocked.Increment(ref _routedWheelEvents);
         SetLookaheadDirection(-e.Delta.Y);
     }
@@ -1733,6 +1780,10 @@ public sealed class ThumbnailViewerControl : UserControl
         {
             scroller.PropertyChanged -= OnGalleryOffsetChanged;
             _galleryScrollViewer = null;
+            _lastFarProgrammaticSeekTimestamp = 0;
+            _consecutiveFarProgrammaticSeeks = 0;
+            _lastFullViewportJumpTimestamp = 0;
+            _consecutiveFullViewportJumpCount = 0;
             _lastLookaheadScheduledOffsetY = double.NaN;
             _lastLookaheadOffsetEdge = -1;
             _lastLookaheadOffsetDirection = 0;
@@ -1853,11 +1904,54 @@ public sealed class ThumbnailViewerControl : UserControl
     internal static TimeSpan LookaheadDelayForScrollForSmoke(
         TimeSpan normalDelay,
         double offsetChange,
-        double viewportHeight) =>
+        double viewportHeight,
+        int consecutiveFullViewportJumps = 1) =>
         IsFullViewportJumpForSmoke(offsetChange, viewportHeight)
             ? TimeSpan.FromMilliseconds(
-                Math.Max(normalDelay.TotalMilliseconds, 48))
+                Math.Max(
+                    normalDelay.TotalMilliseconds,
+                    consecutiveFullViewportJumps >= 2 ? 96 : 48))
             : normalDelay;
+
+    internal static bool IsFarProgrammaticTargetForSmoke(
+        int firstVisibleRow,
+        int lastVisibleRow,
+        int targetRow)
+    {
+        if (targetRow < 0
+            || firstVisibleRow < 0
+            || lastVisibleRow < firstVisibleRow)
+        {
+            return false;
+        }
+
+        var visibleRows = (long)lastVisibleRow - firstVisibleRow + 1;
+        return targetRow < (long)firstVisibleRow - visibleRows
+            || targetRow > (long)lastVisibleRow + visibleRows;
+    }
+
+    internal static TimeSpan ProgrammaticSeekLookaheadDelayForSmoke(
+        TimeSpan baseDelay,
+        int consecutiveFarSeeks)
+    {
+        if (consecutiveFarSeeks <= 0)
+        {
+            return baseDelay;
+        }
+
+        var floor = consecutiveFarSeeks >= 2 ? 96 : 48;
+        return TimeSpan.FromMilliseconds(
+            Math.Max(baseDelay.TotalMilliseconds, floor));
+    }
+
+    internal static int CountConsecutiveViewportJumpsForSmoke(
+        int previousCount,
+        TimeSpan sincePreviousJump) =>
+        previousCount > 0
+        && sincePreviousJump >= TimeSpan.Zero
+        && sincePreviousJump < TimeSpan.FromMilliseconds(250)
+            ? Math.Min(2, previousCount + 1)
+            : 1;
 
     private void ScheduleLookahead(long rowIndex, int columns)
     {
@@ -1875,15 +1969,43 @@ public sealed class ThumbnailViewerControl : UserControl
                 : 0;
         var viewportHeight =
             _galleryScrollViewer?.Viewport.Height ?? 0;
+        var isLargeJump = IsFullViewportJumpForSmoke(
+            offsetChange, viewportHeight);
+        if (isLargeJump)
+        {
+            var now = Stopwatch.GetTimestamp();
+            var sincePreviousJump = _lastFullViewportJumpTimestamp > 0
+                ? Stopwatch.GetElapsedTime(
+                    _lastFullViewportJumpTimestamp, now)
+                : TimeSpan.MaxValue;
+            _consecutiveFullViewportJumpCount =
+                CountConsecutiveViewportJumpsForSmoke(
+                    _consecutiveFullViewportJumpCount,
+                    sincePreviousJump);
+            _lastFullViewportJumpTimestamp = now;
+        }
+
         var delay = LookaheadDelayForScrollForSmoke(
             _session.Options.PrefetchDelay,
             offsetChange,
-            viewportHeight);
+            viewportHeight,
+            _consecutiveFullViewportJumpCount);
+        // A ScrollToAsset jump can attach a new row before ScrollViewer
+        // changes its Offset, so the geometry-based large-jump branch
+        // above may incorrectly see zero. Honour explicit far-seek
+        // admission as well, but only while the seek is recent.
+        if (_lastFarProgrammaticSeekTimestamp > 0
+            && Stopwatch.GetElapsedTime(
+                _lastFarProgrammaticSeekTimestamp)
+                < TimeSpan.FromMilliseconds(250))
+        {
+            delay = ProgrammaticSeekLookaheadDelayForSmoke(
+                delay, _consecutiveFarProgrammaticSeeks);
+        }
+
         // Whether geometry belongs to the previous viewport must not
         // depend on the configured delay. If the caller already uses a
         // >=48ms delay, a bulk jump still invalidates same-edge reuse.
-        var isLargeJump = IsFullViewportJumpForSmoke(
-            offsetChange, viewportHeight);
         // A large seek can be reported while the old viewport geometry
         // is still attached. Do not reuse that old same-edge task just
         // because virtualization has not measured the new rows yet.
@@ -1966,7 +2088,11 @@ public sealed class ThumbnailViewerControl : UserControl
                         GetFirstVisibleRowIndex(),
                         GetLastVisibleRowIndex()));
             cancellationToken.ThrowIfCancellationRequested();
-            var rows = session.Options.PrefetchRows;
+            var rows = ResolveListLookaheadRowsForSmoke(
+                _layoutMode == ViewerLayoutMode.List,
+                session.Options.PrefetchRows,
+                session.Options,
+                session.Diagnostics.AttachedTiles);
             var afterStartIndex = checked(afterRow * columns);
             var afterCount = afterStartIndex < session.Count
                 ? checked((int)Math.Min(
@@ -2058,45 +2184,131 @@ public sealed class ThumbnailViewerControl : UserControl
                         Interlocked.Exchange(
                             ref _lookaheadLastPredecodeStartIndex,
                             warmStartIndex);
-                        await PredecodeNextRowAsync(
-                            session,
-                            warmStartIndex,
-                            checked((int)Math.Min(
-                                session.Count - warmStartIndex,
-                                nextRowCount)),
-                            cancellationToken).ConfigureAwait(false);
-
-                        // One extra row is the absolute upper bound. Use
-                        // the worst-case configured decoded square pixel
-                        // size to guarantee the attached visible set and
-                        // both prospective rows can fit within entry and
-                        // byte budgets even while all are leased.
+                        // A far programmatic seek may leave the previous
+                        // scroll direction reversed. Sequentially decoding
+                        // an entire seven-tile reverse row can exhaust the
+                        // 200ms settled dwell before a single forward tile
+                        // is warm. Admit only two bounded nearby rows and
+                        // warm both concurrently under the existing
+                        // BitmapCache.DecodeConcurrencyLimit (=2). No new
+                        // range, memory allowance or source priority.
                         var oppositeStart = checked(
                             oppositeRow * columns);
-                        if (oppositeStart >= 0
+                        var warmOpposite = oppositeStart >= 0
                             && oppositeStart < session.Count
                             && HasSecondaryWarmCapacityForSmoke(
                                 session.Options,
                                 state.AttachedTiles,
-                                nextRowCount))
+                                nextRowCount);
+                        var primaryCount = checked((int)Math.Min(
+                            session.Count - warmStartIndex,
+                            nextRowCount));
+                        var primaryWarm = PredecodeNextRowAsync(
+                            session,
+                            warmStartIndex,
+                            primaryCount,
+                            cancellationToken);
+                        Task oppositeWarm = Task.CompletedTask;
+                        if (warmOpposite)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            var beforeSecondary = session.Diagnostics;
-                            if (beforeSecondary.ReadyTiles
-                                    >= beforeSecondary.AttachedTiles
-                                && beforeSecondary.ActiveBitmapDecodes == 0)
-                            {
-                                Interlocked.Exchange(
-                                    ref _lookaheadLastPredecodeStartIndex,
-                                    oppositeStart);
-                                await PredecodeNextRowAsync(
-                                    session,
-                                    oppositeStart,
-                                    checked((int)Math.Min(
-                                        session.Count - oppositeStart,
-                                        nextRowCount)),
-                                    cancellationToken).ConfigureAwait(false);
-                            }
+                            oppositeWarm = PredecodeNextRowAsync(
+                                session,
+                                oppositeStart,
+                                checked((int)Math.Min(
+                                    session.Count - oppositeStart,
+                                    nextRowCount)),
+                                cancellationToken);
+                        }
+
+                        await Task.WhenAll(
+                            primaryWarm, oppositeWarm).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        // List rows are 60-82px tall; prepare a second
+                        // offscreen row on BOTH sides if PrefetchRows>=2
+                        // and the viewport + four neighbors fit the same
+                        // conservative bitmap entry/byte budget.
+                        var listTwoRowCapacity =
+                            _layoutMode == ViewerLayoutMode.List
+                            && HasSecondaryWarmCapacityForSmoke(
+                                session.Options,
+                                state.AttachedTiles,
+                                nextRowCount * 2);
+                        if (listTwoRowCapacity)
+                        {
+                            var secondPreferredRow =
+                                ResolveSecondListWarmRowForSmoke(
+                                    isList: true,
+                                    session.Options.PrefetchRows,
+                                    preferredRow,
+                                    direction,
+                                    session.Count);
+                            var secondOppositeRow =
+                                ResolveSecondListWarmRowForSmoke(
+                                    isList: true,
+                                    session.Options.PrefetchRows,
+                                    oppositeRow,
+                                    -direction,
+                                    session.Count);
+
+                            Task secondPrimary = secondPreferredRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, secondPreferredRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            Task secondOpposite = warmOpposite
+                                && secondOppositeRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, secondOppositeRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            await Task.WhenAll(
+                                secondPrimary, secondOpposite)
+                                .ConfigureAwait(false);
+                        }
+
+                        // A 68px List row crosses the lower viewport
+                        // boundary after only ~1.36 normal 50px notches.
+                        // Four consecutive forward events traverse almost
+                        // three rows. Two warm rows on each side were
+                        // insufficient at the 4th first-render tick.
+                        // Prepare the third on each side if and ONLY if
+                        // configured 2+ prefetch rows were extended to a
+                        // bounded three-row List horizon and all six
+                        // native Bitmaps fit the worst-case cache budget.
+                        var listThreeRowCapacity =
+                            listTwoRowCapacity
+                            && rows >= 3
+                            && HasSecondaryWarmCapacityForSmoke(
+                                session.Options,
+                                state.AttachedTiles,
+                                nextRowCount * 3);
+                        if (listThreeRowCapacity)
+                        {
+                            var thirdPreferredRow =
+                                ResolveAdditionalListWarmRowForSmoke(
+                                    isList: true, rows,
+                                    preferredRow, direction,
+                                    session.Count, ordinal: 3);
+                            var thirdOppositeRow =
+                                ResolveAdditionalListWarmRowForSmoke(
+                                    isList: true, rows,
+                                    oppositeRow, -direction,
+                                    session.Count, ordinal: 3);
+                            Task thirdPrimary = thirdPreferredRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, thirdPreferredRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            Task thirdOpposite = warmOpposite
+                                && thirdOppositeRow >= 0
+                                ? PredecodeNextRowAsync(
+                                    session, thirdOppositeRow, 1,
+                                    cancellationToken)
+                                : Task.CompletedTask;
+                            await Task.WhenAll(
+                                thirdPrimary, thirdOpposite)
+                                .ConfigureAwait(false);
                         }
 
                         break;
@@ -2146,6 +2358,67 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    // Extend only List's configured 2+ source lookahead by one row
+    // when the visible viewport + three rows on EACH side fit the
+    // existing native bitmap entry/byte budget. Small List/disabled
+    // settings and all Grid layouts preserve exactly their old range.
+    internal static int ResolveListLookaheadRowsForSmoke(
+        bool isList,
+        int configuredRows,
+        ViewerOptions options,
+        int attachedTiles) =>
+        isList
+        && configuredRows >= 2
+        && HasSecondaryWarmCapacityForSmoke(
+            options, attachedTiles, nextRowCount: 3)
+            ? Math.Max(3, configuredRows)
+            : configuredRows;
+
+    internal static long ResolveAdditionalListWarmRowForSmoke(
+        bool isList,
+        int lookaheadRows,
+        long nearRow,
+        int direction,
+        long assetCount,
+        int ordinal)
+    {
+        if (!isList
+            || ordinal < 2
+            || lookaheadRows < ordinal
+            || nearRow < 0
+            || nearRow >= assetCount
+            || direction is not (1 or -1))
+        {
+            return -1;
+        }
+
+        var target = nearRow + (long)(ordinal - 1) * direction;
+        return target >= 0 && target < assetCount ? target : -1;
+    }
+
+    // Return the next (not the first) offscreen List row, preserving
+    // nearest-first warm order. Grid warms full seven-column rows as
+    // before. This never requests an item beyond PrefetchRows or Count.
+    internal static long ResolveSecondListWarmRowForSmoke(
+        bool isList,
+        int prefetchRows,
+        long nearRow,
+        int direction,
+        long assetCount)
+    {
+        if (!isList
+            || prefetchRows < 2
+            || nearRow < 0
+            || nearRow >= assetCount
+            || direction is not (1 or -1))
+        {
+            return -1;
+        }
+
+        var second = nearRow + direction;
+        return second >= 0 && second < assetCount ? second : -1;
     }
 
     internal static bool HasSecondaryWarmCapacityForSmoke(

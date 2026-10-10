@@ -42,6 +42,43 @@ internal static class Program
             throw new ArgumentException(
                 "--wheel-sequence-evidence-dir requires an output directory.");
         }
+
+        // The opt-in sequence test can exercise the SAME routed 10-event
+        // probe against Grid or List and all three density settings. It
+        // does not modify default Viewer benchmark behavior.
+        var sequenceLayoutText =
+            ReadOption(args, "--wheel-sequence-layout") ?? "grid";
+        if (wheelSequenceEvidenceDir is null
+            && args.Contains("--wheel-sequence-layout"))
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-layout requires --wheel-sequence-evidence-dir.");
+        }
+
+        var sequenceLayout = sequenceLayoutText.ToLowerInvariant() switch
+        {
+            "grid" => ViewerLayoutMode.Grid,
+            "list" => ViewerLayoutMode.List,
+            _ => throw new ArgumentException(
+                "--wheel-sequence-layout must be grid or list.")
+        };
+        var sequenceDensityText =
+            ReadOption(args, "--wheel-sequence-density") ?? "1";
+        if (wheelSequenceEvidenceDir is null
+            && args.Contains("--wheel-sequence-density"))
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-density requires --wheel-sequence-evidence-dir.");
+        }
+
+        if (!int.TryParse(sequenceDensityText,
+                NumberStyles.None, CultureInfo.InvariantCulture,
+                out var sequenceDensity)
+            || sequenceDensity is < 0 or > 2)
+        {
+            throw new ArgumentException(
+                "--wheel-sequence-density must be an integer 0, 1 or 2.");
+        }
         // This is an independently invoked input/raster diagnostic, NOT
         // part of the accepted direct-offset timing benchmark.
         if (wheelEvidenceDir is not null
@@ -95,6 +132,13 @@ internal static class Program
         long routedWheelEventCount = 0;
         // Phase checkpoints identify unnecessary work without changing
         // thumbnail scheduling or resource acceptance thresholds.
+        ViewerSourcePriorityDiagnostics priorityAfterInitialViewport = default;
+        ViewerSourcePriorityDiagnostics priorityAfterColdSmallScroll = default;
+        ViewerSourcePriorityDiagnostics priorityAfterFastSeek = default;
+        ViewerSourcePriorityDiagnostics priorityAfterSettledSmallScroll = default;
+        ViewerSourcePriorityDiagnostics priorityBeforeRoutedWheel = default;
+        ViewerSourcePriorityDiagnostics priorityAfterRoutedWheel = default;
+        ViewerSourcePriorityDiagnostics priorityFinal = default;
         long requestsAfterInitialViewport = 0;
         long requestsAfterColdSmallScroll = 0;
         long requestsAfterFastSeek = 0;
@@ -152,7 +196,14 @@ internal static class Program
                             DecodedBitmapByteLimit = 32L * 1024 * 1024
                         });
 
-                    var viewer = new ThumbnailViewerControl(session);
+                    var viewer = new ThumbnailViewerControl(
+                        session,
+                        wheelSequenceEvidenceDir is null
+                            ? ViewerLayoutMode.Grid
+                            : sequenceLayout,
+                        wheelSequenceEvidenceDir is null
+                            ? 1
+                            : sequenceDensity);
                     // Only the opt-in #634 diagnostic gets a compositor
                     // witness pixel: identical blue fixture rows can produce
                     // byte-identical PNGs despite a genuine redraw.
@@ -200,6 +251,8 @@ internal static class Program
                     Observe(viewer);
                     requestsAfterInitialViewport =
                         viewer.Diagnostics.ThumbnailRequests;
+                    priorityAfterInitialViewport =
+                        session.SourceRequestsByPriority;
 
                     // Standalone wheel burst/reversal: exclude all forty
                     // synthetic far seeks and the other raster probes.
@@ -249,6 +302,8 @@ internal static class Program
                     Observe(viewer);
                     requestsAfterColdSmallScroll =
                         viewer.Diagnostics.ThumbnailRequests;
+                    priorityAfterColdSmallScroll =
+                        session.SourceRequestsByPriority;
 
                     using (recorder.Measure(CoreMetricNames.ViewerFastScrollRefresh))
                     {
@@ -271,6 +326,8 @@ internal static class Program
                     }
                     requestsAfterFastSeek =
                         viewer.Diagnostics.ThumbnailRequests;
+                    priorityAfterFastSeek =
+                        session.SourceRequestsByPriority;
 
                     // Separate the unavoidable immediate first-viewport
                     // race from a normal browsing pause. Jump to a new
@@ -334,6 +391,8 @@ internal static class Program
                     Observe(viewer);
                     requestsAfterSettledSmallScroll =
                         viewer.Diagnostics.ThumbnailRequests;
+                    priorityAfterSettledSmallScroll =
+                        session.SourceRequestsByPriority;
 
                     if (wheelEvidenceDir is not null)
                     {
@@ -362,6 +421,8 @@ internal static class Program
                                 "Wheel probe could not locate a window-relative input point.");
                         requestsBeforeRoutedWheel =
                             viewer.Diagnostics.ThumbnailRequests;
+                        priorityBeforeRoutedWheel =
+                            session.SourceRequestsByPriority;
                         cancelledBeforeRoutedWheel =
                             viewer.Diagnostics.ThumbnailRequestsCancelled;
                         var beforeWheelEvents = viewer.RoutedWheelEventCount;
@@ -410,6 +471,8 @@ internal static class Program
                                 evidenceRoot, "fourth-wheel.png"));
                         requestsAfterRoutedWheel =
                             viewer.Diagnostics.ThumbnailRequests;
+                        priorityAfterRoutedWheel =
+                            session.SourceRequestsByPriority;
                         cancelledAfterRoutedWheel =
                             viewer.Diagnostics.ThumbnailRequestsCancelled;
 
@@ -475,7 +538,18 @@ internal static class Program
                     window.Close();
                     await WaitForViewerIdleAsync(session);
                     finalDiagnostics = viewer.Diagnostics;
+                    priorityFinal = session.SourceRequestsByPriority;
                     finalTileReadiness = viewer.TileReadiness;
+                    if (priorityFinal.Total != finalDiagnostics.ThumbnailRequests)
+                    {
+                        throw new InvalidOperationException(
+                            "Source request priority accounting does not equal overall source work: "
+                            + $"foreground={priorityFinal.Foreground}, "
+                            + $"background={priorityFinal.Background}, "
+                            + $"interactive={priorityFinal.Interactive}, "
+                            + $"total={finalDiagnostics.ThumbnailRequests}.");
+                    }
+
                     if (wheelEvidenceDir is not null)
                     {
                         Console.WriteLine(
@@ -488,6 +562,15 @@ internal static class Program
                             + $"afterWheel={requestsAfterRoutedWheel}, "
                             + $"final={finalDiagnostics.ThumbnailRequests}, "
                             + $"wheelCancelledDelta={cancelledAfterRoutedWheel - cancelledBeforeRoutedWheel}.");
+                        Console.WriteLine(
+                            "Source requests by priority: "
+                            + $"first(F/B/I)={priorityAfterInitialViewport.Foreground}/{priorityAfterInitialViewport.Background}/{priorityAfterInitialViewport.Interactive}, "
+                            + $"cold(F/B/I)={priorityAfterColdSmallScroll.Foreground}/{priorityAfterColdSmallScroll.Background}/{priorityAfterColdSmallScroll.Interactive}, "
+                            + $"fast(F/B/I)={priorityAfterFastSeek.Foreground}/{priorityAfterFastSeek.Background}/{priorityAfterFastSeek.Interactive}, "
+                            + $"settled(F/B/I)={priorityAfterSettledSmallScroll.Foreground}/{priorityAfterSettledSmallScroll.Background}/{priorityAfterSettledSmallScroll.Interactive}, "
+                            + $"preWheel(F/B/I)={priorityBeforeRoutedWheel.Foreground}/{priorityBeforeRoutedWheel.Background}/{priorityBeforeRoutedWheel.Interactive}, "
+                            + $"postWheel(F/B/I)={priorityAfterRoutedWheel.Foreground}/{priorityAfterRoutedWheel.Background}/{priorityAfterRoutedWheel.Interactive}, "
+                            + $"final(F/B/I)={priorityFinal.Foreground}/{priorityFinal.Background}/{priorityFinal.Interactive}.");
                     }
 
                     if (finalDiagnostics.AttachedTiles != 0)
@@ -584,6 +667,9 @@ internal static class Program
                     ["wheel_probe_fourth_blue"] = fourthWheelAudit?.BlueThumbnailSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_probe_fourth_dark"] = fourthWheelAudit?.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_input_kind"] = wheelSequenceEvidence is null ? "not-captured" : "routed-pointerwheel-first-raster",
+                    ["wheel_sequence_layout"] = wheelSequenceEvidence is null ? "not-captured" : sequenceLayout.ToString().ToLowerInvariant(),
+                    ["wheel_sequence_density"] = wheelSequenceEvidence is null ? "not-captured" : sequenceDensity.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_sequence_columns"] = wheelSequenceEvidence is null ? "not-captured" : finalColumns.ToString(CultureInfo.InvariantCulture),
                     ["wheel_sequence_steps"] = wheelSequenceEvidence?.Steps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_forward_steps"] = wheelSequenceEvidence?.ForwardSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["wheel_sequence_reverse_steps"] = wheelSequenceEvidence?.ReverseSteps.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
@@ -617,6 +703,15 @@ internal static class Program
                     ["raw_wheel_post_flush_dark"] = rawWheelEvidence?.Settled.DarkPlaceholderSamples.ToString(CultureInfo.InvariantCulture) ?? "not-captured",
                     ["max_concurrent_bitmap_decodes"] = maxConcurrentBitmapDecodes.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests"] = finalDiagnostics.ThumbnailRequests.ToString(CultureInfo.InvariantCulture),
+                    ["source_requests_foreground"] = priorityFinal.Foreground.ToString(CultureInfo.InvariantCulture),
+                    ["source_requests_background"] = priorityFinal.Background.ToString(CultureInfo.InvariantCulture),
+                    ["source_requests_interactive"] = priorityFinal.Interactive.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_foreground_after_fast_seek"] = priorityAfterFastSeek.Foreground.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_background_after_fast_seek"] = priorityAfterFastSeek.Background.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_foreground_before_input"] = priorityBeforeRoutedWheel.Foreground.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_background_before_input"] = priorityBeforeRoutedWheel.Background.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_foreground_after_input"] = priorityAfterRoutedWheel.Foreground.ToString(CultureInfo.InvariantCulture),
+                    ["wheel_source_background_after_input"] = priorityAfterRoutedWheel.Background.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_coalesced"] = finalDiagnostics.ThumbnailRequestsCoalesced.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_cancelled"] = finalDiagnostics.ThumbnailRequestsCancelled.ToString(CultureInfo.InvariantCulture),
                     ["thumbnail_requests_failed"] = finalDiagnostics.ThumbnailRequestsFailed.ToString(CultureInfo.InvariantCulture),

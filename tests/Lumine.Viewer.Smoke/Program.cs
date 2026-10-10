@@ -1236,6 +1236,92 @@ internal static class Program
                 }, attachedTiles: 35, nextRowCount: 7),
             "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
 
+        // A 50px List notch (List row height ~68px) often makes the
+        // second adjacent row visible before lookahead can run again.
+        // Warm two contiguous List rows on BOTH sides only with a
+        // proven cache budget; never spend extra Grid source/Bitmap work.
+        Require(
+            ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 100, direction: 1, assetCount: 1000) == 101
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 100, direction: -1, assetCount: 1000) == 99
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 1,
+                nearRow: 100, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: false, prefetchRows: 2,
+                nearRow: 100, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 0, direction: -1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.ResolveSecondListWarmRowForSmoke(
+                isList: true, prefetchRows: 2,
+                nearRow: 999, direction: 1, assetCount: 1000) == -1
+            && ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                twoSidedOptions, attachedTiles: 12, nextRowCount: 2)
+            && !ThumbnailViewerControl.HasSecondaryWarmCapacityForSmoke(
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 14,
+                    DecodedBitmapByteLimit = 8L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 12, nextRowCount: 2),
+            "List second-row warming bypassed viewport/native cache budget or leaked to Grid.");
+
+        // Four 50px List notches cross almost three 68px rows,
+        // including one at the lower viewport boundary. Extend the
+        // source and Bitmap warm horizon to three List rows ONLY if
+        // the attached viewport plus 3 neighbors on both sides fits
+        // the unchanged conservative native cache capacity.
+        Require(
+            ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 2,
+                twoSidedOptions, attachedTiles: 12) == 3
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: false, configuredRows: 2,
+                twoSidedOptions, attachedTiles: 12) == 2
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 1,
+                twoSidedOptions, attachedTiles: 12) == 1
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 0,
+                twoSidedOptions, attachedTiles: 12) == 0
+            && ThumbnailViewerControl.ResolveListLookaheadRowsForSmoke(
+                isList: true, configuredRows: 2,
+                new ViewerOptions
+                {
+                    DecodedBitmapEntryLimit = 16,
+                    DecodedBitmapByteLimit = 8L * 1024 * 1024,
+                    DecodedThumbnailMaxDimension = 384
+                }, attachedTiles: 12) == 2
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == 102
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 100, direction: -1,
+                assetCount: 1000, ordinal: 3) == 98
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: false, lookaheadRows: 3,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 2,
+                nearRow: 100, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 998, direction: 1,
+                assetCount: 1000, ordinal: 3) == -1
+            && ThumbnailViewerControl.ResolveAdditionalListWarmRowForSmoke(
+                isList: true, lookaheadRows: 3,
+                nearRow: 1, direction: -1,
+                assetCount: 1000, ordinal: 3) == -1,
+            "List third-row warm horizon bypassed source range, memory budget, edge or Grid isolation.");
+
         // Unlike ScrollToAsset, a small offset adjustment exercises
         // the real inner ScrollViewer's routed ScrollChanged event.
         // This also covers keyboard/scrollbar/touch direction changes,
@@ -1354,6 +1440,76 @@ internal static class Program
                 normalLookaheadDelay, 1600, double.NaN)
                 == normalLookaheadDelay,
             "Lookahead seek debounce improperly slows small/reverse wheel input or ignores a full-viewport jump.");
+
+        // ScrollToAsset can attach virtualized rows before Offset catches
+        // up. Explicit target-distance classification must still detect
+        // far direct navigation with stale visible geometry, and must
+        // never slow near movement, a mounted initial page, or user wheel.
+        Require(
+            ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 500)
+            && ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 20)
+            && !ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: 100, lastVisibleRow: 105,
+                targetRow: 108)
+            && !ThumbnailViewerControl.IsFarProgrammaticTargetForSmoke(
+                firstVisibleRow: -1, lastVisibleRow: -1,
+                targetRow: 500)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 0)
+                == TimeSpan.FromMilliseconds(8)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 1)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(8), consecutiveFarSeeks: 2)
+                == TimeSpan.FromMilliseconds(96)
+            && ThumbnailViewerControl.ProgrammaticSeekLookaheadDelayForSmoke(
+                TimeSpan.FromMilliseconds(200), consecutiveFarSeeks: 2)
+                == TimeSpan.FromMilliseconds(200),
+            "Programmatic far-seek lookahead did not coalesce stale-geometry source work.");
+
+        // Multiple large seeks separated by <250ms form one burst:
+        // cancel old speculative requests and debounce discarded pages.
+        // First isolated seeks and all 50px forward/reverse wheel input
+        // must preserve their existing short-delay priority.
+        Require(
+            ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 0,
+                sincePreviousJump: TimeSpan.MaxValue) == 1
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 1,
+                sincePreviousJump: TimeSpan.FromMilliseconds(2)) == 2
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 2,
+                sincePreviousJump: TimeSpan.FromMilliseconds(2)) == 2
+            && ThumbnailViewerControl.CountConsecutiveViewportJumpsForSmoke(
+                previousCount: 2,
+                sincePreviousJump: TimeSpan.FromMilliseconds(250)) == 1
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 1600, 800,
+                consecutiveFullViewportJumps: 1)
+                == TimeSpan.FromMilliseconds(48)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(96)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), -1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(96)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(8), 50, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(8)
+            && ThumbnailViewerControl.LookaheadDelayForScrollForSmoke(
+                TimeSpan.FromMilliseconds(220), 1600, 800,
+                consecutiveFullViewportJumps: 2)
+                == TimeSpan.FromMilliseconds(220),
+            "Repeated full-viewport seeks did not debounce obsolete prefetch or slowed normal mouse scroll.");
 
         // A later same-direction motion may shift the *visible* edge
         // without creating a new virtual row (the overscan already

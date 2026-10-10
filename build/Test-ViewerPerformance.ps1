@@ -144,6 +144,32 @@ foreach ($result in $results) {
     # 200ms dwell, with zero decoded bitmap warm hits. A bounded opposite-
     # side warm row must actually be reused after this jump scenario.
     $settledHits = [long]$result.metadata.small_scroll_settled_forward_warm_bitmap_hits
+
+    # Print the complete causal stage boundary BEFORE enforcing the
+    # existing settled Bitmap gate. A failed 10k benchmark previously
+    # skipped final artifact upload, hiding whether the lookahead was
+    # unscheduled, canceled, source-only or decoded but evicted.
+    Write-Host (
+        "Viewer settled lookahead diagnostic: assets=$count; " +
+        "scheduledBefore=$($result.metadata.settled_lookahead_scheduled_before_dwell); " +
+        "scheduledDuring=$($result.metadata.settled_lookahead_scheduled_during_dwell); " +
+        "canceledDuring=$($result.metadata.settled_lookahead_cancelled_during_dwell); " +
+        "sourceCompletedDuring=$($result.metadata.settled_lookahead_source_completed_during_dwell); " +
+        "eligibleDuring=$($result.metadata.settled_lookahead_eligible_during_dwell); " +
+        "BitmapPredecodedDuring=$($result.metadata.settled_lookahead_predecoded_during_dwell); " +
+        "BitmapPredecodedDuringScroll=$($result.metadata.settled_lookahead_predecoded_during_scroll); " +
+        "lastDirection=$($result.metadata.settled_lookahead_last_direction); " +
+        "lastWarmRow=$($result.metadata.settled_lookahead_last_predecode_start); " +
+        "lastVisibleAsset=$($result.metadata.settled_lookahead_last_visible_index); " +
+        "warmHits=$settledHits; " +
+        "warmLookups=$($result.metadata.small_scroll_settled_forward_warm_lookup_attempts); " +
+        "noDescriptor=$($result.metadata.small_scroll_settled_forward_no_descriptor); " +
+        "BitmapUnavailable=$($result.metadata.small_scroll_settled_forward_bitmap_unavailable); " +
+        "foreground=$($result.metadata.source_requests_foreground); " +
+        "background=$($result.metadata.source_requests_background); " +
+        "totalSources=$requests; " +
+        "peakBitmapBytes=$maxDecodedBytes"
+    )
     if ($settledHits -le 0) {
         throw "$count Viewer settled forward scrolling still reused no decoded next-row bitmaps."
     }
