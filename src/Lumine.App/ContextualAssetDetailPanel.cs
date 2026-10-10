@@ -951,7 +951,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 Spacing = LumineDesign.Space6
             };
         publicationFooterContent.Children.Add(
-            _publicationCreateCommand ?? new Grid());
+            (Control?)_publicationCreateCommand ?? new Grid());
         publicationFooterContent.Children.Add(
             _publicationActionStatus);
         _publicationActionSurface =
