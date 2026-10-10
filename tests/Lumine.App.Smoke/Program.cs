@@ -9166,6 +9166,14 @@ try
 
                                 Require(
                                     window.CurrentShell.IsContextDetailVisible
+                                    && Math.Abs(
+                                        window.CurrentShell.ContextDetail
+                                            .PreviewHeightForSmoke
+                                        - ContextualAssetDetailPanel
+                                            .ResolvePreviewHeightForSmoke(
+                                                window.CurrentShell
+                                                    .IsCompactInspectorLayout,
+                                                window.CurrentShell.Bounds.Height)) < 0.5
                                     && window.CurrentShell.IsCompactInspectorLayout
                                         == (window.CurrentShell.Bounds.Width < 1600)
                                     && window.CurrentShell.ContextSurfaceBounds.Width
@@ -9705,6 +9713,9 @@ try
 
                     Require(
                         window.CurrentShell.IsCompactInspectorLayout
+                        && Math.Abs(
+                            window.CurrentShell.ContextDetail
+                                .PreviewHeightForSmoke - 80) < 0.5
                         && window.CurrentShell.ContextSurfaceBounds.Width <= 340
                         && window.CurrentShell.ContextDetail
                             .IsCompactPresentationForSmoke
