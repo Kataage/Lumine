@@ -157,3 +157,8 @@ Manual acceptance must verify that a first-time user can, without reading instru
 7. search/filter/sort without deciphering developer-oriented text.
 
 If an evaluator has to be told "the feature is there; use this shortcut" for an ordinary workflow, the UX gate fails.
+
+
+## 2026-10-10 — holistic #635 redesign is a separate contract
+
+The first v2 shell conventions above remain **implementation history**, not acceptance that the finished app reaches the owner's requested quality level. The new [holistic UX v0.1 specification](lumine-v2-holistic-ux-spec-v0.1.md) and [source/screenshot audit](lumine-v2-ui-audit-2026-10-10.md) define the **cross-surface** redesign work under [Issue #635](https://github.com/Kataage/Lumine/issues/635). Its first PR only establishes evidence and design invariants; no runtime UI or user acceptance is claimed. The existing App/Viewer shared palette and 10k/100k budget remain canonical.
