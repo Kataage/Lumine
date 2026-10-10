@@ -10,6 +10,11 @@ using Lumine.Library;
 
 namespace Lumine.App;
 
+internal sealed record BrowseNoMatchRecovery(
+    string ActionLabel,
+    string Guidance,
+    BrowseFilterState? NextState);
+
 internal sealed record BrowseFilterState(
     string SearchText = "",
     string? FolderPath = null,
@@ -33,6 +38,58 @@ internal sealed record BrowseFilterState(
     public IReadOnlyList<string> TagNames =>
         RequiredTags
         ?? Array.Empty<string>();
+
+    public bool HasRefinements =>
+        TagNames.Count > 0
+        || MinRating.HasValue
+        || !string.IsNullOrWhiteSpace(StatusLabel)
+        || FavoriteOnly
+        || !string.IsNullOrWhiteSpace(ColorLabel);
+
+    // Search, current Folder navigation scope, and Sort are three
+    // independent user intentions; a bulk filter-chip clear must
+    // never erase them behind the user's back.
+    public BrowseFilterState WithoutRefinements() =>
+        this with
+        {
+            RequiredTags = Array.Empty<string>(),
+            MinRating = null,
+            StatusLabel = null,
+            FavoriteOnly = false,
+            ColorLabel = null
+        };
+
+    public BrowseNoMatchRecovery PlanNoMatchRecovery()
+    {
+        if (HasRefinements)
+        {
+            return new BrowseNoMatchRecovery(
+                "絞り込みを解除",
+                "絞り込みを解除して再表示します。検索語・フォルダー・並び順は維持されます。",
+                WithoutRefinements());
+        }
+
+        if (!string.IsNullOrWhiteSpace(SearchText))
+        {
+            return new BrowseNoMatchRecovery(
+                "検索を解除",
+                "検索語を解除して再表示します。現在のフォルダーと並び順は維持されます。",
+                this with { SearchText = string.Empty });
+        }
+
+        if (!string.IsNullOrWhiteSpace(FolderPath))
+        {
+            return new BrowseNoMatchRecovery(
+                "すべての画像を表示",
+                "フォルダーの指定を外して、ライブラリ全体の画像を表示します。",
+                this with { FolderPath = null });
+        }
+
+        return new BrowseNoMatchRecovery(
+            "画像フォルダーを追加",
+            "表示できる画像がありません。別の画像フォルダーを追加できます。",
+            NextState: null);
+    }
 
     public bool EquivalentTo(
         BrowseFilterState other) =>
@@ -1159,6 +1216,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     Array.Empty<string>()
             });
 
+    internal async Task ApplyNoMatchRecoveryStateAsync(
+        BrowseFilterState nextState)
+    {
+        ArgumentNullException.ThrowIfNull(nextState);
+
+        // The in-place Viewer can change the active query externally
+        // (e.g. restoring an archived search). Even if the toolbar's
+        // currently rendered state already looks like the recovery
+        // target, the runtime still needs the explicit recovery query.
+        // Avoid the ordinary unchanged-filter debounce early return.
+        if (State.EquivalentTo(nextState))
+        {
+            await _filtersChanged(nextState);
+            return;
+        }
+
+        await SetStateAsync(nextState);
+    }
+
     public Task ReplaceTagScopeAsync(
         string oldTag,
         string newTag)
@@ -1676,7 +1752,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     ColorLabel = null
                 }));
 
-        if (_chips.Children.Count > 0)
+        if (State.HasRefinements)
         {
             var clear =
                 new Button
@@ -1696,11 +1772,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             clear.Click +=
                 async (_, _) =>
                     await SetStateAsync(
-                        new BrowseFilterState(
-                            SearchText:
-                                State.SearchText,
-                            SortOrder:
-                                State.SortOrder));
+                        State.WithoutRefinements());
             _chips.Children.Add(clear);
         }
 

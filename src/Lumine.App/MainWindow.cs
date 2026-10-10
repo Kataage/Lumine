@@ -2670,6 +2670,7 @@ public sealed class MainWindow : Window
                     "Workspace";
                 existingShell.SetNoMatchState(
                     runtime.AssetCount == 0,
+                    _browseFilterState.PlanNoMatchRecovery().ActionLabel,
                     ClearBrowseFiltersAsync,
                     OpenBrowseFilterPanel);
                 _status.Foreground =
@@ -3739,11 +3740,24 @@ public sealed class MainWindow : Window
 
     private async Task ClearBrowseFiltersAsync()
     {
-        _browseFilterState =
-            new BrowseFilterState(
-                SortOrder:
-                    _browsePreferences.SortOrder);
-        EnsureBrowseControls();
+        var recovery =
+            _browseFilterState.PlanNoMatchRecovery();
+        if (recovery.NextState is not { } next)
+        {
+            // No active constraints: do not offer a no-op clear action.
+            await ChooseAndOpenLibraryAsync();
+            return;
+        }
+
+        if (_browseControls is { } controls)
+        {
+            // Preserve the live Search and navigation owners rather than
+            // rebuilding the toolbar just to clear one constraint level.
+            await controls.ApplyNoMatchRecoveryStateAsync(next);
+            return;
+        }
+
+        _browseFilterState = next;
         await ApplyBrowseQueryAsync();
         RenderNavigationDestination();
     }
@@ -3755,11 +3769,13 @@ public sealed class MainWindow : Window
 
     private Control CreateNoMatchState()
     {
+        var recovery =
+            _browseFilterState.PlanNoMatchRecovery();
         var clear =
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
-                    Content = "条件をすべて解除"
+                    Content = recovery.ActionLabel
                 });
         clear.Click +=
             async (_, _) =>
@@ -3797,7 +3813,7 @@ public sealed class MainWindow : Window
 
         return LumineDesign.CreateProductState(
             "一致する画像がありません",
-            "条件を解除するか、フィルターを見直してください。",
+            recovery.Guidance,
             new Border
             {
                 Child = actions
