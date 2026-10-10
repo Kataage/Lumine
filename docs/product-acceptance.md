@@ -112,3 +112,6 @@ After the real Windows review, provide `product-summary.json` (or paste its cont
 If the result is `pass`, first verify that #443 and #410 have no remaining P0/P1 follow-up, then close the acceptance chain in dependency order (#443 -> #410 -> #397). #385 closes only after its complete Product Epic conditions are confirmed. AI research/integration remains blocked until #397 and #385 are complete.
 
 If any manual item is `fail`, #397 stays open and the failure should become a focused product issue rather than being waived implicitly.
+
+
+For the focused P1 scroll-quality Issue #634, the shipped Windows product acceptance artifact also includes `build/Run-ViewerScrollOwnerReview.ps1` and [the shorter human review instructions](viewer-scroll-owner-review.md). This is a **separate five-interaction real-Windows manual check**, not a replacement for the comprehensive #397 product acceptance or physical Windows GPU verification.
