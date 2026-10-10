@@ -8790,6 +8790,11 @@ try
                                     && window.BrowseControlsForSmoke
                                         .PrimaryToolbarIsContainedForSmoke
                                     && window.BrowseControlsForSmoke
+                                        .WorkspaceContextIsVisibleForSmoke
+                                    && window.BrowseControlsForSmoke
+                                        .WorkspaceContextForSmoke.Library
+                                        == window.CurrentRuntime!.Library.Name
+                                    && window.BrowseControlsForSmoke
                                         .FilterButtonIsVisibleForSmoke
                                     && window.BrowseControlsForSmoke
                                         .DisplayButtonIsVisibleForSmoke
@@ -8883,6 +8888,51 @@ try
                                             .CloseDisplayFlyoutForSmoke();
                                         Dispatcher.UIThread.RunJobs();
 
+                                        Require(
+                                            BrowseWorkspaceControls.FormatFolderScopeForSmoke(null)
+                                                == "すべての画像"
+                                            && BrowseWorkspaceControls.FormatFolderScopeForSmoke(
+                                                @"D:\art\projects\subject")
+                                                == "subject"
+                                            && BrowseWorkspaceControls.FormatFolderScopeForSmoke(
+                                                "assets/subject/")
+                                                == "subject"
+                                            && BrowseWorkspaceControls.FormatFolderScopeForSmoke(
+                                                @"D:\")
+                                                == "D:",
+                                            "Browse contextual folder label is not safely reduced to its final segment.");
+
+                                        var contextBeforeFiltering =
+                                            window.BrowseControlsForSmoke!
+                                                .WorkspaceContextForSmoke;
+                                        Require(
+                                            contextBeforeFiltering.Scope
+                                                == "すべての画像",
+                                            "Browse context failed to identify unfiltered library.");
+
+                                        var retainedContextControls =
+                                            window.BrowseControlsForSmoke!;
+                                        Require(
+                                            retainedContextControls.FocusSearchForSmoke(),
+                                            "Browse Search failed to receive focus before context change.");
+                                        retainedContextControls.UpdateWorkspaceContext(
+                                            window.CurrentRuntime!.Library.Name,
+                                            @"assets\portfolio\portrait");
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            ReferenceEquals(
+                                                retainedContextControls,
+                                                window.BrowseControlsForSmoke)
+                                            && retainedContextControls
+                                                .WorkspaceContextForSmoke.Scope
+                                                == "portrait"
+                                            && retainedContextControls.IsSearchFocusedForSmoke,
+                                            "Browse library/scope context update recreated the toolbar or stole Search focus.");
+                                        retainedContextControls.UpdateWorkspaceContext(
+                                            window.CurrentRuntime.Library.Name,
+                                            null);
+                                        Dispatcher.UIThread.RunJobs();
+
                                         var visualFilterAsset =
                                             await window.CurrentRuntime!
                                                 .ViewerSession
@@ -8910,6 +8960,14 @@ try
                                             && window.BrowseControlsForSmoke
                                                 .ActiveChipsUseSharedThemeForSmoke,
                                             "Browse active-filter state was not surfaced with the shared chip design and a matching result.");
+                                        Require(
+                                            window.BrowseControlsForSmoke
+                                                .WorkspaceContextForSmoke.Library
+                                                == contextBeforeFiltering.Library
+                                            && window.BrowseControlsForSmoke
+                                                .WorkspaceContextForSmoke.Scope
+                                                == "すべての画像",
+                                            "Tag filtering unexpectedly replaced the library context or folder scope.");
                                         CaptureVisualEvidence(
                                             window,
                                             "browse-active-filter-900x600");
