@@ -820,20 +820,52 @@ internal sealed class CoreViewerShell : UserControl
         long index) =>
         _grid.IsAssetFocused(index);
 
-    internal async Task ShowContextDetailAsync()
+    internal async Task ShowContextDetailAsync(
+        bool focusSelectedTab = false)
     {
         _contextSurface.IsVisible = true;
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
 
-        if (_grid.SelectedAssetIndex < 0)
+        var selectedIndex = _grid.SelectedAssetIndex;
+        if (selectedIndex < 0)
         {
             _contextDetail.ShowNoSelection();
             return;
         }
 
-        await LoadContextDetailAsync(
-            _grid.SelectedAssetIndex);
+        // Keyboard 'I' owns an explicit focus transition into Inspector.
+        // Pointer/menu/programmatic opening must not steal focus. Defer
+        // until layout, and only transfer if the same selected Gallery
+        // asset and its original keyboard focus remain current.
+        if (focusSelectedTab)
+        {
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (!_contextSurface.IsVisible
+                        || _focusedSurface.IsVisible
+                        || _grid.SelectedAssetIndex != selectedIndex)
+                    {
+                        return;
+                    }
+
+                    var current =
+                        TopLevel.GetTopLevel(this)
+                            ?.FocusManager
+                            ?.GetFocusedElement() as Control;
+                    if (current is not null
+                        && (ReferenceEquals(current, _grid)
+                            || current.GetVisualAncestors()
+                                .Contains(_grid)))
+                    {
+                        _contextDetail.FocusSelectedTab();
+                    }
+                },
+                DispatcherPriority.Input);
+        }
+
+        await LoadContextDetailAsync(selectedIndex);
     }
 
     internal void HideContextDetail(
@@ -3395,7 +3427,8 @@ internal sealed class CoreViewerShell : UserControl
         if (e.Key == Key.I)
         {
             e.Handled = true;
-            await ShowContextDetailAsync();
+            await ShowContextDetailAsync(
+                focusSelectedTab: true);
             return;
         }
 

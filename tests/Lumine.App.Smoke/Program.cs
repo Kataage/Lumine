@@ -5579,6 +5579,39 @@ try
                 && shell.IsAssetFocusedForSmoke(inspectorReturnIndex),
                 "Closing Inspector did not restore focus to the selected, virtualization-aware asset tile.");
 
+            // Real keyboard entry must transfer focus into the live,
+            // current Inspector tab; pointer/programmatic entry still
+            // preserves caller focus. This complements the explicit-close
+            // thumbnail focus restoration above.
+            var keyboardInspectorEntry = new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.I
+            };
+            shell.RaiseEvent(keyboardInspectorEntry);
+            for (var inspectorFocusAttempt = 0;
+                 inspectorFocusAttempt < 30
+                 && !shell.ContextDetail.IsSelectedTabFocusedForSmoke;
+                 inspectorFocusAttempt++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                await Task.Delay(1);
+            }
+            Require(
+                keyboardInspectorEntry.Handled
+                && shell.IsContextDetailVisible
+                && shell.ContextDetail.IsSelectedTabFocusedForSmoke
+                && shell.GridViewer.SelectedAssetIndex
+                    == inspectorReturnIndex,
+                "Gallery I shortcut did not enter the active Inspector tab or changed selection.");
+            shell.HideContextDetail(
+                restoreSelectedAssetFocus: true);
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !shell.IsContextDetailVisible
+                && shell.IsAssetFocusedForSmoke(inspectorReturnIndex),
+                "Keyboard-opened Inspector did not restore the invoking Gallery asset on close.");
+
             // Automatic/query-driven hides must keep their existing
             // grid-container fallback instead of focusing a stale tile.
             await shell.ShowContextDetailAsync();
