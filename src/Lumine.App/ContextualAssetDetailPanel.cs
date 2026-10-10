@@ -997,7 +997,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     new RowDefinitions("Auto,Auto,*")
             };
         layout.Children.Add(header);
-        Grid.SetRow(summaryBody, 1);
+        Grid.SetRow(_summaryLayout, 1);
         layout.Children.Add(_summaryLayout);
         Grid.SetRow(tabLayout, 2);
         layout.Children.Add(tabLayout);
