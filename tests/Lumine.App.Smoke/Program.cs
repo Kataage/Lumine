@@ -7833,6 +7833,90 @@ try
                         CaptureVisualEvidence(
                             window,
                             "browse-1440x900-sidebar");
+
+                        // A real async navigation refresh rebuilds the
+                        // contextual Folder view. Keyboard focus on its
+                        // All images action must follow the new instance,
+                        // while focus deliberately moved to global
+                        // navigation must never be stolen back.
+                        window.NavigateForSmoke("フォルダー");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var oldAllFolders =
+                            window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    AutomationProperties.GetName(button)
+                                        == "すべての画像（表示中）");
+                        Require(
+                            oldAllFolders.Focus(),
+                            "Contextual All images was not keyboard reachable.");
+                        window.NavigateForSmoke("フォルダー");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var refreshedAllFolders =
+                            window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    AutomationProperties.GetName(button)
+                                        == "すべての画像（表示中）");
+                        Require(
+                            !ReferenceEquals(
+                                oldAllFolders,
+                                refreshedAllFolders)
+                            && refreshedAllFolders.IsFocused,
+                            "Refreshing contextual Folder navigation detached the focused action without semantic focus restoration.");
+
+                        window.NavigateForSmoke("フォルダー");
+                        var deliberateGlobalFocus =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .First(button =>
+                                    button.IsEffectivelyVisible
+                                    && !button.Classes.Contains("rail")
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && AutomationProperties.GetName(button)
+                                        == "ライブラリ");
+                        Require(
+                            deliberateGlobalFocus.Focus(),
+                            "Global Library command did not accept intervening focus.");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            deliberateGlobalFocus.IsFocused
+                            && !window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Any(button => button.IsFocused),
+                            "Late contextual view refresh stole focus from the user's new global navigation target.");
+                        deliberateGlobalFocus.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<Border>()
+                                .Any(card =>
+                                    AutomationProperties.GetAutomationId(card)?
+                                        .StartsWith(
+                                            "library-card-",
+                                            StringComparison.Ordinal)
+                                    == true)
+                            && window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Any(button =>
+                                    button.IsEffectivelyVisible
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && button.Classes.Contains("selected")
+                                    && button.IsFocused
+                                    && AutomationProperties.GetName(button)
+                                        == "ライブラリ"),
+                            "Returning to Library after Folder refresh lost context or global keyboard focus.");
                     }
 
                     var shellBeforeSettings =
