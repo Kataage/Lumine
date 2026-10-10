@@ -9815,6 +9815,18 @@ try
                                                         AutomationProperties.GetName(
                                                             button)
                                                             == "タグ: zz-browse-focus-smoke の絞り込みを解除");
+                                        for (var chipFocusAttempt = 0;
+                                             chipFocusAttempt < 30
+                                                 && !survivingChip.IsFocused;
+                                             chipFocusAttempt++)
+                                        {
+                                            // The new button becomes focusable
+                                            // after its first layout pass.
+                                            // Verify the real live successor,
+                                            // never substitute a test-only focus.
+                                            Dispatcher.UIThread.RunJobs();
+                                            await Task.Delay(1);
+                                        }
                                         Require(
                                             chipControls.State.TagNames.SequenceEqual(
                                                 ["zz-browse-focus-smoke"],
@@ -9824,7 +9836,12 @@ try
                                                 == searchBeforeChipRemoval
                                             && chipControls.State.SortOrder
                                                 == sortBeforeChipRemoval,
-                                            "Removing the focused Browse filter chip did not focus the surviving condition or preserve Search/Sort.");
+                                            "Removing the focused Browse filter chip did not focus the surviving condition or preserve Search/Sort. "
+                                            + $"tags={string.Join(",", chipControls.State.TagNames)}, "
+                                            + $"focus={survivingChip.IsFocused}, "
+                                            + $"focusOwner={window.FocusManager.GetFocusedElement()?.GetType().Name}, "
+                                            + $"search={chipControls.State.SearchText == searchBeforeChipRemoval}, "
+                                            + $"sort={chipControls.State.SortOrder == sortBeforeChipRemoval}.");
 
                                         var focusedClearAll =
                                             chipControls.GetVisualDescendants()
