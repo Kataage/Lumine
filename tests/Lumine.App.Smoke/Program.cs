@@ -6074,15 +6074,15 @@ try
                                     "設定");
                             var primaryIcon =
                                 LumineDesign.ConfigureIconButton(
-                                    LumineDesign.ConfigurePrimaryButton(
-                                        new Button
-                                        {
-                                            Content =
-                                                LumineDesign.CreateStrokeIcon(
-                                                    LumineDesign.PlusIconPath,
-                                                    18)
-                                        }),
-                                    "追加");
+                                    new Button
+                                    {
+                                        Content =
+                                            LumineDesign.CreateStrokeIcon(
+                                                LumineDesign.PlusIconPath,
+                                                18)
+                                    },
+                                    "追加",
+                                    primary: true);
                             var input =
                                 LumineDesign.ConfigureTextBox(
                                     new TextBox
