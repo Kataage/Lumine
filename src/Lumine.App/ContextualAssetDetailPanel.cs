@@ -85,6 +85,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly ManagedTagPicker _tagPicker;
     private readonly TextBox _notesEditor;
     private readonly TextBlock _saveStatus;
+    private readonly Border _saveActionSurface;
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _retry;
@@ -550,7 +551,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             organizeBody,
             "整理情報",
             editor);
-        organizeBody.Children.Add(
+
+        // Saving is the primary action of the Organize tab. Keep the
+        // existing controls in the same Inspector, but outside the
+        // scrollable metadata fields: otherwise a short window hides
+        // Save/Reset below Notes and forces a long scroll to commit.
+        _saveActionSurface =
             new Border
             {
                 Background = LumineDesign.SurfaceRaised,
@@ -561,8 +567,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     new Thickness(
                         LumineDesign.Space8,
                         LumineDesign.Space6),
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        0,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12),
                 Child = saveRow
-            });
+            };
 
         Button CreateContextAction(
             string label,
@@ -984,11 +996,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                    new RowDefinitions("Auto,*,Auto")
             };
         tabLayout.Children.Add(tabStripHost);
         Grid.SetRow(_tabContent, 1);
         tabLayout.Children.Add(_tabContent);
+        Grid.SetRow(_saveActionSurface, 2);
+        tabLayout.Children.Add(_saveActionSurface);
 
         var layout =
             new Grid
@@ -1250,6 +1264,18 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
         SelectTab(index);
     }
+
+    // One stable footer for the Organize tab: it does not take part in
+    // the tab's ScrollViewer content and collapses for the other jobs.
+    internal bool SaveActionsDockedForSmoke =>
+        _saveActionSurface.Parent is Grid parent
+        && ReferenceEquals(_tabContent.Parent, parent)
+        && Grid.GetRow(_tabContent) == 1
+        && Grid.GetRow(_saveActionSurface) == 2
+        && _saveActionSurface.IsVisible == (_selectedTabIndex == 0);
+
+    internal bool SaveActionsVisibleForSmoke =>
+        _saveActionSurface.IsVisible;
 
     internal bool TabPagesHaveIndependentScrollStateForSmoke =>
         _tabPages.Length == TabHeaders.Count
@@ -3309,6 +3335,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _selectedTabIndex = index;
         _tabContent.Content =
             _tabPages[index];
+        _saveActionSurface.IsVisible = index == 0;
 
         for (var itemIndex = 0;
              itemIndex < _tabButtons.Length;
