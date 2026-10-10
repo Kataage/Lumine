@@ -10157,6 +10157,76 @@ try
                         && !window.CurrentShell.IsFocusedViewVisible,
                         "Closing the focused image viewer did not release modality/full-screen state and restore workspace interaction.");
 
+                    // The actual Inspector "画像を表示" action is a
+                    // different keyboard origin from a grid tile.
+                    // Closing the focused modal must restore the live
+                    // Inspector command instead of dropping users back
+                    // into the thumbnail strip mid-editing.
+                    window.CurrentShell.GridViewer.SelectAsset(0);
+                    await window.CurrentShell.ShowContextDetailAsync();
+                    Dispatcher.UIThread.RunJobs();
+                    var inspectorOpenImageCommand =
+                        window.CurrentShell.ContextDetail
+                            .GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                AutomationProperties.GetName(button)
+                                    == "画像を表示");
+                    Require(
+                        inspectorOpenImageCommand.IsEnabled
+                        && inspectorOpenImageCommand.IsEffectivelyVisible
+                        && inspectorOpenImageCommand.Focus(),
+                        "Inspector focused-view invoker was not keyboard reachable.");
+
+                    await window.CurrentShell.OpenFocusedViewAsync(0);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxVisible
+                        && window.IsFocusInsideLightboxForSmoke,
+                        "Inspector-invoked focused viewer failed to establish modality.");
+
+                    await window.CurrentShell.DetailViewer.SelectAsync(1);
+                    Dispatcher.UIThread.RunJobs();
+                    // Navigating inside the focused view may legitimately
+                    // synchronize a new selected asset back to the Gallery.
+                    // The close operation must preserve whichever selection
+                    // is current, not silently roll back to the opener.
+                    var selectionBeforeInspectorReturn =
+                        window.CurrentShell.GridViewer.SelectedAssetIndex;
+                    window.CurrentShell.CloseFocusedView();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxVisible
+                        && window.IsWorkspaceInteractionEnabled
+                        && window.CurrentShell.IsContextDetailVisible
+                        && inspectorOpenImageCommand.IsFocused
+                        && window.CurrentShell.GridViewer.SelectedAssetIndex
+                            == selectionBeforeInspectorReturn,
+                        "Closing Inspector-invoked focused viewer lost the live Inspector command or silently rewound Gallery selection.");
+
+                    // If Inspector is hidden while the modal is open, its
+                    // invoker is no longer a valid keyboard destination:
+                    // fall back to the invoking thumbnail index.
+                    Require(
+                        inspectorOpenImageCommand.Focus(),
+                        "Inspector invoker could not refocus before fallback verification.");
+                    await window.CurrentShell.OpenFocusedViewAsync(0);
+                    Dispatcher.UIThread.RunJobs();
+                    window.CurrentShell.HideContextDetail();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxVisible
+                        && window.IsFocusInsideLightboxForSmoke
+                        && !window.CurrentShell.IsContextDetailVisible,
+                        "Closing the underlying Inspector stole modal Viewer keyboard focus.");
+                    window.CurrentShell.CloseFocusedView();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsLightboxVisible
+                        && !window.CurrentShell.IsContextDetailVisible
+                        && window.CurrentShell.IsAssetFocusedForSmoke(0),
+                        "Closing viewer restored focus to a hidden Inspector rather than the invoking thumbnail.");
+
                     var cacheSafetyAsset =
                         await window.CurrentRuntime!
                             .ViewerSession
