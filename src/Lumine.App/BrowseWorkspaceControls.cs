@@ -144,6 +144,8 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Border _displayControlsHost;
     private readonly WrapPanel _chips;
     private readonly Border _workspaceContextHost;
+    private readonly Grid _primaryToolbarRow;
+    private bool _primaryToolbarStacked;
     private readonly TextBlock _libraryContextTitle;
     private readonly TextBlock _scopeContextTitle;
     private CancellationTokenSource? _searchDebounce;
@@ -566,7 +568,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
             _workspaceContextHost,
             "現在のライブラリ: ライブラリ、すべての画像");
 
-        var primaryRow =
+        _primaryToolbarRow =
             new Grid
             {
                 ColumnDefinitions =
@@ -576,29 +578,25 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
-        primaryRow.Children.Add(_workspaceContextHost);
+        _primaryToolbarRow.Children.Add(_workspaceContextHost);
 
         Grid.SetColumn(_search, 1);
-        primaryRow.Children.Add(_search);
+        _primaryToolbarRow.Children.Add(_search);
 
-        Grid.SetColumn(
-            _filterButton,
-            2);
-        primaryRow.Children.Add(
-            _filterButton);
+        Grid.SetColumn(_filterButton, 2);
+        _primaryToolbarRow.Children.Add(_filterButton);
 
-        Grid.SetColumn(
-            _displayButton,
-            3);
-        primaryRow.Children.Add(
-            _displayButton);
+        Grid.SetColumn(_displayButton, 3);
+        _primaryToolbarRow.Children.Add(_displayButton);
+        _primaryToolbarRow.SizeChanged +=
+            (_, e) => UpdatePrimaryToolbarLayout(e.NewSize.Width);
 
         var root =
             new StackPanel
             {
                 Spacing = LumineDesign.Space4
             };
-        root.Children.Add(primaryRow);
+        root.Children.Add(_primaryToolbarRow);
         root.Children.Add(_chips);
 
         var commandBar =
@@ -824,6 +822,117 @@ internal sealed class BrowseWorkspaceControls : UserControl
             : name;
     }
 
+    // Avalonia measures semantic button labels at the active text scale.
+    // The single-row toolbar must not squeeze Search below its themed
+    // minimum when those labels grow (e.g. "フィルター 5" at 225%).
+    // This pure geometry test does not rely on arbitrary screen breakpoints.
+    internal static bool ShouldStackToolbarForSmoke(
+        double availableWidth,
+        double searchMinimumWidth,
+        double filterDesiredWidth,
+        double displayDesiredWidth,
+        double contextWidth = 184,
+        double columnGap = LumineDesign.Space8) =>
+        double.IsFinite(availableWidth)
+        && availableWidth > 0
+        && availableWidth + 0.5 <
+            contextWidth
+            + searchMinimumWidth
+            + filterDesiredWidth
+            + displayDesiredWidth
+            + 3 * columnGap;
+
+    private void UpdatePrimaryToolbarLayout(double availableWidth)
+    {
+        if (availableWidth <= 0)
+        {
+            return;
+        }
+
+        // DesiredSize can be zero during initial layout. In that pass
+        // retain the normal grammar; the subsequent measured SizeChanged
+        // evaluates the actual text/button widths without new controls.
+        var filterWidth = _filterButton.DesiredSize.Width;
+        var displayWidth = _displayButton.DesiredSize.Width;
+        if (filterWidth <= 0 || displayWidth <= 0)
+        {
+            return;
+        }
+
+        var stacked = ShouldStackToolbarForSmoke(
+            availableWidth,
+            _search.MinWidth,
+            filterWidth,
+            displayWidth,
+            _workspaceContextHost.Width,
+            LumineDesign.Space8);
+        if (stacked == _primaryToolbarStacked)
+        {
+            return;
+        }
+
+        _primaryToolbarStacked = stacked;
+
+        // Move ONLY the original four mounted controls between grid cells.
+        // This preserves Search caret/selection, Flyout ownership, keyboard
+        // order, filter state, and the Viewer underneath the command bar.
+        _primaryToolbarRow.ColumnDefinitions =
+            new ColumnDefinitions(
+                stacked ? "*,Auto,Auto" : "184,*,Auto,Auto");
+        _primaryToolbarRow.RowDefinitions =
+            new RowDefinitions(
+                stacked ? "Auto,Auto" : "Auto");
+        _primaryToolbarRow.RowSpacing =
+            stacked ? LumineDesign.Space4 : 0;
+
+        Grid.SetRow(_workspaceContextHost, 0);
+        Grid.SetColumn(_workspaceContextHost, 0);
+        Grid.SetColumnSpan(
+            _workspaceContextHost,
+            stacked ? 3 : 1);
+
+        Grid.SetRow(_search, stacked ? 1 : 0);
+        Grid.SetColumn(_search, stacked ? 0 : 1);
+        Grid.SetColumnSpan(_search, 1);
+        _search.HorizontalAlignment =
+            stacked
+                ? HorizontalAlignment.Stretch
+                : HorizontalAlignment.Left;
+
+        Grid.SetRow(_filterButton, stacked ? 1 : 0);
+        Grid.SetColumn(_filterButton, stacked ? 1 : 2);
+        Grid.SetRow(_displayButton, stacked ? 1 : 0);
+        Grid.SetColumn(_displayButton, stacked ? 2 : 3);
+    }
+
+    internal bool PrimaryToolbarStackedForSmoke =>
+        _primaryToolbarStacked;
+
+    internal bool PrimaryToolbarOrderForSmoke
+    {
+        get
+        {
+            if (_primaryToolbarStacked)
+            {
+                return Grid.GetRow(_workspaceContextHost) == 0
+                    && Grid.GetRow(_search) == 1
+                    && Grid.GetRow(_filterButton) == 1
+                    && Grid.GetRow(_displayButton) == 1
+                    && Grid.GetColumn(_search) == 0
+                    && Grid.GetColumn(_filterButton) == 1
+                    && Grid.GetColumn(_displayButton) == 2;
+            }
+
+            return Grid.GetRow(_workspaceContextHost) == 0
+                && Grid.GetRow(_search) == 0
+                && Grid.GetRow(_filterButton) == 0
+                && Grid.GetRow(_displayButton) == 0
+                && Grid.GetColumn(_search) == 1
+                && Grid.GetColumn(_filterButton) == 2
+                && Grid.GetColumn(_displayButton) == 3;
+        }
+    }
+
     internal bool FocusSearchForSmoke() =>
         _search.Focus();
 
@@ -934,7 +1043,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
             - LumineDesign.Space6) < 0.001
         && _search.MaxWidth <= 720.5
         && _search.HorizontalAlignment
-            == HorizontalAlignment.Left;
+            == (_primaryToolbarStacked
+                ? HorizontalAlignment.Stretch
+                : HorizontalAlignment.Left);
 
     internal bool FocusFilterTriggerForSmoke() =>
         _filterButton.Focus();
