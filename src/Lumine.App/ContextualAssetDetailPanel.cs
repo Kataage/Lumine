@@ -795,7 +795,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             creativeActionButtons.ToArray();
         var creativeActions =
             new Grid();
-        if (LumineVisualMetrics.TextScaleFactor >= 1.5)
+        if (creativeActionButtons.Count > 0
+            && LumineVisualMetrics.TextScaleFactor >= 1.5)
         {
             // 150–225% Japanese text needs full-width action names. Keep
             // each creation/addition flyout reachable without tiny labels.
@@ -1374,6 +1375,82 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         > _saveActionSurface.Bounds.Width + 0.5
                     || point.Y + command.Bounds.Height
                         > _saveActionSurface.Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    // A single task-specific action region belongs below the scrollable
+    // Inspector body. Information commands stay close to their sections.
+    internal bool ContextualFooterLayoutForSmoke
+    {
+        get
+        {
+            if (_tabContent.Parent is not Grid host
+                || !ReferenceEquals(_saveActionSurface.Parent, host)
+                || !ReferenceEquals(_creativeActionSurface.Parent, host)
+                || !ReferenceEquals(_publicationActionSurface.Parent, host)
+                || Grid.GetRow(_saveActionSurface) != 2
+                || Grid.GetRow(_creativeActionSurface) != 2
+                || Grid.GetRow(_publicationActionSurface) != 2)
+            {
+                return false;
+            }
+
+            return _saveActionSurface.IsVisible == (_selectedTabIndex == 0)
+                && _creativeActionSurface.IsVisible ==
+                    (_selectedTabIndex == 1
+                     && _creativeFooterCommands.Length > 0)
+                && _publicationActionSurface.IsVisible ==
+                    (_selectedTabIndex == 2
+                     && _publicationCreateCommand is not null);
+        }
+    }
+
+    internal bool ContextualFooterCommandsContainedForSmoke
+    {
+        get
+        {
+            Border? host = null;
+            IEnumerable<Control> commands = Array.Empty<Control>();
+            if (_creativeActionSurface.IsVisible)
+            {
+                host = _creativeActionSurface;
+                commands = _creativeFooterCommands;
+            }
+            else if (_publicationActionSurface.IsVisible
+                     && _publicationCreateCommand is not null)
+            {
+                host = _publicationActionSurface;
+                commands = new Control[] { _publicationCreateCommand };
+            }
+
+            if (host is null)
+            {
+                return true;
+            }
+
+            if (host.Bounds.Width <= 0 || host.Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var command in commands)
+            {
+                var position = command.TranslatePoint(
+                    new Point(0, 0), host);
+                if (position is not { } point
+                    || !command.IsEffectivelyVisible
+                    || point.X < -0.5
+                    || point.Y < -0.5
+                    || point.X + command.Bounds.Width
+                        > host.Bounds.Width + 0.5
+                    || point.Y + command.Bounds.Height
+                        > host.Bounds.Height + 0.5)
                 {
                     return false;
                 }
