@@ -6872,6 +6872,72 @@ try
                                     == "フォルダー"),
                         "Contextual close button left focus on the hidden pane.");
 
+                    // Compact navigation must also light-dismiss from an
+                    // actual pointer press on the image/workspace side.
+                    // A press within the navigation pane must not dismiss it.
+                    var pointerFolderTrigger =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.Classes.Contains("rail")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー");
+                    pointerFolderTrigger.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent));
+                    Dispatcher.UIThread.RunJobs();
+                    var pointerNavigationPane =
+                        window.GetVisualDescendants()
+                            .OfType<Border>()
+                            .Single(border =>
+                                border.Classes.Contains("lumine-sidebar"));
+                    var pointerPaneOrigin =
+                        pointerNavigationPane.TranslatePoint(
+                            new Point(0, 0),
+                            window)
+                        ?? throw new InvalidOperationException(
+                            "Compact navigation did not map to the window for pointer light-dismiss smoke.");
+                    Require(
+                        window.IsNavigationPaneOverlayForSmoke,
+                        "Compact navigation did not reopen for pointer light-dismiss smoke.");
+
+                    var paneHeaderPoint = new Point(
+                        pointerPaneOrigin.X + 16,
+                        pointerPaneOrigin.Y + 16);
+                    window.MouseDown(paneHeaderPoint, MouseButton.Left);
+                    window.MouseUp(paneHeaderPoint, MouseButton.Left);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsNavigationPaneOverlayForSmoke,
+                        "Pressing inside the compact navigation header light-dismissed its own pane.");
+
+                    var workspaceClickPoint = new Point(
+                        window.ClientSize.Width - 32,
+                        window.ClientSize.Height - 32);
+                    Require(
+                        workspaceClickPoint.X
+                            > pointerPaneOrigin.X
+                            + pointerNavigationPane.Bounds.Width + 8,
+                        "Compact navigation pointer smoke did not choose a point outside the pane.");
+                    window.MouseDown(
+                        workspaceClickPoint,
+                        MouseButton.Left);
+                    window.MouseUp(
+                        workspaceClickPoint,
+                        MouseButton.Left);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !window.IsNavigationPaneVisibleForSmoke
+                        && !window.IsNavigationPinnedForSmoke
+                        && window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Any(button =>
+                                button.IsEffectivelyVisible
+                                && button.Classes.Contains("rail")
+                                && button.Classes.Contains("selected")
+                                && AutomationProperties.GetName(button)
+                                    == "フォルダー"),
+                        "Workspace click failed to light-dismiss compact navigation while preserving the selected destination.");
+
                     var railLibraryAfterDismiss =
                         window.GetVisualDescendants()
                             .OfType<Button>()
