@@ -590,6 +590,14 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _primaryToolbarRow.Children.Add(_displayButton);
         _primaryToolbarRow.SizeChanged +=
             (_, e) => UpdatePrimaryToolbarLayout(e.NewSize.Width);
+        // Facet-count text can widen Filter without resizing the window.
+        // Re-evaluate after Avalonia measures that semantic command too.
+        _filterButton.SizeChanged +=
+            (_, _) => UpdatePrimaryToolbarLayout(
+                _primaryToolbarRow.Bounds.Width);
+        _displayButton.SizeChanged +=
+            (_, _) => UpdatePrimaryToolbarLayout(
+                _primaryToolbarRow.Bounds.Width);
 
         var root =
             new StackPanel
