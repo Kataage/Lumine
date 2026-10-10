@@ -529,12 +529,43 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ColumnSpacing = LumineDesign.Space6
             };
         saveRow.Children.Add(_saveStatus);
-        Grid.SetColumn(_retry, 1);
-        saveRow.Children.Add(_retry);
-        Grid.SetColumn(_reset, 2);
-        saveRow.Children.Add(_reset);
-        Grid.SetColumn(_save, 3);
-        saveRow.Children.Add(_save);
+        if (LumineVisualMetrics.TextScaleFactor >= 1.5)
+        {
+            // At Windows 150–225% text, do not clip the three commands
+            // against the narrow Inspector drawer. Give status its own
+            // row and allow the existing buttons to wrap naturally.
+            saveRow.ColumnDefinitions =
+                new ColumnDefinitions("*");
+            saveRow.RowDefinitions =
+                new RowDefinitions("Auto,Auto");
+            saveRow.RowSpacing = LumineDesign.Space4;
+            _saveStatus.TextWrapping = TextWrapping.Wrap;
+            var actions = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            _retry.Margin =
+                new Thickness(0, 0, LumineDesign.Space6, LumineDesign.Space4);
+            _reset.Margin =
+                new Thickness(0, 0, LumineDesign.Space6, LumineDesign.Space4);
+            _save.Margin =
+                new Thickness(0, 0, 0, LumineDesign.Space4);
+            actions.Children.Add(_retry);
+            actions.Children.Add(_reset);
+            actions.Children.Add(_save);
+            Grid.SetRow(actions, 1);
+            saveRow.Children.Add(actions);
+        }
+        else
+        {
+            Grid.SetColumn(_retry, 1);
+            saveRow.Children.Add(_retry);
+            Grid.SetColumn(_reset, 2);
+            saveRow.Children.Add(_reset);
+            Grid.SetColumn(_save, 3);
+            saveRow.Children.Add(_save);
+        }
 
         var organizeBody =
             new StackPanel
