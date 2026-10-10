@@ -150,6 +150,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly TextBlock _scopeContextTitle;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
+    private int _chipFocusGeneration;
 
     public BrowseWorkspaceControls(
         BrowseFilterState state,
@@ -1768,6 +1769,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
             Array.FindIndex(
                 previousChips,
                 static chip => chip.IsFocused);
+        // A completed async query can update facets while a prior chip
+        // removal is in flight. Only the latest render may hand off focus.
+        var focusGeneration = ++_chipFocusGeneration;
         if (focusedChipIndex >= 0)
         {
             _filterButton.Focus(
@@ -1904,20 +1908,41 @@ internal sealed class BrowseWorkspaceControls : UserControl
                 _chips.Children
                     .OfType<Button>()
                     .ToArray();
-            if (nextChips.Length > 0
-                && !nextChips[
-                    Math.Min(
-                        focusedChipIndex,
-                        nextChips.Length - 1)]
-                    .Focus(
+            if (nextChips.Length > 0)
+            {
+                var replacement =
+                    nextChips[
+                        Math.Min(
+                            focusedChipIndex,
+                            nextChips.Length - 1)];
+                if (!replacement.Focus(
                         NavigationMethod.Unspecified,
                         KeyModifiers.None))
-            {
-                // The Filter command remains a stable keyboard target if
-                // a replacement chip cannot yet accept focus.
-                _filterButton.Focus(
-                    NavigationMethod.Unspecified,
-                    KeyModifiers.None);
+                {
+                    // A newly attached chip may not be focusable until
+                    // its first layout pass. Retry only when the stable
+                    // Filter button still owns our synchronous handoff;
+                    // never steal a newer user focus or revive an old chip.
+                    Dispatcher.UIThread.Post(
+                        () =>
+                        {
+                            if (focusGeneration != _chipFocusGeneration
+                                || !ReferenceEquals(
+                                    replacement.Parent,
+                                    _chips)
+                                || !_filterButton.IsFocused
+                                || !replacement.IsEffectivelyVisible
+                                || !replacement.IsEffectivelyEnabled)
+                            {
+                                return;
+                            }
+
+                            replacement.Focus(
+                                NavigationMethod.Unspecified,
+                                KeyModifiers.None);
+                        },
+                        DispatcherPriority.Loaded);
+                }
             }
         }
     }
