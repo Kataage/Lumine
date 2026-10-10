@@ -3573,6 +3573,68 @@ try
                         StringComparer.Ordinal),
                     "Active Browse tag scope was not replaced case-insensitively after rename.");
 
+                // The Library→Browse command grammar must reflow at
+                // large Windows text rather than clip Search, Filter
+                // or Display behind the viewport edge. Mount actual
+                // controls and resize without recreating the TextBox,
+                // losing its keyboard focus or changing active tags.
+                Require(
+                    BrowseWorkspaceControls.ShouldStackToolbarForSmoke(
+                        620, 260, 200, 90)
+                    && !BrowseWorkspaceControls.ShouldStackToolbarForSmoke(
+                        900, 260, 200, 90)
+                    && !BrowseWorkspaceControls.ShouldStackToolbarForSmoke(
+                        double.NaN, 260, 200, 90),
+                    "Responsive Browse toolbar did not respect intrinsic measured action widths.");
+
+                var responsiveBrowseWindow = new Window
+                {
+                    Width = 650,
+                    Height = 250,
+                    Content = scopeControls
+                };
+                responsiveBrowseWindow.Show();
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    scopeControls.PrimaryToolbarStackedForSmoke
+                    && scopeControls.PrimaryToolbarOrderForSmoke
+                    && scopeControls.PrimaryToolbarIsContainedForSmoke
+                    && scopeControls.SearchUsesSharedThemeForSmoke
+                    && scopeControls.FilterButtonIsVisibleForSmoke
+                    && scopeControls.DisplayButtonIsVisibleForSmoke
+                    && scopeControls.FocusSearchForSmoke(),
+                    "Browse command row clipped or lost accessible actions at narrow 225% text.");
+
+                var searchBeforeResize =
+                    responsiveBrowseWindow.GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .First(textBox =>
+                            AutomationProperties.GetName(textBox)
+                                == "画像を検索");
+                searchBeforeResize.Text = "resizing search draft";
+                Dispatcher.UIThread.RunJobs();
+                responsiveBrowseWindow.Width = 1100;
+                Dispatcher.UIThread.RunJobs();
+                var searchAfterResize =
+                    responsiveBrowseWindow.GetVisualDescendants()
+                        .OfType<TextBox>()
+                        .First(textBox =>
+                            AutomationProperties.GetName(textBox)
+                                == "画像を検索");
+                Require(
+                    !scopeControls.PrimaryToolbarStackedForSmoke
+                    && scopeControls.PrimaryToolbarOrderForSmoke
+                    && scopeControls.PrimaryToolbarIsContainedForSmoke
+                    && ReferenceEquals(
+                        searchBeforeResize, searchAfterResize)
+                    && searchAfterResize.Text == "resizing search draft"
+                    && scopeControls.IsSearchFocusedForSmoke
+                    && scopeControls.State.TagNames.SequenceEqual(
+                        ["renamed-short"], StringComparer.Ordinal),
+                    "Resize replaced Browse Search, lost keyboard focus, or discarded filter scope.");
+                responsiveBrowseWindow.Close();
+                Dispatcher.UIThread.RunJobs();
+
                 compactTagsWindow.Close();
                 Dispatcher.UIThread.RunJobs();
             }
