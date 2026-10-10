@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -280,6 +281,15 @@ public sealed class MainWindow : Window
             _workspacePageHost);
         _workspaceHost.Children.Add(
             _statusSurface);
+        // Compact navigation is a temporary overlay. A pointer press on
+        // the underlying workspace should dismiss it without swallowing
+        // the user's intended image/search click or taking keyboard focus.
+        // Tunneling also observes presses consumed by a child control.
+        _workspaceHost.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnWorkspacePointerPressed,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
 
         _navigationRailHost =
             new ContentControl
@@ -929,7 +939,26 @@ public sealed class MainWindow : Window
             className);
     }
 
-    private void DismissNavigationPaneToRail()
+    private void OnWorkspacePointerPressed(
+        object? sender,
+        PointerPressedEventArgs e)
+    {
+        // The floating navigation and workspace are sibling surfaces:
+        // presses *inside* the pane cannot tunnel through workspace.
+        // Only compact, transient navigation may light-dismiss. The
+        // background click still proceeds to its original target.
+        if (_compactNavigationLayout
+            && _navigationPane.IsVisible
+            && _navigationPane.ZIndex > 0
+            && !_lightboxHost.IsVisible)
+        {
+            DismissNavigationPaneToRail(
+                restoreRailFocus: false);
+        }
+    }
+
+    private void DismissNavigationPaneToRail(
+        bool restoreRailFocus = true)
     {
         if (!_navigationPane.IsVisible)
         {
@@ -950,11 +979,11 @@ public sealed class MainWindow : Window
         ApplyNavigationLayout(
             ResolveLayoutWidth());
 
-        // Dismissing an overlay or the expanded sidebar makes its
-        // focused command invisible. Return to the corresponding live
-        // destination on the rail instead of leaving keyboard focus
-        // on the hidden pane.
-        if (!_navigationRailHost.IsEffectivelyVisible)
+        // Escape/Close return to the selected rail destination.
+        // A workspace click is different: let its actual focus target
+        // win rather than redirecting focus back to the navigation rail.
+        if (!restoreRailFocus
+            || !_navigationRailHost.IsEffectivelyVisible)
         {
             return;
         }
