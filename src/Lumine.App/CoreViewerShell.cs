@@ -431,8 +431,12 @@ internal sealed class CoreViewerShell : UserControl
                                 ?.GetFocusedElement() as Control;
                         if (current is null
                             || ReferenceEquals(current, _grid)
-                            || current.GetVisualAncestors().Contains(_grid))
+                            || current.GetVisualAncestors().Contains(_grid)
+                            || TopLevel.GetTopLevel(current)
+                                != TopLevel.GetTopLevel(this))
                         {
+                            // The previously focused virtualized tile may
+                            // have detached during query/session rebind.
                             _noMatchRecoveryButton.Focus(
                                 NavigationMethod.Unspecified,
                                 KeyModifiers.None);
