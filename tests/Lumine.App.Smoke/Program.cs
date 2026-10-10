@@ -3632,6 +3632,7 @@ try
                     && scopeControls.State.TagNames.SequenceEqual(
                         ["renamed-short"], StringComparer.Ordinal),
                     "Resize replaced Browse Search, lost keyboard focus, or discarded filter scope.");
+                scopeControls.DisposeTransientWork();
                 responsiveBrowseWindow.Close();
                 Dispatcher.UIThread.RunJobs();
 
