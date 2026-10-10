@@ -1702,8 +1702,8 @@ try
                     StringComparison.Ordinal)
                 && allFoldersButton.Resources.Count == 0
                 && allFoldersButton.BorderThickness
-                    == new Thickness(0),
-                "Folder navigation escaped the shared flat semantic-row contract.");
+                    == new Thickness(1),
+                "Folder navigation escaped the shared flat semantic-row/focus contract.");
 
             Require(
                 VisibleFolderCount(hierarchyList) == 1,
@@ -1740,6 +1740,35 @@ try
                 && AutomationProperties.GetName(expandedRootDisclosure)
                     == "root を閉じる",
                 "Expanding a root folder lost keyboard focus or exposed incorrect children.");
+
+            // Each expanded branch exposes two distinct keyboard actions:
+            // disclosure first, selection second. A leaf disclosure is
+            // visually silent and disabled, never an extra Tab stop.
+            var realizedOrder =
+                hierarchyView.GetVisualDescendants()
+                    .OfType<Button>()
+                    .ToArray();
+            var rootLabelPosition =
+                Array.FindIndex(
+                    realizedOrder,
+                    button => AutomationProperties.GetName(button)
+                        == "フォルダー: root");
+            var rootDisclosurePosition =
+                Array.FindIndex(
+                    realizedOrder,
+                    button => AutomationProperties.GetAutomationId(button)
+                        == "folder-disclosure:root");
+            var leafDisclosure =
+                realizedOrder.Single(button =>
+                    AutomationProperties.GetAutomationId(button)
+                        == "folder-disclosure:root/b");
+            Require(
+                rootDisclosurePosition >= 0
+                && rootLabelPosition > rootDisclosurePosition
+                && !leafDisclosure.IsEnabled
+                && !leafDisclosure.IsEffectivelyEnabled
+                && leafDisclosure.Opacity == 0,
+                "Expanded folder keyboard ordering or disabled leaf disclosure Tab-skip contract regressed.");
 
             var nestedDisclosure =
                 hierarchyView
@@ -1859,8 +1888,8 @@ try
                     "selected")
                 && realizedFolderButton.Resources.Count == 0
                 && realizedFolderButton.BorderThickness
-                    == new Thickness(0),
-                "Folder tree row restored per-control paint resources or resting card borders.");
+                    == new Thickness(1),
+                "Folder tree row restored per-control paint resources or lost reserved keyboard focus ring.");
 
             if (visualOutputDirectory is not null)
             {
@@ -1944,8 +1973,8 @@ try
                         && unselectedAll.Content as string == "すべての画像"
                         && !unselectedAll.Classes.Contains("selected")
                         && selectedFolderButton.BorderThickness
-                            == new Thickness(0),
-                        "Selected folder lacks a non-color current marker or leaks it into unselected rows.");
+                            == new Thickness(1),
+                        "Selected folder lacks a non-color current marker or reserved keyboard ring.");
 
                     if (visualOutputDirectory is not null)
                     {
@@ -1954,6 +1983,36 @@ try
                             selectedFolderScale > 2
                                 ? "folders-selected-420x600-text225"
                                 : "folders-selected-420x600");
+                    }
+
+                    var selectedFolderBoundsBeforeFocus =
+                        selectedFolderButton.Bounds;
+                    var rootFolderBoundsBeforeFocus =
+                        rootFolderButton.Bounds;
+                    Require(
+                        selectedFolderButton.Focus(),
+                        "Selected folder could not receive keyboard focus.");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        selectedFolderButton.IsFocused
+                        && selectedFolderButton.BorderThickness
+                            == new Thickness(1)
+                        && selectedFolderButton.BorderBrush
+                            is ISolidColorBrush focusedFolderBrush
+                        && focusedFolderBrush.Color == LumineDesign.FocusColor
+                        && selectedFolderButton.Bounds
+                            == selectedFolderBoundsBeforeFocus
+                        && rootFolderButton.Bounds
+                            == rootFolderBoundsBeforeFocus,
+                        "Selected Folder focus lacked visible shared ring or moved neighbouring folder rows.");
+
+                    if (visualOutputDirectory is not null)
+                    {
+                        CaptureVisualEvidence(
+                            selectedFolderWindow,
+                            selectedFolderScale > 2
+                                ? "folders-focus-420x600-text225"
+                                : "folders-focus-420x600");
                     }
                     selectedFolderWindow.Close();
                     Dispatcher.UIThread.RunJobs();
@@ -6430,7 +6489,7 @@ try
                                 && focusBorder.Color
                                     == LumineDesign.FocusColor
                             : libraryDestination.BorderThickness
-                                == new Thickness(0))
+                                == new Thickness(1))
                         && libraryDestination.MinHeight <= 52.5
                         && !libraryDestination
                             .GetVisualDescendants()
@@ -6444,9 +6503,19 @@ try
                                         LumineDesign.Accent)),
                         $"Selected global navigation regressed from the shared quiet sidebar selection treatment, focus ring contract, or restored the old accent stripe. focused={libraryDestination.IsFocused}, border={libraryDestination.BorderThickness}, resources={libraryDestination.Resources.Count}");
 
+                    var destinationBoundsBeforeFocus =
+                        libraryDestination.Bounds;
                     Require(
                         libraryDestination.Focus(),
                         "Compact navigation first destination was not focusable.");
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        libraryDestination.BorderThickness == new Thickness(1)
+                        && libraryDestination.BorderBrush
+                            is ISolidColorBrush focusedNavBrush
+                        && focusedNavBrush.Color == LumineDesign.FocusColor
+                        && libraryDestination.Bounds == destinationBoundsBeforeFocus,
+                        "Sidebar focus ring changed its navigation target geometry or lost the shared focus color.");
                     foreach (var (key, modifiers) in new[]
                              {
                                  (Key.Down, KeyModifiers.Control),
@@ -10792,6 +10861,8 @@ try
                 "folders-navigation-420x600",
                 "folders-selected-420x600",
                 "folders-selected-420x600-text225",
+                "folders-focus-420x600",
+                "folders-focus-420x600-text225",
                 "tags-selected-420x600",
                 "tags-selected-420x600-text225",
                 "tags-managed-selected-420x600",
