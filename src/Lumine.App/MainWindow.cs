@@ -61,6 +61,7 @@ public sealed class MainWindow : Window
     private bool _closeStarted;
     private bool _closeCompleted;
     private string _productShellState = "Welcome";
+    private Button? _productStateFocusOwner;
     private string _navigationDestination = "ライブラリ";
     private string? _failedLibraryRoot;
     private AppDataPaths? _failedLibraryDataPaths;
@@ -535,6 +536,14 @@ public sealed class MainWindow : Window
     internal bool OpenFolderCommandEnabledForSmoke =>
         _openFolder.IsEnabled;
 
+    internal bool PrimaryProductActionHasFocusForSmoke =>
+        _viewerHost.Content is Control state
+        && state.GetVisualDescendants()
+            .OfType<Button>()
+            .FirstOrDefault(
+                button => button.IsEffectivelyEnabled)
+            ?.IsFocused == true;
+
     internal bool LoadingCancellationRequestedForSmoke =>
         _openCancellation?.IsCancellationRequested == true;
 
@@ -558,9 +567,9 @@ public sealed class MainWindow : Window
             "Loading";
         _status.Text =
             string.Empty;
-        _viewerHost.Content =
+        ShowLibrarySurface(
             CreateLoadingLibraryState(
-                out var progress);
+                out var progress));
         progress.Text =
             progressText;
     }
@@ -571,9 +580,9 @@ public sealed class MainWindow : Window
             "Welcome";
         _status.Text =
             string.Empty;
-        _viewerHost.Content =
+        ShowLibrarySurface(
             CreateWelcomeState(
-                recovered: false);
+                recovered: false));
     }
 
     internal void PresentRecoverableErrorForSmoke(
@@ -584,10 +593,10 @@ public sealed class MainWindow : Window
             "Error";
         _status.Text =
             string.Empty;
-        _viewerHost.Content =
+        ShowLibrarySurface(
             CreateLibraryOpenFailureState(
                 new InvalidOperationException(
-                    message));
+                    message)));
     }
 
     internal void NavigateForSmoke(
@@ -3052,9 +3061,9 @@ public sealed class MainWindow : Window
             .ConfigureAwait(true);
         _expandedFolderPaths.Clear();
 
-        _viewerHost.Content =
+        ShowLibrarySurface(
             CreateLoadingLibraryState(
-                out var loadingProgress);
+                out var loadingProgress));
 
         var acceptOpenProgress = true;
         var progress =
@@ -3093,8 +3102,8 @@ public sealed class MainWindow : Window
             if (_runtime.AssetCount == 0)
             {
                 _shell = null;
-                _viewerHost.Content =
-                    CreateEmptyLibraryState();
+                ShowLibrarySurface(
+                    CreateEmptyLibraryState());
                 _productShellState =
                     "EmptyLibrary";
             }
@@ -3104,7 +3113,7 @@ public sealed class MainWindow : Window
                     CreateCoreViewerShell(
                         _runtime);
                 _shell = shell;
-                _viewerHost.Content = shell;
+                ShowLibrarySurface(shell);
                 _productShellState =
                     "Workspace";
                 shell.SelectInitialAsset();
@@ -3160,8 +3169,8 @@ public sealed class MainWindow : Window
                     cancelledStatus;
                 _ = ClearTransientStatusAsync(
                     cancelledStatus);
-                _viewerHost.Content =
-                    CreateWelcomeState(recovered: false);
+                ShowLibrarySurface(
+                    CreateWelcomeState(recovered: false));
             }
         }
         catch (Exception exception)
@@ -3181,9 +3190,9 @@ public sealed class MainWindow : Window
                 LumineDesign.Danger;
             _status.Text =
                 string.Empty;
-            _viewerHost.Content =
+            ShowLibrarySurface(
                 CreateLibraryOpenFailureState(
-                    exception);
+                    exception));
         }
         finally
         {
@@ -3247,6 +3256,7 @@ public sealed class MainWindow : Window
         retry.Click +=
             async (_, _) =>
             {
+                RememberProductStateKeyboardOwner(retry);
                 retry.IsEnabled = false;
                 try
                 {
@@ -3735,6 +3745,100 @@ public sealed class MainWindow : Window
         };
     }
 
+    private void RememberProductStateKeyboardOwner(
+        Button action)
+    {
+        if (action.IsFocused)
+        {
+            // Click handlers may disable/remove the focused button before
+            // the next product state has finished opening.
+            _productStateFocusOwner = action;
+        }
+    }
+
+    private void ShowLibrarySurface(
+        Control next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+
+        var previous = _viewerHost.Content as Control;
+        var focused =
+            FocusManager?.GetFocusedElement()
+                as Control;
+        if (_productStateFocusOwner is null
+            && previous is not null
+            && previous is not CoreViewerShell
+            && focused is Button action
+            && (ReferenceEquals(action, previous)
+                || action.GetVisualAncestors().Contains(previous)))
+        {
+            _productStateFocusOwner = action;
+        }
+
+        _viewerHost.Content = next;
+        var owner = _productStateFocusOwner;
+        if (owner is null)
+        {
+            return;
+        }
+
+        // A fast library can go Loading -> Workspace/EmptyLibrary before
+        // Loading ever receives a layout frame. Keep the previous action
+        // identity until the *current* destination has a focus target.
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (_closeStarted
+                    || _lightboxHost.IsVisible
+                    || !ReferenceEquals(_viewerHost.Content, next))
+                {
+                    return;
+                }
+
+                var current =
+                    FocusManager?.GetFocusedElement()
+                        as Control;
+                if (current is not null
+                    && !ReferenceEquals(current, owner)
+                    && TopLevel.GetTopLevel(current) == this)
+                {
+                    // A dialog, Search or navigation gained legitimate
+                    // focus while the async library operation completed.
+                    _productStateFocusOwner = null;
+                    return;
+                }
+
+                if (next is CoreViewerShell shell)
+                {
+                    if (shell.GridViewer.AssetCount > 0)
+                    {
+                        shell.GridViewer.RestoreAssetFocus(
+                            Math.Max(
+                                0,
+                                shell.GridViewer.SelectedAssetIndex));
+                        _productStateFocusOwner = null;
+                    }
+
+                    return;
+                }
+
+                var primary =
+                    next.GetVisualDescendants()
+                        .OfType<Button>()
+                        .FirstOrDefault(
+                            button =>
+                                button.IsEffectivelyEnabled
+                                && button.IsEffectivelyVisible);
+                if (primary?.Focus(
+                        NavigationMethod.Unspecified,
+                        KeyModifiers.None) == true)
+                {
+                    _productStateFocusOwner = null;
+                }
+            },
+            DispatcherPriority.Input);
+    }
+
     private Control CreateEmptyLibraryState()
     {
         var add =
@@ -3898,6 +4002,7 @@ public sealed class MainWindow : Window
                     return;
                 }
 
+                RememberProductStateKeyboardOwner(cancel);
                 cancel.IsEnabled = false;
                 progressLabel.Text = "読み込みを中止しています…";
                 opening.Cancel();
