@@ -535,6 +535,9 @@ public sealed class MainWindow : Window
     internal bool OpenFolderCommandEnabledForSmoke =>
         _openFolder.IsEnabled;
 
+    internal bool LoadingCancellationRequestedForSmoke =>
+        _openCancellation?.IsCancellationRequested == true;
+
     internal Task RetryFailedLibraryForSmokeAsync() =>
         RetryFailedLibraryAsync();
 
@@ -547,6 +550,10 @@ public sealed class MainWindow : Window
         string progressText =
             "画像一覧を準備しています…")
     {
+        // Headless preview owns a cancellable stand-in operation, not a
+        // background scan. The real open path supplies its own CTS.
+        _openCancellation?.Dispose();
+        _openCancellation = new CancellationTokenSource();
         _productShellState =
             "Loading";
         _status.Text =
@@ -3823,6 +3830,9 @@ public sealed class MainWindow : Window
     private Control CreateLoadingLibraryState(
         out TextBlock progressText)
     {
+        // Capture the operation's ownership, rather than cancelling
+        // whichever library may happen to be loading after navigation.
+        var opening = _openCancellation;
         progressText =
             new TextBlock
             {
@@ -3854,9 +3864,41 @@ public sealed class MainWindow : Window
         content.Children.Add(progress);
         content.Children.Add(progressText);
 
+        var cancel =
+            LumineDesign.ConfigureSecondaryButton(
+                new Button
+                {
+                    Content = "読み込みを中止",
+                    IsEnabled = opening is not null,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch
+                });
+        AutomationProperties.SetName(
+            cancel,
+            "ライブラリの読み込みを中止");
+        cancel.Click +=
+            (_, _) =>
+            {
+                if (opening is null
+                    || !ReferenceEquals(opening, _openCancellation)
+                    || opening.IsCancellationRequested
+                    || !string.Equals(
+                        _productShellState,
+                        "Loading",
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                cancel.IsEnabled = false;
+                progressText.Text = "読み込みを中止しています…";
+                opening.Cancel();
+            };
+        content.Children.Add(cancel);
+
         return LumineDesign.CreateProductState(
             "ライブラリを開いています",
-            "画像一覧を安全に準備しています。",
+            "画像一覧を安全に準備しています。必要なら読み込みを中止できます。",
             content);
     }
 
