@@ -74,10 +74,16 @@
   </Style>
 
   <Style Selector="Button.lumine-primary">
+    <!-- Reserve focus ring space in the resting state: keyboard focus
+         must never change a command's layout/label at 225% text. -->
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Background" Value="{DynamicResource Lumine.Accent}" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.PrimaryForeground}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.lumine-primary:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
   </Style>
   <Style Selector="Button.lumine-primary:pointerover">
     <Setter Property="Background" Value="{DynamicResource Lumine.Selection}" />
@@ -91,6 +97,7 @@
   </Style>
 
   <Style Selector="Button.lumine-secondary">
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Background" Value="{DynamicResource Lumine.ControlSurface}" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
@@ -124,6 +131,7 @@
   </Style>
 
   <Style Selector="Button.lumine-tertiary">
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
@@ -140,10 +148,14 @@
   </Style>
 
   <Style Selector="Button.lumine-danger">
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Background" Value="{DynamicResource Lumine.DangerTint}" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Danger}" />
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.lumine-danger:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
   </Style>
   <Style Selector="Button.lumine-danger:pointerover">
     <Setter Property="Background" Value="{DynamicResource Lumine.Danger}" />
@@ -175,7 +187,11 @@
   </Style>
   <Style Selector="Button.lumine-icon.lumine-primary">
     <Setter Property="Background" Value="{DynamicResource Lumine.Accent}" />
-    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.lumine-icon.lumine-primary:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
   </Style>
 
   <Style Selector="TextBox.lumine-input">
