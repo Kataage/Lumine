@@ -976,6 +976,22 @@ internal sealed class CoreViewerShell : UserControl
     internal void HideContextDetail(
         bool restoreSelectedAssetFocus = false)
     {
+        // Query/no-match updates can auto-hide Inspector while Search,
+        // a Tag chip or global navigation owns keyboard focus. Capture
+        // Inspector ownership before hiding its subtree; its dismissal
+        // must not redirect an unrelated user's keyboard interaction.
+        var focused =
+            TopLevel.GetTopLevel(this)
+                ?.FocusManager
+                ?.GetFocusedElement() as Control;
+        var inspectorHadKeyboardFocus =
+            focused is not null
+            && (ReferenceEquals(
+                    focused,
+                    _contextSurface)
+                || focused.GetVisualAncestors()
+                    .Contains(_contextSurface));
+
         _contextSurface.IsVisible = false;
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
@@ -989,16 +1005,17 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
-        // An explicit Inspector close returns to the invoking asset, even
-        // when its virtualized tile needs another layout pass to materialize.
-        // Programmatic hides (query/no-match transitions) retain the former
-        // grid-container focus behavior so they never refocus a hidden tile.
+        // An explicit Inspector close restores its selected Gallery asset.
+        // For an automatic hide, return to the grid only when Inspector
+        // previously owned focus. Independently focused Search/Tag/Browse
+        // commands remain focused throughout an async query change.
         var selectedIndex = _grid.SelectedAssetIndex;
         if (restoreSelectedAssetFocus && selectedIndex >= 0)
         {
             _grid.RestoreAssetFocus(selectedIndex);
         }
-        else
+        else if (restoreSelectedAssetFocus
+                 || inspectorHadKeyboardFocus)
         {
             _grid.Focus();
         }
