@@ -2794,6 +2794,9 @@ public sealed class MainWindow : Window
                 _browseFacets,
                 OnBrowseFiltersChangedAsync,
                 OnBrowsePreferencesChangedAsync);
+        _browseControls.UpdateWorkspaceContext(
+            _runtime?.Library.Name ?? "ライブラリ",
+            _browseFilterState.FolderPath);
         _browseHost.Content =
             _browseControls;
         _browseHost.IsVisible = true;
@@ -2814,6 +2817,9 @@ public sealed class MainWindow : Window
             return;
         }
 
+        _browseControls?.UpdateWorkspaceContext(
+            _runtime.Library.Name,
+            _browseFilterState.FolderPath);
         _status.Foreground =
             LumineDesign.MutedForeground;
         _status.Text = string.Empty;

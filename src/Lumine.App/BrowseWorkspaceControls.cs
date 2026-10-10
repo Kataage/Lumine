@@ -86,6 +86,9 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private readonly Slider _density;
     private readonly Border _displayControlsHost;
     private readonly WrapPanel _chips;
+    private readonly Border _workspaceContextHost;
+    private readonly TextBlock _libraryContextTitle;
+    private readonly TextBlock _scopeContextTitle;
     private CancellationTokenSource? _searchDebounce;
     private bool _suppressEvents;
 
@@ -464,27 +467,72 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _displayButton.Flyout =
             _displayFlyout;
 
+        // The library/scope identity belongs to the same stable
+        // command surface as Search/Filter/Display. Never rebuild
+        // the toolbar or steal its keyboard focus when the query
+        // changes; only update these two lightweight text nodes.
+        _libraryContextTitle =
+            new TextBlock
+            {
+                Text = "ライブラリ",
+                FontSize = LumineDesign.BodyFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = LumineDesign.Foreground,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+        _scopeContextTitle =
+            new TextBlock
+            {
+                Text = "すべての画像",
+                FontSize = LumineDesign.CaptionFontSize,
+                Foreground = LumineDesign.MutedForeground,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+        var contextLabelStack =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space2
+            };
+        contextLabelStack.Children.Add(_libraryContextTitle);
+        contextLabelStack.Children.Add(_scopeContextTitle);
+        _workspaceContextHost =
+            new Border
+            {
+                Width = 184,
+                ClipToBounds = true,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = contextLabelStack
+            };
+        _workspaceContextHost.Classes.Add(
+            "lumine-browse-context");
+        AutomationProperties.SetName(
+            _workspaceContextHost,
+            "現在のライブラリ: ライブラリ、すべての画像");
+
         var primaryRow =
             new Grid
             {
                 ColumnDefinitions =
                     new ColumnDefinitions(
-                        "*,Auto,Auto"),
-                ColumnSpacing = LumineDesign.Space6,
+                        "184,*,Auto,Auto"),
+                ColumnSpacing = LumineDesign.Space8,
                 VerticalAlignment =
                     VerticalAlignment.Center
             };
+        primaryRow.Children.Add(_workspaceContextHost);
+
+        Grid.SetColumn(_search, 1);
         primaryRow.Children.Add(_search);
 
         Grid.SetColumn(
             _filterButton,
-            1);
+            2);
         primaryRow.Children.Add(
             _filterButton);
 
         Grid.SetColumn(
             _displayButton,
-            2);
+            3);
         primaryRow.Children.Add(
             _displayButton);
 
@@ -685,6 +733,50 @@ internal sealed class BrowseWorkspaceControls : UserControl
         await PublishPreferencesAsync();
     }
 
+    internal void UpdateWorkspaceContext(
+        string libraryName,
+        string? folderPath)
+    {
+        var title = string.IsNullOrWhiteSpace(libraryName)
+            ? "ライブラリ"
+            : libraryName.Trim();
+        var scope = FormatFolderScopeForSmoke(folderPath);
+
+        _libraryContextTitle.Text = title;
+        _scopeContextTitle.Text = scope;
+        AutomationProperties.SetName(
+            _workspaceContextHost,
+            $"現在のライブラリ: {title}、{scope}");
+    }
+
+    internal static string FormatFolderScopeForSmoke(
+        string? folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            return "すべての画像";
+        }
+
+        var trimmed = folderPath.TrimEnd('\\', '/');
+        var lastSeparator = Math.Max(
+            trimmed.LastIndexOf('\\'),
+            trimmed.LastIndexOf('/'));
+        var name = trimmed[(lastSeparator + 1)..];
+        return string.IsNullOrWhiteSpace(name)
+            ? "選択したフォルダー"
+            : name;
+    }
+
+    internal bool WorkspaceContextIsVisibleForSmoke =>
+        _workspaceContextHost.IsEffectivelyVisible
+        && _workspaceContextHost.Bounds.Width > 0
+        && _workspaceContextHost.Bounds.Height > 0
+        && !string.IsNullOrWhiteSpace(_libraryContextTitle.Text)
+        && !string.IsNullOrWhiteSpace(_scopeContextTitle.Text);
+
+    internal (string? Library, string? Scope) WorkspaceContextForSmoke =>
+        (_libraryContextTitle.Text, _scopeContextTitle.Text);
+
     internal bool PrimaryToolbarIsContainedForSmoke
     {
         get
@@ -697,6 +789,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
 
             foreach (var control in new Control[]
                      {
+                         _workspaceContextHost,
                          _search,
                          _filterButton,
                          _displayButton

@@ -157,3 +157,10 @@ The exact class names are illustrative until implementation review. The existing
 - No claim that headless Skia PNGs are physical Windows GPU-present evidence.
 
 **Versioning:** v0.1 is a draft. Any later change to nav jobs, palette, canvas-width minimums or accepted functionality requires a dated v0.2 diff entry and explicit issue-level rationale; do not overwrite the design agreement silently.
+
+
+### Stage 2A — contextual Browse header prototype (2026-10-10)
+
+The first bounded implementation changes the **existing Browse command row** to keep a live two-line **library + folder-scope** context at the start of Search/Filter/Display; it does not add a persistent sidebar, rebuild the Browse query controls, change Grid/List request paths or move the Inspector/Focused Viewer layers. The context uses only the registered human Library name and **last folder segment**, never the full path. The same 184-DIP semantic context region works at 900 and 1440 and ellipsizes long titles, while Search remains >=260 DIP and the two explicit command buttons remain reachable. Existing screen captures will be regenerated at the same names for paired comparison. Geometry, complete focus and broad journey tests remain necessary, and this is **a prototype sub-step, not the completion of the holistic journey**.
+
+Native Ave/Viewer performance budgets and owner acceptance remain unchanged. Phase 2B will consolidate navigation, Inspector/Focused Viewer focus and return before declaring the complete end-to-end prototype.
