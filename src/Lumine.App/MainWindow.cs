@@ -1351,6 +1351,25 @@ public sealed class MainWindow : Window
                 button.Flyout is Flyout { IsOpen: true });
     }
 
+    // Library has a direct ScrollViewer; Folder, Tag and Publication use
+    // virtualized ListBox template scroll owners. Restore only the actual
+    // visible navigation list, never a popup editor's nested scrollbar.
+    private static ScrollViewer? FindNavigationScrollOwner(
+        Control? view)
+    {
+        if (view is ScrollViewer rootScroll)
+        {
+            return rootScroll;
+        }
+
+        var list = view?.GetVisualDescendants()
+            .OfType<ListBox>()
+            .FirstOrDefault(list => list.IsEffectivelyVisible);
+        return list?.GetVisualDescendants()
+            .OfType<ScrollViewer>()
+            .FirstOrDefault(scroll => scroll.IsEffectivelyVisible);
+    }
+
     private void RenderNavigationDestination(
         bool preserveActiveEditor = false)
     {
@@ -1377,6 +1396,32 @@ public sealed class MainWindow : Window
         // destination; a genuine global navigation change must not carry
         // a Folder/Tag action into a different page.
         var previousView = _navigationContent.Content as Control;
+        // A normal data refresh replaces the list tree, not the user's
+        // browsing position. Explicit destination navigation still starts
+        // at the new destination's default state.
+        var sameContextRefresh =
+            preserveActiveEditor
+            && previousView is not null
+            && string.Equals(
+                _renderedNavigationDestination,
+                _navigationDestination,
+                StringComparison.Ordinal);
+        var navigationScrollOffset =
+            sameContextRefresh
+                ? FindNavigationScrollOwner(previousView)?.Offset
+                : null;
+        var tagSearchText =
+            sameContextRefresh
+            && string.Equals(
+                _navigationDestination,
+                "タグ",
+                StringComparison.Ordinal)
+                ? previousView!.GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .FirstOrDefault(box =>
+                        AutomationProperties.GetName(box)
+                            == "タグを検索")?.Text
+                : null;
         var previouslyFocused =
             FocusManager?.GetFocusedElement() as Button;
         var restoreContextFocus =
@@ -1512,12 +1557,66 @@ public sealed class MainWindow : Window
 
         _renderedNavigationDestination =
             _navigationDestination;
+
+        var nextView = _navigationContent.Content as Control;
+        if (tagSearchText is not null)
+        {
+            // ApplyFilter is wired to TextChanged on the new Tag view.
+            // Restore the query before attempting its scroll anchor.
+            var nextSearch =
+                nextView?.GetVisualDescendants()
+                    .OfType<TextBox>()
+                    .FirstOrDefault(box =>
+                        AutomationProperties.GetName(box)
+                            == "タグを検索");
+            if (nextSearch is not null)
+            {
+                nextSearch.Text = tagSearchText;
+            }
+        }
+
+        if (navigationScrollOffset is { Y: > 0.5 } oldOffset)
+        {
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (_closeStarted
+                        || _lightboxHost.IsVisible
+                        || contextFocusGeneration
+                            != _contextNavigationFocusGeneration
+                        || !ReferenceEquals(
+                            _navigationContent.Content,
+                            nextView))
+                    {
+                        return;
+                    }
+
+                    var liveScroll =
+                        FindNavigationScrollOwner(nextView);
+                    if (liveScroll is not null
+                        && liveScroll.IsEffectivelyVisible
+                        // A fresh user scroll must win over a delayed
+                        // restore from the previous list instance.
+                        && liveScroll.Offset.Y <= 0.5)
+                    {
+                        liveScroll.Offset = new Vector(
+                            oldOffset.X,
+                            Math.Min(
+                                oldOffset.Y,
+                                Math.Max(
+                                    0,
+                                    liveScroll.Extent.Height
+                                    - liveScroll.Viewport.Height)));
+                    }
+                },
+                DispatcherPriority.Render);
+        }
+
         if (!restoreContextFocus)
         {
             return;
         }
 
-        var nextView = _navigationContent.Content as Control;
         Dispatcher.UIThread.Post(
             () =>
             {

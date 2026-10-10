@@ -8112,6 +8112,47 @@ try
                         tagEditorFlyout.Hide();
                         Dispatcher.UIThread.RunJobs();
 
+                        // Once focus leaves Tag search, an ordinary metadata
+                        // refresh must update the live view while keeping
+                        // its user-chosen search query. This is distinct
+                        // from an active draft/flyout, which retains the
+                        // original mounted control above.
+                        var passiveTagNavigation =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    button.IsEffectivelyVisible
+                                    && !button.Classes.Contains("rail")
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && AutomationProperties.GetName(button)
+                                        == "タグ");
+                        Require(
+                            passiveTagNavigation.Focus(),
+                            "Global Tag destination could not accept focus after closing its editor.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var rebuiltTags =
+                            window.NavigationContentForSmoke!;
+                        var restoredTagSearch =
+                            rebuiltTags.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "タグを検索");
+                        Require(
+                            !ReferenceEquals(
+                                rebuiltTags,
+                                tagsWhileEditing)
+                            && !ReferenceEquals(
+                                restoredTagSearch,
+                                tagSearchDraft)
+                            && restoredTagSearch.Text
+                                == "unsaved-tag-filter"
+                            && passiveTagNavigation.IsFocused,
+                            "Metadata refresh reset a blurred Tag search filter or stole live global navigation focus.");
+
                         window.NavigateForSmoke("公開履歴");
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
@@ -9774,6 +9815,18 @@ try
                                                         AutomationProperties.GetName(
                                                             button)
                                                             == "タグ: zz-browse-focus-smoke の絞り込みを解除");
+                                        for (var chipFocusAttempt = 0;
+                                             chipFocusAttempt < 30
+                                                 && !survivingChip.IsFocused;
+                                             chipFocusAttempt++)
+                                        {
+                                            // The new button becomes focusable
+                                            // after its first layout pass.
+                                            // Verify the real live successor,
+                                            // never substitute a test-only focus.
+                                            Dispatcher.UIThread.RunJobs();
+                                            await Task.Delay(1);
+                                        }
                                         Require(
                                             chipControls.State.TagNames.SequenceEqual(
                                                 ["zz-browse-focus-smoke"],
@@ -9783,7 +9836,12 @@ try
                                                 == searchBeforeChipRemoval
                                             && chipControls.State.SortOrder
                                                 == sortBeforeChipRemoval,
-                                            "Removing the focused Browse filter chip did not focus the surviving condition or preserve Search/Sort.");
+                                            "Removing the focused Browse filter chip did not focus the surviving condition or preserve Search/Sort. "
+                                            + $"tags={string.Join(",", chipControls.State.TagNames)}, "
+                                            + $"focus={survivingChip.IsFocused}, "
+                                            + $"focusOwner={window.FocusManager.GetFocusedElement()?.GetType().Name}, "
+                                            + $"search={chipControls.State.SearchText == searchBeforeChipRemoval}, "
+                                            + $"sort={chipControls.State.SortOrder == sortBeforeChipRemoval}.");
 
                                         var focusedClearAll =
                                             chipControls.GetVisualDescendants()
