@@ -3863,6 +3863,8 @@ public sealed class MainWindow : Window
             };
         content.Children.Add(progress);
         content.Children.Add(progressText);
+        // An out parameter cannot be captured by an event handler.
+        var progressLabel = progressText;
 
         var cancel =
             LumineDesign.ConfigureSecondaryButton(
@@ -3891,7 +3893,7 @@ public sealed class MainWindow : Window
                 }
 
                 cancel.IsEnabled = false;
-                progressText.Text = "読み込みを中止しています…";
+                progressLabel.Text = "読み込みを中止しています…";
                 opening.Cancel();
             };
         content.Children.Add(cancel);
