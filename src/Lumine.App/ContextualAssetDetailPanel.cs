@@ -95,6 +95,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Avalonia.Controls.Image _preview;
     private readonly TextBlock _previewStatus;
     private readonly Border _previewSurface;
+    private readonly Grid _summaryLayout;
+    private readonly StackPanel _summaryDetails;
     private readonly ContentControl _tabContent;
     private readonly Button[] _tabButtons;
     private readonly Control[] _tabPages;
@@ -440,10 +442,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         Grid.SetColumn(close, 3);
         header.Children.Add(close);
 
-        var summaryBody =
-            new StackPanel
+        // Keep the same preview lease and text controls across layout
+        // changes; resizing the drawer must never rebuild the image.
+        _summaryLayout =
+            new Grid
             {
-                Spacing = LumineDesign.Space6,
+                RowDefinitions =
+                    new RowDefinitions("Auto,Auto"),
+                RowSpacing = LumineDesign.Space6,
                 Margin =
                     new Thickness(
                         LumineDesign.Space12,
@@ -470,9 +476,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ClipToBounds = true,
                 Child = previewStage
             };
-        summaryBody.Children.Add(_previewSurface);
-        summaryBody.Children.Add(_title);
-        summaryBody.Children.Add(_summary);
+        _summaryDetails =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        _summaryDetails.Children.Add(_title);
+        _summaryDetails.Children.Add(_summary);
+        _summaryLayout.Children.Add(_previewSurface);
+        Grid.SetRow(_summaryDetails, 1);
+        _summaryLayout.Children.Add(_summaryDetails);
 
         var editor =
             new StackPanel
@@ -984,7 +998,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
         layout.Children.Add(header);
         Grid.SetRow(summaryBody, 1);
-        layout.Children.Add(summaryBody);
+        layout.Children.Add(_summaryLayout);
         Grid.SetRow(tabLayout, 2);
         layout.Children.Add(tabLayout);
 
@@ -1125,6 +1139,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal double PreviewHeightForSmoke =>
         _previewSurface.Height;
 
+    internal bool UsesCompactHorizontalSummaryForSmoke =>
+        Grid.GetColumn(_summaryDetails) == 1
+        && Grid.GetRow(_summaryDetails) == 0
+        && Math.Abs(_previewSurface.Width - 96) < 0.5;
+
     // A short desktop layout needs usable editable fields without
     // scrolling beyond the entire preview. Only the image preview,
     // not text or the four Inspector tabs, is reduced in height.
@@ -1146,6 +1165,31 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         var previewHeight = ResolvePreviewHeightForSmoke(
             compact,
             availableHeight);
+        // The selected image is already present in the Gallery. On short
+        // screens the secondary Inspector overview places a small preview
+        // beside the filename and image facts rather than stacking three
+        // full-width rows above the edit controls. All metadata stays live.
+        var horizontalSummary = compact
+            && availableHeight > 0
+            && availableHeight < 720;
+        _summaryLayout.ColumnDefinitions = horizontalSummary
+            ? new ColumnDefinitions("96,*")
+            : new ColumnDefinitions("*");
+        _summaryLayout.RowDefinitions = horizontalSummary
+            ? new RowDefinitions("Auto")
+            : new RowDefinitions("Auto,Auto");
+        _summaryLayout.ColumnSpacing = horizontalSummary
+            ? LumineDesign.Space8
+            : 0;
+        _summaryLayout.RowSpacing = horizontalSummary
+            ? 0
+            : LumineDesign.Space6;
+        Grid.SetColumn(_summaryDetails, horizontalSummary ? 1 : 0);
+        Grid.SetRow(_summaryDetails, horizontalSummary ? 0 : 1);
+        _previewSurface.Width = horizontalSummary ? 96 : double.NaN;
+        _summary.TextWrapping = horizontalSummary
+            ? TextWrapping.Wrap
+            : TextWrapping.NoWrap;
         _previewSurface.Height = previewHeight;
         _preview.MaxHeight = previewHeight;
         _notesEditor.MinHeight =
