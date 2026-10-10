@@ -576,7 +576,8 @@
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
+    <!-- Stable keyboard focus ring: no 1-DIP padding/label reflow. -->
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
   </Style>
@@ -593,7 +594,6 @@
   </Style>
   <Style Selector="Button.lumine-nav-item:focus">
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
-    <Setter Property="BorderThickness" Value="1" />
   </Style>
   <Style Selector="Button.lumine-nav-item.rail">
     <Setter Property="MinHeight" Value="52" />
@@ -621,7 +621,8 @@
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
+    <!-- Stable keyboard focus ring: no 1-DIP padding/label reflow. -->
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="8" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -634,7 +635,6 @@
   </Style>
   <Style Selector="Button.lumine-library-open:focus">
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
-    <Setter Property="BorderThickness" Value="1" />
   </Style>
   <Style Selector="Button.lumine-library-open:disabled">
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
@@ -660,7 +660,8 @@
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="FontSize" Value="{DynamicResource Lumine.CaptionFontSize}" />
     <Setter Property="BorderBrush" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
+    <!-- Stable keyboard focus ring: no 1-DIP padding/label reflow. -->
+    <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
   </Style>
   <Style Selector="Button.lumine-folder-row:pointerover">
@@ -677,7 +678,6 @@
   </Style>
   <Style Selector="Button.lumine-folder-row:focus">
     <Setter Property="BorderBrush" Value="{DynamicResource Lumine.Focus}" />
-    <Setter Property="BorderThickness" Value="1" />
   </Style>
 
   <Style Selector="TextBlock.lumine-muted-caption">
