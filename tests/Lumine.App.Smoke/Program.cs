@@ -9207,7 +9207,9 @@ try
                                     && window.CurrentShell.ContextDetail
                                         .SaveActionsDockedForSmoke
                                     && window.CurrentShell.ContextDetail
-                                        .SaveActionButtonsContainedForSmoke,
+                                        .SaveActionButtonsContainedForSmoke
+                                    && window.CurrentShell.ContextDetail
+                                        .ContextualFooterLayoutForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 if (iteration == 0
@@ -9260,8 +9262,29 @@ try
                                             .SaveActionsVisibleForSmoke
                                                 == (tabIndex == 0)
                                         && window.CurrentShell.ContextDetail
-                                            .SaveActionButtonsContainedForSmoke,
-                                        $"Inspector tab {tabIndex} was not reachable or lost Lumine state styling at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+                                            .SaveActionButtonsContainedForSmoke
+                                        && window.CurrentShell.ContextDetail
+                                            .ContextualFooterLayoutForSmoke
+                                        && window.CurrentShell.ContextDetail
+                                            .ContextualFooterCommandsContainedForSmoke,
+                                        $"Inspector tab {tabIndex} was not reachable or lost Lumine state styling or footer bounds at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
+
+                                    // Named screenshots capture the actual
+                                    // per-tab action hierarchy (including
+                                    // 225% text) rather than only Organize.
+                                    if (mode == BrowseViewMode.Grid
+                                        && !navigationVisible
+                                        && viewport.Width == 900d
+                                        && (iteration == 0 || iteration == 2)
+                                        && tabIndex is 1 or 2 or 3)
+                                    {
+                                        CaptureVisualEvidence(
+                                            window,
+                                            $"inspector-tab-{tabIndex}-900x600"
+                                            + (iteration == 2
+                                                ? "-text225"
+                                                : string.Empty));
+                                    }
                                 }
 
                                 window.CurrentShell.HideContextDetail();
