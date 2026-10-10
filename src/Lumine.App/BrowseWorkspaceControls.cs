@@ -1216,9 +1216,24 @@ internal sealed class BrowseWorkspaceControls : UserControl
                     Array.Empty<string>()
             });
 
-    internal Task ApplyNoMatchRecoveryStateAsync(
-        BrowseFilterState nextState) =>
-        SetStateAsync(nextState);
+    internal async Task ApplyNoMatchRecoveryStateAsync(
+        BrowseFilterState nextState)
+    {
+        ArgumentNullException.ThrowIfNull(nextState);
+
+        // The in-place Viewer can change the active query externally
+        // (e.g. restoring an archived search). Even if the toolbar's
+        // currently rendered state already looks like the recovery
+        // target, the runtime still needs the explicit recovery query.
+        // Avoid the ordinary unchanged-filter debounce early return.
+        if (State.EquivalentTo(nextState))
+        {
+            await _filtersChanged(nextState);
+            return;
+        }
+
+        await SetStateAsync(nextState);
+    }
 
     public Task ReplaceTagScopeAsync(
         string oldTag,
