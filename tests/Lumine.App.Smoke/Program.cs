@@ -6050,6 +6050,12 @@ try
                                     {
                                         Content = "副操作"
                                     });
+                            var tertiary =
+                                LumineDesign.ConfigureTertiaryButton(
+                                    new Button
+                                    {
+                                        Content = "補助リンク"
+                                    });
                             var danger =
                                 LumineDesign.ConfigureDangerButton(
                                     new Button
@@ -6066,6 +6072,17 @@ try
                                                 18)
                                     },
                                     "設定");
+                            var primaryIcon =
+                                LumineDesign.ConfigureIconButton(
+                                    LumineDesign.ConfigurePrimaryButton(
+                                        new Button
+                                        {
+                                            Content =
+                                                LumineDesign.CreateStrokeIcon(
+                                                    LumineDesign.PlusIconPath,
+                                                    18)
+                                        }),
+                                    "追加");
                             var input =
                                 LumineDesign.ConfigureTextBox(
                                     new TextBox
@@ -6100,7 +6117,13 @@ try
                                     "lumine-secondary")
                                 && danger.Classes.Contains(
                                     "lumine-danger")
+                                && tertiary.Classes.Contains(
+                                    "lumine-tertiary")
                                 && icon.Classes.Contains(
+                                    "lumine-icon")
+                                && primaryIcon.Classes.Contains(
+                                    "lumine-primary")
+                                && primaryIcon.Classes.Contains(
                                     "lumine-icon")
                                 && input.Classes.Contains(
                                     "lumine-input")
@@ -6119,8 +6142,10 @@ try
                                      {
                                          primary,
                                          secondary,
+                                         tertiary,
                                          danger,
-                                         icon
+                                         icon,
+                                         primaryIcon
                                      })
                             {
                                 control.Margin =
@@ -6205,8 +6230,17 @@ try
                             Dispatcher.UIThread.RunJobs();
 
                             Require(
-                                secondary.BorderThickness
-                                    == new Thickness(0)
+                                primary.BorderThickness == new Thickness(1)
+                                && secondary.BorderThickness
+                                    == new Thickness(1)
+                                && tertiary.BorderThickness
+                                    == new Thickness(1)
+                                && danger.BorderThickness
+                                    == new Thickness(1)
+                                && icon.BorderThickness
+                                    == new Thickness(1)
+                                && primaryIcon.BorderThickness
+                                    == new Thickness(1)
                                 && secondary.Background
                                     is ISolidColorBrush secondaryBrush
                                 && secondaryBrush.Color
@@ -6257,6 +6291,70 @@ try
                             CaptureVisualEvidence(
                                 specimen,
                                 $"design-system-scale-{scale * 100:N0}");
+
+                            // Focus is a product-wide keyboard affordance,
+                            // not only a secondary-button feature. All
+                            // semantic roles reserve a transparent 1-DIP
+                            // border at rest so the ring never reflows
+                            // Japanese labels even at 225% text.
+                            var focusButtons =
+                                new[]
+                                {
+                                    primary,
+                                    secondary,
+                                    tertiary,
+                                    danger,
+                                    icon,
+                                    primaryIcon
+                                };
+                            var restingBounds =
+                                focusButtons
+                                    .Select(button => button.Bounds)
+                                    .ToArray();
+                            for (var focusIndex = 0;
+                                 focusIndex < focusButtons.Length;
+                                 focusIndex++)
+                            {
+                                var focusedButton =
+                                    focusButtons[focusIndex];
+                                Require(
+                                    focusedButton.Focus(),
+                                    $"Semantic button {focusIndex} could not receive keyboard focus at {scale:P0}.");
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    focusedButton.IsFocused
+                                    && focusedButton.BorderThickness
+                                        == new Thickness(1)
+                                    && focusedButton.BorderBrush
+                                        is ISolidColorBrush activeRing
+                                    && activeRing.Color
+                                        == LumineDesign.FocusColor
+                                    && focusButtons
+                                        .Select(button => button.Bounds)
+                                        .Zip(
+                                            restingBounds,
+                                            (actual, baseline) =>
+                                                Math.Abs(actual.X - baseline.X) < 0.5
+                                                && Math.Abs(actual.Y - baseline.Y) < 0.5
+                                                && Math.Abs(actual.Width - baseline.Width) < 0.5
+                                                && Math.Abs(actual.Height - baseline.Height) < 0.5)
+                                        .All(static stable => stable),
+                                    $"Semantic button {focusIndex} lost visible focus or changed action geometry at {scale:P0}.");
+                            }
+
+                            if (scale is 1.0 or 2.25)
+                            {
+                                // Capture the real primary action's ring,
+                                // not merely a synthetic style declaration.
+                                Require(
+                                    primary.Focus(),
+                                    $"Primary focus screenshot was not keyboard reachable at {scale:P0}.");
+                                Dispatcher.UIThread.RunJobs();
+                                CaptureVisualEvidence(
+                                    specimen,
+                                    $"design-system-focus-{scale * 100:N0}");
+                            }
+
                             specimen.Close();
                             Dispatcher.UIThread.RunJobs();
                         }
@@ -10675,6 +10773,8 @@ try
                 "design-system-scale-150",
                 "design-system-scale-200",
                 "design-system-scale-225",
+                "design-system-focus-100",
+                "design-system-focus-225",
                 "welcome-1440x900",
                 "loading-1440x900",
                 "browse-900x600",
