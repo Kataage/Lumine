@@ -534,6 +534,32 @@ jobs:
           $item = Get-Item $exe
           Write-Host "NativeAOT executable: $($item.FullName) ($($item.Length) bytes)"
 
+      - name: Verify viewer scroll owner-review PowerShell 5.1 and pending evidence
+        shell: powershell
+        run: |
+          $script = (Resolve-Path -LiteralPath "./build/Run-ViewerScrollOwnerReview.ps1").Path
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors) | Out-Null
+          if (@($errors).Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Host
+            throw "Viewer scroll owner review syntax is invalid on Windows PowerShell 5.1."
+          }
+          $output = Join-Path $env:RUNNER_TEMP "lumine-viewer-owner-review-prepare"
+          & $script -Exe "./artifacts/native-aot/Lumine.App.exe" -OutputDirectory $output -PrepareOnly
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+            throw "Viewer owner-review preparation failed."
+          }
+          $report = Get-Content -LiteralPath (Join-Path $output "viewer-scroll-owner-report.json") -Raw | ConvertFrom-Json
+          if ($report.issue -ne 634 -or $report.manualDecision -ne "pending" -or
+              -not $report.preparationOnly -or @($report.checks).Count -ne 5 -or
+              @($report.checks | Where-Object { $_.status -ne "pending" }).Count -ne 0 -or
+              $null -ne $report.appExitCode -or
+              -not (Test-Path (Join-Path $output "VIEWER-SCROLL-CHECKLIST.md"))) {
+            throw "Prepare-only review incorrectly claimed or omitted human acceptance."
+          }
+          Write-Host "Reviewer wrapper syntax and strictly pending preflight evidence: PASS."
+
       - name: Run NativeAOT product runtime lifecycle smoke
         shell: pwsh
         run: |
@@ -665,6 +691,8 @@ jobs:
             artifacts/native-aot/**
             build/Run-ProductAcceptance.ps1
             build/Run-RealLibraryAcceptance.ps1
+            build/Run-ViewerScrollOwnerReview.ps1
+            docs/viewer-scroll-owner-review.md
             docs/product-acceptance.md
             docs/core-acceptance.md
             docs/product-settings-portable.md

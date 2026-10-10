@@ -190,3 +190,10 @@ The Viewer now publishes `ViewerWarmPresentationDiagnostics` counters without ch
 ## External reference
 
 Avalonia's `VirtualizingStackPanel.CacheLength` can retain extra realized elements around the viewport, but larger UI buffers consume memory and may increase GC/decode pressure; it must not be increased blindly as a substitute for measured prefetch: https://api-docs.avaloniaui.net/docs/P_Avalonia_Controls_VirtualizingStackPanel_CacheLength
+
+
+## 2026-10-10 — PR #659 CI green; physical owner verification bridge
+
+[PR #659](https://github.com/Kataage/Lumine/pull/659) merged to develop at `49ccf66e84aad58d3f32753267cd422170604ab7`. Its [Windows CI #37986022284](https://github.com/Kataage/Lumine/actions/runs/37986022284) passed normal 10k/50k/100k bitmap reuse and performance; 10k routed wheel **1,400/1,600 requests**; both 10-step actual routed wheel/Grid/List headless Skia tests had **zero immediate/first-raster unready** and no increase above the 32MiB bitmap cache. Those frames were **headless Skia**, not a real user's Windows GPU compositor-present fence. Issue #634 remains open.
+
+A minimal dedicated [#634 owner review wrapper](viewer-scroll-owner-review.md) runs the **real NativeAOT product** on Windows, guides five normal Grid/List and jump/reverse interactions on a representative actual image library, and persists each human observation with app revision and coarse GPU inventory in `viewer-scroll-owner-report.json`. It explicitly does not convert a CI result into GPU or manual acceptance; skipped steps stay pending. `-PrepareOnly` validates JSON without launching UI, so Windows CI can test packaging/syntax but cannot substitute for the owner. This bridge avoids rerunning the heavyweight full-product manual checklist just to assess #634.
