@@ -1472,6 +1472,42 @@ internal static class Program
                 == TimeSpan.FromMilliseconds(200),
             "Programmatic far-seek lookahead did not coalesce stale-geometry source work.");
 
+        // A real wheel event after a far seek must immediately replace
+        // an *asleep* 48/96ms task when intent stays in the same direction.
+        // A reversed wheel is handled by the existing direction change;
+        // neither ordinary scrolling nor a completed quiet period should
+        // restart otherwise valid lookahead work.
+        Require(
+            ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                pendingTask: true,
+                scheduledDelay: TimeSpan.FromMilliseconds(96),
+                elapsed: TimeSpan.FromMilliseconds(10),
+                normalDelay: normalLookaheadDelay,
+                wheelDelta: 1,
+                directionChanges: false)
+            && ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, TimeSpan.FromMilliseconds(48),
+                TimeSpan.Zero, normalLookaheadDelay, -1, false)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                false, TimeSpan.FromMilliseconds(96),
+                TimeSpan.FromMilliseconds(10), normalLookaheadDelay, 1, false)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, TimeSpan.FromMilliseconds(96),
+                TimeSpan.FromMilliseconds(96), normalLookaheadDelay, 1, false)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, normalLookaheadDelay,
+                TimeSpan.Zero, normalLookaheadDelay, 1, false)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, TimeSpan.FromMilliseconds(96),
+                TimeSpan.Zero, normalLookaheadDelay, 1, true)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, TimeSpan.FromMilliseconds(96),
+                TimeSpan.Zero, normalLookaheadDelay, 0, false)
+            && !ThumbnailViewerControl.ShouldResumeDelayedSeekForWheelForSmoke(
+                true, TimeSpan.FromMilliseconds(96),
+                TimeSpan.Zero, normalLookaheadDelay, double.NaN, false),
+            "Genuine wheel input retained seek debounce or restarted settled/reversed speculation.");
+
         // Multiple large seeks separated by <250ms form one burst:
         // cancel old speculative requests and debounce discarded pages.
         // First isolated seeks and all 50px forward/reverse wheel input
