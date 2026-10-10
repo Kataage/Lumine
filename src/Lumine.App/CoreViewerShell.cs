@@ -843,6 +843,15 @@ internal sealed class CoreViewerShell : UserControl
         ApplyInspectorLayout(
             ResolveInspectorLayoutWidth());
 
+        // The focused image is modal. Hiding the Inspector behind it must
+        // NOT steal keyboard focus from the lightbox or send shortcuts to
+        // the background Gallery. CloseFocusedView owns the later safe
+        // return to a live Inspector command or semantic asset index.
+        if (_focusedSurface.IsVisible)
+        {
+            return;
+        }
+
         // An explicit Inspector close returns to the invoking asset, even
         // when its virtualized tile needs another layout pass to materialize.
         // Programmatic hides (query/no-match transitions) retain the former

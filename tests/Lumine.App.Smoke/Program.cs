@@ -10205,6 +10205,12 @@ try
                     await window.CurrentShell.OpenFocusedViewAsync(0);
                     Dispatcher.UIThread.RunJobs();
                     window.CurrentShell.HideContextDetail();
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        window.IsLightboxVisible
+                        && window.IsFocusInsideLightboxForSmoke
+                        && !window.CurrentShell.IsContextDetailVisible,
+                        "Closing the underlying Inspector stole modal Viewer keyboard focus.");
                     window.CurrentShell.CloseFocusedView();
                     Dispatcher.UIThread.RunJobs();
                     Require(
