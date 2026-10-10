@@ -9910,6 +9910,18 @@ try
                                                         AutomationProperties.GetName(
                                                             button)
                                                             == expectedRemovalName);
+                                        // Repro the real query race: the
+                                        // Inspector is open while a chip
+                                        // owns keyboard focus. Removing the
+                                        // chip causes an async query rebind
+                                        // and an automatic Inspector hide.
+                                        // That hide must not refocus Gallery.
+                                        await window.CurrentShell!
+                                            .ShowContextDetailAsync();
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            window.CurrentShell.IsContextDetailVisible,
+                                            "Focused-chip regression did not mount an open Inspector.");
                                         Require(
                                             focusedRemovalChip.Focus(),
                                             "Browse filter chip could not receive keyboard focus.");
