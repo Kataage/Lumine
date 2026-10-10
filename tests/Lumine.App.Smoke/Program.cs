@@ -7464,10 +7464,51 @@ try
                             && string.IsNullOrWhiteSpace(
                                 window.StatusTextForSmoke),
                             "Loading state duplicated its central progress through the transient status banner.");
+                        var cancelOpen =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    string.Equals(
+                                        button.Content as string,
+                                        "読み込みを中止",
+                                        StringComparison.Ordinal));
+                        Require(
+                            cancelOpen.IsEnabled
+                            && AutomationProperties.GetName(cancelOpen)
+                                == "ライブラリの読み込みを中止"
+                            && !window.LoadingCancellationRequestedForSmoke,
+                            "Loading lacked a clear enabled cancellation action tied to the active open.");
+
                         CaptureVisualEvidence(
                             window,
                             "loading-1440x900");
+
+                        cancelOpen.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            window.LoadingCancellationRequestedForSmoke
+                            && !cancelOpen.IsEnabled
+                            && window.GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Any(block =>
+                                    block.Text
+                                        == "読み込みを中止しています…")
+                            && string.IsNullOrWhiteSpace(
+                                window.StatusTextForSmoke),
+                            "Loading cancel did not signal the active operation or announce cancellation without duplicate status.");
+
                         window.PresentWelcomeStateForSmoke();
+                        Dispatcher.UIThread.RunJobs();
+                        // An old loading CTA may still have a captured
+                        // reference; it must not cancel a later operation.
+                        cancelOpen.RaiseEvent(
+                            new RoutedEventArgs(
+                                Button.ClickEvent));
+                        Require(
+                            window.ProductShellState == "Welcome",
+                            "A stale loading cancel action changed the destination after recovery.");
                         Dispatcher.UIThread.RunJobs();
                     }
 
