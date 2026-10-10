@@ -46,6 +46,9 @@ internal sealed class CoreViewerShell : UserControl
     private CancellationTokenSource? _bulkOperationCancellation;
     private Button? _cancelBulkOperationButton;
     private long _focusedViewReturnIndex = -1;
+    // Only an actually focused Inspector command is a valid lightbox
+    // return target. The thumbnail index remains the safe fallback.
+    private Control? _focusedViewInspectorReturnControl;
     private bool _compactInspectorLayout;
     private bool _inspectorPinned;
     private bool _detached;
@@ -868,6 +871,25 @@ internal sealed class CoreViewerShell : UserControl
             return;
         }
 
+        // Snapshot the real invoking control BEFORE FocusAsset intentionally
+        // moves keyboard focus to the virtualized thumbnail. Returning from
+        // an Inspector command should return to that command, not to an
+        // unrelated grid tile. Grid-invoked viewing retains its existing
+        // semantic asset-index restoration path.
+        var focusAtOpen =
+            TopLevel.GetTopLevel(this)
+                ?.FocusManager
+                ?.GetFocusedElement()
+            as Control;
+        _focusedViewInspectorReturnControl =
+            _contextSurface.IsVisible
+            && focusAtOpen is not null
+            && (ReferenceEquals(focusAtOpen, _contextDetail)
+                || focusAtOpen.GetVisualAncestors()
+                    .Contains(_contextDetail))
+                ? focusAtOpen
+                : null;
+
         if (_grid.SelectedAssetIndex != index)
         {
             _grid.SelectAsset(index);
@@ -914,16 +936,11 @@ internal sealed class CoreViewerShell : UserControl
             var returnIndex =
                 _focusedViewReturnIndex;
             _focusedViewReturnIndex = -1;
-            if (returnIndex >= 0)
-            {
-                _grid.RestoreAssetFocus(returnIndex);
-            }
-            else
-            {
-                _grid.Focus(
-                    NavigationMethod.Unspecified,
-                    KeyModifiers.None);
-            }
+            var inspectorReturn =
+                _focusedViewInspectorReturnControl;
+            _focusedViewInspectorReturnControl = null;
+            RestoreFocusedViewReturnFocus(
+                inspectorReturn, returnIndex);
 
             throw;
         }
@@ -951,6 +968,9 @@ internal sealed class CoreViewerShell : UserControl
         var returnIndex =
             _focusedViewReturnIndex;
         _focusedViewReturnIndex = -1;
+        var inspectorReturn =
+            _focusedViewInspectorReturnControl;
+        _focusedViewInspectorReturnControl = null;
         var owner =
             TopLevel.GetTopLevel(_focusedSurface)
             as MainWindow
@@ -972,6 +992,34 @@ internal sealed class CoreViewerShell : UserControl
         // enabled when Avalonia's FocusManager evaluates the target.
         owner?.HideLightbox(
             _focusedSurface);
+
+        RestoreFocusedViewReturnFocus(
+            inspectorReturn, returnIndex);
+    }
+
+    private void RestoreFocusedViewReturnFocus(
+        Control? inspectorReturn,
+        long returnIndex)
+    {
+        // An Inspector command might have been removed, disabled or hidden
+        // while the focused view was open. Never move focus into a detached
+        // control or the hidden Inspector, and do not change the current
+        // library selection just to restore a keyboard destination.
+        if (_contextSurface.IsVisible
+            && inspectorReturn is
+            {
+                IsEnabled: true,
+                IsEffectivelyVisible: true
+            }
+            && ReferenceEquals(
+                TopLevel.GetTopLevel(inspectorReturn),
+                TopLevel.GetTopLevel(this))
+            && inspectorReturn.Focus(
+                NavigationMethod.Unspecified,
+                KeyModifiers.None))
+        {
+            return;
+        }
 
         if (returnIndex >= 0)
         {
