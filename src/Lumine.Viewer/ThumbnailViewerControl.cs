@@ -82,6 +82,10 @@ public sealed class ThumbnailViewerControl : UserControl
     // realized row. Fast scroll repeatedly supersedes the previous range.
     private CancellationTokenSource? _lookaheadCancellation;
     private Task? _lookaheadTask;
+    // Monotonic admission timestamp distinguishes a seek's pending quiet
+    // period from already-running I/O when genuine wheel input arrives.
+    private long _lookaheadScheduledAt;
+    private TimeSpan _lookaheadScheduledDelay;
     private long _lookaheadCancelled;
     private long _lookaheadSourcesComplete;
     private long _lookaheadPredecodeEligible;
@@ -1746,12 +1750,52 @@ public sealed class ThumbnailViewerControl : UserControl
         object? sender,
         PointerWheelEventArgs e)
     {
-        // Real wheel input is never a continuation of a programmatic
-        // far-seek burst. Keep its normal short lookahead delay.
+        // A physical wheel tick interrupts the quiet period of a prior
+        // programmatic far seek. If direction stays the same, the normal
+        // direction-change path would leave a 48/96ms task asleep, even
+        // though the user is now actively browsing.
+        var wheelDelta = -e.Delta.Y;
+        var directionChanges = Math.Abs(wheelDelta) > 0.01
+            && Math.Sign(wheelDelta) != _lookaheadDirection;
+        var elapsed = _lookaheadScheduledAt > 0
+            ? Stopwatch.GetElapsedTime(_lookaheadScheduledAt)
+            : TimeSpan.MaxValue;
+        var resumePendingSeek =
+            ShouldResumeDelayedSeekForWheelForSmoke(
+                _lookaheadTask is { IsCompleted: false },
+                _lookaheadScheduledDelay,
+                elapsed,
+                _session.Options.PrefetchDelay,
+                wheelDelta,
+                directionChanges);
+
+        // Wheel intent is not another seek, even if its routed event is
+        // delivered before the inner ScrollViewer updates its offset.
         _consecutiveFarProgrammaticSeeks = 0;
         _lastFarProgrammaticSeekTimestamp = 0;
+        _consecutiveFullViewportJumpCount = 0;
+        _lastFullViewportJumpTimestamp = 0;
+        _lastLookaheadScheduledOffsetY =
+            _galleryScrollViewer?.Offset.Y ?? double.NaN;
         Interlocked.Increment(ref _routedWheelEvents);
-        SetLookaheadDirection(-e.Delta.Y);
+        SetLookaheadDirection(wheelDelta);
+
+        if (!resumePendingSeek)
+        {
+            return;
+        }
+
+        // Only same-direction input needs intervention: a reversal already
+        // supersedes the old task in SetLookaheadDirection. Do not create
+        // another queue, expand the row range, or change decode budgets.
+        var edge = _lookaheadDirection < 0
+            ? GetFirstVisibleRowIndex()
+            : GetLastVisibleRowIndex();
+        if (edge >= 0)
+        {
+            CancelLookahead();
+            ScheduleLookahead(edge, _columns);
+        }
     }
 
     private void EnsureScrollTracking()
@@ -1888,6 +1932,24 @@ public sealed class ThumbnailViewerControl : UserControl
         && visibleEdge >= 0
         && visibleEdge == lastEdge
         && direction == lastDirection;
+
+    // A seek debounce only applies while the quiet-period timer is still
+    // running. Completed lookahead and ordinary same-direction wheel input
+    // must not restart otherwise valid speculative bitmap/source work.
+    internal static bool ShouldResumeDelayedSeekForWheelForSmoke(
+        bool pendingTask,
+        TimeSpan scheduledDelay,
+        TimeSpan elapsed,
+        TimeSpan normalDelay,
+        double wheelDelta,
+        bool directionChanges) =>
+        pendingTask
+        && !directionChanges
+        && double.IsFinite(wheelDelta)
+        && Math.Abs(wheelDelta) > 0.01
+        && scheduledDelay > normalDelay
+        && elapsed >= TimeSpan.Zero
+        && elapsed < scheduledDelay;
 
     // Large random seeks are unlike a 50px wheel notch: speculative
     // neighbors at each short-lived intermediate viewport should wait
@@ -2047,6 +2109,8 @@ public sealed class ThumbnailViewerControl : UserControl
             ref _lookaheadLastScheduledDirection,
             _lookaheadDirection);
         _lookaheadCancellation = new CancellationTokenSource();
+        _lookaheadScheduledAt = Stopwatch.GetTimestamp();
+        _lookaheadScheduledDelay = delay;
         _lookaheadTask = PrefetchViewportLookaheadAsync(
             session,
             rowIndex,
