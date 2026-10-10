@@ -1308,6 +1308,47 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     internal bool SaveActionsVisibleForSmoke =>
         _saveActionSurface.IsVisible;
 
+    internal bool SaveActionButtonsContainedForSmoke
+    {
+        get
+        {
+            if (!_saveActionSurface.IsVisible)
+            {
+                return true;
+            }
+
+            if (_saveActionSurface.Bounds.Width <= 0
+                || _saveActionSurface.Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var command in new[] { _retry, _reset, _save })
+            {
+                if (!command.IsEffectivelyVisible)
+                {
+                    continue;
+                }
+
+                var origin = command.TranslatePoint(
+                    new Point(0, 0),
+                    _saveActionSurface);
+                if (origin is not { } point
+                    || point.X < -0.5
+                    || point.Y < -0.5
+                    || point.X + command.Bounds.Width
+                        > _saveActionSurface.Bounds.Width + 0.5
+                    || point.Y + command.Bounds.Height
+                        > _saveActionSurface.Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
     internal bool TabPagesHaveIndependentScrollStateForSmoke =>
         _tabPages.Length == TabHeaders.Count
         && _tabPages.All(
