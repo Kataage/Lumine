@@ -1445,7 +1445,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                      && _creativeFooterCommands.Length > 0)
                 && _publicationActionSurface.IsVisible ==
                     (_selectedTabIndex == 2
-                     && _publicationCreateCommand is not null);
+                     && _publicationCreateCommand is not null)
+                && _creativeActionSurface.Child is StackPanel creativeBody
+                && creativeBody.Children.Contains(_creativeActionStatus)
+                && _publicationActionSurface.Child is StackPanel publicationBody
+                && publicationBody.Children.Contains(_publicationActionStatus);
         }
     }
 
