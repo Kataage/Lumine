@@ -40,6 +40,7 @@ internal sealed class CoreViewerShell : UserControl
     private readonly Grid _browseViewer;
     private readonly Border _focusedSurface;
     private readonly ContentControl _noMatchSurface;
+    private readonly Button _noMatchRecoveryButton;
     private Func<Task>? _clearNoMatchFilters;
     private Action? _editNoMatchFilters;
     private CancellationTokenSource? _selectionSummaryCancellation;
@@ -192,13 +193,13 @@ internal sealed class CoreViewerShell : UserControl
         _selectionBar = CreateSelectionBar();
         _selectionBar.IsVisible = false;
 
-        var clearNoMatch =
+        _noMatchRecoveryButton =
             LumineDesign.ConfigurePrimaryButton(
                 new Button
                 {
                     Content = "条件をすべて解除"
                 });
-        clearNoMatch.Click +=
+        _noMatchRecoveryButton.Click +=
             async (_, _) =>
             {
                 if (_clearNoMatchFilters is not null)
@@ -223,7 +224,7 @@ internal sealed class CoreViewerShell : UserControl
                 HorizontalAlignment =
                     HorizontalAlignment.Center
             };
-        clearNoMatch.Margin =
+        _noMatchRecoveryButton.Margin =
             new Thickness(
                 0,
                 0,
@@ -236,7 +237,7 @@ internal sealed class CoreViewerShell : UserControl
                 0,
                 LumineDesign.Space8);
         noMatchActions.Children.Add(
-            clearNoMatch);
+            _noMatchRecoveryButton);
         noMatchActions.Children.Add(
             editNoMatch);
 
@@ -257,7 +258,7 @@ internal sealed class CoreViewerShell : UserControl
                 Content =
                     LumineDesign.CreateProductState(
                         "一致する画像がありません",
-                        "条件を解除するか、フィルターを見直してください。",
+                        "検索・絞り込み・フォルダーを確認してください。",
                         noMatchActionHost)
             };
 
@@ -355,8 +356,12 @@ internal sealed class CoreViewerShell : UserControl
     internal bool IsNoMatchStateVisibleForSmoke =>
         _noMatchSurface.IsVisible;
 
+    internal string NoMatchRecoveryLabelForSmoke =>
+        _noMatchRecoveryButton.Content as string ?? string.Empty;
+
     internal void SetNoMatchState(
         bool visible,
+        string? recoveryLabel = null,
         Func<Task>? clearFilters = null,
         Action? editFilters = null)
     {
@@ -364,6 +369,13 @@ internal sealed class CoreViewerShell : UserControl
             visible
                 ? clearFilters
                 : null;
+        if (visible && recoveryLabel is not null)
+        {
+            _noMatchRecoveryButton.Content = recoveryLabel;
+            AutomationProperties.SetName(
+                _noMatchRecoveryButton,
+                recoveryLabel);
+        }
         _editNoMatchFilters =
             visible
                 ? editFilters
