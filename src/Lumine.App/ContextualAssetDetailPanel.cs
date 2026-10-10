@@ -86,6 +86,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBox _notesEditor;
     private readonly TextBlock _saveStatus;
     private readonly Border _saveActionSurface;
+    private readonly Border _creativeActionSurface;
+    private readonly Border _publicationActionSurface;
+    private readonly Control[] _creativeFooterCommands;
+    private readonly Button? _publicationCreateCommand;
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _retry;
@@ -583,12 +587,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             "整理情報",
             editor);
 
-        // Saving is the primary action of the Organize tab. Keep the
-        // existing controls in the same Inspector, but outside the
-        // scrollable metadata fields: otherwise a short window hides
-        // Save/Reset below Notes and forces a long scroll to commit.
-        _saveActionSurface =
-            new Border
+        // One shared action grammar for organizing, creative archive and
+        // publication: the task actions stay reachable while the content
+        // scrolls. Information-only commands remain beside their fields.
+        Border CreateInspectorActionFooter(Control content) =>
+            new()
             {
                 Background = LumineDesign.SurfaceRaised,
                 CornerRadius =
@@ -604,8 +607,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         0,
                         LumineDesign.Space12,
                         LumineDesign.Space12),
-                Child = saveRow
+                Child = content
             };
+
+        _saveActionSurface =
+            CreateInspectorActionFooter(saveRow);
 
         Button CreateContextAction(
             string label,
@@ -785,37 +791,59 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     additionPanel));
         }
 
-        if (creativeActionButtons.Count > 0)
+        _creativeFooterCommands =
+            creativeActionButtons.ToArray();
+        var creativeActions =
+            new Grid();
+        if (LumineVisualMetrics.TextScaleFactor >= 1.5)
         {
-            var actionColumns =
-                string.Join(
-                    ",",
-                    Enumerable.Repeat(
-                        "*",
-                        creativeActionButtons.Count));
-            var creativeActions =
-                new Grid
-                {
-                    ColumnDefinitions =
-                        new ColumnDefinitions(
-                            actionColumns),
-                    ColumnSpacing =
-                        LumineDesign.Space8
-                };
-            for (var index = 0;
-                 index < creativeActionButtons.Count;
-                 index++)
+            // 150–225% Japanese text needs full-width action names. Keep
+            // each creation/addition flyout reachable without tiny labels.
+            creativeActions.RowDefinitions =
+                new RowDefinitions(
+                    string.Join(
+                        ",",
+                        Enumerable.Repeat(
+                            "Auto",
+                            creativeActionButtons.Count)));
+            creativeActions.RowSpacing =
+                LumineDesign.Space6;
+        }
+        else if (creativeActionButtons.Count > 0)
+        {
+            creativeActions.ColumnDefinitions =
+                new ColumnDefinitions(
+                    string.Join(
+                        ",",
+                        Enumerable.Repeat(
+                            "*",
+                            creativeActionButtons.Count)));
+            creativeActions.ColumnSpacing =
+                LumineDesign.Space8;
+        }
+
+        for (var index = 0;
+             index < creativeActionButtons.Count;
+             index++)
+        {
+            if (LumineVisualMetrics.TextScaleFactor >= 1.5)
+            {
+                Grid.SetRow(
+                    creativeActionButtons[index],
+                    index);
+            }
+            else
             {
                 Grid.SetColumn(
                     creativeActionButtons[index],
                     index);
-                creativeActions.Children.Add(
-                    creativeActionButtons[index]);
             }
-
-            creative.Children.Add(
-                creativeActions);
+            creativeActions.Children.Add(
+                creativeActionButtons[index]);
         }
+
+        _creativeActionSurface =
+            CreateInspectorActionFooter(creativeActions);
 
         creative.Children.Add(
             CreateInspectorSectionCard(
@@ -876,17 +904,19 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
         if (createPublicationRequested is not null)
         {
-            var createPublication =
+            _publicationCreateCommand =
                 CreateContextAction(
                     "公開記録を作成",
                     createPublicationRequested);
-            createPublication.HorizontalAlignment =
+            _publicationCreateCommand.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
-            createPublication.HorizontalContentAlignment =
+            _publicationCreateCommand.HorizontalContentAlignment =
                 HorizontalAlignment.Center;
-            publicationBody.Children.Add(
-                createPublication);
         }
+
+        _publicationActionSurface =
+            CreateInspectorActionFooter(
+                _publicationCreateCommand ?? new Grid());
 
         var publicationHeader =
             new Grid
@@ -1034,6 +1064,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         tabLayout.Children.Add(_tabContent);
         Grid.SetRow(_saveActionSurface, 2);
         tabLayout.Children.Add(_saveActionSurface);
+        Grid.SetRow(_creativeActionSurface, 2);
+        tabLayout.Children.Add(_creativeActionSurface);
+        Grid.SetRow(_publicationActionSurface, 2);
+        tabLayout.Children.Add(_publicationActionSurface);
 
         var layout =
             new Grid
@@ -3408,6 +3442,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _tabContent.Content =
             _tabPages[index];
         _saveActionSurface.IsVisible = index == 0;
+        _creativeActionSurface.IsVisible =
+            index == 1 && _creativeFooterCommands.Length > 0;
+        _publicationActionSurface.IsVisible =
+            index == 2 && _publicationCreateCommand is not null;
 
         for (var itemIndex = 0;
              itemIndex < _tabButtons.Length;
