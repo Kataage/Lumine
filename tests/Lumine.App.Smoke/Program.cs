@@ -8910,6 +8910,29 @@ try
                                                 == "すべての画像",
                                             "Browse context failed to identify unfiltered library.");
 
+                                        var retainedContextControls =
+                                            window.BrowseControlsForSmoke!;
+                                        Require(
+                                            retainedContextControls.FocusSearchForSmoke(),
+                                            "Browse Search failed to receive focus before context change.");
+                                        retainedContextControls.UpdateWorkspaceContext(
+                                            window.CurrentRuntime!.Library.Name,
+                                            @"assets\portfolio\portrait");
+                                        Dispatcher.UIThread.RunJobs();
+                                        Require(
+                                            ReferenceEquals(
+                                                retainedContextControls,
+                                                window.BrowseControlsForSmoke)
+                                            && retainedContextControls
+                                                .WorkspaceContextForSmoke.Scope
+                                                == "portrait"
+                                            && retainedContextControls.IsSearchFocusedForSmoke,
+                                            "Browse library/scope context update recreated the toolbar or stole Search focus.");
+                                        retainedContextControls.UpdateWorkspaceContext(
+                                            window.CurrentRuntime.Library.Name,
+                                            null);
+                                        Dispatcher.UIThread.RunJobs();
+
                                         var visualFilterAsset =
                                             await window.CurrentRuntime!
                                                 .ViewerSession

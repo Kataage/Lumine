@@ -767,6 +767,12 @@ internal sealed class BrowseWorkspaceControls : UserControl
             : name;
     }
 
+    internal bool FocusSearchForSmoke() =>
+        _search.Focus();
+
+    internal bool IsSearchFocusedForSmoke =>
+        _search.IsFocused;
+
     internal bool WorkspaceContextIsVisibleForSmoke =>
         _workspaceContextHost.IsEffectivelyVisible
         && _workspaceContextHost.Bounds.Width > 0
