@@ -88,6 +88,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly Border _saveActionSurface;
     private readonly Border _creativeActionSurface;
     private readonly Border _publicationActionSurface;
+    private readonly TextBlock _creativeActionStatus;
+    private readonly TextBlock _publicationActionStatus;
     private readonly Control[] _creativeFooterCommands;
     private readonly Button? _publicationCreateCommand;
     private readonly Button _save;
@@ -613,9 +615,22 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _saveActionSurface =
             CreateInspectorActionFooter(saveRow);
 
+        TextBlock CreateActionFeedback() =>
+            new()
+            {
+                Foreground = LumineDesign.Warning,
+                FontSize = LumineDesign.CaptionFontSize,
+                TextWrapping = TextWrapping.Wrap,
+                IsVisible = false
+            };
+
+        _creativeActionStatus = CreateActionFeedback();
+        _publicationActionStatus = CreateActionFeedback();
+
         Button CreateContextAction(
             string label,
-            Func<Task> action)
+            Func<Task> action,
+            TextBlock feedback)
         {
             var button =
                 LumineDesign.ConfigureSecondaryButton(
@@ -627,6 +642,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 async (_, _) =>
                 {
                     button.IsEnabled = false;
+                    feedback.Text = string.Empty;
+                    feedback.IsVisible = false;
                     try
                     {
                         await action();
@@ -635,8 +652,9 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     {
                         System.Diagnostics.Trace.TraceError(
                             exception.ToString());
-                        _saveStatus.Text =
+                        feedback.Text =
                             "操作を完了できませんでした。もう一度お試しください。";
+                        feedback.IsVisible = true;
                     }
                     finally
                     {
@@ -740,7 +758,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 creationPanel.Children.Add(
                     CreateContextAction(
                         "Workを作成",
-                        createWorkRequested));
+                        createWorkRequested,
+                        _creativeActionStatus));
             }
 
             if (createGroupRequested is not null)
@@ -748,7 +767,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 creationPanel.Children.Add(
                     CreateContextAction(
                         "生成グループを作成",
-                        createGroupRequested));
+                        createGroupRequested,
+                        _creativeActionStatus));
             }
 
             creativeActionButtons.Add(
@@ -774,7 +794,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 additionPanel.Children.Add(
                     CreateContextAction(
                         "既存Workへ追加",
-                        addToWorkRequested));
+                        addToWorkRequested,
+                        _creativeActionStatus));
             }
 
             if (addToGroupRequested is not null)
@@ -782,7 +803,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 additionPanel.Children.Add(
                     CreateContextAction(
                         "既存Generation Groupへ追加",
-                        addToGroupRequested));
+                        addToGroupRequested,
+                        _creativeActionStatus));
             }
 
             creativeActionButtons.Add(
@@ -843,8 +865,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 creativeActionButtons[index]);
         }
 
+        var creativeFooterContent =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        creativeFooterContent.Children.Add(creativeActions);
+        creativeFooterContent.Children.Add(_creativeActionStatus);
         _creativeActionSurface =
-            CreateInspectorActionFooter(creativeActions);
+            CreateInspectorActionFooter(creativeFooterContent);
 
         creative.Children.Add(
             CreateInspectorSectionCard(
@@ -908,16 +937,25 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _publicationCreateCommand =
                 CreateContextAction(
                     "公開記録を作成",
-                    createPublicationRequested);
+                    createPublicationRequested,
+                    _publicationActionStatus);
             _publicationCreateCommand.HorizontalAlignment =
                 HorizontalAlignment.Stretch;
             _publicationCreateCommand.HorizontalContentAlignment =
                 HorizontalAlignment.Center;
         }
 
+        var publicationFooterContent =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
+        publicationFooterContent.Children.Add(
+            _publicationCreateCommand ?? new Grid());
+        publicationFooterContent.Children.Add(
+            _publicationActionStatus);
         _publicationActionSurface =
-            CreateInspectorActionFooter(
-                _publicationCreateCommand ?? new Grid());
+            CreateInspectorActionFooter(publicationFooterContent);
 
         var publicationHeader =
             new Grid
@@ -1523,6 +1561,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _retry.IsVisible = false;
         _saveStatus.Foreground =
             LumineDesign.MutedForeground;
+        _creativeActionStatus.Text = string.Empty;
+        _creativeActionStatus.IsVisible = false;
+        _publicationActionStatus.Text = string.Empty;
+        _publicationActionStatus.IsVisible = false;
         _title.Text = asset.DisplayName;
         _summary.Text =
             FormatSummary(asset);
