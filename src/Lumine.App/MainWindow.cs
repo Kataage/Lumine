@@ -609,6 +609,9 @@ public sealed class MainWindow : Window
     internal Task NavigationRefreshForSmokeAsync() =>
         _navigationOperation;
 
+    internal void StartNavigationRefreshForSmoke() =>
+        StartNavigationRefresh();
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
@@ -1272,11 +1275,69 @@ public sealed class MainWindow : Window
         _browseControls?.UpdateFacetData(
             _tags,
             _browseFacets);
-        RenderNavigationDestination();
+        RenderNavigationDestination(
+            preserveActiveEditor: true);
     }
 
-    private void RenderNavigationDestination()
+    private bool HasLiveNavigationEditor()
     {
+        if (_lightboxHost.IsVisible
+            || !string.Equals(
+                _renderedNavigationDestination,
+                _navigationDestination,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var view =
+            IsMainWorkspaceDestination(
+                _navigationDestination)
+                ? _workspacePageHost.Content as Control
+                : _navigationContent.Content as Control;
+        if (view is null || !view.IsEffectivelyVisible)
+        {
+            return false;
+        }
+
+        var focused =
+            FocusManager?.GetFocusedElement() as Control;
+        if (focused is TextBox
+            && (ReferenceEquals(focused, view)
+                || focused.GetVisualAncestors()
+                    .Any(ancestor =>
+                        ReferenceEquals(ancestor, view))))
+        {
+            // Do not discard an unsaved custom extension or live Tag
+            // search while asynchronously refreshing library metadata.
+            return true;
+        }
+
+        // Tag and Publication editor flyouts live under a PopupRoot,
+        // outside the contextual view's visual descendants. Inspect
+        // their attached owner commands instead of the focused TextBox.
+        return view.GetVisualDescendants()
+            .OfType<Button>()
+            .Any(button =>
+                button.Flyout is Flyout { IsOpen: true });
+    }
+
+    private void RenderNavigationDestination(
+        bool preserveActiveEditor = false)
+    {
+        if (_navigationContent is null)
+        {
+            return;
+        }
+
+        if (preserveActiveEditor
+            && HasLiveNavigationEditor())
+        {
+            // Snapshot/facet data was already refreshed above. Keep
+            // the editor's live input and staged changes until the
+            // user finishes editing or explicitly navigates away.
+            return;
+        }
         if (_navigationContent is null)
         {
             return;
