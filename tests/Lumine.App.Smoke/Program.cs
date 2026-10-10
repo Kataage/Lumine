@@ -9203,7 +9203,11 @@ try
                                     && window.CurrentShell.ContextDetail
                                         .TabStripUsesLumineStatesForSmoke
                                     && window.CurrentShell.ContextDetail
-                                        .TabPagesHaveIndependentScrollStateForSmoke,
+                                        .TabPagesHaveIndependentScrollStateForSmoke
+                                    && window.CurrentShell.ContextDetail
+                                        .SaveActionsDockedForSmoke
+                                    && window.CurrentShell.ContextDetail
+                                        .SaveActionButtonsContainedForSmoke,
                                     $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
 
                                 if (iteration == 0
@@ -9249,7 +9253,14 @@ try
                                         window.CurrentShell.ContextDetail
                                             .SelectedTabIndex == tabIndex
                                         && window.CurrentShell.ContextDetail
-                                            .TabStripUsesLumineStatesForSmoke,
+                                            .TabStripUsesLumineStatesForSmoke
+                                        && window.CurrentShell.ContextDetail
+                                            .SaveActionsDockedForSmoke
+                                        && window.CurrentShell.ContextDetail
+                                            .SaveActionsVisibleForSmoke
+                                                == (tabIndex == 0)
+                                        && window.CurrentShell.ContextDetail
+                                            .SaveActionButtonsContainedForSmoke,
                                         $"Inspector tab {tabIndex} was not reachable or lost Lumine state styling at {viewport.Width:N0}x{viewport.Height:N0}, {mode}.");
                                 }
 
@@ -9724,6 +9735,10 @@ try
                                 .PreviewHeightForSmoke - 80) < 0.5
                         && window.CurrentShell.ContextDetail
                             .UsesCompactHorizontalSummaryForSmoke
+                        && window.CurrentShell.ContextDetail
+                            .SaveActionsDockedForSmoke
+                        && window.CurrentShell.ContextDetail
+                            .SaveActionButtonsContainedForSmoke
                         && window.CurrentShell.ContextSurfaceBounds.Width <= 340
                         && window.CurrentShell.ContextDetail
                             .IsCompactPresentationForSmoke

@@ -85,6 +85,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly ManagedTagPicker _tagPicker;
     private readonly TextBox _notesEditor;
     private readonly TextBlock _saveStatus;
+    private readonly Border _saveActionSurface;
     private readonly Button _save;
     private readonly Button _reset;
     private readonly Button _retry;
@@ -528,12 +529,43 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 ColumnSpacing = LumineDesign.Space6
             };
         saveRow.Children.Add(_saveStatus);
-        Grid.SetColumn(_retry, 1);
-        saveRow.Children.Add(_retry);
-        Grid.SetColumn(_reset, 2);
-        saveRow.Children.Add(_reset);
-        Grid.SetColumn(_save, 3);
-        saveRow.Children.Add(_save);
+        if (LumineVisualMetrics.TextScaleFactor >= 1.5)
+        {
+            // At Windows 150–225% text, do not clip the three commands
+            // against the narrow Inspector drawer. Give status its own
+            // row and allow the existing buttons to wrap naturally.
+            saveRow.ColumnDefinitions =
+                new ColumnDefinitions("*");
+            saveRow.RowDefinitions =
+                new RowDefinitions("Auto,Auto");
+            saveRow.RowSpacing = LumineDesign.Space4;
+            _saveStatus.TextWrapping = TextWrapping.Wrap;
+            var actions = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            _retry.Margin =
+                new Thickness(0, 0, LumineDesign.Space6, LumineDesign.Space4);
+            _reset.Margin =
+                new Thickness(0, 0, LumineDesign.Space6, LumineDesign.Space4);
+            _save.Margin =
+                new Thickness(0, 0, 0, LumineDesign.Space4);
+            actions.Children.Add(_retry);
+            actions.Children.Add(_reset);
+            actions.Children.Add(_save);
+            Grid.SetRow(actions, 1);
+            saveRow.Children.Add(actions);
+        }
+        else
+        {
+            Grid.SetColumn(_retry, 1);
+            saveRow.Children.Add(_retry);
+            Grid.SetColumn(_reset, 2);
+            saveRow.Children.Add(_reset);
+            Grid.SetColumn(_save, 3);
+            saveRow.Children.Add(_save);
+        }
 
         var organizeBody =
             new StackPanel
@@ -550,7 +582,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             organizeBody,
             "整理情報",
             editor);
-        organizeBody.Children.Add(
+
+        // Saving is the primary action of the Organize tab. Keep the
+        // existing controls in the same Inspector, but outside the
+        // scrollable metadata fields: otherwise a short window hides
+        // Save/Reset below Notes and forces a long scroll to commit.
+        _saveActionSurface =
             new Border
             {
                 Background = LumineDesign.SurfaceRaised,
@@ -561,8 +598,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     new Thickness(
                         LumineDesign.Space8,
                         LumineDesign.Space6),
+                Margin =
+                    new Thickness(
+                        LumineDesign.Space12,
+                        0,
+                        LumineDesign.Space12,
+                        LumineDesign.Space12),
                 Child = saveRow
-            });
+            };
 
         Button CreateContextAction(
             string label,
@@ -984,11 +1027,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             new Grid
             {
                 RowDefinitions =
-                    new RowDefinitions("Auto,*")
+                    new RowDefinitions("Auto,*,Auto")
             };
         tabLayout.Children.Add(tabStripHost);
         Grid.SetRow(_tabContent, 1);
         tabLayout.Children.Add(_tabContent);
+        Grid.SetRow(_saveActionSurface, 2);
+        tabLayout.Children.Add(_saveActionSurface);
 
         var layout =
             new Grid
@@ -1249,6 +1294,59 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             TabHeaders.Count);
 
         SelectTab(index);
+    }
+
+    // One stable footer for the Organize tab: it does not take part in
+    // the tab's ScrollViewer content and collapses for the other jobs.
+    internal bool SaveActionsDockedForSmoke =>
+        _saveActionSurface.Parent is Grid parent
+        && ReferenceEquals(_tabContent.Parent, parent)
+        && Grid.GetRow(_tabContent) == 1
+        && Grid.GetRow(_saveActionSurface) == 2
+        && _saveActionSurface.IsVisible == (_selectedTabIndex == 0);
+
+    internal bool SaveActionsVisibleForSmoke =>
+        _saveActionSurface.IsVisible;
+
+    internal bool SaveActionButtonsContainedForSmoke
+    {
+        get
+        {
+            if (!_saveActionSurface.IsVisible)
+            {
+                return true;
+            }
+
+            if (_saveActionSurface.Bounds.Width <= 0
+                || _saveActionSurface.Bounds.Height <= 0)
+            {
+                return false;
+            }
+
+            foreach (var command in new[] { _retry, _reset, _save })
+            {
+                if (!command.IsEffectivelyVisible)
+                {
+                    continue;
+                }
+
+                var origin = command.TranslatePoint(
+                    new Point(0, 0),
+                    _saveActionSurface);
+                if (origin is not { } point
+                    || point.X < -0.5
+                    || point.Y < -0.5
+                    || point.X + command.Bounds.Width
+                        > _saveActionSurface.Bounds.Width + 0.5
+                    || point.Y + command.Bounds.Height
+                        > _saveActionSurface.Bounds.Height + 0.5)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     internal bool TabPagesHaveIndependentScrollStateForSmoke =>
@@ -3309,6 +3407,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _selectedTabIndex = index;
         _tabContent.Content =
             _tabPages[index];
+        _saveActionSurface.IsVisible = index == 0;
 
         for (var itemIndex = 0;
              itemIndex < _tabButtons.Length;
