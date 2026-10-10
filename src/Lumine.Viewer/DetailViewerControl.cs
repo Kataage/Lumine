@@ -226,9 +226,7 @@ public sealed class DetailViewerControl : UserControl
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(10, 6),
-                Margin = new Thickness(12, 12, 12, 16),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Bottom,
                 IsVisible = false,
                 IsHitTestVisible = false,
                 Child = _status
@@ -289,12 +287,8 @@ public sealed class DetailViewerControl : UserControl
                     new CornerRadius(9),
                 Padding =
                     new Thickness(10, 6),
-                Margin =
-                    new Thickness(12, 12, 12, 16),
                 HorizontalAlignment =
                     HorizontalAlignment.Center,
-                VerticalAlignment =
-                    VerticalAlignment.Bottom,
                 IsVisible = false,
                 IsHitTestVisible = false,
                 Child = _metadata
@@ -390,8 +384,24 @@ public sealed class DetailViewerControl : UserControl
                 Child = topChromeLayout
             };
         stage.Children.Add(_topChromeHost);
-        stage.Children.Add(_statusHost);
-        stage.Children.Add(_metadataHost);
+
+        // Metadata may remain explicitly expanded while an original is
+        // loading or fails. Both bottom overlays used to share identical
+        // placement, so one could paint over the other. Keep them in one
+        // non-interactive bottom lane with status nearest the bottom edge:
+        // they retain their original position when shown individually.
+        var bottomFeedback = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Spacing = 8,
+            Margin = new Thickness(12, 12, 12, 16),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            IsHitTestVisible = false
+        };
+        bottomFeedback.Children.Add(_metadataHost);
+        bottomFeedback.Children.Add(_statusHost);
+        stage.Children.Add(bottomFeedback);
 
         _chromeTimer =
             new DispatcherTimer
@@ -628,6 +638,14 @@ public sealed class DetailViewerControl : UserControl
         _metadataHost.IsVisible =
             !_metadataHost.IsVisible;
     }
+
+    internal bool IsStatusVisibleForSmoke =>
+        _statusHost.IsVisible;
+
+    internal Rect StatusBoundsInControlForSmoke =>
+        GetControlBoundsForSmoke(
+            _statusHost,
+            "status host");
 
     internal Rect MetadataBoundsInControlForSmoke =>
         GetControlBoundsForSmoke(

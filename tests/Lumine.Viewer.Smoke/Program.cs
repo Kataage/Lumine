@@ -2921,6 +2921,35 @@ internal static class Program
             provider.ActiveOriginalLoads > 0,
             "Rapid-navigation test never started original decode.");
 
+        // A user can leave the explicit Info overlay open while the
+        // current image loads an original. The loading/error status must
+        // remain visible beneath it, rather than occupy the same bottom
+        // coordinates. Validate the actual mounted Avalonia geometry.
+        detail.ToggleMetadataForSmoke();
+        for (var feedbackAttempt = 0;
+             feedbackAttempt < 30
+             && !detail.IsStatusVisibleForSmoke;
+             feedbackAttempt++)
+        {
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(1);
+        }
+
+        Dispatcher.UIThread.RunJobs();
+        var loadingStatus = detail.StatusBoundsInControlForSmoke;
+        var expandedMetadata = detail.MetadataBoundsInControlForSmoke;
+        var feedbackViewport = detail.ViewportBoundsInControlForSmoke;
+        Require(
+            detail.IsMetadataVisibleForSmoke
+            && detail.IsStatusVisibleForSmoke
+            && expandedMetadata.Height > 0
+            && loadingStatus.Height > 0
+            && expandedMetadata.Bottom + 7
+                <= loadingStatus.Top
+            && loadingStatus.Bottom
+                <= feedbackViewport.Bottom + 0.5,
+            "Focused Viewer metadata covered the active loading status instead of sharing a non-overlapping bottom feedback lane.");
+
         await detailSession.SelectAsync(2);
         await staleOriginal;
 
@@ -2929,6 +2958,20 @@ internal static class Program
             static snapshot =>
                 snapshot.SelectedIndex == 2
                 && snapshot.State == ViewerDetailLoadState.PreviewReady);
+
+        Dispatcher.UIThread.RunJobs();
+        var metadataAfterLoad =
+            detail.MetadataBoundsInControlForSmoke;
+        Require(
+            detail.IsMetadataVisibleForSmoke
+            && !detail.IsStatusVisibleForSmoke
+            && Math.Abs(
+                metadataAfterLoad.Bottom
+                - (detail.ViewportBoundsInControlForSmoke.Bottom - 16))
+                <= 1.5,
+            "Viewer Info overlay did not return to its original bottom edge after the loading feedback cleared.");
+        detail.ToggleMetadataForSmoke();
+        Dispatcher.UIThread.RunJobs();
 
         Require(
             provider.CancelledOriginals > cancelledBefore,
