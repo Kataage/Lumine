@@ -9696,7 +9696,7 @@ try
                                 Dispatcher.UIThread.RunJobs();
                                 if (persisted() == expected
                                     && snapshot() == expected
-                                    && budgetSettingsPage
+                                    && budgetSettingsPage!
                                         .GetVisualDescendants()
                                         .OfType<TextBlock>()
                                         .Any(block =>
@@ -9716,7 +9716,7 @@ try
                                 && selector.SelectedIndex == chosen
                                 && persisted() == expected
                                 && snapshot() == expected
-                                && budgetSettingsPage
+                                && budgetSettingsPage!
                                     .GetVisualDescendants()
                                     .OfType<TextBlock>()
                                     .Any(block =>
