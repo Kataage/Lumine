@@ -9525,6 +9525,127 @@ try
                         }
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Test the real mounted cache deletion action through
+                        // a declined confirmation and a measured post-prune
+                        // stats result. A cancelled action must never say
+                        // "deleted", nor change the displayed disk usage.
+                        var cacheDeleteAttempts = 0;
+                        var measuredCacheAfter =
+                            new ThumbnailCacheStats(
+                                5,
+                                5L * 1024 * 1024,
+                                0);
+                        var clearSettingsPage =
+                            ProductSettingsView.Create(
+                                window.SettingsSnapshot,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () =>
+                                {
+                                    cacheDeleteAttempts++;
+                                    return cacheDeleteAttempts == 1
+                                        ? Task.FromException<ThumbnailCacheStats>(
+                                            new OperationCanceledException(
+                                                "Simulated deletion decline"))
+                                        : Task.FromResult(measuredCacheAfter);
+                                },
+                                () => Task.CompletedTask,
+                                new HashSet<string>(
+                                    StringComparer.Ordinal)
+                                {
+                                    "詳細設定"
+                                });
+                        var clearSettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = clearSettingsPage
+                        };
+                        clearSettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var clearExpander =
+                                clearSettingsPage.GetVisualDescendants()
+                                    .OfType<Expander>()
+                                    .Single(e =>
+                                        string.Equals(
+                                            e.Header as string,
+                                            "詳細設定",
+                                            StringComparison.Ordinal));
+                            var clearCommand =
+                                clearSettingsPage.GetVisualDescendants()
+                                    .OfType<Button>()
+                                    .Single(button =>
+                                        string.Equals(
+                                            button.Content as string,
+                                            "表示用キャッシュを削除",
+                                            StringComparison.Ordinal));
+                            var cacheInfo =
+                                clearSettingsPage.GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Single(block =>
+                                        (block.Text ?? string.Empty)
+                                            .StartsWith(
+                                                "現在のキャッシュ: ",
+                                                StringComparison.Ordinal));
+                            var initialCacheInfo = cacheInfo.Text;
+                            bool ShowsCacheMessage(string message) =>
+                                clearSettingsPage.GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block => block.Text == message);
+
+                            Require(
+                                clearExpander.IsExpanded
+                                && clearCommand.IsEffectivelyVisible,
+                                "Mounted cache clear disclosure did not expose the action.");
+
+                            clearCommand.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                cacheDeleteAttempts == 1
+                                && clearCommand.IsEnabled
+                                && clearExpander.IsExpanded
+                                && cacheInfo.Text == initialCacheInfo
+                                && ShowsCacheMessage(
+                                    "削除をキャンセルしました。")
+                                && !ShowsCacheMessage(
+                                    "表示用キャッシュを削除しました。元画像・タグ・評価・公開履歴などのユーザーデータは変更していません。"),
+                                "Cancelled cache deletion changed the displayed usage or falsely reported success.");
+
+                            clearCommand.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                cacheDeleteAttempts == 2
+                                && clearCommand.IsEnabled
+                                && clearExpander.IsExpanded
+                                && cacheInfo.Text ==
+                                    "現在のキャッシュ: 5ファイル / 5 MiB"
+                                && ShowsCacheMessage(
+                                    "表示用キャッシュを削除しました。元画像・タグ・評価・公開履歴などのユーザーデータは変更していません。")
+                                && ReferenceEquals(
+                                    clearSettingsWindow.Content,
+                                    clearSettingsPage),
+                                "Successful cache prune did not refresh the visible measured usage while retaining the mounted Settings view and confirmation.");
+                        }
+                        finally
+                        {
+                            clearSettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
