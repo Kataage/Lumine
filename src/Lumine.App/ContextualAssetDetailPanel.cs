@@ -67,7 +67,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _summary;
     private readonly TextBlock _path;
     private readonly Button _copyPath;
-    private readonly TextBlock _technical;
+    private readonly StackPanel _technicalFacts;
     private readonly TextBlock _exif;
     private readonly Button _exifRetry;
     private readonly TextBlock _works;
@@ -199,7 +199,11 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             {
                 await CopyCurrentPathAsync();
             };
-        _technical = CreateValue(wrap: true);
+        _technicalFacts = new StackPanel
+        {
+            Spacing = LumineDesign.Space6
+        };
+        SetTechnicalFacts(null);
         _exif = CreateValue(wrap: true);
         _exifRetry =
             LumineDesign.ConfigureSecondaryButton(
@@ -1063,7 +1067,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         informationBody.Children.Add(
             CreateInspectorSectionCard(
                 "技術情報",
-                _technical));
+                _technicalFacts));
 
         var exifBody =
             new StackPanel
@@ -1215,7 +1219,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             : string.Empty;
 
     internal string TechnicalText =>
-        _technical.Text ?? string.Empty;
+        _currentAsset is { } asset
+            ? string.Join(
+                "\n",
+                FormatTechnicalFacts(asset).Select(
+                    static fact =>
+                        $"{fact.Label}: {fact.Value}"))
+            : "—";
 
     internal string ExifTextForSmoke =>
         _exif.Text ?? string.Empty;
@@ -1648,8 +1658,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _copyPath.Content =
             "パスをコピー";
         _copyPath.IsEnabled = true;
-        _technical.Text =
-            FormatTechnical(asset);
+        SetTechnicalFacts(asset);
         _exifLoadedAssetId = 0;
         _exifLoadingAssetId = 0;
         _exif.Text =
@@ -1924,7 +1933,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _copyPath.Content =
             "パスをコピー";
         _copyPath.IsEnabled = false;
-        _technical.Text = "—";
+        SetTechnicalFacts(null);
         _exif.Text = "—";
         _exifRetry.IsVisible = false;
         _exifLoadedAssetId = 0;
@@ -3357,8 +3366,70 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             $"{dimensions} · {format} · {FormatBytes(asset.FileSize)}";
     }
 
-    private static string FormatTechnical(
-        ViewerAsset asset)
+    private void SetTechnicalFacts(ViewerAsset? asset)
+    {
+        _technicalFacts.Children.Clear();
+        if (asset is null)
+        {
+            _technicalFacts.Children.Add(
+                new TextBlock
+                {
+                    Text = "画像が選択されていません。",
+                    Foreground = LumineDesign.MutedForeground,
+                    TextWrapping = TextWrapping.Wrap
+                });
+            return;
+        }
+
+        foreach (var (label, value) in FormatTechnicalFacts(asset))
+        {
+            var row = new Grid
+            {
+                MinHeight = 30
+            };
+            var labelBlock = new TextBlock
+            {
+                Text = label,
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = LumineDesign.CaptionFontSize,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var valueBlock = new TextBlock
+            {
+                Text = value,
+                Foreground = LumineDesign.Foreground,
+                FontSize = LumineDesign.BodyFontSize,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            AutomationProperties.SetAutomationId(
+                row,
+                $"inspector-technical-fact-{label}");
+            AutomationProperties.SetName(
+                valueBlock,
+                $"{label}: {value}");
+
+            if (LumineVisualMetrics.TextScaleFactor >= 1.5)
+            {
+                row.RowDefinitions = new RowDefinitions("Auto,Auto");
+                row.RowSpacing = LumineDesign.Space4;
+                Grid.SetRow(valueBlock, 1);
+            }
+            else
+            {
+                row.ColumnDefinitions = new ColumnDefinitions("88,*");
+                row.ColumnSpacing = LumineDesign.Space8;
+                Grid.SetColumn(valueBlock, 1);
+            }
+
+            row.Children.Add(labelBlock);
+            row.Children.Add(valueBlock);
+            _technicalFacts.Children.Add(row);
+        }
+    }
+
+    private static IReadOnlyList<(string Label, string Value)>
+        FormatTechnicalFacts(ViewerAsset asset)
     {
         var modified =
             new DateTimeOffset(
@@ -3379,11 +3450,20 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 : "未取得";
 
         return
-            $"表示寸法: {display}\n"
-            + $"元寸法: {raw}\n"
-            + $"アルファ: {(asset.HasAlpha == true ? "あり" : asset.HasAlpha == false ? "なし" : "未取得")}\n"
-            + $"更新日時: {modified:yyyy-MM-dd HH:mm:ss}\n"
-            + $"ソース版: {asset.SourceRevision}";
+        [
+            ("表示寸法", display),
+            ("元寸法", raw),
+            ("アルファ", asset.HasAlpha == true
+                ? "あり"
+                : asset.HasAlpha == false
+                    ? "なし"
+                    : "未取得"),
+            ("更新日時", modified.ToString(
+                "yyyy-MM-dd HH:mm:ss",
+                System.Globalization.CultureInfo.InvariantCulture)),
+            ("ソース版", asset.SourceRevision.ToString(
+                System.Globalization.CultureInfo.InvariantCulture))
+        ];
     }
 
     private static string FormatExif(
