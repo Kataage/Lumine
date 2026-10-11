@@ -10081,6 +10081,7 @@ try
                         var cacheModeActions = 0;
                         var pruneActions = 0;
                         var rescanActions = 0;
+                        var scanSaveActions = 0;
                         var actionSettingsPage =
                             ProductSettingsView.Create(
                                 actionSettingsSnapshot,
@@ -10097,7 +10098,15 @@ try
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
-                                _ => Task.CompletedTask,
+                                _ =>
+                                {
+                                    scanSaveActions++;
+                                    return scanSaveActions == 2
+                                        ? Task.FromException(
+                                            new IOException(
+                                                "Simulated scan-target save failure"))
+                                        : Task.CompletedTask;
+                                },
                                 () =>
                                 {
                                     rescanActions++;
@@ -10155,6 +10164,12 @@ try
                                     .Single(button =>
                                         AutomationProperties.GetName(button)
                                             == "現在のライブラリを再スキャン");
+                            var scanSaveAction =
+                                actionSettingsPage.GetVisualDescendants()
+                                    .OfType<Button>()
+                                    .Single(button =>
+                                        AutomationProperties.GetName(button)
+                                            == "読み込み対象を保存");
                             var originalCacheMode =
                                 modeAction.IsChecked == true;
                             Require(
@@ -10206,6 +10221,37 @@ try
                                 && pruneAction.IsEnabled
                                 && pruneAction.IsFocused,
                                 "Cancelled cache prune lost keyboard focus.");
+
+                            Require(
+                                scanSaveAction.Focus(),
+                                "Scan-target save command did not accept keyboard focus.");
+                            scanSaveAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                scanSaveActions == 1
+                                && scanSaveAction.IsEnabled
+                                && scanSaveAction.IsFocused
+                                && actionSettingsPage.GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block => block.Text ==
+                                        "読み込み対象を保存しました。既存indexを更新する場合は再スキャンしてください。"),
+                                "Successful scan-target save lost focus or its confirmation.");
+                            scanSaveAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                scanSaveActions == 2
+                                && scanSaveAction.IsEnabled
+                                && scanSaveAction.IsFocused
+                                && actionSettingsPage.GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block => block.Text ==
+                                        "読み込み対象を保存できませんでした。もう一度お試しください。")
+                                && ReferenceEquals(
+                                    actionSettingsWindow.Content,
+                                    actionSettingsPage),
+                                "Failed scan-target save lost focus, feedback or the mounted Settings page.");
 
                             Require(
                                 rescanAction.Focus(),

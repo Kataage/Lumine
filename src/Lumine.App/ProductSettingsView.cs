@@ -832,12 +832,12 @@ internal static class ProductSettingsView
                     saveButton.IsEnabled =
                         true;
                     if (restoreSaveFocus
-                        && saveButton.IsEffectivelyVisible
-                        && (TopLevel.GetTopLevel(saveButton)
-                                ?.FocusManager?.GetFocusedElement()
-                            is null))
+                        && TopLevel.GetTopLevel(saveButton)
+                            is Window owner)
                     {
-                        saveButton.Focus();
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            saveButton);
                     }
                 }
             };
