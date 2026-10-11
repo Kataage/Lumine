@@ -2533,14 +2533,15 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private static Control CreatePublicationCard(
         PublicationInfo publication)
     {
-        var body =
+        // A publication's date/destination/title are the identifying
+        // facts. Long snapshots must not obscure the next history item
+        // in a narrow Inspector before the owner requests details.
+        var summary =
             new StackPanel
             {
-                Spacing =
-                    LumineDesign.Space6
+                Spacing = LumineDesign.Space6
             };
-
-        body.Children.Add(
+        summary.Children.Add(
             new TextBlock
             {
                 Text =
@@ -2561,7 +2562,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         if (!string.IsNullOrWhiteSpace(
                 publication.Title))
         {
-            body.Children.Add(
+            summary.Children.Add(
                 new TextBlock
                 {
                     Text = publication.Title,
@@ -2576,6 +2577,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                 });
         }
 
+        // Keep every existing data field; only change when it becomes
+        // visible. No additional database read or image request occurs.
+        var details =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space6
+            };
         if (!string.IsNullOrWhiteSpace(
                 publication.Body))
         {
@@ -2584,7 +2592,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     ? publication.Body
                     : publication.Body[..277]
                         + "…";
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     excerpt));
         }
@@ -2592,14 +2600,14 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         if (!string.IsNullOrWhiteSpace(
                 publication.TagsSnapshot))
         {
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     $"タグ: {publication.TagsSnapshot}"));
         }
 
         if (publication.Assets.Count > 0)
         {
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     FormatPublicationAssets(
                         publication)));
@@ -2608,7 +2616,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         if (!string.IsNullOrWhiteSpace(
                 publication.ExternalId))
         {
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     $"外部ID: {publication.ExternalId}"));
         }
@@ -2616,7 +2624,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         if (!string.IsNullOrWhiteSpace(
                 publication.ExternalUrl))
         {
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     $"URL: {publication.ExternalUrl}"));
         }
@@ -2625,9 +2633,36 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                  ExtractPublicationFlags(
                      publication.PlatformMetadataJson))
         {
-            body.Children.Add(
+            details.Children.Add(
                 CreatePublicationDetail(
                     flag));
+        }
+
+        var body =
+            new StackPanel
+            {
+                Spacing = LumineDesign.Space8
+            };
+        body.Children.Add(summary);
+        if (details.Children.Count > 0)
+        {
+            var disclosure =
+                new Expander
+                {
+                    Header = "投稿内容・詳細",
+                    IsExpanded = false,
+                    HorizontalAlignment =
+                        HorizontalAlignment.Stretch,
+                    Content = details
+                };
+            AutomationProperties.SetName(
+                disclosure,
+                "公開記録の詳細: "
+                + (string.IsNullOrWhiteSpace(
+                        publication.Title)
+                    ? publication.Destination
+                    : publication.Title));
+            body.Children.Add(disclosure);
         }
 
         return new Border
