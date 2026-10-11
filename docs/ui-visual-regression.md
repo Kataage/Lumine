@@ -10,7 +10,7 @@ The App smoke receives:
 --visual-output=artifacts/visual-regression
 ```
 
-When enabled it captures the required product surfaces below:
+When enabled it captures the representative product surfaces below. **This list is not exhaustive**: the authoritative required capture set is the `expectedVisualEvidence` array in `tests/Lumine.App.Smoke/Program.cs`; the App Smoke fails when any name is missing or an output frame is empty. As of 2026-10-12 Stage 3T, the successful [Windows CI #38162018463](https://github.com/Kataage/Lumine/actions/runs/38162018463) published 75 PNG captures, up from 63 on [the October 10 baseline](https://github.com/Kataage/Lumine/actions/runs/38028622123). For exact additions, unchanged image dimensions, automated coverage vs physical acceptance and the end-to-end workflow limitations, see [the integrated evidence audit](lumine-v2-integrated-ux-audit-2026-10-12.md). The representative baseline names include:
 
 - `design-system-scale-100.png`
 - `design-system-scale-125.png`
