@@ -1236,6 +1236,71 @@ internal static class Program
                 }, attachedTiles: 35, nextRowCount: 7),
             "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
 
+        // Stage #634 owner feedback: a two-row source window is visibly
+        // too short on a physical Windows library. Ordinary scrolling
+        // should warm the next plausible viewport in the direction of
+        // travel, while preserving one/two rows for a quick reversal.
+        // Rapid far seeks MUST retain the old two-row budget so discarded
+        // intermediate viewports do not flood native requests.
+        var normalGrid =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 2,
+                visibleRows: 5, columns: 7, attachedTiles: 35,
+                new ViewerOptions(), isFarSeek: false);
+        var smallBudgetGrid =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 2,
+                visibleRows: 5, columns: 7, attachedTiles: 35,
+                twoSidedOptions, isFarSeek: false);
+        var normalList =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: true, configuredRows: 2,
+                visibleRows: 9, columns: 1, attachedTiles: 12,
+                twoSidedOptions, isFarSeek: false);
+        var farSeek =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 2,
+                visibleRows: 5, columns: 7, attachedTiles: 35,
+                new ViewerOptions(), isFarSeek: true);
+        var optedOut =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: true, configuredRows: 0,
+                visibleRows: 9, columns: 1, attachedTiles: 12,
+                new ViewerOptions(), isFarSeek: false);
+        var oneRow =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 1,
+                visibleRows: 5, columns: 7, attachedTiles: 35,
+                new ViewerOptions(), isFarSeek: false);
+        var exhausted =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 2,
+                visibleRows: 5, columns: 7, attachedTiles: 55,
+                twoSidedOptions, isFarSeek: false);
+        Require(
+            normalGrid.PreferredSourceRows == 6
+            && normalGrid.OppositeSourceRows == 2
+            && normalGrid.PreferredBitmapRows >= 4
+            && normalGrid.OppositeBitmapRows >= 1
+            && smallBudgetGrid.PreferredSourceRows == 6
+            && smallBudgetGrid.PreferredBitmapRows >= 1
+            && smallBudgetGrid.OppositeBitmapRows >= 1
+            && 35 + (smallBudgetGrid.PreferredBitmapRows
+                + smallBudgetGrid.OppositeBitmapRows) * 7 <= 56
+            && normalList.PreferredSourceRows == 12
+            && normalList.OppositeSourceRows == 2
+            && normalList.PreferredBitmapRows >= 9
+            && normalList.OppositeBitmapRows >= 1
+            && farSeek.PreferredSourceRows == 2
+            && farSeek.OppositeSourceRows == 2
+            && optedOut.PreferredSourceRows == 0
+            && optedOut.PreferredBitmapRows == 0
+            && oneRow.PreferredSourceRows == 1
+            && oneRow.PreferredBitmapRows <= 1
+            && exhausted.PreferredBitmapRows == 0
+            && exhausted.OppositeBitmapRows == 0,
+            "Directional viewport lookahead regressed: normal forward/reverse, narrow cache, List, far-seek, opt-out or native memory budget.");
+
         // A 50px List notch (List row height ~68px) often makes the
         // second adjacent row visible before lookahead can run again.
         // Warm two contiguous List rows on BOTH sides only with a
