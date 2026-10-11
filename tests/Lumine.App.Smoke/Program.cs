@@ -1377,14 +1377,25 @@ try
                     .Distinct(StringComparer.Ordinal)
                     .Count() == navLibraries.Length,
                 "Library Manage accessible names were not associated with their individual rows.");
+            var manageLibraryGlyph =
+                manageLibraryButton.Content as Viewbox;
+            var manageLibraryFrame =
+                manageLibraryGlyph?.Child as Canvas;
+            var manageLibraryInk =
+                manageLibraryFrame?.Children
+                    .OfType<Avalonia.Controls.Shapes.Path>()
+                    .SingleOrDefault();
             Require(
                 manageLibraryButton is { IsEffectivelyVisible: true }
-                && manageLibraryButton.Content
-                    is Avalonia.Controls.Shapes.Path manageLibraryIcon
-                && manageLibraryIcon.Data is not null
-                && manageLibraryIcon.Data.Bounds.Height > 0.5
-                && manageLibraryIcon.Width >= 15.5
-                && manageLibraryIcon.Height >= 15.5
+                && manageLibraryGlyph is not null
+                && manageLibraryGlyph.Width >= 15.5
+                && manageLibraryGlyph.Height >= 15.5
+                && manageLibraryFrame is not null
+                && Math.Abs(manageLibraryFrame.Width - 24) < 0.01
+                && Math.Abs(manageLibraryFrame.Height - 24) < 0.01
+                && manageLibraryInk?.Data is not null
+                && manageLibraryInk.Data.Bounds.Height > 0.5
+                && manageLibraryInk.Stretch == Stretch.None
                 && manageLibraryButton.Classes.Contains(
                     "lumine-icon")
                 && manageLibraryButton.Classes.Contains(
@@ -11222,8 +11233,12 @@ try
                             .OfType<Button>()
                             .FirstOrDefault(
                                 button =>
-                                    button.Content
+                                    (button.Content
                                         is Avalonia.Controls.Shapes.Path
+                                    || button.Content is Viewbox
+                                    {
+                                        Child: Canvas
+                                    })
                                     && string.IsNullOrWhiteSpace(
                                         AutomationProperties.GetName(
                                             button)));
