@@ -824,10 +824,15 @@ public sealed class MainWindow : Window
             && _navigationPinned
             && _navigationPane.IsVisible;
 
+        // A docked sidebar already has an explicit Collapse action.
+        // Showing a neighboring active Pin button is functionally
+        // redundant and makes two opposite-looking exit commands
+        // compete in the cramped contextual header. Pin remains
+        // available when the sidebar is floating at desktop width.
         _navigationPin.IsEnabled =
-            !_compactNavigationLayout;
+            !_compactNavigationLayout && !paneCanDock;
         _navigationPin.IsVisible =
-            !_compactNavigationLayout;
+            !_compactNavigationLayout && !paneCanDock;
 
         if (paneCanDock)
         {
@@ -917,6 +922,7 @@ public sealed class MainWindow : Window
         && !_navigationRailHost.IsVisible
         && _wideNavigationHost.IsVisible
         && _wideSettingsHost.IsVisible
+        && !_navigationPin.IsVisible
         && Grid.GetRow(
             _wideNavigationHost) == 0
         && Grid.GetRow(

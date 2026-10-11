@@ -221,6 +221,50 @@ internal static class ProductNavigationViews
                     });
             }
 
+            // The frequent rescan action deserves a readable target,
+            // but an additional 32-DIP icon alongside a two-line library
+            // title and overflow button makes a narrow sidebar cramped.
+            // Give it a labelled second line *only* for the active,
+            // available library; keep the library title and Manage
+            // action on a single clean header row.
+            if (isActive
+                && library.IsEnabled
+                && rootAvailable)
+            {
+                var rescanContent = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = LumineDesign.Space8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                rescanContent.Children.Add(
+                    LumineDesign.CreateStrokeIcon(
+                        LumineDesign.RefreshIconPath,
+                        16,
+                        LumineDesign.MutedForeground));
+                rescanContent.Children.Add(
+                    new TextBlock
+                    {
+                        Text = "再スキャン",
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                var rescan = LumineDesign.ConfigureTertiaryButton(
+                    new Button
+                    {
+                        Content = rescanContent,
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    });
+                rescan.Classes.Add("lumine-library-rescan");
+                AutomationProperties.SetName(
+                    rescan,
+                    "現在のライブラリを再スキャン");
+                AttachAsync(
+                    rescan,
+                    () => rescanLibrary(library),
+                    reportError);
+                primaryContent.Children.Add(rescan);
+            }
+
             Control primary;
             if (isActive)
             {
@@ -269,41 +313,13 @@ internal static class ProductNavigationViews
                 new Grid
                 {
                     ColumnDefinitions =
-                        new ColumnDefinitions(
-                            "*,Auto,Auto"),
+                        new ColumnDefinitions("*,Auto"),
                     ColumnSpacing =
-                        LumineDesign.Space2,
+                        LumineDesign.Space4,
                     VerticalAlignment =
-                        VerticalAlignment.Center
+                        VerticalAlignment.Top
                 };
             libraryRow.Children.Add(primary);
-
-            if (isActive
-                && library.IsEnabled
-                && rootAvailable)
-            {
-                var rescan =
-                    LumineDesign.ConfigureIconButton(
-                        new Button
-                        {
-                            Content =
-                                LumineDesign.CreateStrokeIcon(
-                                    LumineDesign.RefreshIconPath,
-                                    16)
-                        },
-                        "現在のライブラリを再スキャン");
-                rescan.VerticalAlignment =
-                    VerticalAlignment.Center;
-                AttachAsync(
-                    rescan,
-                    () => rescanLibrary(library),
-                    reportError);
-                Grid.SetColumn(
-                    rescan,
-                    1);
-                libraryRow.Children.Add(
-                    rescan);
-            }
 
             var manageButton =
                 LumineDesign.ConfigureIconButton(
@@ -316,7 +332,7 @@ internal static class ProductNavigationViews
                     },
                     $"ライブラリを管理: {library.Name}");
             manageButton.VerticalAlignment =
-                VerticalAlignment.Center;
+                VerticalAlignment.Top;
 
             var manageMenu =
                 new ContextMenu();
@@ -356,7 +372,7 @@ internal static class ProductNavigationViews
                     manageMenu.Open(manageButton);
             Grid.SetColumn(
                 manageButton,
-                2);
+                1);
             libraryRow.Children.Add(
                 manageButton);
 

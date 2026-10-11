@@ -1413,12 +1413,62 @@ try
                                 "現在のライブラリを再スキャン",
                                 StringComparison.Ordinal));
             Require(
-                rescanButton is { IsEnabled: true }
+                rescanButton is
+                {
+                    IsEnabled: true,
+                    IsEffectivelyVisible: true,
+                    Content: StackPanel
+                }
                 && rescanButton.Classes.Contains(
+                    "lumine-tertiary")
+                && rescanButton.Classes.Contains(
+                    "lumine-library-rescan")
+                && !rescanButton.Classes.Contains(
                     "lumine-icon")
-                && rescanButton.Classes.Contains(
-                    "lumine-tertiary"),
+                && rescanButton.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Any(label => label.Text == "再スキャン"),
                 "Active library did not expose the themed direct rescan utility action.");
+            // Verify a two-column library header (title plus only
+            // one overflow button) and a second-line labelled rescan.
+            // It must not compete with the first-line title or metadata
+            // even in a narrow docked sidebar.
+            var selectedLibraryGrid =
+                activeLibrarySurface.Child as Grid;
+            var selectedLibraryMetadata =
+                activeLibrarySurface.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .First(label =>
+                        label.Text?.Contains(
+                            "件 · ", StringComparison.Ordinal) == true);
+            var metadataTop =
+                selectedLibraryMetadata.TranslatePoint(
+                    new Point(0, 0), activeLibrarySurface);
+            var rescanTop =
+                rescanButton.TranslatePoint(
+                    new Point(0, 0), activeLibrarySurface);
+            var overflowTop =
+                manageLibraryButton.TranslatePoint(
+                    new Point(0, 0), activeLibrarySurface);
+            Require(
+                selectedLibraryGrid is not null
+                && selectedLibraryGrid.ColumnDefinitions.Count == 2
+                && manageLibraryButton is not null
+                && Grid.GetColumn(manageLibraryButton) == 1
+                && manageLibraryButton.VerticalAlignment
+                    == VerticalAlignment.Top
+                && metadataTop is { } metadataPoint
+                && rescanTop is { } rescanPoint
+                && overflowTop is { } overflowPoint
+                && rescanPoint.Y >= metadataPoint.Y
+                    + selectedLibraryMetadata.Bounds.Height
+                && overflowPoint.Y < rescanPoint.Y
+                && activeLibrarySurface.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Count(button =>
+                        button.Classes.Contains("lumine-icon")) == 1,
+                "Active Library still crams Rescan and Manage icons into one row or loses the labelled action.");
+
             rescanButton.RaiseEvent(
                 new RoutedEventArgs(
                     Button.ClickEvent));
@@ -11037,7 +11087,7 @@ try
                                     window.IsNavigationPinnedForSmoke
                                     && !window.IsNavigationPaneOverlayForSmoke
                                     && window.PinnedNavigationUsesUnifiedSidebarForSmoke
-                                    && window.NavigationPinVisibleForSmoke
+                                    && !window.NavigationPinVisibleForSmoke
                                     && ReferenceEquals(
                                         window.CurrentRuntime,
                                         runtimeBeforeNavigation)
