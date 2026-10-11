@@ -161,7 +161,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                     HorizontalAlignment.Stretch,
                 VerticalAlignment =
                     VerticalAlignment.Center,
-                MaxHeight = 168
+                MaxHeight = 192
             };
         _previewStatus =
             new TextBlock
@@ -404,17 +404,37 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             async (_, _) =>
                 await _closeRequested();
 
+        // A primary user journey (open the selected image at full size)
+        // must not look like a third indistinguishable utility glyph
+        // beside Pin and Close. Keep one accessible command instance so
+        // return-from-viewer focus continues to restore to its invoker.
+        var viewCommandContent = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = LumineDesign.Space4,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        viewCommandContent.Children.Add(
+            LumineDesign.CreateStrokeIcon(
+                LumineDesign.ViewIconPath,
+                16));
+        viewCommandContent.Children.Add(
+            new TextBlock
+            {
+                Text = "拡大",
+                VerticalAlignment = VerticalAlignment.Center
+            });
         _focused =
-            LumineDesign.ConfigureIconButton(
+            LumineDesign.ConfigureTertiaryButton(
                 new Button
                 {
-                    Content =
-                        LumineDesign.CreateStrokeIcon(
-                            LumineDesign.ViewIconPath,
-                            18),
-                    IsEnabled = false
-                },
-                "画像を表示");
+                    Content = viewCommandContent,
+                    IsEnabled = false,
+                    VerticalContentAlignment = VerticalAlignment.Center
+                });
+        _focused.Classes.Add("lumine-inspector-open-image");
+        AutomationProperties.SetName(_focused, "画像を表示");
+        ToolTip.SetTip(_focused, "選択した画像を大きく表示");
         _focused.Click +=
             async (_, _) =>
                 await _focusedViewRequested();
@@ -1265,12 +1285,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     // A short desktop layout needs usable editable fields without
     // scrolling beyond the entire preview. Only the image preview,
     // not text or the four Inspector tabs, is reduced in height.
-    // Large/full-height views retain the existing 120/148-DIP preview.
+    // The wide desktop Inspector is secondary to the main image canvas,
+    // yet a 148-DIP thumbnail makes its selected image difficult to
+    // recognize at 1920x1080. Use the available vertical headroom on
+    // full-height workspaces; keep compact/short panels unchanged.
     internal static double ResolvePreviewHeightForSmoke(
         bool compact,
         double availableHeight) =>
         !compact
-            ? 148
+            ? availableHeight >= 900
+                ? 192
+                : 148
             : availableHeight > 0
                 && availableHeight < 720
                     ? 80
