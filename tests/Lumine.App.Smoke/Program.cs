@@ -9362,7 +9362,13 @@ try
                                     .Any(block =>
                                         block.Text ==
                                         "読み込み対象を保存しました。既存indexを更新する場合は再スキャンしてください。"),
-                                "Saving scan extensions recreated Settings, lost keyboard/save feedback or persisted a different scan policy.");
+                                "Saving scan extensions recreated Settings, lost keyboard/save feedback or persisted a different scan policy. "
+                                + $"samePage={ReferenceEquals(window.WorkspacePageForSmoke, scanSettingsPage)}, "
+                                + $"saveEnabled={scanSaveButton.IsEnabled}, saveFocused={scanSaveButton.IsFocused}, "
+                                + $"bmpControl={bmpSelector.IsChecked}, expectedBmp={expectedBmp}, "
+                                + $"savedBmp={actualScanExtensions.Contains(".bmp", StringComparer.OrdinalIgnoreCase)}, "
+                                + $"snapshotMatches={window.SettingsSnapshot.ScanExtensions.SequenceEqual(actualScanExtensions)}, "
+                                + $"confirmationVisible={scanSettingsPage!.GetVisualDescendants().OfType<TextBlock>().Any(block => block.Text == "読み込み対象を保存しました。既存indexを更新する場合は再スキャンしてください。")}.");
                         }
 
                         await VerifyScanExtensionSaveAsync(!originalBmp);
