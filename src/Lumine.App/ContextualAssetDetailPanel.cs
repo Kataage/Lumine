@@ -1219,7 +1219,13 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             : string.Empty;
 
     internal string TechnicalText =>
-        _technical.Text ?? string.Empty;
+        _currentAsset is { } asset
+            ? string.Join(
+                "\n",
+                FormatTechnicalFacts(asset).Select(
+                    static fact =>
+                        $"{fact.Label}: {fact.Value}"))
+            : "—";
 
     internal string ExifTextForSmoke =>
         _exif.Text ?? string.Empty;
