@@ -5303,6 +5303,38 @@ try
 
             shell.ContextDetail.SelectTabForSmoke(2);
             Dispatcher.UIThread.RunJobs();
+            var publicationDetailDisclosure =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Expander>()
+                    .Single(expander =>
+                        (AutomationProperties.GetName(expander)
+                         ?? string.Empty).StartsWith(
+                            "公開記録の詳細: ",
+                            StringComparison.Ordinal));
+            Require(
+                !publicationDetailDisclosure.IsExpanded
+                && publicationDetailDisclosure.Header as string
+                    == "投稿内容・詳細"
+                && shell.ContextDetail.PublicationCardCountForSmoke >= 1,
+                "Inspector Publication history did not begin as scannable compact records with accessible detail disclosure.");
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-publication-collapsed-1100x720");
+            }
+
+            publicationDetailDisclosure.IsExpanded = true;
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                publicationDetailDisclosure.IsExpanded,
+                "Inspector publication detail did not open without navigation or a new load.");
+            if (visualOutputDirectory is not null)
+            {
+                CaptureVisualEvidence(
+                    window,
+                    "inspector-publication-expanded-1100x720");
+            }
             var publicationCardText =
                 string.Join(
                     "\n",
@@ -5345,6 +5377,12 @@ try
                             "公開記録を作成",
                             StringComparison.Ordinal)),
                 "Inspector Publication tab did not render rich publication cards while keeping its direct create action.");
+
+            publicationDetailDisclosure.IsExpanded = false;
+            Dispatcher.UIThread.RunJobs();
+            Require(
+                !publicationDetailDisclosure.IsExpanded,
+                "Inspector Publication details did not collapse back to the scannable history summary.");
 
             var publicationHistory =
                 await shellRuntime.LibraryService.ListPublicationsAsync(
@@ -12244,6 +12282,8 @@ try
                 "inspector-organize-1100x720",
                 "inspector-creative-1100x720",
                 "inspector-publication-1100x720",
+                "inspector-publication-collapsed-1100x720",
+                "inspector-publication-expanded-1100x720",
                 "inspector-information-1100x720",
                 "inspector-tab-1-900x600",
                 "inspector-tab-2-900x600",
