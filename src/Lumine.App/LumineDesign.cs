@@ -719,6 +719,19 @@ internal static class LumineDesign
              index < NavigationItems.Count - 1;
              index++)
         {
+            // The narrow rail should communicate the same information
+            // groups as the expanded sidebar without tiny section text.
+            if (index == 3)
+            {
+                stack.Children.Add(
+                    new Border
+                    {
+                        Height = 1,
+                        Margin = new Thickness(12, Space12),
+                        Background = Border
+                    });
+            }
+
             var destination =
                 CreateDestinationButton(
                     NavigationItems[index]);
@@ -890,6 +903,26 @@ internal static class LumineDesign
         Grid.SetColumn(brandLabel, 1);
         brandRow.Children.Add(brandLabel);
 
+        TextBlock CreateSectionHeader(string title)
+        {
+            var heading = new TextBlock
+            {
+                Text = title,
+                FontSize = CaptionFontSize,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = MutedForeground,
+                Margin = new Thickness(
+                    Space12, Space16, Space8, Space6),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            heading.Classes.Add("lumine-nav-section-header");
+            return heading;
+        }
+
+        // Global destinations are not five unrelated commands. Image
+        // browsing/organization stays together; publishing is a separate
+        // workflow. These are semantic group headings, NOT selectable
+        // pseudo-pages or an extra navigation level.
         var destinations =
             new StackPanel
             {
@@ -897,17 +930,22 @@ internal static class LumineDesign
                 Margin =
                     new Thickness(
                         Space8,
-                        Space4,
+                        0,
                         Space8,
                         Space8)
             };
+        destinations.Children.Add(
+            CreateSectionHeader("画像を探す"));
         for (var index = 0;
-             index < buttons.Length - 1;
+             index < 3;
              index++)
         {
-            destinations.Children.Add(
-                buttons[index]);
+            destinations.Children.Add(buttons[index]);
         }
+
+        destinations.Children.Add(
+            CreateSectionHeader("公開・管理"));
+        destinations.Children.Add(buttons[3]);
 
         var primaryRoot =
             new StackPanel
@@ -915,6 +953,13 @@ internal static class LumineDesign
                 Spacing = 0
             };
         primaryRoot.Children.Add(brandRow);
+        primaryRoot.Children.Add(
+            new Border
+            {
+                Height = 1,
+                Margin = new Thickness(Space16, Space4, Space16, 0),
+                Background = Border
+            });
         primaryRoot.Children.Add(destinations);
 
         var primary =
