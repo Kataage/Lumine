@@ -9646,6 +9646,181 @@ try
                         }
                     }
 
+                    if (iteration == 0)
+                    {
+                        // The real advanced Settings selectors must not
+                        // display a budget that the settings store rejected.
+                        // Programmatic rollback raises SelectionChanged:
+                        // it must not trigger a second write or false success.
+                        var budgetRollbackSnapshot =
+                            window.SettingsSnapshot;
+                        var budgetWriteCounts = new int[3];
+                        var committedBudgets = new long[]
+                        {
+                            budgetRollbackSnapshot.ThumbnailCacheByteLimit,
+                            budgetRollbackSnapshot.EncodedThumbnailMemoryByteLimit,
+                            budgetRollbackSnapshot.DecodedThumbnailByteLimit
+                        };
+                        Task SaveBudgetForRollbackAsync(
+                            int budgetIndex,
+                            long bytes)
+                        {
+                            budgetWriteCounts[budgetIndex]++;
+                            if (budgetWriteCounts[budgetIndex] is 1 or 3)
+                            {
+                                return Task.FromException(
+                                    new IOException(
+                                        "Simulated budget persistence failure"));
+                            }
+
+                            committedBudgets[budgetIndex] = bytes;
+                            return Task.CompletedTask;
+                        }
+
+                        var rollbackSettingsPage =
+                            ProductSettingsView.Create(
+                                budgetRollbackSnapshot,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                bytes => SaveBudgetForRollbackAsync(
+                                    0, bytes),
+                                bytes => SaveBudgetForRollbackAsync(
+                                    1, bytes),
+                                bytes => SaveBudgetForRollbackAsync(
+                                    2, bytes),
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.FromResult(
+                                    budgetRollbackSnapshot.CacheStats),
+                                () => Task.CompletedTask,
+                                new HashSet<string>(
+                                    StringComparer.Ordinal)
+                                {
+                                    "詳細設定"
+                                });
+                        var rollbackSettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = rollbackSettingsPage
+                        };
+                        rollbackSettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var rollbackDisclosure =
+                                rollbackSettingsPage
+                                    .GetVisualDescendants()
+                                    .OfType<Expander>()
+                                    .Single(expander =>
+                                        string.Equals(
+                                            expander.Header as string,
+                                            "詳細設定",
+                                            StringComparison.Ordinal));
+                            var budgetNames =
+                                new[]
+                                {
+                                    "ディスク保持上限",
+                                    "高速再表示用メモリ上限",
+                                    "画像先読み用メモリ上限（展開済み）"
+                                };
+                            var budgetSuccessTexts =
+                                new[]
+                                {
+                                    "ディスク保持上限を保存しました。次回起動から有効です。",
+                                    "メモリ上限を保存しました。次回起動から有効です。",
+                                    "画像先読み用メモリ上限を保存しました。次回起動から有効です。"
+                                };
+                            bool HasRollbackStatus(string message) =>
+                                rollbackSettingsPage
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block => block.Text == message);
+                            for (var budgetIndex = 0;
+                                 budgetIndex < budgetNames.Length;
+                                 budgetIndex++)
+                            {
+                                var selector =
+                                    rollbackSettingsPage
+                                        .GetVisualDescendants()
+                                        .OfType<ComboBox>()
+                                        .Single(combo =>
+                                            AutomationProperties.GetName(combo)
+                                                == budgetNames[budgetIndex]);
+                                var initialIndex =
+                                    selector.SelectedIndex;
+                                var alternateIndex =
+                                    initialIndex == 0 ? 1 : 0;
+                                var startingBytes =
+                                    committedBudgets[budgetIndex];
+                                Require(
+                                    rollbackDisclosure.IsExpanded
+                                    && selector.IsEffectivelyVisible
+                                    && initialIndex >= 0,
+                                    $"Budget rollback fixture missing {budgetNames[budgetIndex]}.");
+
+                                selector.SelectedIndex = alternateIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    budgetWriteCounts[budgetIndex] == 1
+                                    && selector.IsEnabled
+                                    && selector.SelectedIndex == initialIndex
+                                    && committedBudgets[budgetIndex]
+                                        == startingBytes
+                                    && HasRollbackStatus(
+                                        budgetIndex == 2
+                                            ? "先読み用メモリ上限を保存できませんでした。もう一度お試しください。"
+                                            : "保存できませんでした。もう一度お試しください。"),
+                                    $"Failed {budgetNames[budgetIndex]} write was not rolled back or caused a duplicate write.");
+
+                                selector.SelectedIndex = alternateIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    budgetWriteCounts[budgetIndex] == 2
+                                    && committedBudgets[budgetIndex]
+                                        != startingBytes
+                                    && selector.SelectedIndex
+                                        == alternateIndex
+                                    && HasRollbackStatus(
+                                        budgetSuccessTexts[budgetIndex]),
+                                    $"Retry of {budgetNames[budgetIndex]} was not successfully committed.");
+
+                                var newlyCommittedBytes =
+                                    committedBudgets[budgetIndex];
+                                selector.SelectedIndex = initialIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    budgetWriteCounts[budgetIndex] == 3
+                                    && committedBudgets[budgetIndex]
+                                        == newlyCommittedBytes
+                                    && selector.SelectedIndex
+                                        == alternateIndex
+                                    && selector.IsEnabled,
+                                    $"Failed later {budgetNames[budgetIndex]} write did not restore the last successfully committed value.");
+
+                                selector.SelectedIndex = initialIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    budgetWriteCounts[budgetIndex] == 4
+                                    && committedBudgets[budgetIndex]
+                                        == startingBytes
+                                    && selector.SelectedIndex == initialIndex
+                                    && HasRollbackStatus(
+                                        budgetSuccessTexts[budgetIndex])
+                                    && ReferenceEquals(
+                                        rollbackSettingsWindow.Content,
+                                        rollbackSettingsPage)
+                                    && rollbackDisclosure.IsExpanded,
+                                    $"Recovery of {budgetNames[budgetIndex]} did not retain the mounted form or restore the initial value.");
+                            }
+                        }
+                        finally
+                        {
+                            rollbackSettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
