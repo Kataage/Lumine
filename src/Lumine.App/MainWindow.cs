@@ -47,6 +47,7 @@ public sealed class MainWindow : Window
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
     private CancellationTokenSource? _navigationCancellation;
+    private long _navigationSnapshotGeneration;
     private Task _openOperation = Task.CompletedTask;
     private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
     private Task _diagnosticFlushOperation = Task.CompletedTask;
@@ -626,6 +627,13 @@ public sealed class MainWindow : Window
     internal void StartNavigationRefreshForSmoke() =>
         StartNavigationRefresh();
 
+    // Deterministically suspend a real loaded navigation snapshot at the
+    // commit boundary during mounted headless tests. Never set at runtime.
+    internal Func<Task>? NavigationBeforeCommitForSmokeAsync { get; set; }
+
+    internal Task NavigationRefreshWithoutCancellationForSmokeAsync() =>
+        RefreshNavigationAsync(CancellationToken.None);
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
@@ -1191,7 +1199,8 @@ public sealed class MainWindow : Window
             _host?.Log.Write(
                 "navigation",
                 $"Navigation refresh failed: {exception.Message}");
-            if (!_closeStarted)
+            if (!_closeStarted
+                && ReferenceEquals(_navigationOperation, operation))
             {
                 _status.Foreground =
                     LumineDesign.Warning;
@@ -1214,6 +1223,11 @@ public sealed class MainWindow : Window
     private async Task RefreshNavigationAsync(
         CancellationToken cancellationToken)
     {
+        // Some Tag and Publication mutations refresh without a cancellation
+        // token. Cancellation alone cannot stop an older DB snapshot from
+        // overwriting newer navigation and facets after an awaited read.
+        var requestGeneration = ++_navigationSnapshotGeneration;
+        var requestDestination = _navigationDestination;
         await _navigationInitialization
             .WaitAsync(cancellationToken);
 
@@ -1256,7 +1270,7 @@ public sealed class MainWindow : Window
                     runtime.Library.Id,
                     cancellationToken);
             if (string.Equals(
-                    _navigationDestination,
+                    requestDestination,
                     "公開履歴",
                     StringComparison.Ordinal))
             {
@@ -1285,7 +1299,27 @@ public sealed class MainWindow : Window
             await GetThumbnailCacheStatsAsync(
                 cancellationToken);
 
+        // Unit-of-work commit barrier: keep all settings, scoped tags,
+        // facets and contextual controls together from the newest request.
+        // Awaited snapshots must not mutate a different library/destination.
+        var beforeCommit = NavigationBeforeCommitForSmokeAsync;
+        if (beforeCommit is not null)
+        {
+            await beforeCommit();
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
+        if (_closeStarted
+            || requestGeneration != _navigationSnapshotGeneration
+            || !ReferenceEquals(runtime, _runtime)
+            || !string.Equals(
+                requestDestination,
+                _navigationDestination,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
         _settingsSnapshot =
             CreateSettingsSnapshot(
                 cacheStats);
