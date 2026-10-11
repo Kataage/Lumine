@@ -723,13 +723,14 @@ internal static class LumineDesign
             // groups as the expanded sidebar without tiny section text.
             if (index == 3)
             {
-                stack.Children.Add(
-                    new Border
-                    {
-                        Height = 1,
-                        Margin = new Thickness(12, Space12),
-                        Background = Border
-                    });
+                var divider = new Border
+                {
+                    Height = 1,
+                    Margin = new Thickness(12, Space12),
+                    Background = Border
+                };
+                divider.Classes.Add("lumine-nav-rail-divider");
+                stack.Children.Add(divider);
             }
 
             var destination =
