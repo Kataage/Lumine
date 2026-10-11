@@ -1477,6 +1477,7 @@ internal static class ProductSettingsView
                     HorizontalAlignment =
                         HorizontalAlignment.Left
                 });
+        var diagnosticsStatus = CreateStatusText();
         diagnostics.Click +=
             async (_, _) =>
             {
@@ -1487,9 +1488,26 @@ internal static class ProductSettingsView
                     TopLevel.GetTopLevel(diagnostics)
                         as Window;
                 diagnostics.IsEnabled = false;
+                diagnosticsStatus.Text = string.Empty;
                 try
                 {
                     await showDiagnostics();
+                }
+                catch (OperationCanceledException)
+                {
+                    diagnosticsStatus.Foreground =
+                        LumineDesign.MutedForeground;
+                    diagnosticsStatus.Text =
+                        "診断情報の表示を中止しました。";
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    diagnosticsStatus.Foreground =
+                        LumineDesign.Danger;
+                    diagnosticsStatus.Text =
+                        "診断情報を開けませんでした。もう一度お試しください。";
                 }
                 finally
                 {
@@ -1520,6 +1538,7 @@ internal static class ProductSettingsView
                         0)
             });
         details.Children.Add(diagnostics);
+        details.Children.Add(diagnosticsStatus);
 
         content.Children.Add(
             new Expander

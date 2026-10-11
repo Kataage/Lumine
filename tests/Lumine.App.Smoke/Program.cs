@@ -7790,6 +7790,7 @@ try
                         Window? settingsDiagnosticsModal = null;
                         Button? settingsDiagnosticsAction = null;
                         var invokedWhileDisabled = false;
+                        var diagnosticsAttempts = 0;
                         var settingsDiagnosticsPage =
                             ProductSettingsView.Create(
                                 window.SettingsSnapshot,
@@ -7806,6 +7807,13 @@ try
                                     invokedWhileDisabled =
                                         settingsDiagnosticsAction is
                                             { IsEnabled: false };
+                                    diagnosticsAttempts++;
+                                    if (diagnosticsAttempts == 2)
+                                    {
+                                        throw new IOException(
+                                            "Simulated Settings diagnostics failure");
+                                    }
+
                                     settingsDiagnosticsModal =
                                         new Window
                                         {
@@ -7871,8 +7879,33 @@ try
                             && settingsDiagnosticsAction.IsFocused,
                             "Settings diagnostics failed to restore initiating focus after re-enabling its command.");
 
-                        // The Settings page may change while diagnostics is
-                        // open. Do not send keyboard focus to a hidden action.
+                        // A failed diagnostics callback must remain inside
+                        // the mounted Settings form, with truthful error
+                        // feedback and a re-enabled, keyboard-ready command.
+                        Require(
+                            settingsDiagnosticsAction.Focus(),
+                            "Settings diagnostics action could not regain focus before simulated failure.");
+                        settingsDiagnosticsAction.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            diagnosticsAttempts == 2
+                            && settingsDiagnosticsAction.IsEnabled
+                            && settingsDiagnosticsAction.IsFocused
+                            && ReferenceEquals(
+                                settingsDiagnosticsOwner.Content,
+                                settingsDiagnosticsPage)
+                            && settingsDiagnosticsPage
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Any(block =>
+                                    block.Text ==
+                                        "診断情報を開けませんでした。もう一度お試しください。"),
+                            "Failed Settings diagnostics escaped the handler, lost focus, or hid the failure.");
+
+                        // A new attempt must clear the previous error
+                        // and still restore focus safely if its action
+                        // becomes hidden while the modal is open.
                         Require(
                             settingsDiagnosticsAction.Focus(),
                             "Settings diagnostics action lost focus before hidden-target regression.");
@@ -7881,8 +7914,14 @@ try
                         Dispatcher.UIThread.RunJobs();
                         Require(
                             settingsDiagnosticsModal is { IsVisible: true }
-                            && !settingsDiagnosticsAction.IsEnabled,
-                            "Settings diagnostics hidden-target modal failed to open.");
+                            && !settingsDiagnosticsAction.IsEnabled
+                            && !settingsDiagnosticsPage
+                                .GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Any(block =>
+                                    block.Text ==
+                                        "診断情報を開けませんでした。もう一度お試しください。"),
+                            "Settings diagnostics retry did not clear the previous error or open its modal.");
                         settingsDiagnosticsAction.IsVisible = false;
                         settingsDiagnosticsModal!.Close();
                         Dispatcher.UIThread.RunJobs();
