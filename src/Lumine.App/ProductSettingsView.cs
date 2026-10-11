@@ -20,7 +20,13 @@ internal sealed record ProductSettingsSnapshot(
     IReadOnlyList<string> ScanExtensions,
     bool HasActiveLibrary,
     string? SettingsWarning,
-    bool ThumbnailModeEnvironmentOverride);
+    bool ThumbnailModeEnvironmentOverride)
+{
+    // Separate from compressed-thumbnail memory: this is the native
+    // decoded Bitmap cache that normal-scroll lookahead actually fills.
+    public long DecodedThumbnailByteLimit { get; init; } =
+        Lumine.Core.CoreResourcePolicy.Default.DecodedThumbnailByteLimit;
+}
 
 internal static class ProductSettingsView
 {
@@ -45,12 +51,23 @@ internal static class ProductSettingsView
         1024L * 1024 * 1024
     ];
 
+    // The native decoded cache has its own limit and an independent
+    // 512-entry safety ceiling. Presets are intentionally conservative.
+    private static readonly long[] DecodedBudgetOptions =
+    [
+        64L * 1024 * 1024,
+        96L * 1024 * 1024,
+        128L * 1024 * 1024,
+        256L * 1024 * 1024
+    ];
+
     public static Control Create(
         ProductSettingsSnapshot snapshot,
         Func<BrowsePreferences, Task> saveViewerDefaults,
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
         Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
+        Func<long, Task> saveDecodedBudget,
         Func<IReadOnlyList<string>, Task> saveScanExtensions,
         Func<Task> rescanCurrentLibrary,
         Func<Task> clearCache,
@@ -62,6 +79,7 @@ internal static class ProductSettingsView
         ArgumentNullException.ThrowIfNull(saveThumbnailMode);
         ArgumentNullException.ThrowIfNull(saveDiskBudget);
         ArgumentNullException.ThrowIfNull(saveMemoryBudget);
+        ArgumentNullException.ThrowIfNull(saveDecodedBudget);
         ArgumentNullException.ThrowIfNull(saveScanExtensions);
         ArgumentNullException.ThrowIfNull(rescanCurrentLibrary);
         ArgumentNullException.ThrowIfNull(clearCache);
@@ -138,6 +156,7 @@ internal static class ProductSettingsView
                 saveThumbnailMode,
                 saveDiskBudget,
                 saveMemoryBudget,
+                saveDecodedBudget,
                 clearCache,
                 initiallyExpandedSections?.Contains("詳細設定") == true));
         root.Children.Add(
@@ -836,6 +855,7 @@ internal static class ProductSettingsView
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
         Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
+        Func<long, Task> saveDecodedBudget,
         Func<Task> clearCache,
         bool expandAdvanced = false)
     {
@@ -956,7 +976,7 @@ internal static class ProductSettingsView
             CreateFieldWithDescription(
                 "高速再表示用メモリ上限",
                 memory,
-                "再表示を速くする一時メモリの上限。変更は次回起動から有効です。");
+                "圧縮済みサムネイルの再利用に使うメモリです。画像先読み用の展開済みBitmapとは別で、変更は次回起動から有効です。");
         memoryField.Width = 280;
         memoryField.Margin =
             new Thickness(
@@ -964,6 +984,37 @@ internal static class ProductSettingsView
                 0,
                 0,
                 LumineDesign.Space8);
+
+        // The owner's configured memory ceiling must actually govern
+        // decoded image-ahead Bitmap residency. The separate selector
+        // above only controls encoded thumbnails, not presentation.
+        var decodedBudgets =
+            DecodedBudgetOptions
+                .Concat([snapshot.DecodedThumbnailByteLimit])
+                .Distinct()
+                .Order()
+                .ToArray();
+        var decoded = LumineDesign.ConfigureComboBox(
+            new ComboBox
+            {
+                ItemsSource = decodedBudgets
+                    .Select(static value => FormatBytes(value))
+                    .ToArray(),
+                SelectedIndex = Array.IndexOf(
+                    decodedBudgets,
+                    snapshot.DecodedThumbnailByteLimit),
+                MinWidth = 180
+            });
+        var decodedField = CreateFieldWithDescription(
+            "画像先読み用メモリ上限（展開済み）",
+            decoded,
+            "スクロール前に用意する画像Bitmapのメモリ枠です。表示中の画像を優先し、最大512件の保護上限も適用します。変更は次回起動から有効です。");
+        decodedField.Width = 280;
+        decodedField.Margin = new Thickness(
+            0,
+            0,
+            LumineDesign.Space12,
+            LumineDesign.Space8);
 
         var budgetFields =
             new WrapPanel
@@ -973,6 +1024,7 @@ internal static class ProductSettingsView
             };
         budgetFields.Children.Add(diskField);
         budgetFields.Children.Add(memoryField);
+        budgetFields.Children.Add(decodedField);
         advanced.Children.Add(budgetFields);
 
         var clear =
@@ -1103,6 +1155,39 @@ internal static class ProductSettingsView
                 finally
                 {
                     memory.IsEnabled = true;
+                }
+            };
+
+        decoded.SelectionChanged +=
+            async (_, _) =>
+            {
+                if (decoded.SelectedIndex < 0
+                    || decoded.SelectedIndex >= decodedBudgets.Length)
+                {
+                    return;
+                }
+
+                decoded.IsEnabled = false;
+                status.Foreground = LumineDesign.MutedForeground;
+                status.Text = "保存しています…";
+                try
+                {
+                    await saveDecodedBudget(
+                        decodedBudgets[decoded.SelectedIndex]);
+                    status.Text =
+                        "画像先読み用メモリ上限を保存しました。次回起動から有効です。";
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        exception.ToString());
+                    status.Foreground = LumineDesign.Danger;
+                    status.Text =
+                        "先読み用メモリ上限を保存できませんでした。もう一度お試しください。";
+                }
+                finally
+                {
+                    decoded.IsEnabled = true;
                 }
             };
 

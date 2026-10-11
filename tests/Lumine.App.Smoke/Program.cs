@@ -566,6 +566,10 @@ try
             {
                 EncodedThumbnailMemoryByteLimit =
                     512L * 1024 * 1024,
+                DecodedThumbnailByteLimit =
+                    128L * 1024 * 1024,
+                DecodedThumbnailEntryLimit =
+                    CoreResourcePolicy.MaxDecodedThumbnailEntryLimit,
                 ThumbnailCacheByteLimit =
                     4L * 1024 * 1024 * 1024
             });
@@ -635,6 +639,24 @@ try
                 .ThumbnailCacheByteLimit
                 == 4L * 1024 * 1024 * 1024,
             "User-facing persistent thumbnail disk budget did not persist across restart.");
+        var restoredViewerOptions =
+            ViewerOptions.FromResourcePolicy(
+                cleanRestart.ResourcePolicy);
+        Require(
+            cleanRestart.Settings.ResourcePolicy
+                ?.DecodedThumbnailByteLimit
+                == 128L * 1024 * 1024
+            && cleanRestart.ResourcePolicy
+                .DecodedThumbnailByteLimit
+                == 128L * 1024 * 1024
+            && restoredViewerOptions.DecodedBitmapByteLimit
+                == 128L * 1024 * 1024
+            && restoredViewerOptions.DecodedBitmapEntryLimit
+                == CoreResourcePolicy.MaxDecodedThumbnailEntryLimit
+            && cleanRestart.ResourcePolicy
+                .EncodedThumbnailMemoryByteLimit
+                == 512L * 1024 * 1024,
+            "Configured native decoded Bitmap lookahead budget was not preserved independently across restart into ViewerOptions.");
 
         await cleanRestart.CompleteCleanShutdownAsync();
     }
@@ -7719,6 +7741,7 @@ try
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
                                 () => Task.CompletedTask,
                                 () => Task.CompletedTask,
                                 async () =>
@@ -8829,6 +8852,11 @@ try
                                 ? 512L * 1024 * 1024
                                 : appHost.ResourcePolicy
                                     .EncodedThumbnailMemoryByteLimit)
+                        && window.SettingsSnapshot.DecodedThumbnailByteLimit
+                            == (appHost.Settings.ResourcePolicy
+                                    ?.DecodedThumbnailByteLimit
+                                ?? appHost.ResourcePolicy
+                                    .DecodedThumbnailByteLimit)
                         && window.SettingsSnapshot.ScanExtensions.Count > 0
                         && window.SettingsSnapshot.ScanExtensions.All(
                             extension =>
@@ -9190,6 +9218,89 @@ try
                         "Custom scan-extension removal did not update the staged Settings state.");
 
 
+                    // The Settings widget itself must submit the real
+                    // decoded Bitmap limit callback, not just display a
+                    // label and rely on a separately simulated policy.
+                    long? requestedAheadBytes = null;
+                    var aheadSettingsPage =
+                        ProductSettingsView.Create(
+                            window.SettingsSnapshot,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            bytes =>
+                            {
+                                requestedAheadBytes = bytes;
+                                return Task.CompletedTask;
+                            },
+                            _ => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            new HashSet<string>(
+                                StringComparer.Ordinal)
+                            {
+                                "詳細設定"
+                            });
+                    var aheadSettingsWindow = new Window
+                    {
+                        Width = 900,
+                        Height = 900,
+                        Content = aheadSettingsPage
+                    };
+                    aheadSettingsWindow.Show();
+                    try
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        var aheadBudgetSelector =
+                            aheadSettingsPage.GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(control)
+                                        == "画像先読み用メモリ上限（展開済み）");
+                        var aheadChoices =
+                            aheadBudgetSelector.ItemsSource!
+                                .Cast<string>()
+                                .ToArray();
+                        var nextAheadIndex =
+                            Array.FindIndex(
+                                aheadChoices,
+                                choice => choice ==
+                                    "128 MiB");
+                        Require(
+                            aheadBudgetSelector.IsEffectivelyVisible
+                            && nextAheadIndex >= 0,
+                            "Advanced Settings did not mount the independent decoded ahead-memory budget control.");
+                        // Always force a different selection even when
+                        // the user's fixture begins at 128 MiB.
+                        var selectedAheadIndex =
+                            nextAheadIndex
+                                == aheadBudgetSelector.SelectedIndex
+                                ? Array.FindIndex(
+                                    aheadChoices,
+                                    choice => choice == "96 MiB")
+                                : nextAheadIndex;
+                        Require(
+                            selectedAheadIndex >= 0,
+                            "Decoded ahead-memory fixture lacks 96/128 MiB choices.");
+                        aheadBudgetSelector.SelectedIndex =
+                            selectedAheadIndex;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            requestedAheadBytes ==
+                                (aheadChoices[selectedAheadIndex]
+                                    == "128 MiB"
+                                        ? 128L * 1024 * 1024
+                                        : 96L * 1024 * 1024),
+                            "Selecting the user-visible ahead-memory control did not invoke the decoded-Bitmap persistence callback.");
+                    }
+                    finally
+                    {
+                        aheadSettingsWindow.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     // Keyboard focus regression is exercised on a separate
                     // REAL mounted Settings window. MainWindow's asynchronous
                     // navigation refresh may replace its Settings tree while
@@ -9198,6 +9309,7 @@ try
                     var keyboardSettingsPage =
                         ProductSettingsView.Create(
                             window.SettingsSnapshot,
+                            _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
@@ -9416,8 +9528,45 @@ try
                                 string.Equals(
                                     block.Text,
                                     "高速再表示用メモリ上限",
+                                    StringComparison.Ordinal))
+                            && advancedSettingsText.Any(block =>
+                                string.Equals(
+                                    block.Text,
+                                    "画像先読み用メモリ上限（展開済み）",
                                     StringComparison.Ordinal)),
                             "Advanced Settings disclosure did not expose its cache budget controls.");
+
+                        // Do not equate the visible compressed cache
+                        // selector with native decoded ahead-preloading.
+                        // The actual persisted Policy -> ViewerOptions
+                        // route must respect the separate Bitmap budget
+                        // AND a sufficient independent entry cap.
+                        var selectedDecodedPolicy =
+                            CoreResourcePolicy.Resolve(
+                                new ResourcePolicySettings
+                                {
+                                    DecodedThumbnailByteLimit =
+                                        128L * 1024 * 1024,
+                                    DecodedThumbnailEntryLimit =
+                                        CoreResourcePolicy
+                                            .MaxDecodedThumbnailEntryLimit
+                                });
+                        var decodedOptions =
+                            ViewerOptions.FromResourcePolicy(
+                                selectedDecodedPolicy);
+                        var untouchedEncoded =
+                            CoreResourcePolicy.Default
+                                .EncodedThumbnailMemoryByteLimit;
+                        Require(
+                            decodedOptions.DecodedBitmapByteLimit
+                                == 128L * 1024 * 1024
+                            && decodedOptions.DecodedBitmapEntryLimit
+                                == CoreResourcePolicy
+                                    .MaxDecodedThumbnailEntryLimit
+                            && selectedDecodedPolicy
+                                .EncodedThumbnailMemoryByteLimit
+                                == untouchedEncoded,
+                            "Configured decoded ahead-memory does not reach real viewer cache or incorrectly alters encoded thumbnails.");
 
                         CaptureVisualEvidence(
                             window,

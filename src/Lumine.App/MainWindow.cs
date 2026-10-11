@@ -1680,6 +1680,7 @@ public sealed class MainWindow : Window
                     SaveThumbnailModeFromSettingsAsync,
                     SaveDiskCacheBudgetFromSettingsAsync,
                     SaveMemoryBudgetFromSettingsAsync,
+                    SaveDecodedBudgetFromSettingsAsync,
                     SaveScanExtensionsFromSettingsAsync,
                     RescanCurrentLibraryFromSettingsAsync,
                     ClearThumbnailCacheFromSettingsAsync,
@@ -3065,6 +3066,32 @@ public sealed class MainWindow : Window
         StartNavigationRefresh();
     }
 
+    private async Task SaveDecodedBudgetFromSettingsAsync(
+        long bytes)
+    {
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        var current =
+            _host.Settings.ResourcePolicy
+            ?? new ResourcePolicySettings();
+        // A hidden 96-entry default would otherwise stop preloading
+        // long before a user-selected 128/256 MiB Bitmap byte limit.
+        // Both independent limits still apply at runtime, and actual
+        // native cache admission never exceeds the configured bytes.
+        var next = current with
+        {
+            DecodedThumbnailByteLimit = bytes,
+            DecodedThumbnailEntryLimit =
+                CoreResourcePolicy.MaxDecodedThumbnailEntryLimit
+        };
+        await _host.SaveSettingsAsync(next);
+        StartNavigationRefresh();
+    }
+
     private async Task ClearThumbnailCacheFromSettingsAsync()
     {
         var confirmed =
@@ -3154,6 +3181,11 @@ public sealed class MainWindow : Window
                 ?.EncodedThumbnailMemoryByteLimit
             ?? _resourcePolicy
                 .EncodedThumbnailMemoryByteLimit;
+        var decodedLimit =
+            _host?.Settings.ResourcePolicy
+                ?.DecodedThumbnailByteLimit
+            ?? _resourcePolicy
+                .DecodedThumbnailByteLimit;
 
         return new ProductSettingsSnapshot(
             _browsePreferences,
@@ -3170,7 +3202,10 @@ public sealed class MainWindow : Window
             !string.IsNullOrWhiteSpace(
                 Environment.GetEnvironmentVariable(
                     ThumbnailStoragePreference
-                        .EnvironmentVariable)));
+                        .EnvironmentVariable)))
+        {
+            DecodedThumbnailByteLimit = decodedLimit
+        };
     }
 
     private AssetQuery? BuildBrowseQuery()
