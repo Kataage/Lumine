@@ -5363,9 +5363,15 @@ try
                     "https://example.invalid/app-smoke",
                     StringComparison.Ordinal)
                 && publicationCardText.Contains(
+                    "AI生成: はい",
+                    StringComparison.Ordinal)
+                && publicationCardText.Contains(
+                    "年齢制限: 全年齢",
+                    StringComparison.Ordinal)
+                && !publicationCardText.Contains(
                     "aiGenerated: true",
                     StringComparison.OrdinalIgnoreCase)
-                && publicationCardText.Contains(
+                && !publicationCardText.Contains(
                     "ageRestriction: all",
                     StringComparison.OrdinalIgnoreCase)
                 && shell.ContextDetail
@@ -5377,6 +5383,19 @@ try
                             "公開記録を作成",
                             StringComparison.Ordinal)),
                 "Inspector Publication tab did not render rich publication cards while keeping its direct create action.");
+
+            // Both publication surfaces must format identical metadata
+            // through the shared parser, including legacy/modern flags.
+            var formattedPublicationFlags =
+                ProductNavigationViews.ExtractPublicationFlagsForSmoke(
+                    smokePublication.PlatformMetadataJson);
+            Require(
+                formattedPublicationFlags.Count > 0
+                && formattedPublicationFlags.All(flag =>
+                    publicationCardText.Contains(
+                        flag,
+                        StringComparison.Ordinal)),
+                "Inspector and Publication navigation disagree about localized AI/age metadata flags.");
 
             publicationDetailDisclosure.IsExpanded = false;
             Dispatcher.UIThread.RunJobs();

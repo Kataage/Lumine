@@ -3149,7 +3149,10 @@ internal static class ProductNavigationViews
         ExtractPublicationFlags(
             platformMetadataJson);
 
-    private static IReadOnlyList<string>
+    // Shared presentation contract for publication navigation and Inspector.
+    // Keep canonical Japanese labels and legacy/modern metadata normalization
+    // in one place rather than drifting between two record surfaces.
+    internal static IReadOnlyList<string>
         ExtractPublicationFlags(
             string? platformMetadataJson)
     {
