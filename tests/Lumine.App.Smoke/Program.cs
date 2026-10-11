@@ -9373,10 +9373,21 @@ try
 
                         await VerifyScanExtensionSaveAsync(!originalBmp);
                         await VerifyScanExtensionSaveAsync(originalBmp);
+                        // The original active policy may have a
+                        // different display order from the canonical
+                        // persisted setting (built-ins first, custom
+                        // extensions sorted). Scan eligibility depends
+                        // on normalized membership, not list ordering.
                         Require(
                             window.SettingsSnapshot.ScanExtensions
-                                .SequenceEqual(originalScanExtensions),
-                            "Mounted scan-target save did not restore the original image extensions.");
+                                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                                .SetEquals(originalScanExtensions)
+                            && ScanExtensionPreference.Resolve(
+                                    appHost.Settings,
+                                    out _)
+                                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                                .SetEquals(originalScanExtensions),
+                            "Mounted scan-target save did not restore the original effective extension set.");
                     }
 
                     // The Settings widget itself must submit the real
