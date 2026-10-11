@@ -9275,6 +9275,104 @@ try
                         "Custom scan-extension removal did not update the staged Settings state.");
 
 
+                    // Source-of-truth scan extension changes must not
+                    // rebuild this Settings form after a real Save click.
+                    // A rebuild would discard the save result and detach
+                    // the focus target and still-staged custom editor.
+                    if (iteration == 0)
+                    {
+                        var scanSettingsPage =
+                            window.WorkspacePageForSmoke;
+                        var originalScanExtensions =
+                            window.SettingsSnapshot.ScanExtensions.ToArray();
+                        var bmpSelector =
+                            scanExtensionControls.Single(check =>
+                                string.Equals(
+                                    check.Content as string,
+                                    ".bmp",
+                                    StringComparison.Ordinal));
+                        var originalBmp = bmpSelector.IsChecked == true;
+                        var scanSaveButton =
+                            scanActionGroup!
+                                .GetVisualDescendants()
+                                .OfType<Button>()
+                                .Single(button =>
+                                    AutomationProperties.GetName(button)
+                                        == "読み込み対象を保存");
+
+                        async Task VerifyScanExtensionSaveAsync(
+                            bool expectedBmp)
+                        {
+                            bmpSelector.IsChecked = expectedBmp;
+                            scanSaveButton.BringIntoView();
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                scanSaveButton.Focus(),
+                                "Mounted Settings scan Save command was not keyboard focusable.");
+                            scanSaveButton.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            for (var scanSavePass = 0;
+                                 scanSavePass < 200;
+                                 scanSavePass++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                var resolved =
+                                    ScanExtensionPreference.Resolve(
+                                        appHost.Settings,
+                                        out _);
+                                if (scanSaveButton.IsEnabled
+                                    && resolved.Contains(
+                                        ".bmp",
+                                        StringComparer.OrdinalIgnoreCase)
+                                        == expectedBmp
+                                    && window.SettingsSnapshot.ScanExtensions
+                                        .SequenceEqual(resolved))
+                                {
+                                    break;
+                                }
+
+                                await Task.Delay(5);
+                            }
+
+                            // Drain navigation work to catch accidental
+                            // asynchronous replacement *after* the value
+                            // was persisted.
+                            await window.NavigationRefreshForSmokeAsync();
+                            Dispatcher.UIThread.RunJobs();
+                            var actualScanExtensions =
+                                ScanExtensionPreference.Resolve(
+                                    appHost.Settings,
+                                    out _);
+                            Require(
+                                ReferenceEquals(
+                                    window.WorkspacePageForSmoke,
+                                    scanSettingsPage)
+                                && scanSaveButton.IsEnabled
+                                && scanSaveButton.IsFocused
+                                && bmpSelector.IsChecked == expectedBmp
+                                && actualScanExtensions.Contains(
+                                    ".bmp",
+                                    StringComparer.OrdinalIgnoreCase)
+                                    == expectedBmp
+                                && window.SettingsSnapshot.ScanExtensions
+                                    .SequenceEqual(actualScanExtensions)
+                                && scanSettingsPage!
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block =>
+                                        block.Text ==
+                                        "読み込み対象を保存しました。既存indexを更新する場合は再スキャンしてください。"),
+                                "Saving scan extensions recreated Settings, lost keyboard/save feedback or persisted a different scan policy.");
+                        }
+
+                        await VerifyScanExtensionSaveAsync(!originalBmp);
+                        await VerifyScanExtensionSaveAsync(originalBmp);
+                        Require(
+                            window.SettingsSnapshot.ScanExtensions
+                                .SequenceEqual(originalScanExtensions),
+                            "Mounted scan-target save did not restore the original image extensions.");
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
