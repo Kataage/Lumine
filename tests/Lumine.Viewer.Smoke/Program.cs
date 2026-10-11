@@ -426,6 +426,64 @@ internal static class Program
                 "In-memory thumbnail payload was not admitted to the decoded bitmap cache.");
         }
 
+        // A memory-led warm pass admits near rows BEFORE distant ones.
+        // Without a resident-only LRU touch, the most-needed next
+        // viewport becomes the oldest unleased cache entry and is
+        // evicted first even though more speculative rows were warmed.
+        // Model that pressure with four 1px memory thumbnails and
+        // exactly three cache slots: no source request, bitmap decode
+        // or extra cache entry is permitted by the promotion.
+        using (var nearPriorityCache =
+            new DecodedBitmapCache(entryLimit: 3, byteLimit: 12))
+        {
+            var encoded = await File.ReadAllBytesAsync(sourceThumbnail);
+            var thumbs = Enumerable.Range(0, 4)
+                .Select(index => new ViewerThumbnail(
+                    $"lookahead-priority-{index}",
+                    string.Empty, 1, 1,
+                    EncodedBytes: encoded))
+                .ToArray();
+            for (var index = 0; index < 3; index++)
+            {
+                using var initial =
+                    await nearPriorityCache.AcquireAsync(thumbs[index]);
+            }
+
+            Require(
+                nearPriorityCache.Diagnostics.EntryCount == 3
+                && nearPriorityCache.Diagnostics.EstimatedBytes == 12,
+                "Nearest-row LRU fixture did not fill the bounded cache.");
+            Require(
+                ThumbnailViewerControl.PromoteResidentWarmThumbnailForSmoke(
+                    nearPriorityCache, thumbs[0])
+                && !ThumbnailViewerControl.PromoteResidentWarmThumbnailForSmoke(
+                    nearPriorityCache, thumbs[3]),
+                "Resident-only nearest lookahead promotion attempted to decode or missed a warm resident.");
+            Require(
+                nearPriorityCache.Diagnostics.EntryCount == 3
+                && nearPriorityCache.Diagnostics.EstimatedBytes == 12,
+                "Nearest-row LRU priority touch allocated a new native bitmap.");
+
+            using (var distant = await nearPriorityCache.AcquireAsync(
+                       thumbs[3]))
+            {
+                Require(distant.Bitmap.PixelSize.Width == 1,
+                    "Distant lookahead bitmap was not admitted.");
+            }
+
+            Require(
+                nearPriorityCache.TryAcquireExisting(thumbs[0], out var adjacent)
+                && adjacent is not null,
+                "Distant predecode evicted a promoted next-viewport bitmap.");
+            adjacent!.Dispose();
+            Require(
+                !nearPriorityCache.TryAcquireExisting(thumbs[1], out var evicted)
+                && evicted is null
+                && nearPriorityCache.Diagnostics.EntryCount == 3
+                && nearPriorityCache.Diagnostics.EstimatedBytes == 12,
+                "Nearest-row promotion broke LRU eviction or native cache budgets.");
+        }
+
         using (var oversizeCache = new DecodedBitmapCache(
                    entryLimit: 2,
                    byteLimit: 3))
