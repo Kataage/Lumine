@@ -8,7 +8,6 @@ using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using System.Text.Json;
 using Lumine.Core;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -2630,7 +2629,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         }
 
         foreach (var flag in
-                 ExtractPublicationFlags(
+                 ProductNavigationViews.ExtractPublicationFlags(
                      publication.PlatformMetadataJson))
         {
             details.Children.Add(
@@ -2751,80 +2750,6 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                         TextWrapping.Wrap
                 }
         };
-
-    private static IReadOnlyList<string>
-        ExtractPublicationFlags(
-            string? platformMetadataJson)
-    {
-        if (string.IsNullOrWhiteSpace(
-                platformMetadataJson))
-        {
-            return Array.Empty<string>();
-        }
-
-        try
-        {
-            using var document =
-                JsonDocument.Parse(
-                    platformMetadataJson);
-            if (document.RootElement.ValueKind
-                != JsonValueKind.Object)
-            {
-                return Array.Empty<string>();
-            }
-
-            var flags =
-                new List<string>();
-            foreach (var property in
-                     document.RootElement
-                         .EnumerateObject())
-            {
-                var normalized =
-                    property.Name
-                        .Replace(
-                            "_",
-                            string.Empty,
-                            StringComparison.Ordinal)
-                        .Replace(
-                            "-",
-                            string.Empty,
-                            StringComparison.Ordinal)
-                        .ToLowerInvariant();
-
-                if (normalized is not
-                    ("aigenerated"
-                    or "isgeneratedbyai"
-                    or "generatedbyai"
-                    or "agerestriction"
-                    or "agegate"
-                    or "adult"
-                    or "isadult"
-                    or "r18"
-                    or "isr18"))
-                {
-                    continue;
-                }
-
-                var value =
-                    property.Value.ValueKind
-                    is JsonValueKind.String
-                        ? property.Value.GetString()
-                        : property.Value.GetRawText();
-                if (!string.IsNullOrWhiteSpace(
-                        value))
-                {
-                    flags.Add(
-                        $"{property.Name}: {value}");
-                }
-            }
-
-            return flags;
-        }
-        catch (JsonException)
-        {
-            return Array.Empty<string>();
-        }
-    }
 
     internal int PublicationCardCountForSmoke =>
         _publicationCards.Children.Count;
