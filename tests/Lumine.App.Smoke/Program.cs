@@ -10069,6 +10069,174 @@ try
                         }
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Real action controls also disable themselves
+                        // during asynchronous persistence, pruning and
+                        // library rescans. Keep keyboard focus for both
+                        // success and cancellation/failure on a mounted
+                        // page; no process or library mutation is needed.
+                        var actionSettingsSnapshot =
+                            window.SettingsSnapshot;
+                        var cacheModeActions = 0;
+                        var pruneActions = 0;
+                        var rescanActions = 0;
+                        var actionSettingsPage =
+                            ProductSettingsView.Create(
+                                actionSettingsSnapshot,
+                                _ => Task.CompletedTask,
+                                _ =>
+                                {
+                                    cacheModeActions++;
+                                    return cacheModeActions == 2
+                                        ? Task.FromException(
+                                            new OperationCanceledException(
+                                                "Simulated disk-cache opt-in decline"))
+                                        : Task.CompletedTask;
+                                },
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () =>
+                                {
+                                    rescanActions++;
+                                    return rescanActions == 2
+                                        ? Task.FromException(
+                                            new IOException(
+                                                "Simulated rescan failure"))
+                                        : Task.CompletedTask;
+                                },
+                                () =>
+                                {
+                                    pruneActions++;
+                                    return pruneActions == 2
+                                        ? Task.FromException<ThumbnailCacheStats>(
+                                            new OperationCanceledException(
+                                                "Simulated cache-clear decline"))
+                                        : Task.FromResult(
+                                            actionSettingsSnapshot.CacheStats);
+                                },
+                                () => Task.CompletedTask,
+                                new HashSet<string>(
+                                    StringComparer.Ordinal)
+                                {
+                                    "詳細設定"
+                                });
+                        var actionSettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = actionSettingsPage
+                        };
+                        actionSettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var modeAction =
+                                actionSettingsPage.GetVisualDescendants()
+                                    .OfType<CheckBox>()
+                                    .Single(check =>
+                                        string.Equals(
+                                            check.Content as string,
+                                            "表示用サムネイルを次回起動後も再利用する",
+                                            StringComparison.Ordinal));
+                            var pruneAction =
+                                actionSettingsPage.GetVisualDescendants()
+                                    .OfType<Button>()
+                                    .Single(button =>
+                                        string.Equals(
+                                            button.Content as string,
+                                            "表示用キャッシュを削除",
+                                            StringComparison.Ordinal));
+                            var rescanAction =
+                                actionSettingsPage.GetVisualDescendants()
+                                    .OfType<Button>()
+                                    .Single(button =>
+                                        AutomationProperties.GetName(button)
+                                            == "現在のライブラリを再スキャン");
+                            var originalCacheMode =
+                                modeAction.IsChecked == true;
+                            Require(
+                                actionSettingsSnapshot.HasActiveLibrary
+                                && rescanAction.IsEnabled
+                                && pruneAction.IsEffectivelyVisible,
+                                "Mounted Settings action focus fixture requires a scan-enabled library and expanded advanced cache controls.");
+
+                            Require(
+                                modeAction.Focus(),
+                                "Cache mode checkbox did not accept keyboard focus.");
+                            modeAction.IsChecked = !originalCacheMode;
+                            modeAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                cacheModeActions == 1
+                                && modeAction.IsEnabled
+                                && modeAction.IsFocused
+                                && modeAction.IsChecked == !originalCacheMode,
+                                "Successful cache mode save lost keyboard focus or toggle state.");
+                            modeAction.IsChecked = originalCacheMode;
+                            modeAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                cacheModeActions == 2
+                                && modeAction.IsEnabled
+                                && modeAction.IsFocused
+                                && modeAction.IsChecked == !originalCacheMode,
+                                "Cancelled cache mode save lost focus or failed to restore committed state.");
+
+                            Require(
+                                pruneAction.Focus(),
+                                "Cache-clear command did not accept keyboard focus.");
+                            pruneAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                pruneActions == 1
+                                && pruneAction.IsEnabled
+                                && pruneAction.IsFocused,
+                                "Successful cache prune lost keyboard focus.");
+                            pruneAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                pruneActions == 2
+                                && pruneAction.IsEnabled
+                                && pruneAction.IsFocused,
+                                "Cancelled cache prune lost keyboard focus.");
+
+                            Require(
+                                rescanAction.Focus(),
+                                "Active-library rescan command did not accept keyboard focus.");
+                            rescanAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                rescanActions == 1
+                                && rescanAction.IsEnabled
+                                && rescanAction.IsFocused,
+                                "Successful rescan command lost keyboard focus.");
+                            rescanAction.RaiseEvent(
+                                new RoutedEventArgs(Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                rescanActions == 2
+                                && rescanAction.IsEnabled
+                                && rescanAction.IsFocused
+                                && ReferenceEquals(
+                                    actionSettingsWindow.Content,
+                                    actionSettingsPage),
+                                "Failed rescan command lost focus or replaced the mounted Settings form.");
+                        }
+                        finally
+                        {
+                            actionSettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
