@@ -4720,6 +4720,52 @@ try
                             && button.IsEnabled),
                 "Inspector information tab did not expose the keyboard-reachable source-path copy action.");
 
+            // Technical dimensions, transparency and provenance
+            // must be scannable label/value facts, not an unstructured
+            // five-line paragraph. Check the actual mounted information
+            // tab at normal Windows scale; large-text mode stacks facts.
+            var technicalRows =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Grid>()
+                    .Where(row =>
+                        (AutomationProperties.GetAutomationId(row)
+                            ?? string.Empty).StartsWith(
+                                "inspector-technical-fact-",
+                                StringComparison.Ordinal))
+                    .ToArray();
+            var technicalLabels =
+                technicalRows.Select(
+                    row => row.Children.OfType<TextBlock>()
+                        .FirstOrDefault()?.Text)
+                    .ToArray();
+            Require(
+                technicalRows.Length == 5
+                && technicalLabels.SequenceEqual(
+                    new[]
+                    {
+                        "表示寸法",
+                        "元寸法",
+                        "アルファ",
+                        "更新日時",
+                        "ソース版"
+                    })
+                && technicalRows.All(
+                    row => row.Children.OfType<TextBlock>()
+                        .Count() == 2
+                        && row.Children.OfType<TextBlock>()
+                            .All(label => !string.IsNullOrWhiteSpace(
+                                label.Text))
+                        && (LumineVisualMetrics.TextScaleFactor >= 1.5
+                            ? row.RowDefinitions.Count == 2
+                            && row.ColumnDefinitions.Count == 0
+                            : row.ColumnDefinitions.Count == 2
+                            && row.RowDefinitions.Count == 0))
+                && shell.ContextDetail.TechnicalText.Contains(
+                    "表示寸法:", StringComparison.Ordinal)
+                && shell.ContextDetail.TechnicalText.Contains(
+                    "ソース版:", StringComparison.Ordinal),
+                "Inspector information still uses dense technical prose, drops facts or clips the label/value grid at scaled text.");
+
             shell.ContextDetail.SelectTabForSmoke(0);
             Dispatcher.UIThread.RunJobs();
 
