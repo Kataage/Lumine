@@ -2288,6 +2288,21 @@ public sealed class ThumbnailViewerControl : UserControl
                         for (var ordinal = 0; ordinal < rowCount; ordinal++)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            if (ordinal > 0)
+                            {
+                                // A full memory-led horizon is admitted
+                                // nearest-first, but LRU eviction then
+                                // considers the NEXT viewport oldest.
+                                // Refresh only still-resident near rows
+                                // before far work; never request/decode a
+                                // bitmap to repair speculative cache loss.
+                                await Dispatcher.UIThread.InvokeAsync(
+                                    () => PromoteNearestWarmRows(
+                                        session, preferredRow,
+                                        oppositeRow, columns,
+                                        cancellationToken));
+                            }
+
                             var primaryRow =
                                 preferredRow + (long)ordinal * direction;
                             var reverseRow =
@@ -2325,6 +2340,16 @@ public sealed class ThumbnailViewerControl : UserControl
                             await Task.WhenAll(primaryWarm, reverseWarm)
                                 .ConfigureAwait(false);
                         }
+
+                        // Ensure a full idle lookahead leaves the likely
+                        // next row most recent, not the farthest warmed
+                        // row. This changes LRU recency only; it never
+                        // increases cache entries or native allocations.
+                        await Dispatcher.UIThread.InvokeAsync(
+                            () => PromoteNearestWarmRows(
+                                session, preferredRow,
+                                oppositeRow, columns,
+                                cancellationToken));
 
                         break;
                     }
@@ -2574,6 +2599,74 @@ public sealed class ThumbnailViewerControl : UserControl
         return combinedEntries <= options.DecodedBitmapEntryLimit
             && combinedEntries <= options.DecodedBitmapByteLimit
                 / worstCaseBytesPerEntry;
+    }
+
+    // Keep the *next* real viewport's decoded presentations ahead of
+    // more distant speculative rows in the bounded cache's LRU ordering.
+    // Missing/evicted residents stay missing: do not create I/O or decode
+    // work on this path, and do not hold extra leases across awaits.
+    internal static bool PromoteResidentWarmThumbnailForSmoke(
+        DecodedBitmapCache cache,
+        ViewerThumbnail thumbnail)
+    {
+        if (!cache.TryAcquireExisting(thumbnail, out var lease)
+            || lease is null)
+        {
+            return false;
+        }
+
+        lease.Dispose();
+        return true;
+    }
+
+    private void PromoteNearestWarmRows(
+        ViewerSession session,
+        long preferredRow,
+        long oppositeRow,
+        int columns,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!ReferenceEquals(_session, session))
+        {
+            return;
+        }
+
+        // Touch the reverse neighbor first, then the preferred edge,
+        // so the intended scroll direction remains most recent.
+        PromoteResidentWarmRow(session, oppositeRow, columns);
+        if (preferredRow != oppositeRow)
+        {
+            PromoteResidentWarmRow(session, preferredRow, columns);
+        }
+    }
+
+    private void PromoteResidentWarmRow(
+        ViewerSession session,
+        long row,
+        int columns)
+    {
+        if (row < 0 || columns <= 0)
+        {
+            return;
+        }
+
+        var start = checked(row * (long)columns);
+        if (start >= session.Count)
+        {
+            return;
+        }
+
+        var end = Math.Min(session.Count, start + columns);
+        for (var index = start; index < end; index++)
+        {
+            if (_warmPresentations.TryGetValue(
+                    index, out var warm))
+            {
+                PromoteResidentWarmThumbnailForSmoke(
+                    session.BitmapCache, warm.Thumbnail);
+            }
+        }
     }
 
     private async Task PredecodeNextRowAsync(
