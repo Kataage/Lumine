@@ -3026,14 +3026,23 @@ public sealed class MainWindow : Window
                     confirmLabel: "有効にする");
             if (!confirmed)
             {
-                StartNavigationRefresh();
-                return;
+                // A declined confirmation is not a successful save. The
+                // Settings control restores its last committed checkbox
+                // state and reports cancellation without showing success.
+                throw new OperationCanceledException(
+                    "Thumbnail disk-cache opt-in was cancelled.");
             }
         }
 
         await _host.SaveThumbnailStorageModeAsync(
             mode);
-        StartNavigationRefresh();
+        // Cache mode remains restart-effective. Refreshing the entire
+        // Settings page here would discard the confirmation or its result
+        // and the user's keyboard/scroll position.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            PersistedThumbnailStorageMode = mode
+        };
     }
 
     private async Task SaveDiskCacheBudgetFromSettingsAsync(
