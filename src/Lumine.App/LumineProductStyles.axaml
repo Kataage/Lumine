@@ -171,7 +171,11 @@
     <Setter Property="Height" Value="{DynamicResource Lumine.ControlHeight}" />
     <Setter Property="MinWidth" Value="{DynamicResource Lumine.ControlHeight}" />
     <Setter Property="MinHeight" Value="{DynamicResource Lumine.ControlHeight}" />
-    <Setter Property="Padding" Value="{DynamicResource Lumine.IconPadding}" />
+    <!-- A shared fixed 24-DIP icon frame must sit in the exact
+         center of the touch target at all Windows text scales. -->
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderBrush" Value="Transparent" />
     <Setter Property="BorderThickness" Value="1" />
@@ -571,8 +575,8 @@
   </Style>
 
   <Style Selector="Button.lumine-nav-item">
-    <Setter Property="MinHeight" Value="38" />
-    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="MinHeight" Value="42" />
+    <Setter Property="Padding" Value="10,6" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
     <Setter Property="BorderBrush" Value="Transparent" />
@@ -580,6 +584,7 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.lumine-nav-item:pointerover">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionHover}" />
