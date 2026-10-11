@@ -9758,6 +9758,128 @@ try
                                 .DecodedThumbnailByteLimit,
                             "画像先読み用メモリ上限を保存しました。次回起動から有効です。");
 
+                        // Changing view/density/sort from the actual
+                        // MainWindow Settings page must update both the
+                        // browsable Gallery and saved defaults, without
+                        // destroying the mounted form or its confirmation.
+                        var defaultsSettingsPage =
+                            window.WorkspacePageForSmoke;
+                        var initialDefaults =
+                            window.SettingsSnapshot.ViewerDefaults;
+                        var defaultSelectors =
+                            new[] { "表示", "密度", "並び順" }
+                                .Select(name => (
+                                    Name: name,
+                                    Control: defaultsSettingsPage!
+                                        .GetVisualDescendants()
+                                        .OfType<ComboBox>()
+                                        .Single(box =>
+                                            AutomationProperties.GetName(box)
+                                                == name)))
+                                .ToArray();
+                        var initialIndexes =
+                            defaultSelectors.Select(field =>
+                                field.Control.SelectedIndex).ToArray();
+
+                        async Task VerifyLiveDefaultSaveAsync(
+                            string name,
+                            ComboBox selector,
+                            int index)
+                        {
+                            var before =
+                                window.SettingsSnapshot.ViewerDefaults;
+                            var expected = name switch
+                            {
+                                "表示" => before with
+                                {
+                                    ViewMode = index == 1
+                                        ? BrowseViewMode.List
+                                        : BrowseViewMode.Grid
+                                },
+                                "密度" => before with
+                                {
+                                    Density = index
+                                },
+                                "並び順" => before with
+                                {
+                                    SortOrder = index == 1
+                                        ? AssetSortOrder.ModifiedOldest
+                                        : AssetSortOrder.ModifiedNewest
+                                },
+                                _ => throw new InvalidOperationException(
+                                    $"Unknown Settings default selector: {name}")
+                            };
+
+                            selector.SelectedIndex = index;
+                            for (var pass = 0; pass < 200; pass++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                if (window.SettingsSnapshot.ViewerDefaults
+                                        == expected
+                                    && BrowsePreferenceResolver.Resolve(
+                                        appHost.Settings, out _) == expected
+                                    && selector.IsEnabled)
+                                {
+                                    break;
+                                }
+
+                                await Task.Delay(5);
+                            }
+
+                            // Drain any queued refresh: stale replacement
+                            // of the form after the successful save is a
+                            // product regression even if the store is valid.
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                ReferenceEquals(
+                                    window.WorkspacePageForSmoke,
+                                    defaultsSettingsPage)
+                                && window.SettingsSnapshot.ViewerDefaults
+                                    == expected
+                                && BrowsePreferenceResolver.Resolve(
+                                    appHost.Settings, out _) == expected
+                                && selector.SelectedIndex == index
+                                && selector.IsEnabled
+                                && defaultsSettingsPage!
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(text =>
+                                        text.Text
+                                            == "閲覧の既定値を保存しました。"),
+                                $"Saving Settings {name} detached the live form, hid confirmation, or lost persisted Viewer defaults.");
+                        }
+
+                        for (var fieldIndex = 0;
+                             fieldIndex < defaultSelectors.Length;
+                             fieldIndex++)
+                        {
+                            var field = defaultSelectors[fieldIndex];
+                            var alternative =
+                                field.Control.SelectedIndex == 0
+                                    ? 1
+                                    : 0;
+                            await VerifyLiveDefaultSaveAsync(
+                                field.Name,
+                                field.Control,
+                                alternative);
+                        }
+                        // Restore the fixture's starting preferences so
+                        // subsequent visual and Viewer tests remain exact.
+                        for (var fieldIndex = 0;
+                             fieldIndex < defaultSelectors.Length;
+                             fieldIndex++)
+                        {
+                            var field = defaultSelectors[fieldIndex];
+                            await VerifyLiveDefaultSaveAsync(
+                                field.Name,
+                                field.Control,
+                                initialIndexes[fieldIndex]);
+                        }
+                        Require(
+                            window.SettingsSnapshot.ViewerDefaults
+                                == initialDefaults,
+                            "Mounted Settings default changes did not restore the fixture's original Viewer preferences.");
+
                         advancedSettings.IsExpanded = false;
                         window.Width = 900;
                         window.Height = 600;
