@@ -9802,9 +9802,21 @@ try
                                 },
                                 "並び順" => before with
                                 {
-                                    SortOrder = index == 1
-                                        ? AssetSortOrder.ModifiedOldest
-                                        : AssetSortOrder.ModifiedNewest
+                                    SortOrder = index switch
+                                    {
+                                        1 => AssetSortOrder.ModifiedOldest,
+                                        2 => AssetSortOrder.CreatedNewest,
+                                        3 => AssetSortOrder.CreatedOldest,
+                                        4 => AssetSortOrder.FileNameAscending,
+                                        5 => AssetSortOrder.FileNameDescending,
+                                        6 => AssetSortOrder.FileSizeLargest,
+                                        7 => AssetSortOrder.FileSizeSmallest,
+                                        8 => AssetSortOrder.RatingHighest,
+                                        9 => AssetSortOrder.RatingLowest,
+                                        10 => AssetSortOrder.StatusAscending,
+                                        11 => AssetSortOrder.StatusDescending,
+                                        _ => AssetSortOrder.ModifiedNewest
+                                    }
                                 },
                                 _ => throw new InvalidOperationException(
                                     $"Unknown Settings default selector: {name}")
