@@ -2145,27 +2145,50 @@ public sealed class ThumbnailViewerControl : UserControl
             // Snapshot once, after the initial view has had a chance to
             // finish layout. This dispatcher hop must not be bypassed:
             // _rows.GetRealizedContainers and TranslatePoint are UI-only.
-            var (beforeRow, afterRow) =
+            var (beforeRow, afterRow, viewportRows) =
                 await Dispatcher.UIThread.InvokeAsync(
-                    () => ResolveOffscreenLookaheadRowsForSmoke(
-                        attachedRow,
-                        GetFirstVisibleRowIndex(),
-                        GetLastVisibleRowIndex()));
+                    () =>
+                    {
+                        var first = GetFirstVisibleRowIndex();
+                        var last = GetLastVisibleRowIndex();
+                        var outside = ResolveOffscreenLookaheadRowsForSmoke(
+                            attachedRow, first, last);
+                        return (
+                            outside.BeforeRow,
+                            outside.AfterRow,
+                            first >= 0 && last >= first
+                                ? last - first + 1
+                                : 1);
+                    });
             cancellationToken.ThrowIfCancellationRequested();
-            var rows = ResolveListLookaheadRowsForSmoke(
+
+            // A small wheel step should look ahead through the next
+            // plausible viewport, not stop after two rows. A rapid
+            // far seek still gets the old bounded range so obsolete
+            // viewports cannot flood source work.
+            var plan = ResolveDirectionalLookaheadForSmoke(
                 _layoutMode == ViewerLayoutMode.List,
                 session.Options.PrefetchRows,
+                viewportRows,
+                columns,
+                session.Diagnostics.AttachedTiles,
                 session.Options,
-                session.Diagnostics.AttachedTiles);
+                isFarSeek: delay > session.Options.PrefetchDelay);
+            var beforeRows = direction < 0
+                ? plan.PreferredSourceRows
+                : plan.OppositeSourceRows;
+            var afterRows = direction < 0
+                ? plan.OppositeSourceRows
+                : plan.PreferredSourceRows;
             var afterStartIndex = checked(afterRow * columns);
             var afterCount = afterStartIndex < session.Count
                 ? checked((int)Math.Min(
                     session.Count - afterStartIndex,
-                    (long)rows * columns))
+                    (long)afterRows * columns))
                 : 0;
-            var beforeStartRow = Math.Max(0, beforeRow - rows + 1);
+            var beforeStartRow = Math.Max(0, beforeRow - beforeRows + 1);
             var beforeStartIndex = checked(beforeStartRow * columns);
-            var beforeCount = beforeRow >= 0
+            var beforeCount = beforeRow >= 0 && beforeRows > 0
                 ? checked((int)((beforeRow - beforeStartRow + 1) * columns))
                 : 0;
 
@@ -2248,130 +2271,53 @@ public sealed class ThumbnailViewerControl : UserControl
                         Interlocked.Exchange(
                             ref _lookaheadLastPredecodeStartIndex,
                             warmStartIndex);
-                        // A far programmatic seek may leave the previous
-                        // scroll direction reversed. Sequentially decoding
-                        // an entire seven-tile reverse row can exhaust the
-                        // 200ms settled dwell before a single forward tile
-                        // is warm. Admit only two bounded nearby rows and
-                        // warm both concurrently under the existing
-                        // BitmapCache.DecodeConcurrencyLimit (=2). No new
-                        // range, memory allowance or source priority.
-                        var oppositeStart = checked(
-                            oppositeRow * columns);
-                        var warmOpposite = oppositeStart >= 0
-                            && oppositeStart < session.Count
-                            && HasSecondaryWarmCapacityForSmoke(
-                                session.Options,
-                                state.AttachedTiles,
-                                nextRowCount);
-                        var primaryCount = checked((int)Math.Min(
-                            session.Count - warmStartIndex,
-                            nextRowCount));
-                        var primaryWarm = PredecodeNextRowAsync(
-                            session,
-                            warmStartIndex,
-                            primaryCount,
-                            cancellationToken);
-                        Task oppositeWarm = Task.CompletedTask;
-                        if (warmOpposite)
+                        // Ahead-of-scroll presentations, not merely
+                        // encoded files: reserve existing cache capacity
+                        // for all attached tiles, then warm successive
+                        // preferred rows. Retain nearby reverse rows for
+                        // quick direction changes; never raise native
+                        // decode concurrency or cache limits.
+                        var warmPreferred = plan.PreferredBitmapRows;
+                        var warmOpposite = plan.OppositeBitmapRows;
+                        var rowCount = Math.Max(
+                            warmPreferred, warmOpposite);
+                        for (var ordinal = 0; ordinal < rowCount; ordinal++)
                         {
-                            oppositeWarm = PredecodeNextRowAsync(
-                                session,
-                                oppositeStart,
-                                checked((int)Math.Min(
-                                    session.Count - oppositeStart,
-                                    nextRowCount)),
-                                cancellationToken);
-                        }
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var primaryRow =
+                                preferredRow + (long)ordinal * direction;
+                            var reverseRow =
+                                oppositeRow - (long)ordinal * direction;
+                            var primaryStart = primaryRow >= 0
+                                ? checked(primaryRow * columns)
+                                : -1;
+                            var reverseStart = reverseRow >= 0
+                                ? checked(reverseRow * columns)
+                                : -1;
 
-                        await Task.WhenAll(
-                            primaryWarm, oppositeWarm).ConfigureAwait(false);
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        // List rows are 60-82px tall; prepare a second
-                        // offscreen row on BOTH sides if PrefetchRows>=2
-                        // and the viewport + four neighbors fit the same
-                        // conservative bitmap entry/byte budget.
-                        var listTwoRowCapacity =
-                            _layoutMode == ViewerLayoutMode.List
-                            && HasSecondaryWarmCapacityForSmoke(
-                                session.Options,
-                                state.AttachedTiles,
-                                nextRowCount * 2);
-                        if (listTwoRowCapacity)
-                        {
-                            var secondPreferredRow =
-                                ResolveSecondListWarmRowForSmoke(
-                                    isList: true,
-                                    session.Options.PrefetchRows,
-                                    preferredRow,
-                                    direction,
-                                    session.Count);
-                            var secondOppositeRow =
-                                ResolveSecondListWarmRowForSmoke(
-                                    isList: true,
-                                    session.Options.PrefetchRows,
-                                    oppositeRow,
-                                    -direction,
-                                    session.Count);
-
-                            Task secondPrimary = secondPreferredRow >= 0
+                            Task primaryWarm = ordinal < warmPreferred
+                                && primaryStart >= 0
+                                && primaryStart < session.Count
                                 ? PredecodeNextRowAsync(
-                                    session, secondPreferredRow, 1,
+                                    session,
+                                    primaryStart,
+                                    checked((int)Math.Min(
+                                        session.Count - primaryStart,
+                                        nextRowCount)),
                                     cancellationToken)
                                 : Task.CompletedTask;
-                            Task secondOpposite = warmOpposite
-                                && secondOppositeRow >= 0
+                            Task reverseWarm = ordinal < warmOpposite
+                                && reverseStart >= 0
+                                && reverseStart < session.Count
                                 ? PredecodeNextRowAsync(
-                                    session, secondOppositeRow, 1,
+                                    session,
+                                    reverseStart,
+                                    checked((int)Math.Min(
+                                        session.Count - reverseStart,
+                                        nextRowCount)),
                                     cancellationToken)
                                 : Task.CompletedTask;
-                            await Task.WhenAll(
-                                secondPrimary, secondOpposite)
-                                .ConfigureAwait(false);
-                        }
-
-                        // A 68px List row crosses the lower viewport
-                        // boundary after only ~1.36 normal 50px notches.
-                        // Four consecutive forward events traverse almost
-                        // three rows. Two warm rows on each side were
-                        // insufficient at the 4th first-render tick.
-                        // Prepare the third on each side if and ONLY if
-                        // configured 2+ prefetch rows were extended to a
-                        // bounded three-row List horizon and all six
-                        // native Bitmaps fit the worst-case cache budget.
-                        var listThreeRowCapacity =
-                            listTwoRowCapacity
-                            && rows >= 3
-                            && HasSecondaryWarmCapacityForSmoke(
-                                session.Options,
-                                state.AttachedTiles,
-                                nextRowCount * 3);
-                        if (listThreeRowCapacity)
-                        {
-                            var thirdPreferredRow =
-                                ResolveAdditionalListWarmRowForSmoke(
-                                    isList: true, rows,
-                                    preferredRow, direction,
-                                    session.Count, ordinal: 3);
-                            var thirdOppositeRow =
-                                ResolveAdditionalListWarmRowForSmoke(
-                                    isList: true, rows,
-                                    oppositeRow, -direction,
-                                    session.Count, ordinal: 3);
-                            Task thirdPrimary = thirdPreferredRow >= 0
-                                ? PredecodeNextRowAsync(
-                                    session, thirdPreferredRow, 1,
-                                    cancellationToken)
-                                : Task.CompletedTask;
-                            Task thirdOpposite = warmOpposite
-                                && thirdOppositeRow >= 0
-                                ? PredecodeNextRowAsync(
-                                    session, thirdOppositeRow, 1,
-                                    cancellationToken)
-                                : Task.CompletedTask;
-                            await Task.WhenAll(
-                                thirdPrimary, thirdOpposite)
+                            await Task.WhenAll(primaryWarm, reverseWarm)
                                 .ConfigureAwait(false);
                         }
 
@@ -2422,6 +2368,85 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    // Prefer the next full screen of thumbnails during ordinary scroll,
+    // while keeping a smaller reverse buffer for immediate reversals.
+    // Both source I/O and Bitmap residency are capped independently.
+    // Rapid far seeks retain two rows per side; a physical wheel input
+    // restores the viewport-sized plan once the user starts browsing.
+    internal static (int PreferredSourceRows, int OppositeSourceRows,
+        int PreferredBitmapRows, int OppositeBitmapRows)
+        ResolveDirectionalLookaheadForSmoke(
+            bool isList,
+            int configuredRows,
+            int visibleRows,
+            int columns,
+            int attachedTiles,
+            ViewerOptions options,
+            bool isFarSeek)
+    {
+        if (configuredRows <= 0
+            || visibleRows <= 0
+            || columns <= 0
+            || attachedTiles < 0)
+        {
+            return (0, 0, 0, 0);
+        }
+
+        // Explicit one-row preference retains its historical low-work
+        // semantics. Default two-row mode is adaptive on actual geometry.
+        var adaptive = configuredRows >= 2 && !isFarSeek;
+        var preferredSourceRows = adaptive
+            ? Math.Min(
+                isList ? 18 : 8,
+                Math.Max(
+                    configuredRows,
+                    visibleRows + (isList ? 3 : 1)))
+            : isFarSeek
+                ? Math.Min(2, configuredRows)
+                : configuredRows;
+        var oppositeSourceRows = adaptive
+            ? Math.Min(configuredRows, isList ? 3 : 2)
+            : preferredSourceRows;
+
+        // Conservative worst-case RGBA entry budget; no speculative
+        // decoder admission is allowed to displace pinned viewport
+        // Bitmaps or to rely on a successful LRU eviction.
+        var dimension = (long)options.DecodedThumbnailMaxDimension;
+        if (dimension is <= 0 or > 32768)
+        {
+            return (preferredSourceRows, oppositeSourceRows, 0, 0);
+        }
+
+        var bytesPerTile = dimension * dimension * 4L;
+        var maxEntries = Math.Min(
+            (long)options.DecodedBitmapEntryLimit,
+            options.DecodedBitmapByteLimit / bytesPerTile);
+        var spareEntries = Math.Max(0, maxEntries - attachedTiles);
+        var spareRows = Math.Min(
+            int.MaxValue, spareEntries / columns);
+        if (spareRows <= 0)
+        {
+            return (preferredSourceRows, oppositeSourceRows, 0, 0);
+        }
+
+        var desiredPreferred = Math.Min(
+            preferredSourceRows, isList ? 14 : 6);
+        var desiredOpposite = Math.Min(
+            oppositeSourceRows, isList ? 2 : 1);
+        var reverseRows = spareRows >= 2
+            ? Math.Min(desiredOpposite,
+                Math.Max(1, (int)(spareRows - desiredPreferred)))
+            : 0;
+        var forwardRows = (int)Math.Min(
+            desiredPreferred, spareRows - reverseRows);
+
+        return (
+            preferredSourceRows,
+            oppositeSourceRows,
+            forwardRows,
+            reverseRows);
     }
 
     // Extend only List's configured 2+ source lookahead by one row
