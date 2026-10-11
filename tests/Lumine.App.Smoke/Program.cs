@@ -9015,6 +9015,150 @@ try
                             window,
                             "settings-900x600");
 
+                        // Stage 2V: background Settings refresh must not
+                        // collapse opened disclosures or jump to the top.
+                        // Directly navigating away/back still resets both.
+                        var settingsBeforeRefresh =
+                            window.WorkspacePageForSmoke;
+                        var disclosureHeaders =
+                            new[]
+                            {
+                                "詳細設定",
+                                "保存場所と診断の詳細"
+                            };
+                        var openDisclosures =
+                            settingsBeforeRefresh.GetVisualDescendants()
+                                .OfType<Expander>()
+                                .Where(expander =>
+                                    disclosureHeaders.Contains(
+                                        expander.Header as string,
+                                        StringComparer.Ordinal))
+                                .ToArray();
+                        Require(
+                            openDisclosures.Length == 2,
+                            "Settings scroll continuity fixture lost its two disclosures.");
+                        foreach (var disclosure in openDisclosures)
+                        {
+                            disclosure.IsExpanded = true;
+                        }
+
+                        var liveSettingsNav =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .First(button =>
+                                    button.IsEffectivelyVisible
+                                    && button.Classes.Contains(
+                                        "lumine-nav-item")
+                                    && AutomationProperties.GetName(button)
+                                        == "設定");
+                        Require(
+                            liveSettingsNav.Focus(),
+                            "Settings global command could not own keyboard focus before background refresh.");
+                        for (var settingsLayoutPass = 0;
+                             settingsLayoutPass < 3;
+                             settingsLayoutPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        }
+
+                        var settingsScrollBefore =
+                            settingsBeforeRefresh.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .Single(scroll =>
+                                    AutomationProperties.GetName(scroll)
+                                        == "設定スクロール");
+                        Require(
+                            settingsScrollBefore.Extent.Height
+                                > settingsScrollBefore.Viewport.Height + 140,
+                            "Settings continuity smoke did not mount an overflowing expanded page.");
+                        var settingsOffsetBefore = Math.Min(
+                            220,
+                            settingsScrollBefore.Extent.Height
+                                - settingsScrollBefore.Viewport.Height - 4);
+                        settingsScrollBefore.Offset =
+                            new Vector(0, settingsOffsetBefore);
+                        Dispatcher.UIThread.RunJobs();
+                        settingsOffsetBefore =
+                            settingsScrollBefore.Offset.Y;
+                        Require(
+                            settingsOffsetBefore > 100
+                            && liveSettingsNav.IsFocused,
+                            "Settings continuity smoke could not scroll with independent global focus.");
+
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        for (var settingsRestorePass = 0;
+                             settingsRestorePass < 3;
+                             settingsRestorePass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        }
+
+                        var settingsAfterRefresh =
+                            window.WorkspacePageForSmoke;
+                        var settingsScrollAfter =
+                            settingsAfterRefresh.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .Single(scroll =>
+                                    AutomationProperties.GetName(scroll)
+                                        == "設定スクロール");
+                        var retainedDisclosures =
+                            settingsAfterRefresh.GetVisualDescendants()
+                                .OfType<Expander>()
+                                .Where(expander =>
+                                    disclosureHeaders.Contains(
+                                        expander.Header as string,
+                                        StringComparer.Ordinal))
+                                .ToArray();
+                        Require(
+                            !ReferenceEquals(
+                                settingsBeforeRefresh,
+                                settingsAfterRefresh)
+                            && !ReferenceEquals(
+                                settingsScrollBefore,
+                                settingsScrollAfter)
+                            && retainedDisclosures.Length == 2
+                            && retainedDisclosures.All(
+                                expander => expander.IsExpanded)
+                            && Math.Abs(
+                                settingsScrollAfter.Offset.Y
+                                - settingsOffsetBefore) < 3
+                            && liveSettingsNav.IsFocused,
+                            $"Settings metadata refresh lost disclosure/scroll/focus state: "
+                            + $"old={settingsOffsetBefore:N1}, "
+                            + $"new={settingsScrollAfter.Offset.Y:N1}, "
+                            + $"expanded={retainedDisclosures.Count(x => x.IsExpanded)}/2.");
+
+                        window.NavigateForSmoke("ライブラリ");
+                        await window.NavigationRefreshForSmokeAsync();
+                        window.NavigateForSmoke("設定");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var reopenedSettings =
+                            window.WorkspacePageForSmoke;
+                        var reopenedDisclosures =
+                            reopenedSettings.GetVisualDescendants()
+                                .OfType<Expander>()
+                                .Where(expander =>
+                                    disclosureHeaders.Contains(
+                                        expander.Header as string,
+                                        StringComparer.Ordinal))
+                                .ToArray();
+                        var reopenedScroll =
+                            reopenedSettings.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .Single(scroll =>
+                                    AutomationProperties.GetName(scroll)
+                                        == "設定スクロール");
+                        Require(
+                            reopenedDisclosures.Length == 2
+                            && reopenedDisclosures.All(
+                                expander => !expander.IsExpanded)
+                            && reopenedScroll.Offset.Y <= 0.5,
+                            "Explicit Settings re-entry inherited the prior page's disclosure or scroll position.");
+
                         window.Width = 1440;
                         window.Height = 900;
                         Dispatcher.UIThread.RunJobs();

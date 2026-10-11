@@ -54,7 +54,8 @@ internal static class ProductSettingsView
         Func<IReadOnlyList<string>, Task> saveScanExtensions,
         Func<Task> rescanCurrentLibrary,
         Func<Task> clearCache,
-        Func<Task> showDiagnostics)
+        Func<Task> showDiagnostics,
+        IReadOnlySet<string>? initiallyExpandedSections = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(saveViewerDefaults);
@@ -137,11 +138,14 @@ internal static class ProductSettingsView
                 saveThumbnailMode,
                 saveDiskBudget,
                 saveMemoryBudget,
-                clearCache));
+                clearCache,
+                initiallyExpandedSections?.Contains("詳細設定") == true));
         root.Children.Add(
             CreateStorageSettings(
                 snapshot,
-                showDiagnostics));
+                showDiagnostics,
+                initiallyExpandedSections?.Contains(
+                    "保存場所と診断の詳細") == true));
 
         var scroll =
             new ScrollViewer
@@ -832,7 +836,8 @@ internal static class ProductSettingsView
         Func<ThumbnailStorageMode, Task> saveThumbnailMode,
         Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
-        Func<Task> clearCache)
+        Func<Task> clearCache,
+        bool expandAdvanced = false)
     {
         var content = CreateCardStack();
 
@@ -990,7 +995,7 @@ internal static class ProductSettingsView
             new Expander
             {
                 Header = "詳細設定",
-                IsExpanded = false,
+                IsExpanded = expandAdvanced,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch,
                 Content = advanced
@@ -1136,7 +1141,8 @@ internal static class ProductSettingsView
 
     private static Control CreateStorageSettings(
         ProductSettingsSnapshot snapshot,
-        Func<Task> showDiagnostics)
+        Func<Task> showDiagnostics,
+        bool expandDetails = false)
     {
         var content = CreateCardStack();
 
@@ -1253,7 +1259,7 @@ internal static class ProductSettingsView
             new Expander
             {
                 Header = "保存場所と診断の詳細",
-                IsExpanded = false,
+                IsExpanded = expandDetails,
                 HorizontalAlignment =
                     HorizontalAlignment.Stretch,
                 Content = details

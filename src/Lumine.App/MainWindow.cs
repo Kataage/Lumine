@@ -1576,6 +1576,33 @@ public sealed class MainWindow : Window
         var contextFocusGeneration =
             ++_contextNavigationFocusGeneration;
 
+        // A same-page metadata update may rebuild Settings after the user
+        // finishes editing. Preserve its disclosure choices and scroll
+        // anchor just like contextual Tag/Folder lists; explicit navigation
+        // to Settings still uses the default collapsed/top presentation.
+        var previousSettingsView =
+            preserveActiveEditor
+            && IsMainWorkspaceDestination(_navigationDestination)
+            && string.Equals(
+                _renderedNavigationDestination,
+                _navigationDestination,
+                StringComparison.Ordinal)
+                ? _workspacePageHost.Content as Control
+                : null;
+        var expandedSettingsHeaders =
+            previousSettingsView?.GetVisualDescendants()
+                .OfType<Expander>()
+                .Where(expander => expander.IsExpanded)
+                .Select(expander => expander.Header as string)
+                .Where(header => !string.IsNullOrWhiteSpace(header))
+                .ToHashSet(StringComparer.Ordinal);
+        var settingsScrollOffset =
+            previousSettingsView?.GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault(scroll =>
+                    AutomationProperties.GetName(scroll)
+                        == "設定スクロール")?.Offset;
+
         _navigationTitle.Text =
             _navigationDestination;
 
@@ -1601,11 +1628,54 @@ public sealed class MainWindow : Window
                     SaveScanExtensionsFromSettingsAsync,
                     RescanCurrentLibraryFromSettingsAsync,
                     ClearThumbnailCacheFromSettingsAsync,
-                    ShowDiagnosticsFromNavigationAsync);
+                    ShowDiagnosticsFromNavigationAsync,
+                    expandedSettingsHeaders);
             _workspacePageHost.IsVisible = true;
             _workspaceContent.IsHitTestVisible = false;
             _renderedNavigationDestination =
                 _navigationDestination;
+            var nextSettingsView =
+                _workspacePageHost.Content as Control;
+            if (settingsScrollOffset is { Y: > 0.5 } oldSettingsOffset)
+            {
+                Dispatcher.UIThread.Post(
+                    () =>
+                    {
+                        if (_closeStarted
+                            || _lightboxHost.IsVisible
+                            || contextFocusGeneration
+                                != _contextNavigationFocusGeneration
+                            || !ReferenceEquals(
+                                _workspacePageHost.Content,
+                                nextSettingsView))
+                        {
+                            return;
+                        }
+
+                        var liveScroll =
+                            nextSettingsView?.GetVisualDescendants()
+                                .OfType<ScrollViewer>()
+                                .FirstOrDefault(scroll =>
+                                    AutomationProperties.GetName(scroll)
+                                        == "設定スクロール");
+                        if (liveScroll is not null
+                            && liveScroll.IsEffectivelyVisible
+                            && liveScroll.Offset.Y <= 0.5
+                            && liveScroll.Viewport.Height > 0)
+                        {
+                            liveScroll.Offset = new Vector(
+                                oldSettingsOffset.X,
+                                Math.Min(
+                                    oldSettingsOffset.Y,
+                                    Math.Max(
+                                        0,
+                                        liveScroll.Extent.Height
+                                        - liveScroll.Viewport.Height)));
+                        }
+                    },
+                    DispatcherPriority.Loaded);
+            }
+
             UpdateStatusSurfaceVisibility();
             return;
         }
