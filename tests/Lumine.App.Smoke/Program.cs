@@ -9646,6 +9646,118 @@ try
                                 "Expanded Settings visual evidence duplicated the collapsed capture.");
                         }
 
+                        // Budget changes must not silently replace the
+                        // Settings page while its save-result feedback is
+                        // displayed. The selected value, persisted policy
+                        // and SettingsSnapshot must agree without a
+                        // navigation/metadata refresh.
+                        var budgetSettingsPage =
+                            window.WorkspacePageForSmoke;
+                        async Task VerifyLiveBudgetSaveAsync(
+                            string label,
+                            string primaryChoice,
+                            string alternativeChoice,
+                            long primaryBytes,
+                            long alternativeBytes,
+                            Func<long> persisted,
+                            Func<long> snapshot,
+                            string successText)
+                        {
+                            var selector =
+                                budgetSettingsPage!
+                                    .GetVisualDescendants()
+                                    .OfType<ComboBox>()
+                                    .Single(box =>
+                                        AutomationProperties.GetName(box)
+                                            == label);
+                            var choices =
+                                selector.ItemsSource!.Cast<string>()
+                                    .ToArray();
+                            var first =
+                                Array.IndexOf(choices, primaryChoice);
+                            var alternative =
+                                Array.IndexOf(choices, alternativeChoice);
+                            Require(
+                                first >= 0 && alternative >= 0,
+                                $"Settings budget choices are missing for {label}.");
+                            var chosen =
+                                selector.SelectedIndex == first
+                                    ? alternative
+                                    : first;
+                            var expected =
+                                chosen == first
+                                    ? primaryBytes
+                                    : alternativeBytes;
+                            selector.SelectedIndex = chosen;
+                            for (var savePass = 0;
+                                 savePass < 120;
+                                 savePass++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                if (persisted() == expected
+                                    && snapshot() == expected
+                                    && budgetSettingsPage
+                                        .GetVisualDescendants()
+                                        .OfType<TextBlock>()
+                                        .Any(block =>
+                                            block.Text == successText))
+                                {
+                                    break;
+                                }
+
+                                await Task.Delay(5);
+                            }
+
+                            Require(
+                                ReferenceEquals(
+                                    window.WorkspacePageForSmoke,
+                                    budgetSettingsPage)
+                                && advancedSettings.IsExpanded
+                                && selector.SelectedIndex == chosen
+                                && persisted() == expected
+                                && snapshot() == expected
+                                && budgetSettingsPage
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(block =>
+                                        block.Text == successText),
+                                $"Saving {label} recreated Settings, hid feedback, or lost the persisted budget.");
+                        }
+
+                        await VerifyLiveBudgetSaveAsync(
+                            "ディスク保持上限",
+                            "8 GiB",
+                            "4 GiB",
+                            8L * 1024 * 1024 * 1024,
+                            4L * 1024 * 1024 * 1024,
+                            () => appHost.Settings.ResourcePolicy
+                                ?.ThumbnailCacheByteLimit ?? -1,
+                            () => window.SettingsSnapshot
+                                .ThumbnailCacheByteLimit,
+                            "ディスク保持上限を保存しました。次回起動から有効です。");
+                        await VerifyLiveBudgetSaveAsync(
+                            "高速再表示用メモリ上限",
+                            "256 MiB",
+                            "128 MiB",
+                            256L * 1024 * 1024,
+                            128L * 1024 * 1024,
+                            () => appHost.Settings.ResourcePolicy
+                                ?.EncodedThumbnailMemoryByteLimit ?? -1,
+                            () => window.SettingsSnapshot
+                                .EncodedThumbnailMemoryByteLimit,
+                            "メモリ上限を保存しました。次回起動から有効です。");
+                        await VerifyLiveBudgetSaveAsync(
+                            "画像先読み用メモリ上限（展開済み）",
+                            "256 MiB",
+                            "128 MiB",
+                            256L * 1024 * 1024,
+                            128L * 1024 * 1024,
+                            () => appHost.Settings.ResourcePolicy
+                                ?.DecodedThumbnailByteLimit ?? -1,
+                            () => window.SettingsSnapshot
+                                .DecodedThumbnailByteLimit,
+                            "画像先読み用メモリ上限を保存しました。次回起動から有効です。");
+
                         advancedSettings.IsExpanded = false;
                         window.Width = 900;
                         window.Height = 600;
