@@ -634,6 +634,19 @@ public sealed class MainWindow : Window
     internal Task NavigationRefreshWithoutCancellationForSmokeAsync() =>
         RefreshNavigationAsync(CancellationToken.None);
 
+    // Stage 2X: hold an actual completed Publication DB mutation before its
+    // in-memory commit, so a mounted smoke can replace the runtime first.
+    internal Func<Task>? PublicationBeforeCommitForSmokeAsync { get; set; }
+
+    internal Task<PublicationDestinationInfo?>
+        CreatePublicationDestinationForSmokeAsync(
+            string name,
+            string kind) =>
+        CreatePublicationDestinationFromNavigationAsync(name, kind);
+
+    internal IReadOnlyList<PublicationDestinationInfo>
+        PublicationDestinationsForSmoke => _publicationDestinations;
+
     internal static IReadOnlyList<string> ProductNavigationLabels =>
         LumineDesign.NavigationLabels;
 
@@ -1964,6 +1977,12 @@ public sealed class MainWindow : Window
         return page;
     }
 
+    // Publication editor callbacks can outlive their Library runtime. A DB
+    // write may still finish for that old Library; its completion must never
+    // mutate metadata belonging to the newly opened Library or closed app.
+    private bool IsCurrentPublicationRuntime(CoreViewerRuntime runtime) =>
+        !_closeStarted && ReferenceEquals(_runtime, runtime);
+
     private async Task<PublicationDestinationInfo?>
         CreatePublicationDestinationFromNavigationAsync(
             string name,
@@ -1980,6 +1999,17 @@ public sealed class MainWindow : Window
                     new PublicationDestinationCreate(
                         name,
                         kind));
+        var beforeCommit = PublicationBeforeCommitForSmokeAsync;
+        if (beforeCommit is not null)
+        {
+            await beforeCommit();
+        }
+
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return null;
+        }
+
         _publicationDestinations =
             _publicationDestinations
                 .Append(created)
@@ -2010,6 +2040,11 @@ public sealed class MainWindow : Window
                     new PublicationDestinationCreate(
                         name,
                         kind));
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return null;
+        }
+
         if (updated is not null)
         {
             _publicationDestinations =
@@ -2047,7 +2082,7 @@ public sealed class MainWindow : Window
                 "この公開先に保存したアカウント設定も削除されます。既存のPublication履歴はsnapshotのため変更されません。",
                 confirmLabel: "公開先を削除",
                 tone: ProductDialogTone.Danger);
-        if (!approved)
+        if (!approved || !IsCurrentPublicationRuntime(runtime))
         {
             return false;
         }
@@ -2057,6 +2092,11 @@ public sealed class MainWindow : Window
                 .DeletePublicationDestinationAsync(
                     runtime.Library.Id,
                     destination.Id);
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return false;
+        }
+
         if (deleted)
         {
             _publicationDestinations =
@@ -2095,6 +2135,11 @@ public sealed class MainWindow : Window
                         destinationId,
                         displayName,
                         identifier));
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return null;
+        }
+
         _publicationAccounts =
             _publicationAccounts
                 .Append(created)
@@ -2130,6 +2175,11 @@ public sealed class MainWindow : Window
                         destinationId,
                         displayName,
                         identifier));
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return null;
+        }
+
         if (updated is not null)
         {
             _publicationAccounts =
@@ -2170,7 +2220,7 @@ public sealed class MainWindow : Window
                 "既存のPublication履歴に保存済みのアカウントsnapshotは変更されません。",
                 confirmLabel: "アカウントを削除",
                 tone: ProductDialogTone.Danger);
-        if (!approved)
+        if (!approved || !IsCurrentPublicationRuntime(runtime))
         {
             return false;
         }
@@ -2180,6 +2230,11 @@ public sealed class MainWindow : Window
                 .DeletePublicationAccountAsync(
                     runtime.Library.Id,
                     account.Id);
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return false;
+        }
+
         if (deleted)
         {
             _publicationAccounts =
@@ -2242,7 +2297,7 @@ public sealed class MainWindow : Window
                 "元画像、評価、お気に入り、タグ、ノート、Work、Generation Group、Lineageは削除・変更しません。この履歴削除はLumineから元に戻せません。",
                 confirmLabel: "履歴を削除",
                 tone: ProductDialogTone.Danger);
-        if (!approved)
+        if (!approved || !IsCurrentPublicationRuntime(runtime))
         {
             return false;
         }
@@ -2252,6 +2307,11 @@ public sealed class MainWindow : Window
                 .DeletePublicationAsync(
                     runtime.Library.Id,
                     publication.Id);
+        if (!IsCurrentPublicationRuntime(runtime))
+        {
+            return false;
+        }
+
         if (deleted)
         {
             _publications =
