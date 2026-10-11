@@ -2291,9 +2291,10 @@ public sealed class ThumbnailViewerControl : UserControl
                             var primaryStart = primaryRow >= 0
                                 ? checked(primaryRow * columns)
                                 : -1;
-                            var reverseStart = reverseRow >= 0
-                                ? checked(reverseRow * columns)
-                                : -1;
+                            var reverseStart =
+                                oppositeRow >= 0 && reverseRow >= 0
+                                    ? checked(reverseRow * columns)
+                                    : -1;
 
                             Task primaryWarm = ordinal < warmPreferred
                                 && primaryStart >= 0
