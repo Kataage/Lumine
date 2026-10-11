@@ -2392,7 +2392,8 @@ public sealed class ThumbnailViewerControl : UserControl
     // Prefer the next full screen of thumbnails during ordinary scroll,
     // while keeping a smaller reverse buffer for immediate reversals.
     // Both source I/O and Bitmap residency are capped independently.
-    // Rapid far seeks retain two rows per side; a physical wheel input
+    // Rapid far seeks retain two Grid rows / three List rows per side;
+    // a physical wheel input
     // restores the viewport-sized plan once the user starts browsing.
     internal static (int PreferredSourceRows, int OppositeSourceRows,
         int PreferredBitmapRows, int OppositeBitmapRows)
@@ -2423,7 +2424,9 @@ public sealed class ThumbnailViewerControl : UserControl
                     configuredRows,
                     visibleRows + (isList ? 3 : 1)))
             : isFarSeek
-                ? Math.Min(2, configuredRows)
+                ? isList && configuredRows >= 2
+                    ? 3
+                    : Math.Min(2, configuredRows)
                 : configuredRows;
         var oppositeSourceRows = adaptive
             ? Math.Min(configuredRows, isList ? 3 : 2)
