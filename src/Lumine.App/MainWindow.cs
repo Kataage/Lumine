@@ -58,6 +58,10 @@ public sealed class MainWindow : Window
     private bool _navigationPinned;
     private int _navigationFocusGeneration;
     private int _contextNavigationFocusGeneration;
+    private Control? _deferredNavigationRefreshView;
+    private string? _deferredNavigationRefreshDestination;
+    private readonly List<Flyout> _deferredNavigationRefreshFlyouts = [];
+    private bool _deferredNavigationRefreshQueued;
     private string? _renderedNavigationDestination;
     private CoreViewerRuntime? _runtime;
     private CoreViewerShell? _shell;
@@ -1351,6 +1355,125 @@ public sealed class MainWindow : Window
                 button.Flyout is Flyout { IsOpen: true });
     }
 
+    // Async metadata may arrive during an unsaved text draft or a Tag /
+    // Publication flyout. Keep those live controls and replay their latest
+    // cached snapshot as soon as the user exits the editor, rather than
+    // leaving the contextual list stale until another DB refresh.
+    private void DeferNavigationRefreshUntilEditorExit()
+    {
+        var view = IsMainWorkspaceDestination(_navigationDestination)
+            ? _workspacePageHost.Content as Control
+            : _navigationContent.Content as Control;
+        if (view is null
+            || (ReferenceEquals(view, _deferredNavigationRefreshView)
+                && string.Equals(
+                    _deferredNavigationRefreshDestination,
+                    _navigationDestination,
+                    StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        ClearDeferredNavigationRefresh();
+        _deferredNavigationRefreshView = view;
+        _deferredNavigationRefreshDestination = _navigationDestination;
+        view.AddHandler(
+            InputElement.LostFocusEvent,
+            OnDeferredNavigationEditorLostFocus,
+            RoutingStrategies.Bubble,
+            handledEventsToo: true);
+
+        // PopupRoot is outside the view's visual tree. Subscribe to
+        // button-owned editor flyouts, including one opened after the
+        // focused Tag search field loses focus.
+        foreach (var flyout in view.GetVisualDescendants()
+                     .OfType<Button>()
+                     .Select(button => button.Flyout)
+                     .OfType<Flyout>()
+                     .Distinct())
+        {
+            flyout.Closed += OnDeferredNavigationFlyoutClosed;
+            _deferredNavigationRefreshFlyouts.Add(flyout);
+        }
+    }
+
+    private void ClearDeferredNavigationRefresh()
+    {
+        if (_deferredNavigationRefreshView is { } view)
+        {
+            view.RemoveHandler(
+                InputElement.LostFocusEvent,
+                OnDeferredNavigationEditorLostFocus);
+        }
+
+        foreach (var flyout in _deferredNavigationRefreshFlyouts)
+        {
+            flyout.Closed -= OnDeferredNavigationFlyoutClosed;
+        }
+
+        _deferredNavigationRefreshFlyouts.Clear();
+        _deferredNavigationRefreshView = null;
+        _deferredNavigationRefreshDestination = null;
+        _deferredNavigationRefreshQueued = false;
+    }
+
+    private void OnDeferredNavigationEditorLostFocus(
+        object? sender,
+        RoutedEventArgs e) =>
+        QueueDeferredNavigationRefreshReplay();
+
+    private void OnDeferredNavigationFlyoutClosed(
+        object? sender,
+        EventArgs e) =>
+        QueueDeferredNavigationRefreshReplay();
+
+    private void QueueDeferredNavigationRefreshReplay()
+    {
+        if (_deferredNavigationRefreshQueued
+            || _deferredNavigationRefreshView is null)
+        {
+            return;
+        }
+
+        _deferredNavigationRefreshQueued = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _deferredNavigationRefreshQueued = false;
+                var pendingView = _deferredNavigationRefreshView;
+                if (pendingView is null)
+                {
+                    return;
+                }
+
+                var currentView =
+                    IsMainWorkspaceDestination(_navigationDestination)
+                        ? _workspacePageHost.Content as Control
+                        : _navigationContent.Content as Control;
+                if (_closeStarted
+                    || _lightboxHost.IsVisible
+                    || !ReferenceEquals(currentView, pendingView)
+                    || !string.Equals(
+                        _deferredNavigationRefreshDestination,
+                        _navigationDestination,
+                        StringComparison.Ordinal))
+                {
+                    ClearDeferredNavigationRefresh();
+                    return;
+                }
+
+                if (!HasLiveNavigationEditor())
+                {
+                    // RenderNavigationDestination clears the pending
+                    // subscriptions and preserves current Tag query, scroll
+                    // anchor and any newly acquired independent focus.
+                    RenderNavigationDestination(
+                        preserveActiveEditor: true);
+                }
+            },
+            DispatcherPriority.Loaded);
+    }
+
     // Library has a direct ScrollViewer; Folder, Tag and Publication use
     // virtualized ListBox template scroll owners. Restore only the actual
     // visible navigation list, never a popup editor's nested scrollbar.
@@ -1381,15 +1504,14 @@ public sealed class MainWindow : Window
         if (preserveActiveEditor
             && HasLiveNavigationEditor())
         {
-            // Snapshot/facet data was already refreshed above. Keep
-            // the editor's live input and staged changes until the
-            // user finishes editing or explicitly navigates away.
+            // Snapshot/facet data is updated, but the live editor stays.
+            // Its pending repaint runs once the editor loses focus or
+            // its owning flyout closes, without a second DB round-trip.
+            DeferNavigationRefreshUntilEditorExit();
             return;
         }
-        if (_navigationContent is null)
-        {
-            return;
-        }
+
+        ClearDeferredNavigationRefresh();
 
         // RefreshNavigationAsync replaces the entire contextual view.
         // Preserve only keyboard focus from the currently displayed
