@@ -8289,6 +8289,91 @@ try
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
 
+                        // Stage 2W: exercise a real, deliberately reordered
+                        // DB snapshot. A non-cancellable Tag mutation refresh
+                        // must not paint its stale result over newer metadata
+                        // just because its final await resumes last.
+                        var oldSnapshotReachedCommit =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        var releaseOldSnapshot =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        window.NavigationBeforeCommitForSmokeAsync =
+                            async () =>
+                            {
+                                oldSnapshotReachedCommit.TrySetResult(true);
+                                await releaseOldSnapshot.Task;
+                            };
+                        var oldTagSnapshot =
+                            window.NavigationRefreshWithoutCancellationForSmokeAsync();
+                        await oldSnapshotReachedCommit.Task.WaitAsync(
+                            TimeSpan.FromSeconds(10));
+                        window.NavigationBeforeCommitForSmokeAsync = null;
+                        const string orderingTagName =
+                            "nav-out-of-order-refresh-smoke";
+                        await window.CurrentRuntime!.LibraryService
+                            .CreateTagAsync(
+                                window.CurrentRuntime.Library.Id,
+                                orderingTagName,
+                                "#6366f1");
+
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var newestTagView =
+                            window.NavigationContentForSmoke;
+                        var newestTagList =
+                            newestTagView!.GetVisualDescendants()
+                                .OfType<ListBox>()
+                                .Single(list =>
+                                    AutomationProperties.GetName(list)
+                                        == "タグ一覧");
+                        Require(
+                            newestTagList.ItemsSource!
+                                .Cast<LibraryTagInfo>()
+                                .Any(tag =>
+                                    tag.Name == orderingTagName),
+                            "Newest navigation metadata did not show the just-created Tag.");
+
+                        releaseOldSnapshot.TrySetResult(true);
+                        await oldTagSnapshot;
+                        Dispatcher.UIThread.RunJobs();
+                        var settledTagList =
+                            window.NavigationContentForSmoke!
+                                .GetVisualDescendants()
+                                .OfType<ListBox>()
+                                .Single(list =>
+                                    AutomationProperties.GetName(list)
+                                        == "タグ一覧");
+                        Require(
+                            ReferenceEquals(
+                                window.NavigationContentForSmoke,
+                                newestTagView)
+                            && ReferenceEquals(
+                                settledTagList,
+                                newestTagList)
+                            && settledTagList.ItemsSource!
+                                .Cast<LibraryTagInfo>()
+                                .Any(tag =>
+                                    tag.Name == orderingTagName),
+                            "Older non-cancellable navigation snapshot replaced newer Tag data or recreated the live view.");
+
+                        var orderingTag =
+                            (await window.CurrentRuntime.LibraryService
+                                .ListTagsAsync(
+                                    window.CurrentRuntime.Library.Id,
+                                    limit: LibraryRepository.MaxTagListLimit))
+                            .Single(tag =>
+                                tag.Name == orderingTagName);
+                        await window.CurrentRuntime.LibraryService
+                            .DeleteTagAsync(
+                                window.CurrentRuntime.Library.Id,
+                                orderingTag.Id);
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+
                         window.NavigateForSmoke("公開履歴");
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
