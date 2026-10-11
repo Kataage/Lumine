@@ -1,6 +1,6 @@
 # Lumine v2 — holistic image-first UX contract, v0.1 (2026-10-10)
 
-**Owner Issue:** [#635](https://github.com/Kataage/Lumine/issues/635) · **Status: PROPOSED, NOT IMPLEMENTED** · Baseline: `develop@839df08108e392e9925c2006b15fa731617f9b3a`. Review evidence: [automated-screenshot audit](lumine-v2-ui-audit-2026-10-10.md).
+**Owner Issue:** [#635](https://github.com/Kataage/Lumine/issues/635) · **Status: INCREMENTALLY IMPLEMENTED, AUTOMATED CHECKS PASSING; OWNER PRODUCT-QUALITY APPROVAL PENDING** (as of 2026-10-12, Stage 3T) · Original design baseline: `develop@839df08108e392e9925c2006b15fa731617f9b3a`. Review evidence: [2026-10-10 screenshot baseline](lumine-v2-ui-audit-2026-10-10.md) and [2026-10-12 integrated journey/evidence audit](lumine-v2-integrated-ux-audit-2026-10-12.md).
 
 This is a **whole-product layout and interaction specification before new code churn**, not another cosmetic PR. Protect the approved Lumine dark palette and the local-first/portable/no-AI Core. The v1 philosophy is defined in [product-principles.md](product-principles.md), not superseded by this document.
 
