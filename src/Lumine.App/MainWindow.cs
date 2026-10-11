@@ -2945,7 +2945,14 @@ public sealed class MainWindow : Window
             EnsureBrowseControls();
         }
 
-        StartNavigationRefresh();
+        // The current Browsing session already received the layout and
+        // sort query updates. Rebuilding the whole Settings page here
+        // detaches the selected ComboBox and its "保存しました" feedback,
+        // without supplying any new library or thumbnail data.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            ViewerDefaults = preferences
+        };
     }
 
     private async Task SaveScanExtensionsFromSettingsAsync(
