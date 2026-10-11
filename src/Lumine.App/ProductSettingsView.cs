@@ -319,6 +319,17 @@ internal static class ProductSettingsView
                 return;
             }
 
+            // Disabling the active selector during an async write can
+            // drop keyboard focus. Return to that selector only if no
+            // newer, live focus owner has taken precedence.
+            var focusReturn =
+                view.IsFocused
+                    ? view
+                    : density.IsFocused
+                        ? density
+                        : sort.IsFocused
+                            ? sort
+                            : null;
             updating = true;
             view.IsEnabled = false;
             density.IsEnabled = false;
@@ -370,6 +381,14 @@ internal static class ProductSettingsView
                 view.IsEnabled = true;
                 density.IsEnabled = true;
                 sort.IsEnabled = true;
+                if (focusReturn is not null
+                    && TopLevel.GetTopLevel(focusReturn)
+                        is Window owner)
+                {
+                    ProductDialogs.RestoreFocusIfEligible(
+                        owner,
+                        focusReturn);
+                }
             }
         }
 
@@ -1171,6 +1190,7 @@ internal static class ProductSettingsView
                     return;
                 }
 
+                var restoreKeyboardFocus = disk.IsFocused;
                 disk.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
@@ -1199,6 +1219,14 @@ internal static class ProductSettingsView
                 finally
                 {
                     disk.IsEnabled = true;
+                    if (restoreKeyboardFocus
+                        && TopLevel.GetTopLevel(disk)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            disk);
+                    }
                 }
             };
 
@@ -1212,6 +1240,7 @@ internal static class ProductSettingsView
                     return;
                 }
 
+                var restoreKeyboardFocus = memory.IsFocused;
                 memory.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
@@ -1240,6 +1269,14 @@ internal static class ProductSettingsView
                 finally
                 {
                     memory.IsEnabled = true;
+                    if (restoreKeyboardFocus
+                        && TopLevel.GetTopLevel(memory)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            memory);
+                    }
                 }
             };
 
@@ -1253,6 +1290,7 @@ internal static class ProductSettingsView
                     return;
                 }
 
+                var restoreKeyboardFocus = decoded.IsFocused;
                 decoded.IsEnabled = false;
                 status.Foreground = LumineDesign.MutedForeground;
                 status.Text = "保存しています…";
@@ -1280,6 +1318,14 @@ internal static class ProductSettingsView
                 finally
                 {
                     decoded.IsEnabled = true;
+                    if (restoreKeyboardFocus
+                        && TopLevel.GetTopLevel(decoded)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            decoded);
+                    }
                 }
             };
 
