@@ -307,6 +307,10 @@ internal static class ProductSettingsView
         content.Children.Add(fields);
         content.Children.Add(status);
 
+        // The controls remain mounted across saves. Keep the most
+        // recently committed preferences, not the initial snapshot, as
+        // the rollback target after a rejected settings-store write.
+        var lastSavedDefaults = snapshot.ViewerDefaults;
         var updating = false;
         async Task SaveAsync()
         {
@@ -325,7 +329,7 @@ internal static class ProductSettingsView
 
             try
             {
-                await save(
+                var requested =
                     new BrowsePreferences(
                         view.SelectedIndex == 1
                             ? BrowseViewMode.List
@@ -335,7 +339,9 @@ internal static class ProductSettingsView
                             0,
                             2),
                         SortFromIndex(
-                            sort.SelectedIndex)));
+                            sort.SelectedIndex));
+                await save(requested);
+                lastSavedDefaults = requested;
                 status.Text =
                     "閲覧の既定値を保存しました。";
             }
@@ -343,6 +349,17 @@ internal static class ProductSettingsView
             {
                 System.Diagnostics.Trace.TraceError(
                     exception.ToString());
+                // Updating remains true while these programmatic
+                // selections are restored, preventing reentrant saves
+                // and preserving the actual write-error message.
+                view.SelectedIndex =
+                    lastSavedDefaults.ViewMode
+                        == BrowseViewMode.List
+                            ? 1
+                            : 0;
+                density.SelectedIndex = lastSavedDefaults.Density;
+                sort.SelectedIndex =
+                    SortIndex(lastSavedDefaults.SortOrder);
                 status.Foreground = LumineDesign.Danger;
                 status.Text =
                     "保存できませんでした。もう一度お試しください。";

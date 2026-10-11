@@ -9821,6 +9821,167 @@ try
                         }
                     }
 
+                    if (iteration == 0)
+                    {
+                        // An explicit Settings preference write may fail
+                        // while Browse's quick controls use a best-effort
+                        // policy. The mounted Settings page must never
+                        // report that rejected values were saved.
+                        var initialDisplayDefaults =
+                            window.SettingsSnapshot.ViewerDefaults;
+                        var committedDisplayDefaults =
+                            initialDisplayDefaults;
+                        var viewerWriteCounts = new int[3];
+                        var activeViewerField = -1;
+                        Task SaveDisplayDefaultsForSmokeAsync(
+                            BrowsePreferences requested)
+                        {
+                            viewerWriteCounts[activeViewerField]++;
+                            if (viewerWriteCounts[activeViewerField]
+                                is 1 or 3)
+                            {
+                                return Task.FromException(
+                                    new IOException(
+                                        "Simulated viewer defaults store failure"));
+                            }
+
+                            committedDisplayDefaults = requested;
+                            return Task.CompletedTask;
+                        }
+
+                        var displaySettingsPage =
+                            ProductSettingsView.Create(
+                                window.SettingsSnapshot,
+                                SaveDisplayDefaultsForSmokeAsync,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.FromResult(
+                                    window.SettingsSnapshot.CacheStats),
+                                () => Task.CompletedTask);
+                        var displaySettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = displaySettingsPage
+                        };
+                        displaySettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var displayNames =
+                                new[] { "表示", "密度", "並び順" };
+                            var displayControls =
+                                displayNames.Select(name =>
+                                    displaySettingsPage
+                                        .GetVisualDescendants()
+                                        .OfType<ComboBox>()
+                                        .Single(combo =>
+                                            AutomationProperties.GetName(
+                                                combo) == name))
+                                    .ToArray();
+                            bool HasDisplaySaveStatus(string message) =>
+                                displaySettingsPage
+                                    .GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(text => text.Text == message);
+                            for (var displayField = 0;
+                                 displayField < displayControls.Length;
+                                 displayField++)
+                            {
+                                activeViewerField = displayField;
+                                var control =
+                                    displayControls[displayField];
+                                var initialIndex =
+                                    control.SelectedIndex;
+                                var alternateIndex =
+                                    initialIndex == 0 ? 1 : 0;
+                                var previouslySaved =
+                                    committedDisplayDefaults;
+
+                                Require(
+                                    initialIndex >= 0,
+                                    $"Mounted Viewer default selector missing: {displayNames[displayField]}.");
+
+                                control.SelectedIndex =
+                                    alternateIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    viewerWriteCounts[displayField] == 1
+                                    && committedDisplayDefaults
+                                        == previouslySaved
+                                    && control.SelectedIndex
+                                        == initialIndex
+                                    && displayControls.All(
+                                        combo => combo.IsEnabled)
+                                    && HasDisplaySaveStatus(
+                                        "保存できませんでした。もう一度お試しください。")
+                                    && !HasDisplaySaveStatus(
+                                        "閲覧の既定値を保存しました。"),
+                                    $"Failed {displayNames[displayField]} write left an uncommitted choice or false success.");
+
+                                control.SelectedIndex =
+                                    alternateIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    viewerWriteCounts[displayField] == 2
+                                    && committedDisplayDefaults
+                                        != previouslySaved
+                                    && control.SelectedIndex
+                                        == alternateIndex
+                                    && HasDisplaySaveStatus(
+                                        "閲覧の既定値を保存しました。"),
+                                    $"Retry of {displayNames[displayField]} did not save preferences.");
+
+                                var mostRecentlySaved =
+                                    committedDisplayDefaults;
+                                control.SelectedIndex =
+                                    initialIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    viewerWriteCounts[displayField] == 3
+                                    && committedDisplayDefaults
+                                        == mostRecentlySaved
+                                    && control.SelectedIndex
+                                        == alternateIndex
+                                    && HasDisplaySaveStatus(
+                                        "保存できませんでした。もう一度お試しください。"),
+                                    $"Later failed {displayNames[displayField]} write did not restore the most recent persisted preference.");
+
+                                control.SelectedIndex =
+                                    initialIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    viewerWriteCounts[displayField] == 4
+                                    && committedDisplayDefaults
+                                        == previouslySaved
+                                    && control.SelectedIndex
+                                        == initialIndex
+                                    && HasDisplaySaveStatus(
+                                        "閲覧の既定値を保存しました。")
+                                    && displayControls.All(
+                                        combo => combo.IsEnabled)
+                                    && ReferenceEquals(
+                                        displaySettingsWindow.Content,
+                                        displaySettingsPage),
+                                    $"Recovery of {displayNames[displayField]} did not restore the original Viewer defaults on the mounted page.");
+                            }
+
+                            Require(
+                                committedDisplayDefaults
+                                    == initialDisplayDefaults,
+                                "Display default rollback fixture did not restore the initial committed preferences.");
+                        }
+                        finally
+                        {
+                            displaySettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.

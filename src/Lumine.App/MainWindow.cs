@@ -2929,8 +2929,19 @@ public sealed class MainWindow : Window
     private async Task SaveViewerDefaultsFromSettingsAsync(
         BrowsePreferences preferences)
     {
-        await OnBrowsePreferencesChangedAsync(
+        if (_host is null)
+        {
+            throw new InvalidOperationException(
+                "設定保存を利用できません。");
+        }
+
+        // This is an explicit Settings save, unlike quick Browse
+        // adjustments. Do not swallow a failed store write or present
+        // uncommitted preferences as successfully saved.
+        await _host.SaveBrowsePreferencesAsync(
             preferences);
+        _browsePreferences = preferences;
+        _shell?.SetBrowseLayout(preferences);
 
         _browseFilterState =
             _browseFilterState with
