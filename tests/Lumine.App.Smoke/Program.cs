@@ -8374,6 +8374,88 @@ try
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
 
+                        // Stage 2X: a Publication DB write may finish for
+                        // the old runtime after this window reopens the same
+                        // Library. The new snapshot already contains its DB
+                        // row; the obsolete callback must not append it again
+                        // to the new runtime's in-memory Publication list.
+                        window.NavigateForSmoke("公開履歴");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var oldPublicationRuntime =
+                            window.CurrentRuntime!;
+                        var publicationCommitReached =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        var releasePublicationCommit =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        window.PublicationBeforeCommitForSmokeAsync =
+                            async () =>
+                            {
+                                publicationCommitReached.TrySetResult(true);
+                                await releasePublicationCommit.Task;
+                            };
+                        const string stalePublicationName =
+                            "nav-old-runtime-publication-smoke";
+                        var stalePublicationCreate =
+                            window.CreatePublicationDestinationForSmokeAsync(
+                                stalePublicationName,
+                                "other");
+                        await publicationCommitReached.Task.WaitAsync(
+                            TimeSpan.FromSeconds(10));
+                        window.PublicationBeforeCommitForSmokeAsync = null;
+
+                        // This is a genuine runtime replacement, not a
+                        // simulated bool flag. Its refreshed database view
+                        // observes the completed old-context write.
+                        await window.OpenLibraryAsync(repeatedLibraryRoot);
+                        await window.NavigationRefreshForSmokeAsync();
+                        window.NavigateForSmoke("公開履歴");
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        var activePublicationRuntime =
+                            window.CurrentRuntime!;
+                        var refreshedPublication =
+                            window.PublicationDestinationsForSmoke
+                                .Where(item =>
+                                    item.Name == stalePublicationName)
+                                .ToArray();
+                        Require(
+                            !ReferenceEquals(
+                                activePublicationRuntime,
+                                oldPublicationRuntime)
+                            && refreshedPublication.Length == 1
+                            && refreshedPublication[0].LibraryId
+                                == activePublicationRuntime.Library.Id,
+                            "Reopened Library did not load exactly one saved Publication destination before stale completion.");
+
+                        releasePublicationCommit.TrySetResult(true);
+                        var stalePublicationResult =
+                            await stalePublicationCreate;
+                        Require(
+                            stalePublicationResult is null
+                            && window.PublicationDestinationsForSmoke
+                                .Count(item =>
+                                    item.Name == stalePublicationName) == 1,
+                            "Old Publication creation completion polluted the new runtime's metadata or duplicated its destination.");
+                        var removedStalePublication =
+                            await activePublicationRuntime.LibraryService
+                                .DeletePublicationDestinationAsync(
+                                    activePublicationRuntime.Library.Id,
+                                    refreshedPublication[0].Id);
+                        Require(
+                            removedStalePublication,
+                            "Publication runtime-isolation fixture cleanup failed.");
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !window.PublicationDestinationsForSmoke
+                                .Any(item =>
+                                    item.Name == stalePublicationName),
+                            "Publication runtime-isolation fixture survived its cleanup refresh.");
+
                         window.NavigateForSmoke("公開履歴");
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
