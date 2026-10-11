@@ -845,6 +845,10 @@ internal static class ProductSettingsView
         rescanButton.Click +=
             async (_, _) =>
             {
+                // A focused command loses keyboard focus when disabled.
+                // Restore it after the awaited rescan only if no newer
+                // live focus target has taken precedence.
+                var restoreRescanFocus = rescanButton.IsFocused;
                 rescanButton.IsEnabled =
                     false;
                 status.Foreground =
@@ -870,6 +874,14 @@ internal static class ProductSettingsView
                 {
                     rescanButton.IsEnabled =
                         snapshot.HasActiveLibrary;
+                    if (restoreRescanFocus
+                        && TopLevel.GetTopLevel(rescanButton)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            rescanButton);
+                    }
                 }
             };
 
@@ -1117,6 +1129,8 @@ internal static class ProductSettingsView
                     persistent.IsChecked == true
                         ? ThumbnailStorageMode.PersistentDisk
                         : ThumbnailStorageMode.MemoryOnly;
+                var restorePersistentFocus =
+                    persistent.IsFocused;
                 persistent.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
@@ -1152,6 +1166,14 @@ internal static class ProductSettingsView
                 finally
                 {
                     persistent.IsEnabled = true;
+                    if (restorePersistentFocus
+                        && TopLevel.GetTopLevel(persistent)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            persistent);
+                    }
                 }
             };
 
@@ -1332,6 +1354,7 @@ internal static class ProductSettingsView
         clear.Click +=
             async (_, _) =>
             {
+                var restoreClearFocus = clear.IsFocused;
                 clear.IsEnabled = false;
                 status.Foreground =
                     LumineDesign.MutedForeground;
@@ -1365,6 +1388,14 @@ internal static class ProductSettingsView
                 finally
                 {
                     clear.IsEnabled = true;
+                    if (restoreClearFocus
+                        && TopLevel.GetTopLevel(clear)
+                            is Window owner)
+                    {
+                        ProductDialogs.RestoreFocusIfEligible(
+                            owner,
+                            clear);
+                    }
                 }
             };
 
