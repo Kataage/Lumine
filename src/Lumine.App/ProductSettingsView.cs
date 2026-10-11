@@ -1069,6 +1069,11 @@ internal static class ProductSettingsView
         var status = CreateStatusText();
         content.Children.Add(status);
 
+        // The initial immutable snapshot may be stale after another
+        // successful change on this live page. Restore the last mode
+        // that actually finished persisting on cancellation or error.
+        var lastSavedMode =
+            snapshot.PersistedThumbnailStorageMode;
         persistent.Click +=
             async (_, _) =>
             {
@@ -1083,16 +1088,27 @@ internal static class ProductSettingsView
                 try
                 {
                     await saveThumbnailMode(requested);
+                    lastSavedMode = requested;
                     status.Text =
                         "キャッシュ方式を保存しました。次回起動から有効です。";
+                }
+                catch (OperationCanceledException)
+                {
+                    persistent.IsChecked =
+                        lastSavedMode
+                            == ThumbnailStorageMode.PersistentDisk;
+                    status.Foreground =
+                        LumineDesign.MutedForeground;
+                    status.Text =
+                        "変更をキャンセルしました。";
                 }
                 catch (Exception exception)
                 {
                     System.Diagnostics.Trace.TraceError(
                         exception.ToString());
                     persistent.IsChecked =
-                        snapshot.PersistedThumbnailStorageMode
-                        == ThumbnailStorageMode.PersistentDisk;
+                        lastSavedMode
+                            == ThumbnailStorageMode.PersistentDisk;
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
                         "保存できませんでした。もう一度お試しください。";
