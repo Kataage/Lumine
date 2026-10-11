@@ -648,6 +648,17 @@
     <Setter Property="Foreground" Value="{DynamicResource Lumine.MutedForeground}" />
   </Style>
 
+  <!-- Keep the active library's rescan command readable and
+       keyboard-reachable, instead of packing two tiny glyph buttons
+       into the title/metadata line at 225% text scaling. -->
+  <Style Selector="Button.lumine-library-rescan">
+    <Setter Property="MinHeight" Value="32" />
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="Margin" Value="0,4,0,0" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
   <Style Selector="Border.lumine-library-static">
     <Setter Property="Padding" Value="8" />
     <Setter Property="Background" Value="Transparent" />
