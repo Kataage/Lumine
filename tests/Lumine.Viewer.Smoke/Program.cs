@@ -1251,12 +1251,11 @@ internal static class Program
                 attachedTiles: 7, readyTiles: 6, activeBitmapDecodes: 0),
             "A slow visible tile blocked warmup indefinitely or predecode stole native capacity from active foreground tiles.");
 
-        // Stage #634 owner feedback: a two-row source window is visibly
-        // too short on a physical Windows library. Ordinary scrolling
-        // should warm the next plausible viewport in the direction of
-        // travel, while preserving one/two rows for a quick reversal.
-        // Rapid far seeks MUST retain the old two-row budget so discarded
-        // intermediate viewports do not flood native requests.
+        // Owner retest: even after the viewport-ahead repair, the
+        // fixed 6/14 decoded-row ceiling can leave large configured
+        // caches underused. Spend the worst-case RGBA capacity forward
+        // while reserving visible tiles and the nearby reverse edge.
+        // Far seeks preserve the old 2-Grid / 3-List work bound.
         var normalGrid =
             ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
                 isList: false, configuredRows: 2,
@@ -1282,6 +1281,26 @@ internal static class Program
                 isList: true, configuredRows: 2,
                 visibleRows: 9, columns: 1, attachedTiles: 12,
                 twoSidedOptions, isFarSeek: true);
+        // The decoded cache budget, not a hardcoded 6/14-row cap,
+        // governs normal browsing. Raising only the user's configured
+        // cache allowance must enlarge the warm horizon. Geometry
+        // still includes the currently pinned viewport and both sides.
+        var expandedMemory = new ViewerOptions
+        {
+            DecodedBitmapEntryLimit = 128,
+            DecodedBitmapByteLimit = 128L * 1024 * 1024,
+            DecodedThumbnailMaxDimension = 384
+        };
+        var expandedList =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: true, configuredRows: 2,
+                visibleRows: 9, columns: 1, attachedTiles: 12,
+                expandedMemory, isFarSeek: false);
+        var wideGrid =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: false, configuredRows: 2,
+                visibleRows: 5, columns: 12, attachedTiles: 60,
+                expandedMemory, isFarSeek: false);
         var optedOut =
             ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
                 isList: true, configuredRows: 0,
@@ -1298,19 +1317,32 @@ internal static class Program
                 visibleRows: 5, columns: 7, attachedTiles: 55,
                 twoSidedOptions, isFarSeek: false);
         Require(
-            normalGrid.PreferredSourceRows == 6
+            normalGrid.PreferredSourceRows == 7
             && normalGrid.OppositeSourceRows == 2
-            && normalGrid.PreferredBitmapRows >= 4
-            && normalGrid.OppositeBitmapRows >= 1
+            && normalGrid.PreferredBitmapRows == 7
+            && normalGrid.OppositeBitmapRows == 1
+            && 35 + (normalGrid.PreferredBitmapRows
+                + normalGrid.OppositeBitmapRows) * 7 <= 96
             && smallBudgetGrid.PreferredSourceRows == 6
-            && smallBudgetGrid.PreferredBitmapRows >= 1
-            && smallBudgetGrid.OppositeBitmapRows >= 1
+            && smallBudgetGrid.PreferredBitmapRows == 2
+            && smallBudgetGrid.OppositeBitmapRows == 1
             && 35 + (smallBudgetGrid.PreferredBitmapRows
                 + smallBudgetGrid.OppositeBitmapRows) * 7 <= 56
-            && normalList.PreferredSourceRows == 12
+            && normalList.PreferredSourceRows == 42
             && normalList.OppositeSourceRows == 2
-            && normalList.PreferredBitmapRows >= 9
-            && normalList.OppositeBitmapRows >= 1
+            && normalList.PreferredBitmapRows == 42
+            && normalList.OppositeBitmapRows == 2
+            && 12 + normalList.PreferredBitmapRows
+                + normalList.OppositeBitmapRows == 56
+            && expandedList.PreferredSourceRows == 114
+            && expandedList.PreferredBitmapRows == 114
+            && expandedList.OppositeBitmapRows == 2
+            && 12 + expandedList.PreferredBitmapRows
+                + expandedList.OppositeBitmapRows == 128
+            && wideGrid.PreferredBitmapRows == 4
+            && wideGrid.OppositeBitmapRows == 1
+            && 60 + (wideGrid.PreferredBitmapRows
+                + wideGrid.OppositeBitmapRows) * 12 <= 128
             && farSeek.PreferredSourceRows == 2
             && farSeek.OppositeSourceRows == 2
             && farSeekList.PreferredSourceRows == 3

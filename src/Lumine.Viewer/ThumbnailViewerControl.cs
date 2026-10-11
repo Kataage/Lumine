@@ -2235,9 +2235,12 @@ public sealed class ThumbnailViewerControl : UserControl
             // the preferred next row first and, only with ample pinned
             // viewport capacity, the opposite adjacent row as well.
             // Never let speculative decoding compete with foreground.
-            var nextRowCount = Math.Min(
-                columns,
-                Math.Min(8, session.Options.DecodedBitmapEntryLimit / 8));
+            // A full row can contain more than eight columns at
+            // desktop width. Partial-row speculative decode still
+            // leaves a visible cold strip on an otherwise warm row.
+            // The shared planner admits only entire rows whose
+            // worst-case native bitmaps fit the configured budget.
+            var nextRowCount = columns;
             var preferredRow = direction < 0
                 ? beforeRow
                 : afterRow;
@@ -2389,12 +2392,17 @@ public sealed class ThumbnailViewerControl : UserControl
         return readyTiles >= attachedTiles - toleratedSlowTiles;
     }
 
-    // Prefer the next full screen of thumbnails during ordinary scroll,
-    // while keeping a smaller reverse buffer for immediate reversals.
-    // Both source I/O and Bitmap residency are capped independently.
-    // Rapid far seeks retain two Grid rows / three List rows per side;
-    // a physical wheel input
-    // restores the viewport-sized plan once the user starts browsing.
+    // Use the configured decoded Bitmap cache as the normal-scroll
+    // lookahead budget, not an independent arbitrary row ceiling. A
+    // source row is useful only if its presentation can be prepared.
+    // Reserve resident space for all attached tiles and the immediate
+    // reverse neighborhood; spend remaining capacity forward. Cache
+    // admission and the foreground-aware scheduler remain authoritative.
+    //
+    // A rapid programmatic seek is different: intermediate viewports
+    // must never exhaust source work while a user is still jumping.
+    // Keep the proven 2-Grid / 3-List near-seek handoff and allow
+    // ordinary pointer-wheel browsing to return to the budget plan.
     internal static (int PreferredSourceRows, int OppositeSourceRows,
         int PreferredBitmapRows, int OppositeBitmapRows)
         ResolveDirectionalLookaheadForSmoke(
@@ -2414,15 +2422,15 @@ public sealed class ThumbnailViewerControl : UserControl
             return (0, 0, 0, 0);
         }
 
-        // Explicit one-row preference retains its historical low-work
-        // semantics. Default two-row mode is adaptive on actual geometry.
+        // Opt-in PrefetchRows=1 deliberately keeps the original
+        // low-work behavior; >=2 enables the memory-led product policy.
         var adaptive = configuredRows >= 2 && !isFarSeek;
-        var preferredSourceRows = adaptive
-            ? Math.Min(
-                isList ? 18 : 8,
+        var minimumForward = adaptive
+            ? (int)Math.Min(
+                int.MaxValue,
                 Math.Max(
-                    configuredRows,
-                    visibleRows + (isList ? 3 : 1)))
+                    (long)configuredRows,
+                    (long)visibleRows + (isList ? 3L : 1L)))
             : isFarSeek
                 ? isList && configuredRows >= 2
                     ? 3
@@ -2430,42 +2438,55 @@ public sealed class ThumbnailViewerControl : UserControl
                 : configuredRows;
         var oppositeSourceRows = adaptive
             ? Math.Min(configuredRows, isList ? 3 : 2)
-            : preferredSourceRows;
+            : minimumForward;
 
-        // Conservative worst-case RGBA entry budget; no speculative
-        // decoder admission is allowed to displace pinned viewport
-        // Bitmaps or to rely on a successful LRU eviction.
+        // Use worst-case *decoded* RGBA bytes per tile. Encoded source
+        // cache bytes are not interchangeable with this native budget.
+        // Invalid/unknown geometry never authorizes Bitmap admission.
         var dimension = (long)options.DecodedThumbnailMaxDimension;
         if (dimension is <= 0 or > 32768)
         {
-            return (preferredSourceRows, oppositeSourceRows, 0, 0);
+            return (minimumForward, oppositeSourceRows, 0, 0);
         }
 
         var bytesPerTile = dimension * dimension * 4L;
-        var maxEntries = Math.Min(
+        var capacityEntries = Math.Min(
             (long)options.DecodedBitmapEntryLimit,
             options.DecodedBitmapByteLimit / bytesPerTile);
-        var spareEntries = Math.Max(0, maxEntries - attachedTiles);
-        var spareRows = Math.Min(
-            int.MaxValue, spareEntries / columns);
-        if (spareRows <= 0)
+        var availableEntries =
+            Math.Max(0L, capacityEntries - attachedTiles);
+        var availableRows = (int)Math.Min(
+            int.MaxValue, availableEntries / columns);
+        if (availableRows <= 0)
         {
-            return (preferredSourceRows, oppositeSourceRows, 0, 0);
+            return (minimumForward, oppositeSourceRows, 0, 0);
         }
 
-        var desiredPreferred = Math.Min(
-            preferredSourceRows, isList ? 14 : 6);
-        var desiredOpposite = Math.Min(
+        // Reverse memory is kept small but nonzero when possible so
+        // reversing one wheel tick does not expose another cold edge.
+        // Keep the old far-seek near-row count exactly as validated by
+        // Grid/List strict first-raster CI.
+        var reverseGoal = Math.Min(
             oppositeSourceRows, isList ? 2 : 1);
-        var reverseRows = spareRows >= 2
-            ? Math.Min(desiredOpposite,
-                Math.Max(1, (int)(spareRows - desiredPreferred)))
+        var reverseRows = availableRows >= 2
+            ? Math.Min(
+                reverseGoal,
+                Math.Max(1, availableRows / 4))
             : 0;
-        var forwardRows = (int)Math.Min(
-            desiredPreferred, spareRows - reverseRows);
+        var forwardRows = availableRows - reverseRows;
+        if (!adaptive)
+        {
+            forwardRows = Math.Min(forwardRows, minimumForward);
+        }
 
+        // On normal scrolling, the forward source horizon must cover
+        // every row we intend to predecode. Neither the old 8/18
+        // source limits nor the old 6/14 Bitmap limits apply.
+        var forwardSourceRows = adaptive
+            ? Math.Max(minimumForward, forwardRows)
+            : minimumForward;
         return (
-            preferredSourceRows,
+            forwardSourceRows,
             oppositeSourceRows,
             forwardRows,
             reverseRows);
