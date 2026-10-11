@@ -1597,19 +1597,22 @@ public sealed class MainWindow : Window
                         && liveScroll.IsEffectivelyVisible
                         // A fresh user scroll must win over a delayed
                         // restore from the previous list instance.
-                        && liveScroll.Offset.Y <= 0.5)
+                        && liveScroll.Offset.Y <= 0.5
+                        && liveScroll.Viewport.Height > 0)
                     {
+                        var maxOffset = Math.Max(
+                            0,
+                            liveScroll.Extent.Height
+                            - liveScroll.Viewport.Height);
                         liveScroll.Offset = new Vector(
                             oldOffset.X,
-                            Math.Min(
-                                oldOffset.Y,
-                                Math.Max(
-                                    0,
-                                    liveScroll.Extent.Height
-                                    - liveScroll.Viewport.Height)));
+                            Math.Min(oldOffset.Y, maxOffset));
                     }
                 },
-                DispatcherPriority.Render);
+                // Render may run before the freshly replaced virtualized
+                // ListBox has an extent. Loaded follows the first layout
+                // so clamping never mistakes an unmeasured list for empty.
+                DispatcherPriority.Loaded);
         }
 
         if (!restoreContextFocus)
