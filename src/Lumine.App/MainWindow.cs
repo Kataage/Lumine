@@ -1628,27 +1628,14 @@ public sealed class MainWindow : Window
                     SaveScanExtensionsFromSettingsAsync,
                     RescanCurrentLibraryFromSettingsAsync,
                     ClearThumbnailCacheFromSettingsAsync,
-                    ShowDiagnosticsFromNavigationAsync);
+                    ShowDiagnosticsFromNavigationAsync,
+                    expandedSettingsHeaders);
             _workspacePageHost.IsVisible = true;
             _workspaceContent.IsHitTestVisible = false;
             _renderedNavigationDestination =
                 _navigationDestination;
             var nextSettingsView =
                 _workspacePageHost.Content as Control;
-            if (expandedSettingsHeaders is { Count: > 0 })
-            {
-                foreach (var expander in
-                         nextSettingsView!.GetVisualDescendants()
-                             .OfType<Expander>())
-                {
-                    if (expander.Header is string header
-                        && expandedSettingsHeaders.Contains(header))
-                    {
-                        expander.IsExpanded = true;
-                    }
-                }
-            }
-
             if (settingsScrollOffset is { Y: > 0.5 } oldSettingsOffset)
             {
                 Dispatcher.UIThread.Post(
