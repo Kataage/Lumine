@@ -4439,6 +4439,40 @@ try
                 && shell.ContextDetail.TabPagesHaveIndependentScrollStateForSmoke,
                 "Inspector did not expose the selected image preview, four-destination Lumine tab strip, and independent scroll ownership.");
 
+            // The full-image action is a labelled, visible primary
+            // task rather than another anonymous icon-only utility.
+            // Its instance/accessible name must remain stable for
+            // Focused Viewer close->Inspector focus restoration.
+            var inspectorOpenImageButton =
+                shell.ContextDetail.GetVisualDescendants()
+                    .OfType<Button>()
+                    .Single(button =>
+                        AutomationProperties.GetName(button)
+                            == "画像を表示");
+            Require(
+                inspectorOpenImageButton.IsEffectivelyVisible
+                && inspectorOpenImageButton.Classes.Contains(
+                    "lumine-inspector-open-image")
+                && !inspectorOpenImageButton.Classes.Contains(
+                    "lumine-icon")
+                && inspectorOpenImageButton.Content is StackPanel
+                && inspectorOpenImageButton.GetVisualDescendants()
+                    .OfType<TextBlock>()
+                    .Any(label => label.Text == "拡大")
+                && ContextualAssetDetailPanel
+                    .ResolvePreviewHeightForSmoke(
+                        compact: false, availableHeight: 1080) == 192
+                && ContextualAssetDetailPanel
+                    .ResolvePreviewHeightForSmoke(
+                        compact: false, availableHeight: 720) == 148
+                && ContextualAssetDetailPanel
+                    .ResolvePreviewHeightForSmoke(
+                        compact: true, availableHeight: 600) == 80
+                && ContextualAssetDetailPanel
+                    .ResolvePreviewHeightForSmoke(
+                        compact: true, availableHeight: 900) == 120,
+                "Inspector regressed to anonymous full-image control or failed to prioritize wide desktop previews while keeping compact layout.");
+
             // Exercise the actual four Inspector tab buttons, not merely
             // SelectTabForSmoke, so modifiers do not hijack arrow commands.
             var inspectorKeyboardTabs =
