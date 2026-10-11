@@ -3039,7 +3039,12 @@ public sealed class MainWindow : Window
 
         await _host.SaveSettingsAsync(
             next);
-        StartNavigationRefresh();
+        // Preserve the live Settings form and its save-result feedback;
+        // only this persisted selector value changed.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            ThumbnailCacheByteLimit = bytes
+        };
     }
 
     private async Task SaveMemoryBudgetFromSettingsAsync(
@@ -3063,7 +3068,12 @@ public sealed class MainWindow : Window
 
         await _host.SaveSettingsAsync(
             next);
-        StartNavigationRefresh();
+        // Preserve the live Settings form and its save-result feedback;
+        // only this persisted selector value changed.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            EncodedThumbnailMemoryByteLimit = bytes
+        };
     }
 
     private async Task SaveDecodedBudgetFromSettingsAsync(
@@ -3089,7 +3099,15 @@ public sealed class MainWindow : Window
                 CoreResourcePolicy.MaxDecodedThumbnailEntryLimit
         };
         await _host.SaveSettingsAsync(next);
-        StartNavigationRefresh();
+        // The selector already shows the requested value. Rebuilding the
+        // entire Settings tree here would discard the save-result message,
+        // Expander state and keyboard focus while the user is still editing.
+        // The next ordinary navigation refresh still resolves the saved
+        // policy from AppHost.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            DecodedThumbnailByteLimit = bytes
+        };
     }
 
     private async Task ClearThumbnailCacheFromSettingsAsync()
