@@ -1119,10 +1119,36 @@ internal static class ProductSettingsView
                 }
             };
 
+        // These three selectors remain mounted after each persistence
+        // attempt. A failed write must not leave an unsaved budget on screen.
+        // Restoring SelectedIndex raises SelectionChanged, so suppress that
+        // single programmatic event rather than re-submitting a failed write.
+        var lastSavedDiskBudget = snapshot.ThumbnailCacheByteLimit;
+        var lastSavedMemoryBudget = snapshot.EncodedThumbnailMemoryByteLimit;
+        var lastSavedDecodedBudget = snapshot.DecodedThumbnailByteLimit;
+        var restoringBudgetSelection = false;
+        void RestoreBudgetSelection(
+            ComboBox selector,
+            long[] options,
+            long committedBytes)
+        {
+            restoringBudgetSelection = true;
+            try
+            {
+                selector.SelectedIndex =
+                    Array.IndexOf(options, committedBytes);
+            }
+            finally
+            {
+                restoringBudgetSelection = false;
+            }
+        }
+
         disk.SelectionChanged +=
             async (_, _) =>
             {
-                if (disk.SelectedIndex < 0
+                if (restoringBudgetSelection
+                    || disk.SelectedIndex < 0
                     || disk.SelectedIndex >= diskBudgets.Length)
                 {
                     return;
@@ -1136,6 +1162,8 @@ internal static class ProductSettingsView
                 {
                     await saveDiskBudget(
                         diskBudgets[disk.SelectedIndex]);
+                    lastSavedDiskBudget =
+                        diskBudgets[disk.SelectedIndex];
                     status.Text =
                         "ディスク保持上限を保存しました。次回起動から有効です。";
                 }
@@ -1143,6 +1171,10 @@ internal static class ProductSettingsView
                 {
                     System.Diagnostics.Trace.TraceError(
                         exception.ToString());
+                    RestoreBudgetSelection(
+                        disk,
+                        diskBudgets,
+                        lastSavedDiskBudget);
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
                         "保存できませんでした。もう一度お試しください。";
@@ -1156,7 +1188,8 @@ internal static class ProductSettingsView
         memory.SelectionChanged +=
             async (_, _) =>
             {
-                if (memory.SelectedIndex < 0
+                if (restoringBudgetSelection
+                    || memory.SelectedIndex < 0
                     || memory.SelectedIndex >= budgets.Length)
                 {
                     return;
@@ -1170,6 +1203,8 @@ internal static class ProductSettingsView
                 {
                     await saveMemoryBudget(
                         budgets[memory.SelectedIndex]);
+                    lastSavedMemoryBudget =
+                        budgets[memory.SelectedIndex];
                     status.Text =
                         "メモリ上限を保存しました。次回起動から有効です。";
                 }
@@ -1177,6 +1212,10 @@ internal static class ProductSettingsView
                 {
                     System.Diagnostics.Trace.TraceError(
                         exception.ToString());
+                    RestoreBudgetSelection(
+                        memory,
+                        budgets,
+                        lastSavedMemoryBudget);
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
                         "保存できませんでした。もう一度お試しください。";
@@ -1190,7 +1229,8 @@ internal static class ProductSettingsView
         decoded.SelectionChanged +=
             async (_, _) =>
             {
-                if (decoded.SelectedIndex < 0
+                if (restoringBudgetSelection
+                    || decoded.SelectedIndex < 0
                     || decoded.SelectedIndex >= decodedBudgets.Length)
                 {
                     return;
@@ -1203,6 +1243,8 @@ internal static class ProductSettingsView
                 {
                     await saveDecodedBudget(
                         decodedBudgets[decoded.SelectedIndex]);
+                    lastSavedDecodedBudget =
+                        decodedBudgets[decoded.SelectedIndex];
                     status.Text =
                         "画像先読み用メモリ上限を保存しました。次回起動から有効です。";
                 }
@@ -1210,6 +1252,10 @@ internal static class ProductSettingsView
                 {
                     System.Diagnostics.Trace.TraceError(
                         exception.ToString());
+                    RestoreBudgetSelection(
+                        decoded,
+                        decodedBudgets,
+                        lastSavedDecodedBudget);
                     status.Foreground = LumineDesign.Danger;
                     status.Text =
                         "先読み用メモリ上限を保存できませんでした。もう一度お試しください。";
