@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Lumine.Image;
@@ -646,58 +647,75 @@ internal static class ProductSettingsView
             "独自読み込み対象を追加");
         addCustomFocusTarget = addCustom;
 
-        addCustom.Click +=
-            (_, _) =>
+        // Button and unmodified Enter in the input use the same
+        // validation/staging path; nothing is persisted until Save.
+        void StageCustomExtension()
+        {
+            if (!LibraryFileTypes.TryNormalizeExtension(
+                    customInput.Text,
+                    out var extension))
             {
-                if (!LibraryFileTypes.TryNormalizeExtension(
-                        customInput.Text,
-                        out var extension))
-                {
-                    status.Foreground =
-                        LumineDesign.Warning;
-                    status.Text =
-                        "拡張子は . の後に英数字を指定してください（最大16文字）。";
-                    return;
-                }
+                status.Foreground =
+                    LumineDesign.Warning;
+                status.Text =
+                    "拡張子は . の後に英数字を指定してください（最大16文字）。";
+                return;
+            }
 
-                if (builtIn.Contains(
-                        extension))
-                {
-                    var builtInControl =
-                        controls.First(
-                            item =>
-                                string.Equals(
-                                    item.Extension,
-                                    extension,
-                                    StringComparison.OrdinalIgnoreCase));
-                    builtInControl.Control.IsChecked =
-                        true;
-                    customInput.Text =
-                        string.Empty;
-                    status.Foreground =
-                        LumineDesign.MutedForeground;
-                    status.Text =
-                        $"{extension} は既定形式です。有効にしました。";
-                    return;
-                }
-
-                if (!customExtensions.Add(
-                        extension))
-                {
-                    status.Foreground =
-                        LumineDesign.MutedForeground;
-                    status.Text =
-                        $"{extension} は既に追加されています。";
-                    return;
-                }
-
+            if (builtIn.Contains(
+                    extension))
+            {
+                var builtInControl =
+                    controls.First(
+                        item =>
+                            string.Equals(
+                                item.Extension,
+                                extension,
+                                StringComparison.OrdinalIgnoreCase));
+                builtInControl.Control.IsChecked =
+                    true;
                 customInput.Text =
                     string.Empty;
-                RefreshCustomOptions();
                 status.Foreground =
                     LumineDesign.MutedForeground;
                 status.Text =
-                    $"{extension} を追加候補にしました。保存すると反映されます。";
+                    $"{extension} は既定形式です。有効にしました。";
+                return;
+            }
+
+            if (!customExtensions.Add(
+                    extension))
+            {
+                status.Foreground =
+                    LumineDesign.MutedForeground;
+                status.Text =
+                    $"{extension} は既に追加されています。";
+                return;
+            }
+
+            customInput.Text =
+                string.Empty;
+            RefreshCustomOptions();
+            status.Foreground =
+                LumineDesign.MutedForeground;
+            status.Text =
+                $"{extension} を追加候補にしました。保存すると反映されます。";
+        }
+
+        addCustom.Click +=
+            (_, _) => StageCustomExtension();
+        customInput.KeyDown +=
+            (_, args) =>
+            {
+                if (args.Handled
+                    || args.Key != Key.Enter
+                    || args.KeyModifiers != KeyModifiers.None)
+                {
+                    return;
+                }
+
+                StageCustomExtension();
+                args.Handled = true;
             };
 
         var customActions =
