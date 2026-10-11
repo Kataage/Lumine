@@ -1377,14 +1377,25 @@ try
                     .Distinct(StringComparer.Ordinal)
                     .Count() == navLibraries.Length,
                 "Library Manage accessible names were not associated with their individual rows.");
+            var manageLibraryGlyph =
+                manageLibraryButton.Content as Viewbox;
+            var manageLibraryFrame =
+                manageLibraryGlyph?.Child as Canvas;
+            var manageLibraryInk =
+                manageLibraryFrame?.Children
+                    .OfType<Avalonia.Controls.Shapes.Path>()
+                    .SingleOrDefault();
             Require(
                 manageLibraryButton is { IsEffectivelyVisible: true }
-                && manageLibraryButton.Content
-                    is Avalonia.Controls.Shapes.Path manageLibraryIcon
-                && manageLibraryIcon.Data is not null
-                && manageLibraryIcon.Data.Bounds.Height > 0.5
-                && manageLibraryIcon.Width >= 15.5
-                && manageLibraryIcon.Height >= 15.5
+                && manageLibraryGlyph is not null
+                && manageLibraryGlyph.Width >= 15.5
+                && manageLibraryGlyph.Height >= 15.5
+                && manageLibraryFrame is not null
+                && Math.Abs(manageLibraryFrame.Width - 24) < 0.01
+                && Math.Abs(manageLibraryFrame.Height - 24) < 0.01
+                && manageLibraryInk?.Data is not null
+                && manageLibraryInk.Data.Bounds.Height > 0.5
+                && manageLibraryInk.Stretch == Stretch.None
                 && manageLibraryButton.Classes.Contains(
                     "lumine-icon")
                 && manageLibraryButton.Classes.Contains(
@@ -6351,6 +6362,38 @@ try
                             specimen.Show();
                             Dispatcher.UIThread.RunJobs();
 
+                            // Mounted controls: icon-only commands
+                            // share a centered, un-stretched 24-DIP
+                            // drawing frame at every Windows text scale.
+                            foreach (var glyphButton in new[]
+                                     { icon, primaryIcon })
+                            {
+                                var glyph = glyphButton.Content as Viewbox;
+                                var frame = glyph?.Child as Canvas;
+                                var ink = frame?.Children
+                                    .OfType<Avalonia.Controls.Shapes.Path>()
+                                    .SingleOrDefault();
+                                var glyphOrigin = glyph?.TranslatePoint(
+                                    new Point(0, 0), glyphButton);
+                                Require(
+                                    glyph is not null
+                                    && frame is not null
+                                    && ink is not null
+                                    && ink.Stretch == Stretch.None
+                                    && Math.Abs(frame.Width - 24) < 0.01
+                                    && Math.Abs(frame.Height - 24) < 0.01
+                                    && glyphOrigin is { } origin
+                                    && Math.Abs(
+                                        origin.X + glyph.Bounds.Width / 2
+                                        - glyphButton.Bounds.Width / 2) < 1.5
+                                    && Math.Abs(
+                                        origin.Y + glyph.Bounds.Height / 2
+                                        - glyphButton.Bounds.Height / 2) < 1.5
+                                    && glyphButton.Padding
+                                        == new Thickness(0),
+                                    $"Mounted icon-button glyph/frame is off center at {scale:P0}: {AutomationProperties.GetName(glyphButton)}.");
+                            }
+
                             Require(
                                 primary.BorderThickness == new Thickness(1)
                                 && secondary.BorderThickness
@@ -6536,6 +6579,20 @@ try
                                         "lumine-nav-item")
                                     && button.Classes.Contains(
                                         "rail"));
+                    var railGlyph =
+                        libraryDestination.GetVisualDescendants()
+                            .OfType<Viewbox>()
+                            .FirstOrDefault();
+                    var railFrame = railGlyph?.Child as Canvas;
+                    Require(
+                        railFrame is not null
+                        && Math.Abs(railFrame.Width - 24) < 0.01
+                        && Math.Abs(railFrame.Height - 24) < 0.01
+                        && railFrame.Children
+                            .OfType<Avalonia.Controls.Shapes.Path>()
+                            .Single().Stretch == Stretch.None,
+                        "Compact navigation still stretches individual icon outlines rather than a unified 24-DIP frame.");
+
                     Require(
                         libraryDestination.Classes.Contains(
                             "lumine-nav-item")
@@ -11176,8 +11233,12 @@ try
                             .OfType<Button>()
                             .FirstOrDefault(
                                 button =>
-                                    button.Content
+                                    (button.Content
                                         is Avalonia.Controls.Shapes.Path
+                                    || button.Content is Viewbox
+                                    {
+                                        Child: Canvas
+                                    })
                                     && string.IsNullOrWhiteSpace(
                                         AutomationProperties.GetName(
                                             button)));

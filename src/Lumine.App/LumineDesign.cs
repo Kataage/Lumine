@@ -308,21 +308,42 @@ internal static class LumineDesign
         return checkBox;
     }
 
+    // All product glyph paths are authored in a 24x24 coordinate system.
+    // Stretching each Path's tight geometry bounding box independently
+    // changes its apparent size and shifts it inside an otherwise centered
+    // button. Keep a fixed *drawing* frame, then uniformly scale that frame:
+    // navigation and toolbar buttons now share the same optical origin.
     public static Control CreateStrokeIcon(
         string pathData,
         double size = 19,
-        IBrush? brush = null) =>
-        new Avalonia.Controls.Shapes.Path
+        IBrush? brush = null)
+    {
+        var frame = new Canvas
         {
-            Data = Geometry.Parse(pathData),
-            Stroke = brush ?? Foreground,
-            StrokeThickness = 1.7,
+            Width = 24,
+            Height = 24,
+            ClipToBounds = true
+        };
+        frame.Children.Add(
+            new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse(pathData),
+                Stroke = brush ?? Foreground,
+                StrokeThickness = 1.7,
+                Stretch = Stretch.None,
+                Width = 24,
+                Height = 24
+            });
+        return new Viewbox
+        {
+            Child = frame,
             Stretch = Stretch.Uniform,
             Width = size,
             Height = size,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
+    }
 
     public static Button ConfigureIconButton(
         Button button,
@@ -765,19 +786,22 @@ internal static class LumineDesign
                     selectedLabel,
                     StringComparison.Ordinal);
 
+            // Reserve the same 24-DIP glyph cell for every destination
+            // regardless of the geometry's natural bounds. Align the
+            // brand/title and destination text on one consistent axis.
             var row =
                 new Grid
                 {
                     ColumnDefinitions =
                         new ColumnDefinitions(
-                            "Auto,*"),
+                            "24,*"),
                     ColumnSpacing = Space8
                 };
 
             var icon =
                 CreateStrokeIcon(
                     item.IconPath,
-                    18,
+                    20,
                     selected
                         ? Foreground
                         : MutedForeground);
@@ -869,7 +893,7 @@ internal static class LumineDesign
         var destinations =
             new StackPanel
             {
-                Spacing = Space2,
+                Spacing = Space4,
                 Margin =
                     new Thickness(
                         Space8,
