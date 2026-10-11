@@ -4293,6 +4293,17 @@ public sealed class MainWindow : Window
             && _browseControls is not null
             && !_workspacePageHost.IsVisible)
         {
+            // Ctrl+F changes the active work surface, not merely focus.
+            // A compact navigation overlay would otherwise cover the
+            // newly focused search field. Dismiss without sending focus
+            // back to the rail before placing the caret in Browse.
+            if (_navigationPane.IsVisible
+                && _navigationPane.ZIndex > 0)
+            {
+                DismissNavigationPaneToRail(
+                    restoreRailFocus: false);
+            }
+
             _browseControls.FocusSearch();
             e.Handled = true;
         }
