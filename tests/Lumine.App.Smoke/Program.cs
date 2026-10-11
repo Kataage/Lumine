@@ -9982,6 +9982,93 @@ try
                         }
                     }
 
+                    if (iteration == 0)
+                    {
+                        // The real Settings ComboBoxes temporarily disable
+                        // themselves during saves. A keyboard-focused field
+                        // must remain navigable after save or error; a later
+                        // deliberate focus change must not be overridden.
+                        var focusedSettingsPage =
+                            ProductSettingsView.Create(
+                                window.SettingsSnapshot,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.FromResult(
+                                    window.SettingsSnapshot.CacheStats),
+                                () => Task.CompletedTask,
+                                new HashSet<string>(
+                                    StringComparer.Ordinal)
+                                {
+                                    "詳細設定"
+                                });
+                        var focusedSettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = focusedSettingsPage
+                        };
+                        focusedSettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var focusedSelectorNames = new[]
+                            {
+                                "表示",
+                                "密度",
+                                "並び順",
+                                "ディスク保持上限",
+                                "高速再表示用メモリ上限",
+                                "画像先読み用メモリ上限（展開済み）"
+                            };
+                            foreach (var fieldName in focusedSelectorNames)
+                            {
+                                var field =
+                                    focusedSettingsPage
+                                        .GetVisualDescendants()
+                                        .OfType<ComboBox>()
+                                        .Single(selector =>
+                                            AutomationProperties.GetName(
+                                                selector) == fieldName);
+                                Require(
+                                    field.IsEffectivelyVisible
+                                    && field.Focus(),
+                                    $"Settings selector was not keyboard-focusable before save: {fieldName}.");
+                                var priorIndex = field.SelectedIndex;
+                                var alternateIndex =
+                                    priorIndex == 0 ? 1 : 0;
+                                field.SelectedIndex = alternateIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    field.IsEnabled
+                                    && field.IsFocused
+                                    && field.SelectedIndex == alternateIndex,
+                                    $"Settings selector lost keyboard focus after save: {fieldName}.");
+                                field.SelectedIndex = priorIndex;
+                                Dispatcher.UIThread.RunJobs();
+                                Require(
+                                    field.IsEnabled
+                                    && field.IsFocused
+                                    && field.SelectedIndex == priorIndex,
+                                    $"Settings selector lost keyboard focus while restoring: {fieldName}.");
+                            }
+                            Require(
+                                ReferenceEquals(
+                                    focusedSettingsWindow.Content,
+                                    focusedSettingsPage),
+                                "Settings saves replaced the mounted controls while returning keyboard focus.");
+                        }
+                        finally
+                        {
+                            focusedSettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
