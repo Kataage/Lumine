@@ -4473,6 +4473,20 @@ try
                         compact: true, availableHeight: 900) == 120,
                 "Inspector regressed to anonymous full-image control or failed to prioritize wide desktop previews while keeping compact layout.");
 
+            // A newly opened image without Creative associations
+            // should display one useful empty state, not three large
+            // Work/Group/Lineage cards each repeating "なし".
+            var initialCreativeState =
+                shell.ContextDetail.CreativeVisibilityForSmoke;
+            Require(
+                initialCreativeState.EmptyVisible
+                && !initialCreativeState.WorkVisible
+                && !initialCreativeState.GroupVisible
+                && !initialCreativeState.LineageVisible
+                && shell.ContextDetail.CreativeEmptyTextForSmoke
+                    .Contains("関連付け", StringComparison.Ordinal),
+                "Empty Inspector Creative tab still renders duplicate missing-data cards or loses its actionable guidance.");
+
             // Exercise the actual four Inspector tab buttons, not merely
             // SelectTabForSmoke, so modifiers do not hijack arrow commands.
             var inspectorKeyboardTabs =
@@ -5209,9 +5223,15 @@ try
                                 StringComparison.Ordinal)),
                 "Contextual detail did not render human-readable creative archive context with lineage maintenance.");
 
+            var linkedCreativeState =
+                shell.ContextDetail.CreativeVisibilityForSmoke;
             Require(
-                shell.ContextDetail.SelectedTabHeader == "制作",
-                "Inspector creative context was not reachable through the dedicated 制作 tab.");
+                !linkedCreativeState.EmptyVisible
+                && linkedCreativeState.WorkVisible
+                && linkedCreativeState.GroupVisible
+                && linkedCreativeState.LineageVisible
+                && shell.ContextDetail.SelectedTabHeader == "制作",
+                "Populated Inspector Creative context lost associated Work/Group/Lineage cards or exposed a misleading empty state.");
 
             shell.ContextDetail.SelectTabForSmoke(2);
             Dispatcher.UIThread.RunJobs();
