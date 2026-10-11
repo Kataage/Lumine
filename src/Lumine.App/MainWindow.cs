@@ -2975,7 +2975,18 @@ public sealed class MainWindow : Window
             "読み込み対象を保存しました。今後の同期に反映されます。";
         _ = ClearTransientStatusAsync(
             _status.Text);
-        StartNavigationRefresh();
+        // Saving extension preferences changes future scans, not the
+        // already-mounted library or its metadata. Keep the user's staged
+        // controls, keyboard position and visible save confirmation intact.
+        // A later explicit rescan/navigation refresh still reads the
+        // canonical value from AppHost.
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            ScanExtensions =
+                ScanExtensionPreference.Resolve(
+                    _host.Settings,
+                    out _)
+        };
     }
 
     private async Task RescanCurrentLibraryFromSettingsAsync()

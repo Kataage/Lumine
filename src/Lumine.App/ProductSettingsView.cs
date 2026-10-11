@@ -764,6 +764,11 @@ internal static class ProductSettingsView
                     return;
                 }
 
+                // Disabling the focused command while a write is pending
+                // removes its keyboard focus in Avalonia. Restore it only
+                // when no newer input target has claimed focus, so a
+                // user-initiated focus change during the await wins.
+                var restoreSaveFocus = saveButton.IsFocused;
                 saveButton.IsEnabled =
                     false;
                 status.Foreground =
@@ -790,6 +795,14 @@ internal static class ProductSettingsView
                 {
                     saveButton.IsEnabled =
                         true;
+                    if (restoreSaveFocus
+                        && saveButton.IsEffectivelyVisible
+                        && (TopLevel.GetTopLevel(saveButton)
+                                ?.FocusManager?.GetFocusedElement()
+                            is null))
+                    {
+                        saveButton.Focus();
+                    }
                 }
             };
 
