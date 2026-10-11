@@ -10410,6 +10410,7 @@ try
                     // navigation refresh may replace its Settings tree while
                     // unrelated smoke work is running; a detached Button
                     // cannot meaningfully validate keyboard focus.
+                    var keyboardScanSaveCalls = 0;
                     var keyboardSettingsPage =
                         ProductSettingsView.Create(
                             window.SettingsSnapshot,
@@ -10418,7 +10419,11 @@ try
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
-                            _ => Task.CompletedTask,
+                            _ =>
+                            {
+                                keyboardScanSaveCalls++;
+                                return Task.CompletedTask;
+                            },
                             () => Task.CompletedTask,
                             () => Task.FromResult(window.SettingsSnapshot.CacheStats),
                             () => Task.CompletedTask);
@@ -10454,16 +10459,89 @@ try
                                         AutomationProperties.GetName(panel)
                                             == "独自読み込み対象一覧");
 
-                        foreach (var extension in new[] { "JFIF", "zzfocus" })
+                        Require(
+                            keyboardInput.Focus(),
+                            "Custom scan-extension input did not accept keyboard focus.");
+                        keyboardInput.Text = "invalid/path";
+                        var invalidEnter = new KeyEventArgs
                         {
-                            keyboardInput.Text = extension;
-                            keyboardAdd.RaiseEvent(
-                                new RoutedEventArgs(Button.ClickEvent));
-                            Dispatcher.UIThread.RunJobs();
-                            Require(
-                                string.IsNullOrEmpty(keyboardInput.Text),
-                                $"Settings focus fixture could not stage {extension}.");
-                        }
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Enter
+                        };
+                        keyboardInput.RaiseEvent(invalidEnter);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            invalidEnter.Handled
+                            && keyboardInput.IsFocused
+                            && keyboardInput.Text == "invalid/path"
+                            && !keyboardExtensions.Children.OfType<Button>().Any()
+                            && keyboardScanSaveCalls == 0,
+                            "Invalid extension Enter must preserve the draft and avoid staging or saving.");
+
+                        keyboardInput.Text = "JFIF";
+                        var enterToAdd = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Enter
+                        };
+                        keyboardInput.RaiseEvent(enterToAdd);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            enterToAdd.Handled
+                            && keyboardInput.IsFocused
+                            && string.IsNullOrEmpty(keyboardInput.Text)
+                            && keyboardExtensions.Children.OfType<Button>()
+                                .Count() == 1
+                            && keyboardExtensions.Children.OfType<Button>()
+                                .Any(button =>
+                                    AutomationProperties.GetName(button)
+                                        == "独自読み込み対象 .jfif を削除"),
+                            "Unmodified Enter did not stage the extension once while retaining keyboard input focus.");
+
+                        keyboardInput.Text = "JFIF";
+                        var duplicateEnter = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Enter
+                        };
+                        keyboardInput.RaiseEvent(duplicateEnter);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            duplicateEnter.Handled
+                            && keyboardInput.IsFocused
+                            && keyboardInput.Text == "JFIF"
+                            && keyboardExtensions.Children.OfType<Button>()
+                                .Count() == 1
+                            && keyboardScanSaveCalls == 0,
+                            "Duplicate extension Enter must not stage twice or save settings.");
+
+                        keyboardInput.Text = "zzfocus";
+                        var modifiedEnter = new KeyEventArgs
+                        {
+                            RoutedEvent = InputElement.KeyDownEvent,
+                            Key = Key.Enter,
+                            KeyModifiers = KeyModifiers.Shift
+                        };
+                        keyboardInput.RaiseEvent(modifiedEnter);
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            !modifiedEnter.Handled
+                            && keyboardInput.Text == "zzfocus"
+                            && keyboardExtensions.Children.OfType<Button>()
+                                .Count() == 1,
+                            "Modified Enter unexpectedly staged a custom extension.");
+
+                        keyboardAdd.RaiseEvent(
+                            new RoutedEventArgs(Button.ClickEvent));
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            string.IsNullOrEmpty(keyboardInput.Text)
+                            && keyboardExtensions.Children.OfType<Button>()
+                                .Count() == 2,
+                            "Existing Add button no longer stages exactly one extension.");
+                        Require(
+                            keyboardScanSaveCalls == 0,
+                            "Staging custom extensions must not persist scan settings until explicit Save.");
 
                         var focusedRemoval =
                             keyboardExtensions.Children
