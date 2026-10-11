@@ -3715,6 +3715,76 @@ try
                     && scopeControls.State.TagNames.SequenceEqual(
                         ["renamed-short"], StringComparer.Ordinal),
                     "Resize replaced Browse Search, lost keyboard focus, or discarded filter scope.");
+
+                // Enter must bypass an actual pending debounce, not
+                // merely revisit a query published before resizing.
+                var sortBeforeKeyboardSearch =
+                    scopeControls.State.SortOrder;
+                searchAfterResize.Text = "instant keyboard query";
+                var modifiedSearch = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Enter,
+                    KeyModifiers = KeyModifiers.Control
+                };
+                searchAfterResize.RaiseEvent(modifiedSearch);
+                Require(
+                    !modifiedSearch.Handled
+                    && scopeControls.State.SearchText
+                        != "instant keyboard query",
+                    "Modified Enter unexpectedly bypassed Browse search debounce.");
+
+                var enterSearch = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Enter
+                };
+                searchAfterResize.RaiseEvent(enterSearch);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    enterSearch.Handled
+                    && searchAfterResize.IsFocused
+                    && scopeControls.State.SearchText
+                        == "instant keyboard query"
+                    && scopeControls.State.TagNames.SequenceEqual(
+                        ["renamed-short"], StringComparer.Ordinal)
+                    && scopeControls.State.SortOrder
+                        == sortBeforeKeyboardSearch
+                    && renamedScopeState?.SearchText
+                        == "instant keyboard query",
+                    "Enter did not immediately apply Browse search while preserving focused input and tag scope.");
+
+                var escapeSearch = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Escape
+                };
+                searchAfterResize.RaiseEvent(escapeSearch);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    escapeSearch.Handled
+                    && searchAfterResize.Text == string.Empty
+                    && searchAfterResize.IsFocused
+                    && scopeControls.State.SearchText == string.Empty
+                    && scopeControls.State.TagNames.SequenceEqual(
+                        ["renamed-short"], StringComparer.Ordinal)
+                    && scopeControls.State.SortOrder
+                        == sortBeforeKeyboardSearch
+                    && renamedScopeState?.SearchText == string.Empty,
+                    "Escape did not clear only Browse search while preserving focus and other filters.");
+
+                var blankEscape = new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Escape
+                };
+                searchAfterResize.RaiseEvent(blankEscape);
+                Dispatcher.UIThread.RunJobs();
+                Require(
+                    !blankEscape.Handled
+                    && searchAfterResize.IsFocused,
+                    "Escape on an empty search should remain available to surrounding navigation.");
+
                 scopeControls.DisposeTransientWork();
                 responsiveBrowseWindow.Close();
                 Dispatcher.UIThread.RunJobs();
