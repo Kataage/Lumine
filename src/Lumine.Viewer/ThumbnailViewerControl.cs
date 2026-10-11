@@ -2262,9 +2262,10 @@ public sealed class ThumbnailViewerControl : UserControl
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var state = session.Diagnostics;
-                    if (state.AttachedTiles > 0
-                        && state.ReadyTiles >= state.AttachedTiles
-                        && state.ActiveBitmapDecodes == 0)
+                    if (CanWarmAheadOfViewportForSmoke(
+                            state.AttachedTiles,
+                            state.ReadyTiles,
+                            state.ActiveBitmapDecodes))
                     {
                         Interlocked.Increment(
                             ref _lookaheadPredecodeEligible);
@@ -2369,6 +2370,23 @@ public sealed class ThumbnailViewerControl : UserControl
         catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
         {
         }
+    }
+
+    // One damaged/slow visible thumbnail must not veto all future
+    // scrolling readiness. Speculate only when native decoders are idle
+    // and the rest of the viewport is substantially painted.
+    internal static bool CanWarmAheadOfViewportForSmoke(
+        int attachedTiles,
+        int readyTiles,
+        int activeBitmapDecodes)
+    {
+        if (attachedTiles <= 0 || activeBitmapDecodes != 0)
+        {
+            return false;
+        }
+
+        var toleratedSlowTiles = Math.Min(2, attachedTiles / 8);
+        return readyTiles >= attachedTiles - toleratedSlowTiles;
     }
 
     // Prefer the next full screen of thumbnails during ordinary scroll,
