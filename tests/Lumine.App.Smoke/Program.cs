@@ -7719,6 +7719,7 @@ try
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
                                 () => Task.CompletedTask,
                                 () => Task.CompletedTask,
                                 async () =>
@@ -8829,6 +8830,11 @@ try
                                 ? 512L * 1024 * 1024
                                 : appHost.ResourcePolicy
                                     .EncodedThumbnailMemoryByteLimit)
+                        && window.SettingsSnapshot.DecodedThumbnailByteLimit
+                            == (appHost.Settings.ResourcePolicy
+                                    ?.DecodedThumbnailByteLimit
+                                ?? appHost.ResourcePolicy
+                                    .DecodedThumbnailByteLimit)
                         && window.SettingsSnapshot.ScanExtensions.Count > 0
                         && window.SettingsSnapshot.ScanExtensions.All(
                             extension =>
@@ -9203,6 +9209,7 @@ try
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
                             () => Task.CompletedTask,
                             () => Task.CompletedTask,
                             () => Task.CompletedTask);
@@ -9416,8 +9423,45 @@ try
                                 string.Equals(
                                     block.Text,
                                     "高速再表示用メモリ上限",
+                                    StringComparison.Ordinal))
+                            && advancedSettingsText.Any(block =>
+                                string.Equals(
+                                    block.Text,
+                                    "画像先読み用メモリ上限（展開済み）",
                                     StringComparison.Ordinal)),
                             "Advanced Settings disclosure did not expose its cache budget controls.");
+
+                        // Do not equate the visible compressed cache
+                        // selector with native decoded ahead-preloading.
+                        // The actual persisted Policy -> ViewerOptions
+                        // route must respect the separate Bitmap budget
+                        // AND a sufficient independent entry cap.
+                        var selectedDecodedPolicy =
+                            CoreResourcePolicy.Resolve(
+                                new ResourcePolicySettings
+                                {
+                                    DecodedThumbnailByteLimit =
+                                        128L * 1024 * 1024,
+                                    DecodedThumbnailEntryLimit =
+                                        CoreResourcePolicy
+                                            .MaxDecodedThumbnailEntryLimit
+                                });
+                        var decodedOptions =
+                            ViewerOptions.FromResourcePolicy(
+                                selectedDecodedPolicy);
+                        var untouchedEncoded =
+                            CoreResourcePolicy.Default
+                                .EncodedThumbnailMemoryByteLimit;
+                        Require(
+                            decodedOptions.DecodedBitmapByteLimit
+                                == 128L * 1024 * 1024
+                            && decodedOptions.DecodedBitmapEntryLimit
+                                == CoreResourcePolicy
+                                    .MaxDecodedThumbnailEntryLimit
+                            && selectedDecodedPolicy
+                                .EncodedThumbnailMemoryByteLimit
+                                == untouchedEncoded,
+                            "Configured decoded ahead-memory does not reach real viewer cache or incorrectly alters encoded thumbnails.");
 
                         CaptureVisualEvidence(
                             window,
