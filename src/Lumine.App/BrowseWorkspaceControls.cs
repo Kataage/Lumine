@@ -752,6 +752,7 @@ internal sealed class BrowseWorkspaceControls : UserControl
     private void AttachHandlers()
     {
         _search.TextChanged += OnSearchTextChanged;
+        _search.KeyDown += OnSearchKeyDown;
         _sort.SelectionChanged += OnSortChanged;
         _rating.SelectionChanged += OnRatingChanged;
         _status.SelectionChanged += OnStatusChanged;
@@ -1407,6 +1408,55 @@ internal sealed class BrowseWorkspaceControls : UserControl
         _searchDebounce?.Cancel();
         _searchDebounce?.Dispose();
         _searchDebounce = null;
+    }
+
+    // Enter commits a typed search without waiting for the debounce.
+    // Escape clears only the search text; it does not alter active folder,
+    // tag/rating refinements or sort. Modified keys retain their owners.
+    private async void OnSearchKeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        if (e.Handled || e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            if (string.IsNullOrEmpty(_search.Text))
+            {
+                return;
+            }
+
+            _search.Text = string.Empty;
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Enter)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _searchDebounce?.Cancel();
+        _searchDebounce?.Dispose();
+        _searchDebounce = null;
+
+        try
+        {
+            await SetStateAsync(
+                State with
+                {
+                    SearchText = _search.Text?.Trim()
+                        ?? string.Empty
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer search or navigation superseded this interaction.
+        }
     }
 
     private async void OnSearchTextChanged(
