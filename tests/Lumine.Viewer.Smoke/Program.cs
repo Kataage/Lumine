@@ -1277,6 +1277,11 @@ internal static class Program
                 isList: false, configuredRows: 2,
                 visibleRows: 5, columns: 7, attachedTiles: 35,
                 new ViewerOptions(), isFarSeek: true);
+        var farSeekList =
+            ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
+                isList: true, configuredRows: 2,
+                visibleRows: 9, columns: 1, attachedTiles: 12,
+                twoSidedOptions, isFarSeek: true);
         var optedOut =
             ThumbnailViewerControl.ResolveDirectionalLookaheadForSmoke(
                 isList: true, configuredRows: 0,
@@ -1308,6 +1313,9 @@ internal static class Program
             && normalList.OppositeBitmapRows >= 1
             && farSeek.PreferredSourceRows == 2
             && farSeek.OppositeSourceRows == 2
+            && farSeekList.PreferredSourceRows == 3
+            && farSeekList.OppositeSourceRows == 3
+            && farSeekList.PreferredBitmapRows >= 3
             && optedOut.PreferredSourceRows == 0
             && optedOut.PreferredBitmapRows == 0
             && oneRow.PreferredSourceRows == 1
