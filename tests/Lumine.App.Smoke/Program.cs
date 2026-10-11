@@ -9218,6 +9218,89 @@ try
                         "Custom scan-extension removal did not update the staged Settings state.");
 
 
+                    // The Settings widget itself must submit the real
+                    // decoded Bitmap limit callback, not just display a
+                    // label and rely on a separately simulated policy.
+                    long? requestedAheadBytes = null;
+                    var aheadSettingsPage =
+                        ProductSettingsView.Create(
+                            window.SettingsSnapshot,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            _ => Task.CompletedTask,
+                            bytes =>
+                            {
+                                requestedAheadBytes = bytes;
+                                return Task.CompletedTask;
+                            },
+                            _ => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            () => Task.CompletedTask,
+                            new HashSet<string>(
+                                StringComparer.Ordinal)
+                            {
+                                "詳細設定"
+                            });
+                    var aheadSettingsWindow = new Window
+                    {
+                        Width = 900,
+                        Height = 900,
+                        Content = aheadSettingsPage
+                    };
+                    aheadSettingsWindow.Show();
+                    try
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        var aheadBudgetSelector =
+                            aheadSettingsPage.GetVisualDescendants()
+                                .OfType<ComboBox>()
+                                .Single(control =>
+                                    AutomationProperties.GetName(control)
+                                        == "画像先読み用メモリ上限（展開済み）");
+                        var aheadChoices =
+                            aheadBudgetSelector.ItemsSource!
+                                .Cast<string>()
+                                .ToArray();
+                        var nextAheadIndex =
+                            Array.FindIndex(
+                                aheadChoices,
+                                choice => choice ==
+                                    "128 MiB");
+                        Require(
+                            aheadBudgetSelector.IsEffectivelyVisible
+                            && nextAheadIndex >= 0,
+                            "Advanced Settings did not mount the independent decoded ahead-memory budget control.");
+                        // Always force a different selection even when
+                        // the user's fixture begins at 128 MiB.
+                        var selectedAheadIndex =
+                            nextAheadIndex
+                                == aheadBudgetSelector.SelectedIndex
+                                ? Array.FindIndex(
+                                    aheadChoices,
+                                    choice => choice == "96 MiB")
+                                : nextAheadIndex;
+                        Require(
+                            selectedAheadIndex >= 0,
+                            "Decoded ahead-memory fixture lacks 96/128 MiB choices.");
+                        aheadBudgetSelector.SelectedIndex =
+                            selectedAheadIndex;
+                        Dispatcher.UIThread.RunJobs();
+                        Require(
+                            requestedAheadBytes ==
+                                (aheadChoices[selectedAheadIndex]
+                                    == "128 MiB"
+                                        ? 128L * 1024 * 1024
+                                        : 96L * 1024 * 1024),
+                            "Selecting the user-visible ahead-memory control did not invoke the decoded-Bitmap persistence callback.");
+                    }
+                    finally
+                    {
+                        aheadSettingsWindow.Close();
+                        Dispatcher.UIThread.RunJobs();
+                    }
+
                     // Keyboard focus regression is exercised on a separate
                     // REAL mounted Settings window. MainWindow's asynchronous
                     // navigation refresh may replace its Settings tree while
