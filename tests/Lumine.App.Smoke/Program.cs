@@ -9390,6 +9390,141 @@ try
                             "Mounted scan-target save did not restore the original effective extension set.");
                     }
 
+                    if (iteration == 0)
+                    {
+                        // Real mounted checkbox: cancellation must not
+                        // display success or leave an uncommitted cache
+                        // mode selected. A later failure must roll back
+                        // to the *last* successful save, not the snapshot
+                        // captured when the page was first created.
+                        var modeSaveAttempts = 0;
+                        var committedMode =
+                            ThumbnailStorageMode.MemoryOnly;
+                        var modeSettingsPage =
+                            ProductSettingsView.Create(
+                                window.SettingsSnapshot,
+                                _ => Task.CompletedTask,
+                                mode =>
+                                {
+                                    modeSaveAttempts++;
+                                    if (modeSaveAttempts == 1)
+                                    {
+                                        return Task.FromException(
+                                            new OperationCanceledException(
+                                                "Simulated decline"));
+                                    }
+
+                                    if (modeSaveAttempts == 3)
+                                    {
+                                        return Task.FromException(
+                                            new IOException(
+                                                "Simulated settings write failure"));
+                                    }
+
+                                    committedMode = mode;
+                                    return Task.CompletedTask;
+                                },
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                _ => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.CompletedTask,
+                                () => Task.CompletedTask);
+                        var modeSettingsWindow = new Window
+                        {
+                            Width = 900,
+                            Height = 900,
+                            Content = modeSettingsPage
+                        };
+                        modeSettingsWindow.Show();
+                        try
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            var modeToggle =
+                                modeSettingsPage.GetVisualDescendants()
+                                    .OfType<CheckBox>()
+                                    .Single(check =>
+                                        string.Equals(
+                                            check.Content as string,
+                                            "表示用サムネイルを次回起動後も再利用する",
+                                            StringComparison.Ordinal));
+                            Require(
+                                modeToggle.IsChecked == false,
+                                "Thumbnail cache mode fixture did not start MemoryOnly.");
+                            bool HasModeStatus(string expected) =>
+                                modeSettingsPage.GetVisualDescendants()
+                                    .OfType<TextBlock>()
+                                    .Any(text => text.Text == expected);
+
+                            modeToggle.IsChecked = true;
+                            modeToggle.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                modeSaveAttempts == 1
+                                && committedMode
+                                    == ThumbnailStorageMode.MemoryOnly
+                                && modeToggle.IsEnabled
+                                && modeToggle.IsChecked == false
+                                && HasModeStatus(
+                                    "変更をキャンセルしました。")
+                                && !HasModeStatus(
+                                    "キャッシュ方式を保存しました。次回起動から有効です。"),
+                                "Declining cache persistence falsely reported success or left an unsaved toggle.");
+
+                            modeToggle.IsChecked = true;
+                            modeToggle.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                modeSaveAttempts == 2
+                                && committedMode
+                                    == ThumbnailStorageMode.PersistentDisk
+                                && modeToggle.IsEnabled
+                                && modeToggle.IsChecked == true
+                                && HasModeStatus(
+                                    "キャッシュ方式を保存しました。次回起動から有効です。"),
+                                "Confirmed cache mode was not shown as saved.");
+
+                            modeToggle.IsChecked = false;
+                            modeToggle.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                modeSaveAttempts == 3
+                                && committedMode
+                                    == ThumbnailStorageMode.PersistentDisk
+                                && modeToggle.IsChecked == true
+                                && HasModeStatus(
+                                    "保存できませんでした。もう一度お試しください。"),
+                                "Failed cache mode write did not restore the most recent committed state.");
+
+                            modeToggle.IsChecked = false;
+                            modeToggle.RaiseEvent(
+                                new RoutedEventArgs(
+                                    Button.ClickEvent));
+                            Dispatcher.UIThread.RunJobs();
+                            Require(
+                                modeSaveAttempts == 4
+                                && committedMode
+                                    == ThumbnailStorageMode.MemoryOnly
+                                && modeToggle.IsEnabled
+                                && modeToggle.IsChecked == false
+                                && HasModeStatus(
+                                    "キャッシュ方式を保存しました。次回起動から有効です。"),
+                                "Cache mode toggle did not recover after an error.");
+                        }
+                        finally
+                        {
+                            modeSettingsWindow.Close();
+                            Dispatcher.UIThread.RunJobs();
+                        }
+                    }
+
                     // The Settings widget itself must submit the real
                     // decoded Bitmap limit callback, not just display a
                     // label and rely on a separately simulated policy.
