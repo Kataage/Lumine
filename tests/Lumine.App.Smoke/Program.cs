@@ -566,6 +566,10 @@ try
             {
                 EncodedThumbnailMemoryByteLimit =
                     512L * 1024 * 1024,
+                DecodedThumbnailByteLimit =
+                    128L * 1024 * 1024,
+                DecodedThumbnailEntryLimit =
+                    CoreResourcePolicy.MaxDecodedThumbnailEntryLimit,
                 ThumbnailCacheByteLimit =
                     4L * 1024 * 1024 * 1024
             });
@@ -635,6 +639,24 @@ try
                 .ThumbnailCacheByteLimit
                 == 4L * 1024 * 1024 * 1024,
             "User-facing persistent thumbnail disk budget did not persist across restart.");
+        var restoredViewerOptions =
+            ViewerOptions.FromResourcePolicy(
+                cleanRestart.ResourcePolicy);
+        Require(
+            cleanRestart.Settings.ResourcePolicy
+                ?.DecodedThumbnailByteLimit
+                == 128L * 1024 * 1024
+            && cleanRestart.ResourcePolicy
+                .DecodedThumbnailByteLimit
+                == 128L * 1024 * 1024
+            && restoredViewerOptions.DecodedBitmapByteLimit
+                == 128L * 1024 * 1024
+            && restoredViewerOptions.DecodedBitmapEntryLimit
+                == CoreResourcePolicy.MaxDecodedThumbnailEntryLimit
+            && cleanRestart.ResourcePolicy
+                .EncodedThumbnailMemoryByteLimit
+                == 512L * 1024 * 1024,
+            "Configured native decoded Bitmap lookahead budget was not preserved independently across restart into ViewerOptions.");
 
         await cleanRestart.CompleteCleanShutdownAsync();
     }
