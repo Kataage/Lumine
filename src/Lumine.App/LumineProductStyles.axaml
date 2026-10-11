@@ -593,6 +593,9 @@
   <Style Selector="Button.lumine-nav-item.selected">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelected}" />
     <Setter Property="Foreground" Value="{DynamicResource Lumine.Foreground}" />
+    <!-- A quiet one-pixel keyline makes the active location legible
+         without reviving the rejected bright vertical accent stripe. -->
+    <Setter Property="BorderBrush" Value="{DynamicResource Lumine.BorderStrong}" />
   </Style>
   <Style Selector="Button.lumine-nav-item.selected:pointerover">
     <Setter Property="Background" Value="{DynamicResource Lumine.InteractionSelectedHover}" />

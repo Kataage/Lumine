@@ -342,7 +342,8 @@ public sealed class MainWindow : Window
         _navigationTitle =
             new TextBlock
             {
-                Text = _navigationDestination,
+                Text = ResolveNavigationContextHeading(
+                    _navigationDestination),
                 Foreground = LumineDesign.Foreground,
                 FontSize = LumineDesign.BodyFontSize,
                 FontWeight = FontWeight.Bold,
@@ -1096,7 +1097,8 @@ public sealed class MainWindow : Window
             !mainWorkspaceDestination
             || (_navigationPinned
                 && ResolveLayoutWidth() >= 1200);
-        _navigationTitle.Text = destination;
+        _navigationTitle.Text =
+            ResolveNavigationContextHeading(destination);
         ApplyNavigationLayout(
             ResolveLayoutWidth());
         _navigationRailHost.Content =
@@ -1651,7 +1653,7 @@ public sealed class MainWindow : Window
                         == "設定スクロール")?.Offset;
 
         _navigationTitle.Text =
-            _navigationDestination;
+            ResolveNavigationContextHeading(_navigationDestination);
 
         if (IsMainWorkspaceDestination(
                 _navigationDestination))
@@ -2328,6 +2330,21 @@ public sealed class MainWindow : Window
 
         return deleted;
     }
+
+    // The destination command and the contextual collection title
+    // must not repeat the same one-word label in a docked sidebar.
+    // Clarify what the second level actually contains without adding a
+    // new navigation destination or changing focus semantics.
+    private static string ResolveNavigationContextHeading(
+        string destination) =>
+        destination switch
+        {
+            "ライブラリ" => "ライブラリ一覧",
+            "フォルダー" => "フォルダーから探す",
+            "タグ" => "タグから探す",
+            "公開履歴" => "公開履歴の管理",
+            _ => destination
+        };
 
     private static bool IsMainWorkspaceDestination(
         string destination) =>

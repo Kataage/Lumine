@@ -6594,6 +6594,15 @@ try
                         "Compact navigation still stretches individual icon outlines rather than a unified 24-DIP frame.");
 
                     Require(
+                        window.GetVisualDescendants()
+                            .OfType<Border>()
+                            .Count(divider =>
+                                divider.IsEffectivelyVisible
+                                && divider.Classes.Contains(
+                                    "lumine-nav-rail-divider")) == 1,
+                        "Compact rail did not preserve a single Browse/Publish group break.");
+
+                    Require(
                         libraryDestination.Classes.Contains(
                             "lumine-nav-item")
                         && libraryDestination.Classes.Contains(
@@ -8016,6 +8025,70 @@ try
                             && window.IsNavigationPaneVisibleForSmoke
                             && window.PinnedNavigationUsesUnifiedSidebarForSmoke,
                             "Wide default workspace did not present the unified desktop sidebar.");
+                        // This is a two-level navigation system,
+                        // not a pile of five visually identical links.
+                        // Check *mounted* grouping, reading order and
+                        // distinct contextual title at desktop width.
+                        var sidebarGroups =
+                            window.GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Where(label =>
+                                    label.IsEffectivelyVisible
+                                    && label.Classes.Contains(
+                                        "lumine-nav-section-header"))
+                                .ToArray();
+                        var sidebarDestinations =
+                            window.GetVisualDescendants()
+                                .OfType<Button>()
+                                .Where(button =>
+                                    button.IsEffectivelyVisible
+                                    && button.Classes.Contains("lumine-nav-item")
+                                    && !button.Classes.Contains("rail"))
+                                .ToArray();
+                        var browseTop = sidebarGroups.Length >= 1
+                            ? sidebarGroups[0].TranslatePoint(
+                                new Point(0, 0), window)
+                            : null;
+                        var publishTop = sidebarGroups.Length >= 2
+                            ? sidebarGroups[1].TranslatePoint(
+                                new Point(0, 0), window)
+                            : null;
+                        var firstDestinationTop =
+                            sidebarDestinations.Length >= 1
+                                ? sidebarDestinations[0].TranslatePoint(
+                                    new Point(0, 0), window)
+                                : null;
+                        var lastBrowseBottom =
+                            sidebarDestinations.Length >= 3
+                                ? sidebarDestinations[2].TranslatePoint(
+                                    new Point(0, 0), window)
+                                : null;
+                        var publicationTop =
+                            sidebarDestinations.Length >= 4
+                                ? sidebarDestinations[3].TranslatePoint(
+                                    new Point(0, 0), window)
+                                : null;
+                        Require(
+                            sidebarGroups.Length == 2
+                            && sidebarGroups[0].Text == "画像を探す"
+                            && sidebarGroups[1].Text == "公開・管理"
+                            && sidebarDestinations.Length == 5
+                            && browseTop is { } browsePoint
+                            && firstDestinationTop is { } firstPoint
+                            && lastBrowseBottom is { } lastBrowsePoint
+                            && publishTop is { } publishPoint
+                            && publicationTop is { } publicationPoint
+                            && browsePoint.Y < firstPoint.Y
+                            && publishPoint.Y
+                                > lastBrowsePoint.Y
+                                + sidebarDestinations[2].Bounds.Height
+                            && publishPoint.Y < publicationPoint.Y
+                            && window.GetVisualDescendants()
+                                .OfType<TextBlock>()
+                                .Any(label =>
+                                    label.IsEffectivelyVisible
+                                    && label.Text == "ライブラリ一覧"),
+                            "Docked sidebar lost its browse/publish grouping, reading order or distinct contextual collection heading.");
                         CaptureVisualEvidence(
                             window,
                             "browse-1440x900-sidebar");
