@@ -11731,6 +11731,51 @@ try
                             browseSearch),
                         "Window-level Ctrl+F no longer focused Browse search.");
 
+                    // Compact navigation is an overlay above Browse.
+                    // Ctrl+F from its focused Close command must dismiss
+                    // the overlay *before* focusing the existing search.
+                    // Keep the active runtime, selection, and input intact.
+                    var ctrlFindRestoreWidth = window.Width;
+                    var ctrlFindRestoreHeight = window.Height;
+                    window.Width = 900;
+                    window.Height = 600;
+                    window.SetNavigationPinnedForSmoke(false);
+                    window.SetNavigationPaneVisibleForSmoke(true);
+                    Dispatcher.UIThread.RunJobs();
+                    var ctrlFindOverlayClose =
+                        window.GetVisualDescendants()
+                            .OfType<Button>()
+                            .Single(button =>
+                                button.IsEffectivelyVisible
+                                && AutomationProperties.GetName(button)
+                                    == "ナビゲーションを閉じる");
+                    Require(
+                        window.IsNavigationPaneOverlayForSmoke
+                        && ctrlFindOverlayClose.Focus(),
+                        "Ctrl+F regression could not focus compact navigation overlay.");
+
+                    var ctrlFindFromOverlay = new KeyEventArgs
+                    {
+                        RoutedEvent = InputElement.KeyDownEvent,
+                        Key = Key.F,
+                        KeyModifiers = KeyModifiers.Control
+                    };
+                    ctrlFindOverlayClose.RaiseEvent(ctrlFindFromOverlay);
+                    Dispatcher.UIThread.RunJobs();
+                    Require(
+                        ctrlFindFromOverlay.Handled
+                        && !window.IsNavigationPaneVisibleForSmoke
+                        && browseSearch.IsEffectivelyVisible
+                        && ReferenceEquals(
+                            window.FocusManager.GetFocusedElement(),
+                            browseSearch)
+                        && shortcutViewer.SelectedAssetCount > 0,
+                        "Ctrl+F did not dismiss compact navigation and focus the live Browse search without losing selection.");
+
+                    window.Width = ctrlFindRestoreWidth;
+                    window.Height = ctrlFindRestoreHeight;
+                    Dispatcher.UIThread.RunJobs();
+
                     // Open the actual Browse popup from its keyboard
                     // trigger; focus must enter its first actionable control
                     // and return to that trigger after Escape/light-dismiss.
