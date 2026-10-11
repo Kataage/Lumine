@@ -8110,7 +8110,33 @@ try
                             && tagEditorDraft.Text == "unsaved-tag-name",
                             "Asynchronous Tag refresh closed its active create editor or lost the draft.");
                         tagEditorFlyout.Hide();
+                        for (var deferredTagPass = 0;
+                             deferredTagPass < 30
+                                 && ReferenceEquals(
+                                     window.NavigationContentForSmoke,
+                                     tagsWhileEditing);
+                             deferredTagPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(1);
+                        }
                         Dispatcher.UIThread.RunJobs();
+                        var resumedTagView =
+                            window.NavigationContentForSmoke!;
+                        var resumedTagQuery =
+                            resumedTagView.GetVisualDescendants()
+                                .OfType<TextBox>()
+                                .Single(box =>
+                                    AutomationProperties.GetName(box)
+                                        == "タグを検索");
+                        Require(
+                            !ReferenceEquals(
+                                resumedTagView,
+                                tagsWhileEditing)
+                            && resumedTagQuery.Text
+                                == "unsaved-tag-filter"
+                            && !tagEditorFlyout.IsOpen,
+                            "Closing the protected Tag editor did not replay the deferred metadata snapshot with its search query.");
 
                         // Once focus leaves Tag search, an ordinary metadata
                         // refresh must update the live view while keeping
@@ -8303,7 +8329,22 @@ try
                                 == "unsaved-publication",
                             "Asynchronous Publication refresh discarded an active editor draft.");
                         publicationEditorFlyout.Hide();
-                        Dispatcher.UIThread.RunJobs();
+                        for (var deferredPublicationPass = 0;
+                             deferredPublicationPass < 30
+                                 && ReferenceEquals(
+                                     window.NavigationContentForSmoke,
+                                     publicationWhileEditing);
+                             deferredPublicationPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(1);
+                        }
+                        Require(
+                            !ReferenceEquals(
+                                window.NavigationContentForSmoke,
+                                publicationWhileEditing)
+                            && !publicationEditorFlyout.IsOpen,
+                            "Closing the protected Publication editor left a stale contextual view until another refresh.");
 
                         window.NavigateForSmoke("ライブラリ");
                         await window.NavigationRefreshForSmokeAsync();
@@ -8389,6 +8430,22 @@ try
                         Require(
                             settingsNav.Focus(),
                             "Settings navigation focus could not leave the editor.");
+                        for (var deferredSettingsPass = 0;
+                             deferredSettingsPass < 30
+                                 && ReferenceEquals(
+                                     window.WorkspacePageForSmoke,
+                                     settingsWhileEditing);
+                             deferredSettingsPass++)
+                        {
+                            Dispatcher.UIThread.RunJobs();
+                            await Task.Delay(1);
+                        }
+                        Require(
+                            !ReferenceEquals(
+                                window.WorkspacePageForSmoke,
+                                settingsWhileEditing)
+                            && settingsNav.IsFocused,
+                            "Leaving the Settings editor did not automatically replay a deferred refresh or preserve global focus.");
                         window.StartNavigationRefreshForSmoke();
                         await window.NavigationRefreshForSmokeAsync();
                         Dispatcher.UIThread.RunJobs();
