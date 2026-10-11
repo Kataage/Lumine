@@ -74,6 +74,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
     private readonly TextBlock _groups;
     private readonly TextBlock _relations;
     private readonly StackPanel _relationCards;
+    private readonly Border _workCard;
+    private readonly Border _groupCard;
+    private readonly Border _lineageCard;
+    private readonly TextBlock _creativeEmptyState;
     private readonly Func<AssetRelationInfo, Task>? _deleteRelationRequested;
     private readonly TextBlock _publications;
     private readonly TextBlock _publicationCount;
@@ -895,14 +899,34 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         _creativeActionSurface =
             CreateInspectorActionFooter(creativeFooterContent);
 
-        creative.Children.Add(
+        // The empty Creative tab must explain the next action once,
+        // not stack three full-height cards that all say "なし".
+        // Cards are shown only when corresponding associations exist;
+        // the pinned Create/Add footer remains directly reachable.
+        _creativeEmptyState =
+            new TextBlock
+            {
+                Text = "制作情報を読み込み中…",
+                Foreground = LumineDesign.MutedForeground,
+                FontSize = LumineDesign.BodyFontSize,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(
+                    LumineDesign.Space8,
+                    LumineDesign.Space12)
+            };
+        creative.Children.Add(_creativeEmptyState);
+        _workCard =
             CreateInspectorSectionCard(
-                "Work",
-                _works));
-        creative.Children.Add(
+                "作品",
+                _works);
+        _workCard.IsVisible = false;
+        creative.Children.Add(_workCard);
+        _groupCard =
             CreateInspectorSectionCard(
-                "Generation Group",
-                _groups));
+                "生成グループ",
+                _groups);
+        _groupCard.IsVisible = false;
+        creative.Children.Add(_groupCard);
 
         var lineage =
             new StackPanel
@@ -911,10 +935,12 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             };
         lineage.Children.Add(_relations);
         lineage.Children.Add(_relationCards);
-        creative.Children.Add(
+        _lineageCard =
             CreateInspectorSectionCard(
-                "Lineage",
-                lineage));
+                "派生関係",
+                lineage);
+        _lineageCard.IsVisible = false;
+        creative.Children.Add(_lineageCard);
 
         var creativeBody =
             new StackPanel
@@ -930,7 +956,7 @@ internal sealed class ContextualAssetDetailPanel : UserControl
         creativeBody.Children.Add(
             new TextBlock
             {
-                Text = "制作コンテキスト",
+                Text = "関連する作品・生成情報",
                 Foreground =
                     LumineDesign.MutedForeground,
                 FontSize =
@@ -1243,6 +1269,17 @@ internal sealed class ContextualAssetDetailPanel : UserControl
 
     internal string NotesText =>
         _notesEditor.Text ?? string.Empty;
+
+    internal (bool EmptyVisible, bool WorkVisible,
+        bool GroupVisible, bool LineageVisible)
+        CreativeVisibilityForSmoke =>
+        (_creativeEmptyState.IsVisible,
+         _workCard.IsVisible,
+         _groupCard.IsVisible,
+         _lineageCard.IsVisible);
+
+    internal string CreativeEmptyTextForSmoke =>
+        _creativeEmptyState.Text ?? string.Empty;
 
     internal string WorksText =>
         _works.Text ?? string.Empty;
@@ -2192,10 +2229,36 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             lease.Dispose);
     }
 
+    private void ShowCreativeMessage(string message)
+    {
+        _workCard.IsVisible = false;
+        _groupCard.IsVisible = false;
+        _lineageCard.IsVisible = false;
+        _creativeEmptyState.Text = message;
+        _creativeEmptyState.IsVisible = true;
+    }
+
+    private void ShowCreativeAssociations(
+        int workCount,
+        int groupCount,
+        int relationCount)
+    {
+        _workCard.IsVisible = workCount > 0;
+        _groupCard.IsVisible = groupCount > 0;
+        _lineageCard.IsVisible = relationCount > 0;
+        var empty = workCount == 0
+            && groupCount == 0
+            && relationCount == 0;
+        _creativeEmptyState.Text =
+            "まだ制作情報が関連付けられていません。";
+        _creativeEmptyState.IsVisible = empty;
+    }
+
     private async Task LoadCreativeContextAsync(
         long assetId,
         CancellationToken cancellationToken)
     {
+        ShowCreativeMessage("制作情報を読み込み中…");
         _works.Text = "読み込み中…";
         _groups.Text = "読み込み中…";
         _relations.Text = "読み込み中…";
@@ -2264,6 +2327,10 @@ internal sealed class ContextualAssetDetailPanel : UserControl
                                     : $" · {relation.Note}")));
             RenderRelationCards(
                 context.Relations);
+            ShowCreativeAssociations(
+                context.Works.Count,
+                context.GenerationGroups.Count,
+                context.Relations.Count);
 
             _publications.Text =
                 context.Publications.Count == 0
@@ -2308,6 +2375,8 @@ internal sealed class ContextualAssetDetailPanel : UserControl
             _relations.Text = "—";
             _relations.IsVisible = true;
             _relationCards.Children.Clear();
+            ShowCreativeMessage(
+                "制作情報を取得できませんでした。再読み込みしてください。");
             _publications.Text = "—";
             _publicationCount.Text =
                 "取得できませんでした";
