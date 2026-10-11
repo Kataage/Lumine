@@ -70,7 +70,7 @@ internal static class ProductSettingsView
         Func<long, Task> saveDecodedBudget,
         Func<IReadOnlyList<string>, Task> saveScanExtensions,
         Func<Task> rescanCurrentLibrary,
-        Func<Task> clearCache,
+        Func<Task<ThumbnailCacheStats>> clearCache,
         Func<Task> showDiagnostics,
         IReadOnlySet<string>? initiallyExpandedSections = null)
     {
@@ -869,7 +869,7 @@ internal static class ProductSettingsView
         Func<long, Task> saveDiskBudget,
         Func<long, Task> saveMemoryBudget,
         Func<long, Task> saveDecodedBudget,
-        Func<Task> clearCache,
+        Func<Task<ThumbnailCacheStats>> clearCache,
         bool expandAdvanced = false)
     {
         var content = CreateCardStack();
@@ -1229,9 +1229,21 @@ internal static class ProductSettingsView
                 status.Text = "キャッシュを削除しています…";
                 try
                 {
-                    await clearCache();
+                    var refreshedStats =
+                        await clearCache();
+                    // A cache deletion does not replace this Settings tree:
+                    // show fresh measured usage in the same mounted page.
+                    diskStats.Text =
+                        $"現在のキャッシュ: {refreshedStats.FileCount:N0}ファイル / {FormatBytes(refreshedStats.TotalBytes)}";
                     status.Text =
                         "表示用キャッシュを削除しました。元画像・タグ・評価・公開履歴などのユーザーデータは変更していません。";
+                }
+                catch (OperationCanceledException)
+                {
+                    status.Foreground =
+                        LumineDesign.MutedForeground;
+                    status.Text =
+                        "削除をキャンセルしました。";
                 }
                 catch (Exception exception)
                 {

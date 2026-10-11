@@ -3137,7 +3137,7 @@ public sealed class MainWindow : Window
         };
     }
 
-    private async Task ClearThumbnailCacheFromSettingsAsync()
+    private async Task<ThumbnailCacheStats> ClearThumbnailCacheFromSettingsAsync()
     {
         var confirmed =
             await ProductDialogs.ConfirmAsync(
@@ -3148,7 +3148,10 @@ public sealed class MainWindow : Window
                 confirmLabel: "キャッシュを削除");
         if (!confirmed)
         {
-            return;
+            // The caller must distinguish a declined destructive action
+            // from an actual successful deletion.
+            throw new OperationCanceledException(
+                "Thumbnail cache deletion was cancelled.");
         }
 
         var result =
@@ -3163,7 +3166,17 @@ public sealed class MainWindow : Window
         _ = ClearTransientStatusAsync(
             _status.Text);
 
-        StartNavigationRefresh();
+        // Cache pruning really changes the displayed usage, but not
+        // the library/facet snapshot. Read the post-prune facts and update
+        // only this Settings page instead of discarding its save outcome.
+        var refreshedStats =
+            await GetThumbnailCacheStatsAsync(
+                CancellationToken.None);
+        _settingsSnapshot = _settingsSnapshot with
+        {
+            CacheStats = refreshedStats
+        };
+        return refreshedStats;
     }
 
     internal Task<ThumbnailPruneResult>
