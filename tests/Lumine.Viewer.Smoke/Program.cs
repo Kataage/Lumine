@@ -1236,6 +1236,21 @@ internal static class Program
                 }, attachedTiles: 35, nextRowCount: 7),
             "Secondary adjacent-row warming ignored the pinned viewport byte/entry budget.");
 
+        Require(
+            !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 0, readyTiles: 0, activeBitmapDecodes: 0)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 35, readyTiles: 32, activeBitmapDecodes: 0)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 35, readyTiles: 34, activeBitmapDecodes: 1)
+            && ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 35, readyTiles: 33, activeBitmapDecodes: 0)
+            && ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 12, readyTiles: 11, activeBitmapDecodes: 0)
+            && !ThumbnailViewerControl.CanWarmAheadOfViewportForSmoke(
+                attachedTiles: 7, readyTiles: 6, activeBitmapDecodes: 0),
+            "A slow visible tile blocked warmup indefinitely or predecode stole native capacity from active foreground tiles.");
+
         // Stage #634 owner feedback: a two-row source window is visibly
         // too short on a physical Windows library. Ordinary scrolling
         // should warm the next plausible viewport in the direction of
