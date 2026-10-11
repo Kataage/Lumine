@@ -7800,7 +7800,7 @@ try
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
                                 () => Task.CompletedTask,
-                                () => Task.CompletedTask,
+                                () => Task.FromResult(window.SettingsSnapshot.CacheStats),
                                 async () =>
                                 {
                                     invokedWhileDisabled =
@@ -9429,7 +9429,7 @@ try
                                 _ => Task.CompletedTask,
                                 _ => Task.CompletedTask,
                                 () => Task.CompletedTask,
-                                () => Task.CompletedTask,
+                                () => Task.FromResult(window.SettingsSnapshot.CacheStats),
                                 () => Task.CompletedTask);
                         var modeSettingsWindow = new Window
                         {
@@ -9543,7 +9543,7 @@ try
                             },
                             _ => Task.CompletedTask,
                             () => Task.CompletedTask,
-                            () => Task.CompletedTask,
+                            () => Task.FromResult(window.SettingsSnapshot.CacheStats),
                             () => Task.CompletedTask,
                             new HashSet<string>(
                                 StringComparer.Ordinal)
@@ -9623,7 +9623,7 @@ try
                             _ => Task.CompletedTask,
                             _ => Task.CompletedTask,
                             () => Task.CompletedTask,
-                            () => Task.CompletedTask,
+                            () => Task.FromResult(window.SettingsSnapshot.CacheStats),
                             () => Task.CompletedTask);
                     var keyboardSettingsWindow = new Window
                     {
