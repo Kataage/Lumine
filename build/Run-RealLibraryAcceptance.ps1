@@ -242,8 +242,8 @@ function Get-ViewerBackgroundMetadataEvidence {
     $counts = @{}
     foreach ($name in $names) {
         $raw = Get-MetadataValue -Result $Result -Key ($prefix + $name)
-        if ([string]::IsNullOrWhiteSpace($raw) -or
-            -not [long]::TryParse($raw, [ref]([long]$parsed = 0))) {
+        [long]$parsed = 0
+        if (-not [long]::TryParse($raw, [ref]$parsed)) {
             throw "$Mode Viewer background metadata '$name' missing or invalid."
         }
         $counts[$name] = [long]$raw
