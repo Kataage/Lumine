@@ -116,3 +116,43 @@ batch group sizes and commits avoided. First-raster responsiveness and
 real hardware GPU-pressure acceptance remain separate checks to coordinate
 with #634/#635 on the final physical acceptance pass. Until those results are
 verified, `#714` stays OPEN.
+
+
+## Concurrent foreground requests and warm thumbnail revisits — Issue #714 follow-up
+
+Previous App integration verification launched 32 real PNG background requests
+through the **production** `ImageViewerThumbnailProvider`/
+`ThumbnailPipeline`/`ViewerTechnicalMetadataBatcher` path but requested
+foreground and interactive thumbnails only *after* every background job had
+completed. That proved routing on idle, not while competing work was present.
+
+The updated existing App smoke fixture now starts **32 background, one
+foreground, and one interactive request together** on the same registered
+scratch library and single production thumbnail pipeline (12 image workers;
+64 queue entries), with separate fresh paths for foreground/interactive.
+It awaits all requests, requires source identity and dimensions for all 34,
+and asserts only the 32 background records reached the bounded metadata
+queue. Both direct priorities must return thumbnails with source metadata
+and persist guarded SQLite metadata correctly. Report individual
+foreground/interactive completion time, whole mixed cold-pass completion
+time, and the background queue commit histogram **as diagnostics**; do
+not impose a new hosted-runner-dependent time threshold.
+
+A second pass requests the same 32 stale `ViewerAsset` descriptors on
+the already-warm pipeline. Their cached source identity must be reused
+without any further background enqueue, batch/single COMMIT or latency
+histogram sample. The measured warm pass is a **cache reuse behavior check**,
+not a claimed cold apples-to-apples batch speedup. After the pipeline is
+disposed, SQLite pools are cleared and a distinct `LibraryService`
+instance reopens the exact same database to check all **34** persisted
+source metadata records (correct dimensions, valid source identities),
+including foreground and interactive entries.
+
+The experiment is small compared with a real 100k image library and does
+not exercise a physical GPU, but it closes three specific functional gaps:
+(1) routing under mixed-priority concurrent activity,
+(2) avoiding redundant database writes during repeated thumbnail viewing,
+and (3) durable metadata after service/database restart. Existing safety
+guards, batching bounds (128 queued, 64 rows/transaction) and the strict
+8-second/1.5-second Windows gates stay unchanged. User physical approval
+remains deferred until consolidated #634/#635/#714 final acceptance.
