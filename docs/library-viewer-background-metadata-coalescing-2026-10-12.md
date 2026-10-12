@@ -61,3 +61,58 @@ background request p95/p99 under CPU/GPU contention, and no regressions to
 first raster or the strict 8,000ms single-transaction baseline. Continue
 Issue #714; defer final physical-user validation to the single combined
 #634/#635/#714 Windows acceptance pass.
+
+
+## Latency distributions & comparable evidence (next Issue #714 PR)
+
+The existing last-turn PR #719 passed the **full unchanged Windows CI on attempt 2** and was squash-merged to `develop@a069b2e3dc4a023e94053f6a1e5612637be91322`. Attempt 1 failed the independent synthetic 50k Viewer fast-scroll refresh threshold at 1,683.9344ms versus its unchanged 1,500ms hard limit; attempt 2 passed. That observed variance is **preserved**, not considered solved. Neither a synthetic scroll pass nor a warm database pass proves cold product responsiveness.
+
+To enable useful p95/p99 production observations **without storing per-image history or allocating on each image**, a fixed 10-bin, exclusive histogram now samples every completed background metadata write from queue admission through post-COMMIT:
+
+| Bucket | Meaning |
+| --- | --- |
+| `le_2_ms` | up to 2 ms |
+| `le_5_ms` | above 2, up to 5 ms |
+| `le_10_ms` | above 5, up to 10 ms |
+| `le_20_ms` | above 10, up to 20 ms |
+| `le_50_ms` | above 20, up to 50 ms |
+| `le_100_ms` | above 50, up to 100 ms |
+| `le_250_ms` | above 100, up to 250 ms |
+| `le_500_ms` | above 250, up to 500 ms |
+| `le_1000_ms` | above 500, up to 1000 ms |
+| `over_1000_ms` | strictly above 1000 ms |
+
+`viewer.metadata_background_latency_p95_upper_bound_ms` and
+`viewer.metadata_background_latency_p99_upper_bound_ms` are the **upper
+edge of the percentile's bucket, never a fabricated exact percentile**.
+`no_samples` means no completed background writes and `over_1000`
+means only that the tail exceeded this histogram's maximum numeric bound.
+All 10 counters are exported under `viewer.metadata_background_latency_bucket_*_ms`.
+The snapshot itself is nonblocking and at most 10 `long` values; each completed
+write does one additional atomic increment. The method's bounded queue size
+and the transaction's maximum 64 rows are unchanged.
+
+The distribution also counts **committed** batch groups by size (2–8, 9–32,
+33–64), and reports `viewer.metadata_background_avoided_individual_commits`
+as (batched rows – committed batches), which is only a count of
+potential individual transactions saved, not a timing or throughput claim.
+A SQLite stale-guard rejection within an otherwise successful batch can
+still be included in the batch's attempted-row count. Single-item false
+guard results do **not** count as committed successful single writes.
+Failed/canceled-before-write entries never become histogram samples.
+
+The existing 16-way repository coalescer functional acceptance and the real
+32-PNG adapter smoke now also check histogram sample counts, transaction
+accounting and deterministic percentile bucket boundaries. They **do not**
+assert a timing cutoff from synthetic fixtures, nor weaken the unchanged
+8-second 10k metadata gate or 1.5-second Viewer fast-scroll gate.
+
+### What still blocks #714 completion
+
+Obtain repeatable strict Windows **post-merge `develop`** evidence, and
+representative real-library cold/warm Viewer metrics with nonzero write sample
+counts, including source size distribution, p95/p99 coarse completion latency,
+batch group sizes and commits avoided. First-raster responsiveness and
+real hardware GPU-pressure acceptance remain separate checks to coordinate
+with #634/#635 on the final physical acceptance pass. Until those results are
+verified, `#714` stays OPEN.
