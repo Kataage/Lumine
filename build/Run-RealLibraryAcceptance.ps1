@@ -225,6 +225,111 @@ function Get-MetadataValue {
     return [string]$property.Value
 }
 
+# Issue #714: accepted background write histogram evidence, not just passive telemetry.
+# A valid zero-write/zero-sample result is "not-observed", never a speedup pass.
+function Get-ViewerBackgroundMetadataEvidence {
+    param([object]$Result, [string]$Mode)
+
+    $prefix = "viewer.metadata_background_"
+    $names = @(
+        "queued", "single_commits", "batch_commits", "batched_rows",
+        "guard_rejected", "cancelled_before_write", "failed_groups",
+        "peak_queue_depth", "completed_write_latency_ticks",
+        "max_completed_write_latency_ticks", "batch_groups_2_to_8",
+        "batch_groups_9_to_32", "batch_groups_33_to_64",
+        "avoided_individual_commits"
+    )
+    $counts = @{}
+    foreach ($name in $names) {
+        $raw = Get-MetadataValue -Result $Result -Key ($prefix + $name)
+        [long]$parsed = 0
+        if (-not [long]::TryParse($raw, [ref]$parsed)) {
+            throw "$Mode Viewer background metadata '$name' missing or invalid."
+        }
+        $counts[$name] = [long]$raw
+        if ($counts[$name] -lt 0) {
+            throw "$Mode Viewer background metadata '$name' is negative."
+        }
+    }
+    $bins = @("le_2", "le_5", "le_10", "le_20", "le_50",
+              "le_100", "le_250", "le_500", "le_1000", "over_1000")
+    $bounds = @("2", "5", "10", "20", "50", "100", "250", "500", "1000", "over_1000")
+    $histogram = New-Object 'long[]' $bins.Count
+    [long]$samples = 0
+    for ($i = 0; $i -lt $bins.Count; $i++) {
+        $key = $prefix + "latency_bucket_" + $bins[$i] + "_ms"
+        $raw = Get-MetadataValue -Result $Result -Key $key
+        [long]$parsed = 0
+        if (-not [long]::TryParse($raw, [ref]$parsed) -or $parsed -lt 0) {
+            throw "$Mode Viewer background histogram '$key' missing or invalid."
+        }
+        $histogram[$i] = $parsed
+        $samples += $parsed
+    }
+
+    $groups = $counts["batch_groups_2_to_8"] + $counts["batch_groups_9_to_32"] +
+        $counts["batch_groups_33_to_64"]
+    $minRows = 2 * $counts["batch_groups_2_to_8"] + 9 * $counts["batch_groups_9_to_32"] +
+        33 * $counts["batch_groups_33_to_64"]
+    $maxRows = 8 * $counts["batch_groups_2_to_8"] + 32 * $counts["batch_groups_9_to_32"] +
+        64 * $counts["batch_groups_33_to_64"]
+    $rows = $counts["batched_rows"]
+    $queued = $counts["queued"]
+    $avoided = $rows - $counts["batch_commits"]
+    if ($groups -ne $counts["batch_commits"] -or
+        $rows -lt $minRows -or $rows -gt $maxRows -or
+        $counts["avoided_individual_commits"] -ne $avoided -or
+        $counts["peak_queue_depth"] -gt 128 -or
+        $counts["peak_queue_depth"] -gt $queued -or
+        $counts["cancelled_before_write"] -gt $queued -or
+        $samples -gt $queued -or
+        $samples -lt ($rows + $counts["single_commits"]) -or
+        $counts["max_completed_write_latency_ticks"] -gt
+            $counts["completed_write_latency_ticks"]) {
+        throw "$Mode Viewer background metadata group, admission or latency accounting is inconsistent."
+    }
+
+    $percentiles = @{}
+    foreach ($percentile in @(95, 99)) {
+        $reported = Get-MetadataValue -Result $Result -Key (
+            $prefix + "latency_p" + $percentile + "_upper_bound_ms")
+        $expected = "no_samples"
+        if ($samples -gt 0) {
+            $rank = [long][Math]::Ceiling($samples * ($percentile / 100.0))
+            [long]$seen = 0
+            for ($i = 0; $i -lt $histogram.Length; $i++) {
+                $seen += $histogram[$i]
+                if ($seen -ge $rank) {
+                    $expected = $bounds[$i]
+                    break
+                }
+            }
+        }
+        if ($reported -cne $expected) {
+            throw "$Mode Viewer background metadata p$percentile disagrees with the histogram."
+        }
+        $percentiles[$percentile] = $reported
+    }
+
+    $state = "not-observed"
+    if ($samples -gt 0) { $state = "observed" }
+    return [ordered]@{
+        state = $state
+        queued = $queued
+        completedWrites = $samples
+        singleCommits = $counts["single_commits"]
+        batchCommits = $counts["batch_commits"]
+        batchedRows = $rows
+        avoidedIndividualCommits = $avoided
+        canceledBeforeWrite = $counts["cancelled_before_write"]
+        rejected = $counts["guard_rejected"]
+        failedGroups = $counts["failed_groups"]
+        peakQueueDepth = $counts["peak_queue_depth"]
+        p95UpperBoundMs = $percentiles[95]
+        p99UpperBoundMs = $percentiles[99]
+    }
+}
+
 function Get-MaxMeasurement {
     param(
         [Parameter(Mandatory = $true)]
@@ -733,6 +838,7 @@ try {
             @{ Name = "steady-warm"; Result = $steadyWarm }
     }
 
+    $viewerMetadataEvidence = @{}
     foreach ($pair in $validationPairs) {
         $mode = $pair.Name
         $result = $pair.Result
@@ -760,6 +866,8 @@ try {
                 throw "$mode product gate '$productGate' did not report pass."
             }
         }
+
+        $viewerMetadataEvidence[$mode] = Get-ViewerBackgroundMetadataEvidence -Result $result -Mode $mode
 
         $assetCount = [int64](Get-MetadataValue -Result $result -Key "library.asset_count")
         if ($assetCount -lt $MinimumAssets) {
@@ -948,6 +1056,9 @@ try {
     $warmBootstrap =
         Get-MetadataValue -Result $finalWarm -Key "filesystem.bootstrap_mode"
     $warnings = @()
+    if ($viewerMetadataEvidence["cold"].state -ne "observed") {
+        $warnings += "Cold background metadata had zero completed writes. Cache reuse is valid but does not qualify metadata batching latency; collect fresh-source evidence for #714."
+    }
 
     if ($warmBootstrap -ne "UsnDelta") {
         $warnings += "Warm filesystem bootstrap was '$warmBootstrap' rather than 'UsnDelta'. This can be valid when USN journal replay is unavailable, but should be reviewed for the target library volume."
@@ -998,6 +1109,11 @@ try {
             productStates = (Get-MetadataValue -Result $finalWarm -Key "product.states")
             settingsPortable = (Get-MetadataValue -Result $finalWarm -Key "product.settings_portable")
             searchMetadataRoundTrip = (Get-MetadataValue -Result $finalWarm -Key "product.search_metadata_roundtrip")
+        }
+        viewerBackgroundMetadata = [ordered]@{
+            cold = $viewerMetadataEvidence["cold"]
+            warm = $viewerMetadataEvidence["warm"]
+            steadyWarm = $viewerMetadataEvidence["steady-warm"]
         }
         rawResultSha256 = [ordered]@{
             cold = $coldRawSha256
@@ -1093,6 +1209,9 @@ try {
     Write-Host "Warm generated       : $warmGenerated"
     Write-Host "Warm cache misses    : $warmCacheMisses"
     Write-Host "Warm cache hits      : $warmCacheHits"
+    Write-Host "Cold metadata writes : $($summary.viewerBackgroundMetadata.cold.completedWrites) ($($summary.viewerBackgroundMetadata.cold.state))"
+    Write-Host "Cold batch commits   : $($summary.viewerBackgroundMetadata.cold.batchCommits), avoided individual commits=$($summary.viewerBackgroundMetadata.cold.avoidedIndividualCommits)"
+    Write-Host "Cold write p95/p99   : $($summary.viewerBackgroundMetadata.cold.p95UpperBoundMs) / $($summary.viewerBackgroundMetadata.cold.p99UpperBoundMs) ms (histogram upper bounds)"
     Write-Host "Warm convergence     : $warmConvergenceNeeded"
     Write-Host "Summary              : $summaryPath"
 

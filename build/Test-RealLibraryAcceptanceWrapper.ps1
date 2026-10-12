@@ -124,6 +124,29 @@ foreach ($iteration in 1..$Repeat) {
         throw "Acceptance wrapper smoke iteration $iteration did not produce a passing summary."
     }
 
+    # Issue #714: evidence must explicitly distinguish valid zero-write
+    # reuse from a completed production metadata commit observation.
+    foreach ($mode in @("cold", "warm")) {
+        $evidence = $summary.viewerBackgroundMetadata.$mode
+        if ($null -eq $evidence -or
+            [string]$evidence.state -notin @("observed", "not-observed")) {
+            throw "Acceptance wrapper smoke iteration $iteration omitted $mode Viewer DB evidence classification."
+        }
+        if ([int64]$evidence.completedWrites -eq 0 -and
+            [string]$evidence.state -ne "not-observed") {
+            throw "Acceptance wrapper smoke iteration $iteration treated zero $mode background write samples as measured."
+        }
+        if ([int64]$evidence.completedWrites -gt 0 -and
+            [string]$evidence.state -ne "observed") {
+            throw "Acceptance wrapper smoke iteration $iteration suppressed valid $mode background write samples."
+        }
+        if ([int64]$evidence.avoidedIndividualCommits -ne (
+                [int64]$evidence.batchedRows - [int64]$evidence.batchCommits
+            )) {
+            throw "Acceptance wrapper smoke iteration $iteration misreported $mode background commit savings."
+        }
+    }
+
     if ($summary.productAutomated.result -ne "pass") {
         throw "Acceptance wrapper smoke iteration $iteration did not pass NativeAOT product workflows."
     }

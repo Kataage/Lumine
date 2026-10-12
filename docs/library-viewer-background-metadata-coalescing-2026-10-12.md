@@ -156,3 +156,41 @@ and (3) durable metadata after service/database restart. Existing safety
 guards, batching bounds (128 queued, 64 rows/transaction) and the strict
 8-second/1.5-second Windows gates stay unchanged. User physical approval
 remains deferred until consolidated #634/#635/#714 final acceptance.
+
+
+## Real-library acceptance evidence classification (Issue #714)
+
+The representative Windows `Run-RealLibraryAcceptance.ps1` wrapper now
+cross-validates the real Viewer background metadata snapshot for each
+cold/warm/optional steady-warm run. The check requires every emitted
+batch/queue/latency metric, valid nonnegative counters, bounded peak
+queue depth (128), plausible row totals for batch sizes 2–8 / 9–32 /
+33–64, correctly accounted avoided individual commits, and p95/p99
+coarse labels recomputed independently from all ten exclusive histogram
+bucket counts. Missing or inconsistent telemetry fails the acceptance
+wrapper instead of silently coercing missing metadata to zero.
+
+A new additive `viewerBackgroundMetadata` summary member reports
+`cold`, `warm` and `steadyWarm` entries with explicit `state`:
+
+- `observed`: at least one completed real background metadata write
+  sampled from enqueue through post-COMMIT
+- `not-observed`: no completed writes; valid when prior metadata and
+  cache hits already satisfy Viewer requests, **not proof of batching
+  latency or savings**
+
+The summary includes queued/completed counts, individual and grouped
+commits, attempted batched rows, saved-commit count, rejected/canceled
+requests, failed groups, queue peak and p95/p99 bucket upper bounds.
+Cold zero-sample evidence generates an explicit reviewer warning, but
+does not override the existing valid warm-cache acceptance outcome or
+invent a strict minimum background write count on representative
+libraries. The original fast-scroll, resource, WAL, thumbnail-cache,
+NativeAOT, portability and Library 8s performance gates stay intact.
+
+The NativeAOT real-library wrapper smoke verifies these fields exist
+and that a zero-sample run cannot claim `observed`. This is a stronger
+*truthfulness and consistency* gate, **not** a performance speedup.
+A physical owner run using a representative fresh-source image library
+must still produce nonzero write evidence and be reviewed alongside
+#634/#635 before #714 can close.
