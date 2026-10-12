@@ -738,7 +738,6 @@ public sealed class LibraryDatabase
 
         await ExecutePragmasAsync(
             connection,
-            """
             $"""
             PRAGMA foreign_keys=ON;
             PRAGMA busy_timeout=5000;
