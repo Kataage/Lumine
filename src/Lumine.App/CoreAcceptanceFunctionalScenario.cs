@@ -349,6 +349,31 @@ internal static class CoreAcceptanceFunctionalScenario
                 "functional.offline_recovery"] =
                 "pass";
 
+            // Histogram boundaries/empty-tail semantics are deterministic;
+            // no p95/p99 gate is inferred from a 16-write scratch workload.
+            var syntheticLatencyBuckets = new long[
+                ViewerTechnicalMetadataLatencyHistogram.UpperBoundsMs.Length + 1];
+            syntheticLatencyBuckets[0] = 94;
+            syntheticLatencyBuckets[8] = 5;
+            syntheticLatencyBuckets[9] = 1;
+            if (ViewerTechnicalMetadataLatencyHistogram.BucketIndex(
+                    TimeSpan.FromMilliseconds(2)) != 0
+                || ViewerTechnicalMetadataLatencyHistogram.BucketIndex(
+                    TimeSpan.FromMilliseconds(2.01)) != 1
+                || ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                    syntheticLatencyBuckets, 95) != "1000"
+                || ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                    syntheticLatencyBuckets, 99) != "1000"
+                || ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                    syntheticLatencyBuckets, 100) != "over_1000"
+                || ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                    new long[syntheticLatencyBuckets.Length], 95)
+                    != "no_samples")
+            {
+                throw new InvalidOperationException(
+                    "Background metadata latency histogram boundaries or coarse percentile labels regressed.");
+            }
+
             // Exercise the exact per-LibraryService bounded write coalescer
             // used by background thumbnail metadata persistence. Foreground
             // thumbnail traffic does not pass through this delay window.
@@ -385,7 +410,10 @@ internal static class CoreAcceptanceFunctionalScenario
                     || after.QueuedWrites - before.QueuedWrites != 16
                     || after.CompletedWriteLatencyTicks <= before.CompletedWriteLatencyTicks
                     || after.MaxCompletedWriteLatencyTicks <= 0
-                    || after.FailedGroups != before.FailedGroups)
+                    || after.FailedGroups != before.FailedGroups
+                    || after.CompletedWriteLatencyBuckets.Sum() != 16
+                    || after.BatchGroups2To8Rows + after.BatchGroups9To32Rows
+                        + after.BatchGroups33To64Rows != after.CommittedBatches)
                 {
                     throw new InvalidOperationException(
                         "Background thumbnail metadata did not coalesce guarded SQLite writes.");

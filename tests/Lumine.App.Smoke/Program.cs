@@ -1127,8 +1127,19 @@ try
                 == backgroundFixtureCount
             && routeAfter.PeakPendingQueueDepth
                 <= 128
-            && routeAfter.FailedGroups == routeBefore.FailedGroups,
-            "Production Viewer background metadata requests did not reach the bounded coalescer.");
+            && routeAfter.FailedGroups == routeBefore.FailedGroups
+            && routeAfter.CompletedWriteLatencyBuckets.Sum()
+                - routeBefore.CompletedWriteLatencyBuckets.Sum()
+                == backgroundFixtureCount
+            && routeAfter.BatchedRows - routeBefore.BatchedRows
+                + routeAfter.SingleWriteCommits - routeBefore.SingleWriteCommits
+                == backgroundFixtureCount
+            && routeAfter.BatchGroups2To8Rows + routeAfter.BatchGroups9To32Rows
+                + routeAfter.BatchGroups33To64Rows
+                == routeAfter.CommittedBatches
+            && ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                routeAfter.CompletedWriteLatencyBuckets, 95) != "no_samples",
+            "Production Viewer background metadata routing, group accounting or latency distribution regressed.");
 
         foreach (var backgroundAsset in backgroundAssets)
         {
@@ -1173,7 +1184,9 @@ try
             $"queued={routeAfter.QueuedWrites - routeBefore.QueuedWrites}, " +
             $"batch_commits={routeAfter.CommittedBatches - routeBefore.CommittedBatches}, " +
             $"batched_rows={routeAfter.BatchedRows - routeBefore.BatchedRows}, " +
-            $"peak_depth={routeAfter.PeakPendingQueueDepth}.");
+            $"peak_depth={routeAfter.PeakPendingQueueDepth}, " +
+            $"p95_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(routeAfter.CompletedWriteLatencyBuckets, 95)}, " +
+            $"p99_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(routeAfter.CompletedWriteLatencyBuckets, 99)}.");
     }
 
     LibraryDatabase.ClearPools();
