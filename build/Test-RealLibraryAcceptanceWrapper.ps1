@@ -140,6 +140,13 @@ foreach ($iteration in 1..$Repeat) {
             [string]$evidence.state -ne "observed") {
             throw "Acceptance wrapper smoke iteration $iteration suppressed valid $mode background write samples."
         }
+        if ([int64]$evidence.acceptedBatchedRows -gt [int64]$evidence.batchedRows -or
+            [int64]$evidence.acceptedBatchedRows -lt 0 -or
+            [string]$evidence.batchEvidence -notin @("accepted-batch", "no-accepted-batch") -or
+            ([string]$evidence.batchEvidence -eq "accepted-batch") -ne
+                ([int64]$evidence.acceptedBatchedRows -gt 0)) {
+            throw "Acceptance wrapper smoke iteration $iteration misclassified $mode accepted metadata batches."
+        }
         if ([int64]$evidence.avoidedIndividualCommits -ne (
                 [int64]$evidence.batchedRows - [int64]$evidence.batchCommits
             )) {
