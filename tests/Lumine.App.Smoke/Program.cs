@@ -1105,14 +1105,43 @@ try
             backgroundAssets.Length == backgroundFixtureCount,
             "Real Viewer metadata route omitted background fixtures.");
 
+        static async Task<(ViewerThumbnail Thumbnail, double ElapsedMs)> RequestDirectTimedAsync(
+            ImageViewerThumbnailProvider thumbnailProvider,
+            ViewerAsset requestedAsset,
+            ViewerThumbnailPriority requestedPriority)
+        {
+            var started = Stopwatch.GetTimestamp();
+            var thumbnail = await thumbnailProvider.RequestAsync(
+                requestedAsset, requestedPriority);
+            return (thumbnail, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
+
+        var directSpecs = new[]
+        {
+            (Name: "direct-foreground.png", Priority: ViewerThumbnailPriority.Foreground),
+            (Name: "direct-interactive.png", Priority: ViewerThumbnailPriority.Interactive)
+        };
         var realBatcher = ViewerTechnicalMetadataBatcher.For(realBatchService);
         var routeBefore = realBatcher.Diagnostics;
+        var coldStarted = Stopwatch.GetTimestamp();
         var backgroundTasks = backgroundAssets
             .Select(item => realBatchProvider.RequestAsync(
                 item,
                 ViewerThumbnailPriority.Background).AsTask())
             .ToArray();
+        // Start foreground/interactive work WHILE background decoding and
+        // coalescing is active, not after all background tasks have finished.
+        // These requests must not enter the background commit queue.
+        var directTasks = directSpecs
+            .Select(pair => RequestDirectTimedAsync(
+                realBatchProvider,
+                ToBatchViewerAsset(realBatchPage.Items.Single(row =>
+                    string.Equals(row.RelativePath, pair.Name, StringComparison.Ordinal))),
+                pair.Priority))
+            .ToArray();
         var backgroundResults = await Task.WhenAll(backgroundTasks);
+        var directResults = await Task.WhenAll(directTasks);
+        var coldElapsed = Stopwatch.GetElapsedTime(coldStarted);
         var routeAfter = realBatcher.Diagnostics;
         Require(
             backgroundResults.Length == backgroundFixtureCount
@@ -1157,27 +1186,42 @@ try
                 "Production Viewer background thumbnail did not commit guarded source metadata.");
         }
 
-        foreach (var (name, priority) in new[]
-                 {
-                     ("direct-foreground.png", ViewerThumbnailPriority.Foreground),
-                     ("direct-interactive.png", ViewerThumbnailPriority.Interactive)
-                 })
+        for (var index = 0; index < directSpecs.Length; index++)
         {
-            var indexedDirect = realBatchPage.Items.Single(
-                row => string.Equals(row.RelativePath, name, StringComparison.Ordinal));
-            var beforeDirect = realBatcher.Diagnostics;
-            var directThumbnail = await realBatchProvider.RequestAsync(
-                ToBatchViewerAsset(indexedDirect), priority);
-            var afterDirect = realBatcher.Diagnostics;
             var persistedDirect = await realBatchService.GetAssetAsync(
-                realBatchLibrary.Id, name);
+                realBatchLibrary.Id, directSpecs[index].Name);
             Require(
-                directThumbnail.SourceMetadata is not null
+                directResults[index].Thumbnail.SourceMetadata is not null
+                && directResults[index].Thumbnail.EncodedBytes is { Length: > 0 }
+                && directResults[index].ElapsedMs >= 0
                 && persistedDirect?.Width == 320
-                && FileSourceIdentityProbe.IsValid(persistedDirect.SourceIdentity)
-                && afterDirect.QueuedWrites == beforeDirect.QueuedWrites,
-                "Interactive/foreground thumbnails unexpectedly entered background metadata batching.");
+                && persistedDirect.Height == 200
+                && FileSourceIdentityProbe.IsValid(persistedDirect.SourceIdentity),
+                "Interleaved foreground/interactive thumbnail failed to bypass background queue and persist safely.");
         }
+
+        // Revisit the exact stale ViewerAsset descriptors. The production
+        // metadata bridge should recognize persisted source identities and
+        // avoid re-queuing any redundant SQLite metadata updates.
+        var warmBefore = realBatcher.Diagnostics;
+        var warmStarted = Stopwatch.GetTimestamp();
+        var warmResults = await Task.WhenAll(backgroundAssets.Select(item =>
+            realBatchProvider.RequestAsync(
+                item, ViewerThumbnailPriority.Background).AsTask()));
+        var warmElapsed = Stopwatch.GetElapsedTime(warmStarted);
+        var warmAfter = realBatcher.Diagnostics;
+        Require(
+            warmResults.Length == backgroundFixtureCount
+            && warmResults.All(static thumbnail =>
+                thumbnail.SourceMetadata is not null
+                && thumbnail.EncodedBytes is { Length: > 0 })
+            && warmAfter.QueuedWrites == warmBefore.QueuedWrites
+            && warmAfter.CommittedBatches == warmBefore.CommittedBatches
+            && warmAfter.SingleWriteCommits == warmBefore.SingleWriteCommits
+            && warmAfter.CompletedWriteLatencyBuckets.Sum()
+                == warmBefore.CompletedWriteLatencyBuckets.Sum()
+            && warmAfter.FailedGroups == warmBefore.FailedGroups,
+            "Warm Viewer thumbnail reuse unexpectedly queued duplicate background metadata writes.");
 
         Console.WriteLine(
             $"Real Viewer background metadata: {backgroundFixtureCount} PNGs, " +
@@ -1186,10 +1230,27 @@ try
             $"batched_rows={routeAfter.BatchedRows - routeBefore.BatchedRows}, " +
             $"peak_depth={routeAfter.PeakPendingQueueDepth}, " +
             $"p95_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(routeAfter.CompletedWriteLatencyBuckets, 95)}, " +
-            $"p99_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(routeAfter.CompletedWriteLatencyBuckets, 99)}.");
+            $"p99_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(routeAfter.CompletedWriteLatencyBuckets, 99)}, " +
+            $"cold_with_direct_ms={coldElapsed.TotalMilliseconds:F1}, " +
+            $"direct_foreground_ms={directResults[0].ElapsedMs:F1}, " +
+            $"direct_interactive_ms={directResults[1].ElapsedMs:F1}, " +
+            $"warm_revisit_ms={warmElapsed.TotalMilliseconds:F1}, " +
+            $"warm_added_writes={warmAfter.QueuedWrites - warmBefore.QueuedWrites}.");
     }
 
     LibraryDatabase.ClearPools();
+    var restartedRealBatchService = new LibraryService(realBatchDatabase);
+    await restartedRealBatchService.InitializeAsync();
+    var durableRealBatchPage = await restartedRealBatchService.GetAssetPageAsync(
+        realBatchLibrary.Id, 64);
+    Require(
+        durableRealBatchPage.Items.Count == backgroundFixtureCount + 2
+        && durableRealBatchPage.Items.All(static asset =>
+            asset.Width == 320
+            && asset.Height == 200
+            && FileSourceIdentityProbe.IsValid(asset.SourceIdentity)),
+        "Restarted database lost durable technical metadata from interleaved Viewer background/interactive requests.");
+
     var restartedLibraryService = new LibraryService(databasePath);
     await restartedLibraryService.InitializeAsync();
     persisted = await restartedLibraryService.GetAssetAsync(
