@@ -168,6 +168,49 @@ if ($windowTicks.Count -ne 10 -or $windowSlow.Count -ne 10 -or
     ($windowSlow | Where-Object { $_ -gt 1000 }).Count -gt 0) {
     throw "10k individual COMMIT window totals disagree with the original production timing evidence."
 }
+# Sparse >32ms COMMIT ordinals make the interval between stalls
+# observable without adding any SQL/checkpoints, disk I/O, or logging to
+# the 10k production-write hot loop. Ordinals are 1-based and bounded.
+$spikeOrdinalsText = [string]$hundredK.metadata.technical_metadata_commit_ge_32ms_ordinals_csv
+$spikeOverflowText = [string]$hundredK.metadata.technical_metadata_commit_ge_32ms_ordinals_overflow
+$spikeOverflow = 0
+if (-not [int]::TryParse($spikeOverflowText, [ref]$spikeOverflow) -or $spikeOverflow -lt 0) {
+    throw "10k COMMIT >=32ms ordinal overflow count is missing or invalid."
+}
+$spikeOrdinals = @()
+if (-not [string]::IsNullOrEmpty($spikeOrdinalsText)) {
+    $spikeOrdinals = @($spikeOrdinalsText.Split(',') | ForEach-Object {
+        [int]$parsed = 0
+        if (-not [int]::TryParse($_, [ref]$parsed)) {
+            throw "10k COMMIT >=32ms ordinal contained an invalid integer."
+        }
+        $parsed
+    })
+}
+if ($spikeOrdinals.Count -gt 256 -or
+    $spikeOrdinals.Count + $spikeOverflow -ne $windowSlowTotal) {
+    throw "10k COMMIT >=32ms ordinal count disagrees with its window histogram."
+}
+$spikeWindows = @(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+$lastOrdinal = 0
+foreach ($ordinal in $spikeOrdinals) {
+    if ($ordinal -le $lastOrdinal -or $ordinal -lt 1 -or $ordinal -gt 10000) {
+        throw "10k COMMIT >=32ms ordinals must increase strictly within 1..10000."
+    }
+    $windowIndex = [int][math]::Floor(($ordinal - 1) / 1000)
+    $spikeWindows[$windowIndex]++
+    $lastOrdinal = $ordinal
+}
+if ($spikeOverflow -eq 0) {
+    for ($index = 0; $index -lt 10; $index++) {
+        if ($spikeWindows[$index] -ne $windowSlow[$index]) {
+            throw "10k COMMIT >=32ms ordinal positions disagree with 1k windows."
+        }
+    }
+}
+Write-Host ("10k individual SQLite COMMIT >=32ms ordinals (1-based; max 256): [{0}], overflow={1}" -f
+    ($spikeOrdinals -join ","), $spikeOverflow)
+
 $windowsMs = @($windowTicks | ForEach-Object { "{0:F1}" -f ($_ / 10000.0) })
 Write-Host ("10k individual SQLite COMMIT per-1k windows: ms=[{0}], >=32ms stalls=[{1}]" -f
     ($windowsMs -join ","), ($windowSlow -join ","))
