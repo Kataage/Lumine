@@ -987,6 +987,24 @@ internal sealed class RealLibraryAcceptanceSession
             diagnostics.CommittedBatches.ToString(CultureInfo.InvariantCulture);
         _metadata["viewer.metadata_background_batched_rows"] =
             diagnostics.BatchedRows.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_queue_to_sqlite_ticks"] =
+            diagnostics.QueuedToSqliteServiceTicks.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_max_queue_to_sqlite_ticks"] =
+            diagnostics.MaxQueuedToSqliteServiceTicks.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_queue_to_sqlite_samples"] =
+            diagnostics.QueuedToSqliteServiceSamples.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_sqlite_service_ticks"] =
+            diagnostics.SqliteServiceDurationTicks.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_max_sqlite_service_ticks"] =
+            diagnostics.MaxSqliteServiceDurationTicks.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_sqlite_service_calls"] =
+            diagnostics.SqliteServiceCalls.ToString(
+                CultureInfo.InvariantCulture);
         _metadata["viewer.metadata_background_batch_accepted_rows"] =
             diagnostics.AcceptedBatchedRows.ToString(
                 CultureInfo.InvariantCulture);
