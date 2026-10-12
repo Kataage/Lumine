@@ -58,6 +58,11 @@ long metadataBeginTicks = 0;
 long metadataGuardedUpdateTicks = 0;
 long metadataUpsertTicks = 0;
 long metadataCommitTicks = 0;
+long metadataMaxCommitTicks = 0;
+long metadataCommitOver8msTicks = 0;
+// Exclusive COMMIT-duration buckets measured inside the original guarded
+// per-asset SQLite transaction. These do not change the strict 8s gate.
+long[] metadataCommitLatencyBuckets = new long[5];
 var metadataObservedWrites = 0;
 var searchIndexed = 0;
 var pairedWarmAbRows = 0;
@@ -77,6 +82,19 @@ void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
     metadataGuardedUpdateTicks += timing.GuardedAssetUpdateTicks;
     metadataUpsertTicks += timing.MetadataUpsertTicks;
     metadataCommitTicks += timing.CommitTicks;
+    metadataMaxCommitTicks = Math.Max(
+        metadataMaxCommitTicks, timing.CommitTicks);
+    var commitMs = timing.CommitTicks / (double)TimeSpan.TicksPerMillisecond;
+    var bucket = commitMs < 1 ? 0
+        : commitMs < 8 ? 1
+        : commitMs < 32 ? 2
+        : commitMs < 128 ? 3
+        : 4;
+    metadataCommitLatencyBuckets[bucket]++;
+    if (commitMs >= 8)
+    {
+        metadataCommitOver8msTicks += timing.CommitTicks;
+    }
     metadataObservedWrites++;
 }
 
@@ -559,6 +577,13 @@ try
             ["technical_metadata_guarded_asset_update_ticks"] = metadataGuardedUpdateTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_metadata_upsert_ticks"] = metadataUpsertTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_ticks"] = metadataCommitTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_max_ticks"] = metadataMaxCommitTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_over_8ms_ticks"] = metadataCommitOver8msTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_bucket_lt_1ms"] = metadataCommitLatencyBuckets[0].ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_bucket_1_to_lt_8ms"] = metadataCommitLatencyBuckets[1].ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_bucket_8_to_lt_32ms"] = metadataCommitLatencyBuckets[2].ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_bucket_32_to_lt_128ms"] = metadataCommitLatencyBuckets[3].ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_bucket_ge_128ms"] = metadataCommitLatencyBuckets[4].ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
@@ -589,6 +614,15 @@ try
     }
     Console.WriteLine($"Technical metadata phase durations: pages={TimeSpan.FromTicks(metadataPageFetchTicks).TotalMilliseconds:N1} ms ({metadataPageFetchCount:N0} fetches), updates={TimeSpan.FromTicks(metadataWriteTicks).TotalMilliseconds:N1} ms, slow writes >=8ms={metadataSlowWriteCount:N0}, max write={TimeSpan.FromTicks(metadataMaxWriteTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Technical metadata production write internals: opens={TimeSpan.FromTicks(metadataConnectionOpenTicks).TotalMilliseconds:N1} ms, begin={TimeSpan.FromTicks(metadataBeginTicks).TotalMilliseconds:N1} ms, guarded UPDATE={TimeSpan.FromTicks(metadataGuardedUpdateTicks).TotalMilliseconds:N1} ms, UPSERT={TimeSpan.FromTicks(metadataUpsertTicks).TotalMilliseconds:N1} ms, COMMIT={TimeSpan.FromTicks(metadataCommitTicks).TotalMilliseconds:N1} ms.");
+    Console.WriteLine(
+        $"Individual metadata SQLite COMMIT tail: " +
+        $"<1ms={metadataCommitLatencyBuckets[0]:N0}, " +
+        $"[1,8)ms={metadataCommitLatencyBuckets[1]:N0}, " +
+        $"[8,32)ms={metadataCommitLatencyBuckets[2]:N0}, " +
+        $"[32,128)ms={metadataCommitLatencyBuckets[3]:N0}, " +
+        $">=128ms={metadataCommitLatencyBuckets[4]:N0}, " +
+        $"max={TimeSpan.FromTicks(metadataMaxCommitTicks).TotalMilliseconds:N1}ms, " +
+        $">=8ms cumulative={TimeSpan.FromTicks(metadataCommitOver8msTicks).TotalMilliseconds:N1}ms.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
