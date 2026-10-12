@@ -1253,6 +1253,177 @@ try
             && FileSourceIdentityProbe.IsValid(asset.SourceIdentity)),
         "Restarted database lost durable technical metadata from interleaved Viewer background/interactive requests.");
 
+    // Issue #714: a second, independent real-image pressure fixture exercises
+    // more than 128 simultaneous thumbnail requests (larger than the bounded
+    // metadata queue) without requiring any personal representative library.
+    // Unlike the 32-PNG route smoke, include substantially larger 1024x768
+    // BMP sources alongside real PNGs. This is NOT a 100k-library simulation.
+    {
+        const int pressureCount = 192;
+        var pressureRoot = Path.Combine(root, "viewer-metadata-pressure-assets");
+        var pressureDatabase = Path.Combine(root, "viewer-metadata-pressure.db");
+        Directory.CreateDirectory(pressureRoot);
+        var largeSource = Path.Combine(root, "viewer-metadata-large-source.bmp");
+        WriteBmp24(largeSource, 1024, 768);
+        for (var index = 0; index < pressureCount; index++)
+        {
+            var isLargeBmp = index % 8 == 0;
+            File.Copy(
+                isLargeBmp ? largeSource : sourcePath,
+                Path.Combine(
+                    pressureRoot,
+                    $"pressure-{index:D3}{(isLargeBmp ? ".bmp" : ".png")}"));
+        }
+
+        var pressureService = new LibraryService(pressureDatabase);
+        await pressureService.InitializeAsync();
+        var pressureLibrary = await pressureService.RegisterLibraryAsync(
+            "Viewer mixed PNG/BMP background queue pressure",
+            pressureRoot);
+        var pressureScan = await pressureService.ScanAsync(pressureLibrary.Id);
+        Require(
+            pressureScan.Completed,
+            "Mixed-format Viewer pressure fixture did not index all sources.");
+
+        var pressureAssets = new List<AssetInfo>(pressureCount);
+        AssetCursor? pressureCursor = null;
+        do
+        {
+            var page = await pressureService.GetAssetPageAsync(
+                pressureLibrary.Id, 128, pressureCursor);
+            pressureAssets.AddRange(page.Items);
+            pressureCursor = page.NextCursor;
+        }
+        while (pressureCursor is not null);
+        Require(
+            pressureAssets.Count == pressureCount,
+            "Mixed-format Viewer pressure fixture lost paginated library assets.");
+
+        static ViewerAsset ToPressureViewerAsset(AssetInfo item) =>
+            new(
+                item.Id,
+                item.SourceRevision,
+                item.RelativePath,
+                item.FileName,
+                item.FileSize,
+                item.ModifiedAtUtc.UtcDateTime.Ticks,
+                item.Width,
+                item.Height,
+                item.Format,
+                item.SourceIdentity,
+                item.RawWidth,
+                item.RawHeight,
+                item.HasAlpha);
+
+        var pressureBatcher = ViewerTechnicalMetadataBatcher.For(pressureService);
+        var pressureBefore = pressureBatcher.Diagnostics;
+        var pressureWorkingSetBefore = Environment.WorkingSet;
+        await using (var pressurePipeline = new ThumbnailPipeline(
+                         new ThumbnailCache(
+                             Path.Combine(root, "viewer-metadata-pressure-cache")),
+                         new ThumbnailPipelineOptions
+                         {
+                             WorkerCount = 12,
+                             QueueCapacity = 64,
+                             MaxForegroundBurst = 2,
+                             StorageMode = ThumbnailStorageMode.MemoryOnly
+                         }))
+        {
+            var pressureProvider = new ImageViewerThumbnailProvider(
+                pressurePipeline, pressureRoot, pressureService, pressureLibrary.Id);
+            var pressureRequests = pressureAssets
+                .Select(item => pressureProvider.RequestAsync(
+                    ToPressureViewerAsset(item),
+                    ViewerThumbnailPriority.Background).AsTask())
+                .ToArray();
+            var pressureStarted = Stopwatch.GetTimestamp();
+            var pressureResults = await Task.WhenAll(pressureRequests);
+            var pressureElapsed = Stopwatch.GetElapsedTime(pressureStarted);
+            var pressureAfter = pressureBatcher.Diagnostics;
+
+            Require(
+                pressureResults.Length == pressureCount
+                && pressureResults.All(static image =>
+                    image.SourceMetadata is not null
+                    && image.EncodedBytes is { Length: > 0 })
+                && pressureAfter.QueuedWrites - pressureBefore.QueuedWrites
+                    == pressureCount
+                && pressureAfter.BatchedRows - pressureBefore.BatchedRows
+                    + pressureAfter.SingleWriteCommits - pressureBefore.SingleWriteCommits
+                    == pressureCount
+                && pressureAfter.AcceptedBatchedRows - pressureBefore.AcceptedBatchedRows
+                    == pressureAfter.BatchedRows - pressureBefore.BatchedRows
+                && pressureAfter.CommittedBatches > pressureBefore.CommittedBatches
+                && pressureAfter.FailedGroups == pressureBefore.FailedGroups
+                && pressureAfter.RejectedWrites == pressureBefore.RejectedWrites
+                && pressureAfter.PeakPendingQueueDepth <= 128
+                && pressureAfter.CompletedWriteLatencyBuckets.Sum()
+                    - pressureBefore.CompletedWriteLatencyBuckets.Sum()
+                    == pressureCount,
+                "Mixed-format Viewer pressure requests escaped queue, rejected guarded writes or lost committed metadata.");
+
+            var pressureWarmBefore = pressureBatcher.Diagnostics;
+            var pressureWarmStarted = Stopwatch.GetTimestamp();
+            var pressureWarmResults = await Task.WhenAll(
+                pressureAssets.Select(item => pressureProvider.RequestAsync(
+                    ToPressureViewerAsset(item),
+                    ViewerThumbnailPriority.Background).AsTask()));
+            var pressureWarmElapsed = Stopwatch.GetElapsedTime(pressureWarmStarted);
+            var pressureWarmAfter = pressureBatcher.Diagnostics;
+            Require(
+                pressureWarmResults.Length == pressureCount
+                && pressureWarmResults.All(static image =>
+                    image.SourceMetadata is not null
+                    && image.EncodedBytes is { Length: > 0 })
+                && pressureWarmAfter.QueuedWrites == pressureWarmBefore.QueuedWrites
+                && pressureWarmAfter.BatchedRows == pressureWarmBefore.BatchedRows
+                && pressureWarmAfter.SingleWriteCommits == pressureWarmBefore.SingleWriteCommits
+                && pressureWarmAfter.CompletedWriteLatencyBuckets.Sum()
+                    == pressureWarmBefore.CompletedWriteLatencyBuckets.Sum(),
+                "Mixed-format warm Viewer thumbnail revisit duplicated metadata commits.");
+
+            Console.WriteLine(
+                $"Real Viewer queue pressure: {pressureCount} mixed PNG/BMP sources, " +
+                $"large_bmps={pressureCount / 8}, " +
+                $"queued={pressureAfter.QueuedWrites - pressureBefore.QueuedWrites}, " +
+                $"batch_commits={pressureAfter.CommittedBatches - pressureBefore.CommittedBatches}, " +
+                $"accepted_batched_rows={pressureAfter.AcceptedBatchedRows - pressureBefore.AcceptedBatchedRows}, " +
+                $"queue_peak={pressureAfter.PeakPendingQueueDepth}, " +
+                $"p95_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(pressureAfter.CompletedWriteLatencyBuckets, 95)}, " +
+                $"p99_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(pressureAfter.CompletedWriteLatencyBuckets, 99)}, " +
+                $"cold_elapsed_ms={pressureElapsed.TotalMilliseconds:F1}, " +
+                $"warm_elapsed_ms={pressureWarmElapsed.TotalMilliseconds:F1}, " +
+                $"working_set_delta_bytes={Environment.WorkingSet - pressureWorkingSetBefore}.");
+        }
+
+        LibraryDatabase.ClearPools();
+        var pressureReopened = new LibraryService(pressureDatabase);
+        await pressureReopened.InitializeAsync();
+        var durablePressureCount = 0;
+        AssetCursor? durablePressureCursor = null;
+        do
+        {
+            var page = await pressureReopened.GetAssetPageAsync(
+                pressureLibrary.Id, 128, durablePressureCursor);
+            foreach (var asset in page.Items)
+            {
+                var expectedLarge = asset.RelativePath.EndsWith(
+                    ".bmp", StringComparison.OrdinalIgnoreCase);
+                Require(
+                    asset.Width == (expectedLarge ? 1024 : 320)
+                    && asset.Height == (expectedLarge ? 768 : 200)
+                    && FileSourceIdentityProbe.IsValid(asset.SourceIdentity),
+                    "Restarted SQLite lost guarded technical metadata for mixed PNG/BMP Viewer pressure.");
+                durablePressureCount++;
+            }
+            durablePressureCursor = page.NextCursor;
+        }
+        while (durablePressureCursor is not null);
+        Require(
+            durablePressureCount == pressureCount,
+            "Restarted SQLite lost source-guarded Viewer pressure records.");
+    }
+
     var restartedLibraryService = new LibraryService(databasePath);
     await restartedLibraryService.InitializeAsync();
     persisted = await restartedLibraryService.GetAssetAsync(
