@@ -24,7 +24,13 @@ internal readonly record struct ViewerTechnicalMetadataBatchDiagnostics(
     long[] CompletedWriteLatencyBuckets,
     long BatchGroups2To8Rows,
     long BatchGroups9To32Rows,
-    long BatchGroups33To64Rows);
+    long BatchGroups33To64Rows,
+    long QueuedToSqliteServiceTicks,
+    long MaxQueuedToSqliteServiceTicks,
+    long QueuedToSqliteServiceSamples,
+    long SqliteServiceDurationTicks,
+    long MaxSqliteServiceDurationTicks,
+    long SqliteServiceCalls);
 
 /// <summary>
 /// Fixed memory, exclusive millisecond buckets for successful post-COMMIT
@@ -121,6 +127,12 @@ internal sealed class ViewerTechnicalMetadataBatcher
     private long _batchGroups2To8;
     private long _batchGroups9To32;
     private long _batchGroups33To64;
+    private long _queuedToSqliteServiceTicks;
+    private long _maxQueuedToSqliteServiceTicks;
+    private long _queuedToSqliteServiceSamples;
+    private long _sqliteServiceDurationTicks;
+    private long _maxSqliteServiceDurationTicks;
+    private long _sqliteServiceCalls;
 
     private ViewerTechnicalMetadataBatcher(LibraryService library) =>
         _library = library;
@@ -149,7 +161,13 @@ internal sealed class ViewerTechnicalMetadataBatcher
             SnapshotLatencyBuckets(),
             Interlocked.Read(ref _batchGroups2To8),
             Interlocked.Read(ref _batchGroups9To32),
-            Interlocked.Read(ref _batchGroups33To64));
+            Interlocked.Read(ref _batchGroups33To64),
+            Interlocked.Read(ref _queuedToSqliteServiceTicks),
+            Interlocked.Read(ref _maxQueuedToSqliteServiceTicks),
+            Interlocked.Read(ref _queuedToSqliteServiceSamples),
+            Interlocked.Read(ref _sqliteServiceDurationTicks),
+            Interlocked.Read(ref _maxSqliteServiceDurationTicks),
+            Interlocked.Read(ref _sqliteServiceCalls));
 
     /// <summary>
     /// Completing the task means SQLite COMMIT has finished, not that the work
@@ -241,6 +259,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
                 {
                     var one = live[0];
                     var item = one.Item;
+                    var sqliteStarted = Stopwatch.GetTimestamp();
                     var updated = await _library.UpdateTechnicalMetadataAsync(
                         one.LibraryId,
                         item.AssetId,
@@ -252,12 +271,14 @@ internal sealed class ViewerTechnicalMetadataBatcher
                     {
                         Interlocked.Increment(ref _singleWriteCommits);
                     }
+                    RecordSuccessfulSqliteServiceTiming(live, sqliteStarted);
                     RecordCompletedWrite(one, updated);
                     one.Completion.TrySetResult(updated);
                 }
                 else if (live.Count > 1)
                 {
                     var items = live.Select(static write => write.Item).ToArray();
+                    var sqliteStarted = Stopwatch.GetTimestamp();
                     var results = await _library.UpdateTechnicalMetadataBatchAsync(
                         live[0].LibraryId,
                         items).ConfigureAwait(false);
@@ -268,6 +289,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
                             "SQLite technical metadata batch returned a mismatched result count.");
                     }
 
+                    RecordSuccessfulSqliteServiceTiming(live, sqliteStarted);
                     Interlocked.Increment(ref _committedBatches);
                     Interlocked.Add(ref _batchedRows, results.Count);
                     // The guarded transaction COMMIT can succeed while one
@@ -322,6 +344,45 @@ internal sealed class ViewerTechnicalMetadataBatcher
             // Background metadata commits must not monopolize the scheduler
             // while a foreground image request is ready.
             await Task.Yield();
+        }
+    }
+
+    /// <summary>
+    /// Separately capture time admitted writes spent awaiting a SQLite
+    /// service call, and the actual async repository service-call wall time.
+    /// Failed groups and pre-write cancellations have no completed sample.
+    /// A service call includes connection/transaction/continuation overhead:
+    /// this is deliberately NOT advertised as raw SQL COMMIT duration.
+    /// </summary>
+    private void RecordSuccessfulSqliteServiceTiming(
+        IReadOnlyList<PendingWrite> selected,
+        long serviceStarted)
+    {
+        var duration = Stopwatch.GetElapsedTime(serviceStarted).Ticks;
+        Interlocked.Add(ref _sqliteServiceDurationTicks, duration);
+        Interlocked.Increment(ref _sqliteServiceCalls);
+        ObserveMax(ref _maxSqliteServiceDurationTicks, duration);
+
+        foreach (var pending in selected)
+        {
+            var waitTicks = Stopwatch.GetElapsedTime(
+                pending.AdmittedAtTimestamp, serviceStarted).Ticks;
+            Interlocked.Add(ref _queuedToSqliteServiceTicks, waitTicks);
+            Interlocked.Increment(ref _queuedToSqliteServiceSamples);
+            ObserveMax(ref _maxQueuedToSqliteServiceTicks, waitTicks);
+        }
+    }
+
+    private static void ObserveMax(ref long maximum, long next)
+    {
+        long observed;
+        while ((observed = Interlocked.Read(ref maximum)) < next)
+        {
+            if (Interlocked.CompareExchange(
+                    ref maximum, next, observed) == observed)
+            {
+                break;
+            }
         }
     }
 
