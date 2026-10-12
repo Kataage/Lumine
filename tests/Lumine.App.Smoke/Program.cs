@@ -2093,6 +2093,10 @@ try
 
             var navigationScaleWatch =
                 Stopwatch.StartNew();
+            // Diagnostic stage samples do not change the original 2-second
+            // end-to-end navigation performance gate or its fixture sizes.
+            var navigationFolderMs = 0d;
+            var navigationTagMs = 0d;
             var foldersView =
                 ProductNavigationViews.CreateFolders(
                     largeFolders,
@@ -2520,6 +2524,7 @@ try
                         "Folder accessibility smoke has no Avalonia application."));
             }
 
+            navigationFolderMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
             var tagsView =
                 ProductNavigationViews.CreateTags(
                     largeTags,
@@ -2780,6 +2785,7 @@ try
                         "Selected Tag smoke has no current application."));
             }
 
+            navigationTagMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
             var publicationsView =
                 ProductNavigationViews.CreatePublicationEntry(
                     largePublications);
@@ -2898,10 +2904,18 @@ try
             Dispatcher.UIThread.RunJobs();
 
             navigationScaleWatch.Stop();
+            // Preserve the exact hard wall-clock budget and add elapsed
+            // breakdown only to distinguish rendering from scheduling noise.
+            Console.WriteLine(
+                $"High-count navigation stages: folders={navigationFolderMs:F1}ms, " +
+                $"tags={(navigationTagMs - navigationFolderMs):F1}ms, " +
+                $"publications={(navigationScaleWatch.Elapsed.TotalMilliseconds - navigationTagMs):F1}ms, " +
+                $"total={navigationScaleWatch.Elapsed.TotalMilliseconds:F1}ms.");
             Require(
                 navigationScaleWatch.Elapsed
                     < TimeSpan.FromSeconds(2),
-                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms.");
+                $"High-count navigation acceptance exceeded the responsiveness budget: {navigationScaleWatch.Elapsed.TotalMilliseconds:N0} ms " +
+                $"(folders={navigationFolderMs:F1}ms, tags={(navigationTagMs - navigationFolderMs):F1}ms, publications={(navigationScaleWatch.Elapsed.TotalMilliseconds - navigationTagMs):F1}ms).");
 
             // Keyboard focus deliberately moved during an asynchronous
             // page load must win over the Load More focus handoff.
