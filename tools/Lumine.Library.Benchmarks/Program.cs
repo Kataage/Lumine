@@ -47,7 +47,24 @@ long metadataPageFetchTicks = 0;
 long metadataWriteTicks = 0;
 long metadataSlowWriteCount = 0;
 long metadataMaxWriteTicks = 0;
+long metadataConnectionOpenTicks = 0;
+long metadataBeginTicks = 0;
+long metadataGuardedUpdateTicks = 0;
+long metadataUpsertTicks = 0;
+long metadataCommitTicks = 0;
+var metadataObservedWrites = 0;
 var searchIndexed = 0;
+
+void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
+{
+    metadataConnectionOpenTicks += timing.ConnectionOpenTicks;
+    metadataBeginTicks += timing.BeginTransactionTicks;
+    metadataGuardedUpdateTicks += timing.GuardedAssetUpdateTicks;
+    metadataUpsertTicks += timing.MetadataUpsertTicks;
+    metadataCommitTicks += timing.CommitTicks;
+    metadataObservedWrites++;
+}
+
 
 try
 {
@@ -167,7 +184,8 @@ try
                         asset.Height ?? 1,
                         false,
                         asset.Format ?? asset.Extension,
-                        identity));
+                        identity),
+                    timingObserver: ObserveMetadataWrite);
                 var writeTicks = Stopwatch.GetElapsedTime(writeStart).Ticks;
                 metadataWriteTicks += writeTicks;
                 metadataMaxWriteTicks = Math.Max(metadataMaxWriteTicks, writeTicks);
@@ -193,7 +211,8 @@ try
         }
     }
 
-    if (metadataPersisted != metadataTarget)
+    if (metadataPersisted != metadataTarget
+        || metadataObservedWrites != metadataTarget)
     {
         throw new InvalidOperationException(
             $"Persisted technical metadata for {metadataPersisted:N0} assets, expected {metadataTarget:N0}.");
@@ -333,6 +352,12 @@ try
             ["technical_metadata_update_ticks"] = metadataWriteTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_update_max_ticks"] = metadataMaxWriteTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_update_over_8ms_count"] = metadataSlowWriteCount.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_phase_observed_write_count"] = metadataObservedWrites.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_connection_open_ticks"] = metadataConnectionOpenTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_begin_transaction_ticks"] = metadataBeginTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_guarded_asset_update_ticks"] = metadataGuardedUpdateTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_metadata_upsert_ticks"] = metadataUpsertTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_ticks"] = metadataCommitTicks.ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
@@ -351,6 +376,7 @@ try
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
     Console.WriteLine($"Technical metadata phase durations: pages={TimeSpan.FromTicks(metadataPageFetchTicks).TotalMilliseconds:N1} ms ({metadataPageFetchCount:N0} fetches), updates={TimeSpan.FromTicks(metadataWriteTicks).TotalMilliseconds:N1} ms, slow writes >=8ms={metadataSlowWriteCount:N0}, max write={TimeSpan.FromTicks(metadataMaxWriteTicks).TotalMilliseconds:N1} ms.");
+    Console.WriteLine($"Technical metadata production write internals: opens={TimeSpan.FromTicks(metadataConnectionOpenTicks).TotalMilliseconds:N1} ms, begin={TimeSpan.FromTicks(metadataBeginTicks).TotalMilliseconds:N1} ms, guarded UPDATE={TimeSpan.FromTicks(metadataGuardedUpdateTicks).TotalMilliseconds:N1} ms, UPSERT={TimeSpan.FromTicks(metadataUpsertTicks).TotalMilliseconds:N1} ms, COMMIT={TimeSpan.FromTicks(metadataCommitTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");

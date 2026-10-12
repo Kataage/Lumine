@@ -1,8 +1,16 @@
+using System.Diagnostics;
 using System.Globalization;
 using Lumine.Core;
 using Microsoft.Data.Sqlite;
 
 namespace Lumine.Library;
+
+public readonly record struct TechnicalMetadataWriteTimings(
+    long ConnectionOpenTicks,
+    long BeginTransactionTicks,
+    long GuardedAssetUpdateTicks,
+    long MetadataUpsertTicks,
+    long CommitTicks);
 
 public sealed partial class LibraryRepository
 {
@@ -145,7 +153,8 @@ public sealed partial class LibraryRepository
         long expectedFileSize,
         long expectedModifiedAtUtcTicks,
         AssetTechnicalMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<TechnicalMetadataWriteTimings>? timingObserver = null)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
@@ -186,8 +195,12 @@ public sealed partial class LibraryRepository
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var connectionStarted = timingObserver is null
+                ? 0L : Stopwatch.GetTimestamp();
             await using var connection = await _database.OpenConnectionAsync(
                 cancellationToken).ConfigureAwait(false);
+            var connectionOpenTicks = timingObserver is null
+                ? 0L : Stopwatch.GetElapsedTime(connectionStarted).Ticks;
             try
             {
                 return await UpdateTechnicalMetadataOnConnectionAsync(
@@ -200,7 +213,9 @@ public sealed partial class LibraryRepository
                     metadata,
                     normalizedIdentity,
                     nowTicks,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    timingObserver,
+                    connectionOpenTicks).ConfigureAwait(false);
             }
             catch (SqliteException exception)
                 when (attempt == 0
@@ -230,10 +245,18 @@ public sealed partial class LibraryRepository
         AssetTechnicalMetadata metadata,
         string normalizedIdentity,
         long nowTicks,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<TechnicalMetadataWriteTimings>? timingObserver,
+        long connectionOpenTicks)
     {
+        var beginStarted = timingObserver is null
+            ? 0L : Stopwatch.GetTimestamp();
         using var transaction = connection.BeginTransaction();
+        var beginTicks = timingObserver is null
+            ? 0L : Stopwatch.GetElapsedTime(beginStarted).Ticks;
 
+        var guardedUpdateStarted = timingObserver is null
+            ? 0L : Stopwatch.GetTimestamp();
         await using var updateAsset = connection.CreateCommand();
         updateAsset.Transaction = transaction;
         updateAsset.CommandText =
@@ -275,6 +298,10 @@ public sealed partial class LibraryRepository
             return false;
         }
 
+        var guardedUpdateTicks = timingObserver is null
+            ? 0L : Stopwatch.GetElapsedTime(guardedUpdateStarted).Ticks;
+        var upsertStarted = timingObserver is null
+            ? 0L : Stopwatch.GetTimestamp();
         await using var upsertMetadata = connection.CreateCommand();
         upsertMetadata.Transaction = transaction;
         upsertMetadata.CommandText =
@@ -307,8 +334,20 @@ public sealed partial class LibraryRepository
         upsertMetadata.Parameters.AddWithValue("$has_alpha", metadata.HasAlpha ? 1 : 0);
         upsertMetadata.Parameters.AddWithValue("$updated", nowTicks);
         await upsertMetadata.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
+        var upsertTicks = timingObserver is null
+            ? 0L : Stopwatch.GetElapsedTime(upsertStarted).Ticks;
+        var commitStarted = timingObserver is null
+            ? 0L : Stopwatch.GetTimestamp();
         transaction.Commit();
+        if (timingObserver is not null)
+        {
+            timingObserver(new TechnicalMetadataWriteTimings(
+                connectionOpenTicks,
+                beginTicks,
+                guardedUpdateTicks,
+                upsertTicks,
+                Stopwatch.GetElapsedTime(commitStarted).Ticks));
+        }
         return true;
     }
 
