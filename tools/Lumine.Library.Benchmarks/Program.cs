@@ -63,6 +63,15 @@ long metadataCommitOver8msTicks = 0;
 // Exclusive COMMIT-duration buckets measured inside the original guarded
 // per-asset SQLite transaction. These do not change the strict 8s gate.
 long[] metadataCommitLatencyBuckets = new long[5];
+// 10 fixed windows of 1,000 actual individual commits: diagnose whether
+// the 32ms+ tail is clustered or periodic, without extra I/O inside the gate.
+long[] metadataCommitWindowTicks = new long[10];
+long[] metadataCommitWindowSlow32Count = new long[10];
+// Bounded 1-based ordinals retain precise sparse spikes without an
+// allocation/logging operation on each individual COMMIT hot path.
+int[] metadataCommitSlow32Ordinals = new int[256];
+var metadataCommitSlow32Stored = 0;
+var metadataCommitSlow32Overflow = 0;
 var metadataObservedWrites = 0;
 var searchIndexed = 0;
 var pairedWarmAbRows = 0;
@@ -91,6 +100,23 @@ void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
         : commitMs < 128 ? 3
         : 4;
     metadataCommitLatencyBuckets[bucket]++;
+    var windowIndex = metadataObservedWrites / 1_000;
+    if ((uint)windowIndex < metadataCommitWindowTicks.Length)
+    {
+        metadataCommitWindowTicks[windowIndex] += timing.CommitTicks;
+        if (commitMs >= 32)
+        {
+            metadataCommitWindowSlow32Count[windowIndex]++;
+            if (metadataCommitSlow32Stored < metadataCommitSlow32Ordinals.Length)
+            {
+                metadataCommitSlow32Ordinals[metadataCommitSlow32Stored++] = metadataObservedWrites + 1;
+            }
+            else
+            {
+                metadataCommitSlow32Overflow++;
+            }
+        }
+    }
     if (commitMs >= 8)
     {
         metadataCommitOver8msTicks += timing.CommitTicks;
@@ -584,6 +610,10 @@ try
             ["technical_metadata_commit_bucket_8_to_lt_32ms"] = metadataCommitLatencyBuckets[2].ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_bucket_32_to_lt_128ms"] = metadataCommitLatencyBuckets[3].ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_commit_bucket_ge_128ms"] = metadataCommitLatencyBuckets[4].ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_window_1000_ticks_csv"] = string.Join(",", metadataCommitWindowTicks.Select(static ticks => ticks.ToString(CultureInfo.InvariantCulture))),
+            ["technical_metadata_commit_window_1000_ge_32ms_csv"] = string.Join(",", metadataCommitWindowSlow32Count.Select(static count => count.ToString(CultureInfo.InvariantCulture))),
+            ["technical_metadata_commit_ge_32ms_ordinals_csv"] = string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored)),
+            ["technical_metadata_commit_ge_32ms_ordinals_overflow"] = metadataCommitSlow32Overflow.ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
@@ -623,6 +653,13 @@ try
         $">=128ms={metadataCommitLatencyBuckets[4]:N0}, " +
         $"max={TimeSpan.FromTicks(metadataMaxCommitTicks).TotalMilliseconds:N1}ms, " +
         $">=8ms cumulative={TimeSpan.FromTicks(metadataCommitOver8msTicks).TotalMilliseconds:N1}ms.");
+    Console.WriteLine(
+        $"Individual SQLite COMMIT 1k windows (ms): {string.Join(",", metadataCommitWindowTicks.Select(static ticks => (ticks / (double)TimeSpan.TicksPerMillisecond).ToString("F1", CultureInfo.InvariantCulture)))}; " +
+        $">=32ms spikes/window: {string.Join(",", metadataCommitWindowSlow32Count)}.");
+    Console.WriteLine(
+        $"Individual SQLite COMMIT >=32ms ordinal positions (1-based, first 256): " +
+        $"{string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored))}; " +
+        $"overflow={metadataCommitSlow32Overflow}.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");

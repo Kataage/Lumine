@@ -179,3 +179,64 @@ guarantee a 10k **individually COMMITted** synthetic workload fits
 within 8s under every hosted-disk condition. Issue #714 remains OPEN
 for an evidence-led root-cause/architecture decision and final
 representative owner Windows acceptance together with #634/#635.
+
+
+## Bounded 1,000-write COMMIT windows to investigate clustered stalls (#714)
+
+[PR #727](https://github.com/Kataage/Lumine/pull/727) passed strict
+Windows CI [#38283482983](https://github.com/Kataage/Lumine/actions/runs/38283482983)
+on its first attempt and was merged into `develop`. The 10,000
+individual repository COMMITs showed a surprisingly skewed distribution:
+
+| Single SQLite COMMIT wall duration | Count |
+| --- | ---: |
+| <1ms | 9,933 |
+| 1–<8ms | 34 |
+| 8–<32ms | 0 |
+| 32–<128ms | **33** |
+| >=128ms | 0 |
+
+The **33 COMMITs >=8ms consumed 2,112.6ms** out of the total
+**2,448.4ms COMMIT wall time**, and the full 10k guarded metadata
+persistence finished within the unchanged 8-second limit at 3,156.8ms.
+This supports the hypothesis that occasional long commits can dominate
+the result, but the earlier 9,870.0ms red develop run predates the new
+histogram and cannot be assumed to have the identical distribution.
+
+To identify whether >=32ms commits arrive periodically (for example,
+around WAL checkpoint activity), or cluster around other hosted-runner
+I/O scheduling events, the follow-up benchmark observer collects **two
+fixed-length arrays of ten elements** over the *same original 10,000
+individual production repository calls*. Each window represents 1,000
+successfully persisted, separately committed image records and contains
+(1) summed SQLite COMMIT duration ticks and (2) number of COMMITs
+lasting >=32ms. The strict Windows acceptance verifies both arrays
+have exactly 10 nonnegative elements and sum back to the previously
+required full-run COMMIT time and >=32ms histogram bucket counts.
+
+This adds **no new SQLite statements, sleeps, file probes, connection
+handling, checkpoint PRAGMAs or timing-gate changes**. No inference that
+checkpointing is the cause is made without supporting evidence.
+The diagnostic is not a fix and may fail on the same unchanged 8,000ms
+hard budget. Issue #714 remains OPEN until trustworthy repeated
+post-merge/representative physical validation with #634/#635.
+
+
+## PR #728 — unchanged strict gate RED with precise COMMIT windows (2026-10-13)
+
+The first Windows [CI #38292620467](https://github.com/Kataage/Lumine/actions/runs/38292620467) after integrating completed Issue #729 **FAILED** the original unchanged 8-second 10k-individual-commit gate at **15,933.5261ms**. The same run completed all ten diagnostic windows **before** the hard rejection. This is actual performance evidence, not a Viewer cancellation smoke false positive.
+
+| Production write phase | Measured duration |
+| --- | ---: |
+| Pooled connection open + PRAGMAs | 62.4ms |
+| BEGIN | 50.4ms |
+| Guarded UPDATE | 140.3ms |
+| Metadata UPSERT | 138.3ms |
+| SQLite COMMIT total | **15,453.0ms** |
+| 10k original elapsed | **15,933.5ms (FAIL)** |
+
+Per-1k COMMIT totals (ms): `2449.8,8495.9,1531.2,429.8,387.8,455.5,350.1,397.0,532.5,423.6`. COMMITs >=32ms per 1k window: `7,4,5,3,3,4,3,3,4,3` (39). Single largest COMMIT: **5,716.1ms**. The second 1k window consumed **8,495.9ms**, proving that one unusually slow region can push the full run over the strict gate. The same job's earlier 10k-fixture runs completed individual writes in **3,442.7ms, 2,874.9ms and 3,088.3ms**, rather than reproducing the extreme delay on every attempt/fixture.
+
+SQLite documents [automatic WAL checkpoints](https://www.sqlite.org/wal.html) as a default 1000-page per-connection mechanism invoked by a COMMIT and as a cause of occasional longer COMMITs. The approximately 3–4 >=32ms events per ordinary 1k writes are **consistent** with this, but neither the particular SQLite checkpoint responsible nor the 5.7-second hosted runner delay is independently proven. With `synchronous=NORMAL`, moving synchronization into a separate checkpoint worker alters the power-loss window; disabling checkpoints, weakening synchronous mode, altering the original 8s gate or claiming an unmeasured optimization are **not** acceptable shortcuts.
+
+The next strictly additive diagnostic records the **one-based write ordinal** for each >=32ms COMMIT, in a fixed 256-entry memory buffer with an overflow count. It performs no extra SQL, file probes, WAL operations, timers, sleeps or logging per write; the post-benchmark JSON and Windows gate verify exact ordinal/window/histogram consistency. This allows evaluation of inter-stall spacing rather than inferring periodicity from window aggregate counts alone. If evidence supports checkpoint tuning, evaluate **bounded automatic checkpoint frequency** under the normal production `LibraryDatabase.OpenConnectionAsync` path, with WAL growth, crash/restart, cancellation, concurrency, and foreground-latency safety checks **before** deciding to adopt it. A green CI is not proof of repeatable stability; #714 remains OPEN.
