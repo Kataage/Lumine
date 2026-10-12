@@ -510,6 +510,148 @@ try
         concurrentTechnicalResults.All(static updated => updated),
         "Concurrent technical metadata persistence rejected a current source revision.");
 
+    // The bounded batch is the same guarded SQL path as a single write.
+    // A stale revision or same-stat conflicting identity must reject only
+    // that row without replacing valid existing technical metadata.
+    var batchValid = new TechnicalMetadataBatchItem(
+        sameStat.Id,
+        sameStat.SourceRevision,
+        sameStat.FileSize,
+        sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+        new AssetTechnicalMetadata(
+            640, 480, 640, 480, true, "png", technicalSha));
+    var batchRejectedIdentity =
+        batchValid with
+        {
+            Metadata = batchValid.Metadata with
+            {
+                SourceIdentity = "sha256:" + new string('c', 64)
+            }
+        };
+    var batchResults = await repository.UpdateTechnicalMetadataBatchAsync(
+        library.Id,
+        [
+            batchValid,
+            batchValid with { ExpectedSourceRevision = sameStat.SourceRevision + 1 },
+            batchRejectedIdentity,
+            batchValid
+        ]);
+    Require(
+        batchResults.SequenceEqual([true, false, false, true]),
+        "Bounded batch did not preserve per-row revision and source-identity guards.");
+    Require(
+        (await repository.GetAssetAsync(library.Id, "b.png")) is
+        {
+            Width: 640,
+            Height: 480,
+            SourceIdentity: var batchIdentity
+        }
+        && batchIdentity == technicalSha,
+        "Rejected batch rows corrupted persisted metadata.");
+
+    using (var cancelledBatch = new CancellationTokenSource())
+    {
+        cancelledBatch.Cancel();
+        try
+        {
+            _ = await repository.UpdateTechnicalMetadataBatchAsync(
+                library.Id, [batchValid], cancelledBatch.Token);
+            throw new InvalidOperationException(
+                "Cancelled technical metadata batch unexpectedly committed.");
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation before BEGIN must never acknowledge a write.
+        }
+    }
+
+    try
+    {
+        _ = await repository.UpdateTechnicalMetadataBatchAsync(
+            library.Id,
+            Enumerable.Repeat(
+                batchValid, LibraryRepository.MaxTechnicalMetadataBatchSize + 1)
+                .ToArray());
+        throw new InvalidOperationException(
+            "Oversized technical metadata batch was accepted.");
+    }
+    catch (ArgumentOutOfRangeException)
+    {
+        // Hard bound protects SQLite transaction duration and memory.
+    }
+
+    // Inject a SQLite failure on the second UPDATE and verify a prior
+    // successful UPDATE in the same batch was rolled back.
+    await using (var triggerConnection = new SqliteConnection(
+                     $"Data Source={databasePath}"))
+    {
+        await triggerConnection.OpenAsync();
+        await using var createTrigger = triggerConnection.CreateCommand();
+        createTrigger.CommandText =
+            """
+            CREATE TRIGGER reject_test_metadata_batch
+            BEFORE UPDATE OF width ON assets
+            WHEN NEW.width = 641
+            BEGIN
+                SELECT RAISE(ABORT, 'batch smoke forced rollback');
+            END;
+            """;
+        await createTrigger.ExecuteNonQueryAsync();
+    }
+
+    try
+    {
+        var firstChange = batchValid with
+        {
+            Metadata = batchValid.Metadata with { Width = 642 }
+        };
+        var secondChange = batchValid with
+        {
+            Metadata = batchValid.Metadata with { Width = 641 }
+        };
+        try
+        {
+            _ = await repository.UpdateTechnicalMetadataBatchAsync(
+                library.Id, [firstChange, secondChange]);
+            throw new InvalidOperationException(
+                "Injected SQLite error did not abort metadata batch.");
+        }
+        catch (SqliteException exception)
+            when (exception.Message.Contains(
+                "batch smoke forced rollback", StringComparison.Ordinal))
+        {
+            // Failure must roll back both assets and technical metadata.
+        }
+    }
+    finally
+    {
+        await using var cleanup = new SqliteConnection(
+            $"Data Source={databasePath}");
+        await cleanup.OpenAsync();
+        await using var dropTrigger = cleanup.CreateCommand();
+        dropTrigger.CommandText = "DROP TRIGGER IF EXISTS reject_test_metadata_batch;";
+        await dropTrigger.ExecuteNonQueryAsync();
+    }
+
+    var afterFailedBatch = await repository.GetAssetAsync(
+        library.Id, "b.png");
+    Require(
+        afterFailedBatch?.Width == 640
+        && afterFailedBatch.SourceIdentity == technicalSha,
+        "Failed metadata batch left partially committed state.");
+    LibraryDatabase.ClearPools();
+    var durableBatchDb = new LibraryDatabase(databasePath);
+    await durableBatchDb.InitializeAsync();
+    var durableBatchRepository = new LibraryRepository(durableBatchDb);
+    Require(
+        (await durableBatchRepository.GetAssetAsync(library.Id, "b.png")) is
+        {
+            Width: 640,
+            SourceIdentity: var durableIdentity
+        }
+        && durableIdentity == technicalSha,
+        "Metadata batch did not survive a fresh database connection.");
+
     await using (var transactionProbe =
                  new SqliteConnection(
                      "Data Source=:memory:;Pooling=False"))
