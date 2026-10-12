@@ -39,6 +39,7 @@ $reopen100 = Get-Metric $hundredK "library.database_reopen"
 $query100 = Get-Metric $hundredK "library.query"
 $keyset100 = Get-Metric $hundredK "library.keyset_traversal"
 $metadataPersist100 = Get-Metric $hundredK "library.technical_metadata_persist"
+$metadataBatch100 = Get-Metric $hundredK "library.technical_metadata_batch_persist"
 $searchRebuild100 = Get-Metric $hundredK "library.search_index_rebuild"
 $searchAscii100 = Get-Metric $hundredK "library.search_ascii"
 $searchJapanese100 = Get-Metric $hundredK "library.search_japanese_short"
@@ -111,6 +112,17 @@ if ($openMs -le 0 -or $beginMs -lt 0 -or $updateMs -le 0 -or
 }
 Write-Host ("10k technical metadata internal phases: pooled opens/PRAGMAs={0:N1} ms, BEGIN={1:N1} ms, guarded UPDATE={2:N1} ms, UPSERT={3:N1} ms, COMMIT={4:N1} ms" -f
     $openMs, $beginMs, $updateMs, $upsertMs, $commitMs)
+
+$metadataBatchCount = [int]$hundredK.metadata.technical_metadata_batch_persist_count
+$metadataBatchTransactions = [int]$hundredK.metadata.technical_metadata_batch_transaction_count
+if ($metadataBatchCount -ne 10000 -or
+    $metadataBatchTransactions -le 0 -or
+    $metadataBatchTransactions -ge 10000 -or
+    [double]$metadataBatch100.durationMs -le 0) {
+    throw "100k bounded metadata batch did not persist all 10,000 records in fewer than 10,000 transactions."
+}
+Write-Host ("10k bounded metadata batch (warm second pass): {0:N1} ms, {1:N0} rows / {2:N0} commits" -f
+    [double]$metadataBatch100.durationMs, $metadataBatchCount, $metadataBatchTransactions)
 
 if ([double]$metadataPersist100.durationMs -gt 8000) {
     throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
