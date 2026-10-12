@@ -362,6 +362,8 @@ try
     var sameStat = await repository.GetAssetAsync(library.Id, "b.png")
         ?? throw new InvalidOperationException("b.png was not indexed.");
     var technicalSha = "sha256:" + new string('a', 64);
+    TechnicalMetadataWriteTimings? observedTechnicalWriteTiming = null;
+    var technicalWriteObservationCount = 0;
     Require(
         await repository.UpdateTechnicalMetadataAsync(
             library.Id,
@@ -376,8 +378,22 @@ try
                 480,
                 true,
                 "png",
-                technicalSha)),
+                technicalSha),
+            timingObserver: timing =>
+            {
+                technicalWriteObservationCount++;
+                observedTechnicalWriteTiming = timing;
+            }),
         "Technical metadata update was rejected for the current source revision.");
+    Require(
+        technicalWriteObservationCount == 1
+        && observedTechnicalWriteTiming is { } technicalTiming
+        && technicalTiming.ConnectionOpenTicks > 0
+        && technicalTiming.BeginTransactionTicks >= 0
+        && technicalTiming.GuardedAssetUpdateTicks > 0
+        && technicalTiming.MetadataUpsertTicks > 0
+        && technicalTiming.CommitTicks >= 0,
+        "Successful technical metadata write did not expose valid individual transaction phase timings.");
 
     var technical = await repository.GetAssetAsync(library.Id, "b.png")
         ?? throw new InvalidOperationException("Technical metadata asset disappeared.");
