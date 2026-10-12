@@ -545,6 +545,9 @@ internal sealed class RealLibraryAcceptanceSession
 
         WriteViewerMetadata(viewer);
         WriteImageMetadata(image);
+        WriteBackgroundTechnicalMetadata(
+            ViewerTechnicalMetadataBatcher.For(
+                runtime.LibraryService).Diagnostics);
         _metadata["thumbnail.storage_mode"] =
             runtime.ThumbnailStorageMode.ToString();
         _metadata["thumbnail.memory_cache_entries"] =
@@ -968,6 +971,36 @@ internal sealed class RealLibraryAcceptanceSession
                 NormalizeMetadataValue(
                     diagnostics.LastTileLoadError);
         }
+    }
+
+    private void WriteBackgroundTechnicalMetadata(
+        ViewerTechnicalMetadataBatchDiagnostics diagnostics)
+    {
+        // Real representative-library Viewer traffic only: the queue is
+        // accessed through the actual thumbnail adapter. Zero rows means no
+        // new background metadata was necessary, not a performance pass.
+        _metadata["viewer.metadata_background_queued"] =
+            diagnostics.QueuedWrites.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_single_commits"] =
+            diagnostics.SingleWriteCommits.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batch_commits"] =
+            diagnostics.CommittedBatches.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batched_rows"] =
+            diagnostics.BatchedRows.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_guard_rejected"] =
+            diagnostics.RejectedWrites.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_cancelled_before_write"] =
+            diagnostics.CanceledBeforeWrite.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_failed_groups"] =
+            diagnostics.FailedGroups.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_peak_queue_depth"] =
+            diagnostics.PeakPendingQueueDepth.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_completed_write_latency_ticks"] =
+            diagnostics.CompletedWriteLatencyTicks.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_max_completed_write_latency_ticks"] =
+            diagnostics.MaxCompletedWriteLatencyTicks.ToString(
+                CultureInfo.InvariantCulture);
     }
 
     private void WriteImageMetadata(
