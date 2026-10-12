@@ -26,6 +26,13 @@ if (!int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, ou
     throw new ArgumentException("--count must be a positive integer.");
 }
 
+var walPagesText = ReadOption(args, "--wal-autocheckpoint-pages") ?? "1000";
+if (!int.TryParse(walPagesText, NumberStyles.None, CultureInfo.InvariantCulture, out var walAutoCheckpointPages)
+    || walAutoCheckpointPages is < 128 or > 8192)
+{
+    throw new ArgumentException("--wal-autocheckpoint-pages must be an integer from 128 to 8192.");
+}
+
 var output = ReadOption(args, "--output")
     ?? Path.Combine("artifacts", "benchmarks", $"library-{count}.json");
 
@@ -46,6 +53,8 @@ long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
+long metadataWalAfterSingleBytes = 0;
+long metadataWalAfterBatchBytes = 0;
 var metadataBatchPersisted = 0;
 var metadataBatchTransactionCount = 0;
 var metadataPageFetchCount = 0;
@@ -127,7 +136,7 @@ void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
 
 try
 {
-    var database = new LibraryDatabase(databasePath);
+    var database = new LibraryDatabase(databasePath, walAutoCheckpointPages);
 
     using (recorder.Measure(CoreMetricNames.DatabaseOpenMigration))
     {
@@ -270,6 +279,10 @@ try
         }
     }
 
+    // File-size snapshots are taken OUTSIDE the original strict 10k timer.
+    var walPath = databasePath + "-wal";
+    metadataWalAfterSingleBytes = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
+
     if (metadataPersisted != metadataTarget
         || metadataObservedWrites != metadataTarget)
     {
@@ -339,6 +352,8 @@ try
             }
         }
     }
+
+    metadataWalAfterBatchBytes = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
 
     if (metadataBatchPersisted != metadataTarget)
     {
@@ -469,7 +484,7 @@ try
     using (recorder.Measure(CoreMetricNames.DatabaseReopen))
     {
         LibraryDatabase.ClearPools();
-        var reopenedDatabase = new LibraryDatabase(databasePath);
+        var reopenedDatabase = new LibraryDatabase(databasePath, walAutoCheckpointPages);
         await reopenedDatabase.InitializeAsync();
         repository = new LibraryRepository(reopenedDatabase);
 
@@ -579,6 +594,9 @@ try
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["kind"] = "library-core",
+            ["wal_autocheckpoint_pages"] = walAutoCheckpointPages.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_bytes_after_single"] = metadataWalAfterSingleBytes.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_bytes_after_batch"] = metadataWalAfterBatchBytes.ToString(CultureInfo.InvariantCulture),
             ["fixture_asset_count"] = count.ToString(CultureInfo.InvariantCulture),
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),

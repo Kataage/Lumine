@@ -565,13 +565,25 @@ public sealed class LibraryDatabase
             """)
     ];
 
-    public LibraryDatabase(string databasePath)
+    // Benchmarkable production connection policy. 1000 pages preserves the
+    // documented SQLite default; zero (checkpoint disabled) is disallowed.
+    public LibraryDatabase(string databasePath, int walAutoCheckpointPages = 1000)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        if (walAutoCheckpointPages is < 128 or > 8192)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(walAutoCheckpointPages),
+                "The WAL auto-checkpoint threshold must be 128..8192 pages.");
+        }
+
         DatabasePath = Path.GetFullPath(databasePath);
+        WalAutoCheckpointPages = walAutoCheckpointPages;
     }
 
     public string DatabasePath { get; }
+
+    public int WalAutoCheckpointPages { get; }
 
     public static int SupportedSchemaVersion => Migrations[^1].Version;
 
@@ -727,9 +739,11 @@ public sealed class LibraryDatabase
         await ExecutePragmasAsync(
             connection,
             """
+            $"""
             PRAGMA foreign_keys=ON;
             PRAGMA busy_timeout=5000;
             PRAGMA synchronous=NORMAL;
+            PRAGMA wal_autocheckpoint={WalAutoCheckpointPages};
             """,
             cancellationToken).ConfigureAwait(false);
 
