@@ -179,3 +179,44 @@ guarantee a 10k **individually COMMITted** synthetic workload fits
 within 8s under every hosted-disk condition. Issue #714 remains OPEN
 for an evidence-led root-cause/architecture decision and final
 representative owner Windows acceptance together with #634/#635.
+
+
+## Bounded 1,000-write COMMIT windows to investigate clustered stalls (#714)
+
+[PR #727](https://github.com/Kataage/Lumine/pull/727) passed strict
+Windows CI [#38283482983](https://github.com/Kataage/Lumine/actions/runs/38283482983)
+on its first attempt and was merged into `develop`. The 10,000
+individual repository COMMITs showed a surprisingly skewed distribution:
+
+| Single SQLite COMMIT wall duration | Count |
+| --- | ---: |
+| <1ms | 9,933 |
+| 1–<8ms | 34 |
+| 8–<32ms | 0 |
+| 32–<128ms | **33** |
+| >=128ms | 0 |
+
+The **33 COMMITs >=8ms consumed 2,112.6ms** out of the total
+**2,448.4ms COMMIT wall time**, and the full 10k guarded metadata
+persistence finished within the unchanged 8-second limit at 3,156.8ms.
+This supports the hypothesis that occasional long commits can dominate
+the result, but the earlier 9,870.0ms red develop run predates the new
+histogram and cannot be assumed to have the identical distribution.
+
+To identify whether >=32ms commits arrive periodically (for example,
+around WAL checkpoint activity), or cluster around other hosted-runner
+I/O scheduling events, the follow-up benchmark observer collects **two
+fixed-length arrays of ten elements** over the *same original 10,000
+individual production repository calls*. Each window represents 1,000
+successfully persisted, separately committed image records and contains
+(1) summed SQLite COMMIT duration ticks and (2) number of COMMITs
+lasting >=32ms. The strict Windows acceptance verifies both arrays
+have exactly 10 nonnegative elements and sum back to the previously
+required full-run COMMIT time and >=32ms histogram bucket counts.
+
+This adds **no new SQLite statements, sleeps, file probes, connection
+handling, checkpoint PRAGMAs or timing-gate changes**. No inference that
+checkpointing is the cause is made without supporting evidence.
+The diagnostic is not a fix and may fail on the same unchanged 8,000ms
+hard budget. Issue #714 remains OPEN until trustworthy repeated
+post-merge/representative physical validation with #634/#635.
