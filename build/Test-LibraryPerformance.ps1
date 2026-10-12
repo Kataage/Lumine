@@ -138,6 +138,40 @@ Write-Host ("10k individual SQLite COMMIT latency: <1ms={0:N0}, [1,8)ms={1:N0}, 
     $commitBuckets[0], $commitBuckets[1], $commitBuckets[2],
     $commitBuckets[3], $commitBuckets[4], $commitMaxMs, $commitSlowMs)
 
+# Fixed 10 x 1,000-write windows reuse the exact same original per-write
+# production COMMIT timer. No extra filesystem I/O or alternate SQL.
+$windowTicksText = [string]$hundredK.metadata.technical_metadata_commit_window_1000_ticks_csv
+$windowSlowText = [string]$hundredK.metadata.technical_metadata_commit_window_1000_ge_32ms_csv
+if ([string]::IsNullOrWhiteSpace($windowTicksText) -or
+    [string]::IsNullOrWhiteSpace($windowSlowText)) {
+    throw "10k individual COMMIT timing windows are missing."
+}
+$windowTicks = @($windowTicksText.Split(',') | ForEach-Object {
+    [long]$parsed = 0
+    if (-not [long]::TryParse($_, [ref]$parsed) -or $parsed -lt 0) {
+        throw "10k COMMIT window contained a missing, negative or invalid time."
+    }
+    $parsed
+})
+$windowSlow = @($windowSlowText.Split(',') | ForEach-Object {
+    [long]$parsed = 0
+    if (-not [long]::TryParse($_, [ref]$parsed) -or $parsed -lt 0) {
+        throw "10k COMMIT window contained an invalid >=32ms count."
+    }
+    $parsed
+})
+$windowTotalTicks = ($windowTicks | Measure-Object -Sum).Sum
+$windowSlowTotal = ($windowSlow | Measure-Object -Sum).Sum
+if ($windowTicks.Count -ne 10 -or $windowSlow.Count -ne 10 -or
+    $windowTotalTicks -ne [long]$hundredK.metadata.technical_metadata_commit_ticks -or
+    $windowSlowTotal -ne ($commitBuckets[3] + $commitBuckets[4]) -or
+    ($windowSlow | Where-Object { $_ -gt 1000 }).Count -gt 0) {
+    throw "10k individual COMMIT window totals disagree with the original production timing evidence."
+}
+$windowsMs = @($windowTicks | ForEach-Object { "{0:F1}" -f ($_ / 10000.0) })
+Write-Host ("10k individual SQLite COMMIT per-1k windows: ms=[{0}], >=32ms stalls=[{1}]" -f
+    ($windowsMs -join ","), ($windowSlow -join ","))
+
 $metadataBatchCount = [int]$hundredK.metadata.technical_metadata_batch_persist_count
 $metadataBatchTransactions = [int]$hundredK.metadata.technical_metadata_batch_transaction_count
 if ($metadataBatchCount -ne 10000 -or
