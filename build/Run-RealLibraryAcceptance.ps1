@@ -238,7 +238,10 @@ function Get-ViewerBackgroundMetadataEvidence {
         "peak_queue_depth", "completed_write_latency_ticks",
         "max_completed_write_latency_ticks", "batch_groups_2_to_8",
         "batch_groups_9_to_32", "batch_groups_33_to_64",
-        "avoided_individual_commits"
+        "avoided_individual_commits",
+        "queue_to_sqlite_ticks", "max_queue_to_sqlite_ticks",
+        "queue_to_sqlite_samples", "sqlite_service_ticks",
+        "max_sqlite_service_ticks", "sqlite_service_calls"
     )
     $counts = @{}
     foreach ($name in $names) {
@@ -288,7 +291,14 @@ function Get-ViewerBackgroundMetadataEvidence {
         $samples -gt $queued -or
         $samples -lt ($rows + $counts["single_commits"]) -or
         $counts["max_completed_write_latency_ticks"] -gt
-            $counts["completed_write_latency_ticks"]) {
+            $counts["completed_write_latency_ticks"] -or
+        $counts["queue_to_sqlite_samples"] -ne $samples -or
+        $counts["queue_to_sqlite_ticks"] -gt $counts["completed_write_latency_ticks"] -or
+        $counts["max_queue_to_sqlite_ticks"] -gt $counts["queue_to_sqlite_ticks"] -or
+        $counts["max_sqlite_service_ticks"] -gt $counts["sqlite_service_ticks"] -or
+        $counts["sqlite_service_calls"] -gt $samples -or
+        $counts["sqlite_service_calls"] -lt (
+            $counts["batch_commits"] + $counts["single_commits"])) {
         throw "$Mode Viewer background metadata group, admission or latency accounting is inconsistent."
     }
 
@@ -338,6 +348,12 @@ function Get-ViewerBackgroundMetadataEvidence {
         peakQueueDepth = $counts["peak_queue_depth"]
         p95UpperBoundMs = $percentiles[95]
         p99UpperBoundMs = $percentiles[99]
+        queueToSqliteTicks = $counts["queue_to_sqlite_ticks"]
+        maxQueueToSqliteTicks = $counts["max_queue_to_sqlite_ticks"]
+        queueToSqliteSamples = $counts["queue_to_sqlite_samples"]
+        sqliteServiceTicks = $counts["sqlite_service_ticks"]
+        maxSqliteServiceTicks = $counts["max_sqlite_service_ticks"]
+        sqliteServiceCalls = $counts["sqlite_service_calls"]
     }
 }
 
@@ -1223,6 +1239,8 @@ try {
     Write-Host "Cold metadata writes : $($summary.viewerBackgroundMetadata.cold.completedWrites) ($($summary.viewerBackgroundMetadata.cold.state))"
     Write-Host "Cold batch commits   : $($summary.viewerBackgroundMetadata.cold.batchCommits), accepted rows=$($summary.viewerBackgroundMetadata.cold.acceptedBatchedRows), avoided individual commits=$($summary.viewerBackgroundMetadata.cold.avoidedIndividualCommits)"
     Write-Host "Cold batch evidence  : $($summary.viewerBackgroundMetadata.cold.batchEvidence)"
+    Write-Host "Cold queue wait samples : $($summary.viewerBackgroundMetadata.cold.queueToSqliteSamples), total ticks=$($summary.viewerBackgroundMetadata.cold.queueToSqliteTicks)"
+    Write-Host "Cold SQLite calls       : $($summary.viewerBackgroundMetadata.cold.sqliteServiceCalls), total ticks=$($summary.viewerBackgroundMetadata.cold.sqliteServiceTicks)"
     Write-Host "Cold write p95/p99   : $($summary.viewerBackgroundMetadata.cold.p95UpperBoundMs) / $($summary.viewerBackgroundMetadata.cold.p99UpperBoundMs) ms (histogram upper bounds)"
     Write-Host "Warm convergence     : $warmConvergenceNeeded"
     Write-Host "Summary              : $summaryPath"
