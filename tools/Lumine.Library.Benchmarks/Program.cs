@@ -42,6 +42,8 @@ long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
+var metadataBatchPersisted = 0;
+var metadataBatchTransactionCount = 0;
 var metadataPageFetchCount = 0;
 long metadataPageFetchTicks = 0;
 long metadataWriteTicks = 0;
@@ -218,6 +220,75 @@ try
             $"Persisted technical metadata for {metadataPersisted:N0} assets, expected {metadataTarget:N0}.");
     }
 
+    // New, separately reported production API experiment. Keep the original
+    // 10,000 individually awaited, revision-guarded writes and their unchanged
+    // <=8s acceptance gate above as the control. This additional pass reuses
+    // the actual bounded repository method, not fixture-only direct SQL.
+    // It is a warm second pass: do not claim a head-to-head cold speedup.
+    using (recorder.Measure(CoreMetricNames.LibraryTechnicalMetadataBatchPersist))
+    {
+        AssetCursor? batchCursor = null;
+        while (metadataBatchPersisted < metadataTarget)
+        {
+            var page = await repository.GetAssetPageAsync(
+                library.Id,
+                Math.Min(500, metadataTarget - metadataBatchPersisted),
+                batchCursor);
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+
+            for (var offset = 0; offset < page.Items.Count;
+                 offset += LibraryRepository.MaxTechnicalMetadataBatchSize)
+            {
+                var updates = page.Items
+                    .Skip(offset)
+                    .Take(LibraryRepository.MaxTechnicalMetadataBatchSize)
+                    .Select(asset => new TechnicalMetadataBatchItem(
+                        asset.Id,
+                        asset.SourceRevision,
+                        asset.FileSize,
+                        asset.ModifiedAtUtc.UtcDateTime.Ticks,
+                        new AssetTechnicalMetadata(
+                            asset.Width ?? 1,
+                            asset.Height ?? 1,
+                            asset.RawWidth ?? asset.Width ?? 1,
+                            asset.RawHeight ?? asset.Height ?? 1,
+                            asset.HasAlpha ?? false,
+                            asset.Format ?? asset.Extension,
+                            "sha256:" + asset.Id
+                                .ToString("x", CultureInfo.InvariantCulture)
+                                .PadLeft(64, '0'))))
+                    .ToArray();
+
+                var results = await repository.UpdateTechnicalMetadataBatchAsync(
+                    library.Id, updates);
+                if (results.Count != updates.Length
+                    || results.Any(static accepted => !accepted))
+                {
+                    throw new InvalidOperationException(
+                        "Bounded technical metadata batch rejected a current fixture source.");
+                }
+
+                metadataBatchPersisted += results.Count;
+                metadataBatchTransactionCount++;
+            }
+
+            batchCursor = page.NextCursor;
+            if (batchCursor is null)
+            {
+                break;
+            }
+        }
+    }
+
+    if (metadataBatchPersisted != metadataTarget)
+    {
+        throw new InvalidOperationException(
+            $"Bounded metadata batch persisted {metadataBatchPersisted:N0} assets, expected {metadataTarget:N0}.");
+    }
+
     using (recorder.Measure(CoreMetricNames.LibrarySearchIndexRebuild))
     {
         searchIndexed = await repository.RebuildSearchIndexAsync(
@@ -347,6 +418,8 @@ try
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_batch_persist_count"] = metadataBatchPersisted.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_batch_transaction_count"] = metadataBatchTransactionCount.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_page_fetch_count"] = metadataPageFetchCount.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_page_fetch_ticks"] = metadataPageFetchTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_update_ticks"] = metadataWriteTicks.ToString(CultureInfo.InvariantCulture),
@@ -375,6 +448,7 @@ try
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
+    Console.WriteLine($"Technical metadata bounded batch: {metadataBatchPersisted:N0} rows / {metadataBatchTransactionCount:N0} commits (second, warm pass).");
     Console.WriteLine($"Technical metadata phase durations: pages={TimeSpan.FromTicks(metadataPageFetchTicks).TotalMilliseconds:N1} ms ({metadataPageFetchCount:N0} fetches), updates={TimeSpan.FromTicks(metadataWriteTicks).TotalMilliseconds:N1} ms, slow writes >=8ms={metadataSlowWriteCount:N0}, max write={TimeSpan.FromTicks(metadataMaxWriteTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Technical metadata production write internals: opens={TimeSpan.FromTicks(metadataConnectionOpenTicks).TotalMilliseconds:N1} ms, begin={TimeSpan.FromTicks(metadataBeginTicks).TotalMilliseconds:N1} ms, guarded UPDATE={TimeSpan.FromTicks(metadataGuardedUpdateTicks).TotalMilliseconds:N1} ms, UPSERT={TimeSpan.FromTicks(metadataUpsertTicks).TotalMilliseconds:N1} ms, COMMIT={TimeSpan.FromTicks(metadataCommitTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
