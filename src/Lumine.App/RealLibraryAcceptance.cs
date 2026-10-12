@@ -1001,6 +1001,42 @@ internal sealed class RealLibraryAcceptanceSession
         _metadata["viewer.metadata_background_max_completed_write_latency_ticks"] =
             diagnostics.MaxCompletedWriteLatencyTicks.ToString(
                 CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batch_groups_2_to_8"] =
+            diagnostics.BatchGroups2To8Rows.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batch_groups_9_to_32"] =
+            diagnostics.BatchGroups9To32Rows.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batch_groups_33_to_64"] =
+            diagnostics.BatchGroups33To64Rows.ToString(
+                CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_avoided_individual_commits"] =
+            Math.Max(0, diagnostics.BatchedRows - diagnostics.CommittedBatches)
+                .ToString(CultureInfo.InvariantCulture);
+
+        var latencyBuckets = diagnostics.CompletedWriteLatencyBuckets;
+        var upperBounds = ViewerTechnicalMetadataLatencyHistogram.UpperBoundsMs;
+        for (var index = 0; index < latencyBuckets.Length; index++)
+        {
+            // The final bucket is strictly greater than 1000ms; each
+            // preceding bucket is exclusive of all smaller upper bounds.
+            var label = index == upperBounds.Length
+                ? "over_1000"
+                : "le_" + upperBounds[index].ToString(
+                    CultureInfo.InvariantCulture);
+            _metadata["viewer.metadata_background_latency_bucket_" + label + "_ms"] =
+                latencyBuckets[index].ToString(CultureInfo.InvariantCulture);
+        }
+
+        // Report coarse percentile upper bounds, never synthetic exact p95/p99
+        // values from the histogram. "no_samples" and "over_1000" are
+        // deliberate non-numeric values with distinct acceptance meanings.
+        _metadata["viewer.metadata_background_latency_p95_upper_bound_ms"] =
+            ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                latencyBuckets, 95);
+        _metadata["viewer.metadata_background_latency_p99_upper_bound_ms"] =
+            ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(
+                latencyBuckets, 99);
     }
 
     private void WriteImageMetadata(
