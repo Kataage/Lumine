@@ -474,7 +474,14 @@ jobs:
           }
 
           foreach ($count in 10000, 50000, 100000) {
-            dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $count --output "artifacts/benchmarks/library-$count.json"
+            # Only the warm 100k fixture runs the optional paired probe.
+            # The cold fixture, original 10k write phase and existing 8s
+            # acceptance gate above remain identical and mandatory.
+            $pairedArgs = @()
+            if ($count -eq 100000) {
+              $pairedArgs = @("--paired-warm-metadata-ab")
+            }
+            dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $count --output "artifacts/benchmarks/library-$count.json" @pairedArgs
             if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
             }

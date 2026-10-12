@@ -16,6 +16,10 @@ static string? ReadOption(string[] args, string name)
     return null;
 }
 
+var pairedWarmMetadataAb = args.Contains(
+    "--paired-warm-metadata-ab",
+    StringComparer.Ordinal);
+
 var countText = ReadOption(args, "--count") ?? "100000";
 if (!int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) || count <= 0)
 {
@@ -56,6 +60,15 @@ long metadataUpsertTicks = 0;
 long metadataCommitTicks = 0;
 var metadataObservedWrites = 0;
 var searchIndexed = 0;
+var pairedWarmAbRows = 0;
+var pairedWarmAbBatchGroups = 0;
+var pairedWarmAbMeasurements = new Dictionary<string, double>(
+    StringComparer.Ordinal);
+
+string PairedWarmPhase(string key) =>
+    pairedWarmAbMeasurements.TryGetValue(key, out var ms)
+        ? ms.ToString("F3", CultureInfo.InvariantCulture)
+        : "not_run";
 
 void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
 {
@@ -289,6 +302,114 @@ try
             $"Bounded metadata batch persisted {metadataBatchPersisted:N0} assets, expected {metadataTarget:N0}.");
     }
 
+    // Paired ABBA diagnostic, opt-in on the 100k warm fixture only.  Unlike
+    // the original gate, both APIs below rewrite the exact same immutable
+    // source-guarded rows after the first full batch pass.  The B-A reversal
+    // attenuates monotonic warming and background runner load, but this is
+    // still a WARM within-run comparison, not cold-vs-cold evidence.
+    if (pairedWarmMetadataAb)
+    {
+        var pairedItems = new List<TechnicalMetadataBatchItem>(metadataTarget);
+        AssetCursor? pairedCursor = null;
+        while (pairedItems.Count < metadataTarget)
+        {
+            var page = await repository.GetAssetPageAsync(
+                library.Id,
+                Math.Min(500, metadataTarget - pairedItems.Count),
+                pairedCursor);
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+
+            foreach (var asset in page.Items)
+            {
+                var identity = asset.SourceIdentity
+                    ?? throw new InvalidOperationException(
+                        "Paired warm A/B source was missing persisted identity.");
+                pairedItems.Add(new TechnicalMetadataBatchItem(
+                    asset.Id,
+                    asset.SourceRevision,
+                    asset.FileSize,
+                    asset.ModifiedAtUtc.UtcDateTime.Ticks,
+                    new AssetTechnicalMetadata(
+                        asset.Width ?? 1,
+                        asset.Height ?? 1,
+                        asset.RawWidth ?? asset.Width ?? 1,
+                        asset.RawHeight ?? asset.Height ?? 1,
+                        asset.HasAlpha ?? false,
+                        asset.Format ?? asset.Extension,
+                        identity)));
+            }
+
+            pairedCursor = page.NextCursor;
+            if (pairedCursor is null)
+            {
+                break;
+            }
+        }
+
+        if (pairedItems.Count != metadataTarget)
+        {
+            throw new InvalidOperationException(
+                $"Paired warm A/B gathered {pairedItems.Count:N0} source-guarded records, expected {metadataTarget:N0}.");
+        }
+
+        pairedWarmAbRows = pairedItems.Count;
+        foreach (var phase in new[]
+                 {
+                     "single_first", "batch_first",
+                     "batch_second", "single_second"
+                 })
+        {
+            var isBatch = phase.StartsWith(
+                "batch_", StringComparison.Ordinal);
+            var start = Stopwatch.GetTimestamp();
+            using (recorder.Measure(
+                       "library.technical_metadata_warm_ab_" + phase))
+            {
+                if (isBatch)
+                {
+                    foreach (var chunk in pairedItems.Chunk(
+                                 LibraryRepository.MaxTechnicalMetadataBatchSize))
+                    {
+                        var accepted = await repository.UpdateTechnicalMetadataBatchAsync(
+                            library.Id, chunk);
+                        if (accepted.Count != chunk.Length
+                            || accepted.Any(static success => !success))
+                        {
+                            throw new InvalidOperationException(
+                                "Paired warm A/B batch rejected a current source.");
+                        }
+                        pairedWarmAbBatchGroups++;
+                    }
+                }
+                else
+                {
+                    foreach (var item in pairedItems)
+                    {
+                        var accepted = await repository.UpdateTechnicalMetadataAsync(
+                            library.Id,
+                            item.AssetId,
+                            item.ExpectedSourceRevision,
+                            item.ExpectedFileSize,
+                            item.ExpectedModifiedAtUtcTicks,
+                            item.Metadata);
+                        if (!accepted)
+                        {
+                            throw new InvalidOperationException(
+                                "Paired warm A/B individual write rejected a current source.");
+                        }
+                    }
+                }
+            }
+
+            pairedWarmAbMeasurements.Add(
+                phase,
+                Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        }
+    }
+
     using (recorder.Measure(CoreMetricNames.LibrarySearchIndexRebuild))
     {
         searchIndexed = await repository.RebuildSearchIndexAsync(
@@ -420,6 +541,13 @@ try
             ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_batch_persist_count"] = metadataBatchPersisted.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_batch_transaction_count"] = metadataBatchTransactionCount.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_warm_ab_enabled"] = pairedWarmMetadataAb ? "true" : "false",
+            ["technical_metadata_warm_ab_rows_per_phase"] = pairedWarmAbRows.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_warm_ab_batch_groups_total"] = pairedWarmAbBatchGroups.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_warm_ab_single_first_ms"] = PairedWarmPhase("single_first"),
+            ["technical_metadata_warm_ab_batch_first_ms"] = PairedWarmPhase("batch_first"),
+            ["technical_metadata_warm_ab_batch_second_ms"] = PairedWarmPhase("batch_second"),
+            ["technical_metadata_warm_ab_single_second_ms"] = PairedWarmPhase("single_second"),
             ["technical_metadata_page_fetch_count"] = metadataPageFetchCount.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_page_fetch_ticks"] = metadataPageFetchTicks.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_update_ticks"] = metadataWriteTicks.ToString(CultureInfo.InvariantCulture),
@@ -449,6 +577,16 @@ try
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
     Console.WriteLine($"Technical metadata bounded batch: {metadataBatchPersisted:N0} rows / {metadataBatchTransactionCount:N0} commits (second, warm pass).");
+    if (pairedWarmMetadataAb)
+    {
+        Console.WriteLine(
+            $"Paired WARM metadata A-B-B-A (same {pairedWarmAbRows:N0} rows): " +
+            $"single1={PairedWarmPhase("single_first")} ms; " +
+            $"batch1={PairedWarmPhase("batch_first")} ms; " +
+            $"batch2={PairedWarmPhase("batch_second")} ms; " +
+            $"single2={PairedWarmPhase("single_second")} ms. " +
+            "No cold/OS-cache equivalence claim.");
+    }
     Console.WriteLine($"Technical metadata phase durations: pages={TimeSpan.FromTicks(metadataPageFetchTicks).TotalMilliseconds:N1} ms ({metadataPageFetchCount:N0} fetches), updates={TimeSpan.FromTicks(metadataWriteTicks).TotalMilliseconds:N1} ms, slow writes >=8ms={metadataSlowWriteCount:N0}, max write={TimeSpan.FromTicks(metadataMaxWriteTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Technical metadata production write internals: opens={TimeSpan.FromTicks(metadataConnectionOpenTicks).TotalMilliseconds:N1} ms, begin={TimeSpan.FromTicks(metadataBeginTicks).TotalMilliseconds:N1} ms, guarded UPDATE={TimeSpan.FromTicks(metadataGuardedUpdateTicks).TotalMilliseconds:N1} ms, UPSERT={TimeSpan.FromTicks(metadataUpsertTicks).TotalMilliseconds:N1} ms, COMMIT={TimeSpan.FromTicks(metadataCommitTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");

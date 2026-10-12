@@ -124,6 +124,34 @@ if ($metadataBatchCount -ne 10000 -or
 Write-Host ("10k bounded metadata batch (warm second pass): {0:N1} ms, {1:N0} rows / {2:N0} commits" -f
     [double]$metadataBatch100.durationMs, $metadataBatchCount, $metadataBatchTransactions)
 
+# Paired A-B-B-A diagnostic is run only on the already-warm 100k fixture.
+# Both production APIs rewrite the same 10,000 source-guarded records twice,
+# reversing order (single/batch/batch/single) to reduce monotonic cache bias.
+# This is *not* a cold A/B test, and it MUST NOT substitute or soften the
+# original 8s single-write gate below.
+if ($hundredK.metadata.technical_metadata_warm_ab_enabled -ne "true") {
+    throw "100k warm fixture omitted the required paired metadata A-B-B-A diagnostic."
+}
+$abRows = [int]$hundredK.metadata.technical_metadata_warm_ab_rows_per_phase
+$abGroups = [int]$hundredK.metadata.technical_metadata_warm_ab_batch_groups_total
+$expectedGroups = [int]([Math]::Ceiling($abRows / 64.0) * 2)
+if ($abRows -ne 10000 -or $abGroups -ne $expectedGroups) {
+    throw "Paired warm metadata A-B-B-A did not update all 10,000 guarded rows in both API modes (rows=$abRows, groups=$abGroups)."
+}
+$warmSingleFirst = Get-Metric $hundredK "library.technical_metadata_warm_ab_single_first"
+$warmBatchFirst = Get-Metric $hundredK "library.technical_metadata_warm_ab_batch_first"
+$warmBatchSecond = Get-Metric $hundredK "library.technical_metadata_warm_ab_batch_second"
+$warmSingleSecond = Get-Metric $hundredK "library.technical_metadata_warm_ab_single_second"
+foreach ($metric in @($warmSingleFirst, $warmBatchFirst, $warmBatchSecond, $warmSingleSecond)) {
+    if ([double]$metric.durationMs -le 0) {
+        throw "Paired warm metadata A-B-B-A reported a missing or invalid duration."
+    }
+}
+Write-Host ("10k paired WARM A-B-B-A same-row production metadata: single1={0:N1} ms; batch1={1:N1} ms; batch2={2:N1} ms; single2={3:N1} ms; {4:N0} rows/phase, {5:N0} batch groups total (not cold A/B)" -f
+    [double]$warmSingleFirst.durationMs, [double]$warmBatchFirst.durationMs,
+    [double]$warmBatchSecond.durationMs, [double]$warmSingleSecond.durationMs,
+    $abRows, $abGroups)
+
 if ([double]$metadataPersist100.durationMs -gt 8000) {
     throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
 }
