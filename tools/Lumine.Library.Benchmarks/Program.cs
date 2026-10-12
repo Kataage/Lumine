@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Lumine.Diagnostics;
 using Lumine.Library;
@@ -41,6 +42,11 @@ long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
+var metadataPageFetchCount = 0;
+long metadataPageFetchTicks = 0;
+long metadataWriteTicks = 0;
+long metadataSlowWriteCount = 0;
+long metadataMaxWriteTicks = 0;
 var searchIndexed = 0;
 
 try
@@ -128,10 +134,13 @@ try
 
         while (metadataPersisted < metadataTarget)
         {
+            var pageStart = Stopwatch.GetTimestamp();
             var page = await repository.GetAssetPageAsync(
                 library.Id,
                 Math.Min(500, metadataTarget - metadataPersisted),
                 metadataCursor);
+            metadataPageFetchTicks += Stopwatch.GetElapsedTime(pageStart).Ticks;
+            metadataPageFetchCount++;
 
             if (page.Items.Count == 0)
             {
@@ -144,6 +153,7 @@ try
                     .ToString("x", CultureInfo.InvariantCulture)
                     .PadLeft(64, '0');
 
+                var writeStart = Stopwatch.GetTimestamp();
                 var stored = await repository.UpdateTechnicalMetadataAsync(
                     library.Id,
                     asset.Id,
@@ -158,6 +168,13 @@ try
                         false,
                         asset.Format ?? asset.Extension,
                         identity));
+                var writeTicks = Stopwatch.GetElapsedTime(writeStart).Ticks;
+                metadataWriteTicks += writeTicks;
+                metadataMaxWriteTicks = Math.Max(metadataMaxWriteTicks, writeTicks);
+                if (writeTicks >= TimeSpan.TicksPerMillisecond * 8)
+                {
+                    metadataSlowWriteCount++;
+                }
 
                 if (!stored)
                 {
@@ -311,6 +328,11 @@ try
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),
             ["traversed_asset_count"] = traversed.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_persist_count"] = metadataPersisted.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_page_fetch_count"] = metadataPageFetchCount.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_page_fetch_ticks"] = metadataPageFetchTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_update_ticks"] = metadataWriteTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_update_max_ticks"] = metadataMaxWriteTicks.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_update_over_8ms_count"] = metadataSlowWriteCount.ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
@@ -328,6 +350,7 @@ try
     Console.WriteLine($"Library benchmark: {count:N0} assets");
     Console.WriteLine($"Keyset pages: {pageCount:N0}");
     Console.WriteLine($"Technical metadata persisted: {metadataPersisted:N0}");
+    Console.WriteLine($"Technical metadata phase durations: pages={TimeSpan.FromTicks(metadataPageFetchTicks).TotalMilliseconds:N1} ms ({metadataPageFetchCount:N0} fetches), updates={TimeSpan.FromTicks(metadataWriteTicks).TotalMilliseconds:N1} ms, slow writes >=8ms={metadataSlowWriteCount:N0}, max write={TimeSpan.FromTicks(metadataMaxWriteTicks).TotalMilliseconds:N1} ms.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");
