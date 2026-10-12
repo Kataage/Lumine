@@ -1405,14 +1405,14 @@ try
         {
             var page = await pressureReopened.GetAssetPageAsync(
                 pressureLibrary.Id, 128, durablePressureCursor);
-            foreach (var asset in page.Items)
+            foreach (var durablePressureAsset in page.Items)
             {
-                var expectedLarge = asset.RelativePath.EndsWith(
+                var expectedLarge = durablePressureAsset.RelativePath.EndsWith(
                     ".bmp", StringComparison.OrdinalIgnoreCase);
                 Require(
-                    asset.Width == (expectedLarge ? 1024 : 320)
-                    && asset.Height == (expectedLarge ? 768 : 200)
-                    && FileSourceIdentityProbe.IsValid(asset.SourceIdentity),
+                    durablePressureAsset.Width == (expectedLarge ? 1024 : 320)
+                    && durablePressureAsset.Height == (expectedLarge ? 768 : 200)
+                    && FileSourceIdentityProbe.IsValid(durablePressureAsset.SourceIdentity),
                     "Restarted SQLite lost guarded technical metadata for mixed PNG/BMP Viewer pressure.");
                 durablePressureCount++;
             }
