@@ -76,6 +76,23 @@ if ([int]$hundredK.metadata.technical_metadata_persist_count -ne 10000) {
     throw "100k benchmark did not persist technical metadata for the required 10,000-asset sample."
 }
 
+# Diagnostic only: print the critical phase split BEFORE the unchanged
+# <=8s gate. On a red runner, the previous script lost this information
+# because the summary footer was never reached. All fields come from the
+# very same timed 10,000 single-asset production API calls.
+$metadataPageCount = [int]$hundredK.metadata.technical_metadata_page_fetch_count
+$metadataPageMs = [long]$hundredK.metadata.technical_metadata_page_fetch_ticks / 10000.0
+$metadataWriteMs = [long]$hundredK.metadata.technical_metadata_update_ticks / 10000.0
+$metadataMaxWriteMs = [long]$hundredK.metadata.technical_metadata_update_max_ticks / 10000.0
+$metadataSlowWrites = [long]$hundredK.metadata.technical_metadata_update_over_8ms_count
+if ($metadataPageCount -le 0 -or $metadataWriteMs -le 0 -or
+    $metadataPageMs -lt 0 -or $metadataSlowWrites -lt 0) {
+    throw "100k technical metadata timing-phase diagnostics are invalid."
+}
+Write-Host ("10k technical metadata phases: pages={0:N1} ms ({1:N0} fetches), writes={2:N1} ms, writes >=8ms={3:N0}, max={4:N1} ms (total={5:N1} ms)" -f
+    $metadataPageMs, $metadataPageCount, $metadataWriteMs,
+    $metadataSlowWrites, $metadataMaxWriteMs, [double]$metadataPersist100.durationMs)
+
 if ([double]$metadataPersist100.durationMs -gt 8000) {
     throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
 }
