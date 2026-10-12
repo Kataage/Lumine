@@ -237,3 +237,49 @@ These metrics improve evidence integrity rather than asserting a fixed
 performance gain. The original strict 8,000ms Library and 1,500ms
 Viewer performance gates remain untouched. Final user-visible hardware
 approval is coordinated with #634 and #635 only after #714 is ready.
+
+
+## Multi-format 192-image burst (>128 accepted queue capacity) — Issue #714
+
+The existing production-adapter 32-PNG mixed foreground/interactive smoke
+is retained without changing its fixture count or assertions. A **second
+independent Windows App integration scenario** now builds a scratch library
+from **168 PNGs (320×200)** and **24 native BMPs (1024×768)**, enumerating
+all **192** records via real library keyset pages. The BMP/PNG mix tests
+two actual decoders and introduces larger file/decode workloads without
+installing a model or requiring owner-provided files.
+
+Using the actual thumbnail provider, pipeline (12 image workers, 64
+image queue places, memory-only product default), and per-service guarded
+SQLite batcher (128 admitted pending slots; <=64 rows per transaction),
+the scenario starts **192 concurrent background thumbnail requests** and
+awaits every completed image. It verifies:
+
+- Every source returns a real encoded thumbnail and source metadata.
+- Precisely 192 background metadata writes are queued and acknowledged.
+- Committed multi-row groups actually occur, and every batched attempt
+  passes its source revision/stat/identity guard.
+- All completed requests are recorded in the coarse latency histogram,
+  no guard rejects or failed groups are reported, and the observed
+  pending queue peak remains within its hard 128-slot bound.
+- Repeating the identical 192 stale ViewerAsset descriptors through the
+  warm production adapter adds **zero** metadata queue admissions,
+  individual/batch commits or latency samples.
+- After the thumbnail pipeline is disposed, a fresh LibraryService
+  reopens SQLite and verifies **all 192** metadata records and their
+  correct dimensions/source identities using paginated reads.
+
+The CI log records cold burst wall time (including request admission),
+warm revisit wall time, background p95/p99 *bucket upper bounds*, committed
+batch count, accepted batched row count, pending depth, and the observed
+working-set delta. These are **diagnostics rather than unstable hard timing
+thresholds**: existing strict 8-second individual Library persistence,
+1.5-second Viewer fast-scroll, NativeAOT, memory resource and product
+acceptance gates remain unchanged.
+
+This is deliberately a **bounded mid-scale decoding/concurrency regression
+test**, not a representative 100k user image collection: the fixture uses
+copies of just two source images and does not measure graphics compositor
+pressure or real hardware GPU activity. Final performance acceptance must
+still use the actual representative image library with user hardware,
+reviewed once alongside #634 and #635.
