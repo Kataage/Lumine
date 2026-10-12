@@ -93,6 +93,25 @@ Write-Host ("10k technical metadata phases: pages={0:N1} ms ({1:N0} fetches), wr
     $metadataPageMs, $metadataPageCount, $metadataWriteMs,
     $metadataSlowWrites, $metadataMaxWriteMs, [double]$metadataPersist100.durationMs)
 
+# The phases below are timed inside the unchanged production repository
+# transaction path. Keep all five fields and the 10k count mandatory;
+# do not weaken the same <=8s acceptance gate.
+if ([int]$hundredK.metadata.technical_metadata_phase_observed_write_count -ne 10000) {
+    throw "100k benchmark did not measure every one of the 10,000 technical metadata writes."
+}
+$openMs = [long]$hundredK.metadata.technical_metadata_connection_open_ticks / 10000.0
+$beginMs = [long]$hundredK.metadata.technical_metadata_begin_transaction_ticks / 10000.0
+$updateMs = [long]$hundredK.metadata.technical_metadata_guarded_asset_update_ticks / 10000.0
+$upsertMs = [long]$hundredK.metadata.technical_metadata_metadata_upsert_ticks / 10000.0
+$commitMs = [long]$hundredK.metadata.technical_metadata_commit_ticks / 10000.0
+if ($openMs -le 0 -or $beginMs -lt 0 -or $updateMs -le 0 -or
+    $upsertMs -le 0 -or $commitMs -lt 0 -or
+    ($openMs + $beginMs + $updateMs + $upsertMs + $commitMs) -gt ($metadataWriteMs + 10)) {
+    throw "100k technical metadata in-repository phase timings are incomplete or inconsistent."
+}
+Write-Host ("10k technical metadata internal phases: pooled opens/PRAGMAs={0:N1} ms, BEGIN={1:N1} ms, guarded UPDATE={2:N1} ms, UPSERT={3:N1} ms, COMMIT={4:N1} ms" -f
+    $openMs, $beginMs, $updateMs, $upsertMs, $commitMs)
+
 if ([double]$metadataPersist100.durationMs -gt 8000) {
     throw "10k technical metadata persistence exceeded 8 seconds: $($metadataPersist100.durationMs) ms"
 }
