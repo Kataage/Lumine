@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Lumine.Library;
 
@@ -8,6 +9,18 @@ namespace Lumine.App;
 /// Interactive and foreground thumbnail writes deliberately bypass this queue:
 /// they retain the existing direct, synchronous-on-request persistence path.
 /// </summary>
+internal readonly record struct ViewerTechnicalMetadataBatchDiagnostics(
+    long CommittedBatches,
+    long BatchedRows,
+    long QueuedWrites,
+    long SingleWriteCommits,
+    long RejectedWrites,
+    long CanceledBeforeWrite,
+    long FailedGroups,
+    long PeakPendingQueueDepth,
+    long CompletedWriteLatencyTicks,
+    long MaxCompletedWriteLatencyTicks);
+
 internal sealed class ViewerTechnicalMetadataBatcher
 {
     private const int MaxQueuedWrites = 128;
@@ -21,6 +34,14 @@ internal sealed class ViewerTechnicalMetadataBatcher
     private bool _draining;
     private long _committedBatches;
     private long _batchedRows;
+    private long _queuedWrites;
+    private long _singleWriteCommits;
+    private long _rejectedWrites;
+    private long _canceledBeforeWrite;
+    private long _failedGroups;
+    private int _peakPendingDepth;
+    private long _completedWriteLatencyTicks;
+    private long _maxCompletedWriteLatencyTicks;
 
     private ViewerTechnicalMetadataBatcher(LibraryService library) =>
         _library = library;
@@ -33,9 +54,18 @@ internal sealed class ViewerTechnicalMetadataBatcher
             static key => new ViewerTechnicalMetadataBatcher(key));
     }
 
-    internal (long CommittedBatches, long BatchedRows) Diagnostics =>
-        (Interlocked.Read(ref _committedBatches),
-         Interlocked.Read(ref _batchedRows));
+    internal ViewerTechnicalMetadataBatchDiagnostics Diagnostics =>
+        new(
+            Interlocked.Read(ref _committedBatches),
+            Interlocked.Read(ref _batchedRows),
+            Interlocked.Read(ref _queuedWrites),
+            Interlocked.Read(ref _singleWriteCommits),
+            Interlocked.Read(ref _rejectedWrites),
+            Interlocked.Read(ref _canceledBeforeWrite),
+            Interlocked.Read(ref _failedGroups),
+            Volatile.Read(ref _peakPendingDepth),
+            Interlocked.Read(ref _completedWriteLatencyTicks),
+            Interlocked.Read(ref _maxCompletedWriteLatencyTicks));
 
     /// <summary>
     /// Completing the task means SQLite COMMIT has finished, not that the work
@@ -61,6 +91,9 @@ internal sealed class ViewerTechnicalMetadataBatcher
             lock (_gate)
             {
                 _pending.Enqueue(pending);
+                Interlocked.Increment(ref _queuedWrites);
+                _peakPendingDepth = Math.Max(
+                    _peakPendingDepth, _pending.Count);
                 if (!_draining)
                 {
                     _draining = true;
@@ -111,6 +144,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
                 {
                     if (pending.CancellationToken.IsCancellationRequested)
                     {
+                        Interlocked.Increment(ref _canceledBeforeWrite);
                         pending.Completion.TrySetCanceled(pending.CancellationToken);
                     }
                     else
@@ -130,6 +164,11 @@ internal sealed class ViewerTechnicalMetadataBatcher
                         item.ExpectedFileSize,
                         item.ExpectedModifiedAtUtcTicks,
                         item.Metadata).ConfigureAwait(false);
+                    if (updated)
+                    {
+                        Interlocked.Increment(ref _singleWriteCommits);
+                    }
+                    RecordCompletedWrite(one, updated);
                     one.Completion.TrySetResult(updated);
                 }
                 else if (live.Count > 1)
@@ -149,12 +188,14 @@ internal sealed class ViewerTechnicalMetadataBatcher
                     Interlocked.Add(ref _batchedRows, results.Count);
                     for (var index = 0; index < live.Count; index++)
                     {
+                        RecordCompletedWrite(live[index], results[index]);
                         live[index].Completion.TrySetResult(results[index]);
                     }
                 }
             }
             catch (Exception exception)
             {
+                Interlocked.Increment(ref _failedGroups);
                 foreach (var pending in selected)
                 {
                     pending.Completion.TrySetException(exception);
@@ -176,6 +217,34 @@ internal sealed class ViewerTechnicalMetadataBatcher
         }
     }
 
+    private void RecordCompletedWrite(PendingWrite pending, bool accepted)
+    {
+        // The clock starts when the request is admitted to the bounded
+        // background queue and ends only after SQLite COMMIT has returned.
+        // This is production-path wall time (including scheduling), not a
+        // pure SQLite COMMIT or a first-raster measurement.
+        var elapsedTicks = Stopwatch.GetElapsedTime(
+            pending.AdmittedAtTimestamp).Ticks;
+        Interlocked.Add(ref _completedWriteLatencyTicks, elapsedTicks);
+        if (!accepted)
+        {
+            Interlocked.Increment(ref _rejectedWrites);
+        }
+
+        long observed;
+        while ((observed = Interlocked.Read(
+                   ref _maxCompletedWriteLatencyTicks)) < elapsedTicks)
+        {
+            if (Interlocked.CompareExchange(
+                    ref _maxCompletedWriteLatencyTicks,
+                    elapsedTicks,
+                    observed) == observed)
+            {
+                break;
+            }
+        }
+    }
+
     private sealed class PendingWrite(
         long libraryId,
         TechnicalMetadataBatchItem item,
@@ -184,6 +253,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
         public long LibraryId { get; } = libraryId;
         public TechnicalMetadataBatchItem Item { get; } = item;
         public CancellationToken CancellationToken { get; } = cancellationToken;
+        public long AdmittedAtTimestamp { get; } = Stopwatch.GetTimestamp();
         public TaskCompletionSource<bool> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }

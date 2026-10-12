@@ -1033,6 +1033,149 @@ try
         && FileSourceIdentityProbe.IsValid(persisted.SourceIdentity),
         "Image source technical metadata was not persisted through the App composition boundary.");
 
+    // Exercise actual PNG decoding -> production ImageViewerThumbnailProvider
+    // -> background-only coalescer -> guarded SQLite metadata durability.
+    // Separate scratch library prevents changing the existing smoke fixture's
+    // asset counts and source-revision expectations.
+    var realBatchRoot = Path.Combine(root, "viewer-batch-real-assets");
+    var realBatchDatabase = Path.Combine(root, "viewer-batch-real.db");
+    Directory.CreateDirectory(realBatchRoot);
+    const int backgroundFixtureCount = 32;
+    for (var index = 0; index < backgroundFixtureCount; index++)
+    {
+        File.Copy(
+            sourcePath,
+            Path.Combine(realBatchRoot, $"batch-background-{index:D3}.png"));
+    }
+    File.Copy(sourcePath, Path.Combine(realBatchRoot, "direct-foreground.png"));
+    File.Copy(sourcePath, Path.Combine(realBatchRoot, "direct-interactive.png"));
+
+    var realBatchService = new LibraryService(realBatchDatabase);
+    await realBatchService.InitializeAsync();
+    var realBatchLibrary = await realBatchService.RegisterLibraryAsync(
+        "Viewer metadata production routing smoke", realBatchRoot);
+    var realBatchScan = await realBatchService.ScanAsync(realBatchLibrary.Id);
+    Require(
+        realBatchScan.Completed,
+        "Real Viewer metadata route smoke did not index all PNG fixtures.");
+    var realBatchPage = await realBatchService.GetAssetPageAsync(
+        realBatchLibrary.Id, 64);
+    Require(
+        realBatchPage.Items.Count == backgroundFixtureCount + 2,
+        "Real Viewer metadata route smoke fixture asset count changed.");
+
+    await using (var realBatchPipeline = new ThumbnailPipeline(
+                     new ThumbnailCache(
+                         Path.Combine(root, "viewer-batch-real-cache")),
+                     new ThumbnailPipelineOptions
+                     {
+                         WorkerCount = 12,
+                         QueueCapacity = 64,
+                         MaxForegroundBurst = 2,
+                         StorageMode = ThumbnailStorageMode.MemoryOnly
+                     }))
+    {
+        var realBatchProvider = new ImageViewerThumbnailProvider(
+            realBatchPipeline,
+            realBatchRoot,
+            realBatchService,
+            realBatchLibrary.Id);
+        static ViewerAsset ToBatchViewerAsset(AssetInfo indexedAsset) =>
+            new(
+                indexedAsset.Id,
+                indexedAsset.SourceRevision,
+                indexedAsset.RelativePath,
+                indexedAsset.FileName,
+                indexedAsset.FileSize,
+                indexedAsset.ModifiedAtUtc.UtcDateTime.Ticks,
+                indexedAsset.Width,
+                indexedAsset.Height,
+                indexedAsset.Format,
+                indexedAsset.SourceIdentity,
+                indexedAsset.RawWidth,
+                indexedAsset.RawHeight,
+                indexedAsset.HasAlpha);
+
+        var backgroundAssets = realBatchPage.Items
+            .Where(static indexedAsset => indexedAsset.RelativePath.StartsWith(
+                "batch-background-", StringComparison.Ordinal))
+            .Select(ToBatchViewerAsset)
+            .ToArray();
+        Require(
+            backgroundAssets.Length == backgroundFixtureCount,
+            "Real Viewer metadata route omitted background fixtures.");
+
+        var realBatcher = ViewerTechnicalMetadataBatcher.For(realBatchService);
+        var routeBefore = realBatcher.Diagnostics;
+        var backgroundTasks = backgroundAssets
+            .Select(item => realBatchProvider.RequestAsync(
+                item,
+                ViewerThumbnailPriority.Background).AsTask())
+            .ToArray();
+        var backgroundResults = await Task.WhenAll(backgroundTasks);
+        var routeAfter = realBatcher.Diagnostics;
+        Require(
+            backgroundResults.Length == backgroundFixtureCount
+            && backgroundResults.All(static value =>
+                value.Width == 256
+                && value.Height == 160
+                && value.SourceMetadata is not null
+                && value.EncodedBytes is { Length: > 0 }),
+            "Real background thumbnail provider did not generate all persisted PNG thumbnails.");
+        Require(
+            routeAfter.QueuedWrites - routeBefore.QueuedWrites
+                == backgroundFixtureCount
+            && routeAfter.PeakPendingQueueDepth
+                <= 128
+            && routeAfter.FailedGroups == routeBefore.FailedGroups,
+            "Production Viewer background metadata requests did not reach the bounded coalescer.");
+
+        foreach (var backgroundAsset in backgroundAssets)
+        {
+            var persistedBackground = await realBatchService.GetAssetAsync(
+                realBatchLibrary.Id, backgroundAsset.RelativePath)
+                ?? throw new InvalidOperationException(
+                    "Production Viewer background asset disappeared.");
+            Require(
+                persistedBackground.SourceRevision
+                    == backgroundAsset.SourceRevision
+                && persistedBackground.Width == 320
+                && persistedBackground.Height == 200
+                && FileSourceIdentityProbe.IsValid(
+                    persistedBackground.SourceIdentity),
+                "Production Viewer background thumbnail did not commit guarded source metadata.");
+        }
+
+        foreach (var (name, priority) in new[]
+                 {
+                     ("direct-foreground.png", ViewerThumbnailPriority.Foreground),
+                     ("direct-interactive.png", ViewerThumbnailPriority.Interactive)
+                 })
+        {
+            var indexedDirect = realBatchPage.Items.Single(
+                row => string.Equals(row.RelativePath, name, StringComparison.Ordinal));
+            var beforeDirect = realBatcher.Diagnostics;
+            var directThumbnail = await realBatchProvider.RequestAsync(
+                ToBatchViewerAsset(indexedDirect), priority);
+            var afterDirect = realBatcher.Diagnostics;
+            var persistedDirect = await realBatchService.GetAssetAsync(
+                realBatchLibrary.Id, name);
+            Require(
+                directThumbnail.SourceMetadata is not null
+                && persistedDirect?.Width == 320
+                && FileSourceIdentityProbe.IsValid(persistedDirect.SourceIdentity)
+                && afterDirect.QueuedWrites == beforeDirect.QueuedWrites,
+                "Interactive/foreground thumbnails unexpectedly entered background metadata batching.");
+        }
+
+        Console.WriteLine(
+            $"Real Viewer background metadata: {backgroundFixtureCount} PNGs, " +
+            $"queued={routeAfter.QueuedWrites - routeBefore.QueuedWrites}, " +
+            $"batch_commits={routeAfter.CommittedBatches - routeBefore.CommittedBatches}, " +
+            $"batched_rows={routeAfter.BatchedRows - routeBefore.BatchedRows}, " +
+            $"peak_depth={routeAfter.PeakPendingQueueDepth}.");
+    }
+
     LibraryDatabase.ClearPools();
     var restartedLibraryService = new LibraryService(databasePath);
     await restartedLibraryService.InitializeAsync();

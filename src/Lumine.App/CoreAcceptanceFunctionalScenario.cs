@@ -381,7 +381,11 @@ internal static class CoreAcceptanceFunctionalScenario
                 var after = batcher.Diagnostics;
                 if (!accepted.All(static value => value)
                     || after.CommittedBatches <= before.CommittedBatches
-                    || after.BatchedRows - before.BatchedRows < 2)
+                    || after.BatchedRows - before.BatchedRows < 2
+                    || after.QueuedWrites - before.QueuedWrites != 16
+                    || after.CompletedWriteLatencyTicks <= before.CompletedWriteLatencyTicks
+                    || after.MaxCompletedWriteLatencyTicks <= 0
+                    || after.FailedGroups != before.FailedGroups)
                 {
                     throw new InvalidOperationException(
                         "Background thumbnail metadata did not coalesce guarded SQLite writes.");
@@ -395,10 +399,11 @@ internal static class CoreAcceptanceFunctionalScenario
                             offline.SourceRevision + 1
                     },
                     cancellationToken);
-                if (stale)
+                if (stale
+                    || batcher.Diagnostics.RejectedWrites <= after.RejectedWrites)
                 {
                     throw new InvalidOperationException(
-                        "Background metadata batching accepted a stale source revision.");
+                        "Background metadata batching accepted or failed to count a stale source revision.");
                 }
 
                 var persisted = await service.GetAssetAsync(
