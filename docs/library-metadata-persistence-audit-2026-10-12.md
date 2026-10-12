@@ -131,3 +131,51 @@ real-library evidence with nonzero completed background writes, p95/p99
 bucket bounds, saved commit counts and no scroll/first-raster regressions.
 Keep #714 OPEN; coordinate eventual owner Windows assessment with
 #634/#635 as one final pass rather than repeated setup requests.
+
+
+## The original 8-second gate fails again after ten green develop pushes (2026-10-13)
+
+Strict Windows [post-merge develop CI #38280087286](https://github.com/Kataage/Lumine/actions/runs/38280087286)
+on `develop@6e30186c6ddf3d0c70907d09730013f740cfe0b8`
+**FAILED** the unchanged 10,000-individual-transaction metadata gate at
+**9,870.0ms**. The measured per-write internals break down to:
+
+- pooled connection opens/PRAGMAs: **81.0ms**
+- BEGIN: **61.6ms**
+- guarded asset UPDATE: **177.1ms**
+- metadata UPSERT: **151.4ms**
+- **SQLite COMMIT: 9,309.3ms** (~94.3% of the gate)
+- full individual-write maximum: **759.2ms**, 38 full writes >=8ms.
+
+On the separately scheduled [PR #726 CI #38280679826](https://github.com/Kataage/Lumine/actions/runs/38280679826)
+the same 10,000 individually committed fixture passed at **2,889.9ms**,
+with **2,529.0ms COMMIT** and a full-write maximum **120.6ms**.
+This PR-head success does not refute post-merge storage-timing variance.
+The two runs did not share a single isolated controlled VM or I/O
+context, so runner storage contention / WAL checkpointing remain
+hypotheses rather than established causes. Existing metadata write
+revision/file-stat/identity checks and SQLite WAL/synchronous durability
+settings are not changed.
+
+The next narrow benchmark diagnostic, which runs as a **production-repository
+timing observer only in the strict 100k fixture**, captures exactly 10,000
+exclusive individual SQLite COMMIT duration buckets:
+
+`<1ms`, `[1,8)ms`, `[8,32)ms`, `[32,128)ms`, `>=128ms`, alongside
+the maximum COMMIT duration and total time spent in COMMITs >=8ms.
+The strict Windows acceptance verifies that all five buckets add up to
+exactly 10,000 writes and that the histogram and slow-COMMIT totals
+agree with existing whole-write observations **before** it applies the
+same original hard <=8,000ms gate.
+
+This distinguishes a small number of extreme COMMIT stalls from
+pervasive commit slowdown, *without* hiding or retrying a failing
+performance result, disabling WAL checkpointing, weakening the hard
+gate, or moving the benchmark to a non-production write path.
+
+Viewer background batching and its separate queue-vs-repository-call
+diagnostics address real production use, but they cannot logically
+guarantee a 10k **individually COMMITted** synthetic workload fits
+within 8s under every hosted-disk condition. Issue #714 remains OPEN
+for an evidence-led root-cause/architecture decision and final
+representative owner Windows acceptance together with #634/#635.
