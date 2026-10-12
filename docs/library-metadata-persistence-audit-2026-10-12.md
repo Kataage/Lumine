@@ -88,3 +88,46 @@ Viewer work without degrading first-raster responsiveness or cancellation.
 Until that and repeatably green strict post-merge Windows runs, Issue #714
 **remains OPEN**, and #634/#635 remain open pending the single final real
 Windows user acceptance.
+
+
+## Repeatability evidence from post-merge develop and paired warm A/B
+
+After the initial three independently failing post-merge `develop` runs,
+five later strict **post-merge push** workflows passed on the original unchanged
+10,000 individually awaited metadata write gate:
+
+| develop workflow | Same original 10k individual write metric | Strict <=8,000ms |
+| --- | ---: | --- |
+| [#38230808756](https://github.com/Kataage/Lumine/actions/runs/38230808756) | 3,960.6ms | pass |
+| [#38234053120](https://github.com/Kataage/Lumine/actions/runs/38234053120) | 2,398.1ms | pass |
+| [#38236350982](https://github.com/Kataage/Lumine/actions/runs/38236350982) | 3,485.9ms | pass |
+| [#38239543073](https://github.com/Kataage/Lumine/actions/runs/38239543073) | 3,836.1ms | pass |
+| [#38264263328](https://github.com/Kataage/Lumine/actions/runs/38264263328) | 4,175.2ms | pass |
+
+**Interpretation:** strict post-merge success is now repeatable across
+five different `develop` SHAs, in stark contrast to the earlier repeated
+9,950–16,569ms failures. This does not prove host variance is eliminated.
+The product improvement operates in concurrent background Viewer requests;
+the unchanged strict control remains the single-item API, so do not
+attribute its changing latency solely to the new batched path.
+
+An additional **opt-in, paired warm A-B-B-A** probe is now planned on
+the existing **warm 100k fixture** in the same CI runner:
+after preserving the original single-write test and separate warm-batch
+second pass, the probe snapshots exactly 10,000 existing source-guarded
+records once. It rewrites precisely the **same rows** four times with
+the same production Library repository APIs and same revision/stat/identity
+conditions, in order **single / batch / batch / single**. Batch groups
+contain at most 64 records. Every write must be acknowledged as
+source-current; all four durations and each batch count must exist in
+the benchmark JSON and printed log. The existing <=8,000ms single-write
+gate remains unchanged, applied to the same pre-probe metric. This
+experiment is **warm-vs-warm same-run comparison**, not equivalent cold
+samples and not a replacement for real Viewer/owner hardware evidence.
+
+The next outstanding qualification is consistency on the post-merge
+`develop` of this additional probe and the final actual Windows
+real-library evidence with nonzero completed background writes, p95/p99
+bucket bounds, saved commit counts and no scroll/first-raster regressions.
+Keep #714 OPEN; coordinate eventual owner Windows assessment with
+#634/#635 as one final pass rather than repeated setup requests.
