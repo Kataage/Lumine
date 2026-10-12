@@ -233,6 +233,7 @@ function Get-ViewerBackgroundMetadataEvidence {
     $prefix = "viewer.metadata_background_"
     $names = @(
         "queued", "single_commits", "batch_commits", "batched_rows",
+        "batch_accepted_rows",
         "guard_rejected", "cancelled_before_write", "failed_groups",
         "peak_queue_depth", "completed_write_latency_ticks",
         "max_completed_write_latency_ticks", "batch_groups_2_to_8",
@@ -274,10 +275,12 @@ function Get-ViewerBackgroundMetadataEvidence {
     $maxRows = 8 * $counts["batch_groups_2_to_8"] + 32 * $counts["batch_groups_9_to_32"] +
         64 * $counts["batch_groups_33_to_64"]
     $rows = $counts["batched_rows"]
+    $acceptedBatchRows = $counts["batch_accepted_rows"]
     $queued = $counts["queued"]
     $avoided = $rows - $counts["batch_commits"]
     if ($groups -ne $counts["batch_commits"] -or
         $rows -lt $minRows -or $rows -gt $maxRows -or
+        $acceptedBatchRows -gt $rows -or
         $counts["avoided_individual_commits"] -ne $avoided -or
         $counts["peak_queue_depth"] -gt 128 -or
         $counts["peak_queue_depth"] -gt $queued -or
@@ -313,6 +316,12 @@ function Get-ViewerBackgroundMetadataEvidence {
 
     $state = "not-observed"
     if ($samples -gt 0) { $state = "observed" }
+    # A committed transaction containing only guard rejections is NOT
+    # proof that any technical metadata was actually persisted in a batch.
+    $batchEvidence = "no-accepted-batch"
+    if ($acceptedBatchRows -gt 0) {
+        $batchEvidence = "accepted-batch"
+    }
     return [ordered]@{
         state = $state
         queued = $queued
@@ -320,6 +329,8 @@ function Get-ViewerBackgroundMetadataEvidence {
         singleCommits = $counts["single_commits"]
         batchCommits = $counts["batch_commits"]
         batchedRows = $rows
+        acceptedBatchedRows = $acceptedBatchRows
+        batchEvidence = $batchEvidence
         avoidedIndividualCommits = $avoided
         canceledBeforeWrite = $counts["cancelled_before_write"]
         rejected = $counts["guard_rejected"]
@@ -1210,7 +1221,8 @@ try {
     Write-Host "Warm cache misses    : $warmCacheMisses"
     Write-Host "Warm cache hits      : $warmCacheHits"
     Write-Host "Cold metadata writes : $($summary.viewerBackgroundMetadata.cold.completedWrites) ($($summary.viewerBackgroundMetadata.cold.state))"
-    Write-Host "Cold batch commits   : $($summary.viewerBackgroundMetadata.cold.batchCommits), avoided individual commits=$($summary.viewerBackgroundMetadata.cold.avoidedIndividualCommits)"
+    Write-Host "Cold batch commits   : $($summary.viewerBackgroundMetadata.cold.batchCommits), accepted rows=$($summary.viewerBackgroundMetadata.cold.acceptedBatchedRows), avoided individual commits=$($summary.viewerBackgroundMetadata.cold.avoidedIndividualCommits)"
+    Write-Host "Cold batch evidence  : $($summary.viewerBackgroundMetadata.cold.batchEvidence)"
     Write-Host "Cold write p95/p99   : $($summary.viewerBackgroundMetadata.cold.p95UpperBoundMs) / $($summary.viewerBackgroundMetadata.cold.p99UpperBoundMs) ms (histogram upper bounds)"
     Write-Host "Warm convergence     : $warmConvergenceNeeded"
     Write-Host "Summary              : $summaryPath"

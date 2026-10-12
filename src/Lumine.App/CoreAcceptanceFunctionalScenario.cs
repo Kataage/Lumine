@@ -407,6 +407,8 @@ internal static class CoreAcceptanceFunctionalScenario
                 if (!accepted.All(static value => value)
                     || after.CommittedBatches <= before.CommittedBatches
                     || after.BatchedRows - before.BatchedRows < 2
+                    || after.AcceptedBatchedRows - before.AcceptedBatchedRows
+                        != after.BatchedRows - before.BatchedRows
                     || after.QueuedWrites - before.QueuedWrites != 16
                     || after.CompletedWriteLatencyTicks <= before.CompletedWriteLatencyTicks
                     || after.MaxCompletedWriteLatencyTicks <= 0
@@ -428,7 +430,8 @@ internal static class CoreAcceptanceFunctionalScenario
                     },
                     cancellationToken);
                 if (stale
-                    || batcher.Diagnostics.RejectedWrites <= after.RejectedWrites)
+                    || batcher.Diagnostics.RejectedWrites <= after.RejectedWrites
+                    || batcher.Diagnostics.AcceptedBatchedRows != after.AcceptedBatchedRows)
                 {
                     throw new InvalidOperationException(
                         "Background metadata batching accepted or failed to count a stale source revision.");

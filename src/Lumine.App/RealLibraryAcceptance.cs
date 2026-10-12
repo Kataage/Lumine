@@ -987,6 +987,9 @@ internal sealed class RealLibraryAcceptanceSession
             diagnostics.CommittedBatches.ToString(CultureInfo.InvariantCulture);
         _metadata["viewer.metadata_background_batched_rows"] =
             diagnostics.BatchedRows.ToString(CultureInfo.InvariantCulture);
+        _metadata["viewer.metadata_background_batch_accepted_rows"] =
+            diagnostics.AcceptedBatchedRows.ToString(
+                CultureInfo.InvariantCulture);
         _metadata["viewer.metadata_background_guard_rejected"] =
             diagnostics.RejectedWrites.ToString(CultureInfo.InvariantCulture);
         _metadata["viewer.metadata_background_cancelled_before_write"] =

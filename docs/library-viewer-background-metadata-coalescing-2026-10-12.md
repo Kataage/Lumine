@@ -194,3 +194,46 @@ and that a zero-sample run cannot claim `observed`. This is a stronger
 A physical owner run using a representative fresh-source image library
 must still produce nonzero write evidence and be reviewed alongside
 #634/#635 before #714 can close.
+
+
+## Accepted-row evidence vs guarded transaction attempts
+
+The original `BatchedRows` diagnostic deliberately counts **attempted**
+source-guarded updates in successfully committed grouped transactions. In
+SQLite, a transaction can COMMIT successfully even when individual
+revision/stat/identity checks return `false`, so `BatchedRows` alone
+does **not** prove those image metadata rows were actually persisted.
+Likewise, `BatchedRows - CommittedBatches` describes the potential number
+of separate transactions avoided for attempts, not a successful persisted
+row count or wall-time improvement.
+
+The per-LibraryService production batcher now maintains a separate
+`AcceptedBatchedRows` counter: for each successful bounded transaction,
+count `true` results and atomically accumulate them. There are no
+additional SQL statements, source probes, or memory allocations per image.
+The old batch-attempt and histogram counters retain their previous meaning.
+The real library telemetry publishes
+`viewer.metadata_background_batch_accepted_rows` in addition to
+`viewer.metadata_background_batched_rows`.
+
+The Windows acceptance wrapper rejects inconsistent accepted counts
+(negative, or greater than batched attempts) and publishes a separate
+`viewerBackgroundMetadata.<mode>.batchEvidence`:
+
+- `accepted-batch`: at least one image metadata row passed all source
+  guards and was written inside a committed multi-row transaction;
+- `no-accepted-batch`: no confirmed source-accepted batch rows, even if
+  transactions COMMIT or the histogram records rejected writes.
+
+The existing `state=observed|not-observed` remains an independent
+measurement-sample classification. `observed` alone must **never** be
+construed as evidence of effective batching. The 32-PNG real-image
+integration case confirms all batch attempts passed guards; the existing
+16-way batch functional test confirms successful accepted rows and that
+a stale subsequent write cannot inflate its count. The NativeAOT wrapper
+smoke cross-validates both classifications.
+
+These metrics improve evidence integrity rather than asserting a fixed
+performance gain. The original strict 8,000ms Library and 1,500ms
+Viewer performance gates remain untouched. Final user-visible hardware
+approval is coordinated with #634 and #635 only after #714 is ready.

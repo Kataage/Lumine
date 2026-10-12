@@ -1163,6 +1163,8 @@ try
             && routeAfter.BatchedRows - routeBefore.BatchedRows
                 + routeAfter.SingleWriteCommits - routeBefore.SingleWriteCommits
                 == backgroundFixtureCount
+            && routeAfter.AcceptedBatchedRows - routeBefore.AcceptedBatchedRows
+                == routeAfter.BatchedRows - routeBefore.BatchedRows
             && routeAfter.BatchGroups2To8Rows + routeAfter.BatchGroups9To32Rows
                 + routeAfter.BatchGroups33To64Rows
                 == routeAfter.CommittedBatches

@@ -12,6 +12,7 @@ namespace Lumine.App;
 internal readonly record struct ViewerTechnicalMetadataBatchDiagnostics(
     long CommittedBatches,
     long BatchedRows,
+    long AcceptedBatchedRows,
     long QueuedWrites,
     long SingleWriteCommits,
     long RejectedWrites,
@@ -106,6 +107,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
     private bool _draining;
     private long _committedBatches;
     private long _batchedRows;
+    private long _acceptedBatchedRows;
     private long _queuedWrites;
     private long _singleWriteCommits;
     private long _rejectedWrites;
@@ -135,6 +137,7 @@ internal sealed class ViewerTechnicalMetadataBatcher
         new(
             Interlocked.Read(ref _committedBatches),
             Interlocked.Read(ref _batchedRows),
+            Interlocked.Read(ref _acceptedBatchedRows),
             Interlocked.Read(ref _queuedWrites),
             Interlocked.Read(ref _singleWriteCommits),
             Interlocked.Read(ref _rejectedWrites),
@@ -267,6 +270,18 @@ internal sealed class ViewerTechnicalMetadataBatcher
 
                     Interlocked.Increment(ref _committedBatches);
                     Interlocked.Add(ref _batchedRows, results.Count);
+                    // The guarded transaction COMMIT can succeed while one
+                    // or more stale-source records are explicitly rejected.
+                    // Count accepted rows separately from attempted rows.
+                    var acceptedRows = 0L;
+                    foreach (var accepted in results)
+                    {
+                        if (accepted)
+                        {
+                            acceptedRows++;
+                        }
+                    }
+                    Interlocked.Add(ref _acceptedBatchedRows, acceptedRows);
                     if (results.Count <= 8)
                     {
                         Interlocked.Increment(ref _batchGroups2To8);
