@@ -164,7 +164,10 @@ internal sealed class ViewerTechnicalMetadataBatcher
                         item.ExpectedFileSize,
                         item.ExpectedModifiedAtUtcTicks,
                         item.Metadata).ConfigureAwait(false);
-                    Interlocked.Increment(ref _singleWriteCommits);
+                    if (updated)
+                    {
+                        Interlocked.Increment(ref _singleWriteCommits);
+                    }
                     RecordCompletedWrite(one, updated);
                     one.Completion.TrySetResult(updated);
                 }
