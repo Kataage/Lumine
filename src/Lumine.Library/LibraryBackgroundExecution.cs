@@ -211,6 +211,22 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    /// <summary>
+    /// Persist up to 64 independent source-guarded metadata results in a single
+    /// committed transaction. Intended for concurrent thumbnail/background
+    /// metadata enrichment without relaxing normal single-write semantics.
+    /// </summary>
+    public Task<IReadOnlyList<bool>> UpdateTechnicalMetadataBatchAsync(
+        long libraryId,
+        IReadOnlyList<TechnicalMetadataBatchItem> items,
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdateTechnicalMetadataBatchAsync(
+                libraryId,
+                items,
+                token),
+            cancellationToken);
+
     public Task<AssetExifMetadata?> GetExifMetadataAsync(
         long libraryId,
         long assetId,
