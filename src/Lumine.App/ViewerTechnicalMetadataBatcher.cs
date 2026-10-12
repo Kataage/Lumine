@@ -19,7 +19,79 @@ internal readonly record struct ViewerTechnicalMetadataBatchDiagnostics(
     long FailedGroups,
     long PeakPendingQueueDepth,
     long CompletedWriteLatencyTicks,
-    long MaxCompletedWriteLatencyTicks);
+    long MaxCompletedWriteLatencyTicks,
+    long[] CompletedWriteLatencyBuckets,
+    long BatchGroups2To8Rows,
+    long BatchGroups9To32Rows,
+    long BatchGroups33To64Rows);
+
+/// <summary>
+/// Fixed memory, exclusive millisecond buckets for successful post-COMMIT
+/// background writes. Estimates are upper bounds, not exact percentiles.
+/// </summary>
+internal static class ViewerTechnicalMetadataLatencyHistogram
+{
+    internal static readonly int[] UpperBoundsMs =
+        [2, 5, 10, 20, 50, 100, 250, 500, 1000];
+
+    internal static int BucketIndex(TimeSpan elapsed)
+    {
+        var milliseconds = elapsed.TotalMilliseconds;
+        for (var index = 0; index < UpperBoundsMs.Length; index++)
+        {
+            if (milliseconds <= UpperBoundsMs[index])
+            {
+                return index;
+            }
+        }
+
+        return UpperBoundsMs.Length;
+    }
+
+    internal static string PercentileUpperBoundMs(
+        IReadOnlyList<long> exclusiveBuckets,
+        int percentile)
+    {
+        ArgumentNullException.ThrowIfNull(exclusiveBuckets);
+        ArgumentOutOfRangeException.ThrowIfLessThan(percentile, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(percentile, 100);
+        if (exclusiveBuckets.Count != UpperBoundsMs.Length + 1)
+        {
+            throw new ArgumentException(
+                "The latency histogram bucket count is invalid.",
+                nameof(exclusiveBuckets));
+        }
+
+        long total = 0;
+        foreach (var count in exclusiveBuckets)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(count);
+            total = checked(total + count);
+        }
+
+        if (total == 0)
+        {
+            return "no_samples";
+        }
+
+        var rank = (long)Math.Ceiling(total * (percentile / 100d));
+        long cumulative = 0;
+        for (var index = 0; index < exclusiveBuckets.Count; index++)
+        {
+            cumulative += exclusiveBuckets[index];
+            if (cumulative >= rank)
+            {
+                return index == UpperBoundsMs.Length
+                    ? "over_1000"
+                    : UpperBoundsMs[index].ToString(
+                        System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Latency histogram rank exceeded the recorded sample count.");
+    }
+}
 
 internal sealed class ViewerTechnicalMetadataBatcher
 {
@@ -42,6 +114,11 @@ internal sealed class ViewerTechnicalMetadataBatcher
     private int _peakPendingDepth;
     private long _completedWriteLatencyTicks;
     private long _maxCompletedWriteLatencyTicks;
+    private readonly long[] _completedWriteLatencyBuckets =
+        new long[ViewerTechnicalMetadataLatencyHistogram.UpperBoundsMs.Length + 1];
+    private long _batchGroups2To8;
+    private long _batchGroups9To32;
+    private long _batchGroups33To64;
 
     private ViewerTechnicalMetadataBatcher(LibraryService library) =>
         _library = library;
@@ -65,7 +142,11 @@ internal sealed class ViewerTechnicalMetadataBatcher
             Interlocked.Read(ref _failedGroups),
             Volatile.Read(ref _peakPendingDepth),
             Interlocked.Read(ref _completedWriteLatencyTicks),
-            Interlocked.Read(ref _maxCompletedWriteLatencyTicks));
+            Interlocked.Read(ref _maxCompletedWriteLatencyTicks),
+            SnapshotLatencyBuckets(),
+            Interlocked.Read(ref _batchGroups2To8),
+            Interlocked.Read(ref _batchGroups9To32),
+            Interlocked.Read(ref _batchGroups33To64));
 
     /// <summary>
     /// Completing the task means SQLite COMMIT has finished, not that the work
@@ -186,6 +267,18 @@ internal sealed class ViewerTechnicalMetadataBatcher
 
                     Interlocked.Increment(ref _committedBatches);
                     Interlocked.Add(ref _batchedRows, results.Count);
+                    if (results.Count <= 8)
+                    {
+                        Interlocked.Increment(ref _batchGroups2To8);
+                    }
+                    else if (results.Count <= 32)
+                    {
+                        Interlocked.Increment(ref _batchGroups9To32);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref _batchGroups33To64);
+                    }
                     for (var index = 0; index < live.Count; index++)
                     {
                         RecordCompletedWrite(live[index], results[index]);
@@ -226,6 +319,9 @@ internal sealed class ViewerTechnicalMetadataBatcher
         var elapsedTicks = Stopwatch.GetElapsedTime(
             pending.AdmittedAtTimestamp).Ticks;
         Interlocked.Add(ref _completedWriteLatencyTicks, elapsedTicks);
+        Interlocked.Increment(ref _completedWriteLatencyBuckets[
+            ViewerTechnicalMetadataLatencyHistogram.BucketIndex(
+                TimeSpan.FromTicks(elapsedTicks))]);
         if (!accepted)
         {
             Interlocked.Increment(ref _rejectedWrites);
@@ -243,6 +339,20 @@ internal sealed class ViewerTechnicalMetadataBatcher
                 break;
             }
         }
+    }
+
+    private long[] SnapshotLatencyBuckets()
+    {
+        // No allocation or per-write log line on the production hot path;
+        // only the infrequent diagnostics snapshot makes this small copy.
+        var snapshot = new long[_completedWriteLatencyBuckets.Length];
+        for (var index = 0; index < snapshot.Length; index++)
+        {
+            snapshot[index] = Interlocked.Read(
+                ref _completedWriteLatencyBuckets[index]);
+        }
+
+        return snapshot;
     }
 
     private sealed class PendingWrite(
