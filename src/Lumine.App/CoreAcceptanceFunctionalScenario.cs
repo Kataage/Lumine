@@ -349,6 +349,76 @@ internal static class CoreAcceptanceFunctionalScenario
                 "functional.offline_recovery"] =
                 "pass";
 
+            // Exercise the exact per-LibraryService bounded write coalescer
+            // used by background thumbnail metadata persistence. Foreground
+            // thumbnail traffic does not pass through this delay window.
+            using (recorder.Measure(
+                       "acceptance.functional.background_metadata_batch"))
+            {
+                var sourceSha = "sha256:" + new string('b', 64);
+                var batchItem = new TechnicalMetadataBatchItem(
+                    offline.Id,
+                    offline.SourceRevision,
+                    offline.FileSize,
+                    offline.ModifiedAtUtc.UtcDateTime.Ticks,
+                    new AssetTechnicalMetadata(
+                        128,
+                        96,
+                        128,
+                        96,
+                        false,
+                        "jpeg",
+                        sourceSha));
+                var batcher = ViewerTechnicalMetadataBatcher.For(service);
+                var before = batcher.Diagnostics;
+                var writes = Enumerable.Range(0, 16)
+                    .Select(_ => batcher.WriteAsync(
+                        library.Id,
+                        batchItem,
+                        cancellationToken))
+                    .ToArray();
+                var accepted = await Task.WhenAll(writes);
+                var after = batcher.Diagnostics;
+                if (!accepted.All(static value => value)
+                    || after.CommittedBatches <= before.CommittedBatches
+                    || after.BatchedRows - before.BatchedRows < 2)
+                {
+                    throw new InvalidOperationException(
+                        "Background thumbnail metadata did not coalesce guarded SQLite writes.");
+                }
+
+                var stale = await batcher.WriteAsync(
+                    library.Id,
+                    batchItem with
+                    {
+                        ExpectedSourceRevision =
+                            offline.SourceRevision + 1
+                    },
+                    cancellationToken);
+                if (stale)
+                {
+                    throw new InvalidOperationException(
+                        "Background metadata batching accepted a stale source revision.");
+                }
+
+                var persisted = await service.GetAssetAsync(
+                    library.Id,
+                    offline.RelativePath,
+                    cancellationToken);
+                if (persisted?.Width != 128
+                    || persisted.Height != 96
+                    || persisted.SourceIdentity != sourceSha)
+                {
+                    throw new InvalidOperationException(
+                        "Background metadata batch did not preserve durable source guards.");
+                }
+
+                metadata["functional.background_metadata_batch"] = "pass";
+                metadata["functional.background_metadata_batch_rows"] =
+                    (after.BatchedRows - before.BatchedRows).ToString(
+                        CultureInfo.InvariantCulture);
+            }
+
             await service.CheckpointAsync(
                 cancellationToken);
         }
