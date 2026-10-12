@@ -247,11 +247,15 @@ public sealed partial class LibraryRepository
         long nowTicks,
         CancellationToken cancellationToken,
         Action<TechnicalMetadataWriteTimings>? timingObserver,
-        long connectionOpenTicks)
+        long connectionOpenTicks,
+        SqliteTransaction? batchTransaction = null)
     {
         var beginStarted = timingObserver is null
             ? 0L : Stopwatch.GetTimestamp();
-        using var transaction = connection.BeginTransaction();
+        using var ownedTransaction = batchTransaction is null
+            ? connection.BeginTransaction()
+            : null;
+        var transaction = batchTransaction ?? ownedTransaction!;
         var beginTicks = timingObserver is null
             ? 0L : Stopwatch.GetElapsedTime(beginStarted).Ticks;
 
@@ -294,7 +298,10 @@ public sealed partial class LibraryRepository
 
         if (await updateAsset.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
         {
-            transaction.Rollback();
+            if (ownedTransaction is not null)
+            {
+                transaction.Rollback();
+            }
             return false;
         }
 
@@ -338,7 +345,10 @@ public sealed partial class LibraryRepository
             ? 0L : Stopwatch.GetElapsedTime(upsertStarted).Ticks;
         var commitStarted = timingObserver is null
             ? 0L : Stopwatch.GetTimestamp();
-        transaction.Commit();
+        if (ownedTransaction is not null)
+        {
+            transaction.Commit();
+        }
         if (timingObserver is not null)
         {
             timingObserver(new TechnicalMetadataWriteTimings(

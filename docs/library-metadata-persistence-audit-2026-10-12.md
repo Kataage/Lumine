@@ -42,3 +42,49 @@ To distinguish cost without prematurely changing durability or source-snapshot c
 The unchanged sequential benchmark registers one observer per run, totals the five phases over all 10,000 successful commits, persists the sums and callback count in the additive JSON metadata keys and prints phase totals **before** the original unchanged <=8,000ms hard rejection. The Library Smoke verifies that a real successful persistence emits one populated timing report and roundtrips the same identity and image metadata. No new batching, no change to SQLite foreign-key/WAL/synchronous settings, no transaction skipping, no connection pooling change, no source-identity weakening, and no suppression of the nested-transaction pool quarantine.
 
 **Decision gate:** inspect both green **and red** production-path measurements before choosing between connection/PRAGMA reinitialization, transaction journal/commit pressure and SQL execution as the optimization target. Keep #714 open until a **real production-used correction** is implemented and validated against the original gate. #634 and #635 physical owner checks remain distinct and pending.
+
+
+## Follow-up: bounded production metadata batches (Issue #714, PR after #716)
+
+[PR #716](https://github.com/Kataage/Lumine/pull/716) passed Windows CI and was squash-merged to `develop` (`1d631c36`). Its *real* runner logs on four benchmark fixtures show **COMMIT dominates**, especially on slow runs:
+
+| Fixture | 10k individual write calls | Inside COMMIT |
+| --- | ---: | ---: |
+| 100k cold | 12,837.5 ms | 12,300.5 ms |
+| 10k | 5,125.9 ms | 4,561.8 ms |
+| 50k | 6,976.6 ms | 6,453.7 ms |
+| 100k warm | 2,376.6 ms | 1,823.3 ms |
+
+COMMIT timing includes SQLite WAL work and any hosted-runner scheduling or I/O stalls; these measurements **do not establish** that fsync or any one SQLite internal routine is the cause.
+
+The next bounded implementation introduces `TechnicalMetadataBatchItem` and
+`LibraryRepository.UpdateTechnicalMetadataBatchAsync` (also surfaced through
+`LibraryService`). It permits at most **64 rows** under **one SQLite
+transaction**, calls the exact pre-existing guarded production UPDATE/UPSERT
+helper for each entry, and commits only when the whole batch finishes.
+Entries that fail source revision, stat or normalized-identity guards return
+`false` without an UPSERT; SQL exceptions and cancellation roll back the
+entire batch. The existing single-asset API, including one-write atomicity
+and pooled poisoned-transaction quarantine, remains available and unchanged.
+WAL, foreign keys, synchronous mode and published DB schema are unchanged.
+
+Smoke coverage exercises duplicate/current entries, stale revisions, same-stat
+identity conflicts, cancellation, the 64-item bound, a deliberately aborted
+second SQL UPDATE with rollback of the first, and new-connection durability.
+
+**Benchmark interpretation and remaining work:** The previous unchanged
+10,000 individually awaited transactions still run and remain subject to
+the **same <=8,000ms hard gate**, with every stage observer retained.
+A separately named `library.technical_metadata_batch_persist` reprocesses
+exactly 10,000 source-guarded rows in bounded groups on a **warm second pass**,
+recording group count and real elapsed time in the same JSON. This is only a
+production-API comparison probe; it cannot be represented as an apples-to-apples
+cold performance win, and **does not replace the strict legacy gate**.
+
+The repository/LibraryService API now supports efficient batching but the
+Viewer's per-thumbnail `PersistAsync` still awaits the single-write method.
+A separate integration change must arrange safe batching for actual concurrent
+Viewer work without degrading first-raster responsiveness or cancellation.
+Until that and repeatably green strict post-merge Windows runs, Issue #714
+**remains OPEN**, and #634/#635 remain open pending the single final real
+Windows user acceptance.
