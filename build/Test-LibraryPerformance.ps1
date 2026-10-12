@@ -113,6 +113,31 @@ if ($openMs -le 0 -or $beginMs -lt 0 -or $updateMs -le 0 -or
 Write-Host ("10k technical metadata internal phases: pooled opens/PRAGMAs={0:N1} ms, BEGIN={1:N1} ms, guarded UPDATE={2:N1} ms, UPSERT={3:N1} ms, COMMIT={4:N1} ms" -f
     $openMs, $beginMs, $updateMs, $upsertMs, $commitMs)
 
+# Exclusive production-path COMMIT duration distribution; zero is valid only
+# for a particular bucket, never for the entire 10,000-write fixture.
+$commitBuckets = @(
+    [long]$hundredK.metadata.technical_metadata_commit_bucket_lt_1ms,
+    [long]$hundredK.metadata.technical_metadata_commit_bucket_1_to_lt_8ms,
+    [long]$hundredK.metadata.technical_metadata_commit_bucket_8_to_lt_32ms,
+    [long]$hundredK.metadata.technical_metadata_commit_bucket_32_to_lt_128ms,
+    [long]$hundredK.metadata.technical_metadata_commit_bucket_ge_128ms
+)
+$commitMaxMs = [long]$hundredK.metadata.technical_metadata_commit_max_ticks / 10000.0
+$commitSlowMs = [long]$hundredK.metadata.technical_metadata_commit_over_8ms_ticks / 10000.0
+$commitDistributionCount = ($commitBuckets | Measure-Object -Sum).Sum
+if ($commitBuckets.Count -ne 5 -or
+    $commitDistributionCount -ne 10000 -or
+    ($commitBuckets | Where-Object { $_ -lt 0 }).Count -gt 0 -or
+    $commitMaxMs -lt 0 -or $commitMaxMs -gt $commitMs -or
+    $commitSlowMs -lt 0 -or $commitSlowMs -gt $commitMs -or
+    ($commitBuckets[2] + $commitBuckets[3] + $commitBuckets[4]) -gt $metadataSlowWrites -or
+    ($commitBuckets[2] + $commitBuckets[3] + $commitBuckets[4] -eq 0 -and $commitSlowMs -gt 0)) {
+    throw "100k technical metadata SQLite COMMIT latency tail histogram is incomplete or inconsistent."
+}
+Write-Host ("10k individual SQLite COMMIT latency: <1ms={0:N0}, [1,8)ms={1:N0}, [8,32)ms={2:N0}, [32,128)ms={3:N0}, >=128ms={4:N0}; max={5:N1}ms, >=8ms cumulative={6:N1}ms (10,000 exclusive samples)" -f
+    $commitBuckets[0], $commitBuckets[1], $commitBuckets[2],
+    $commitBuckets[3], $commitBuckets[4], $commitMaxMs, $commitSlowMs)
+
 $metadataBatchCount = [int]$hundredK.metadata.technical_metadata_batch_persist_count
 $metadataBatchTransactions = [int]$hundredK.metadata.technical_metadata_batch_transaction_count
 if ($metadataBatchCount -ne 10000 -or
