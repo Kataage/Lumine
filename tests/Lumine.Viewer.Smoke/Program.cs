@@ -815,9 +815,14 @@ internal static class Program
         string thumbnailPath)
     {
         var assetProvider = new DirectFixtureAssetProvider(100);
+        // Keep the provider operation cancellable and outstanding until
+        // both coalesced callers explicitly cancel it. The old 250ms delay
+        // could finish on a contended CI runner between Started and Cancel,
+        // falsely reporting that the provider never observed cancellation.
+        // This remains bounded if cancellation is broken; no indefinite hang.
         var thumbnailProvider = new DelayedThumbnailProvider(
             thumbnailPath,
-            TimeSpan.FromMilliseconds(250));
+            TimeSpan.FromSeconds(10));
 
         await using var session = new ViewerSession(
             assetProvider,
