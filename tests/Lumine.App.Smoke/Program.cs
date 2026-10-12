@@ -1331,12 +1331,12 @@ try
         {
             var pressureProvider = new ImageViewerThumbnailProvider(
                 pressurePipeline, pressureRoot, pressureService, pressureLibrary.Id);
+            var pressureStarted = Stopwatch.GetTimestamp();
             var pressureRequests = pressureAssets
                 .Select(item => pressureProvider.RequestAsync(
                     ToPressureViewerAsset(item),
                     ViewerThumbnailPriority.Background).AsTask())
                 .ToArray();
-            var pressureStarted = Stopwatch.GetTimestamp();
             var pressureResults = await Task.WhenAll(pressureRequests);
             var pressureElapsed = Stopwatch.GetElapsedTime(pressureStarted);
             var pressureAfter = pressureBatcher.Diagnostics;
