@@ -283,3 +283,50 @@ copies of just two source images and does not measure graphics compositor
 pressure or real hardware GPU activity. Final performance acceptance must
 still use the actual representative image library with user hardware,
 reviewed once alongside #634 and #635.
+
+
+## Diagnose >1s queue-to-post-COMMIT tail under 192 simultaneous requests
+
+Strict Windows [PR #725 CI #38278690064](https://github.com/Kataage/Lumine/actions/runs/38278690064)
+passed all unchanged gates. Its added 192-image, mixed PNG/BMP production
+integration fixture completed 192 real thumbnail requests in **3,158.3ms**;
+9 bounded multi-row commits accepted 191 image rows, plus one singleton.
+Queue peak was **75 / 128**, working-set delta **19,574,784 bytes**,
+warm repeated thumbnail requests **1.9ms / zero extra DB writes**.
+However the post-admission-to-post-COMMIT histogram reported **p95/p99
+`over_1000_ms`**. This can reflect awaiting a batch, a slow SQLite
+service call, scheduling/contention, or a combination. It does **not**
+mean the SQL COMMIT itself took over one second and is not a 100k-image
+cold-GPU benchmark.
+
+The next per-LibraryService diagnostic therefore separately captures,
+for **successful** SQLite service calls only:
+
+- Sum/max of each image request's admitted-to-SQLite-service-start wait,
+  in Stopwatch `TimeSpan.Ticks`, plus count of matched requests.
+- Sum/max of bounded SQLite repository *async service-call wall duration*,
+  plus total successfully finished service calls. A call includes
+  connection open, SQL updates, transaction and continuations, not just
+  the final COMMIT.
+
+All counters are fixed-size atomic scalars; no per-image trace storage,
+extra SQL, SQLite PRAGMA, connection use or sensitive file paths.
+Pre-write canceled requests and failing transaction groups are not
+included in success-only stage samples. Both measurements use the
+same monotonic clock, and queue samples should equal successful
+post-COMMIT histogram samples. Each service call can cover one to
+64 writes, so **service-call total is NOT the sum of per-write latencies**.
+Both stages are affected by scheduling and cannot by themselves certify
+OS-cache-neutral speedups.
+
+The 32-PNG and 192-image actual Viewer integration cases now require
+all stage samples and print mean/max queued wait, total/max repository
+service-call wall time and call count for the 192-image fixture. The
+Windows representative library wrapper validates the new observations
+and carries raw counters into the cold/warm evidence summary.
+
+This **diagnoses** the observed over-one-second tail rather than
+silencing it or altering the historical <=8,000ms individual metadata
+or 1,500ms fast-scroll acceptance thresholds. Issue #714 stays OPEN
+until evidence identifies material bottlenecks and the final
+representative physical hardware check is coordinated with #634/#635.

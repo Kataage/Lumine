@@ -1165,6 +1165,13 @@ try
                 == backgroundFixtureCount
             && routeAfter.AcceptedBatchedRows - routeBefore.AcceptedBatchedRows
                 == routeAfter.BatchedRows - routeBefore.BatchedRows
+            && routeAfter.QueuedToSqliteServiceSamples
+                - routeBefore.QueuedToSqliteServiceSamples == backgroundFixtureCount
+            && routeAfter.SqliteServiceCalls > routeBefore.SqliteServiceCalls
+            && routeAfter.SqliteServiceDurationTicks
+                > routeBefore.SqliteServiceDurationTicks
+            && routeAfter.QueuedToSqliteServiceTicks
+                <= routeAfter.CompletedWriteLatencyTicks
             && routeAfter.BatchGroups2To8Rows + routeAfter.BatchGroups9To32Rows
                 + routeAfter.BatchGroups33To64Rows
                 == routeAfter.CommittedBatches
@@ -1359,7 +1366,14 @@ try
                 && pressureAfter.PeakPendingQueueDepth <= 128
                 && pressureAfter.CompletedWriteLatencyBuckets.Sum()
                     - pressureBefore.CompletedWriteLatencyBuckets.Sum()
-                    == pressureCount,
+                    == pressureCount
+                && pressureAfter.QueuedToSqliteServiceSamples
+                    - pressureBefore.QueuedToSqliteServiceSamples == pressureCount
+                && pressureAfter.SqliteServiceCalls > pressureBefore.SqliteServiceCalls
+                && pressureAfter.SqliteServiceDurationTicks
+                    > pressureBefore.SqliteServiceDurationTicks
+                && pressureAfter.QueuedToSqliteServiceTicks
+                    <= pressureAfter.CompletedWriteLatencyTicks,
                 "Mixed-format Viewer pressure requests escaped queue, rejected guarded writes or lost committed metadata.");
 
             var pressureWarmBefore = pressureBatcher.Diagnostics;
@@ -1393,7 +1407,12 @@ try
                 $"p99_upper_ms={ViewerTechnicalMetadataLatencyHistogram.PercentileUpperBoundMs(pressureAfter.CompletedWriteLatencyBuckets, 99)}, " +
                 $"cold_elapsed_ms={pressureElapsed.TotalMilliseconds:F1}, " +
                 $"warm_elapsed_ms={pressureWarmElapsed.TotalMilliseconds:F1}, " +
-                $"working_set_delta_bytes={Environment.WorkingSet - pressureWorkingSetBefore}.");
+                $"working_set_delta_bytes={Environment.WorkingSet - pressureWorkingSetBefore}, " +
+                $"queue_wait_mean_ms={(pressureAfter.QueuedToSqliteServiceTicks - pressureBefore.QueuedToSqliteServiceTicks) / (double)TimeSpan.TicksPerMillisecond / pressureCount:F1}, " +
+                $"queue_wait_max_ms={pressureAfter.MaxQueuedToSqliteServiceTicks / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+                $"sqlite_service_total_ms={(pressureAfter.SqliteServiceDurationTicks - pressureBefore.SqliteServiceDurationTicks) / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+                $"sqlite_service_calls={pressureAfter.SqliteServiceCalls - pressureBefore.SqliteServiceCalls}, " +
+                $"sqlite_service_max_ms={pressureAfter.MaxSqliteServiceDurationTicks / (double)TimeSpan.TicksPerMillisecond:F1}.");
         }
 
         LibraryDatabase.ClearPools();

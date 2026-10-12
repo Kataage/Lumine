@@ -147,6 +147,12 @@ foreach ($iteration in 1..$Repeat) {
                 ([int64]$evidence.acceptedBatchedRows -gt 0)) {
             throw "Acceptance wrapper smoke iteration $iteration misclassified $mode accepted metadata batches."
         }
+        if ([int64]$evidence.queueToSqliteSamples -ne [int64]$evidence.completedWrites -or
+            [int64]$evidence.maxQueueToSqliteTicks -gt [int64]$evidence.queueToSqliteTicks -or
+            [int64]$evidence.maxSqliteServiceTicks -gt [int64]$evidence.sqliteServiceTicks -or
+            [int64]$evidence.sqliteServiceCalls -gt [int64]$evidence.completedWrites) {
+            throw "Acceptance wrapper smoke iteration $iteration reported incoherent $mode queue/service timings."
+        }
         if ([int64]$evidence.avoidedIndividualCommits -ne (
                 [int64]$evidence.batchedRows - [int64]$evidence.batchCommits
             )) {
