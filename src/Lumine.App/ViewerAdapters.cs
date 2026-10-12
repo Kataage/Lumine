@@ -670,7 +670,9 @@ internal static class ViewerImageMetadataBridge
                     current,
                     sourcePath,
                     result.SourceMetadata,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    preferBatch: priority == ThumbnailPriority.Background)
+                    .ConfigureAwait(false);
 
                 return (result, current);
             }
@@ -776,7 +778,8 @@ internal static class ViewerImageMetadataBridge
         ViewerAsset asset,
         string sourcePath,
         SourceTechnicalMetadata? metadata,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preferBatch = false)
     {
         if (library is null || metadata is null)
         {
@@ -818,21 +821,32 @@ internal static class ViewerImageMetadataBridge
             return;
         }
 
-        var persisted = await library.UpdateTechnicalMetadataAsync(
-            libraryId,
-            asset.Id,
-            asset.SourceRevision,
-            asset.FileSize,
-            asset.ModifiedAtUtcTicks,
-            new AssetTechnicalMetadata(
-                metadata.Width,
-                metadata.Height,
-                metadata.RawWidth,
-                metadata.RawHeight,
-                metadata.HasAlpha,
-                metadata.Format,
-                metadata.SourceIdentity),
-            cancellationToken).ConfigureAwait(false);
+        var technical = new AssetTechnicalMetadata(
+            metadata.Width,
+            metadata.Height,
+            metadata.RawWidth,
+            metadata.RawHeight,
+            metadata.HasAlpha,
+            metadata.Format,
+            metadata.SourceIdentity);
+        var persisted = preferBatch
+            ? await ViewerTechnicalMetadataBatcher.For(library).WriteAsync(
+                libraryId,
+                new TechnicalMetadataBatchItem(
+                    asset.Id,
+                    asset.SourceRevision,
+                    asset.FileSize,
+                    asset.ModifiedAtUtcTicks,
+                    technical),
+                cancellationToken).ConfigureAwait(false)
+            : await library.UpdateTechnicalMetadataAsync(
+                libraryId,
+                asset.Id,
+                asset.SourceRevision,
+                asset.FileSize,
+                asset.ModifiedAtUtcTicks,
+                technical,
+                cancellationToken).ConfigureAwait(false);
 
         if (!persisted)
         {
