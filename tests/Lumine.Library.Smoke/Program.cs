@@ -194,6 +194,35 @@ try
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
     Require(LibraryDatabase.SupportedSchemaVersion == 10, "Unexpected Library schema version.");
+    // Production pool connections must restore their own checkpoint policy:
+    // 1000(default) -> 512 -> 2048 -> 1000 on the SAME pooled database.
+    foreach (var invalidPages in new[] { 0, -1, 127, 8193 })
+    {
+        try
+        {
+            _ = new LibraryDatabase(databasePath, invalidPages);
+            throw new InvalidOperationException(
+                "Invalid WAL auto-checkpoint setting was accepted.");
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+        }
+    }
+
+    foreach (var pages in new[] { 1000, 512, 2048, 1000 })
+    {
+        var tuned = new LibraryDatabase(databasePath, pages);
+        await using var pooled = await tuned.OpenConnectionAsync(CancellationToken.None);
+        await using var check = pooled.CreateCommand();
+        check.CommandText = "PRAGMA wal_autocheckpoint;";
+        var actual = Convert.ToInt32(
+            await check.ExecuteScalarAsync(),
+            CultureInfo.InvariantCulture);
+        Require(
+            actual == pages,
+            $"A pooled SQLite connection retained an incorrect WAL auto-checkpoint policy: {actual}, expected {pages}.");
+    }
+
 
     await using (var walConnection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
     {
