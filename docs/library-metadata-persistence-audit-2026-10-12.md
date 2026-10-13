@@ -296,3 +296,21 @@ The opt-in benchmark flag `--proactive-passive-checkpoint-every 128` schedules a
 Strict Windows CI still executes exactly the **same mandatory 100k-fixture <=8000ms individual-write gate first** and preserves the red result. A separate A/B/B/A after it — including when red — uses A=auto1000, B=auto1000 plus passive checkpoint every 128 writes, B again, A again in isolated real Repository DBs, preserving both artifacts. No result is claimed before the CI actually reports it. This is an **experimental measurement**, not an adopted new product scheduling policy. Further adoption requires bounded WAL growth, incomplete-checkpoint retry progress, app disposal/shutdown, cancellation, restart integrity, 16-way read/write concurrency, foreground responsiveness and multi-run variance reviews. A successful single run does not justify closing Issue #714.
 
 Official SQLite docs: https://www.sqlite.org/pragma.html#pragma_wal_checkpoint (PASSIVE) and https://www.sqlite.org/wal.html#performance_considerations.
+
+
+## PASSIVE checkpoint opt-in measurement and safety follow-up (Issue #714; 2026-10-14)
+
+[PR #732](https://github.com/Kataage/Lumine/pull/732) first-pass [Windows CI #38456124822](https://github.com/Kataage/Lumine/actions/runs/38456124822) **succeeded all 74 core steps**. The original unchanged 100k-fixture 10k individually committed metadata gate passed at **3,050.5123ms**, with three other fixture phases at **3,466.1 / 3,268.6 / 3,776.0ms**. The ABBA independent Repository-source-guarded write experiments produced:
+
+| Phase | Automatic policy | Opt-in PASSIVE worker | Original 10k writes | COMMIT max | COMMIT >=32ms | completed PASSIVE calls |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| A1 | 1000 pages | off | 3,287.7ms | 154.2ms | 32 | 0 |
+| B1 | 1000 pages | every 128 writes | 2,945.5ms | 38.0ms | 3 | 59 |
+| B2 | 1000 pages | every 128 writes | 2,784.6ms | 54.5ms | 3 | 73 |
+| A2 | 1000 pages | off | 3,557.1ms | 113.1ms | 33 | 0 |
+
+Both B trials returned **0 SQLITE_BUSY**, though their individual PASSIVE tasks reached 69.3ms and 32.5ms respectively. The 10k write average fell 3,422.4ms → 2,865.1ms (~16.3%) **for this single controlled run only**. A B1 WAL file snapshot was 6,571,432B vs 5,858,672B for A1/B2/A2 (~12.2% larger); this alone cannot bound disk growth over hours, or prove progress with long-lived readers. Earlier red CI runs still had up to 7.4-second individual COMMIT stalls. **No product scheduler was enabled.** Strict 8s gate remains unchanged. Issue #714 remains OPEN for true stability acceptance.
+
+The next narrow follow-up keeps the production auto-checkpoint fallback at 1,000 pages and adds safety validation on the opt-in API: a checkpoint requested with a pre-cancelled token must not enter SQLite; a bounded (30s) concurrent PASSIVE call alongside the existing 16 source-guarded writes must complete and leave a read-only set of 16 lookups returning the original normalized source identity and image metadata. Existing restart and failed-batch rollback coverage remains mandatory. These are smoke controls, **not a simulated power-cut test**, and do not prove all long-lived reader cases.
+
+The ABBA observer also records how often SQLite's PASSIVE result reports *partial* progress (`checkpointed_frames < wal_frames`), the maximum outstanding WAL frame count after one reported checkpoint, and the **sum of reported checkpointed frames** across calls. The sum may include re-checkpointed frames after WAL resets; it is *not* a unique-frame count. Windows script validates partial/total counters against the number of actual completed checkpoints, includes metrics in the separate ABBA artifact, and rejects nonsensical negative or off-mode nonzero values. These metrics help identify starvation without adding queries to the original strict write path or silently claiming bounded WAL growth. Dedicated sustained-readers, cancellation-in-flight and restart-under-load trials are still needed before product adoption.

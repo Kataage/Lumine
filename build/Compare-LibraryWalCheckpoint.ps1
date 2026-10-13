@@ -44,6 +44,15 @@ foreach ($profile in $profiles) {
     $proactiveStarted = [int]$result.metadata.proactive_passive_checkpoint_requested
     $proactiveCompleted = [int]$result.metadata.proactive_passive_checkpoint_completed
     $proactiveBusy = [int]$result.metadata.proactive_passive_checkpoint_busy
+    $proactivePartial = [int]$result.metadata.proactive_passive_checkpoint_partial
+    $maxPendingFrames = [int]$result.metadata.proactive_passive_checkpoint_max_outstanding_wal_frames
+    $reportedCheckpointFrames = [long]$result.metadata.proactive_passive_checkpointed_frames_reported_total
+    if ($proactivePartial -lt 0 -or $proactivePartial -gt $proactiveCompleted -or
+        $maxPendingFrames -lt 0 -or $reportedCheckpointFrames -lt 0 -or
+        ($proactiveEvery -eq 0 -and
+            ($proactivePartial -ne 0 -or $maxPendingFrames -ne 0 -or $reportedCheckpointFrames -ne 0))) {
+        throw "WAL ABBA PASSIVE checkpoint frame progress metrics are inconsistent for $($profile.Name)."
+    }
     if ($observedEvery -ne $proactiveEvery -or
         $proactiveStarted -ne $proactiveCompleted -or
         $proactiveBusy -gt $proactiveCompleted -or
@@ -69,6 +78,9 @@ foreach ($profile in $profiles) {
         proactive_passive_started = $proactiveStarted
         proactive_passive_completed = $proactiveCompleted
         proactive_passive_busy = $proactiveBusy
+        proactive_passive_partial = $proactivePartial
+        proactive_max_outstanding_frames = $maxPendingFrames
+        proactive_checkpointed_frames_reported_total = $reportedCheckpointFrames
         proactive_passive_max_ms = [long]$result.metadata.proactive_passive_checkpoint_max_ticks / 10000.0
     }
     $samples += $sample

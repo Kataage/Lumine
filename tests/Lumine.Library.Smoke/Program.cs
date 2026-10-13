@@ -249,6 +249,21 @@ try
         && serviceCheckpoint.CheckpointedFrames >= 0,
         "LibraryService PASSIVE checkpoint returned invalid progress.");
 
+    using (var cancelledPassiveCheckpoint = new CancellationTokenSource())
+    {
+        cancelledPassiveCheckpoint.Cancel();
+        try
+        {
+            _ = await database.CheckpointPassiveAsync(cancelledPassiveCheckpoint.Token);
+            throw new InvalidOperationException(
+                "Cancelled PASSIVE WAL checkpoint unexpectedly executed.");
+        }
+        catch (OperationCanceledException)
+        {
+            // An already-cancelled explicit checkpoint never enters SQLite.
+        }
+    }
+
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Smoke", libraryRoot);
     var defaultPublicationDestinations =
@@ -529,6 +544,13 @@ try
         && exifAfterRestart.CameraModel == "Lumine Camera X",
         "EXIF metadata changed after database restart.");
 
+    // Exercise the opt-in checkpoint while the existing 16 independent
+    // guarded writes and read-only lookups access the same WAL database.
+    // Keep all writer/revision/identity assertions unchanged.
+    using var concurrentPassiveTimeout =
+        new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    var concurrentCheckpointTask = Task.Run(
+        () => database.CheckpointPassiveAsync(concurrentPassiveTimeout.Token));
     var concurrentTechnicalWrites =
         Enumerable.Range(0, 16)
             .Select(_ =>
@@ -552,6 +574,20 @@ try
     Require(
         concurrentTechnicalResults.All(static updated => updated),
         "Concurrent technical metadata persistence rejected a current source revision.");
+    var concurrentCheckpoint = await concurrentCheckpointTask;
+    Require(
+        concurrentCheckpoint.WalFrames >= 0
+        && concurrentCheckpoint.CheckpointedFrames >= 0
+        && concurrentCheckpoint.CheckpointedFrames <= concurrentCheckpoint.WalFrames,
+        "Concurrent PASSIVE checkpoint returned invalid WAL frame progress.");
+    var readersAfterCheckpoint = await Task.WhenAll(
+        Enumerable.Range(0, 16).Select(_ =>
+            repository.GetAssetAsync(library.Id, "b.png")));
+    Require(
+        readersAfterCheckpoint.All(asset =>
+            asset is { Width: 640, Height: 480, SourceIdentity: var source }
+            && source == technicalSha),
+        "Concurrent PASSIVE checkpoint corrupted independently committed metadata.");
 
     // The bounded batch is the same guarded SQL path as a single write.
     // A stale revision or same-stat conflicting identity must reject only
