@@ -33,6 +33,14 @@ if (!int.TryParse(walPagesText, NumberStyles.None, CultureInfo.InvariantCulture,
     throw new ArgumentException("--wal-autocheckpoint-pages must be an integer from 128 to 8192.");
 }
 
+var proactiveText = ReadOption(args, "--proactive-passive-checkpoint-every") ?? "0";
+if (!int.TryParse(proactiveText, NumberStyles.None, CultureInfo.InvariantCulture,
+        out var proactiveEveryWrites) || proactiveEveryWrites is not (0 or 128))
+{
+    throw new ArgumentException(
+        "--proactive-passive-checkpoint-every must be 0 (off) or 128 (diagnostic only).");
+}
+
 var output = ReadOption(args, "--output")
     ?? Path.Combine("artifacts", "benchmarks", $"library-{count}.json");
 
@@ -53,6 +61,13 @@ long ingestAllocatedBytes = 0;
 var pageCount = 0;
 var traversed = 0;
 var metadataPersisted = 0;
+var passiveCheckpointRequested = 0;
+var passiveCheckpointCompleted = 0;
+var passiveCheckpointBusy = 0;
+long passiveCheckpointElapsedTicks = 0;
+long passiveCheckpointMaxTicks = 0;
+var passiveCheckpointMaxWalFrames = 0;
+Task<(LibraryPassiveCheckpointResult Result, long DurationTicks)>? passiveCheckpointTask = null;
 long metadataWalAfterSingleBytes = 0;
 long metadataWalAfterBatchBytes = 0;
 var metadataBatchPersisted = 0;
@@ -269,6 +284,36 @@ try
                 }
 
                 metadataPersisted++;
+                if (proactiveEveryWrites != 0
+                    && metadataPersisted % proactiveEveryWrites == 0)
+                {
+                    // Opt-in comparison only. A single PASSIVE checkpoint may
+                    // run on another worker while guarded writes continue.
+                    // SQLite's 1000-page automatic fallback stays enabled.
+                    if (passiveCheckpointTask?.IsCompleted == true)
+                    {
+                        var done = await passiveCheckpointTask.ConfigureAwait(false);
+                        passiveCheckpointCompleted++;
+                        if (done.Result.Busy) passiveCheckpointBusy++;
+                        passiveCheckpointElapsedTicks += done.DurationTicks;
+                        passiveCheckpointMaxTicks = Math.Max(
+                            passiveCheckpointMaxTicks, done.DurationTicks);
+                        passiveCheckpointMaxWalFrames = Math.Max(
+                            passiveCheckpointMaxWalFrames, done.Result.WalFrames);
+                        passiveCheckpointTask = null;
+                    }
+
+                    if (passiveCheckpointTask is null)
+                    {
+                        passiveCheckpointRequested++;
+                        passiveCheckpointTask = Task.Run(async () =>
+                        {
+                            var started = Stopwatch.GetTimestamp();
+                            var result = await database.CheckpointPassiveAsync().ConfigureAwait(false);
+                            return (result, Stopwatch.GetElapsedTime(started).Ticks);
+                        });
+                    }
+                }
             }
 
             metadataCursor = page.NextCursor;
@@ -277,6 +322,20 @@ try
                 break;
             }
         }
+    }
+
+    if (passiveCheckpointTask is not null)
+    {
+        // Await only after the original 10k timed phase is finished, so
+        // final diagnostic cleanup cannot inflate the strict write metric.
+        var done = await passiveCheckpointTask.ConfigureAwait(false);
+        passiveCheckpointCompleted++;
+        if (done.Result.Busy) passiveCheckpointBusy++;
+        passiveCheckpointElapsedTicks += done.DurationTicks;
+        passiveCheckpointMaxTicks = Math.Max(
+            passiveCheckpointMaxTicks, done.DurationTicks);
+        passiveCheckpointMaxWalFrames = Math.Max(
+            passiveCheckpointMaxWalFrames, done.Result.WalFrames);
     }
 
     // File-size snapshots are taken OUTSIDE the original strict 10k timer.
@@ -595,6 +654,13 @@ try
         {
             ["kind"] = "library-core",
             ["wal_autocheckpoint_pages"] = walAutoCheckpointPages.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_every_writes"] = proactiveEveryWrites.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_requested"] = passiveCheckpointRequested.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_completed"] = passiveCheckpointCompleted.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_busy"] = passiveCheckpointBusy.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_total_ticks"] = passiveCheckpointElapsedTicks.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_max_ticks"] = passiveCheckpointMaxTicks.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_max_wal_frames"] = passiveCheckpointMaxWalFrames.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_wal_bytes_after_single"] = metadataWalAfterSingleBytes.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_wal_bytes_after_batch"] = metadataWalAfterBatchBytes.ToString(CultureInfo.InvariantCulture),
             ["fixture_asset_count"] = count.ToString(CultureInfo.InvariantCulture),
