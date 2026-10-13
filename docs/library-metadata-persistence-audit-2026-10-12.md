@@ -251,3 +251,23 @@ The next experiment explicitly sets the checkpoint policy to **1,000 (control) o
 Strict Windows CI first runs the exact existing 10k/100k Library acceptance with the unchanged <=8,000ms and sample count. **Only after passing** does the new diagnostic run `build/Compare-LibraryWalCheckpoint.ps1` as an **A(1000) → B(2048) → B(2048) → A(1000)** paired sequence on separately created temporary database fixtures on the same Windows runner. The script validates ten thousand individually persisted guarded records and nonnegative timings for every phase and emits a JSON artifact with individual-save duration, total COMMIT duration, maximum COMMIT duration, >=32ms COMMIT count, and WAL size sampled **outside** the original save timer. It does not assert that B is faster or relax product gates if A or B runs slowly.
 
 Because the candidate is still a synchronous *COMMIT-thread auto-checkpoint* policy, this is intended to compare checkpoint frequency and stall-tail cost **without changing thread ownership or power-loss behavior**. Larger thresholds can grow WAL disk usage and sometimes make rare checkpoints more expensive; use both repeats and strict resource gates, and keep the production 1,000-page default unless a later distinct PR provides repeatably better real-product measurements and full recovery/concurrency/cancellation/foreground proof. SQLite: https://sqlite.org/wal.html and https://sqlite.org/c3ref/wal_autocheckpoint.html.
+
+
+## Strict-red evidence retention and smaller WAL threshold experiment (2026-10-14, #714)
+
+After [PR #731](https://github.com/Kataage/Lumine/pull/731) completed strict Windows CI and merged at `develop@c570327b740aae762841679cc9a9db425183ba8e`, its four **separate** original Repository 10,000-individual-COMMIT ABBA trials produced the following data:
+
+| Trial | Auto-checkpoint | 10k individual writes | 32ms+ COMMITs | Max single COMMIT | WAL allocated |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A1 | 1000 pages | 19,821.1ms | 41 | 2,669.5ms | 5,858,672B |
+| B1 | 2048 pages | 16,035.3ms | 20 | 3,025.5ms | 8,454,272B |
+| B2 | 2048 pages | 2,877.4ms | 16 | 159.1ms | 8,454,272B |
+| A2 | 1000 pages | 4,155.7ms | 32 | 104.3ms | 5,858,672B |
+
+A doubled checkpoint interval reduces periodic COMMIT stalls but **does not prevent multi-second outliers**. The 2,048-page candidate also grows the WAL allocated size ~44%. Do not adopt it as default, nor infer per-commit I/O causation from wall-clock times.
+
+**New control:** In the strict Windows workflow, upload all available `library-{10000,50000,100000,100000-cold}.json` results to a separate **14-day diagnostic artifact before the unchanged 8-second enforcement**. This fixes the previous red-run observability gap (when later `Upload Core benchmark results` did not execute after `Test-LibraryPerformance.ps1` rejected an outlier). The first upload is after all Library measurements have ended, so it cannot affect any original measured time; upload failure remains a true CI failure if it occurs. No command suppresses the test gate.
+
+**New hypothesis:** Try *smaller*, more frequent synchronous on-COMMIT checkpoints using an opt-in candidate of **512 pages** on the same production `LibraryDatabase.OpenConnectionAsync` path. The already-merged ABBA runner now accepts only a validated candidate of **512 or 2048**, still A=1000, B=candidate, B=candidate, A=1000, with 10,000 independently committed guarded Repository writes per phase. The strict original 8s acceptance continues to run **first**. Inspect the complete saved A/B/B/A JSON for COMMIT total, worst single stall, 32ms+ count, WAL size and cross-phase variance. More frequent checkpoints might yield shorter individual sync stalls but could *increase* total sync/I/O time and foreground latency. Neither outcome authorizes a product default change without repeatability, restart/power-loss, concurrent-reader/writer and cancellation checks. Zero/disabled checkpoints and relaxed durability remain disallowed.
+
+SQLite's documented automatic WAL checkpoints run in the writer's COMMIT, with `NORMAL` synchronization concentrated on checkpoint events: https://www.sqlite.org/wal.html#performance_considerations.

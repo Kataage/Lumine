@@ -1,5 +1,6 @@
 param(
     [int]$BenchmarkCount = 10000,
+    [int]$CandidatePages = 2048,
     [string]$OutputDirectory = "artifacts/benchmarks/wal-checkpoint-comparison"
 )
 
@@ -7,14 +8,17 @@ $ErrorActionPreference = "Stop"
 if ($BenchmarkCount -ne 10000) {
     throw "WAL ABBA comparison requires exactly 10,000 individually persisted records per phase."
 }
+if ($CandidatePages -notin @(512, 2048)) {
+    throw "WAL ABBA candidates are restricted to 512 or 2048 pages; 1000 remains the production default."
+}
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 # Strict library acceptance executes before this diagnostic. Neither
 # candidate results nor a fortunate retry can replace its unchanged gate.
 $profiles = @(
     @{ Name = "A1"; Pages = 1000 },
-    @{ Name = "B1"; Pages = 2048 },
-    @{ Name = "B2"; Pages = 2048 },
+    @{ Name = "B1"; Pages = $CandidatePages },
+    @{ Name = "B2"; Pages = $CandidatePages },
     @{ Name = "A2"; Pages = 1000 }
 )
 $samples = @()
@@ -59,7 +63,8 @@ $report = [pscustomobject]@{
     kind = "library-wal-autocheckpoint-abba-diagnostic"
     original_acceptance_gate_unchanged = $true
     independently_committed_writes_per_phase = 10000
-    order = "1000,2048,2048,1000"
+    order = "1000,$CandidatePages,$CandidatePages,1000"
+    candidate_pages = $CandidatePages
     samples = $samples
 }
 $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reportPath -Encoding utf8
