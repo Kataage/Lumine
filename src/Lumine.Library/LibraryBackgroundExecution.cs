@@ -70,6 +70,12 @@ public sealed class LibraryService
             token => _database.CheckpointAsync(token),
             cancellationToken);
 
+    public Task<LibraryPassiveCheckpointResult> CheckpointPassiveAsync(
+        CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _database.CheckpointPassiveAsync(token),
+            cancellationToken);
+
     public Task<LibraryInfo> RegisterLibraryAsync(
         string name,
         string rootPath,

@@ -17,6 +17,12 @@ public sealed class LibraryDatabaseCompatibilityException : InvalidOperationExce
     }
 }
 
+/// <summary>Result of an explicitly requested non-blocking SQLite PASSIVE checkpoint.</summary>
+public readonly record struct LibraryPassiveCheckpointResult(
+    bool Busy,
+    int WalFrames,
+    int CheckpointedFrames);
+
 public sealed class LibraryDatabase
 {
     private static readonly Migration[] Migrations =
@@ -721,6 +727,39 @@ public sealed class LibraryDatabase
             throw new InvalidOperationException(
                 $"SQLite WAL checkpoint remained busy ({busy}).");
         }
+    }
+
+    /// <summary>
+    /// Observe checkpoint progress via PASSIVE, without waiting on active
+    /// readers/writers or changing the 1000-page automatic checkpoint fallback.
+    /// Intended for explicitly scheduled, bounded background diagnostics.
+    /// Incomplete progress must not be mistaken for a completed checkpoint.
+    /// </summary>
+    public async Task<LibraryPassiveCheckpointResult> CheckpointPassiveAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(
+            cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_checkpoint(PASSIVE);";
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "SQLite PASSIVE checkpoint returned no status row.");
+        }
+
+        var busy = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture);
+        var log = Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture);
+        var checkpointed = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture);
+        if (busy is < 0 or > 1 || log < 0 || checkpointed < 0 || checkpointed > log)
+        {
+            throw new InvalidOperationException(
+                $"Invalid SQLite PASSIVE checkpoint state: busy={busy}, log={log}, checkpointed={checkpointed}.");
+        }
+
+        return new LibraryPassiveCheckpointResult(busy != 0, log, checkpointed);
     }
 
     internal async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)

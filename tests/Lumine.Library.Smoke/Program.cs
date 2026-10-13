@@ -235,6 +235,20 @@ try
             $"Expected WAL journal mode, found '{journalMode}'.");
     }
 
+    var passiveCheckpoint = await database.CheckpointPassiveAsync();
+    Require(
+        passiveCheckpoint.WalFrames >= 0
+        && passiveCheckpoint.CheckpointedFrames >= 0
+        && passiveCheckpoint.CheckpointedFrames <= passiveCheckpoint.WalFrames,
+        "PASSIVE WAL checkpoint did not return valid progress.");
+    // The production LibraryService wrapper runs the same bounded PASSIVE
+    // checkpoint off the UI thread, not in an on-COMMIT hook.
+    var serviceCheckpoint = await new LibraryService(databasePath).CheckpointPassiveAsync();
+    Require(
+        serviceCheckpoint.WalFrames >= 0
+        && serviceCheckpoint.CheckpointedFrames >= 0,
+        "LibraryService PASSIVE checkpoint returned invalid progress.");
+
     var repository = new LibraryRepository(database);
     var library = await repository.RegisterLibraryAsync("Smoke", libraryRoot);
     var defaultPublicationDestinations =

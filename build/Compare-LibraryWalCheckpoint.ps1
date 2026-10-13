@@ -1,6 +1,7 @@
 param(
     [int]$BenchmarkCount = 10000,
     [int]$CandidatePages = 2048,
+    [switch]$ProactivePassiveCandidate,
     [string]$OutputDirectory = "artifacts/benchmarks/wal-checkpoint-comparison"
 )
 
@@ -8,7 +9,7 @@ $ErrorActionPreference = "Stop"
 if ($BenchmarkCount -ne 10000) {
     throw "WAL ABBA comparison requires exactly 10,000 individually persisted records per phase."
 }
-if ($CandidatePages -notin @(512, 2048)) {
+if (-not $ProactivePassiveCandidate -and $CandidatePages -notin @(512, 2048)) {
     throw "WAL ABBA candidates are restricted to 512 or 2048 pages; 1000 remains the production default."
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
@@ -17,14 +18,15 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 # candidate results nor a fortunate retry can replace its unchanged gate.
 $profiles = @(
     @{ Name = "A1"; Pages = 1000 },
-    @{ Name = "B1"; Pages = $CandidatePages },
-    @{ Name = "B2"; Pages = $CandidatePages },
+    @{ Name = "B1"; Pages = $(if ($ProactivePassiveCandidate) { 1000 } else { $CandidatePages }) },
+    @{ Name = "B2"; Pages = $(if ($ProactivePassiveCandidate) { 1000 } else { $CandidatePages }) },
     @{ Name = "A2"; Pages = 1000 }
 )
 $samples = @()
 foreach ($profile in $profiles) {
     $resultPath = Join-Path $OutputDirectory ("wal-" + $profile.Name + ".json")
-    & dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $BenchmarkCount --wal-autocheckpoint-pages $profile.Pages --output $resultPath
+    $proactiveEvery = if ($ProactivePassiveCandidate -and $profile.Name -match "^B") { 128 } else { 0 }
+    & dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $BenchmarkCount --wal-autocheckpoint-pages $profile.Pages --proactive-passive-checkpoint-every $proactiveEvery --output $resultPath
     if ($LASTEXITCODE -ne 0) {
         throw "WAL ABBA diagnostic failed for $($profile.Name)."
     }
@@ -38,6 +40,17 @@ foreach ($profile in $profiles) {
     $maxCommitMs = [long]$result.metadata.technical_metadata_commit_max_ticks / 10000.0
     $slow32 = [int]$result.metadata.technical_metadata_commit_bucket_32_to_lt_128ms + [int]$result.metadata.technical_metadata_commit_bucket_ge_128ms
     $walBytes = [long]$result.metadata.technical_metadata_wal_bytes_after_single
+    $observedEvery = [int]$result.metadata.proactive_passive_checkpoint_every_writes
+    $proactiveStarted = [int]$result.metadata.proactive_passive_checkpoint_requested
+    $proactiveCompleted = [int]$result.metadata.proactive_passive_checkpoint_completed
+    $proactiveBusy = [int]$result.metadata.proactive_passive_checkpoint_busy
+    if ($observedEvery -ne $proactiveEvery -or
+        $proactiveStarted -ne $proactiveCompleted -or
+        $proactiveBusy -gt $proactiveCompleted -or
+        ($proactiveEvery -eq 128 -and $proactiveStarted -le 0) -or
+        ($proactiveEvery -eq 0 -and $proactiveStarted -ne 0)) {
+        throw "WAL ABBA proactive PASSIVE checkpoint diagnostics invalid for $($profile.Name)."
+    }
     if ($count -ne 10000 -or $sampleCount -ne 10000 -or $pages -ne $profile.Pages -or
         $duration -le 0 -or $commitMs -le 0 -or $maxCommitMs -lt 0 -or
         $slow32 -lt 0 -or $walBytes -lt 0 -or $commitMs -gt $duration) {
@@ -52,6 +65,11 @@ foreach ($profile in $profiles) {
         commit_max_ms = $maxCommitMs
         commit_ge_32ms = $slow32
         wal_bytes_after_single = $walBytes
+        proactive_passive_every = $observedEvery
+        proactive_passive_started = $proactiveStarted
+        proactive_passive_completed = $proactiveCompleted
+        proactive_passive_busy = $proactiveBusy
+        proactive_passive_max_ms = [long]$result.metadata.proactive_passive_checkpoint_max_ticks / 10000.0
     }
     $samples += $sample
     Write-Host ("WAL checkpoint {0}: pages={1}; 10k individual={2:F1}ms; COMMIT={3:F1}ms; >=32ms={4}; WAL={5:N0}B" -f
@@ -63,8 +81,9 @@ $report = [pscustomobject]@{
     kind = "library-wal-autocheckpoint-abba-diagnostic"
     original_acceptance_gate_unchanged = $true
     independently_committed_writes_per_phase = 10000
-    order = "1000,$CandidatePages,$CandidatePages,1000"
-    candidate_pages = $CandidatePages
+    order = $(if ($ProactivePassiveCandidate) { "auto1000,auto1000+passive128,auto1000+passive128,auto1000" } else { "1000,$CandidatePages,$CandidatePages,1000" })
+    candidate_pages = $(if ($ProactivePassiveCandidate) { 1000 } else { $CandidatePages })
+    proactive_passive_candidate = [bool]$ProactivePassiveCandidate
     samples = $samples
 }
 $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reportPath -Encoding utf8
