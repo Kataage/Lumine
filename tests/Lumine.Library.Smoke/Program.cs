@@ -235,6 +235,51 @@ try
             $"Expected WAL journal mode, found '{journalMode}'.");
     }
 
+    // This SQLite return shape is legitimate when an automatic checkpoint
+    // already owns the exclusive checkpoint lock. It must remain visibly
+    // busy/unknown, not become a fabricated successful (0,0) checkpoint.
+    var competingCheckpoint = LibraryDatabase.ParsePassiveCheckpointResult(1, -1, -1);
+    Require(
+        competingCheckpoint.Busy
+        && competingCheckpoint.WalFrames == -1
+        && competingCheckpoint.CheckpointedFrames == -1,
+        "PASSIVE must preserve unknown frame progress after SQLITE_BUSY.");
+
+    var validCheckpointProgress = LibraryDatabase.ParsePassiveCheckpointResult(0, 11, 10);
+    Require(
+        !validCheckpointProgress.Busy
+        && validCheckpointProgress.WalFrames == 11
+        && validCheckpointProgress.CheckpointedFrames == 10,
+        "PASSIVE must preserve valid partial WAL progress.");
+
+    var invalidCheckpointRejected = false;
+    try
+    {
+        _ = LibraryDatabase.ParsePassiveCheckpointResult(0, -1, -1);
+    }
+    catch (InvalidOperationException)
+    {
+        invalidCheckpointRejected = true;
+    }
+
+    Require(
+        invalidCheckpointRejected,
+        "PASSIVE must reject unknown WAL frame counts without SQLITE_BUSY.");
+
+    var mixedCheckpointRejected = false;
+    try
+    {
+        _ = LibraryDatabase.ParsePassiveCheckpointResult(1, -1, 0);
+    }
+    catch (InvalidOperationException)
+    {
+        mixedCheckpointRejected = true;
+    }
+
+    Require(
+        mixedCheckpointRejected,
+        "PASSIVE must reject mixed known/unknown WAL frame counts.");
+
     var passiveCheckpoint = await database.CheckpointPassiveAsync();
     Require(
         passiveCheckpoint.WalFrames >= 0

@@ -64,6 +64,7 @@ var metadataPersisted = 0;
 var passiveCheckpointRequested = 0;
 var passiveCheckpointCompleted = 0;
 var passiveCheckpointBusy = 0;
+var passiveCheckpointUnknownProgress = 0;
 var passiveCheckpointPartial = 0;
 var passiveCheckpointMaxOutstandingFrames = 0;
 long passiveCheckpointedFramesReported = 0;
@@ -298,12 +299,21 @@ try
                         var done = await passiveCheckpointTask.ConfigureAwait(false);
                         passiveCheckpointCompleted++;
                         if (done.Result.Busy) passiveCheckpointBusy++;
-                        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
-                            passiveCheckpointPartial++;
-                        passiveCheckpointMaxOutstandingFrames = Math.Max(
-                            passiveCheckpointMaxOutstandingFrames,
-                            done.Result.WalFrames - done.Result.CheckpointedFrames);
-                        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+                        if (done.Result.WalFrames == -1)
+                        {
+                            // SQLITE_BUSY with unknown progress is a real
+                            // skipped checkpoint, not successful WAL drainage.
+                            passiveCheckpointUnknownProgress++;
+                        }
+                        else
+                        {
+                            if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+                                passiveCheckpointPartial++;
+                            passiveCheckpointMaxOutstandingFrames = Math.Max(
+                                passiveCheckpointMaxOutstandingFrames,
+                                done.Result.WalFrames - done.Result.CheckpointedFrames);
+                            passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+                        }
                         passiveCheckpointElapsedTicks += done.DurationTicks;
                         passiveCheckpointMaxTicks = Math.Max(
                             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -340,12 +350,19 @@ try
         var done = await passiveCheckpointTask.ConfigureAwait(false);
         passiveCheckpointCompleted++;
         if (done.Result.Busy) passiveCheckpointBusy++;
-        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
-            passiveCheckpointPartial++;
-        passiveCheckpointMaxOutstandingFrames = Math.Max(
-            passiveCheckpointMaxOutstandingFrames,
-            done.Result.WalFrames - done.Result.CheckpointedFrames);
-        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+        if (done.Result.WalFrames == -1)
+        {
+            passiveCheckpointUnknownProgress++;
+        }
+        else
+        {
+            if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+                passiveCheckpointPartial++;
+            passiveCheckpointMaxOutstandingFrames = Math.Max(
+                passiveCheckpointMaxOutstandingFrames,
+                done.Result.WalFrames - done.Result.CheckpointedFrames);
+            passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+        }
         passiveCheckpointElapsedTicks += done.DurationTicks;
         passiveCheckpointMaxTicks = Math.Max(
             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -673,6 +690,7 @@ try
             ["proactive_passive_checkpoint_requested"] = passiveCheckpointRequested.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_completed"] = passiveCheckpointCompleted.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_busy"] = passiveCheckpointBusy.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_unknown_progress"] = passiveCheckpointUnknownProgress.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_partial"] = passiveCheckpointPartial.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_max_outstanding_wal_frames"] = passiveCheckpointMaxOutstandingFrames.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpointed_frames_reported_total"] = passiveCheckpointedFramesReported.ToString(CultureInfo.InvariantCulture),
