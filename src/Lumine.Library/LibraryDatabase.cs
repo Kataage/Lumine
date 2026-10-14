@@ -738,6 +738,7 @@ public sealed class LibraryDatabase
     public async Task<LibraryPassiveCheckpointResult> CheckpointPassiveAsync(
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = await OpenConnectionAsync(
             cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();

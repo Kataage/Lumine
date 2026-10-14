@@ -64,6 +64,9 @@ var metadataPersisted = 0;
 var passiveCheckpointRequested = 0;
 var passiveCheckpointCompleted = 0;
 var passiveCheckpointBusy = 0;
+var passiveCheckpointPartial = 0;
+var passiveCheckpointMaxOutstandingFrames = 0;
+long passiveCheckpointedFramesReported = 0;
 long passiveCheckpointElapsedTicks = 0;
 long passiveCheckpointMaxTicks = 0;
 var passiveCheckpointMaxWalFrames = 0;
@@ -295,6 +298,12 @@ try
                         var done = await passiveCheckpointTask.ConfigureAwait(false);
                         passiveCheckpointCompleted++;
                         if (done.Result.Busy) passiveCheckpointBusy++;
+                        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+                            passiveCheckpointPartial++;
+                        passiveCheckpointMaxOutstandingFrames = Math.Max(
+                            passiveCheckpointMaxOutstandingFrames,
+                            done.Result.WalFrames - done.Result.CheckpointedFrames);
+                        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
                         passiveCheckpointElapsedTicks += done.DurationTicks;
                         passiveCheckpointMaxTicks = Math.Max(
                             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -331,6 +340,12 @@ try
         var done = await passiveCheckpointTask.ConfigureAwait(false);
         passiveCheckpointCompleted++;
         if (done.Result.Busy) passiveCheckpointBusy++;
+        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+            passiveCheckpointPartial++;
+        passiveCheckpointMaxOutstandingFrames = Math.Max(
+            passiveCheckpointMaxOutstandingFrames,
+            done.Result.WalFrames - done.Result.CheckpointedFrames);
+        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
         passiveCheckpointElapsedTicks += done.DurationTicks;
         passiveCheckpointMaxTicks = Math.Max(
             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -658,6 +673,9 @@ try
             ["proactive_passive_checkpoint_requested"] = passiveCheckpointRequested.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_completed"] = passiveCheckpointCompleted.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_busy"] = passiveCheckpointBusy.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_partial"] = passiveCheckpointPartial.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_max_outstanding_wal_frames"] = passiveCheckpointMaxOutstandingFrames.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpointed_frames_reported_total"] = passiveCheckpointedFramesReported.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_total_ticks"] = passiveCheckpointElapsedTicks.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_max_ticks"] = passiveCheckpointMaxTicks.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_max_wal_frames"] = passiveCheckpointMaxWalFrames.ToString(CultureInfo.InvariantCulture),
