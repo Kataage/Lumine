@@ -40,6 +40,19 @@ foreach ($profile in $profiles) {
     $maxCommitMs = [long]$result.metadata.technical_metadata_commit_max_ticks / 10000.0
     $slow32 = [int]$result.metadata.technical_metadata_commit_bucket_32_to_lt_128ms + [int]$result.metadata.technical_metadata_commit_bucket_ge_128ms
     $walBytes = [long]$result.metadata.technical_metadata_wal_bytes_after_single
+    $walNoopBusy = [int]$result.metadata.technical_metadata_wal_noop_busy_after_single
+    $walNoopFrames = [int]$result.metadata.technical_metadata_wal_noop_log_frames_after_single
+    $walNoopCheckpointed = [int]$result.metadata.technical_metadata_wal_noop_checkpointed_frames_after_single
+    $walNoopOutstanding = [int]$result.metadata.technical_metadata_wal_noop_outstanding_frames_after_single
+    if (-not (
+        ($walNoopBusy -eq 1 -and $walNoopFrames -eq -1 -and
+         $walNoopCheckpointed -eq -1 -and $walNoopOutstanding -eq -1) -or
+        ($walNoopBusy -in @(0, 1) -and $walNoopFrames -ge 0 -and
+         $walNoopCheckpointed -ge 0 -and $walNoopCheckpointed -le $walNoopFrames -and
+         $walNoopOutstanding -eq ($walNoopFrames - $walNoopCheckpointed))
+    )) {
+        throw "WAL ABBA observational NOOP frame status inconsistent for $($profile.Name)."
+    }
     $observedEvery = [int]$result.metadata.proactive_passive_checkpoint_every_writes
     $proactiveStarted = [int]$result.metadata.proactive_passive_checkpoint_requested
     $proactiveCompleted = [int]$result.metadata.proactive_passive_checkpoint_completed
@@ -78,6 +91,10 @@ foreach ($profile in $profiles) {
         commit_max_ms = $maxCommitMs
         commit_ge_32ms = $slow32
         wal_bytes_after_single = $walBytes
+        wal_noop_busy = $walNoopBusy
+        wal_noop_frames = $walNoopFrames
+        wal_noop_checkpointed = $walNoopCheckpointed
+        wal_noop_outstanding = $walNoopOutstanding
         proactive_passive_every = $observedEvery
         proactive_passive_started = $proactiveStarted
         proactive_passive_completed = $proactiveCompleted
