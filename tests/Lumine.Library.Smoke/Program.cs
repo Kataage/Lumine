@@ -589,6 +589,87 @@ try
             && source == technicalSha),
         "Concurrent PASSIVE checkpoint corrupted independently committed metadata.");
 
+    // Keep a real WAL read snapshot open while writers make progress.
+    // PASSIVE must report incomplete checkpoint work rather than waiting
+    // for this reader. Once released, a second PASSIVE should catch up.
+    await using (var heldReaderConnection =
+                     new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+    {
+        await heldReaderConnection.OpenAsync();
+        using (var heldSnapshot = heldReaderConnection.BeginTransaction(deferred: true))
+        {
+            await using (var initialRead = heldReaderConnection.CreateCommand())
+            {
+                initialRead.Transaction = heldSnapshot;
+                initialRead.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                initialRead.Parameters.AddWithValue("$id", sameStat.Id);
+                Require(
+                    Convert.ToInt32(await initialRead.ExecuteScalarAsync(),
+                        CultureInfo.InvariantCulture) == 640,
+                    "Held WAL snapshot did not observe the original metadata.");
+            }
+
+            for (var index = 0; index < 16; index++)
+            {
+                Require(
+                    await repository.UpdateTechnicalMetadataAsync(
+                        library.Id, sameStat.Id, sameStat.SourceRevision,
+                        sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                        new AssetTechnicalMetadata(
+                            645, 480, 645, 480, true, "png", technicalSha)),
+                    "WAL snapshot unexpectedly blocked a guarded metadata commit.");
+            }
+
+            var partialCheckpoint = await database.CheckpointPassiveAsync();
+            Require(
+                partialCheckpoint.WalFrames > 0
+                && partialCheckpoint.CheckpointedFrames < partialCheckpoint.WalFrames,
+                "PASSIVE checkpoint incorrectly claimed to drain WAL past an active reader.");
+
+            await using (var snapshotRead = heldReaderConnection.CreateCommand())
+            {
+                snapshotRead.Transaction = heldSnapshot;
+                snapshotRead.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                snapshotRead.Parameters.AddWithValue("$id", sameStat.Id);
+                Require(
+                    Convert.ToInt32(await snapshotRead.ExecuteScalarAsync(),
+                        CultureInfo.InvariantCulture) == 640,
+                    "WAL snapshot lost read isolation during PASSIVE checkpoint.");
+            }
+        }
+    }
+
+    var resumedCheckpoint = await database.CheckpointPassiveAsync();
+    Require(
+        resumedCheckpoint.WalFrames >= 0
+        && resumedCheckpoint.CheckpointedFrames == resumedCheckpoint.WalFrames,
+        "PASSIVE checkpoint did not resume to completion after reader release.");
+    Require(
+        (await repository.GetAssetAsync(library.Id, "b.png")) is
+        { Width: 645, Height: 480, SourceIdentity: var snapshotWriteIdentity }
+        && snapshotWriteIdentity == technicalSha,
+        "WAL snapshot/checkpoint sequence lost committed metadata.");
+
+    // Restore the existing fixture before subsequent rejected-identity,
+    // rollback and durable batch coverage; do not alter their assertions.
+    Require(
+        await repository.UpdateTechnicalMetadataAsync(
+            library.Id, sameStat.Id, sameStat.SourceRevision,
+            sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                640, 480, 640, 480, true, "png", technicalSha)),
+        "Could not restore metadata after reader-starvation smoke.");
+
+    LibraryDatabase.ClearPools();
+    var checkpointReopened = new LibraryDatabase(databasePath);
+    await checkpointReopened.InitializeAsync();
+    var checkpointReopenedRepository = new LibraryRepository(checkpointReopened);
+    Require(
+        (await checkpointReopenedRepository.GetAssetAsync(library.Id, "b.png")) is
+        { Width: 640, Height: 480, SourceIdentity: var reopenedSource }
+        && reopenedSource == technicalSha,
+        "PASSIVE checkpoint/restart lost independently committed metadata.");
+
     // The bounded batch is the same guarded SQL path as a single write.
     // A stale revision or same-stat conflicting identity must reject only
     // that row without replacing valid existing technical metadata.
