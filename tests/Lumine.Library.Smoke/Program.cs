@@ -670,6 +670,125 @@ try
         && reopenedSource == technicalSha,
         "PASSIVE checkpoint/restart lost independently committed metadata.");
 
+    // Stagger two WAL read snapshots: a second reader must not be mistaken
+    // for a reader gap when the first one finishes. Checkpoint recovery
+    // should progress in stages, then finish only after both readers exit.
+    await using (var staggeredReaderA =
+                     new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+    await using (var staggeredReaderB =
+                     new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+    {
+        await staggeredReaderA.OpenAsync();
+        await staggeredReaderB.OpenAsync();
+        using (var olderSnapshot =
+                   staggeredReaderA.BeginTransaction(deferred: true))
+        {
+            await using (var oldRead = staggeredReaderA.CreateCommand())
+            {
+                oldRead.Transaction = olderSnapshot;
+                oldRead.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                oldRead.Parameters.AddWithValue("$id", sameStat.Id);
+                Require(
+                    Convert.ToInt32(await oldRead.ExecuteScalarAsync(),
+                        CultureInfo.InvariantCulture) == 640,
+                    "Oldest staggered WAL reader lost its initial snapshot.");
+            }
+
+            for (var index = 0; index < 16; index++)
+            {
+                Require(
+                    await repository.UpdateTechnicalMetadataAsync(
+                        library.Id, sameStat.Id, sameStat.SourceRevision,
+                        sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                        new AssetTechnicalMetadata(
+                            646, 480, 646, 480, true, "png", technicalSha)),
+                    "Old WAL snapshot prevented a guarded writer from committing.");
+            }
+
+            using (var newerSnapshot =
+                       staggeredReaderB.BeginTransaction(deferred: true))
+            {
+                await using (var newRead = staggeredReaderB.CreateCommand())
+                {
+                    newRead.Transaction = newerSnapshot;
+                    newRead.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                    newRead.Parameters.AddWithValue("$id", sameStat.Id);
+                    Require(
+                        Convert.ToInt32(await newRead.ExecuteScalarAsync(),
+                            CultureInfo.InvariantCulture) == 646,
+                        "Newer staggered WAL reader did not see the expected snapshot.");
+                }
+
+                for (var index = 0; index < 16; index++)
+                {
+                    Require(
+                        await repository.UpdateTechnicalMetadataAsync(
+                            library.Id, sameStat.Id, sameStat.SourceRevision,
+                            sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                            new AssetTechnicalMetadata(
+                                647, 480, 647, 480, true, "png", technicalSha)),
+                        "Overlapping WAL read snapshots blocked committed metadata writes.");
+                }
+
+                var bothReadersActive = await database.CheckpointPassiveAsync();
+                Require(
+                    bothReadersActive.WalFrames > 0
+                    && bothReadersActive.CheckpointedFrames
+                        < bothReadersActive.WalFrames,
+                    "PASSIVE ignored the earliest active staggered reader.");
+
+                olderSnapshot.Commit();
+                var secondReaderOnly = await database.CheckpointPassiveAsync();
+                Require(
+                    secondReaderOnly.WalFrames > 0
+                    && secondReaderOnly.CheckpointedFrames
+                        < secondReaderOnly.WalFrames
+                    && secondReaderOnly.CheckpointedFrames
+                        >= bothReadersActive.CheckpointedFrames,
+                    "PASSIVE did not retain incomplete WAL state for a later reader.");
+
+                await using var stillPinned = staggeredReaderB.CreateCommand();
+                stillPinned.Transaction = newerSnapshot;
+                stillPinned.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                stillPinned.Parameters.AddWithValue("$id", sameStat.Id);
+                Require(
+                    Convert.ToInt32(await stillPinned.ExecuteScalarAsync(),
+                        CultureInfo.InvariantCulture) == 646,
+                    "Second reader lost its snapshot when the first reader ended.");
+            }
+        }
+    }
+
+    var allReadersReleased = await database.CheckpointPassiveAsync();
+    Require(
+        allReadersReleased.WalFrames >= 0
+        && allReadersReleased.CheckpointedFrames
+            == allReadersReleased.WalFrames,
+        "PASSIVE failed to catch up after both staggered readers exited.");
+    Require(
+        (await repository.GetAssetAsync(library.Id, "b.png")) is
+        { Width: 647, Height: 480, SourceIdentity: var latestStaggeredIdentity }
+        && latestStaggeredIdentity == technicalSha,
+        "Overlapping WAL reader snapshots corrupted latest guarded metadata.");
+
+    Require(
+        await repository.UpdateTechnicalMetadataAsync(
+            library.Id, sameStat.Id, sameStat.SourceRevision,
+            sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                640, 480, 640, 480, true, "png", technicalSha)),
+        "Could not restore metadata after overlapping-reader smoke.");
+
+    LibraryDatabase.ClearPools();
+    var staggeredReopenedDb = new LibraryDatabase(databasePath);
+    await staggeredReopenedDb.InitializeAsync();
+    var staggeredReopenedRepository = new LibraryRepository(staggeredReopenedDb);
+    Require(
+        (await staggeredReopenedRepository.GetAssetAsync(library.Id, "b.png")) is
+        { Width: 640, Height: 480, SourceIdentity: var restoredStaggeredIdentity }
+        && restoredStaggeredIdentity == technicalSha,
+        "Two-reader PASSIVE checkpoint recovery lost persisted source identity.");
+
     // The bounded batch is the same guarded SQL path as a single write.
     // A stale revision or same-stat conflicting identity must reject only
     // that row without replacing valid existing technical metadata.
