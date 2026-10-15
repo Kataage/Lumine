@@ -859,6 +859,123 @@ try
         && restoredStaggeredIdentity == technicalSha,
         "Two-reader PASSIVE checkpoint recovery lost persisted source identity.");
 
+    // Sustained finite WAL backlog probe. A held read snapshot pins the WAL
+    // while 1,024 independently committed production metadata updates run.
+    // This is a finite size/progress sanity check, NOT a 24-hour growth bound.
+    const int sustainedCommitCount = 1024;
+    const long finiteWalSizeLimit = 96L * 1024 * 1024;
+    long largestHeldWalBytes = 0;
+    int largestHeldWalFrames = 0;
+    int largestOutstandingFrames = 0;
+    var partialProgressObservations = 0;
+    await using (var sustainedReader =
+                     new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+    {
+        await sustainedReader.OpenAsync();
+        using (var sustainedSnapshot =
+                   sustainedReader.BeginTransaction(deferred: true))
+        {
+            await using (var original = sustainedReader.CreateCommand())
+            {
+                original.Transaction = sustainedSnapshot;
+                original.CommandText = "SELECT width FROM assets WHERE id = $id;";
+                original.Parameters.AddWithValue("$id", sameStat.Id);
+                Require(
+                    Convert.ToInt32(await original.ExecuteScalarAsync(),
+                        CultureInfo.InvariantCulture) == 640,
+                    "Sustained WAL reader did not pin the original source snapshot.");
+            }
+
+            for (var index = 0; index < sustainedCommitCount; index++)
+            {
+                var newWidth = 650 + (index % 2);
+                Require(
+                    await repository.UpdateTechnicalMetadataAsync(
+                        library.Id, sameStat.Id, sameStat.SourceRevision,
+                        sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+                        new AssetTechnicalMetadata(
+                            newWidth, 480, newWidth, 480, true, "png", technicalSha)),
+                    "Sustained WAL reader prevented a guarded independent metadata COMMIT.");
+
+                if ((index + 1) % 128 != 0)
+                {
+                    continue;
+                }
+
+                // PASSIVE must neither wait for this reader to end nor
+                // misreport a fully checkpointed WAL. Snapshot the existing
+                // WAL size only in this smoke test, not the strict benchmark.
+                var state = await database.CheckpointPassiveAsync();
+                Require(
+                    state.WalFrames > 0
+                    && state.CheckpointedFrames < state.WalFrames,
+                    "PASSIVE falsely reported complete progress during sustained WAL reader hold.");
+                partialProgressObservations++;
+                largestHeldWalFrames = Math.Max(largestHeldWalFrames, state.WalFrames);
+                largestOutstandingFrames = Math.Max(
+                    largestOutstandingFrames, state.WalFrames - state.CheckpointedFrames);
+                var walFile = databasePath + "-wal";
+                Require(File.Exists(walFile),
+                    "SQLite WAL disappeared while an old read snapshot was pinned.");
+                var walBytes = new FileInfo(walFile).Length;
+                Require(
+                    walBytes > 0 && walBytes <= finiteWalSizeLimit,
+                    $"Finite held-reader test exceeded its 96 MiB WAL safety bound: {walBytes} bytes.");
+                largestHeldWalBytes = Math.Max(largestHeldWalBytes, walBytes);
+            }
+
+            await using var unchanged = sustainedReader.CreateCommand();
+            unchanged.Transaction = sustainedSnapshot;
+            unchanged.CommandText = "SELECT width FROM assets WHERE id = $id;";
+            unchanged.Parameters.AddWithValue("$id", sameStat.Id);
+            Require(
+                Convert.ToInt32(await unchanged.ExecuteScalarAsync(),
+                    CultureInfo.InvariantCulture) == 640,
+                "Sustained WAL read snapshot changed despite remaining in the same transaction.");
+        }
+    }
+
+    Require(
+        partialProgressObservations == sustainedCommitCount / 128
+        && largestHeldWalBytes > 0
+        && largestHeldWalFrames >= 1024
+        && largestOutstandingFrames >= 1024,
+        "Sustained WAL reader did not demonstrate a real accumulating checkpoint backlog.");
+
+    var sustainedDrain = await database.CheckpointPassiveAsync();
+    Require(
+        sustainedDrain.WalFrames >= 0
+        && sustainedDrain.CheckpointedFrames == sustainedDrain.WalFrames,
+        "PASSIVE failed to drain finite WAL backlog after sustained reader release.");
+    Require(
+        (await repository.GetAssetAsync(library.Id, "b.png")) is
+        { Width: 651, Height: 480, SourceIdentity: var sustainedLatestIdentity }
+        && sustainedLatestIdentity == technicalSha,
+        "Sustained WAL checkpoint recovery corrupted latest guarded metadata.");
+
+    LibraryDatabase.ClearPools();
+    var sustainedReopenedDb = new LibraryDatabase(databasePath);
+    await sustainedReopenedDb.InitializeAsync();
+    Require(
+        (await new LibraryRepository(sustainedReopenedDb).GetAssetAsync(
+            library.Id, "b.png")) is
+        { Width: 651, Height: 480, SourceIdentity: var sustainedRestartIdentity }
+        && sustainedRestartIdentity == technicalSha,
+        "Finite WAL backlog failed to survive an explicit database reopen.");
+    Require(
+        await repository.UpdateTechnicalMetadataAsync(
+            library.Id, sameStat.Id, sameStat.SourceRevision,
+            sameStat.FileSize, sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
+            new AssetTechnicalMetadata(
+                640, 480, 640, 480, true, "png", technicalSha)),
+        "Could not restore fixture after sustained WAL backlog smoke.");
+
+    Console.WriteLine(
+        $"Sustained WAL reader smoke: {sustainedCommitCount} independent COMMITs, " +
+        $"{partialProgressObservations} partial PASSIVE observations, " +
+        $"max WAL={largestHeldWalBytes:N0} bytes, " +
+        $"max outstanding frames={largestOutstandingFrames:N0}, recovery OK.");
+
     // The bounded batch is the same guarded SQL path as a single write.
     // A stale revision or same-stat conflicting identity must reject only
     // that row without replacing valid existing technical metadata.
