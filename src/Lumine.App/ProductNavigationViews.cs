@@ -869,6 +869,16 @@ internal static class ProductNavigationViews
             new HashSet<string>(
                 selectedTags,
                 StringComparer.OrdinalIgnoreCase);
+        // Base order is immutable within one navigation view: sort it once
+        // instead of sorting all 10k items on each text/edit/selection event.
+        // Stable tie handling mirrors the former three-key LINQ ordering.
+        var baseOrderedTags =
+            tags.OrderByDescending(
+                    static tag => tag.AssetCount)
+                .ThenBy(
+                    static tag => tag.Name,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         var manageMode = false;
 
         var tagEditorWidth =
@@ -1157,28 +1167,54 @@ internal static class ProductNavigationViews
         {
             var normalized =
                 filter?.Trim();
-            var visible =
-                tags.Where(
-                        tag =>
-                            string.IsNullOrWhiteSpace(
-                                normalized)
-                            || tag.Name.Contains(
-                                normalized,
-                                StringComparison
-                                    .OrdinalIgnoreCase))
-                    .OrderByDescending(
-                        tag =>
-                            selected.Contains(
-                                tag.Name))
-                    .ThenByDescending(
-                        tag =>
-                            tag.AssetCount)
-                    .ThenBy(
-                        tag =>
-                            tag.Name,
-                        StringComparer
-                            .OrdinalIgnoreCase)
-                    .ToArray();
+            var noSearch =
+                string.IsNullOrWhiteSpace(normalized);
+            LibraryTagInfo[] visible;
+            if (noSearch && selected.Count == 0)
+            {
+                // This is the common opening/managing path: use the
+                // already sorted snapshot without another 10k allocation.
+                visible = baseOrderedTags;
+            }
+            else
+            {
+                var matched =
+                    noSearch
+                        ? baseOrderedTags
+                        : baseOrderedTags.Where(
+                                tag => tag.Name.Contains(
+                                    normalized!,
+                                    StringComparison.OrdinalIgnoreCase))
+                            .ToArray();
+                if (selected.Count == 0 || matched.Length < 2)
+                {
+                    visible = matched;
+                }
+                else
+                {
+                    // Stable partition is equivalent to selected-first,
+                    // then asset-count-desc/name ordering, but O(n) rather
+                    // than resorting on every selection or search event.
+                    visible = new LibraryTagInfo[matched.Length];
+                    var selectedCount = 0;
+                    foreach (var tag in matched)
+                    {
+                        if (selected.Contains(tag.Name))
+                        {
+                            visible[selectedCount++] = tag;
+                        }
+                    }
+
+                    var remainingOffset = selectedCount;
+                    foreach (var tag in matched)
+                    {
+                        if (!selected.Contains(tag.Name))
+                        {
+                            visible[remainingOffset++] = tag;
+                        }
+                    }
+                }
+            }
 
             list.ItemTemplate =
                 new FuncDataTemplate<LibraryTagInfo>(
