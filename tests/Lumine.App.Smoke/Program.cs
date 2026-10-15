@@ -14104,7 +14104,59 @@ try
                     var nextTask =
                         detail.SelectAsync(1);
 
-                    window.Close();
+                    // #737: Keep an older superseded navigation operation
+                    // deliberately blocked while initiating close. The
+                    // window must await *all* navigation tasks, not only the
+                    // latest completed refresh. Release the test barrier
+                    // even if an assertion fails to avoid orphaning a test.
+                    TaskCompletionSource<bool>? releaseSupersededNavigation = null;
+                    try
+                    {
+                        if (iteration == 0)
+                    {
+                        var supersededEntered =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        releaseSupersededNavigation =
+                            new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                        var releaseForCallback = releaseSupersededNavigation;
+                        window.NavigationBeforeCommitForSmokeAsync = async () =>
+                        {
+                            supersededEntered.TrySetResult(true);
+                            await releaseForCallback.Task;
+                        };
+                        window.StartNavigationRefreshForSmoke();
+                        await supersededEntered.Task.WaitAsync(
+                            TimeSpan.FromSeconds(10));
+                        window.NavigationBeforeCommitForSmokeAsync = null;
+                        window.StartNavigationRefreshForSmoke();
+                        await window.NavigationRefreshForSmokeAsync();
+                        }
+
+                        window.Close();
+                        if (releaseSupersededNavigation is not null)
+                        {
+                            // The older refresh remains blocked even though
+                            // a newer refresh has already completed. On
+                            // shutdown it must prevent the window from
+                            // declaring all owned DB operations drained.
+                            for (var drainAttempt = 0; drainAttempt < 10;
+                                 drainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible,
+                                "MainWindow closed before a superseded navigation refresh finished draining.");
+                        }
+                    }
+                    finally
+                    {
+                        window.NavigationBeforeCommitForSmokeAsync = null;
+                        releaseSupersededNavigation?.TrySetResult(true);
+                    }
 
                     for (var attempt = 0;
                          attempt < 10000

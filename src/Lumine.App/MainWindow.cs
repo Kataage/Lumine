@@ -52,6 +52,10 @@ public sealed class MainWindow : Window
     private Task _runtimeDiagnosticsOperation = Task.CompletedTask;
     private Task _diagnosticFlushOperation = Task.CompletedTask;
     private Task _navigationOperation = Task.CompletedTask;
+    // An older refresh can still be unwinding a cancelled SQLite query
+    // after a newer navigation request supersedes it. Drain ALL of them at
+    // window shutdown, not just the most recent operation.
+    private readonly HashSet<Task> _navigationInFlight = [];
     private Window? _diagnosticsWindow;
     private WindowState? _lightboxPreviousWindowState;
     private bool _lightboxFullScreen;
@@ -1193,6 +1197,13 @@ public sealed class MainWindow : Window
 
     private void StartNavigationRefresh()
     {
+        // Once closing has begun, no new DB/navigation work may escape
+        // the shutdown snapshot of pending operations.
+        if (_closeStarted)
+        {
+            return;
+        }
+
         _navigationCancellation?.Cancel();
         _navigationCancellation?.Dispose();
         _navigationCancellation =
@@ -1202,6 +1213,7 @@ public sealed class MainWindow : Window
             RefreshNavigationAsync(
                 _navigationCancellation.Token);
         _navigationOperation = operation;
+        _navigationInFlight.Add(operation);
         _ = ObserveNavigationOperationAsync(operation);
     }
 
@@ -1231,6 +1243,7 @@ public sealed class MainWindow : Window
         }
         finally
         {
+            _navigationInFlight.Remove(operation);
             if (ReferenceEquals(
                     _navigationOperation,
                     operation))
@@ -4380,7 +4393,21 @@ public sealed class MainWindow : Window
 
             try
             {
-                await _navigationOperation;
+                // Older superseded tasks can still hold SQLite statement/
+                // connection handles even when the latest refresh is done.
+                // Completion is the only safe ownership barrier; cancellation
+                // requests alone do not release the underlying connection.
+                try
+                {
+                    await Task.WhenAll(_navigationInFlight.ToArray());
+                }
+                finally
+                {
+                    // Even when a tracked refresh cancels or faults, do not
+                    // discard a constructor-started DB initialization that
+                    // might still be acquiring a SQLite connection.
+                    await _navigationInitialization;
+                }
             }
             catch (OperationCanceledException)
             {
