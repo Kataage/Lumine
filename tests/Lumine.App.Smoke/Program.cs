@@ -14110,7 +14110,9 @@ try
                     // latest completed refresh. Release the test barrier
                     // even if an assertion fails to avoid orphaning a test.
                     TaskCompletionSource<bool>? releaseSupersededNavigation = null;
-                    if (iteration == 0)
+                    try
+                    {
+                        if (iteration == 0)
                     {
                         var supersededEntered =
                             new TaskCompletionSource<bool>(
@@ -14130,10 +14132,8 @@ try
                         window.NavigationBeforeCommitForSmokeAsync = null;
                         window.StartNavigationRefreshForSmoke();
                         await window.NavigationRefreshForSmokeAsync();
-                    }
+                        }
 
-                    try
-                    {
                         window.Close();
                         if (releaseSupersededNavigation is not null)
                         {
@@ -14154,6 +14154,7 @@ try
                     }
                     finally
                     {
+                        window.NavigationBeforeCommitForSmokeAsync = null;
                         releaseSupersededNavigation?.TrySetResult(true);
                     }
 
