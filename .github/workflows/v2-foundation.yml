@@ -527,22 +527,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Second, bounded diagnostic only: compare 64-write checkpoint cadence
-      # against the separately retained 128-write experiment. Do not change
-      # the original 1000-page automatic fallback or strict 8-second gate.
-      - name: Compare opt-in PASSIVE checkpoint cadence 64 on production Repository path
-        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
-        shell: pwsh
-        run: ./build/Compare-LibraryWalCheckpoint.ps1 -BenchmarkCount 10000 -ProactivePassiveCandidate -ProactiveEveryWrites 64 -OutputDirectory "artifacts/benchmarks/wal-checkpoint-comparison-64"
-
-      - name: Preserve 64-write PASSIVE checkpoint research evidence
-        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: lumine-wal-checkpoint-64-evidence-${{ github.run_id }}
-          path: artifacts/benchmarks/wal-checkpoint-comparison-64/*.json
-          if-no-files-found: warn
-          retention-days: 14
+      # 64-write PASSIVE cadence research is available on demand via
+      # Compare-LibraryWalCheckpoint.ps1 -ProactiveEveryWrites 64.
+      # It is NOT an unconditional CI step: its first strict comparison
+      # exposed a 7,223-frame WAL backlog and ~29.9MB physical WAL file.
+      # Preserve the regular 128-write research baseline above.
 
       - name: Generate Image Core benchmark
         run: dotnet run --project tools/Lumine.Image.Benchmarks/Lumine.Image.Benchmarks.csproj -c Release --no-build -- --count 64 --output artifacts/benchmarks/image-thumbnail.json
