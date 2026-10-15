@@ -107,6 +107,13 @@ long[] metadataCommitWindowSlow32Count = new long[10];
 int[] metadataCommitSlow32Ordinals = new int[256];
 var metadataCommitSlow32Stored = 0;
 var metadataCommitSlow32Overflow = 0;
+// For rare >=128ms stalls preserve bounded exact wall ticks alongside
+// write ordinals, not just the histogram. No disk I/O or allocation in
+// the 10,000-COMMIT hot loop; overflow remains separately countable.
+int[] metadataCommitSevereOrdinals = new int[64];
+long[] metadataCommitSevereTicks = new long[64];
+var metadataCommitSevereStored = 0;
+var metadataCommitSevereOverflow = 0;
 var metadataObservedWrites = 0;
 var searchIndexed = 0;
 var pairedWarmAbRows = 0;
@@ -135,6 +142,21 @@ void ObserveMetadataWrite(TechnicalMetadataWriteTimings timing)
         : commitMs < 128 ? 3
         : 4;
     metadataCommitLatencyBuckets[bucket]++;
+    if (bucket == 4)
+    {
+        if (metadataCommitSevereStored < metadataCommitSevereOrdinals.Length)
+        {
+            metadataCommitSevereOrdinals[metadataCommitSevereStored] =
+                metadataObservedWrites + 1;
+            metadataCommitSevereTicks[metadataCommitSevereStored] =
+                timing.CommitTicks;
+            metadataCommitSevereStored++;
+        }
+        else
+        {
+            metadataCommitSevereOverflow++;
+        }
+    }
     var windowIndex = metadataObservedWrites / 1_000;
     if ((uint)windowIndex < metadataCommitWindowTicks.Length)
     {
@@ -796,6 +818,9 @@ try
             ["technical_metadata_commit_window_1000_ge_32ms_csv"] = string.Join(",", metadataCommitWindowSlow32Count.Select(static count => count.ToString(CultureInfo.InvariantCulture))),
             ["technical_metadata_commit_ge_32ms_ordinals_csv"] = string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored)),
             ["technical_metadata_commit_ge_32ms_ordinals_overflow"] = metadataCommitSlow32Overflow.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_commit_ge_128ms_ordinals_csv"] = string.Join(",", metadataCommitSevereOrdinals.Take(metadataCommitSevereStored)),
+            ["technical_metadata_commit_ge_128ms_ticks_csv"] = string.Join(",", metadataCommitSevereTicks.Take(metadataCommitSevereStored).Select(static ticks => ticks.ToString(CultureInfo.InvariantCulture))),
+            ["technical_metadata_commit_ge_128ms_overflow"] = metadataCommitSevereOverflow.ToString(CultureInfo.InvariantCulture),
             ["search_indexed_asset_count"] = searchIndexed.ToString(CultureInfo.InvariantCulture),
             ["search_index"] = "fts5:trigram-detail-none+cjk-bigram",
             ["search_fixture_asset_id"] = searchAsset.Id.ToString(CultureInfo.InvariantCulture),
@@ -842,6 +867,11 @@ try
         $"Individual SQLite COMMIT >=32ms ordinal positions (1-based, first 256): " +
         $"{string.Join(",", metadataCommitSlow32Ordinals.Take(metadataCommitSlow32Stored))}; " +
         $"overflow={metadataCommitSlow32Overflow}.");
+    Console.WriteLine(
+        $"Individual SQLite COMMIT >=128ms exact ordinals/ticks (first 64): " +
+        $"{string.Join(",", Enumerable.Range(0, metadataCommitSevereStored).Select(
+            index => $"{metadataCommitSevereOrdinals[index]}:{metadataCommitSevereTicks[index]}"))}; " +
+        $"overflow={metadataCommitSevereOverflow}.");
     Console.WriteLine($"Search index rebuilt: {searchIndexed:N0} assets");
     Console.WriteLine("Search fixtures: ASCII partial / Japanese 1-char fallback / exact tag+filter OK");
     Console.WriteLine($"Ingest peak working set: {peakWorkingSetBytes / 1048576d:N1} MiB (+{peakAdditionalWorkingSetBytes / 1048576d:N1} MiB)");

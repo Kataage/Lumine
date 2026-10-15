@@ -211,6 +211,67 @@ if ($spikeOverflow -eq 0) {
 Write-Host ("10k individual SQLite COMMIT >=32ms ordinals (1-based; max 256): [{0}], overflow={1}" -f
     ($spikeOrdinals -join ","), $spikeOverflow)
 
+# On the original success-or-hard-fail acceptance path, retain the precise
+# 1-based ordinal and COMMIT ticks of every >=128ms outlier up to a fixed
+# 64-sample cap. No per-COMMIT filesystem probe or extra checkpoint.
+$severeOrdinalsText = [string]$hundredK.metadata.technical_metadata_commit_ge_128ms_ordinals_csv
+$severeTicksText = [string]$hundredK.metadata.technical_metadata_commit_ge_128ms_ticks_csv
+$severeOverflowText = [string]$hundredK.metadata.technical_metadata_commit_ge_128ms_overflow
+[int]$severeOverflow = -1
+if (-not [int]::TryParse($severeOverflowText, [ref]$severeOverflow) -or $severeOverflow -lt 0) {
+    throw "10k COMMIT >=128ms overflow count is missing or invalid."
+}
+$severeOrdinals = @()
+$severeTicks = @()
+if (-not [string]::IsNullOrEmpty($severeOrdinalsText)) {
+    $severeOrdinals = @($severeOrdinalsText.Split(',') | ForEach-Object {
+        [int]$value = 0
+        if (-not [int]::TryParse($_, [ref]$value)) {
+            throw "10k COMMIT >=128ms ordinal is invalid."
+        }
+        $value
+    })
+}
+if (-not [string]::IsNullOrEmpty($severeTicksText)) {
+    $severeTicks = @($severeTicksText.Split(',') | ForEach-Object {
+        [long]$value = 0
+        if (-not [long]::TryParse($_, [ref]$value)) {
+            throw "10k COMMIT >=128ms duration is invalid."
+        }
+        $value
+    })
+}
+if ($severeOrdinals.Count -ne $severeTicks.Count -or
+    $severeOrdinals.Count -gt 64 -or
+    ($severeOrdinals.Count + $severeOverflow) -ne $commitBuckets[4]) {
+    throw "10k COMMIT >=128ms precise samples disagree with its histogram."
+}
+$severeSumTicks = [long]0
+$severeMaxTicks = [long]0
+$lastSevereOrdinal = 0
+for ($index = 0; $index -lt $severeOrdinals.Count; $index++) {
+    $ordinal = $severeOrdinals[$index]
+    $ticks = $severeTicks[$index]
+    if ($ordinal -le $lastSevereOrdinal -or $ordinal -lt 1 -or $ordinal -gt 10000 -or
+        $ticks -lt (128 * 10000)) {
+        throw "10k COMMIT >=128ms samples must have increasing ordinals and valid durations."
+    }
+    $lastSevereOrdinal = $ordinal
+    $severeSumTicks += $ticks
+    $severeMaxTicks = [Math]::Max($severeMaxTicks, $ticks)
+}
+if ($severeSumTicks -gt [long]$hundredK.metadata.technical_metadata_commit_ticks -or
+    ($severeOverflow -eq 0 -and $severeOrdinals.Count -gt 0 -and
+     $severeMaxTicks -ne [long]$hundredK.metadata.technical_metadata_commit_max_ticks)) {
+    throw "10k COMMIT >=128ms precise samples contradict COMMIT totals or maximum."
+}
+$severeSamples = @()
+for ($index = 0; $index -lt $severeOrdinals.Count; $index++) {
+    $severeSamples += ("{0}:{1:F1}" -f $severeOrdinals[$index], ($severeTicks[$index] / 10000.0))
+}
+Write-Host ("10k individual SQLite COMMIT >=128ms exact ordinal:duration_ms (first 64): [{0}], overflow={1}" -f
+    ($severeSamples -join ","), $severeOverflow)
+
 $windowsMs = @($windowTicks | ForEach-Object { "{0:F1}" -f ($_ / 10000.0) })
 Write-Host ("10k individual SQLite COMMIT per-1k windows: ms=[{0}], >=32ms stalls=[{1}]" -f
     ($windowsMs -join ","), ($windowSlow -join ","))
