@@ -2595,7 +2595,7 @@ try
                         1,
                         selectedTagName,
                         "#123456",
-                        123),
+                        1),
                     new LibraryTagInfo(
                         2,
                         "short",
@@ -2627,6 +2627,18 @@ try
                             static (_, _) => Task.CompletedTask,
                             static (_, _, _) => Task.CompletedTask,
                             static _ => Task.CompletedTask);
+                    var orderedSelectedRows =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<ListBox>()
+                            .Single()
+                            .ItemsSource?
+                            .Cast<LibraryTagInfo>()
+                            .ToArray();
+                    Require(
+                        orderedSelectedRows is { Length: 2 }
+                        && orderedSelectedRows[0].Name == selectedTagName
+                        && orderedSelectedRows[1].Name == "short",
+                        "Selected Tag must remain before a higher-count unselected Tag.");
                     selectedTagView.Width = 300;
                     selectedTagView.HorizontalAlignment =
                         Avalonia.Layout.HorizontalAlignment.Left;
