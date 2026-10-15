@@ -36,10 +36,10 @@ if (!int.TryParse(walPagesText, NumberStyles.None, CultureInfo.InvariantCulture,
 
 var proactiveText = ReadOption(args, "--proactive-passive-checkpoint-every") ?? "0";
 if (!int.TryParse(proactiveText, NumberStyles.None, CultureInfo.InvariantCulture,
-        out var proactiveEveryWrites) || proactiveEveryWrites is not (0 or 128))
+        out var proactiveEveryWrites) || proactiveEveryWrites is not (0 or 64 or 128))
 {
     throw new ArgumentException(
-        "--proactive-passive-checkpoint-every must be 0 (off) or 128 (diagnostic only).");
+        "--proactive-passive-checkpoint-every must be 0 (off), 64 or 128 (diagnostic only).");
 }
 
 var output = ReadOption(args, "--output")

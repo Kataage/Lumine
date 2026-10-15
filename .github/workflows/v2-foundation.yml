@@ -527,6 +527,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # 64-write PASSIVE cadence research is available on demand via
+      # Compare-LibraryWalCheckpoint.ps1 -ProactiveEveryWrites 64.
+      # It is NOT an unconditional CI step: its first strict comparison
+      # exposed a 7,223-frame WAL backlog and ~29.9MB physical WAL file.
+      # Preserve the regular 128-write research baseline above.
+
       - name: Generate Image Core benchmark
         run: dotnet run --project tools/Lumine.Image.Benchmarks/Lumine.Image.Benchmarks.csproj -c Release --no-build -- --count 64 --output artifacts/benchmarks/image-thumbnail.json
 
