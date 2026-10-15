@@ -115,3 +115,12 @@ If any manual item is `fail`, #397 stays open and the failure should become a fo
 
 
 For the focused P1 scroll-quality Issue #634, the shipped Windows product acceptance artifact also includes `build/Run-ViewerScrollOwnerReview.ps1` and [the shorter human review instructions](viewer-scroll-owner-review.md). This is a **separate five-interaction real-Windows manual check**, not a replacement for the comprehensive #397 product acceptance or physical Windows GPU verification.
+
+
+## CI teardown forensic data (#737, 2026-10-15)
+
+[Issue #737](https://github.com/Kataage/Lumine/issues/737) tracks an intermittent strict Windows App Detail adapter smoke failure where `Directory.Delete` cannot remove `library.db` from the isolated smoke root after the normal clean-shutdown sequence. [PR #736 CI #38596829052 attempt 1](https://github.com/Kataage/Lumine/actions/runs/38596829052) showed this exact failure, while attempt 2 hit a **different** strict high-count Tag navigation budget failure (tracked separately as [#738](https://github.com/Kataage/Lumine/issues/738)). Neither proves a regression in #714's held-reader Library smoke, which already passed before the App step.
+
+The existing App smoke teardown tries up to **40 directory deletions**, clearing SQLite pools and awaiting GC/finalizers on failures, with **25ms** between attempts. The original final-iteration exception filter `when (cleanupAttempt < 39)` let the last raw `IOException` escape before the intended diagnostic message. The forensic correction **still fails** on the 40th unsuccessful attempt, but records which remaining database files allow/disallow exclusive read/write opens, the current process PID/handle count, and the final Win32-derived HRESULT. It probes only on failure and does not weaken App/Viewer/Library/Filesystem performance thresholds, hide leaked handles, lengthen the wait or claim it has identified the owner.
+
+If the new evidence still shows a lock, investigate outstanding app background tasks, connection/reader disposal and Windows external file handles before changing cleanup/restart behavior. A passing run does not erase the prior failures; require repeatability for a final product acceptance candidate.

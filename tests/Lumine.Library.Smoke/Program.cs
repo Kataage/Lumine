@@ -235,6 +235,76 @@ try
             $"Expected WAL journal mode, found '{journalMode}'.");
     }
 
+    // This SQLite return shape is legitimate when an automatic checkpoint
+    // already owns the exclusive checkpoint lock. It must remain visibly
+    // busy/unknown, not become a fabricated successful (0,0) checkpoint.
+    var competingCheckpoint = LibraryDatabase.ParsePassiveCheckpointResult(1, -1, -1);
+    Require(
+        competingCheckpoint.Busy
+        && competingCheckpoint.WalFrames == -1
+        && competingCheckpoint.CheckpointedFrames == -1,
+        "PASSIVE must preserve unknown frame progress after SQLITE_BUSY.");
+
+    var validCheckpointProgress = LibraryDatabase.ParsePassiveCheckpointResult(0, 11, 10);
+    Require(
+        !validCheckpointProgress.Busy
+        && validCheckpointProgress.WalFrames == 11
+        && validCheckpointProgress.CheckpointedFrames == 10,
+        "PASSIVE must preserve valid partial WAL progress.");
+
+    var invalidCheckpointRejected = false;
+    try
+    {
+        _ = LibraryDatabase.ParsePassiveCheckpointResult(0, -1, -1);
+    }
+    catch (InvalidOperationException)
+    {
+        invalidCheckpointRejected = true;
+    }
+
+    Require(
+        invalidCheckpointRejected,
+        "PASSIVE must reject unknown WAL frame counts without SQLITE_BUSY.");
+
+    var mixedCheckpointRejected = false;
+    try
+    {
+        _ = LibraryDatabase.ParsePassiveCheckpointResult(1, -1, 0);
+    }
+    catch (InvalidOperationException)
+    {
+        mixedCheckpointRejected = true;
+    }
+
+    Require(
+        mixedCheckpointRejected,
+        "PASSIVE must reject mixed known/unknown WAL frame counts.");
+
+    // NOOP is an observational WAL-status query, not a checkpoint. It is
+    // safe to run after the initial WAL-mode verification and catches
+    // SQLite providers that do not support the diagnostic mode early.
+    await using (var noopConnection = new SqliteConnection(
+        $"Data Source={databasePath};Pooling=False"))
+    {
+        await noopConnection.OpenAsync();
+        await using var noopCommand = noopConnection.CreateCommand();
+        noopCommand.CommandText = "PRAGMA wal_checkpoint(NOOP);";
+        await using var noopResult = await noopCommand.ExecuteReaderAsync();
+        Require(await noopResult.ReadAsync(),
+            "SQLite NOOP WAL checkpoint status returned no row.");
+        var noopBusy = Convert.ToInt32(
+            noopResult.GetValue(0), CultureInfo.InvariantCulture);
+        var noopLog = Convert.ToInt32(
+            noopResult.GetValue(1), CultureInfo.InvariantCulture);
+        var noopDone = Convert.ToInt32(
+            noopResult.GetValue(2), CultureInfo.InvariantCulture);
+        Require(
+            (noopBusy == 1 && noopLog == -1 && noopDone == -1)
+            || (noopBusy is 0 or 1 && noopLog >= 0
+                && noopDone >= 0 && noopDone <= noopLog),
+            "SQLite NOOP WAL checkpoint returned malformed progress.");
+    }
+
     var passiveCheckpoint = await database.CheckpointPassiveAsync();
     Require(
         passiveCheckpoint.WalFrames >= 0

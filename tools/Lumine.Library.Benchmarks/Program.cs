@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Lumine.Diagnostics;
 using Lumine.Library;
+using Microsoft.Data.Sqlite;
 
 static string? ReadOption(string[] args, string name)
 {
@@ -64,6 +65,7 @@ var metadataPersisted = 0;
 var passiveCheckpointRequested = 0;
 var passiveCheckpointCompleted = 0;
 var passiveCheckpointBusy = 0;
+var passiveCheckpointUnknownProgress = 0;
 var passiveCheckpointPartial = 0;
 var passiveCheckpointMaxOutstandingFrames = 0;
 long passiveCheckpointedFramesReported = 0;
@@ -72,6 +74,12 @@ long passiveCheckpointMaxTicks = 0;
 var passiveCheckpointMaxWalFrames = 0;
 Task<(LibraryPassiveCheckpointResult Result, long DurationTicks)>? passiveCheckpointTask = null;
 long metadataWalAfterSingleBytes = 0;
+// The NOOP status is read after the strict timed phase; physical WAL bytes
+// describe the high-water allocation, NOT necessarily uncheckpointed frames.
+var metadataWalNoopBusy = -1;
+var metadataWalNoopFrames = -1;
+var metadataWalNoopCheckpointed = -1;
+var metadataWalNoopOutstanding = -1;
 long metadataWalAfterBatchBytes = 0;
 var metadataBatchPersisted = 0;
 var metadataBatchTransactionCount = 0;
@@ -298,12 +306,21 @@ try
                         var done = await passiveCheckpointTask.ConfigureAwait(false);
                         passiveCheckpointCompleted++;
                         if (done.Result.Busy) passiveCheckpointBusy++;
-                        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
-                            passiveCheckpointPartial++;
-                        passiveCheckpointMaxOutstandingFrames = Math.Max(
-                            passiveCheckpointMaxOutstandingFrames,
-                            done.Result.WalFrames - done.Result.CheckpointedFrames);
-                        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+                        if (done.Result.WalFrames == -1)
+                        {
+                            // SQLITE_BUSY with unknown progress is a real
+                            // skipped checkpoint, not successful WAL drainage.
+                            passiveCheckpointUnknownProgress++;
+                        }
+                        else
+                        {
+                            if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+                                passiveCheckpointPartial++;
+                            passiveCheckpointMaxOutstandingFrames = Math.Max(
+                                passiveCheckpointMaxOutstandingFrames,
+                                done.Result.WalFrames - done.Result.CheckpointedFrames);
+                            passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+                        }
                         passiveCheckpointElapsedTicks += done.DurationTicks;
                         passiveCheckpointMaxTicks = Math.Max(
                             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -340,12 +357,19 @@ try
         var done = await passiveCheckpointTask.ConfigureAwait(false);
         passiveCheckpointCompleted++;
         if (done.Result.Busy) passiveCheckpointBusy++;
-        if (done.Result.CheckpointedFrames < done.Result.WalFrames)
-            passiveCheckpointPartial++;
-        passiveCheckpointMaxOutstandingFrames = Math.Max(
-            passiveCheckpointMaxOutstandingFrames,
-            done.Result.WalFrames - done.Result.CheckpointedFrames);
-        passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+        if (done.Result.WalFrames == -1)
+        {
+            passiveCheckpointUnknownProgress++;
+        }
+        else
+        {
+            if (done.Result.CheckpointedFrames < done.Result.WalFrames)
+                passiveCheckpointPartial++;
+            passiveCheckpointMaxOutstandingFrames = Math.Max(
+                passiveCheckpointMaxOutstandingFrames,
+                done.Result.WalFrames - done.Result.CheckpointedFrames);
+            passiveCheckpointedFramesReported += done.Result.CheckpointedFrames;
+        }
         passiveCheckpointElapsedTicks += done.DurationTicks;
         passiveCheckpointMaxTicks = Math.Max(
             passiveCheckpointMaxTicks, done.DurationTicks);
@@ -356,6 +380,57 @@ try
     // File-size snapshots are taken OUTSIDE the original strict 10k timer.
     var walPath = databasePath + "-wal";
     metadataWalAfterSingleBytes = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
+
+    // Diagnostic read-only snapshot, explicitly OUTSIDE the unchanged
+    // 10k individual-commit stopwatch. Unlike PASSIVE, NOOP copies no WAL
+    // frames and must not be mistaken for maintenance or backlog recovery.
+    await using (var walStatusConnection = new SqliteConnection(
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false
+        }.ToString()))
+    {
+        await walStatusConnection.OpenAsync();
+        await using var statusCommand = walStatusConnection.CreateCommand();
+        statusCommand.CommandText = "PRAGMA wal_checkpoint(NOOP);";
+        await using var statusReader = await statusCommand.ExecuteReaderAsync();
+        if (!await statusReader.ReadAsync())
+        {
+            throw new InvalidOperationException(
+                "Untimed NOOP WAL checkpoint status returned no row.");
+        }
+
+        metadataWalNoopBusy = Convert.ToInt32(
+            statusReader.GetValue(0), CultureInfo.InvariantCulture);
+        metadataWalNoopFrames = Convert.ToInt32(
+            statusReader.GetValue(1), CultureInfo.InvariantCulture);
+        metadataWalNoopCheckpointed = Convert.ToInt32(
+            statusReader.GetValue(2), CultureInfo.InvariantCulture);
+
+        if (metadataWalNoopBusy == 1
+            && metadataWalNoopFrames == -1
+            && metadataWalNoopCheckpointed == -1)
+        {
+            // Another checkpointer owns the exclusive checkpoint lock.
+            // Record unknown live progress; never fabricate a zero backlog.
+        }
+        else if (metadataWalNoopBusy is < 0 or > 1
+                 || metadataWalNoopFrames < 0
+                 || metadataWalNoopCheckpointed < 0
+                 || metadataWalNoopCheckpointed > metadataWalNoopFrames)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected SQLite NOOP WAL status: busy={metadataWalNoopBusy}, " +
+                $"log={metadataWalNoopFrames}, checkpointed={metadataWalNoopCheckpointed}.");
+        }
+        else
+        {
+            metadataWalNoopOutstanding =
+                metadataWalNoopFrames - metadataWalNoopCheckpointed;
+        }
+    }
 
     if (metadataPersisted != metadataTarget
         || metadataObservedWrites != metadataTarget)
@@ -673,6 +748,7 @@ try
             ["proactive_passive_checkpoint_requested"] = passiveCheckpointRequested.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_completed"] = passiveCheckpointCompleted.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_busy"] = passiveCheckpointBusy.ToString(CultureInfo.InvariantCulture),
+            ["proactive_passive_checkpoint_unknown_progress"] = passiveCheckpointUnknownProgress.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_partial"] = passiveCheckpointPartial.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_max_outstanding_wal_frames"] = passiveCheckpointMaxOutstandingFrames.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpointed_frames_reported_total"] = passiveCheckpointedFramesReported.ToString(CultureInfo.InvariantCulture),
@@ -680,6 +756,10 @@ try
             ["proactive_passive_checkpoint_max_ticks"] = passiveCheckpointMaxTicks.ToString(CultureInfo.InvariantCulture),
             ["proactive_passive_checkpoint_max_wal_frames"] = passiveCheckpointMaxWalFrames.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_wal_bytes_after_single"] = metadataWalAfterSingleBytes.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_noop_busy_after_single"] = metadataWalNoopBusy.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_noop_log_frames_after_single"] = metadataWalNoopFrames.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_noop_checkpointed_frames_after_single"] = metadataWalNoopCheckpointed.ToString(CultureInfo.InvariantCulture),
+            ["technical_metadata_wal_noop_outstanding_frames_after_single"] = metadataWalNoopOutstanding.ToString(CultureInfo.InvariantCulture),
             ["technical_metadata_wal_bytes_after_batch"] = metadataWalAfterBatchBytes.ToString(CultureInfo.InvariantCulture),
             ["fixture_asset_count"] = count.ToString(CultureInfo.InvariantCulture),
             ["page_count"] = pageCount.ToString(CultureInfo.InvariantCulture),

@@ -17,7 +17,11 @@ public sealed class LibraryDatabaseCompatibilityException : InvalidOperationExce
     }
 }
 
-/// <summary>Result of an explicitly requested non-blocking SQLite PASSIVE checkpoint.</summary>
+/// <summary>
+/// Result of an explicitly requested non-blocking SQLite PASSIVE checkpoint.
+/// If Busy is true and both frame counts are -1, another checkpointer
+/// prevented the call from starting: frame progress is unknown, not zero.
+/// </summary>
 public readonly record struct LibraryPassiveCheckpointResult(
     bool Busy,
     int WalFrames,
@@ -754,6 +758,23 @@ public sealed class LibraryDatabase
         var busy = Convert.ToInt32(reader.GetValue(0), CultureInfo.InvariantCulture);
         var log = Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture);
         var checkpointed = Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture);
+        return ParsePassiveCheckpointResult(busy, log, checkpointed);
+    }
+
+    internal static LibraryPassiveCheckpointResult ParsePassiveCheckpointResult(
+        int busy,
+        int log,
+        int checkpointed)
+    {
+        // SQLite returns SQLITE_BUSY and (-1, -1) when another concurrent
+        // checkpointer holds the exclusive checkpoint lock. This is expected
+        // contention even for PASSIVE: no frames were observed or copied.
+        // Do not conflate unknown progress with a fully drained WAL.
+        if (busy == 1 && log == -1 && checkpointed == -1)
+        {
+            return new LibraryPassiveCheckpointResult(true, -1, -1);
+        }
+
         if (busy is < 0 or > 1 || log < 0 || checkpointed < 0 || checkpointed > log)
         {
             throw new InvalidOperationException(

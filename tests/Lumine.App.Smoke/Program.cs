@@ -2525,6 +2525,15 @@ try
             }
 
             navigationFolderMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
+            // Diagnostics only: preserve the original 2,000ms end-to-end
+            // acceptance stopwatch and every actual UI exercise.
+            var tagInitialListMs = 0d;
+            var tagFilterMs = 0d;
+            var tagSelection100Ms = 0d;
+            var tagSelection225Ms = 0d;
+            var tagScaleRefreshMs = 0d;
+            var tagScreenshotMs = 0d;
+            var tagPhaseStartMs = navigationFolderMs;
             var tagsView =
                 ProductNavigationViews.CreateTags(
                     largeTags,
@@ -2546,6 +2555,9 @@ try
                 RealizedNavigationRows(tagsView) is > 0 and < 128,
                 "10k tag navigation materialized an unbounded visual tree.");
 
+            tagInitialListMs =
+                navigationScaleWatch.Elapsed.TotalMilliseconds - tagPhaseStartMs;
+            tagPhaseStartMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
             var tagSearch =
                 tagsView.GetVisualDescendants()
                     .OfType<TextBox>()
@@ -2569,6 +2581,8 @@ try
                 && tagList.GetRealizedContainers().Count() < 128,
                 "Large tag filtering failed to debounce/filter while retaining bounded realization.");
             scaleWindow.Close();
+            tagFilterMs =
+                navigationScaleWatch.Elapsed.TotalMilliseconds - tagPhaseStartMs;
 
             // The filter and manage presentations must expose the same
             // selected-tag state without relying on row or dot color.
@@ -2581,7 +2595,7 @@ try
                         1,
                         selectedTagName,
                         "#123456",
-                        123),
+                        1),
                     new LibraryTagInfo(
                         2,
                         "short",
@@ -2594,12 +2608,17 @@ try
             {
                 foreach (var selectedTagScale in new[] { 1.0, 2.25 })
                 {
+                    var selectionScaleStartMs =
+                        navigationScaleWatch.Elapsed.TotalMilliseconds;
                     LumineVisualMetrics.ConfigureTextScaleFactor(
                         selectedTagScale);
+                    var scaleRefreshStart = Stopwatch.GetTimestamp();
                     App.RefreshScaledProductResources(
                         Application.Current
                         ?? throw new InvalidOperationException(
                             "Selected Tag smoke has no current application."));
+                    tagScaleRefreshMs += Stopwatch.GetElapsedTime(
+                        scaleRefreshStart).TotalMilliseconds;
                     var selectedTagView =
                         ProductNavigationViews.CreateTags(
                             selectedTagFixtures,
@@ -2608,6 +2627,18 @@ try
                             static (_, _) => Task.CompletedTask,
                             static (_, _, _) => Task.CompletedTask,
                             static _ => Task.CompletedTask);
+                    var orderedSelectedRows =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<ListBox>()
+                            .Single()
+                            .ItemsSource?
+                            .Cast<LibraryTagInfo>()
+                            .ToArray();
+                    Require(
+                        orderedSelectedRows is { Length: 2 }
+                        && orderedSelectedRows[0].Name == selectedTagName
+                        && orderedSelectedRows[1].Name == "short",
+                        "Selected Tag must remain before a higher-count unselected Tag.");
                     selectedTagView.Width = 300;
                     selectedTagView.HorizontalAlignment =
                         Avalonia.Layout.HorizontalAlignment.Left;
@@ -2673,11 +2704,14 @@ try
 
                     if (visualOutputDirectory is not null)
                     {
+                        var captureStart = Stopwatch.GetTimestamp();
                         CaptureVisualEvidence(
                             selectedTagWindow,
                             selectedTagScale > 2
                                 ? "tags-selected-420x600-text225"
                                 : "tags-selected-420x600");
+                        tagScreenshotMs += Stopwatch.GetElapsedTime(
+                            captureStart).TotalMilliseconds;
                     }
 
                     var tagManageAction =
@@ -2765,27 +2799,51 @@ try
 
                     if (visualOutputDirectory is not null)
                     {
+                        var captureStart = Stopwatch.GetTimestamp();
                         CaptureVisualEvidence(
                             selectedTagWindow,
                             selectedTagScale > 2
                                 ? "tags-managed-selected-420x600-text225"
                                 : "tags-managed-selected-420x600");
+                        tagScreenshotMs += Stopwatch.GetElapsedTime(
+                            captureStart).TotalMilliseconds;
                     }
                     selectedTagWindow.Close();
                     Dispatcher.UIThread.RunJobs();
+                    var selectedScaleMs =
+                        navigationScaleWatch.Elapsed.TotalMilliseconds
+                        - selectionScaleStartMs;
+                    if (selectedTagScale == 1.0)
+                    {
+                        tagSelection100Ms = selectedScaleMs;
+                    }
+                    else
+                    {
+                        tagSelection225Ms = selectedScaleMs;
+                    }
                 }
             }
             finally
             {
                 LumineVisualMetrics.ConfigureTextScaleFactor(
                     originalSelectedTagScale);
+                var scaleRestoreStart = Stopwatch.GetTimestamp();
                 App.RefreshScaledProductResources(
                     Application.Current
                     ?? throw new InvalidOperationException(
                         "Selected Tag smoke has no current application."));
+                tagScaleRefreshMs += Stopwatch.GetElapsedTime(
+                    scaleRestoreStart).TotalMilliseconds;
             }
 
             navigationTagMs = navigationScaleWatch.Elapsed.TotalMilliseconds;
+            Console.WriteLine(
+                $"High-count Tag navigation breakdown: " +
+                $"initial={tagInitialListMs:F1}ms, filter_including_debounce={tagFilterMs:F1}ms, " +
+                $"selection100={tagSelection100Ms:F1}ms, selection225={tagSelection225Ms:F1}ms, " +
+                $"scale_resource_refresh_subset={tagScaleRefreshMs:F1}ms, " +
+                $"visual_capture_subset={tagScreenshotMs:F1}ms, " +
+                $"tag_total={navigationTagMs - navigationFolderMs:F1}ms.");
             var publicationsView =
                 ProductNavigationViews.CreatePublicationEntry(
                     largePublications);
@@ -14356,9 +14414,13 @@ finally
                 break;
             }
             catch (IOException exception)
-                when (cleanupAttempt < 39)
             {
                 cleanupFailure = exception;
+                if (cleanupAttempt == 39)
+                {
+                    break;
+                }
+
                 LibraryDatabase.ClearPools();
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
@@ -14368,8 +14430,53 @@ finally
 
         if (Directory.Exists(root))
         {
+            // Windows reports only the filename in the recursive-delete
+            // IOException. Probe the actual remaining SQLite files *after*
+            // the fixed grace period, without hiding the failure, increasing
+            // the delay or disturbing the existing performance gates.
+            var databaseFileProbes = new List<string>();
+            try
+            {
+                foreach (var remainingDb in Directory
+                             .EnumerateFiles(root, "*.db", SearchOption.AllDirectories)
+                             .Take(8))
+                {
+                    var probe = "exclusive-open-ok";
+                    try
+                    {
+                        using var exclusive = new FileStream(
+                            remainingDb, FileMode.Open, FileAccess.ReadWrite,
+                            FileShare.None);
+                    }
+                    catch (IOException io)
+                    {
+                        probe = $"exclusive-open-locked(0x{io.HResult:X8})";
+                    }
+                    catch (UnauthorizedAccessException denied)
+                    {
+                        probe = $"exclusive-open-denied(0x{denied.HResult:X8})";
+                    }
+
+                    databaseFileProbes.Add(
+                        $"{Path.GetRelativePath(root, remainingDb)}={probe}");
+                }
+            }
+            catch (IOException enumerationFailure)
+            {
+                databaseFileProbes.Add(
+                    $"enumeration-ioerror(0x{enumerationFailure.HResult:X8})");
+            }
+
+            using var smokeProcess = Process.GetCurrentProcess();
+            var forensicSummary =
+                $"PID={smokeProcess.Id}; handles={smokeProcess.HandleCount}; " +
+                $"remaining-db=[{string.Join(", ", databaseFileProbes)}]; " +
+                $"last-error=0x{cleanupFailure?.HResult:X8}";
+            Console.Error.WriteLine(
+                $"App smoke teardown resource ownership: {forensicSummary}");
             throw new IOException(
-                "App smoke temporary database handles remained locked after the bounded cleanup grace period.",
+                "App smoke temporary database handles remained locked after " +
+                $"the bounded 40-attempt cleanup grace period. {forensicSummary}",
                 cleanupFailure);
         }
     }
