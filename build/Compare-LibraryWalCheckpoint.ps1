@@ -2,6 +2,7 @@ param(
     [int]$BenchmarkCount = 10000,
     [int]$CandidatePages = 2048,
     [switch]$ProactivePassiveCandidate,
+    [ValidateSet(64, 128)][int]$ProactiveEveryWrites = 128,
     [string]$OutputDirectory = "artifacts/benchmarks/wal-checkpoint-comparison"
 )
 
@@ -25,7 +26,7 @@ $profiles = @(
 $samples = @()
 foreach ($profile in $profiles) {
     $resultPath = Join-Path $OutputDirectory ("wal-" + $profile.Name + ".json")
-    $proactiveEvery = if ($ProactivePassiveCandidate -and $profile.Name -match "^B") { 128 } else { 0 }
+    $proactiveEvery = if ($ProactivePassiveCandidate -and $profile.Name -match "^B") { $ProactiveEveryWrites } else { 0 }
     & dotnet run --project tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-build -- --count $BenchmarkCount --wal-autocheckpoint-pages $profile.Pages --proactive-passive-checkpoint-every $proactiveEvery --output $resultPath
     if ($LASTEXITCODE -ne 0) {
         throw "WAL ABBA diagnostic failed for $($profile.Name)."
@@ -73,7 +74,7 @@ foreach ($profile in $profiles) {
     if ($observedEvery -ne $proactiveEvery -or
         $proactiveStarted -ne $proactiveCompleted -or
         $proactiveBusy -gt $proactiveCompleted -or
-        ($proactiveEvery -eq 128 -and $proactiveStarted -le 0) -or
+        ($proactiveEvery -gt 0 -and $proactiveStarted -le 0) -or
         ($proactiveEvery -eq 0 -and $proactiveStarted -ne 0)) {
         throw "WAL ABBA proactive PASSIVE checkpoint diagnostics invalid for $($profile.Name)."
     }
@@ -115,9 +116,10 @@ $report = [pscustomobject]@{
     kind = "library-wal-autocheckpoint-abba-diagnostic"
     original_acceptance_gate_unchanged = $true
     independently_committed_writes_per_phase = 10000
-    order = $(if ($ProactivePassiveCandidate) { "auto1000,auto1000+passive128,auto1000+passive128,auto1000" } else { "1000,$CandidatePages,$CandidatePages,1000" })
+    order = $(if ($ProactivePassiveCandidate) { "auto1000,auto1000+passive$ProactiveEveryWrites,auto1000+passive$ProactiveEveryWrites,auto1000" } else { "1000,$CandidatePages,$CandidatePages,1000" })
     candidate_pages = $(if ($ProactivePassiveCandidate) { 1000 } else { $CandidatePages })
     proactive_passive_candidate = [bool]$ProactivePassiveCandidate
+    proactive_passive_candidate_every_writes = $(if ($ProactivePassiveCandidate) { $ProactiveEveryWrites } else { 0 })
     samples = $samples
 }
 $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reportPath -Encoding utf8
