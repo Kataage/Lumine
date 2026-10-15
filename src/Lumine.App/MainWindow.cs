@@ -4397,8 +4397,17 @@ public sealed class MainWindow : Window
                 // connection handles even when the latest refresh is done.
                 // Completion is the only safe ownership barrier; cancellation
                 // requests alone do not release the underlying connection.
-                await Task.WhenAll(_navigationInFlight.ToArray());
-                await _navigationInitialization;
+                try
+                {
+                    await Task.WhenAll(_navigationInFlight.ToArray());
+                }
+                finally
+                {
+                    // Even when a tracked refresh cancels or faults, do not
+                    // discard a constructor-started DB initialization that
+                    // might still be acquiring a SQLite connection.
+                    await _navigationInitialization;
+                }
             }
             catch (OperationCanceledException)
             {
