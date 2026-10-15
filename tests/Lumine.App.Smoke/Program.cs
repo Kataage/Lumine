@@ -14356,9 +14356,13 @@ finally
                 break;
             }
             catch (IOException exception)
-                when (cleanupAttempt < 39)
             {
                 cleanupFailure = exception;
+                if (cleanupAttempt == 39)
+                {
+                    break;
+                }
+
                 LibraryDatabase.ClearPools();
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
@@ -14368,8 +14372,53 @@ finally
 
         if (Directory.Exists(root))
         {
+            // Windows reports only the filename in the recursive-delete
+            // IOException. Probe the actual remaining SQLite files *after*
+            // the fixed grace period, without hiding the failure, increasing
+            // the delay or disturbing the existing performance gates.
+            var databaseFileProbes = new List<string>();
+            try
+            {
+                foreach (var remainingDb in Directory
+                             .EnumerateFiles(root, "*.db", SearchOption.AllDirectories)
+                             .Take(8))
+                {
+                    var probe = "exclusive-open-ok";
+                    try
+                    {
+                        using var exclusive = new FileStream(
+                            remainingDb, FileMode.Open, FileAccess.ReadWrite,
+                            FileShare.None);
+                    }
+                    catch (IOException io)
+                    {
+                        probe = $"exclusive-open-locked(0x{io.HResult:X8})";
+                    }
+                    catch (UnauthorizedAccessException denied)
+                    {
+                        probe = $"exclusive-open-denied(0x{denied.HResult:X8})";
+                    }
+
+                    databaseFileProbes.Add(
+                        $"{Path.GetRelativePath(root, remainingDb)}={probe}");
+                }
+            }
+            catch (IOException enumerationFailure)
+            {
+                databaseFileProbes.Add(
+                    $"enumeration-ioerror(0x{enumerationFailure.HResult:X8})");
+            }
+
+            using var smokeProcess = Process.GetCurrentProcess();
+            var forensicSummary =
+                $"PID={smokeProcess.Id}; handles={smokeProcess.HandleCount}; " +
+                $"remaining-db=[{string.Join(", ", databaseFileProbes)}]; " +
+                $"last-error=0x{cleanupFailure?.HResult:X8}";
+            Console.Error.WriteLine(
+                $"App smoke teardown resource ownership: {forensicSummary}");
             throw new IOException(
-                "App smoke temporary database handles remained locked after the bounded cleanup grace period.",
+                "App smoke temporary database handles remained locked after " +
+                $"the bounded 40-attempt cleanup grace period. {forensicSummary}",
                 cleanupFailure);
         }
     }
