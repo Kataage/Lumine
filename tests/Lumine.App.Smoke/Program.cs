@@ -6851,7 +6851,7 @@ try
         LumineVisualMetrics.TextScaleFactor;
 
     for (var iteration = 0;
-         iteration < 3;
+         iteration < 4;
          iteration++)
     {
         var repeatedLibraryRoot =
@@ -14110,7 +14110,9 @@ try
                     // Hold a real loaded DB snapshot at its commit boundary;
                     // neither can be abandoned while the window closes.
                     TaskCompletionSource<bool>? releaseNavigation = null;
+                    TaskCompletionSource<bool>? releasePublication = null;
                     Task? directNavigationTask = null;
+                    Task<PublicationDestinationInfo?>? pendingPublication = null;
                     try
                     {
                         if (iteration is 0 or 1)
@@ -14149,7 +14151,46 @@ try
                             }
                         }
 
+                        if (iteration == 2)
+                        {
+                            // A real Publication destination INSERT has
+                            // completed, but the async callback is paused
+                            // before returning to MainWindow. The SQLite
+                            // owner remains tracked until that Task exits.
+                            var publicationEntered =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            releasePublication =
+                                new TaskCompletionSource<bool>(
+                                    TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForPublication = releasePublication;
+                            window.PublicationBeforeCommitForSmokeAsync = async () =>
+                            {
+                                publicationEntered.TrySetResult(true);
+                                await releaseForPublication.Task;
+                            };
+                            pendingPublication =
+                                window.CreatePublicationDestinationForSmokeAsync(
+                                    "shutdown-owned-publication-smoke",
+                                    "other");
+                            await publicationEntered.Task.WaitAsync(
+                                TimeSpan.FromSeconds(10));
+                            window.PublicationBeforeCommitForSmokeAsync = null;
+                        }
+
                         window.Close();
+                        if (releasePublication is not null)
+                        {
+                            for (var drainAttempt = 0; drainAttempt < 10;
+                                 drainAttempt++)
+                            {
+                                Dispatcher.UIThread.RunJobs();
+                                await Task.Delay(5);
+                            }
+                            Require(
+                                window.IsVisible,
+                                "MainWindow closed before a pending Publication write callback finished draining.");
+                        }
                         if (releaseNavigation is not null)
                         {
                             for (var drainAttempt = 0; drainAttempt < 10;
@@ -14168,7 +14209,17 @@ try
                     finally
                     {
                         window.NavigationBeforeCommitForSmokeAsync = null;
+                        window.PublicationBeforeCommitForSmokeAsync = null;
                         releaseNavigation?.TrySetResult(true);
+                        releasePublication?.TrySetResult(true);
+                    }
+
+                    if (pendingPublication is not null)
+                    {
+                        var completedPublication = await pendingPublication;
+                        Require(
+                            completedPublication is null,
+                            "A Publication mutation committed stale navigation data after close began.");
                     }
 
                     if (directNavigationTask is not null)

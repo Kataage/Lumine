@@ -647,7 +647,8 @@ public sealed class MainWindow : Window
         CreatePublicationDestinationForSmokeAsync(
             string name,
             string kind) =>
-        CreatePublicationDestinationFromNavigationAsync(name, kind);
+        RunTrackedNavigationOperationAsync(
+            () => CreatePublicationDestinationFromNavigationAsync(name, kind));
 
     internal IReadOnlyList<PublicationDestinationInfo>
         PublicationDestinationsForSmoke => _publicationDestinations;
@@ -1822,18 +1823,38 @@ public sealed class MainWindow : Window
                             _publications,
                             _publicationTotalCount,
                             _publicationNextCursor is not null,
-                            LoadMorePublicationHistoryAsync,
+                            () => RunTrackedNavigationOperationAsync(
+                                LoadMorePublicationHistoryAsync),
                             ReportNavigationError,
                             _publicationDestinations,
                             _publicationAccounts,
-                            CreatePublicationDestinationFromNavigationAsync,
-                            UpdatePublicationDestinationFromNavigationAsync,
-                            DeletePublicationDestinationFromNavigationAsync,
-                            CreatePublicationAccountFromNavigationAsync,
-                            UpdatePublicationAccountFromNavigationAsync,
-                            DeletePublicationAccountFromNavigationAsync,
-                            LoadPublicationDetailFromNavigationAsync,
-                            DeletePublicationFromNavigationAsync),
+                            (name, kind) => RunTrackedNavigationOperationAsync(
+                                () => CreatePublicationDestinationFromNavigationAsync(
+                                    name, kind)),
+                            (destination, name, kind) =>
+                                RunTrackedNavigationOperationAsync(
+                                    () => UpdatePublicationDestinationFromNavigationAsync(
+                                        destination, name, kind)),
+                            destination => RunTrackedNavigationOperationAsync(
+                                () => DeletePublicationDestinationFromNavigationAsync(
+                                    destination)),
+                            (destinationId, name, identifier) =>
+                                RunTrackedNavigationOperationAsync(
+                                    () => CreatePublicationAccountFromNavigationAsync(
+                                        destinationId, name, identifier)),
+                            (account, destinationId, name, identifier) =>
+                                RunTrackedNavigationOperationAsync(
+                                    () => UpdatePublicationAccountFromNavigationAsync(
+                                        account, destinationId, name, identifier)),
+                            account => RunTrackedNavigationOperationAsync(
+                                () => DeletePublicationAccountFromNavigationAsync(
+                                    account)),
+                            publication => RunTrackedNavigationOperationAsync(
+                                () => LoadPublicationDetailFromNavigationAsync(
+                                    publication)),
+                            publication => RunTrackedNavigationOperationAsync(
+                                () => DeletePublicationFromNavigationAsync(
+                                    publication))),
                 _ =>
                     ProductNavigationViews.CreateNoLibrary(
                         _navigationDestination)
@@ -2027,6 +2048,31 @@ public sealed class MainWindow : Window
     // mutate metadata belonging to the newly opened Library or closed app.
     private bool IsCurrentPublicationRuntime(CoreViewerRuntime runtime) =>
         !_closeStarted && ReferenceEquals(_runtime, runtime);
+
+    // Publication navigation owns asynchronous DB reads AND writes before
+    // updating the visible view. The entire callback must finish before
+    // teardown; tracking just Tag/refresh tasks misses these connections.
+    private async Task<TResult> RunTrackedNavigationOperationAsync<TResult>(
+        Func<Task<TResult>> execute)
+    {
+        ArgumentNullException.ThrowIfNull(execute);
+        if (_closeStarted)
+        {
+            throw new OperationCanceledException(
+                "Navigation is no longer available while Lumine is closing.");
+        }
+
+        var operation = execute();
+        _navigationInFlight.Add(operation);
+        try
+        {
+            return await operation;
+        }
+        finally
+        {
+            _navigationInFlight.Remove(operation);
+        }
+    }
 
     private async Task<PublicationDestinationInfo?>
         CreatePublicationDestinationFromNavigationAsync(
