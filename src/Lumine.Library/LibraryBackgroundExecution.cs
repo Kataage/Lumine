@@ -233,6 +233,22 @@ public sealed class LibraryService
                 token),
             cancellationToken);
 
+    /// <summary>
+    /// Production Viewer batch route with COMMIT-only timing evidence.
+    /// Source guards, one bounded transaction and rollback are unchanged.
+    /// </summary>
+    public Task<TechnicalMetadataBatchCommitResult>
+        UpdateTechnicalMetadataBatchMeasuredAsync(
+            long libraryId,
+            IReadOnlyList<TechnicalMetadataBatchItem> items,
+            CancellationToken cancellationToken = default) =>
+        LibraryBackgroundExecution.RunAsync(
+            token => _repository.UpdateTechnicalMetadataBatchMeasuredAsync(
+                libraryId,
+                items,
+                token),
+            cancellationToken);
+
     public Task<AssetExifMetadata?> GetExifMetadataAsync(
         long libraryId,
         long assetId,

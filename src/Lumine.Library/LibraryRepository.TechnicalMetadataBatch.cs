@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumine.Core;
 using Microsoft.Data.Sqlite;
 
@@ -14,6 +15,14 @@ public sealed record TechnicalMetadataBatchItem(
     long ExpectedModifiedAtUtcTicks,
     AssetTechnicalMetadata Metadata);
 
+/// <summary>
+/// Source-guarded batch results and the time spent inside the successful
+/// SQLite COMMIT only. This excludes connection setup, SQL work and queue wait.
+/// </summary>
+public readonly record struct TechnicalMetadataBatchCommitResult(
+    IReadOnlyList<bool> Results,
+    long CommitTicks);
+
 public sealed partial class LibraryRepository
 {
     public const int MaxTechnicalMetadataBatchSize = 64;
@@ -28,7 +37,30 @@ public sealed partial class LibraryRepository
     public async Task<IReadOnlyList<bool>> UpdateTechnicalMetadataBatchAsync(
         long libraryId,
         IReadOnlyList<TechnicalMetadataBatchItem> items,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        (await UpdateTechnicalMetadataBatchCoreAsync(
+            libraryId, items, measureCommit: false, cancellationToken)
+            .ConfigureAwait(false)).Results;
+
+    /// <summary>
+    /// Same committed and source-guarded production batch path, but expose
+    /// the actual COMMIT interval for bounded Viewer diagnostics. No per-row
+    /// clocks, extra SQL or measurement work on other batch callers.
+    /// </summary>
+    public Task<TechnicalMetadataBatchCommitResult>
+        UpdateTechnicalMetadataBatchMeasuredAsync(
+            long libraryId,
+            IReadOnlyList<TechnicalMetadataBatchItem> items,
+            CancellationToken cancellationToken = default) =>
+        UpdateTechnicalMetadataBatchCoreAsync(
+            libraryId, items, measureCommit: true, cancellationToken);
+
+    private async Task<TechnicalMetadataBatchCommitResult>
+        UpdateTechnicalMetadataBatchCoreAsync(
+            long libraryId,
+            IReadOnlyList<TechnicalMetadataBatchItem> items,
+            bool measureCommit,
+            CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(libraryId);
         ArgumentNullException.ThrowIfNull(items);
@@ -41,7 +73,7 @@ public sealed partial class LibraryRepository
 
         if (items.Count == 0)
         {
-            return Array.Empty<bool>();
+            return new TechnicalMetadataBatchCommitResult(Array.Empty<bool>(), 0L);
         }
 
         // Validate and snapshot before opening a transaction. Caller mutation
@@ -116,8 +148,12 @@ public sealed partial class LibraryRepository
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                var commitStarted = measureCommit ? Stopwatch.GetTimestamp() : 0L;
                 transaction.Commit();
-                return result;
+                var commitTicks = measureCommit
+                    ? Stopwatch.GetElapsedTime(commitStarted).Ticks
+                    : 0L;
+                return new TechnicalMetadataBatchCommitResult(result, commitTicks);
             }
             catch (SqliteException exception)
                 when (attempt == 0 && IsRecoverableNestedTransactionState(exception))

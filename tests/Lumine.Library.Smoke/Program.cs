@@ -1027,7 +1027,7 @@ try
                 SourceIdentity = "sha256:" + new string('c', 64)
             }
         };
-    var batchResults = await repository.UpdateTechnicalMetadataBatchAsync(
+    var measuredBatch = await repository.UpdateTechnicalMetadataBatchMeasuredAsync(
         library.Id,
         [
             batchValid,
@@ -1035,6 +1035,9 @@ try
             batchRejectedIdentity,
             batchValid
         ]);
+    var batchResults = measuredBatch.Results;
+    Require(measuredBatch.CommitTicks > 0,
+        "A successful real SQLite metadata batch did not report COMMIT duration.");
     Require(
         batchResults.SequenceEqual([true, false, false, true]),
         "Bounded batch did not preserve per-row revision and source-identity guards.");
