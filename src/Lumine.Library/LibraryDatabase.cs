@@ -795,19 +795,32 @@ public sealed class LibraryDatabase
         }.ToString();
 
         var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        await ExecutePragmasAsync(
-            connection,
-            $"""
-            PRAGMA foreign_keys=ON;
-            PRAGMA busy_timeout=5000;
-            PRAGMA synchronous=NORMAL;
-            PRAGMA wal_autocheckpoint={WalAutoCheckpointPages};
-            """,
-            cancellationToken).ConfigureAwait(false);
+            await ExecutePragmasAsync(
+                connection,
+                $"""
+                PRAGMA foreign_keys=ON;
+                PRAGMA busy_timeout=5000;
+                PRAGMA synchronous=NORMAL;
+                PRAGMA wal_autocheckpoint={WalAutoCheckpointPages};
+                """,
+                cancellationToken).ConfigureAwait(false);
 
-        return connection;
+            // Transfer the fully configured handle only after every PRAGMA
+            // succeeds; callers retain their existing await-using ownership.
+            return connection;
+        }
+        catch
+        {
+            // Open/PRAGMA failures must not strand an acquired SQLite handle
+            // in the shared pool while the caller assumes no connection was
+            // returned. This includes cancellation and busy/IO errors.
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public static void ClearPools() => SqliteConnection.ClearAllPools();

@@ -194,6 +194,39 @@ try
     var database = new LibraryDatabase(databasePath);
     await database.InitializeAsync();
     Require(LibraryDatabase.SupportedSchemaVersion == 10, "Unexpected Library schema version.");
+
+    // An unsuccessful factory open must not transfer a partially owned
+    // SQLite connection. A directory cannot be opened as a database file.
+    // Keep the original exception and confirm a healthy real connection
+    // can still be opened with the same product connection policy.
+    var invalidDatabaseFile = Path.Combine(tempRoot, "database-is-a-directory");
+    Directory.CreateDirectory(invalidDatabaseFile);
+    var openFailed = false;
+    try
+    {
+        await using var unexpectedConnection =
+            await new LibraryDatabase(invalidDatabaseFile)
+                .OpenConnectionAsync(CancellationToken.None);
+    }
+    catch (SqliteException)
+    {
+        openFailed = true;
+    }
+
+    Require(openFailed, "Opening a directory as a SQLite file unexpectedly succeeded.");
+    LibraryDatabase.ClearPools();
+    Directory.Delete(invalidDatabaseFile);
+    await using (var recoveredConnection =
+        await database.OpenConnectionAsync(CancellationToken.None))
+    {
+        await using var policyCheck = recoveredConnection.CreateCommand();
+        policyCheck.CommandText = "PRAGMA wal_autocheckpoint;";
+        Require(
+            Convert.ToInt32(
+                await policyCheck.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture) == 1000,
+            "A failed connection attempt changed the Library WAL policy.");
+    }
     // Production pool connections must restore their own checkpoint policy:
     // 1000(default) -> 512 -> 2048 -> 1000 on the SAME pooled database.
     foreach (var invalidPages in new[] { 0, -1, 127, 8193 })
