@@ -2570,6 +2570,7 @@ try
                 tagsView.GetVisualDescendants()
                     .OfType<ListBox>()
                     .First();
+            var templateBeforeTagSearch = tagList.ItemTemplate;
             tagSearch.Text = "tag-09999";
             await Task.Delay(180);
             Dispatcher.UIThread.RunJobs();
@@ -2578,8 +2579,10 @@ try
                 tagList.ItemsSource?.Cast<LibraryTagInfo>()
                     .SingleOrDefault()?.Name
                     == "tag-09999"
-                && tagList.GetRealizedContainers().Count() < 128,
-                "Large tag filtering failed to debounce/filter while retaining bounded realization.");
+                && tagList.GetRealizedContainers().Count() < 128
+                && templateBeforeTagSearch is not null
+                && ReferenceEquals(tagList.ItemTemplate, templateBeforeTagSearch),
+                "Large tag filtering changed its recycling template or lost bounded realization.");
             scaleWindow.Close();
             tagFilterMs =
                 navigationScaleWatch.Elapsed.TotalMilliseconds - tagPhaseStartMs;
@@ -2714,6 +2717,10 @@ try
                             captureStart).TotalMilliseconds;
                     }
 
+                    var selectedTagTemplateBeforeManage =
+                        selectedTagView.GetVisualDescendants()
+                            .OfType<ListBox>()
+                            .Single().ItemTemplate;
                     var tagManageAction =
                         selectedTagView.GetVisualDescendants()
                             .OfType<Button>()
@@ -2722,6 +2729,13 @@ try
                     tagManageAction.RaiseEvent(
                         new RoutedEventArgs(Button.ClickEvent));
                     Dispatcher.UIThread.RunJobs();
+                    Require(
+                        !ReferenceEquals(
+                            selectedTagTemplateBeforeManage,
+                            selectedTagView.GetVisualDescendants()
+                                .OfType<ListBox>()
+                                .Single().ItemTemplate),
+                        "Tag manage-mode toggle reused a stale browse-row template.");
 
                     var selectedManageSurface =
                         selectedTagView.GetVisualDescendants()

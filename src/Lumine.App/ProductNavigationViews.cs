@@ -880,6 +880,11 @@ internal static class ProductNavigationViews
                     StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         var manageMode = false;
+        // Search changes alter only the visible data. Recreating Avalonia's
+        // recycling template on every keystroke unnecessarily re-prepares
+        // realized rows. Selection and manage-mode changes DO alter row UI
+        // (checkmarks/actions), and explicitly invalidate that template.
+        var refreshRowTemplate = true;
 
         var tagEditorWidth =
             Math.Min(
@@ -1216,8 +1221,10 @@ internal static class ProductNavigationViews
                 }
             }
 
-            list.ItemTemplate =
-                new FuncDataTemplate<LibraryTagInfo>(
+            if (refreshRowTemplate)
+            {
+                list.ItemTemplate =
+                    new FuncDataTemplate<LibraryTagInfo>(
                     (tag, _) =>
                     {
                         var isSelected =
@@ -1337,6 +1344,7 @@ internal static class ProductNavigationViews
                                     }
 
                                     UpdateToolbar();
+                                    refreshRowTemplate = true;
                                     ApplyFilter(
                                         search.Text);
                                     await selectTag(
@@ -1653,6 +1661,8 @@ internal static class ProductNavigationViews
                         return row;
                     },
                     supportsRecycling: true);
+                refreshRowTemplate = false;
+            }
 
             list.ItemsSource =
                 visible;
@@ -1669,6 +1679,7 @@ internal static class ProductNavigationViews
                 if (manageMode)
                 {
                     manageMode = false;
+                    refreshRowTemplate = true;
                     ApplyFilter(
                         search.Text);
                 }
@@ -1755,6 +1766,7 @@ internal static class ProductNavigationViews
                 }
 
                 UpdateCreateActionState();
+                refreshRowTemplate = true;
                 ApplyFilter(
                     search.Text);
             };
@@ -1769,6 +1781,7 @@ internal static class ProductNavigationViews
             {
                 selected.Clear();
                 UpdateToolbar();
+                refreshRowTemplate = true;
                 ApplyFilter(
                     search.Text);
                 await selectTag(null);
