@@ -1170,6 +1170,12 @@ try
             && routeAfter.SqliteServiceCalls > routeBefore.SqliteServiceCalls
             && routeAfter.SqliteServiceDurationTicks
                 > routeBefore.SqliteServiceDurationTicks
+            && routeAfter.BatchedCommitSamples - routeBefore.BatchedCommitSamples
+                == routeAfter.CommittedBatches - routeBefore.CommittedBatches
+            && routeAfter.BatchedCommitDurationTicks > routeBefore.BatchedCommitDurationTicks
+            && routeAfter.BatchedCommitDurationTicks
+                <= routeAfter.SqliteServiceDurationTicks
+            && routeAfter.MaxBatchedCommitDurationTicks > 0
             && routeAfter.QueuedToSqliteServiceTicks
                 <= routeAfter.CompletedWriteLatencyTicks
             && routeAfter.BatchGroups2To8Rows + routeAfter.BatchGroups9To32Rows
@@ -1372,6 +1378,13 @@ try
                 && pressureAfter.SqliteServiceCalls > pressureBefore.SqliteServiceCalls
                 && pressureAfter.SqliteServiceDurationTicks
                     > pressureBefore.SqliteServiceDurationTicks
+                && pressureAfter.BatchedCommitSamples - pressureBefore.BatchedCommitSamples
+                    == pressureAfter.CommittedBatches - pressureBefore.CommittedBatches
+                && pressureAfter.BatchedCommitDurationTicks
+                    > pressureBefore.BatchedCommitDurationTicks
+                && pressureAfter.BatchedCommitDurationTicks
+                    <= pressureAfter.SqliteServiceDurationTicks
+                && pressureAfter.MaxBatchedCommitDurationTicks > 0
                 && pressureAfter.QueuedToSqliteServiceTicks
                     <= pressureAfter.CompletedWriteLatencyTicks,
                 "Mixed-format Viewer pressure requests escaped queue, rejected guarded writes or lost committed metadata.");
@@ -1412,7 +1425,10 @@ try
                 $"queue_wait_max_ms={pressureAfter.MaxQueuedToSqliteServiceTicks / (double)TimeSpan.TicksPerMillisecond:F1}, " +
                 $"sqlite_service_total_ms={(pressureAfter.SqliteServiceDurationTicks - pressureBefore.SqliteServiceDurationTicks) / (double)TimeSpan.TicksPerMillisecond:F1}, " +
                 $"sqlite_service_calls={pressureAfter.SqliteServiceCalls - pressureBefore.SqliteServiceCalls}, " +
-                $"sqlite_service_max_ms={pressureAfter.MaxSqliteServiceDurationTicks / (double)TimeSpan.TicksPerMillisecond:F1}.");
+                $"sqlite_service_max_ms={pressureAfter.MaxSqliteServiceDurationTicks / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+                $"batch_commit_total_ms={(pressureAfter.BatchedCommitDurationTicks - pressureBefore.BatchedCommitDurationTicks) / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+                $"batch_commit_max_ms={pressureAfter.MaxBatchedCommitDurationTicks / (double)TimeSpan.TicksPerMillisecond:F1}, " +
+                $"batch_commit_samples={pressureAfter.BatchedCommitSamples - pressureBefore.BatchedCommitSamples}.");
         }
 
         LibraryDatabase.ClearPools();

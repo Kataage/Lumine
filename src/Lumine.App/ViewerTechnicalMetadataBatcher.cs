@@ -30,7 +30,10 @@ internal readonly record struct ViewerTechnicalMetadataBatchDiagnostics(
     long QueuedToSqliteServiceSamples,
     long SqliteServiceDurationTicks,
     long MaxSqliteServiceDurationTicks,
-    long SqliteServiceCalls);
+    long SqliteServiceCalls,
+    long BatchedCommitDurationTicks,
+    long MaxBatchedCommitDurationTicks,
+    long BatchedCommitSamples);
 
 /// <summary>
 /// Fixed memory, exclusive millisecond buckets for successful post-COMMIT
@@ -133,6 +136,9 @@ internal sealed class ViewerTechnicalMetadataBatcher
     private long _sqliteServiceDurationTicks;
     private long _maxSqliteServiceDurationTicks;
     private long _sqliteServiceCalls;
+    private long _batchedCommitDurationTicks;
+    private long _maxBatchedCommitDurationTicks;
+    private long _batchedCommitSamples;
 
     private ViewerTechnicalMetadataBatcher(LibraryService library) =>
         _library = library;
@@ -167,7 +173,10 @@ internal sealed class ViewerTechnicalMetadataBatcher
             Interlocked.Read(ref _queuedToSqliteServiceSamples),
             Interlocked.Read(ref _sqliteServiceDurationTicks),
             Interlocked.Read(ref _maxSqliteServiceDurationTicks),
-            Interlocked.Read(ref _sqliteServiceCalls));
+            Interlocked.Read(ref _sqliteServiceCalls),
+            Interlocked.Read(ref _batchedCommitDurationTicks),
+            Interlocked.Read(ref _maxBatchedCommitDurationTicks),
+            Interlocked.Read(ref _batchedCommitSamples));
 
     /// <summary>
     /// Completing the task means SQLite COMMIT has finished, not that the work
@@ -279,9 +288,10 @@ internal sealed class ViewerTechnicalMetadataBatcher
                 {
                     var items = live.Select(static write => write.Item).ToArray();
                     var sqliteStarted = Stopwatch.GetTimestamp();
-                    var results = await _library.UpdateTechnicalMetadataBatchAsync(
+                    var batchResult = await _library.UpdateTechnicalMetadataBatchMeasuredAsync(
                         live[0].LibraryId,
                         items).ConfigureAwait(false);
+                    var results = batchResult.Results;
 
                     if (results.Count != live.Count)
                     {
@@ -290,6 +300,11 @@ internal sealed class ViewerTechnicalMetadataBatcher
                     }
 
                     RecordSuccessfulSqliteServiceTiming(live, sqliteStarted);
+                    Interlocked.Add(ref _batchedCommitDurationTicks,
+                        batchResult.CommitTicks);
+                    Interlocked.Increment(ref _batchedCommitSamples);
+                    ObserveMax(ref _maxBatchedCommitDurationTicks,
+                        batchResult.CommitTicks);
                     Interlocked.Increment(ref _committedBatches);
                     Interlocked.Add(ref _batchedRows, results.Count);
                     // The guarded transaction COMMIT can succeed while one
