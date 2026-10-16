@@ -637,7 +637,7 @@ public sealed class MainWindow : Window
     internal Func<Task>? NavigationBeforeCommitForSmokeAsync { get; set; }
 
     internal Task NavigationRefreshWithoutCancellationForSmokeAsync() =>
-        RefreshNavigationAsync(CancellationToken.None);
+        RefreshNavigationTrackedAsync(CancellationToken.None);
 
     // Stage 2X: hold an actual completed Publication DB mutation before its
     // in-memory commit, so a mounted smoke can replace the runtime first.
@@ -1192,6 +1192,29 @@ public sealed class MainWindow : Window
                     }
                 },
                 DispatcherPriority.Input);
+        }
+    }
+
+    // Tag-management callbacks (and explicit non-cancelled refreshes) do not
+    // flow through StartNavigationRefresh. Track their complete SQLite work
+    // as well; cancellation of the latest refresh is not a close barrier.
+    private async Task RefreshNavigationTrackedAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_closeStarted)
+        {
+            return;
+        }
+
+        var operation = RefreshNavigationAsync(cancellationToken);
+        _navigationInFlight.Add(operation);
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            _navigationInFlight.Remove(operation);
         }
     }
 
@@ -2763,7 +2786,7 @@ public sealed class MainWindow : Window
             runtime.Library.Id,
             name,
             color);
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
     }
 
@@ -2822,7 +2845,7 @@ public sealed class MainWindow : Window
             }
         }
 
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
 
         if (_shell is not null)
@@ -2882,7 +2905,7 @@ public sealed class MainWindow : Window
             await ApplyBrowseQueryAsync();
         }
 
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
     }
 
