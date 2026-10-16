@@ -14104,43 +14104,54 @@ try
                     var nextTask =
                         detail.SelectAsync(1);
 
-                    // #737: Keep an older superseded navigation operation
-                    // deliberately blocked while initiating close. The
-                    // window must await *all* navigation tasks, not only the
-                    // latest completed refresh. Release the test barrier
-                    // even if an assertion fails to avoid orphaning a test.
-                    TaskCompletionSource<bool>? releaseSupersededNavigation = null;
+                    // #737: The close barrier must cover BOTH refresh
+                    // ownership paths: a superseded tracked request and a
+                    // direct non-cancelled Tag-style navigation refresh.
+                    // Hold a real loaded DB snapshot at its commit boundary;
+                    // neither can be abandoned while the window closes.
+                    TaskCompletionSource<bool>? releaseNavigation = null;
+                    Task? directNavigationTask = null;
                     try
                     {
-                        if (iteration == 0)
-                    {
-                        var supersededEntered =
-                            new TaskCompletionSource<bool>(
-                                TaskCreationOptions.RunContinuationsAsynchronously);
-                        releaseSupersededNavigation =
-                            new TaskCompletionSource<bool>(
-                                TaskCreationOptions.RunContinuationsAsynchronously);
-                        var releaseForCallback = releaseSupersededNavigation;
-                        window.NavigationBeforeCommitForSmokeAsync = async () =>
+                        if (iteration is 0 or 1)
                         {
-                            supersededEntered.TrySetResult(true);
-                            await releaseForCallback.Task;
-                        };
-                        window.StartNavigationRefreshForSmoke();
-                        await supersededEntered.Task.WaitAsync(
-                            TimeSpan.FromSeconds(10));
-                        window.NavigationBeforeCommitForSmokeAsync = null;
-                        window.StartNavigationRefreshForSmoke();
-                        await window.NavigationRefreshForSmokeAsync();
+                            var entered = new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                            releaseNavigation = new TaskCompletionSource<bool>(
+                                TaskCreationOptions.RunContinuationsAsynchronously);
+                            var releaseForCallback = releaseNavigation;
+                            window.NavigationBeforeCommitForSmokeAsync = async () =>
+                            {
+                                entered.TrySetResult(true);
+                                await releaseForCallback.Task;
+                            };
+                            if (iteration == 0)
+                            {
+                                // A cancelled, superseded refresh is still
+                                // owned until its final continuation exits.
+                                window.StartNavigationRefreshForSmoke();
+                            }
+                            else
+                            {
+                                // Mimics mutation-driven navigation: it uses
+                                // CancellationToken.None and must be tracked
+                                // even though no latest-refresh slot owns it.
+                                directNavigationTask =
+                                    window.NavigationRefreshWithoutCancellationForSmokeAsync();
+                            }
+
+                            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                            window.NavigationBeforeCommitForSmokeAsync = null;
+                            if (iteration == 0)
+                            {
+                                window.StartNavigationRefreshForSmoke();
+                                await window.NavigationRefreshForSmokeAsync();
+                            }
                         }
 
                         window.Close();
-                        if (releaseSupersededNavigation is not null)
+                        if (releaseNavigation is not null)
                         {
-                            // The older refresh remains blocked even though
-                            // a newer refresh has already completed. On
-                            // shutdown it must prevent the window from
-                            // declaring all owned DB operations drained.
                             for (var drainAttempt = 0; drainAttempt < 10;
                                  drainAttempt++)
                             {
@@ -14149,13 +14160,20 @@ try
                             }
                             Require(
                                 window.IsVisible,
-                                "MainWindow closed before a superseded navigation refresh finished draining.");
+                                iteration == 0
+                                    ? "MainWindow closed before a superseded navigation refresh finished draining."
+                                    : "MainWindow closed before a direct non-cancelled navigation refresh finished draining.");
                         }
                     }
                     finally
                     {
                         window.NavigationBeforeCommitForSmokeAsync = null;
-                        releaseSupersededNavigation?.TrySetResult(true);
+                        releaseNavigation?.TrySetResult(true);
+                    }
+
+                    if (directNavigationTask is not null)
+                    {
+                        await directNavigationTask;
                     }
 
                     for (var attempt = 0;

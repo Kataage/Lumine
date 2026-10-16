@@ -637,7 +637,7 @@ public sealed class MainWindow : Window
     internal Func<Task>? NavigationBeforeCommitForSmokeAsync { get; set; }
 
     internal Task NavigationRefreshWithoutCancellationForSmokeAsync() =>
-        RefreshNavigationAsync(CancellationToken.None);
+        RefreshNavigationTrackedAsync(CancellationToken.None);
 
     // Stage 2X: hold an actual completed Publication DB mutation before its
     // in-memory commit, so a mounted smoke can replace the runtime first.
@@ -1192,6 +1192,29 @@ public sealed class MainWindow : Window
                     }
                 },
                 DispatcherPriority.Input);
+        }
+    }
+
+    // Tag-management callbacks (and explicit non-cancelled refreshes) do not
+    // flow through StartNavigationRefresh. Track their complete SQLite work
+    // as well; cancellation of the latest refresh is not a close barrier.
+    private async Task RefreshNavigationTrackedAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_closeStarted)
+        {
+            return;
+        }
+
+        var operation = RefreshNavigationAsync(cancellationToken);
+        _navigationInFlight.Add(operation);
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            _navigationInFlight.Remove(operation);
         }
     }
 
@@ -2750,7 +2773,35 @@ public sealed class MainWindow : Window
         return ApplyBrowseQueryAsync();
     }
 
-    private async Task CreateTagFromNavigationAsync(
+    // The Tag callbacks own SQLite work *before* their eventual refresh.
+    // Track the complete operation as well as the nested refresh; otherwise
+    // closing during Create/Update/Delete could still abandon an open writer.
+    private async Task RunTrackedNavigationMutationAsync(Func<Task> mutation)
+    {
+        if (_closeStarted)
+        {
+            return;
+        }
+
+        var operation = mutation();
+        _navigationInFlight.Add(operation);
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            _navigationInFlight.Remove(operation);
+        }
+    }
+
+    private Task CreateTagFromNavigationAsync(
+        string name,
+        string color) =>
+        RunTrackedNavigationMutationAsync(
+            () => CreateTagFromNavigationCoreAsync(name, color));
+
+    private async Task CreateTagFromNavigationCoreAsync(
         string name,
         string color)
     {
@@ -2763,11 +2814,18 @@ public sealed class MainWindow : Window
             runtime.Library.Id,
             name,
             color);
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
     }
 
-    private async Task UpdateTagFromNavigationAsync(
+    private Task UpdateTagFromNavigationAsync(
+        LibraryTagInfo tag,
+        string name,
+        string color) =>
+        RunTrackedNavigationMutationAsync(
+            () => UpdateTagFromNavigationCoreAsync(tag, name, color));
+
+    private async Task UpdateTagFromNavigationCoreAsync(
         LibraryTagInfo tag,
         string name,
         string color)
@@ -2822,7 +2880,7 @@ public sealed class MainWindow : Window
             }
         }
 
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
 
         if (_shell is not null)
@@ -2831,7 +2889,12 @@ public sealed class MainWindow : Window
         }
     }
 
-    private async Task DeleteTagFromNavigationAsync(
+    private Task DeleteTagFromNavigationAsync(
+        LibraryTagInfo tag) =>
+        RunTrackedNavigationMutationAsync(
+            () => DeleteTagFromNavigationCoreAsync(tag));
+
+    private async Task DeleteTagFromNavigationCoreAsync(
         LibraryTagInfo tag)
     {
         var runtime =
@@ -2882,7 +2945,7 @@ public sealed class MainWindow : Window
             await ApplyBrowseQueryAsync();
         }
 
-        await RefreshNavigationAsync(
+        await RefreshNavigationTrackedAsync(
             CancellationToken.None);
     }
 
