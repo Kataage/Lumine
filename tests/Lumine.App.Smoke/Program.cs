@@ -6851,7 +6851,7 @@ try
         LumineVisualMetrics.TextScaleFactor;
 
     for (var iteration = 0;
-         iteration < 4;
+         iteration < 3;
          iteration++)
     {
         var repeatedLibraryRoot =
