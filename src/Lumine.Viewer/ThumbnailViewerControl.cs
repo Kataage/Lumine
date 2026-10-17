@@ -586,6 +586,14 @@ public sealed class ThumbnailViewerControl : UserControl
     internal bool IsAssetWarmForSmoke(long index) =>
         _warmPresentations.ContainsKey(index);
 
+    // Exercise the real descriptor insertion/eviction policy without
+    // performing redundant thumbnail file I/O or native Bitmap decodes.
+    internal void RegisterWarmPresentationForSmoke(
+        long index,
+        ViewerAsset asset,
+        ViewerThumbnail thumbnail) =>
+        RememberWarmPresentation(index, asset, thumbnail);
+
     internal long? FirstWarmAssetIndexForSmoke =>
         _warmPresentationLru.First?.Value;
 
