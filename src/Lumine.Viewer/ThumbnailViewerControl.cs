@@ -129,12 +129,21 @@ public sealed class ThumbnailViewerControl : UserControl
     private const double GridOuterPadding = 12;
     private const double GridCornerRadius = 10;
 
+    // A memory-led viewport can decode >256 nearby tiles when the owner
+    // raises the decoded Bitmap budget. Keeping only 256 index->bitmap
+    // descriptors then makes already-resident bitmaps invisible to the
+    // instant warm-tile path. Descriptors do NOT pin a Bitmap lease;
+    // match their bounded horizon to the configured native entry count.
     private int WarmPresentationLimit =>
-        Math.Max(
-            16,
-            Math.Min(
-                256,
-                _session.Options.DecodedBitmapEntryLimit * 2));
+        ResolveWarmPresentationDescriptorLimitForSmoke(
+            _session.Options.DecodedBitmapEntryLimit);
+
+    internal int WarmPresentationDescriptorLimitForSmoke =>
+        WarmPresentationLimit;
+
+    internal static int ResolveWarmPresentationDescriptorLimitForSmoke(
+        int decodedEntryLimit) =>
+        (int)Math.Clamp((long)decodedEntryLimit * 2, 16, 1024);
 
     public ThumbnailViewerControl(
         ViewerSession session,

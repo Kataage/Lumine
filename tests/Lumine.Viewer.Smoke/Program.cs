@@ -1802,6 +1802,29 @@ internal static class Program
                 "Small pixel offsets without a progressed visible edge repeatedly scheduled background work.");
         }
 
+        // A 256MiB native Bitmap budget with the existing compiled
+        // 512-entry ceiling can keep more than 256 upcoming thumbnails
+        // decoded. Descriptor eviction must not discard still-resident
+        // images from the instant warm path merely because the old
+        // independent descriptor cap was 256. The map is metadata only;
+        // actual Bitmap residency remains controlled by the byte/entry
+        // bounded native cache.
+        Require(
+            ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(96) == 192
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(128) == 256
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(256) == 512
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(512) == 1024
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(2048) == 1024
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(0) == 16
+            && viewer.WarmPresentationDescriptorLimitForSmoke >= 16,
+            "Warm presentation descriptors were truncated below the configured decoded Bitmap cache capacity.");
+
         // Every newly attached tile attempts exactly one warm lookup.
         // Missing speculative descriptors and unavailable decoded Bitmap
         // entries are distinct root causes and must add up with hits.
