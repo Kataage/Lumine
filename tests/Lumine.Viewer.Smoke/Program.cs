@@ -1802,6 +1802,65 @@ internal static class Program
                 "Small pixel offsets without a progressed visible edge repeatedly scheduled background work.");
         }
 
+        // A 256MiB native Bitmap budget with the existing compiled
+        // 512-entry ceiling can keep more than 256 upcoming thumbnails
+        // decoded. Descriptor eviction must not discard still-resident
+        // images from the instant warm path merely because the old
+        // independent descriptor cap was 256. The map is metadata only;
+        // actual Bitmap residency remains controlled by the byte/entry
+        // bounded native cache.
+        Require(
+            ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(96) == 192
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(128) == 256
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(256) == 512
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(512) == 1024
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(2048) == 1024
+            && ThumbnailViewerControl
+                .ResolveWarmPresentationDescriptorLimitForSmoke(0) == 16
+            && viewer.WarmPresentationDescriptorLimitForSmoke == 128,
+            "Warm presentation descriptors were truncated below the configured decoded Bitmap cache capacity.");
+
+        // MemoryOnly thumbnails may carry large compressed byte arrays.
+        // The warm-descriptor cache stores only the native cache's stable
+        // memory/file identity: never retain the source byte[] a second time.
+        // This also must match the cache's actual resident lookup key.
+        var memoryDescriptor = new ViewerThumbnail(
+            "memory-warm-key", string.Empty, 1, 1,
+            EncodedBytes: File.ReadAllBytes(thumbnailPath));
+        var memoryCache = new DecodedBitmapCache(4, 4 * 1024 * 1024, 384);
+        var memoryIdentity = memoryCache.ResolveWarmCacheIdentity(
+            memoryDescriptor);
+        var fileIdentity = memoryCache.ResolveWarmCacheIdentity(
+            new ViewerThumbnail(
+                "file-warm-key", thumbnailPath, 1, 1));
+        Require(
+            memoryIdentity == "memory:memory-warm-key"
+            && fileIdentity is not null
+            && fileIdentity.StartsWith("thumbnail:", StringComparison.Ordinal)
+            && memoryCache.ResolveWarmCacheIdentity(
+                new ViewerThumbnail("invalid", string.Empty, 1, 1)) is null
+            && !memoryCache.TryAcquireExistingByCacheIdentity(
+                memoryIdentity, out _),
+            "Warm descriptors failed to retain only bounded native cache identities.");
+        using (var originalBitmap = await memoryCache.AcquireAsync(
+            memoryDescriptor))
+        {
+            Require(
+                memoryCache.TryAcquireExistingByCacheIdentity(
+                    memoryIdentity, out var warmBitmap)
+                && warmBitmap is not null
+                && ReferenceEquals(originalBitmap.Bitmap, warmBitmap.Bitmap),
+                "Key-only MemoryOnly descriptor could not reuse a decoded resident Bitmap.");
+            warmBitmap.Dispose();
+        }
+
+        await memoryCache.DisposeAsync();
+
         // Every newly attached tile attempts exactly one warm lookup.
         // Missing speculative descriptors and unavailable decoded Bitmap
         // entries are distinct root causes and must add up with hits.
@@ -1832,6 +1891,41 @@ internal static class Program
 
         window.Close();
         Dispatcher.UIThread.RunJobs();
+
+        // Real bounded 512-entry decoded-cache setting must allow the
+        // matching 1024 lightweight descriptor horizon, rather than
+        // silently retaining only the old 256 and sending resident tiles
+        // down the slow async foreground source path.
+        await using var largeSession = new ViewerSession(
+            new DirectFixtureAssetProvider(2_048),
+            new ImmediateThumbnailProvider(thumbnailPath),
+            new ViewerOptions
+            {
+                PrefetchRows = 0,
+                DecodedBitmapEntryLimit = 512,
+                DecodedBitmapByteLimit = 256L * 1024 * 1024
+            });
+        var largeViewer = new ThumbnailViewerControl(largeSession);
+        var descriptorAsset = await largeSession.GetAssetAsync(0);
+        for (var index = 0; index < 1_100; index++)
+        {
+            largeViewer.RegisterWarmPresentationForSmoke(
+                index, descriptorAsset,
+                new ViewerThumbnail(
+                    "descriptor-" + index.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    string.Empty, 1, 1,
+                    EncodedBytes: [1]));
+        }
+
+        Require(
+            largeViewer.WarmPresentationDescriptorLimitForSmoke == 1_024
+            && largeViewer.WarmTileEntryCountForSmoke == 1_024
+            && !largeViewer.IsAssetWarmForSmoke(75)
+            && largeViewer.IsAssetWarmForSmoke(76)
+            && largeViewer.IsAssetWarmForSmoke(1_099)
+            && largeViewer.FirstWarmAssetIndexForSmoke == 76,
+            "Large decoded Bitmap capacity did not retain exactly the bounded warm descriptor horizon.");
     }
 
     private static async Task VerifyHeadlessVirtualizationCoreAsync(string thumbnailPath)
