@@ -1825,6 +1825,30 @@ internal static class Program
             && viewer.WarmPresentationDescriptorLimitForSmoke == 128,
             "Warm presentation descriptors were truncated below the configured decoded Bitmap cache capacity.");
 
+        // MemoryOnly thumbnails may carry large compressed byte arrays.
+        // The warm-descriptor cache stores only the native cache's stable
+        // memory/file identity: never retain the source byte[] a second time.
+        // This also must match the cache's actual resident lookup key.
+        var memoryDescriptor = new ViewerThumbnail(
+            "memory-warm-key", string.Empty, 1, 1,
+            EncodedBytes: new byte[4096]);
+        var memoryCache = new DecodedBitmapCache(4, 4 * 1024 * 1024);
+        var memoryIdentity = memoryCache.ResolveWarmCacheIdentity(
+            memoryDescriptor);
+        var fileIdentity = memoryCache.ResolveWarmCacheIdentity(
+            new ViewerThumbnail(
+                "file-warm-key", thumbnailPath, 1, 1));
+        Require(
+            memoryIdentity == "memory:memory-warm-key"
+            && fileIdentity is not null
+            && fileIdentity.StartsWith("thumbnail:", StringComparison.Ordinal)
+            && memoryCache.ResolveWarmCacheIdentity(
+                new ViewerThumbnail("invalid", string.Empty, 1, 1)) is null
+            && !memoryCache.TryAcquireExistingByCacheIdentity(
+                memoryIdentity, out _),
+            "Warm descriptors failed to retain only bounded native cache identities.");
+        await memoryCache.DisposeAsync();
+
         // Every newly attached tile attempts exactly one warm lookup.
         // Missing speculative descriptors and unavailable decoded Bitmap
         // entries are distinct root causes and must add up with hits.

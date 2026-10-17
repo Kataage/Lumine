@@ -1170,6 +1170,13 @@ public sealed class ThumbnailViewerControl : UserControl
         ViewerAsset asset,
         ViewerThumbnail thumbnail)
     {
+        var cacheIdentity = _session.BitmapCache
+            .ResolveWarmCacheIdentity(thumbnail);
+        if (cacheIdentity is null)
+        {
+            return;
+        }
+
         if (_warmPresentations.Remove(
                 index,
                 out var previous))
@@ -1184,7 +1191,7 @@ public sealed class ThumbnailViewerControl : UserControl
         _warmPresentations[index] =
             new WarmPresentation(
                 asset,
-                thumbnail,
+                cacheIdentity,
                 node);
 
         while (_warmPresentations.Count
@@ -1238,8 +1245,8 @@ public sealed class ThumbnailViewerControl : UserControl
             return false;
         }
 
-        if (!_session.BitmapCache.TryAcquireExisting(
-                existing.Thumbnail,
+        if (!_session.BitmapCache.TryAcquireExistingByCacheIdentity(
+                existing.CacheIdentity,
                 out var acquired)
             || acquired is null)
         {
@@ -2672,8 +2679,12 @@ public sealed class ThumbnailViewerControl : UserControl
             if (_warmPresentations.TryGetValue(
                     index, out var warm))
             {
-                PromoteResidentWarmThumbnailForSmoke(
-                    session.BitmapCache, warm.Thumbnail);
+                if (session.BitmapCache.TryAcquireExistingByCacheIdentity(
+                        warm.CacheIdentity, out var lease)
+                    && lease is not null)
+                {
+                    lease.Dispose();
+                }
             }
         }
     }
@@ -3900,7 +3911,7 @@ public sealed class ThumbnailViewerControl : UserControl
 
     private sealed record WarmPresentation(
         ViewerAsset Asset,
-        ViewerThumbnail Thumbnail,
+        string CacheIdentity,
         LinkedListNode<long> Node);
 
     internal readonly record struct ViewerTilePresentation(
