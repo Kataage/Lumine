@@ -12879,7 +12879,37 @@ try
                                          || window.CurrentShell.ContextDetail
                                              .IsCompactPresentationForSmoke
                                              != (window.CurrentShell.Bounds.Width < 1600)
-                                         || !window.CurrentShell.ContextDetail.HasPreview);
+                                         || !window.CurrentShell.ContextDetail.HasPreview
+                                         || Math.Abs(
+                                             window.CurrentShell.ContextDetail
+                                                 .PreviewHeightForSmoke
+                                             - ContextualAssetDetailPanel
+                                                 .ResolvePreviewHeightForSmoke(
+                                                     window.CurrentShell
+                                                         .IsCompactInspectorLayout,
+                                                     window.CurrentShell.Bounds.Height))
+                                             >= 0.5
+                                         || window.CurrentShell.ContextDetail
+                                             .UsesCompactHorizontalSummaryForSmoke
+                                             != (window.CurrentShell
+                                                 .IsCompactInspectorLayout
+                                                 && window.CurrentShell.Bounds.Height > 0
+                                                 && window.CurrentShell.Bounds.Height < 720)
+                                         || window.CurrentShell.GridViewerBounds.Width < 500
+                                         || Math.Abs(
+                                             window.CurrentShell.GridViewerBounds.Width
+                                             - unpinnedClosedCanvasWidth) >= 1
+                                         || window.CurrentShell.IsInspectorPinnedForSmoke
+                                         || !window.CurrentShell.ContextDetail
+                                             .TabStripUsesLumineStatesForSmoke
+                                         || !window.CurrentShell.ContextDetail
+                                             .TabPagesHaveIndependentScrollStateForSmoke
+                                         || !window.CurrentShell.ContextDetail
+                                             .SaveActionsDockedForSmoke
+                                         || !window.CurrentShell.ContextDetail
+                                             .SaveActionButtonsContainedForSmoke
+                                         || !window.CurrentShell.ContextDetail
+                                             .ContextualFooterLayoutForSmoke);
                                      inspectorSettleAttempt++)
                                 {
                                     Dispatcher.UIThread.RunJobs();
@@ -12935,7 +12965,22 @@ try
                                         .SaveActionButtonsContainedForSmoke
                                     && window.CurrentShell.ContextDetail
                                         .ContextualFooterLayoutForSmoke,
-                                    $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}.");
+                                    $"Inspector geometry/IA regressed at {viewport.Width:N0}x{viewport.Height:N0}, {mode}, nav={(navigationVisible ? "open" : "closed")}; " +
+                                    $"shell={window.CurrentShell.Bounds.Width:F1}x{window.CurrentShell.Bounds.Height:F1}, " +
+                                    $"visible={window.CurrentShell.IsContextDetailVisible}, " +
+                                    $"compact={window.CurrentShell.IsCompactInspectorLayout}, " +
+                                    $"surfaceWidth={window.CurrentShell.ContextSurfaceBounds.Width:F1}, " +
+                                    $"gridWidth={window.CurrentShell.GridViewerBounds.Width:F1}, " +
+                                    $"closedGridWidth={unpinnedClosedCanvasWidth:F1}, " +
+                                    $"previewHeight={window.CurrentShell.ContextDetail.PreviewHeightForSmoke:F1}, " +
+                                    $"hasPreview={window.CurrentShell.ContextDetail.HasPreview}, " +
+                                    $"horizontalSummary={window.CurrentShell.ContextDetail.UsesCompactHorizontalSummaryForSmoke}, " +
+                                    $"pinned={window.CurrentShell.IsInspectorPinnedForSmoke}, " +
+                                    $"tabStrip={window.CurrentShell.ContextDetail.TabStripUsesLumineStatesForSmoke}, " +
+                                    $"tabScroll={window.CurrentShell.ContextDetail.TabPagesHaveIndependentScrollStateForSmoke}, " +
+                                    $"saveDocked={window.CurrentShell.ContextDetail.SaveActionsDockedForSmoke}, " +
+                                    $"saveContained={window.CurrentShell.ContextDetail.SaveActionButtonsContainedForSmoke}, " +
+                                    $"footer={window.CurrentShell.ContextDetail.ContextualFooterLayoutForSmoke}.");
 
                                 if (iteration == 0
                                     && mode == BrowseViewMode.Grid
