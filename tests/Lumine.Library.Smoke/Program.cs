@@ -1019,6 +1019,30 @@ try
         sameStat.ModifiedAtUtc.UtcDateTime.Ticks,
         new AssetTechnicalMetadata(
             640, 480, 640, 480, true, "png", technicalSha));
+    // The actual standalone source-guarded COMMIT observer is shared by
+    // foreground/interactive Viewer metadata. Only successful COMMITs may
+    // expose timing evidence; stale revisions must not fabricate samples.
+    var measuredSingle = await repository.UpdateTechnicalMetadataMeasuredAsync(
+        library.Id,
+        batchValid.AssetId,
+        batchValid.ExpectedSourceRevision,
+        batchValid.ExpectedFileSize,
+        batchValid.ExpectedModifiedAtUtcTicks,
+        batchValid.Metadata);
+    Require(
+        measuredSingle.Stored
+        && measuredSingle.Timings is { CommitTicks: > 0 },
+        "Real standalone SQLite metadata COMMIT did not return timing evidence.");
+    var rejectedSingle = await repository.UpdateTechnicalMetadataMeasuredAsync(
+        library.Id,
+        batchValid.AssetId,
+        batchValid.ExpectedSourceRevision + 1,
+        batchValid.ExpectedFileSize,
+        batchValid.ExpectedModifiedAtUtcTicks,
+        batchValid.Metadata);
+    Require(
+        !rejectedSingle.Stored && rejectedSingle.Timings is null,
+        "Rejected standalone metadata source revision fabricated a successful COMMIT.");
     var batchRejectedIdentity =
         batchValid with
         {
