@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Lumine.Image;
 using Lumine.Library;
 using Lumine.Viewer;
@@ -592,9 +593,53 @@ internal sealed class ImageViewerDetailProvider : IViewerDetailProvider
 }
 
 
+internal readonly record struct ViewerDirectMetadataWriteDiagnostics(
+    long SuccessfulCommits,
+    long TotalRepositoryServiceTicks,
+    long MaxRepositoryServiceTicks,
+    long TotalCommitTicks,
+    long MaxCommitTicks);
+
 internal static class ViewerImageMetadataBridge
 {
     private const int PersistedMetadataCacheLimit = 8192;
+    private static long _directSuccessfulCommits;
+    private static long _directRepositoryServiceTicks;
+    private static long _directMaxRepositoryServiceTicks;
+    private static long _directCommitTicks;
+    private static long _directMaxCommitTicks;
+
+    internal static ViewerDirectMetadataWriteDiagnostics DirectWriteDiagnostics =>
+        new(
+            Interlocked.Read(ref _directSuccessfulCommits),
+            Interlocked.Read(ref _directRepositoryServiceTicks),
+            Interlocked.Read(ref _directMaxRepositoryServiceTicks),
+            Interlocked.Read(ref _directCommitTicks),
+            Interlocked.Read(ref _directMaxCommitTicks));
+
+    private static void RecordDirectWrite(
+        long serviceTicks,
+        long commitTicks)
+    {
+        Interlocked.Add(ref _directRepositoryServiceTicks, serviceTicks);
+        Interlocked.Add(ref _directCommitTicks, commitTicks);
+        Interlocked.Increment(ref _directSuccessfulCommits);
+        ObserveMax(ref _directMaxRepositoryServiceTicks, serviceTicks);
+        ObserveMax(ref _directMaxCommitTicks, commitTicks);
+    }
+
+    private static void ObserveMax(ref long maximum, long next)
+    {
+        long observed;
+        while ((observed = Interlocked.Read(ref maximum)) < next)
+        {
+            if (Interlocked.CompareExchange(ref maximum, next, observed)
+                == observed)
+            {
+                break;
+            }
+        }
+    }
 
     private static readonly object PersistedMetadataGate = new();
     private static readonly Dictionary<PersistedMetadataKey, LinkedListNode<PersistedMetadataKey>>
@@ -829,8 +874,10 @@ internal static class ViewerImageMetadataBridge
             metadata.HasAlpha,
             metadata.Format,
             metadata.SourceIdentity);
-        var persisted = preferBatch
-            ? await ViewerTechnicalMetadataBatcher.For(library).WriteAsync(
+        bool persisted;
+        if (preferBatch)
+        {
+            persisted = await ViewerTechnicalMetadataBatcher.For(library).WriteAsync(
                 libraryId,
                 new TechnicalMetadataBatchItem(
                     asset.Id,
@@ -838,8 +885,15 @@ internal static class ViewerImageMetadataBridge
                     asset.FileSize,
                     asset.ModifiedAtUtcTicks,
                     technical),
-                cancellationToken).ConfigureAwait(false)
-            : await library.UpdateTechnicalMetadataAsync(
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Foreground and interactive writes bypass background batching.
+            // Measure successful single COMMITs separately from decode and
+            // service work, without changing the existing source guard.
+            var serviceStarted = Stopwatch.GetTimestamp();
+            var write = await library.UpdateTechnicalMetadataMeasuredAsync(
                 libraryId,
                 asset.Id,
                 asset.SourceRevision,
@@ -847,6 +901,14 @@ internal static class ViewerImageMetadataBridge
                 asset.ModifiedAtUtcTicks,
                 technical,
                 cancellationToken).ConfigureAwait(false);
+            persisted = write.Stored;
+            if (persisted)
+            {
+                RecordDirectWrite(
+                    Stopwatch.GetElapsedTime(serviceStarted).Ticks,
+                    write.Timings!.Value.CommitTicks);
+            }
+        }
 
         if (!persisted)
         {
