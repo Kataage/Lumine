@@ -59,6 +59,46 @@ jobs:
             exit 1
           fi
 
+  # Issue #714: diagnostic is independent from all strict UI/performance
+  # gates. A red windows-core remains red; research evidence can survive a
+  # separate App/Viewer regression before Library benchmarking is reached.
+  # Remove this temporary job once the checkpoint comparison is assessed.
+  wal-auto2048-diagnostics:
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      LUMINE_REVISION: ${{ github.sha }}
+      LUMINE_HARDWARE_ID: github-windows-latest
+
+    steps:
+      - name: Checkout the exact PR head
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.401
+
+      - name: Restore library benchmarks
+        run: dotnet restore tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj
+
+      - name: Build library benchmarks release
+        run: dotnet build tools/Lumine.Library.Benchmarks/Lumine.Library.Benchmarks.csproj -c Release --no-restore
+
+      - name: Measure automatic WAL checkpoint 1000 versus 2048 pages
+        shell: pwsh
+        run: ./build/Compare-LibraryWalCheckpoint.ps1 -BenchmarkCount 10000 -CandidatePages 2048 -OutputDirectory "artifacts/benchmarks/wal-auto2048-comparison"
+
+      - name: Preserve 1000-versus-2048 WAL comparison evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-wal-auto2048-evidence-${{ github.run_id }}
+          path: artifacts/benchmarks/wal-auto2048-comparison/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
   windows-core:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -524,24 +564,6 @@ jobs:
         with:
           name: lumine-wal-checkpoint-abba-evidence-${{ github.run_id }}
           path: artifacts/benchmarks/wal-checkpoint-comparison/*.json
-          if-no-files-found: warn
-          retention-days: 14
-
-      # Issue #714: bounded same-run 1000-vs-2048 auto-checkpoint ABBA
-      # experiment. This is diagnostic only, never an acceptance substitute.
-      # Run even if the original 8s gate fails, preserving that hard failure.
-      # Once evidence has been assessed, remove the extra default CI load.
-      - name: Compare automatic WAL checkpoint 1000 versus 2048 pages
-        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
-        shell: pwsh
-        run: ./build/Compare-LibraryWalCheckpoint.ps1 -BenchmarkCount 10000 -CandidatePages 2048 -OutputDirectory "artifacts/benchmarks/wal-auto2048-comparison"
-
-      - name: Preserve automatic WAL checkpoint 2048 comparison evidence
-        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: lumine-wal-auto2048-evidence-${{ github.run_id }}
-          path: artifacts/benchmarks/wal-auto2048-comparison/*.json
           if-no-files-found: warn
           retention-days: 14
 
