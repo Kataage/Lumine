@@ -527,6 +527,24 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # Issue #714: bounded same-run 1000-vs-2048 auto-checkpoint ABBA
+      # experiment. This is diagnostic only, never an acceptance substitute.
+      # Run even if the original 8s gate fails, preserving that hard failure.
+      # Once evidence has been assessed, remove the extra default CI load.
+      - name: Compare automatic WAL checkpoint 1000 versus 2048 pages
+        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
+        shell: pwsh
+        run: ./build/Compare-LibraryWalCheckpoint.ps1 -BenchmarkCount 10000 -CandidatePages 2048 -OutputDirectory "artifacts/benchmarks/wal-auto2048-comparison"
+
+      - name: Preserve automatic WAL checkpoint 2048 comparison evidence
+        if: ${{ !cancelled() && (steps.strict_library_gate.outcome == 'success' || steps.strict_library_gate.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumine-wal-auto2048-evidence-${{ github.run_id }}
+          path: artifacts/benchmarks/wal-auto2048-comparison/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
       # 64-write PASSIVE cadence research is available on demand via
       # Compare-LibraryWalCheckpoint.ps1 -ProactiveEveryWrites 64.
       # It is NOT an unconditional CI step: its first strict comparison
